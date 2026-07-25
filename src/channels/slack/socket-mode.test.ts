@@ -44,6 +44,11 @@ import {
   createSlackNativeRuntimesFromEnv,
   slackClientMessageId,
 } from "./socket-mode.js";
+import {
+  createSlackThreadLifecycle,
+  getSlackThreadLifecycle,
+  markSlackThreadRootDelivered,
+} from "./thread-lifecycle-store.js";
 import type { SlackRoutingPolicy, SlackSocketEnvelope } from "./types.js";
 
 class FakeSlackWebSocket extends EventEmitter {
@@ -377,6 +382,44 @@ describe("Slack Socket Mode routing", () => {
       channel: "C123",
       timestamp: "1713000000.000100",
       name: "+1",
+    });
+  });
+
+  it("creates a native Slack thread root with a stable client message id", async () => {
+    const postMessage = mock(async () => ({
+      channel: "C123",
+      ts: "1713000000.000100",
+      messageId: "1713000000.000100",
+      raw: { ok: true },
+    }));
+    const delivery = new SlackChatActionDelivery({ postMessage } as never);
+    const idempotencyKey = "slack-thread:req-1:slack:ravi-slack:C123:thread.create:thread.create";
+
+    await expect(
+      delivery.executeChatAction({
+        sessionName: "ravi-slack-channel",
+        idempotencyKey,
+        target: {
+          channel: "slack",
+          accountId: "ravi-slack",
+          chatId: "C123",
+          threadId: "old-thread-is-not-a-parent",
+        },
+        action: {
+          type: "chat_action",
+          actionId: "thread.create",
+          text: "Investigate this branch",
+        },
+      }),
+    ).resolves.toMatchObject({
+      provider: "slack",
+      platformMessageId: "1713000000.000100",
+      providerTimestamp: 1_713_000_000_000,
+    });
+    expect(postMessage).toHaveBeenCalledWith({
+      channel: "C123",
+      text: "Investigate this branch",
+      clientMsgId: slackClientMessageId(idempotencyKey),
     });
   });
 
@@ -1050,6 +1093,97 @@ describe("Slack Socket Mode routing", () => {
     expect(published).toHaveLength(2);
     expect(published[1]?.sessionName).toBe("ravi-hil-t-1713000000000100");
     expect(inboundEvents).toHaveLength(1);
+  });
+
+  it("leaves the created event to a pending programmatic thread bootstrap", async () => {
+    getOrCreateSession("ravi-hil", "ravi-hil", "/tmp/ravi-hil", { name: "ravi-hil" });
+    const config: RouterConfig = {
+      agents: {
+        "ravi-hil": {
+          id: "ravi-hil",
+          cwd: "/tmp/ravi-hil",
+          dmScope: "per-peer",
+        },
+      },
+      routes: [
+        {
+          pattern: "group:C123",
+          accountId: "ravi-rbbt-slack",
+          agent: "ravi-hil",
+          session: "ravi-hil",
+          priority: 100,
+          policy: "open",
+          channel: "slack",
+        },
+      ],
+      defaultAgent: "ravi-hil",
+      defaultDmScope: "per-peer",
+      accountAgents: { "ravi-rbbt-slack": "ravi-hil" },
+      instanceToAccount: {},
+      instances: {},
+    };
+    const requestId = "slack-thread:pending-created-event";
+    const threadTs = "1713000000.000100";
+    createSlackThreadLifecycle({
+      requestId,
+      parentSessionKey: "ravi-hil",
+      parentSessionName: "ravi-hil",
+      initiatorSessionKey: "ravi-hil",
+      initiatorSessionName: "ravi-hil",
+      accountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      platformChatId: "C123",
+      initialPrompt: "start work",
+    });
+    markSlackThreadRootDelivered({
+      requestId,
+      providerThreadId: threadTs,
+      canonicalRootMessageId: "cm-root",
+    });
+
+    const prompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const inboundEvents: Array<{ topic: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => config,
+      publishPrompt: async (sessionName, payload) => {
+        prompts.push({ sessionName, payload });
+      },
+      publishInteraction: async (topic, payload) => {
+        inboundEvents.push({ topic, payload });
+      },
+      webClient: {} as never,
+    });
+
+    await service.handleEnvelope({
+      envelope_id: "env-thread-race",
+      payload: {
+        team_id: "T1",
+        event_id: "EvThreadRace",
+        event_time: 1_713_000_030,
+        event: {
+          type: "message",
+          channel: "C123",
+          channel_type: "channel",
+          user: "U123",
+          text: "human follow-up",
+          ts: "1713000030.000200",
+          thread_ts: threadTs,
+        },
+      },
+    });
+
+    expect(prompts).toHaveLength(1);
+    expect(inboundEvents).toHaveLength(0);
+    expect(getSlackThreadLifecycle(requestId)).toMatchObject({
+      source: "action",
+      status: "root_delivered",
+      childSessionKey: `ravi-hil:thread:${threadTs}`,
+    });
   });
 
   it("uses a temporary Slack reaction as the native working presence indicator", async () => {

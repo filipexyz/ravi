@@ -3,6 +3,7 @@
  */
 
 import "reflect-metadata";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
@@ -31,6 +32,7 @@ import {
 import {
   listSessions,
   getSessionsByAgent,
+  getSession,
   deleteSession,
   resetSession,
   resolveSession,
@@ -75,10 +77,20 @@ import {
 } from "../../channels/chat-actions.js";
 import { buildChannelChatActionJob } from "../../channels/outbound-stream.js";
 import { publishChannelOutboundJobDurably } from "../../channels/outbound-publish-outbox.js";
+import {
+  createSlackThreadLifecycle,
+  findSlackThreadLifecycleByChildSession,
+} from "../../channels/slack/thread-lifecycle-store.js";
+import {
+  closeSlackThread,
+  slackThreadParentSessionKey,
+  splitSlackThreadPlatformChatId,
+} from "../../channels/slack/thread-lifecycle.js";
 import { listStickers, stickerAllowedForAgent, stickerAllowedOnChannel } from "../../stickers/catalog.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
 import {
   dbFindAgentChatMessageByRef,
+  dbFindChat,
   dbFindChatByRef,
   dbGetAgentChatActionCounts,
   dbGetChat,
@@ -87,6 +99,7 @@ import {
   dbListAgentChatMessagesPage,
   dbListContexts,
   dbListMessageMetaByChatId,
+  dbUpsertChat,
   type ChatMessageRecord,
   type ChatMessageWithSortKey,
   type ContextRecord,
@@ -315,6 +328,64 @@ const sessionReadMessageReturnSchema = z
   })
   .passthrough();
 const sessionReadReturnSchema = z.union([sessionReadHistoryReturnSchema, sessionReadMessageReturnSchema]);
+const sessionCreateThreadReturnSchema = z
+  .object({
+    status: z.literal("queued"),
+    queued: z.literal(true),
+    actionId: z.literal("thread.create"),
+    executionMode: z.literal("durable"),
+    requestId: z.string(),
+    idempotencyKey: z.string(),
+    publishedNow: z.boolean(),
+    publishPending: z.boolean(),
+    nextAttemptAt: z.number().optional(),
+    parentSession: z.object({
+      sessionKey: z.string(),
+      sessionName: z.string().nullable(),
+    }),
+    initiatorSession: z.object({
+      sessionKey: z.string(),
+      sessionName: z.string().nullable(),
+    }),
+    slack: z.object({
+      accountId: z.string(),
+      instanceId: z.string(),
+      channelId: z.string(),
+      canonicalChatId: z.string(),
+    }),
+    child: z.object({
+      status: z.literal("pending_root_delivery"),
+      modelOverride: z.string().nullable(),
+    }),
+  })
+  .strict();
+const sessionCloseThreadReturnSchema = z
+  .object({
+    status: z.literal("closed"),
+    actionId: z.literal("thread.close"),
+    closed: z.literal(true),
+    changed: z.boolean(),
+    requestId: z.string(),
+    closeSequence: z.number().int().nonnegative(),
+    parentReturn: z.object({
+      requested: z.boolean(),
+      delivered: z.boolean(),
+      pending: z.boolean(),
+    }),
+    parentSession: z.object({
+      sessionKey: z.string(),
+      sessionName: z.string(),
+    }),
+    childSession: z.object({
+      sessionKey: z.string(),
+      sessionName: z.string().nullable(),
+    }),
+    slack: z.object({
+      channelId: z.string(),
+      threadTs: z.string().nullable(),
+    }),
+  })
+  .strict();
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -385,6 +456,16 @@ export function buildCurrentSessionReadCommand(): string {
   return "ravi sessions read --json";
 }
 
+export function buildCurrentSessionCreateThreadCommand(message = "<initial-message>", model = "<model>"): string {
+  return `ravi sessions create-thread ${quoteCliArg(message)} --model ${model}`;
+}
+
+export function buildCurrentSessionCloseThreadCommand(result?: string): string {
+  return result === undefined
+    ? "ravi sessions close-thread"
+    : `ravi sessions close-thread --return ${quoteCliArg(result)}`;
+}
+
 export function buildSessionActionsPromptHint(): string {
   return [
     "Use this payload as the canonical conversational action surface for the current session.",
@@ -394,6 +475,8 @@ export function buildSessionActionsPromptHint(): string {
     `To delete an own outbound message, run \`${buildCurrentSessionDeleteMessageCommand("<message-id>")}\`.`,
     `To edit an own outbound text message, run \`${buildCurrentSessionEditMessageCommand("<message-id>", "novo texto")}\`.`,
     `When \`media.send\` is listed as available, send a local file with \`${buildCurrentSessionMediaSendCommand("<file-path>")}\`.`,
+    `To create a Slack work branch, run \`${buildCurrentSessionCreateThreadCommand()}\`; omit \`--model\` to inherit the normal model.`,
+    `Inside a Slack thread, close silently with \`${buildCurrentSessionCloseThreadCommand()}\` or return a result with \`${buildCurrentSessionCloseThreadCommand("<result>")}\`.`,
     "For reactions, stickers, media, and transcript reads, follow the command-specific `usage.tools` constraints.",
     "Only delete or edit messages authored by this session's agent; do not use these tools on user messages.",
   ].join("\n");
@@ -487,6 +570,35 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
       ],
       promptHint: "Use `ravi sessions read --json` to inspect recent session context.",
     },
+    createThread: {
+      id: "thread.create",
+      tool: "ravi sessions create-thread",
+      command: buildCurrentSessionCreateThreadCommand(),
+      messageSource: "The initial Slack root message and first instruction for the new child session.",
+      modelSource: "Optional runtime model id for the child; omit it to inherit normal model resolution.",
+      useWhen: "Branch work into a new native Slack thread and begin it immediately.",
+      constraints: [
+        "Use only when thread.create is available on a Slack surface.",
+        "The initial message is posted visibly as a new Slack channel root.",
+        "Slack threads are siblings; calling this inside a thread does not nest it.",
+      ],
+      promptHint:
+        'Use `ravi sessions create-thread "<initial-message>" --model <model>`; omit `--model` when the child should inherit the normal model.',
+    },
+    closeThread: {
+      id: "thread.close",
+      tool: "ravi sessions close-thread",
+      command: buildCurrentSessionCloseThreadCommand(),
+      resultSource: "Optional concise completion result for the parent session.",
+      useWhen: "Mark the current Slack thread work as complete.",
+      constraints: [
+        "Use only from the Slack thread child session being closed.",
+        "Omitting --return closes silently to the parent.",
+        "Use --return exactly when the parent should receive and process a completion result.",
+      ],
+      promptHint:
+        'Use `ravi sessions close-thread` for silent completion or `ravi sessions close-thread --return "<result>"` to notify the parent once.',
+    },
   };
 }
 
@@ -548,6 +660,95 @@ async function queueSlackChatAction(
   };
 }
 
+function resolveSlackThreadCreationTarget(session: SessionEntry): {
+  parentSession: SessionEntry;
+  accountId: string;
+  instanceId: string;
+  platformChatId: string;
+  rootCanonicalChatId: string;
+} {
+  const parentSessionKey = slackThreadParentSessionKey(session.sessionKey);
+  const parentSession = parentSessionKey === session.sessionKey ? session : getSession(parentSessionKey);
+  if (!parentSession) {
+    throw new Error(`Slack channel parent session not found: ${parentSessionKey}`);
+  }
+  if (parentSession.agentId !== session.agentId) {
+    throw new Error("Slack thread creation cannot cross agent ownership boundaries");
+  }
+
+  const context = getContext();
+  const contextBelongsToSession =
+    context?.sessionKey === session.sessionKey ||
+    (context?.sessionName !== undefined && context.sessionName === session.name);
+  const contextSource =
+    contextBelongsToSession && context?.source?.channel.toLowerCase() === "slack" ? context.source : undefined;
+
+  let instanceId = contextSource?.instanceId?.trim();
+  let accountId = contextSource?.accountId?.trim();
+  let platformChatId = contextSource?.chatId?.trim();
+  let selectedChat = contextSource?.canonicalChatId ? dbGetChat(contextSource.canonicalChatId) : null;
+
+  if (!selectedChat || selectedChat.channel.toLowerCase() !== "slack") {
+    const subscriptions = listSessionSubscriptions(session.sessionKey);
+    const outputChatId = subscriptions.find((subscription) => subscription.outputAttachedAt !== undefined)?.chatId;
+    const candidateIds = [
+      outputChatId,
+      ...sessionActionChatIds(session),
+      ...sessionActionChatIds(parentSession),
+    ].filter((value): value is string => Boolean(value));
+    selectedChat =
+      candidateIds.map((chatId) => dbGetChat(chatId)).find((chat) => chat?.channel.toLowerCase() === "slack") ?? null;
+  }
+
+  if (selectedChat?.channel.toLowerCase() === "slack") {
+    instanceId ||= selectedChat.instanceId;
+    const threadIdentity = splitSlackThreadPlatformChatId(selectedChat.platformChatId);
+    platformChatId ||= threadIdentity?.platformChatId ?? selectedChat.platformChatId;
+  }
+
+  if (platformChatId?.includes("#")) {
+    platformChatId = splitSlackThreadPlatformChatId(platformChatId)?.platformChatId;
+  }
+  instanceId ||= accountId;
+  accountId ||= parentSession.lastAccountId?.trim() || instanceId;
+  if (!platformChatId || !instanceId || !accountId) {
+    throw new Error("No executable Slack channel surface was found for this session");
+  }
+
+  const rootChat =
+    (selectedChat?.channel.toLowerCase() === "slack" &&
+    selectedChat.instanceId === instanceId &&
+    selectedChat.platformChatId === platformChatId
+      ? selectedChat
+      : dbFindChat({
+          channel: "slack",
+          instanceId,
+          platformChatId,
+        })) ??
+    dbUpsertChat({
+      channel: "slack",
+      instanceId,
+      platformChatId,
+      chatType: platformChatId.startsWith("D") ? "dm" : "channel",
+      title: platformChatId,
+      rawProvenance: {
+        source: "ravi.sessions.create-thread",
+        parentSessionKey: parentSession.sessionKey,
+      },
+    });
+  if (!slackCredentialConfigured(loadRouterConfig(), instanceId)) {
+    throw new Error("The Slack channel has no enabled brokered credential connection");
+  }
+
+  return {
+    parentSession,
+    accountId,
+    instanceId,
+    platformChatId,
+    rootCanonicalChatId: rootChat.id,
+  };
+}
+
 function serializeSessionActionChat(chatId: string | undefined): Record<string, unknown> | null {
   if (!chatId) return null;
   const chat = dbGetChat(chatId);
@@ -600,6 +801,7 @@ export function serializeSessionActionMessage(
 function buildSessionActionSurfaces(session: SessionEntry, chatIds: string[]): ChatActionSurface[] {
   const config = loadRouterConfig();
   const stickers = listStickers();
+  const threadLifecycle = findSlackThreadLifecycleByChildSession(session.sessionKey);
   return chatIds.flatMap((chatId) => {
     const chat = dbGetChat(chatId);
     if (!chat) return [];
@@ -620,6 +822,8 @@ function buildSessionActionSurfaces(session: SessionEntry, chatIds: string[]): C
         channel: chat.channel,
         instanceId: chat.instanceId,
         platformChatId: chat.platformChatId,
+        chatType: chat.chatType,
+        ...(chat.chatType === "thread" ? { threadLifecycleStatus: threadLifecycle?.status ?? "open" } : {}),
         ...(chat.channel.toLowerCase() === "slack"
           ? { credentialConfigured: slackCredentialConfigured(config, chat.instanceId) }
           : {}),
@@ -716,6 +920,24 @@ function sessionActionToolFields(
       constraints: toolHints.sendMedia.constraints,
     };
   }
+  if (actionId === "thread.create") {
+    return {
+      command: buildCurrentSessionCreateThreadCommand(),
+      promptHint: toolHints.createThread.promptHint,
+      messageSource: toolHints.createThread.messageSource,
+      modelSource: toolHints.createThread.modelSource,
+      constraints: toolHints.createThread.constraints,
+    };
+  }
+  if (actionId === "thread.close") {
+    return {
+      command: buildCurrentSessionCloseThreadCommand(),
+      returnCommand: buildCurrentSessionCloseThreadCommand("<result>"),
+      promptHint: toolHints.closeThread.promptHint,
+      resultSource: toolHints.closeThread.resultSource,
+      constraints: toolHints.closeThread.constraints,
+    };
+  }
   return {};
 }
 
@@ -790,12 +1012,14 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
       ...CHAT_ACTION_DESCRIPTORS.map((descriptor) => {
         const resolved = actionAvailability.get(descriptor.id)!;
         const aggregate = resolved.aggregate;
+        const threadToolIsRunnable =
+          (descriptor.id !== "thread.create" && descriptor.id !== "thread.close") || aggregate.status === "available";
         return {
           id: descriptor.id,
           status: aggregate.status,
           description: descriptor.description,
           targetKind: descriptor.targetKind,
-          ...sessionActionToolFields(descriptor.id, toolHints),
+          ...(threadToolIsRunnable ? sessionActionToolFields(descriptor.id, toolHints) : {}),
           ...(aggregate.executionMode ? { executionMode: aggregate.executionMode } : {}),
           ...(aggregate.requiredScopes ? { requiredScopes: aggregate.requiredScopes } : {}),
           ...(aggregate.scopeVerification ? { scopeVerification: aggregate.scopeVerification } : {}),
@@ -829,6 +1053,8 @@ function buildSessionActionsPayload(session: SessionEntry, options: { limit?: nu
       "Use recentOwnMessages.items[].commands.delete to remove an accidental message you sent.",
       "Use recentOwnMessages.items[].commands.edit to edit an accidental message you sent.",
       "message.delete and message.edit are scoped to messages sent by this session's agent.",
+      "thread.create posts a visible Slack root and starts its child fork immediately.",
+      "thread.close is silent to the parent unless --return is supplied.",
     ],
   };
 }
@@ -5619,6 +5845,204 @@ export class SessionCommands {
   }
 
   @Command({
+    name: "create-thread",
+    description: "Create a native Slack thread and start a child session in it",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "create-thread",
+    risk: "medium",
+  })
+  async createThread(
+    @Arg("message", {
+      description: "Initial Slack message and first instruction for the child session",
+    })
+    message: string,
+    @Option({
+      flags: "--model <model>",
+      description: "Optional model override for the child session",
+    })
+    model?: string,
+    @Option({
+      flags: "--session <nameOrKey>",
+      description: "Explicit initiating session (defaults to current session)",
+    })
+    sessionOverride?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const initialMessage = message.trim();
+    if (!initialMessage) {
+      fail("Initial thread message is required");
+      return;
+    }
+    const target = sessionOverride?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail(
+        "No current session context found. Use ravi sessions create-thread <message> inside a session, or pass --session <name> outside one.",
+      );
+      return;
+    }
+    const session = this.resolveTarget(target);
+    if (!session) return;
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionActionRef(session))) {
+      fail(`Session not found: ${target}`);
+      return;
+    }
+
+    const creationTarget = resolveSlackThreadCreationTarget(session);
+    const requestId = `slack-thread:${randomUUID()}`;
+    const normalizedModel = model?.trim() || undefined;
+    createSlackThreadLifecycle({
+      requestId,
+      parentSessionKey: creationTarget.parentSession.sessionKey,
+      parentSessionName: sessionActionRef(creationTarget.parentSession),
+      initiatorSessionKey: session.sessionKey,
+      initiatorSessionName: sessionActionRef(session),
+      accountId: creationTarget.accountId,
+      instanceId: creationTarget.instanceId,
+      platformChatId: creationTarget.platformChatId,
+      rootCanonicalChatId: creationTarget.rootCanonicalChatId,
+      initialPrompt: initialMessage,
+      modelOverride: normalizedModel,
+    });
+    const job = buildChannelChatActionJob({
+      sessionName: sessionActionRef(creationTarget.parentSession),
+      requestId,
+      target: {
+        channel: "slack",
+        accountId: creationTarget.accountId,
+        instanceId: creationTarget.instanceId,
+        chatId: creationTarget.platformChatId,
+        canonicalChatId: creationTarget.rootCanonicalChatId,
+      },
+      content: {
+        type: "chat_action",
+        actionId: "thread.create",
+        text: initialMessage,
+      },
+    });
+    const published = await publishChannelOutboundJobDurably(job);
+    const payload = {
+      status: "queued",
+      queued: true,
+      actionId: "thread.create",
+      executionMode: "durable",
+      requestId,
+      idempotencyKey: job.request.idempotencyKey,
+      publishedNow: published.ok && published.publishedNow,
+      publishPending: !published.ok,
+      ...(published.ok ? {} : { nextAttemptAt: published.nextAttemptAt }),
+      parentSession: {
+        sessionKey: creationTarget.parentSession.sessionKey,
+        sessionName: creationTarget.parentSession.name ?? null,
+      },
+      initiatorSession: {
+        sessionKey: session.sessionKey,
+        sessionName: session.name ?? null,
+      },
+      slack: {
+        accountId: creationTarget.accountId,
+        instanceId: creationTarget.instanceId,
+        channelId: creationTarget.platformChatId,
+        canonicalChatId: creationTarget.rootCanonicalChatId,
+      },
+      child: {
+        status: "pending_root_delivery",
+        modelOverride: normalizedModel ?? null,
+      },
+    };
+    if (asJson) printJson(payload);
+    else console.log(`Queued Slack thread creation in ${creationTarget.platformChatId}`);
+    return payload;
+  }
+
+  @Command({
+    name: "close-thread",
+    description: "Close the current Slack thread session, optionally returning a result to its parent",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "sessions",
+    action: "close-thread",
+    risk: "medium",
+  })
+  async closeThread(
+    @Option({
+      flags: "--return <result>",
+      description: "Completion result to deliver once to the parent session",
+    })
+    returnResult?: string,
+    @Option({
+      flags: "--session <nameOrKey>",
+      description: "Explicit Slack thread session (defaults to current session)",
+    })
+    sessionOverride?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" })
+    asJson?: boolean,
+  ) {
+    const target = sessionOverride?.trim() || resolveCurrentSessionRef();
+    if (!target) {
+      fail(
+        "No current session context found. Use ravi sessions close-thread inside a Slack thread, or pass --session <name> outside one.",
+      );
+      return;
+    }
+    const session = this.resolveTarget(target);
+    if (!session) return;
+    const scopeCtx = getScopeContext();
+    if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionActionRef(session))) {
+      fail(`Session not found: ${target}`);
+      return;
+    }
+    if (slackThreadParentSessionKey(session.sessionKey) === session.sessionKey) {
+      fail("thread.close is available only inside a Slack thread child session");
+      return;
+    }
+    const normalizedReturn = returnResult?.trim() || undefined;
+    const result = await closeSlackThread(session, normalizedReturn);
+    const payload = {
+      status: result.record.status,
+      actionId: "thread.close",
+      closed: true,
+      changed: result.changed,
+      requestId: result.record.requestId,
+      closeSequence: result.record.closeSequence,
+      parentReturn: {
+        requested: result.record.parentReturnRequested,
+        delivered: result.parentReturnDelivered || result.record.parentNotifiedAt !== undefined,
+        pending:
+          result.record.parentReturnRequested &&
+          !result.parentReturnDelivered &&
+          result.record.parentNotifiedAt === undefined,
+      },
+      parentSession: {
+        sessionKey: result.record.parentSessionKey,
+        sessionName: result.record.parentSessionName,
+      },
+      childSession: {
+        sessionKey: result.record.childSessionKey ?? session.sessionKey,
+        sessionName: result.record.childSessionName ?? session.name ?? null,
+      },
+      slack: {
+        channelId: result.record.platformChatId,
+        threadTs: result.record.providerThreadId ?? null,
+      },
+    };
+    if (asJson) printJson(payload);
+    else {
+      console.log(
+        result.changed
+          ? `Closed Slack thread ${result.record.providerThreadId ?? sessionActionRef(session)}`
+          : `Slack thread ${result.record.providerThreadId ?? sessionActionRef(session)} was already closed`,
+      );
+    }
+    return payload;
+  }
+
+  @Command({
     name: "delete-message",
     description: "Delete one of this session agent's own channel messages",
   })
@@ -5981,6 +6405,8 @@ declareCommandReturns(SessionCommands, {
   answer: commandEnvelopeReturnSchema,
   ask: commandEnvelopeReturnSchema,
   attach: commandEnvelopeReturnSchema,
+  closeThread: sessionCloseThreadReturnSchema,
+  createThread: sessionCreateThreadReturnSchema,
   delete: commandEnvelopeReturnSchema,
   deleteMessage: commandEnvelopeReturnSchema,
   detach: commandEnvelopeReturnSchema,

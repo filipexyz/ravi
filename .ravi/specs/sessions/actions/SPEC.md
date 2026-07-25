@@ -50,6 +50,13 @@ attached channels.
 `session.read` is a session action and is independent of channel capabilities.
 Conceptually useful actions without an executable command MUST be `planned`.
 
+`thread.create` and `thread.close` are stable session action ids.
+`thread.create` MUST expose a runnable `sessions create-thread` command only on
+Slack and MUST accept an optional child model override. `thread.close` MUST
+expose a runnable `sessions close-thread` command only for the current Slack
+thread child. A return value on close explicitly opts into one parent
+completion event.
+
 ## Own-Message Scope
 
 Recent mutable messages MUST be constrained by:

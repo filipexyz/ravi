@@ -52,6 +52,8 @@ let agentMessageByRef: Record<string, unknown> | null = null;
 const agentChatActionCounts = new Map<string, { ownMessageCount: number; ownTextMessageCount: number }>();
 let stickerCatalog: Array<Record<string, unknown>> = [];
 const publishedOutboundJobs: Array<Record<string, unknown>> = [];
+const createdSlackThreadLifecycles: Array<Record<string, unknown>> = [];
+const closedSlackThreads: Array<{ session: Record<string, unknown>; returnResult?: string }> = [];
 let displayNameUpdates: Array<{ sessionKey: string; displayName: string }> = [];
 let deletedSessionKeys: string[] = [];
 let renameSessionNameCalls: Array<{ sessionKey: string; newName: string }> = [];
@@ -152,6 +154,47 @@ mock.module("../../channels/outbound-publish-outbox.js", () => ({
       },
     };
   }),
+}));
+
+mock.module("../../channels/slack/thread-lifecycle-store.js", () => ({
+  createSlackThreadLifecycle: (input: Record<string, unknown>) => {
+    createdSlackThreadLifecycles.push(input);
+    return {
+      ...input,
+      status: "queued",
+      closeSequence: 0,
+      parentReturnRequested: false,
+    };
+  },
+  findSlackThreadLifecycleByChildSession: () => null,
+}));
+
+mock.module("../../channels/slack/thread-lifecycle.js", () => ({
+  slackThreadParentSessionKey: (sessionKey: string) => sessionKey.split(":thread:")[0] ?? sessionKey,
+  splitSlackThreadPlatformChatId: (platformChatId: string) => {
+    const [root, thread] = platformChatId.split("#");
+    return root && thread ? { platformChatId: root, providerThreadId: thread } : null;
+  },
+  closeSlackThread: async (session: Record<string, unknown>, returnResult?: string) => {
+    closedSlackThreads.push({ session, ...(returnResult ? { returnResult } : {}) });
+    return {
+      changed: true,
+      parentReturnDelivered: Boolean(returnResult),
+      record: {
+        requestId: "slack-thread:req-1",
+        status: "closed",
+        parentSessionKey: "agent:dev:slack:ravi-slack:C123",
+        parentSessionName: "dev-slack",
+        childSessionKey: session.sessionKey,
+        childSessionName: session.name,
+        platformChatId: "C123",
+        providerThreadId: "1713000000.000100",
+        closeSequence: 1,
+        parentReturnRequested: Boolean(returnResult),
+        ...(returnResult ? { closeResult: returnResult, parentNotifiedAt: Date.now() } : {}),
+      },
+    };
+  },
 }));
 
 mock.module("../../router/sessions.js", () => ({
@@ -330,6 +373,8 @@ const { SessionCommands } = await import("./sessions.js");
 const {
   buildCurrentSessionActionsCommand,
   buildCurrentSessionDeleteMessageCommand,
+  buildCurrentSessionCreateThreadCommand,
+  buildCurrentSessionCloseThreadCommand,
   buildCurrentSessionEditMessageCommand,
   buildCurrentSessionMediaSendCommand,
   buildCurrentSessionReactionCommand,
@@ -392,6 +437,8 @@ beforeEach(() => {
   agentChatActionCounts.clear();
   stickerCatalog = [];
   publishedOutboundJobs.length = 0;
+  createdSlackThreadLifecycles.length = 0;
+  closedSlackThreads.length = 0;
   displayNameUpdates = [];
   deletedSessionKeys = [];
   renameSessionNameCalls = [];
@@ -748,6 +795,11 @@ describe("SessionCommands attach hints", () => {
     expect(buildCurrentSessionStickerSendCommand("wave")).toBe("ravi stickers send wave");
     expect(buildCurrentSessionMediaSendCommand("/tmp/card.png")).toBe('ravi media send "/tmp/card.png"');
     expect(buildCurrentSessionReadCommand()).toBe("ravi sessions read --json");
+    expect(buildCurrentSessionCreateThreadCommand("investigue", "gpt-5.6")).toBe(
+      'ravi sessions create-thread "investigue" --model gpt-5.6',
+    );
+    expect(buildCurrentSessionCloseThreadCommand()).toBe("ravi sessions close-thread");
+    expect(buildCurrentSessionCloseThreadCommand("done")).toBe('ravi sessions close-thread --return "done"');
     expect(buildSessionActionsCommand("dev")).toBe("ravi sessions actions dev --json");
     expect(buildSessionDeleteMessageCommand("dev", "cm_123")).toBe("ravi sessions delete-message dev cm_123");
     expect(buildSessionEditMessageCommand("dev", "cm_123")).toBe('ravi sessions edit-message dev cm_123 "<new-text>"');
@@ -763,6 +815,8 @@ describe("SessionCommands attach hints", () => {
     expect(hint).toContain("ravi sessions delete-message <message-id>");
     expect(hint).toContain('ravi sessions edit-message <message-id> "novo texto"');
     expect(hint).toContain('ravi media send "<file-path>"');
+    expect(hint).toContain("ravi sessions create-thread");
+    expect(hint).toContain("ravi sessions close-thread");
     expect(hint).toContain("usage.tools");
     expect(hint).toContain("Only delete or edit messages authored by this session's agent");
   });
@@ -930,8 +984,139 @@ describe("SessionCommands attach hints", () => {
           id: "message.reply",
           status: "planned",
         }),
+        expect.objectContaining({
+          id: "thread.create",
+          status: "available",
+          executionMode: "durable",
+          command: 'ravi sessions create-thread "<initial-message>" --model <model>',
+        }),
       ]),
     );
+  });
+
+  it("queues Slack thread creation with the selected child model", async () => {
+    const sessionKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = {
+      sessionKey,
+      name: "dev-slack",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    toolContext = {
+      sessionKey,
+      sessionName: "dev-slack",
+      source: {
+        channel: "slack",
+        accountId: "ravi-slack",
+        instanceId: "ravi-slack",
+        chatId: "C123",
+        canonicalChatId: "chat_slack",
+      },
+    };
+    sessionSubscriptions = [
+      {
+        id: "sub_slack",
+        sessionKey,
+        chatId: "chat_slack",
+        role: "primary",
+        speechMode: "speak",
+        outputAttachedAt: 1,
+      },
+    ];
+    chatRecords.set("chat_slack", {
+      id: "chat_slack",
+      title: "ravi",
+      channel: "slack",
+      instanceId: "ravi-slack",
+      platformChatId: "C123",
+      chatType: "channel",
+    });
+    routerConfig = {
+      agents: {},
+      channels: {
+        "ravi-slack": {
+          name: "ravi-slack",
+          provider: "slack",
+          enabled: true,
+          credentialConnection: "ravi-slack-secret",
+        },
+      },
+      instances: {},
+      instanceToAccount: {},
+    };
+
+    const result = (await new SessionCommands().createThread(
+      "Investigate this branch",
+      "gpt-5.6",
+      undefined,
+      true,
+    )) as Record<string, any>;
+
+    expect(result).toMatchObject({
+      status: "queued",
+      actionId: "thread.create",
+      parentSession: { sessionKey, sessionName: "dev-slack" },
+      child: { status: "pending_root_delivery", modelOverride: "gpt-5.6" },
+    });
+    expect(createdSlackThreadLifecycles).toEqual([
+      expect.objectContaining({
+        parentSessionKey: sessionKey,
+        initiatorSessionKey: sessionKey,
+        platformChatId: "C123",
+        initialPrompt: "Investigate this branch",
+        modelOverride: "gpt-5.6",
+      }),
+    ]);
+    expect(publishedOutboundJobs).toHaveLength(1);
+    expect((publishedOutboundJobs[0] as any).request).toMatchObject({
+      origin: { sessionName: "dev-slack" },
+      target: {
+        channel: "slack",
+        chatId: "C123",
+        canonicalChatId: "chat_slack",
+      },
+      content: {
+        type: "chat_action",
+        actionId: "thread.create",
+        text: "Investigate this branch",
+      },
+    });
+  });
+
+  it("closes the current Slack child and opts into a parent return only with --return", async () => {
+    const childKey = "agent:dev:slack:ravi-slack:C123:thread:1713000000.000100";
+    resolvedSession = {
+      sessionKey: childKey,
+      name: "dev-slack-t-1713000000000100",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    toolContext = {
+      sessionKey: childKey,
+      sessionName: "dev-slack-t-1713000000000100",
+    };
+
+    const result = (await new SessionCommands().closeThread("The branch is fixed", undefined, true)) as Record<
+      string,
+      any
+    >;
+
+    expect(result).toMatchObject({
+      status: "closed",
+      actionId: "thread.close",
+      changed: true,
+      parentReturn: {
+        requested: true,
+        delivered: true,
+        pending: false,
+      },
+    });
+    expect(closedSlackThreads).toEqual([
+      {
+        session: resolvedSession,
+        returnResult: "The branch is fixed",
+      },
+    ]);
   });
 
   it("queues Slack edits and deletes durably without claiming provider success", async () => {

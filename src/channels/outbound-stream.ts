@@ -315,13 +315,14 @@ export function buildChannelChatActionJob(input: {
   const now = input.now ?? Date.now();
   const requestId = input.requestId?.trim() || `chat-action:${randomUUID()}`;
   const channelId = input.target.channel.trim().toLowerCase() || "unknown";
+  const actionTarget = "providerMessageId" in input.content ? input.content.providerMessageId : input.content.actionId;
   const idempotencyKey = [
     requestId,
     channelId,
     input.target.accountId,
     input.target.chatId,
     input.content.actionId,
-    input.content.providerMessageId,
+    actionTarget,
   ].join(":");
 
   return {

@@ -5,6 +5,7 @@ import {
   getSession,
   updateSessionEffortOverride,
   updateSessionRuntimeProviderOverride,
+  updateSessionThreadId,
 } from "./sessions.js";
 
 let stateDir: string | null = null;
@@ -60,5 +61,17 @@ describe("sessions store", () => {
       runtimeProvider: "codex",
       runtimeProviderOverride: undefined,
     });
+  });
+
+  it("persists and clears the provider thread id for programmatic session forks", () => {
+    const session = getOrCreateSession("agent:dev:slack-thread", "dev", "/tmp/dev");
+
+    expect(session.lastThreadId).toBeUndefined();
+
+    updateSessionThreadId(session.sessionKey, "1784998026.863699");
+    expect(getSession(session.sessionKey)?.lastThreadId).toBe("1784998026.863699");
+
+    updateSessionThreadId(session.sessionKey, null);
+    expect(getSession(session.sessionKey)?.lastThreadId).toBeUndefined();
   });
 });

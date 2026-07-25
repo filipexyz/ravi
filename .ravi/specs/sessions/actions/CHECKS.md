@@ -11,3 +11,9 @@
 - [ ] New outbound persistence MUST include the stable origin session key.
 - [ ] Legacy unscoped rows MUST NOT be offered as mutable targets.
 - [ ] CLI tool context MUST preserve source instance and canonical chat ids.
+- [ ] Slack `thread.create` MUST expose a runnable command and optional model
+      argument.
+- [ ] Non-Slack surfaces MUST report `thread.create` as unsupported.
+- [ ] Channel-root sessions MUST NOT advertise `thread.close` as runnable.
+- [ ] Slack thread children MUST advertise `thread.close`.
+- [ ] Close without `--return` MUST not interrupt the parent session.

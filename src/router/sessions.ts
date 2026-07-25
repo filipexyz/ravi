@@ -156,6 +156,7 @@ interface SessionStatements {
   listAll: Statement;
   updateAgent: Statement;
   updateSource: Statement;
+  updateThreadId: Statement;
   updateDisplayName: Statement;
   updateContext: Statement;
   updateModelOverride: Statement;
@@ -297,6 +298,7 @@ function getStatements(): SessionStatements {
     updateSource: db.prepare(
       "UPDATE sessions SET last_channel = ?, last_account_id = ?, last_to = ?, updated_at = ? WHERE session_key = ?",
     ),
+    updateThreadId: db.prepare("UPDATE sessions SET last_thread_id = ?, updated_at = ? WHERE session_key = ?"),
     updateDisplayName: db.prepare("UPDATE sessions SET display_name = ?, updated_at = ? WHERE session_key = ?"),
     updateContext: db.prepare("UPDATE sessions SET last_context = ?, updated_at = ? WHERE session_key = ?"),
     updateModelOverride: db.prepare("UPDATE sessions SET model_override = ?, updated_at = ? WHERE session_key = ?"),
@@ -738,6 +740,11 @@ export function updateSessionSource(
   if (!source.channel && !source.accountId && !source.chatId) return;
   const s = getStatements();
   s.updateSource.run(source.channel ?? null, source.accountId ?? null, source.chatId ?? null, Date.now(), sessionKey);
+}
+
+export function updateSessionThreadId(sessionKey: string, threadId: string | null): void {
+  const s = getStatements();
+  s.updateThreadId.run(threadId, Date.now(), sessionKey);
 }
 
 export function updateSessionDisplayName(sessionKey: string, displayName: string): void {

@@ -40,6 +40,11 @@ normative: true
 - `sticker.send` MUST be `unavailable` with `unsupported_channel`.
 - `message.reply` MUST remain `planned` until a canonical quoted-reply command
   exists. Normal Slack thread delivery is not the same action.
+- `thread.create` MUST use `chat.postMessage` without a parent `thread_ts`,
+  require `chat:write`, and use Slack `client_msg_id` derived from the durable
+  request id.
+- `thread.close` MUST NOT call a Slack mutation API; it is an internal Ravi
+  lifecycle action over an existing Slack thread child.
 
 ## Invariants
 
@@ -56,6 +61,10 @@ normative: true
 - Canonical edit/delete state MUST be updated only after Slack confirms the
   operation.
 - Thread and channel ids MUST remain separate from the message timestamp.
+- `thread.create` delivery MUST expose the created root message `ts` so the
+  daemon can materialize the child fork.
+- The channel runner MUST NOT create or run sessions; daemon-owned lifecycle
+  finalization consumes the durable delivery result.
 
 ## Boundary With Slack Operations
 
