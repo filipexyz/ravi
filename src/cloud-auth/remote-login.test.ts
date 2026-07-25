@@ -5,6 +5,7 @@ import {
   REMOTE_LOGIN_PROVIDER_PROTOCOL,
   REMOTE_LOGIN_PROVIDER_SCHEMA_VERSION,
   RemoteLoginContractError,
+  createRemoteLoginAuthorization,
   discoverRemoteLoginEndpoint,
   loadRemoteLoginProvider,
   normalizeRemoteLoginEndpoint,
@@ -95,17 +96,8 @@ describe("remote post-login provider contract", () => {
     const result = await reconcileRemoteInstallation(loaded, {
       endpointUrl: "https://auth.example",
       discovery,
-      humanCredentials: {
-        version: 1,
-        consoleUrl: "https://auth.example",
-        authMode: "remote",
-        installationId: "client_installation_1",
-        accessToken: "access-secret",
-        refreshToken: "refresh-secret",
-        accessTokenExpiresAt: null,
-        scopes: [],
-        createdAt: "2026-07-25T00:00:00.000Z",
-        updatedAt: "2026-07-25T00:00:00.000Z",
+      authorization: {
+        request: async () => ({ status: 200 }),
       },
       installation: {
         clientInstallationId: "client_installation_1",
@@ -122,6 +114,48 @@ describe("remote post-login provider contract", () => {
       publicMetadata: { installationId: "installation_1" },
     });
     expect(provider.reconcileInstallation).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the human credential inside a same-origin request capability", async () => {
+    const requests: Array<{ url: string; init: RequestInit }> = [];
+    const authorization = createRemoteLoginAuthorization({
+      endpointUrl: "https://auth.example",
+      accessToken: "access-secret",
+      fetch: async (input, init) => {
+        requests.push({
+          url: input.toString(),
+          init: init ?? {},
+        });
+        return Response.json({ disposition: "reconciled" });
+      },
+    });
+
+    await expect(
+      authorization.request({
+        method: "POST",
+        path: "/v1/installations/reconcile",
+        body: { clientInstallationId: "client_installation_1" },
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: { disposition: "reconciled" },
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.url).toBe("https://auth.example/v1/installations/reconcile");
+    expect(requests[0]?.init).toEqual(
+      expect.objectContaining({
+        redirect: "error",
+        headers: expect.objectContaining({
+          Authorization: "Bearer access-secret",
+        }),
+      }),
+    );
+    await expect(
+      authorization.request({
+        method: "POST",
+        path: "//other.example/reconcile",
+      }),
+    ).rejects.toThrow();
   });
 
   it("rejects remote module specifiers, duplicate providers, and provider mismatches", async () => {
@@ -198,17 +232,8 @@ describe("remote post-login provider contract", () => {
       reconcileRemoteInstallation(provider, {
         endpointUrl: "https://auth.example",
         discovery,
-        humanCredentials: {
-          version: 1,
-          consoleUrl: "https://auth.example",
-          authMode: "remote",
-          installationId: "client_installation_1",
-          accessToken: "access-secret",
-          refreshToken: "refresh-secret",
-          accessTokenExpiresAt: null,
-          scopes: [],
-          createdAt: "2026-07-25T00:00:00.000Z",
-          updatedAt: "2026-07-25T00:00:00.000Z",
+        authorization: {
+          request: async () => ({ status: 200 }),
         },
         installation: {
           clientInstallationId: "client_installation_1",

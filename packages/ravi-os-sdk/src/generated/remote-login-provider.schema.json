@@ -39,6 +39,57 @@
       ],
       "type": "object"
     },
+    "RemoteLoginAuthorizedRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^\\/(?!\\/)[^\\u0000-\\u001f\\u007f#]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "path"
+      ],
+      "type": "object"
+    },
+    "RemoteLoginAuthorizedResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "status": {
+          "maximum": 599,
+          "minimum": 100,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
     "RemoteLoginDiscovery": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -188,6 +239,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "capsuleVersion": 1,
   "compatibilityProfile": "additive-v1",
-  "sourceDigest": "555770c31a1e959b678fdeebf424bc76808dd5e2d802bfdc15a1dd9e71a320cb",
+  "sourceDigest": "c724404620daa292da750d11d1f90b8cc246756fe95b3f0663492b8ce9e01229",
   "title": "remote-login-provider channel capability"
 }

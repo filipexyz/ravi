@@ -5,12 +5,34 @@ import {
   REMOTE_LOGIN_PROVIDER_PROTOCOL,
   REMOTE_LOGIN_PROVIDER_SCHEMA_VERSION,
   RemoteInstallationCredentialSchema,
+  RemoteLoginAuthorizedRequestSchema,
+  RemoteLoginAuthorizedResponseSchema,
   RemoteLoginDiscoverySchema,
+  RemoteLoginInstallationMetadataSchema,
   RemoteLoginProviderDescriptorSchema,
+  RemoteLoginProviderModuleConfigSchema,
   type RemoteLoginProvider,
 } from "../remote-login-provider.js";
 
+const fixtureDirectory = new URL("./fixtures/remote-login-provider/", import.meta.url);
+
+async function fixture(name: string): Promise<unknown> {
+  return Bun.file(new URL(name, fixtureDirectory)).json();
+}
+
 describe("remote login provider SDK contract", () => {
+  it("accepts every projected ABI fixture", async () => {
+    expect(RemoteLoginDiscoverySchema.parse(await fixture("discovery.json"))).toBeDefined();
+    expect(RemoteLoginInstallationMetadataSchema.parse(await fixture("installation-metadata.json"))).toBeDefined();
+    expect(RemoteLoginAuthorizedRequestSchema.parse(await fixture("authorized-request.json"))).toBeDefined();
+    expect(RemoteLoginAuthorizedResponseSchema.parse(await fixture("authorized-response.json"))).toBeDefined();
+    expect(RemoteLoginProviderDescriptorSchema.parse(await fixture("provider-descriptor.json"))).toBeDefined();
+    expect(RemoteInstallationCredentialSchema.parse(await fixture("installation-credential.json"))).toBeDefined();
+    expect(
+      RemoteLoginProviderModuleConfigSchema.parse(await fixture("module-config.json")),
+    ).toMatchObject({ provider: "example" });
+  });
+
   it("validates discovery, provider, and opaque installation credentials", async () => {
     const discovery = RemoteLoginDiscoverySchema.parse({
       protocol: REMOTE_LOGIN_DISCOVERY_PROTOCOL,
@@ -31,13 +53,25 @@ describe("remote login provider SDK contract", () => {
         schemaVersion: REMOTE_LOGIN_PROVIDER_SCHEMA_VERSION,
         provider: "example",
       }),
-      reconcileInstallation: async () =>
-        RemoteInstallationCredentialSchema.parse({
+      reconcileInstallation: async (context) => {
+        const response = await context.authorization.request({
+          method: "POST",
+          path: "/v1/installations/reconcile",
+          body: {
+            clientInstallationId: context.installation.clientInstallationId,
+          },
+        });
+        expect(response).toEqual({
+          status: 200,
+          body: { disposition: "reconciled" },
+        });
+        return RemoteInstallationCredentialSchema.parse({
           provider: "example",
           credentialId: "credential_1",
-          material: { renewableCredential: "secret" },
+          material: { credentialHandle: "opaque-material" },
           publicMetadata: { installationId: "installation_1" },
-        }),
+        });
+      },
     };
 
     expect(discovery.installationProvider).toBe("example");
@@ -45,11 +79,11 @@ describe("remote login provider SDK contract", () => {
       provider.reconcileInstallation({
         endpointUrl: discovery.issuer,
         discovery,
-        humanCredentials: {
-          accessToken: "access-secret",
-          refreshToken: "refresh-secret",
-          accessTokenExpiresAt: null,
-          scopes: [],
+        authorization: {
+          request: async () => ({
+            status: 200,
+            body: { disposition: "reconciled" },
+          }),
         },
         installation: {
           clientInstallationId: "client_installation_1",

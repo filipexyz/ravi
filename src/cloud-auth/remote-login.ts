@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { CloudAuthError } from "./errors.js";
-import type { CloudCredentials } from "./types.js";
 
 export const REMOTE_LOGIN_DISCOVERY_PROTOCOL = "ravi.auth.discovery" as const;
 export const REMOTE_LOGIN_DISCOVERY_SCHEMA_VERSION = 1 as const;
@@ -100,6 +99,44 @@ const BoundedOpaqueRecordSchema = z.record(z.string(), z.unknown()).superRefine(
   }
 });
 
+export const RemoteLoginInstallationMetadataSchema = z
+  .object({
+    clientInstallationId: OpaqueIdSchema,
+    name: z.string().min(1).max(256),
+    hostname: z.string().min(1).max(256),
+    platform: z.string().min(1).max(128),
+    raviVersion: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+
+export const RemoteLoginAuthorizedRequestSchema = z
+  .object({
+    method: z.enum(["GET", "POST"]),
+    path: z
+      .string()
+      .min(1)
+      .max(4096)
+      .regex(/^\/(?!\/)(?!.*\\)[^\u0000-\u001f\u007f#]*$/, "must be an origin-relative path without a fragment"),
+    body: BoundedOpaqueRecordSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.method === "GET" && value.body !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["body"],
+        message: "GET requests must not carry a body",
+      });
+    }
+  });
+
+export const RemoteLoginAuthorizedResponseSchema = z
+  .object({
+    status: z.number().int().min(100).max(599),
+    body: BoundedOpaqueRecordSchema.optional(),
+  })
+  .strict();
+
 export const RemoteInstallationCredentialSchema = z
   .object({
     provider: WireKindSchema,
@@ -112,20 +149,19 @@ export const RemoteInstallationCredentialSchema = z
 
 export type RemoteLoginDiscovery = z.infer<typeof RemoteLoginDiscoverySchema>;
 export type RemoteLoginProviderModuleConfig = z.infer<typeof RemoteLoginProviderModuleConfigSchema>;
+export type RemoteLoginInstallationMetadata = z.infer<typeof RemoteLoginInstallationMetadataSchema>;
+export type RemoteLoginAuthorizedRequest = z.infer<typeof RemoteLoginAuthorizedRequestSchema>;
+export type RemoteLoginAuthorizedResponse = z.infer<typeof RemoteLoginAuthorizedResponseSchema>;
 export type RemoteInstallationCredential = z.infer<typeof RemoteInstallationCredentialSchema>;
 
-export interface RemoteLoginInstallationMetadata {
-  readonly clientInstallationId: string;
-  readonly name: string;
-  readonly hostname: string;
-  readonly platform: string;
-  readonly raviVersion?: string;
+export interface RemoteLoginAuthorization {
+  request(input: RemoteLoginAuthorizedRequest): Promise<RemoteLoginAuthorizedResponse>;
 }
 
 export interface RemoteLoginProviderContext {
   readonly endpointUrl: string;
   readonly discovery: RemoteLoginDiscovery;
-  readonly humanCredentials: CloudCredentials;
+  readonly authorization: RemoteLoginAuthorization;
   readonly installation: RemoteLoginInstallationMetadata;
   readonly previousCredential?: RemoteInstallationCredential;
 }
@@ -155,7 +191,10 @@ export class RemoteLoginContractError extends Error {
       | "provider_mismatch"
       | "duplicate_provider"
       | "provider_not_configured"
-      | "invalid_provider_result",
+      | "invalid_provider_result"
+      | "invalid_authorized_request"
+      | "authorized_request_failed"
+      | "invalid_authorized_response",
   ) {
     super(reason);
     this.name = "RemoteLoginContractError";
@@ -219,6 +258,72 @@ export function normalizeRemoteLoginEndpoint(value: string): string {
   }
   parsed.pathname = parsed.pathname.replace(/\/+$/, "");
   return parsed.toString().replace(/\/+$/, "");
+}
+
+export function createRemoteLoginAuthorization(options: {
+  endpointUrl: string;
+  accessToken: string;
+  fetch?: RemoteLoginFetch;
+}): RemoteLoginAuthorization {
+  const endpointUrl = normalizeRemoteLoginEndpoint(options.endpointUrl);
+  const endpointOrigin = new URL(endpointUrl).origin;
+  const fetchImpl = options.fetch ?? globalThis.fetch;
+
+  return {
+    async request(input) {
+      const parsed = RemoteLoginAuthorizedRequestSchema.safeParse(input);
+      if (!parsed.success) {
+        throw new RemoteLoginContractError("invalid_authorized_request");
+      }
+      const requestUrl = new URL(parsed.data.path, `${endpointUrl}/`);
+      if (requestUrl.origin !== endpointOrigin) {
+        throw new RemoteLoginContractError("invalid_authorized_request");
+      }
+      let response: Response;
+      try {
+        response = await fetchImpl(requestUrl, {
+          method: parsed.data.method,
+          redirect: "error",
+          headers: {
+            Accept: "application/json",
+            Authorization: `Bearer ${options.accessToken}`,
+            ...(parsed.data.body === undefined ? {} : { "Content-Type": "application/json" }),
+          },
+          ...(parsed.data.body === undefined ? {} : { body: JSON.stringify(parsed.data.body) }),
+        });
+      } catch {
+        throw new RemoteLoginContractError("authorized_request_failed");
+      }
+
+      let body: Record<string, unknown> | undefined;
+      let text: string;
+      try {
+        text = await response.text();
+      } catch {
+        throw new RemoteLoginContractError("invalid_authorized_response");
+      }
+      if (new TextEncoder().encode(text).byteLength > 65_536) {
+        throw new RemoteLoginContractError("invalid_authorized_response");
+      }
+      if (text.length > 0) {
+        let decoded: unknown;
+        try {
+          decoded = JSON.parse(text);
+        } catch {
+          throw new RemoteLoginContractError("invalid_authorized_response");
+        }
+        const parsedBody = BoundedOpaqueRecordSchema.safeParse(decoded);
+        if (!parsedBody.success) {
+          throw new RemoteLoginContractError("invalid_authorized_response");
+        }
+        body = parsedBody.data;
+      }
+      return RemoteLoginAuthorizedResponseSchema.parse({
+        status: response.status,
+        ...(body === undefined ? {} : { body }),
+      });
+    },
+  };
 }
 
 export function parseRemoteLoginProviderModuleConfigs(value: string | undefined): RemoteLoginProviderModuleConfig[] {

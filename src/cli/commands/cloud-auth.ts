@@ -24,6 +24,7 @@ import {
 } from "../../cloud-auth/installation-storage.js";
 import {
   discoverRemoteLoginEndpoint,
+  createRemoteLoginAuthorization,
   loadRemoteLoginProvider,
   normalizeRemoteLoginEndpoint,
   parseRemoteLoginProviderModuleConfigs,
@@ -168,7 +169,10 @@ export async function runLogin(options: CloudLoginOptions = {}, deps: CloudAuthC
     const credential = await reconcileRemoteInstallation(provider, {
       endpointUrl: selected.endpointUrl,
       discovery,
-      humanCredentials: credentials,
+      authorization: createRemoteLoginAuthorization({
+        endpointUrl: selected.endpointUrl,
+        accessToken: credentials.accessToken,
+      }),
       installation: {
         clientInstallationId: installationId,
         ...localInstallationMetadata(env),

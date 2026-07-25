@@ -7,6 +7,11 @@ export const REMOTE_LOGIN_PROVIDER_SCHEMA_VERSION = 1 as const;
 
 const WireKindSchema = z.string().regex(/^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$/).max(96);
 const OpaqueIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._~-]*$/).max(128);
+const ModuleSpecifierSchema = z
+  .string()
+  .regex(
+    /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*|file:\/\/\/[^\u0000-\u001f\u007f]+)$/,
+  );
 const BoundedOpaqueRecordSchema = z.record(z.string(), z.unknown()).superRefine((value, context) => {
   if (!isJsonRecord(value)) {
     context.addIssue({
@@ -78,6 +83,56 @@ export const RemoteLoginProviderDescriptorSchema = z
   })
   .strict();
 
+export const RemoteLoginProviderModuleConfigSchema = z
+  .object({
+    protocol: z.literal(REMOTE_LOGIN_PROVIDER_PROTOCOL),
+    schemaVersion: z.literal(REMOTE_LOGIN_PROVIDER_SCHEMA_VERSION),
+    provider: WireKindSchema,
+    moduleSpecifier: ModuleSpecifierSchema,
+  })
+  .strict();
+
+export const RemoteLoginInstallationMetadataSchema = z
+  .object({
+    clientInstallationId: OpaqueIdSchema,
+    name: z.string().min(1).max(256),
+    hostname: z.string().min(1).max(256),
+    platform: z.string().min(1).max(128),
+    raviVersion: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+
+export const RemoteLoginAuthorizedRequestSchema = z
+  .object({
+    method: z.enum(["GET", "POST"]),
+    path: z
+      .string()
+      .min(1)
+      .max(4096)
+      .regex(
+        /^\/(?!\/)(?!.*\\)[^\u0000-\u001f\u007f#]*$/,
+        "must be an origin-relative path without a fragment",
+      ),
+    body: BoundedOpaqueRecordSchema.optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.method === "GET" && value.body !== undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["body"],
+        message: "GET requests must not carry a body",
+      });
+    }
+  });
+
+export const RemoteLoginAuthorizedResponseSchema = z
+  .object({
+    status: z.number().int().min(100).max(599),
+    body: BoundedOpaqueRecordSchema.optional(),
+  })
+  .strict();
+
 export const RemoteInstallationCredentialSchema = z
   .object({
     provider: WireKindSchema,
@@ -89,28 +144,20 @@ export const RemoteInstallationCredentialSchema = z
   .strict();
 
 export type RemoteLoginDiscovery = z.infer<typeof RemoteLoginDiscoverySchema>;
+export type RemoteLoginProviderModuleConfig = z.infer<typeof RemoteLoginProviderModuleConfigSchema>;
+export type RemoteLoginInstallationMetadata = z.infer<typeof RemoteLoginInstallationMetadataSchema>;
+export type RemoteLoginAuthorizedRequest = z.infer<typeof RemoteLoginAuthorizedRequestSchema>;
+export type RemoteLoginAuthorizedResponse = z.infer<typeof RemoteLoginAuthorizedResponseSchema>;
 export type RemoteInstallationCredential = z.infer<typeof RemoteInstallationCredentialSchema>;
 
-export interface RemoteLoginHumanCredentials {
-  readonly accessToken: string;
-  readonly refreshToken: string;
-  readonly accessTokenExpiresAt: string | null;
-  readonly refreshTokenExpiresAt?: string | null;
-  readonly scopes: readonly string[];
-}
-
-export interface RemoteLoginInstallationMetadata {
-  readonly clientInstallationId: string;
-  readonly name: string;
-  readonly hostname: string;
-  readonly platform: string;
-  readonly raviVersion?: string;
+export interface RemoteLoginAuthorization {
+  request(input: RemoteLoginAuthorizedRequest): Promise<RemoteLoginAuthorizedResponse>;
 }
 
 export interface RemoteLoginProviderContext {
   readonly endpointUrl: string;
   readonly discovery: RemoteLoginDiscovery;
-  readonly humanCredentials: RemoteLoginHumanCredentials;
+  readonly authorization: RemoteLoginAuthorization;
   readonly installation: RemoteLoginInstallationMetadata;
   readonly previousCredential?: RemoteInstallationCredential;
 }
