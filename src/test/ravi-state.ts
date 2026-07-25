@@ -131,6 +131,12 @@ export async function cleanupIsolatedRaviState(stateDir?: string | null): Promis
     process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousAuditSuppression;
   }
   previousAuditSuppression = undefined;
-  if (stateDir) pendingStateDirs.add(stateDir);
-  releaseRaviStateLock();
+  try {
+    if (stateDir) {
+      rmSync(stateDir, { recursive: true, force: true });
+      pendingStateDirs.delete(stateDir);
+    }
+  } finally {
+    releaseRaviStateLock();
+  }
 }
