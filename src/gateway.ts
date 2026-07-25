@@ -240,7 +240,9 @@ export class Gateway {
     this.subscribeToTts();
     this.subscribeToStickerSend();
     this.subscribeToConfigChanges();
-    await this.reconcileSlackThreads();
+    await this.reconcileSlackThreads().catch((error) => {
+      log.warn("Initial Slack thread lifecycle reconciliation failed", { error });
+    });
     this.slackThreadReconciliationTimer = setInterval(() => {
       this.reconcileSlackThreads().catch((error) => {
         log.warn("Slack thread lifecycle reconciliation failed", { error });
