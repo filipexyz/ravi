@@ -1,7 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { ChannelOutboundJob } from "./channels/outbound-stream.js";
-import { configStore } from "./config-store.js";
-import { dbUpsertChannel } from "./router/router-db.js";
 import type { ResponseMessage } from "./runtime/message-types.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 
@@ -191,52 +189,6 @@ describe("Gateway native channel outbound queue", () => {
     expect(record).toMatchObject({
       jobId: "runtime:main-slack:emit-1",
       status: "published",
-    });
-  });
-
-  it("queues responses for an enabled configured native provider instead of Omni", async () => {
-    dbUpsertChannel({
-      name: "example-native-main",
-      provider: "example-native",
-    });
-    configStore.refresh();
-    const { gateway, emitted, omniSend } = await createGateway();
-
-    await handleResponse(gateway, "main-example-native", {
-      _emitId: "emit-configured-native",
-      response: "hello native",
-      target: {
-        channel: "example-native",
-        accountId: "example-native-main",
-        instanceId: "example-native-main",
-        chatId: "conversation-123",
-      },
-    });
-
-    expect(omniSend).not.toHaveBeenCalled();
-    expect(publishedJobs).toHaveLength(1);
-    expect(publishedJobs[0]).toMatchObject({
-      jobId: "runtime:main-example-native:emit-configured-native",
-      status: "queued",
-      request: {
-        channelId: "example-native",
-        accountId: "example-native-main",
-        targetChatId: "conversation-123",
-        origin: {
-          sessionName: "main-example-native",
-          emitId: "emit-configured-native",
-        },
-        content: {
-          type: "text",
-          text: "hello native",
-        },
-      },
-    });
-    expect(emitted[0]?.[0]).toBe("ravi.session.main-example-native.delivery");
-    expect(emitted[0]?.[1]).toMatchObject({
-      status: "queued",
-      reason: "native_channel_outbound",
-      jobId: "runtime:main-example-native:emit-configured-native",
     });
   });
 

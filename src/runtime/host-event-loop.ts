@@ -1139,6 +1139,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
+    if (streaming.currentChannelBackend) {
+      log.debug("Channel backend response deferred to terminal projection", {
+        sessionName,
+        turnId: streaming.currentChannelBackend.binding.turnId,
+      });
+      return;
+    }
     const emitId = Math.random().toString(36).slice(2, 8);
     // Resolve the target chat per `.ravi/specs/sessions/attach/SPEC.md`.
     // Attach selects the chat that receives this session's external output.
@@ -2302,6 +2309,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           break;
         }
 
+        const channelBackendFailure = streaming.currentChannelBackend !== undefined;
         await projectRuntimeEventToChannel(event);
         await emitRuntimeEvent({
           ...event,
@@ -2333,7 +2341,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentChannelBackend = undefined;
         clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
 
-        if (streaming.agentMode !== "sentinel") {
+        if (streaming.agentMode !== "sentinel" && !channelBackendFailure) {
           const suppression = shouldSuppressUserFacingRuntimeLimitFailure({
             error: event.error,
             scope: buildUserFacingFailureSuppressionScope({

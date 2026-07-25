@@ -217,6 +217,14 @@ export class ChannelOutputSinkRegistry {
     }
     await sink.emit(envelope);
   }
+
+  async tryEmit(input: ChannelOutputEnvelope): Promise<boolean> {
+    const envelope = ChannelOutputEnvelopeSchema.parse(input);
+    const sink = this.sinks.get(sinkKey(envelope.target.channelKind, envelope.target.connectionId));
+    if (!sink) return false;
+    await sink.emit(envelope);
+    return true;
+  }
 }
 
 export const channelOutputSinks = new ChannelOutputSinkRegistry();

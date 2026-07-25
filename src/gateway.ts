@@ -1038,12 +1038,7 @@ export class Gateway {
   }
 
   private shouldQueueNativeOutbound(target: NonNullable<ResponseMessage["target"]>): boolean {
-    const channelId = target.channel.toLowerCase();
-    if (NATIVE_OUTBOUND_CHANNELS.has(channelId)) return true;
-
-    return Object.values(configStore.getConfig().channels ?? {}).some(
-      (channel) => channel.enabled !== false && channel.provider.toLowerCase() === channelId,
-    );
+    return NATIVE_OUTBOUND_CHANNELS.has(target.channel.toLowerCase());
   }
 
   private shouldUseNativePresence(target: PresenceTarget): boolean {

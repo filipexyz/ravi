@@ -30,6 +30,7 @@ import {
   projectChannelRuntimeEvent,
   readChannelRuntime,
   requestChannelRuntimeInterrupt,
+  setChannelBackendEgressRequesterForRuntime,
   setChannelRuntimeAbortPublisherForTests,
   type ChannelInterruptRequest,
   type KnownChannelRuntimeEvent,
@@ -55,6 +56,7 @@ afterEach(async () => {
   unregisterRuntimeEvents?.();
   unregisterRuntimeEvents = undefined;
   setChannelBackendPromptPublisherForTests();
+  setChannelBackendEgressRequesterForRuntime();
   setChannelRuntimeAbortPublisherForTests();
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
@@ -297,6 +299,38 @@ describe("channel runtime event projection", () => {
     });
   });
 
+  it("relays events and output through remote egress when sinks live in another process", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    setChannelBackendEgressRequesterForRuntime({
+      async emitRuntimeEvent(_target, event) {
+        events.push(event);
+      },
+      async emitOutput(output) {
+        outputs.push(output);
+      },
+    });
+
+    await projectChannelRuntimeEvent({
+      metadata,
+      event: {
+        type: "turn.complete",
+        usage: { inputTokens: 2, outputTokens: 1 },
+      },
+      responseText: "Remote result",
+      sinks: new ChannelRuntimeEventSinkRegistry(),
+    });
+
+    expect(events.map((event) => event.kind)).toEqual(["turn.state_changed", "turn.terminal_output"]);
+    expect(outputs).toEqual([
+      expect.objectContaining({
+        kind: "assistant_message",
+        content: [{ type: "text", text: "Remote result" }],
+      }),
+    ]);
+  });
+
   it("projects a real host runtime turn through its active channel binding", async () => {
     const metadata = await acceptedMetadata();
     const events: KnownChannelRuntimeEvent[] = [];
@@ -356,6 +390,7 @@ describe("channel runtime event projection", () => {
       state: "completed",
       lastSequence: 3,
     });
+    expect(emitSpy.mock.calls.some(([topic]) => String(topic).endsWith(".response"))).toBe(false);
     expect(streaming.currentChannelBackend).toBeUndefined();
   });
 
