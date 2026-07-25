@@ -35,6 +35,8 @@ class FakeRuntime implements LocalAgentRuntimeAdapter {
     { profile: string; capabilities: readonly string[] }
   >();
   createCount = 0;
+  failCreateBeforePersist = false;
+  failCreateAfterPersist = false;
 
   async inspect(agentId: string) {
     return this.agents.get(agentId) ?? null;
@@ -46,11 +48,17 @@ class FakeRuntime implements LocalAgentRuntimeAdapter {
     runtime: LocalAgentRuntimePreference;
   }) {
     this.createCount += 1;
+    if (this.failCreateBeforePersist) {
+      throw new Error("definitive_create_failure");
+    }
     this.agents.set(input.agentId, {
       agentId: input.agentId,
       cwd: input.cwd,
       ...input.runtime,
     });
+    if (this.failCreateAfterPersist) {
+      throw new Error("ambiguous_create_result");
+    }
   }
 
   async configureRuntime(
@@ -185,6 +193,57 @@ describe("local agent reconciliation", () => {
         "utf8",
       ),
     ).toContain("Answer only within the configured scope.");
+  });
+
+  it("recovers when create persisted before returning an error", async () => {
+    const harness = await createHarness();
+    harness.runtime.failCreateAfterPersist = true;
+    const request = LocalAgentReconciliationRequestSchema.parse({
+      protocol: LOCAL_AGENT_RECONCILIATION_PROTOCOL,
+      schemaVersion: LOCAL_AGENT_RECONCILIATION_SCHEMA_VERSION,
+      requestId: "request-ambiguous-create",
+      idempotencyKey: "idempotency-ambiguous-create",
+      sourceId: "channel-example",
+      agentKey: "external-agent-ambiguous-create",
+      templateId: "standard",
+      revision: digest("revision-ambiguous-create"),
+      runtime: {
+        provider: "codex",
+        modelPreset: "balanced",
+      },
+      requestedCapabilities: ["read.messages"],
+    });
+
+    await expect(harness.reconciler.reconcile(request)).resolves.toMatchObject({
+      disposition: "created",
+      state: "ready",
+      appliedRevision: request.revision,
+      grantedCapabilities: ["read.messages"],
+    });
+    expect(harness.runtime.createCount).toBe(1);
+  });
+
+  it("stays blocked when a failed create did not persist the agent", async () => {
+    const harness = await createHarness();
+    harness.runtime.failCreateBeforePersist = true;
+    const request = LocalAgentReconciliationRequestSchema.parse({
+      protocol: LOCAL_AGENT_RECONCILIATION_PROTOCOL,
+      schemaVersion: LOCAL_AGENT_RECONCILIATION_SCHEMA_VERSION,
+      requestId: "request-definitive-create-failure",
+      idempotencyKey: "idempotency-definitive-create-failure",
+      sourceId: "channel-example",
+      agentKey: "external-agent-definitive-create-failure",
+      templateId: "standard",
+      revision: digest("revision-definitive-create-failure"),
+      requestedCapabilities: [],
+    });
+
+    await expect(harness.reconciler.reconcile(request)).resolves.toMatchObject({
+      disposition: "blocked",
+      state: "blocked",
+      error: { code: "INTERNAL" },
+    });
+    expect(harness.runtime.createCount).toBe(1);
   });
 
   it("fails closed for capability, runtime, ownership, and idempotency conflicts", async () => {

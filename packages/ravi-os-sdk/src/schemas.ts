@@ -1724,12 +1724,300 @@ export const AgentsPermissionsReturnSchema = {
       ]
     },
     "agent": {
-      "additionalProperties": {
-        "$ref": "#/$defs/__schema0"
+      "additionalProperties": false,
+      "properties": {
+        "allowedSessions": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "contactScope": {
+          "type": "string"
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "debounceMs": {
+          "type": "number"
+        },
+        "defaults": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "dmScope": {
+          "enum": [
+            "main",
+            "per-peer",
+            "per-channel-peer",
+            "per-account-channel-peer"
+          ],
+          "type": "string"
+        },
+        "effectiveModel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "effectiveProvider": {
+          "type": "string"
+        },
+        "effort": {
+          "enum": [
+            "none",
+            "minimal",
+            "low",
+            "medium",
+            "high",
+            "xhigh",
+            "max",
+            "ultra"
+          ],
+          "type": "string"
+        },
+        "groupDebounceMs": {
+          "type": "number"
+        },
+        "heartbeat": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "activeEnd": {
+              "type": "string"
+            },
+            "activeStart": {
+              "type": "string"
+            },
+            "enabled": {
+              "type": "boolean"
+            },
+            "intervalMs": {
+              "type": "number"
+            },
+            "lastRunAt": {
+              "type": "number"
+            },
+            "model": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "enabled",
+            "intervalMs"
+          ],
+          "type": "object"
+        },
+        "id": {
+          "type": "string"
+        },
+        "isDefault": {
+          "type": "boolean"
+        },
+        "matrixAccount": {
+          "type": "string"
+        },
+        "memoryModel": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "active",
+            "sentinel"
+          ],
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "modelPresetId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelPresetVersion": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "modelSource": {
+          "anyOf": [
+            {
+              "enum": [
+                "agent_preset",
+                "agent_default",
+                "global_default"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "provider": {
+          "type": "string"
+        },
+        "remote": {
+          "type": "string"
+        },
+        "remoteUser": {
+          "type": "string"
+        },
+        "settingSources": {
+          "items": {
+            "enum": [
+              "user",
+              "project"
+            ],
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "specMode": {
+          "type": "boolean"
+        },
+        "systemPromptAppend": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "enum": [
+                  "agent",
+                  "automation",
+                  "app",
+                  "session",
+                  "task",
+                  "project",
+                  "profile",
+                  "contact",
+                  "chat",
+                  "route",
+                  "instance",
+                  "artifact",
+                  "insight",
+                  "workflow_spec",
+                  "workflow_run",
+                  "workflow_node",
+                  "cron_job",
+                  "trigger",
+                  "hook",
+                  "task_automation",
+                  "observer_rule",
+                  "observer_binding",
+                  "observer_profile",
+                  "command",
+                  "skill",
+                  "skill_gate_rule",
+                  "context",
+                  "call_profile",
+                  "call_request",
+                  "call_voice_agent",
+                  "call_tool",
+                  "outbound_queue",
+                  "outbound_entry",
+                  "spec",
+                  "devin_session"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tagId": {
+                "type": "string"
+              },
+              "tagSlug": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "updatedBy": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tagId",
+              "tagSlug",
+              "assetType",
+              "assetId",
+              "source",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
       },
-      "propertyNames": {
-        "type": "string"
-      },
+      "required": [
+        "id",
+        "cwd",
+        "modelPresetId",
+        "isDefault",
+        "effectiveProvider",
+        "effectiveModel",
+        "modelSource",
+        "modelPresetVersion",
+        "tags"
+      ],
       "type": "object"
     },
     "agentId": {

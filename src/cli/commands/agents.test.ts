@@ -15,6 +15,15 @@ type AgentLike = {
   provider?: string;
   remote?: string;
   defaults?: Record<string, unknown> | null;
+  heartbeat?: {
+    enabled: boolean;
+    intervalMs: number;
+    model?: string;
+    accountId?: string;
+    activeStart?: string;
+    activeEnd?: string;
+    lastRunAt?: number;
+  };
 };
 
 type SessionLike = {
@@ -220,9 +229,8 @@ mock.module("../../runtime/model-preset-store.js", () => ({
 }));
 
 const { AgentsCommands } = await import("./agents.js");
-const { agentSetReturnSchema, agentShowReturnSchema, agentsListReturnSchema } = await import(
-  "./operational-return-schemas.js"
-);
+const { agentPermissionsReturnSchema, agentSetReturnSchema, agentShowReturnSchema, agentsListReturnSchema } =
+  await import("./operational-return-schemas.js");
 
 describe("AgentsCommands public return contracts", () => {
   beforeEach(() => {
@@ -702,6 +710,30 @@ describe("AgentsCommands permissions", () => {
     }
 
     expect(updateAgentCalls).toEqual([]);
+  });
+
+  it("validates a permission payload before JSON strips optional heartbeat fields", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      heartbeat: {
+        enabled: false,
+        intervalMs: 1_800_000,
+        model: undefined,
+        accountId: undefined,
+      },
+    };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      const payload = commands.permissions("dev", undefined, undefined, true);
+
+      expect(agentPermissionsReturnSchema.safeParse(payload).success).toBe(true);
+    } finally {
+      console.log = originalLog;
+    }
   });
 
   it("clears provider-runtime permissions from agent defaults", () => {
