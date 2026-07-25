@@ -36,8 +36,8 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/provider-descriptor.json"
     },
     {
-      "sha256": "6fc68f80da12c6e55d080aff8de21567dd6463ccfb157eb1a73595a35a098841",
-      "sizeBytes": 6492,
+      "sha256": "e941d8337ae59c44ecf411e7d76c6e081a2f028f01f5741f837a749aa2a6d5ad",
+      "sizeBytes": 6502,
       "targetPath": "packages/ravi-os-sdk/src/generated/remote-login-provider.schema.json"
     }
   ],
@@ -64,7 +64,7 @@
     "packages/ravi-os-sdk/src/generated/remote-login-provider.schema.json"
   ],
   "formatVersion": 1,
-  "outputDigest": "7cf7a63d04cad430a724b28ecbe5004a16166b836dea244a5f735f094102a8e5",
+  "outputDigest": "940b72acd4cffb9320f513b09c2a6361eed48079e51515cab860ade2ac049920",
   "rationale": "Remote endpoint login needs a versioned provider-neutral boundary for explicit local post-login reconciliation without loading code from the endpoint.",
   "schemaAllowlist": [
     {
@@ -131,7 +131,7 @@
       "schema": "RemoteInstallationCredential"
     }
   ],
-  "sourceDigest": "c724404620daa292da750d11d1f90b8cc246756fe95b3f0663492b8ce9e01229",
+  "sourceDigest": "ffa2384caf33507d6b65e49ed43e087d522ea81cf062082c834d82748649b6bd",
   "targetRepository": "filipexyz/ravi",
   "validations": [
     {

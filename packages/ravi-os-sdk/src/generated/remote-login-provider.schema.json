@@ -58,7 +58,7 @@
           "type": "string"
         },
         "path": {
-          "pattern": "^\\/(?!\\/)[^\\u0000-\\u001f\\u007f#]*$",
+          "pattern": "^\\/(?!\\/)(?!.*\\\\)[^\\u0000-\\u001f\\u007f#]*$",
           "type": "string"
         }
       },
@@ -239,6 +239,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "capsuleVersion": 1,
   "compatibilityProfile": "additive-v1",
-  "sourceDigest": "c724404620daa292da750d11d1f90b8cc246756fe95b3f0663492b8ce9e01229",
+  "sourceDigest": "ffa2384caf33507d6b65e49ed43e087d522ea81cf062082c834d82748649b6bd",
   "title": "remote-login-provider channel capability"
 }
