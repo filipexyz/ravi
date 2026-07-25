@@ -83,14 +83,24 @@ describe("CLI root version", () => {
       encoding: "utf8",
       env: testEnv(stateDir),
     });
+    const link = spawnSync("bun", ["src/cli/index.ts", "link", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: testEnv(stateDir),
+    });
     rmSync(stateDir, { recursive: true, force: true });
 
     expect(whoami.status).toBe(0);
     expect(logout.status).toBe(0);
+    expect(link.status).toBe(0);
     expect(whoami.stdout).not.toContain("--endpoint");
     expect(whoami.stdout).not.toContain("--console");
     expect(logout.stdout).not.toContain("--endpoint");
     expect(logout.stdout).not.toContain("--console");
+    expect(link.stdout).toContain("--json");
+    expect(link.stdout).not.toContain("--endpoint");
+    expect(link.stdout).not.toContain("--challenge");
+    expect(link.stdout).not.toContain("<code>");
   });
 
   it("suggests the plural tasks command for singular task help", () => {

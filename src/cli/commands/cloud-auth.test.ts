@@ -8,7 +8,7 @@ import {
   REMOTE_LOGIN_PROVIDER_SCHEMA_VERSION,
 } from "../../cloud-auth/remote-login.js";
 import { DEFAULT_CONSOLE_URL, type CloudCredentials, type CredentialExchangeInput } from "../../cloud-auth/types.js";
-import { runLogin, runLogout, runWhoami } from "./cloud-auth.js";
+import { runLink, runLogin, runLogout, runWhoami } from "./cloud-auth.js";
 
 describe("cloud auth root command handlers", () => {
   it("prints whoami JSON with identity and expiry metadata but no token material", async () => {
@@ -231,6 +231,77 @@ describe("cloud auth root command handlers", () => {
 
     expect(promptEndpoint).toHaveBeenCalledWith(DEFAULT_CONSOLE_URL);
     expect(discoverEndpoint).toHaveBeenCalledWith("https://auth.example");
+  });
+
+  it("links through the active local provider without printing the challenge or human credentials", async () => {
+    const challenge = "C".repeat(43);
+    const credentials = {
+      ...makeCredentials(),
+      consoleUrl: "https://auth.example",
+      authMode: "remote" as const,
+    };
+    const consumeIdentityLinkChallenge = mock(async (_context: unknown, receivedChallenge: string) => {
+      expect(receivedChallenge).toBe(challenge);
+      return {
+        provider: "example",
+        disposition: "linked" as const,
+        publicMetadata: { linkId: "link_1" },
+      };
+    });
+    const client = {
+      me: mock(async (accessToken: string) => {
+        expect(accessToken).toBe("access-secret");
+        return {
+          user: { email: "alice@example.com" },
+          organization: { id: "org_123" },
+          scopes: [],
+        };
+      }),
+    } as unknown as ConsoleApiClient;
+
+    const { output, result } = await captureConsole(() =>
+      runLink(
+        { json: true },
+        {
+          client,
+          readCredentials: () => credentials,
+          writeCredentials: () => {},
+          deleteCredentials: () => {},
+          discoverEndpoint: mock(async () => remoteDiscovery()),
+          loadProvider: mock(async () => ({
+            descriptor: {
+              protocol: REMOTE_LOGIN_PROVIDER_PROTOCOL,
+              schemaVersion: REMOTE_LOGIN_PROVIDER_SCHEMA_VERSION,
+              provider: "example",
+            },
+            reconcileInstallation: async () => ({
+              provider: "example",
+              credentialId: "credential_1",
+              material: {},
+            }),
+            consumeIdentityLinkChallenge,
+          })),
+          readIdentityLinkChallenge: async () => challenge,
+        },
+      ),
+    );
+    const payload = JSON.parse(output);
+    const encoded = JSON.stringify(payload);
+
+    expect(result).toEqual(payload);
+    expect(payload).toEqual({
+      success: true,
+      endpointUrl: "https://auth.example",
+      link: {
+        provider: "example",
+        disposition: "linked",
+        publicMetadata: { linkId: "link_1" },
+      },
+    });
+    expect(consumeIdentityLinkChallenge).toHaveBeenCalledTimes(1);
+    expect(encoded).not.toContain(challenge);
+    expect(encoded).not.toContain("access-secret");
+    expect(encoded).not.toContain("refresh-secret");
   });
 
   it("rejects ambiguous or unsafe explicit login endpoint selection before reading credentials", async () => {

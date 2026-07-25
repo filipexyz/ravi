@@ -147,12 +147,28 @@ export const RemoteInstallationCredentialSchema = z
   })
   .strict();
 
+export const RemoteIdentityLinkChallengeSchema = z
+  .string()
+  .min(43)
+  .max(256)
+  .regex(/^[A-Za-z0-9_-]{43,256}$/, "remote identity link challenge must be high-entropy base64url");
+
+export const RemoteIdentityLinkResultSchema = z
+  .object({
+    provider: WireKindSchema,
+    disposition: z.enum(["linked", "already_linked"]),
+    publicMetadata: BoundedOpaqueRecordSchema.optional(),
+  })
+  .strict();
+
 export type RemoteLoginDiscovery = z.infer<typeof RemoteLoginDiscoverySchema>;
 export type RemoteLoginProviderModuleConfig = z.infer<typeof RemoteLoginProviderModuleConfigSchema>;
 export type RemoteLoginInstallationMetadata = z.infer<typeof RemoteLoginInstallationMetadataSchema>;
 export type RemoteLoginAuthorizedRequest = z.infer<typeof RemoteLoginAuthorizedRequestSchema>;
 export type RemoteLoginAuthorizedResponse = z.infer<typeof RemoteLoginAuthorizedResponseSchema>;
 export type RemoteInstallationCredential = z.infer<typeof RemoteInstallationCredentialSchema>;
+export type RemoteIdentityLinkChallenge = z.infer<typeof RemoteIdentityLinkChallengeSchema>;
+export type RemoteIdentityLinkResult = z.infer<typeof RemoteIdentityLinkResultSchema>;
 
 export interface RemoteLoginAuthorization {
   request(input: RemoteLoginAuthorizedRequest): Promise<RemoteLoginAuthorizedResponse>;
@@ -166,11 +182,21 @@ export interface RemoteLoginProviderContext {
   readonly previousCredential?: RemoteInstallationCredential;
 }
 
+export interface RemoteIdentityLinkProviderContext {
+  readonly endpointUrl: string;
+  readonly discovery: RemoteLoginDiscovery;
+  readonly authorization: RemoteLoginAuthorization;
+}
+
 export interface RemoteLoginProvider {
   readonly descriptor: z.infer<typeof RemoteLoginProviderDescriptorSchema>;
   reconcileInstallation(
     context: RemoteLoginProviderContext,
   ): Promise<RemoteInstallationCredential> | RemoteInstallationCredential;
+  consumeIdentityLinkChallenge?(
+    context: RemoteIdentityLinkProviderContext,
+    challenge: RemoteIdentityLinkChallenge,
+  ): Promise<RemoteIdentityLinkResult> | RemoteIdentityLinkResult;
 }
 
 export interface RemoteLoginProviderModule {
@@ -194,7 +220,9 @@ export class RemoteLoginContractError extends Error {
       | "invalid_provider_result"
       | "invalid_authorized_request"
       | "authorized_request_failed"
-      | "invalid_authorized_response",
+      | "invalid_authorized_response"
+      | "identity_link_not_supported"
+      | "invalid_identity_link_challenge",
   ) {
     super(reason);
     this.name = "RemoteLoginContractError";
@@ -388,6 +416,34 @@ export async function reconcileRemoteInstallation(
     throw new CloudAuthError("SERVER_UNAVAILABLE", "Remote installation reconciliation failed.", { cause: error });
   }
   const parsed = RemoteInstallationCredentialSchema.safeParse(result);
+  if (!parsed.success || parsed.data.provider !== provider.descriptor.provider) {
+    throw new RemoteLoginContractError("invalid_provider_result");
+  }
+  return parsed.data;
+}
+
+export async function consumeRemoteIdentityLinkChallenge(
+  provider: RemoteLoginProvider,
+  context: RemoteIdentityLinkProviderContext,
+  challenge: string,
+): Promise<RemoteIdentityLinkResult> {
+  const parsedChallenge = RemoteIdentityLinkChallengeSchema.safeParse(challenge);
+  if (!parsedChallenge.success) {
+    throw new RemoteLoginContractError("invalid_identity_link_challenge");
+  }
+  if (typeof provider.consumeIdentityLinkChallenge !== "function") {
+    throw new RemoteLoginContractError("identity_link_not_supported");
+  }
+  let result: unknown;
+  try {
+    result = await provider.consumeIdentityLinkChallenge(context, parsedChallenge.data);
+  } catch (error) {
+    if (error instanceof CloudAuthError || error instanceof RemoteLoginContractError) {
+      throw error;
+    }
+    throw new CloudAuthError("SERVER_UNAVAILABLE", "Remote identity linking failed.", { cause: error });
+  }
+  const parsed = RemoteIdentityLinkResultSchema.safeParse(result);
   if (!parsed.success || parsed.data.provider !== provider.descriptor.provider) {
     throw new RemoteLoginContractError("invalid_provider_result");
   }
