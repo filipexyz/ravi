@@ -140,21 +140,38 @@ export async function runLogin(options: CloudLoginOptions = {}, deps: CloudAuthC
     });
   }
 
-  const exchanged = await exchangeUntilComplete({
-    client,
-    installationId,
-    config,
-    deviceCode: deviceAuth.deviceCode,
-    existing,
-    poll: options.poll !== false,
-    timeoutSeconds: parsePositiveNumber(options.timeoutSeconds, 300),
-    intervalSeconds: parsePositiveNumber(
-      options.intervalSeconds,
-      deviceAuth.interval ?? numberFrom(config.interval) ?? 5,
-    ),
-    installation: localInstallationMetadata(env),
-    sleep: deps.sleep ?? sleep,
-  });
+  let exchanged: CloudCredentials;
+  try {
+    exchanged = await exchangeUntilComplete({
+      client,
+      installationId,
+      config,
+      deviceCode: deviceAuth.deviceCode,
+      existing,
+      poll: options.poll !== false,
+      timeoutSeconds: parsePositiveNumber(options.timeoutSeconds, 300),
+      intervalSeconds: parsePositiveNumber(
+        options.intervalSeconds,
+        deviceAuth.interval ?? numberFrom(config.interval) ?? 5,
+      ),
+      installation: localInstallationMetadata(env),
+      sleep: deps.sleep ?? sleep,
+    });
+  } catch (error) {
+    if (!isCloudAuthError(error) || error.code !== "AUTH_PENDING" || options.poll !== false) {
+      throw error;
+    }
+    const payload = {
+      success: true,
+      status: "pending" as const,
+      endpointUrl: selected.endpointUrl,
+      auth: safeAuthConfig(config, deviceAuth),
+    };
+    printPayload(payload, options.json, () => {
+      console.log("Authentication is pending. Complete the browser flow before the challenge expires.");
+    });
+    return payload;
+  }
   const credentials: CloudCredentials = {
     ...exchanged,
     consoleUrl: selected.endpointUrl,

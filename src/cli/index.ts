@@ -124,7 +124,7 @@ program
   .option("--console <url>", "Legacy Console base URL")
   .option("--json", "Print raw JSON result")
   .option("--no-open", "Do not open a browser")
-  .option("--no-poll", "Do not poll the exchange endpoint when auth is pending")
+  .option("--no-poll", "Return the public pending challenge without waiting for approval")
   .option("--timeout-seconds <seconds>", "Maximum login polling time", "300")
   .option("--interval-seconds <seconds>", "Login polling interval")
   .action(
