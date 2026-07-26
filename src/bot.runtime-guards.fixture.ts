@@ -1,7 +1,5 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
-
-afterAll(() => mock.restore());
 
 setDefaultTimeout(20_000);
 
@@ -94,6 +92,7 @@ type RuntimeHandle = {
 
 const emittedEvents: Array<{ topic: string; data: any }> = [];
 const sessions = new Map<string, SessionState>();
+const createdBots: Array<{ stop(): Promise<void> }> = [];
 let activeProvider: RuntimeProviderId = "claude";
 let runtimeStartCalls: RuntimeStartRequest[] = [];
 let runtimePrepareImpl: (
@@ -692,7 +691,16 @@ mock.module("./runtime/provider-registry.js", () => ({
 
 const { RaviBot } = await import("./bot.js");
 
+beforeAll(async () => {
+  // The fixture already runs in its own process. Keep its SQLite state alive
+  // until every bot handle is stopped so no case can reuse a closed statement.
+  stateDir = await createIsolatedRaviState("ravi-bot-runtime-guards-test-");
+});
+
 afterEach(async () => {
+  for (const bot of createdBots.splice(0)) {
+    await bot.stop();
+  }
   saveMessageImpl = (...args: Parameters<typeof actualDbModule.saveMessage>) => actualDbModule.saveMessage(...args);
   agentCanImpl = (...args: Parameters<typeof actualAgentCan>) => actualAgentCan(...args);
   canWithCapabilitiesImpl = (...args: Parameters<typeof actualCanWithCapabilities>) =>
@@ -703,18 +711,24 @@ afterEach(async () => {
       actualTaskDbModule.dbDeleteTask(taskId);
     }
   }
+});
+
+afterAll(async () => {
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
+  mock.restore();
 });
 
 function createBot() {
-  return new RaviBot({
+  const bot = new RaviBot({
     config: {
       model: "test-model",
       logLevel: "error",
       apiKey: "fake",
     } as any,
   });
+  createdBots.push(bot);
+  return bot;
 }
 
 function makePrompt(text: string) {
@@ -762,7 +776,6 @@ async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<voi
 
 describe("RaviBot runtime guards", () => {
   beforeEach(async () => {
-    stateDir = await createIsolatedRaviState("ravi-bot-runtime-guards-test-");
     emittedEvents.length = 0;
     sessions.clear();
     clearProviderSession.mockClear();
@@ -1844,7 +1857,6 @@ describe("RaviBot runtime guards", () => {
 
 describe("RaviBot streaming session lifecycle", () => {
   beforeEach(async () => {
-    stateDir = await createIsolatedRaviState("ravi-bot-runtime-guards-test-");
     emittedEvents.length = 0;
     sessions.clear();
     clearProviderSession.mockClear();
