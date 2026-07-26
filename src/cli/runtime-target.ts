@@ -40,6 +40,25 @@ function normalizeComparablePath(value: string | null | undefined): string | nul
   return resolved ? resolved.toLowerCase() : null;
 }
 
+export function matchesLiveDaemonRuntime(input: {
+  currentProcessPid: number;
+  daemonProcessPid: number | null;
+  cliBundlePath: string | null;
+  daemonBundlePath: string | null;
+}): boolean | null {
+  if (
+    Number.isSafeInteger(input.daemonProcessPid) &&
+    input.daemonProcessPid !== null &&
+    input.daemonProcessPid > 0 &&
+    input.currentProcessPid === input.daemonProcessPid
+  ) {
+    return true;
+  }
+  const cliBundlePath = normalizeComparablePath(input.cliBundlePath);
+  const daemonBundlePath = normalizeComparablePath(input.daemonBundlePath);
+  return cliBundlePath && daemonBundlePath ? cliBundlePath === daemonBundlePath : null;
+}
+
 function readDaemonRuntimeInfo(): DaemonRuntimeInfo {
   try {
     const raw = execFileSync("pm2", ["jlist"], {
@@ -51,13 +70,17 @@ function readDaemonRuntimeInfo(): DaemonRuntimeInfo {
     const status = ravi?.pm2_env?.status;
     const execPath = safeRealpath(ravi?.pm2_env?.pm_exec_path ?? null);
     const cwd = safeRealpath(ravi?.pm2_env?.pm_cwd ?? null);
-    const cliBundlePath = normalizeComparablePath(process.argv[1] ?? null);
-    const daemonBundlePath = normalizeComparablePath(execPath);
+    const daemonProcessPid = typeof ravi?.pid === "number" ? ravi.pid : null;
     return {
       online: status === "online",
       execPath,
       cwd,
-      matchesCli: cliBundlePath && daemonBundlePath ? cliBundlePath === daemonBundlePath : null,
+      matchesCli: matchesLiveDaemonRuntime({
+        currentProcessPid: process.pid,
+        daemonProcessPid,
+        cliBundlePath: process.argv[1] ?? null,
+        daemonBundlePath: execPath,
+      }),
     };
   } catch {
     return {
