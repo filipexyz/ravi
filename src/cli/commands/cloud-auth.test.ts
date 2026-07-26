@@ -125,6 +125,69 @@ describe("cloud auth root command handlers", () => {
     expect(encoded).not.toContain("provider-secret");
   });
 
+  it("returns the public challenge when no-poll login remains pending", async () => {
+    const writeCredentials = mock(() => {});
+    const client = {
+      getAuthConfig: mock(async () => ({
+        configured: true,
+        clientId: "ravi-cli",
+        mode: "console_device",
+        endpoints: {
+          deviceAuthorization: "https://console.example/api/cli/auth/device",
+          token: null,
+        },
+      })),
+      startDeviceAuthorization: mock(async () => ({
+        verificationUriComplete: "https://console.example/device?user_code=ABC",
+        verificationUri: "https://console.example/device",
+        userCode: "ABC",
+        deviceCode: "device-secret",
+        expiresIn: 600,
+        interval: 1,
+      })),
+      exchange: mock(async () => {
+        throw new CloudAuthError("AUTH_PENDING", "Authorization is still pending.", {
+          status: 409,
+        });
+      }),
+    } as unknown as ConsoleApiClient;
+
+    const { output, result } = await captureConsole(() =>
+      runLogin(
+        {
+          console: "https://console.example",
+          json: true,
+          open: false,
+          poll: false,
+        },
+        {
+          client,
+          readCredentials: () => null,
+          writeCredentials,
+        },
+      ),
+    );
+    const payload = JSON.parse(output);
+    const encoded = JSON.stringify(payload);
+
+    expect(result).toEqual(payload);
+    expect(payload).toEqual({
+      success: true,
+      status: "pending",
+      endpointUrl: "https://console.example",
+      auth: {
+        provider: null,
+        authorizationUrl: "https://console.example/device?user_code=ABC",
+        verificationUri: "https://console.example/device",
+        userCode: "ABC",
+        expiresIn: 600,
+        interval: 1,
+      },
+    });
+    expect(writeCredentials).not.toHaveBeenCalled();
+    expect(encoded).not.toContain("device-secret");
+  });
+
   it("discovers an explicit remote endpoint and stores its installation credential separately", async () => {
     let writtenHuman: CloudCredentials | null = null;
     let writtenInstallation: unknown;
