@@ -663,6 +663,9 @@ export const ExecutionAuthorityDenialReasonSchema = z.enum([
 export type BindingAuthorityEnvelopeClaims = z.infer<
   typeof BindingAuthorityEnvelopeClaimsSchema
 >;
+export type AuthorityResourceScope = z.infer<
+  typeof AuthorityResourceScopeSchema
+>;
 export type ExecutionRouteLeaseClaims = z.infer<
   typeof ExecutionRouteLeaseClaimsSchema
 >;
