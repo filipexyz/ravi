@@ -4,6 +4,7 @@ import {
   NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
   MAX_NATIVE_INBOUND_ACTION_IDENTITY_BYTES,
   MAX_NATIVE_INBOUND_ACTION_RESPONSE_BYTES,
+  NATIVE_CHANNEL_DEFAULT_LOCAL_AGENT_TEMPLATE_ID,
   NativeChannelDriverDescriptorSchema,
   NativeChannelDriverHostCapabilitiesSchema,
   NativeChannelDriverModuleConfigSchema,
@@ -40,9 +41,18 @@ describe("native channel driver SDK contract", () => {
       inboundActionResult,
     );
     expect(installationCredential).toMatchObject({ provider: "example" });
-    expect(NativeChannelDriverHostCapabilitiesSchema.parse(["installation_credentials"])).toEqual([
+    expect(
+      NativeChannelDriverHostCapabilitiesSchema.parse([
+        "installation_credentials",
+        "local_agent_reconciliation",
+      ]),
+    ).toEqual([
       "installation_credentials",
+      "local_agent_reconciliation",
     ]);
+    expect(NATIVE_CHANNEL_DEFAULT_LOCAL_AGENT_TEMPLATE_ID).toBe(
+      "native-channel-default",
+    );
   });
 
   it("requires an explicit action declaration and exactly one handled response", async () => {
@@ -133,7 +143,10 @@ describe("native channel driver SDK contract", () => {
         driverId: "example.native",
         provider: "example",
         capabilities: ["inbound"],
-        requiredHostCapabilities: ["installation_credentials"],
+        requiredHostCapabilities: [
+          "installation_credentials",
+          "local_agent_reconciliation",
+        ],
       },
       createRuntime(context) {
         return {

@@ -537,6 +537,46 @@ describe("native channel driver contract", () => {
     expect(lease.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it("fails closed when local agent reconciliation is required but absent", async () => {
+    const registry = new NativeChannelDriverRegistry();
+    const driver = fullDriver();
+    const createRuntime = mock(driver.createRuntime.bind(driver));
+    registry.register({
+      ...driver,
+      descriptor: {
+        ...driver.descriptor,
+        requiredHostCapabilities: ["installation_credentials", "local_agent_reconciliation"],
+      },
+      createRuntime,
+    });
+    const lease = hostLease();
+    const incompleteHost = {
+      ...lease.host,
+      reconcileLocalAgent: undefined,
+    } as unknown as NativeChannelDriverHost;
+    const manager = new NativeChannelDriverManager({
+      channels: { "example-channel-a": channel() },
+      registry,
+      createHostLease: () => ({
+        host: incompleteHost,
+        dispose: lease.dispose,
+      }),
+    });
+
+    await manager.start();
+
+    expect(createRuntime).not.toHaveBeenCalled();
+    expect(manager.health()).toEqual([
+      {
+        id: "example:example-channel-a",
+        channelId: "example",
+        status: "failed",
+        reason: "host_capability_missing",
+      },
+    ]);
+    expect(lease.dispose).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps module loader failures stable and free of thrown details", async () => {
     const registry = new NativeChannelDriverRegistry();
     const result = await loadNativeChannelDriverModules(
@@ -701,6 +741,53 @@ describe("native channel driver contract", () => {
     lease.dispose();
     await expect(lease.host.readInstallationCredential()).rejects.toThrow("host_disposed");
     wrongProvider.dispose();
+  });
+
+  it("binds local agent reconciliation to the configured channel instance", async () => {
+    const reconcileLocalAgent = mock(async (request) => ({
+      protocol: "ravi.agent.local-reconciliation" as const,
+      schemaVersion: 1 as const,
+      requestId: request.requestId,
+      disposition: "unchanged" as const,
+      state: "ready" as const,
+      agentId: "native-channel-example",
+      appliedRevision: request.revision,
+      grantedCapabilities: [],
+      observedAt: "2026-07-26T00:00:00.000Z",
+    }));
+    const lease = createNativeChannelDriverHostLease({
+      channel: channel(),
+      provider: "example",
+      reconcileLocalAgent,
+    });
+    const request = {
+      protocol: "ravi.agent.local-reconciliation" as const,
+      schemaVersion: 1 as const,
+      requestId: "request-local-agent-1",
+      idempotencyKey: "idempotency-local-agent-1",
+      sourceId: "example-channel-a",
+      agentKey: "agent-key-1",
+      templateId: "native-channel-default",
+      revision: "a".repeat(64),
+      requestedCapabilities: [],
+    };
+
+    await expect(lease.host.reconcileLocalAgent?.(request)).resolves.toMatchObject({
+      state: "ready",
+      agentId: "native-channel-example",
+    });
+    expect(reconcileLocalAgent).toHaveBeenCalledWith(request);
+    await expect(
+      lease.host.reconcileLocalAgent?.({
+        ...request,
+        requestId: "request-local-agent-2",
+        sourceId: "other-channel",
+      }),
+    ).rejects.toThrow("scope_mismatch");
+    expect(reconcileLocalAgent).toHaveBeenCalledTimes(1);
+
+    lease.dispose();
+    await expect(lease.host.reconcileLocalAgent?.(request)).rejects.toThrow("host_disposed");
   });
 
   it("rejects duplicate driver ownership without replacing the registered driver", () => {

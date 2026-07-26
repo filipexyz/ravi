@@ -16,9 +16,15 @@ import type {
   ChannelRuntimeReadbackResult,
 } from "./channel-runtime-events.js";
 import type { RemoteInstallationCredential } from "./remote-login-provider.js";
+import type {
+  LocalAgentReconciliationRequest,
+  LocalAgentReconciliationResult,
+} from "./local-agent-reconciliation.js";
 
 export const NATIVE_CHANNEL_DRIVER_PROTOCOL = "ravi.channel.native-driver" as const;
 export const NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION = 1 as const;
+export const NATIVE_CHANNEL_DEFAULT_LOCAL_AGENT_TEMPLATE_ID =
+  "native-channel-default" as const;
 export const MAX_NATIVE_INBOUND_ACTION_IDENTITY_BYTES = 512;
 export const MAX_NATIVE_INBOUND_ACTION_RESPONSE_BYTES = 4_096;
 
@@ -56,12 +62,15 @@ export const NativeInboundChannelActionNamesSchema = z
   .max(32)
   .refine((actions) => new Set(actions).size === actions.length);
 
-export const NativeChannelDriverHostCapabilitySchema = z.enum(["installation_credentials"]);
+export const NativeChannelDriverHostCapabilitySchema = z.enum([
+  "installation_credentials",
+  "local_agent_reconciliation",
+]);
 
 export const NativeChannelDriverHostCapabilitiesSchema = z
   .array(NativeChannelDriverHostCapabilitySchema)
   .min(1)
-  .max(1)
+  .max(NativeChannelDriverHostCapabilitySchema.options.length)
   .refine((capabilities) => new Set(capabilities).size === capabilities.length);
 
 export const NativeChannelDriverModuleSpecifierSchema = z
@@ -335,6 +344,9 @@ export interface NativeChannelPresenceDelivery {
 
 export interface NativeChannelDriverHost {
   readInstallationCredential(): Promise<RemoteInstallationCredential | null>;
+  reconcileLocalAgent?(
+    request: LocalAgentReconciliationRequest,
+  ): Promise<LocalAgentReconciliationResult>;
   ingress(request: ChannelIngressRequest): Promise<ChannelIngressResult>;
   interrupt(request: ChannelInterruptRequest): Promise<ChannelInterruptResult>;
   readback(request: ChannelRuntimeReadbackRequest): Promise<ChannelRuntimeReadbackResult>;

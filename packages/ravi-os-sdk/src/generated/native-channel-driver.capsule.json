@@ -1,8 +1,8 @@
 {
   "artifacts": [
     {
-      "sha256": "cc1202c653a571b66cf7b3e961673755ee26be90727d6eab27f4d1009ae304c0",
-      "sizeBytes": 362,
+      "sha256": "e20f0bb904c3742e85e31cc10ea8211229b6838f495272a14bd6fc056174385e",
+      "sizeBytes": 396,
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/driver-descriptor.json"
     },
     {
@@ -31,8 +31,8 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/runtime-descriptor.json"
     },
     {
-      "sha256": "05feff656c1d20bd6e56cb9dc465d7b07e8080ea77b5738b4fb7896cb6d6e449",
-      "sizeBytes": 12607,
+      "sha256": "62860dba85f9fd292f8f0ebaa1be9e791bbc999e41be71c92d69c110bd2f0af4",
+      "sizeBytes": 12729,
       "targetPath": "packages/ravi-os-sdk/src/generated/native-channel-driver.schema.json"
     }
   ],
@@ -58,8 +58,8 @@
     "packages/ravi-os-sdk/src/generated/native-channel-driver.schema.json"
   ],
   "formatVersion": 1,
-  "outputDigest": "10eef000c762efe4545d1a89b61b49768fcebb6fef22781da5872e543095e03e",
-  "rationale": "Channel runners need a versioned provider-neutral boundary to load explicitly configured local channel drivers, bind matching installation credentials without exposing human sessions, and include runtimes in lifecycle and health.",
+  "outputDigest": "e0cdaaee77da043ffd34a5c017d6cbc288d9a69acfeebc728333a1d5a19177b2",
+  "rationale": "Channel runners need a versioned provider-neutral boundary to load explicitly configured local channel drivers, bind matching installation credentials, reconcile locally managed agents without exporting runtime authorization, and include runtimes in lifecycle and health.",
   "schemaAllowlist": [
     {
       "fields": [],
@@ -161,7 +161,7 @@
       "schema": "RemoteInstallationCredential"
     }
   ],
-  "sourceDigest": "4b604dae68aaaeba81fd68ceb6c2864a0bdafc5bb61f0c70d2aeaff696794733",
+  "sourceDigest": "ab2475d54a833066b96e0d9aa127f3961fb589b33829012006c176d74a2e94ce",
   "targetRepository": "filipexyz/ravi",
   "validations": [
     {

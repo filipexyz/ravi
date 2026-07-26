@@ -280,6 +280,16 @@ details are excluded. The ABI introduces no new Ravi capability. Local driver
 code runs inside the channel runner, so installation remains an explicit
 operator trust decision.
 
+When a driver needs a locally managed agent, it declares
+`requiredHostCapabilities: ["local_agent_reconciliation"]` (alongside any
+other required host capabilities) and calls
+`context.host.reconcileLocalAgent()`. Requests must use the current channel
+instance as `sourceId` and the `native-channel-default` template. Ravi scopes
+the request to that channel, reconciles the agent through its in-process
+authorization pipeline, and returns a bounded result without exposing a
+context key. The default template accepts managed instructions and no
+capability aliases or runtime overrides.
+
 The generated driver schema and neutral fixtures live under
 `packages/ravi-os-sdk/src/generated` and
 `packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver`.
