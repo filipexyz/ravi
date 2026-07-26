@@ -45,6 +45,11 @@ import {
   ensureChannelOutboundInfrastructure,
 } from "./outbound-stream.js";
 import { ChannelPresenceConsumer } from "./presence-consumer.js";
+import {
+  startChannelBackendEgressResponder,
+  type ChannelBackendEgressResponder,
+  type ChannelBackendEgressResponderConnection,
+} from "./backend-egress.js";
 import { createSlackNativeChannelDriver, slackNativeRuntimeHealth } from "./slack/driver.js";
 import type { SlackSocketModeStatus } from "./slack/index.js";
 
@@ -75,6 +80,15 @@ export function startChannelRunnerInboundActionResponder(options: {
   return (options.startResponder ?? startNativeInboundChannelActionResponder)({
     connection: options.connection,
     handlers: options.handlers,
+  });
+}
+
+export function startChannelRunnerBackendEgressResponder(options: {
+  connection: ChannelBackendEgressResponderConnection;
+  startResponder?: typeof startChannelBackendEgressResponder;
+}): ChannelBackendEgressResponder {
+  return (options.startResponder ?? startChannelBackendEgressResponder)({
+    connection: options.connection,
   });
 }
 
@@ -114,6 +128,7 @@ export class ChannelRunner {
   private adapterStatuses = new Map<string, AdapterStatus>();
   private stopReceiptPruner: (() => void) | null = null;
   private healthResponder: ChannelRunnerHealthResponder | null = null;
+  private backendEgressResponder: ChannelBackendEgressResponder | null = null;
 
   constructor(private readonly options: ChannelRunnerOptions = {}) {}
 
@@ -147,6 +162,9 @@ export class ChannelRunner {
     });
 
     await this.startNativeChannels(env);
+    this.backendEgressResponder = startChannelRunnerBackendEgressResponder({
+      connection: getNats(),
+    });
 
     if (this.options.consumeOutbound !== false) {
       this.outboundPublishReconciler = new ChannelOutboundPublishReconciler({
@@ -191,6 +209,8 @@ export class ChannelRunner {
     this.outboundConsumer = null;
     await this.presenceConsumer?.stop();
     this.presenceConsumer = null;
+    await this.backendEgressResponder?.stop();
+    this.backendEgressResponder = null;
     await this.inboundActionResponder?.stop();
     this.inboundActionResponder = null;
     await this.nativeChannelManager?.stop();

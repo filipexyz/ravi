@@ -13,9 +13,11 @@ import {
   acceptChannelIngress,
   CHANNEL_BACKEND_PROTOCOL,
   CHANNEL_BACKEND_SCHEMA_VERSION,
+  ChannelOutputSinkRegistry,
   setChannelBackendPromptPublisherForTests,
   type ChannelBackendPromptPublisher,
   type ChannelIngressRequest,
+  type ChannelOutputEnvelope,
 } from "./backend.js";
 import {
   CHANNEL_RUNTIME_EVENTS_PROTOCOL,
@@ -260,6 +262,22 @@ describe("channel backend ingress", () => {
   });
 });
 
+describe("channel backend output sinks", () => {
+  it("reports whether a validated envelope reached a registered local sink", async () => {
+    const registry = new ChannelOutputSinkRegistry();
+    const envelope = outputEnvelope();
+    const emit = mock(async () => {});
+
+    expect(await registry.tryEmit(envelope)).toBe(false);
+    const unregister = registry.register(envelope.target, { emit });
+    expect(await registry.tryEmit(envelope)).toBe(true);
+    expect(emit).toHaveBeenCalledWith(envelope);
+
+    unregister();
+    expect(await registry.tryEmit(envelope)).toBe(false);
+  });
+});
+
 function request(overrides: Partial<ChannelIngressRequest> = {}): ChannelIngressRequest {
   return {
     protocol: CHANNEL_BACKEND_PROTOCOL,
@@ -279,6 +297,31 @@ function request(overrides: Partial<ChannelIngressRequest> = {}): ChannelIngress
     content: [{ type: "text", text: "fixture input" }],
     receivedAt: "2026-07-24T18:00:00.000Z",
     ...overrides,
+  };
+}
+
+function outputEnvelope(): ChannelOutputEnvelope {
+  return {
+    protocol: CHANNEL_BACKEND_PROTOCOL,
+    schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
+    outputId: "output-a",
+    correlationId: "request-a",
+    binding: {
+      channelInstanceId: "channel-instance-a",
+      agentId: "agent-a",
+      chatId: "chat-a",
+      messageId: "message-a",
+      sessionId: "session-a",
+      turnId: "turn-a",
+    },
+    target: {
+      channelKind: "custom",
+      connectionId: "connection-a",
+      conversationId: "external-conversation-a",
+    },
+    kind: "assistant_message",
+    content: [{ type: "text", text: "fixture output" }],
+    emittedAt: "2026-07-24T18:00:02.000Z",
   };
 }
 

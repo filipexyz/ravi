@@ -43,6 +43,8 @@ import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./w
 import type { MessageTarget } from "./runtime/message-types.js";
 import { dbHasActiveAssignedTaskForSession } from "./tasks/task-db.js";
 import { startWorkObjectNatsService, type WorkObjectNatsServiceHandle } from "./work-objects/index.js";
+import { createChannelBackendEgressRequester } from "./channels/backend-egress.js";
+import { setChannelBackendEgressRequesterForRuntime } from "./channels/runtime-events.js";
 import {
   tryAcquireLeadership,
   startLeadershipRenewal,
@@ -262,6 +264,7 @@ async function shutdown(signal: string) {
 
     // Stop config store refresh
     configStore.stop();
+    setChannelBackendEgressRequesterForRuntime();
 
     // Close NATS connection
     await closeNats();
@@ -284,6 +287,7 @@ export async function startDaemon() {
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
   log.info("Connecting to NATS...", { natsUrl });
   await connectNats(natsUrl, { explicit: true });
+  setChannelBackendEgressRequesterForRuntime(createChannelBackendEgressRequester());
 
   const config = loadConfig();
   logger.setLevel(config.logLevel);

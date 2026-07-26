@@ -15,6 +15,7 @@ import {
 } from "../router/router-db.js";
 import type { ChannelBackendPromptMetadata } from "../runtime/message-types.js";
 import type { RuntimeEvent } from "../runtime/types.js";
+import type { ChannelBackendEgressRequester } from "./backend-egress.js";
 import {
   CHANNEL_BACKEND_MAX_CONTENT_BLOCKS,
   CHANNEL_BACKEND_MAX_TEXT_BYTES,
@@ -274,9 +275,24 @@ export class ChannelRuntimeEventSinkRegistry {
     }
     await sink.emit(event);
   }
+
+  async tryEmit(target: ExternalChannelTarget, input: KnownChannelRuntimeEvent): Promise<boolean> {
+    const channelKind = ChannelBackendWireKindSchema.parse(target.channelKind);
+    const connectionId = ChannelBackendOpaqueIdSchema.parse(target.connectionId);
+    const event = KnownChannelRuntimeEventSchema.parse(input);
+    const sink = this.sinks.get(sinkKey(channelKind, connectionId));
+    if (!sink) return false;
+    await sink.emit(event);
+    return true;
+  }
 }
 
 export const channelRuntimeEventSinks = new ChannelRuntimeEventSinkRegistry();
+let channelBackendEgressRequester: ChannelBackendEgressRequester | undefined;
+
+export function setChannelBackendEgressRequesterForRuntime(requester?: ChannelBackendEgressRequester): void {
+  channelBackendEgressRequester = requester;
+}
 
 export type ChannelRuntimeAbortPublisher = (
   topic: "ravi.session.abort",
@@ -598,7 +614,15 @@ async function recordAndEmit(
   });
   let dispatchError: unknown;
   try {
-    await input.sinks.emit(input.metadata.target, event);
+    const deliveredLocally = await input.sinks.tryEmit(input.metadata.target, event);
+    if (!deliveredLocally) {
+      if (!channelBackendEgressRequester) {
+        throw new Error(
+          `Channel runtime event sink is unavailable for ${input.metadata.target.channelKind}/${input.metadata.target.connectionId}`,
+        );
+      }
+      await channelBackendEgressRequester.emitRuntimeEvent(input.metadata.target, event);
+    }
   } catch (error) {
     dispatchError = error;
   }
@@ -608,27 +632,34 @@ async function recordAndEmit(
     ((input.state === "completed" && input.assistantText) || (input.state === "failed" && input.safeError))
   ) {
     try {
-      await channelOutputSinks.emit(
-        ChannelOutputEnvelopeSchema.parse({
-          protocol: CHANNEL_BACKEND_PROTOCOL,
-          schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
-          outputId: semanticEventId("output", input.metadata.binding.turnId, "terminal"),
-          correlationId: input.metadata.correlationId,
-          causationId: input.metadata.ingressRequestId,
-          binding: input.metadata.binding,
-          target: input.metadata.target,
-          ...(input.state === "completed" && input.assistantText
-            ? {
-                kind: "assistant_message",
-                content: input.assistantContent ?? channelTextContent(input.assistantText),
-              }
-            : {
-                kind: "safe_error",
-                error: input.safeError,
-              }),
-          emittedAt: new Date(input.occurredAt).toISOString(),
-        }),
-      );
+      const output = ChannelOutputEnvelopeSchema.parse({
+        protocol: CHANNEL_BACKEND_PROTOCOL,
+        schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
+        outputId: semanticEventId("output", input.metadata.binding.turnId, "terminal"),
+        correlationId: input.metadata.correlationId,
+        causationId: input.metadata.ingressRequestId,
+        binding: input.metadata.binding,
+        target: input.metadata.target,
+        ...(input.state === "completed" && input.assistantText
+          ? {
+              kind: "assistant_message",
+              content: input.assistantContent ?? channelTextContent(input.assistantText),
+            }
+          : {
+              kind: "safe_error",
+              error: input.safeError,
+            }),
+        emittedAt: new Date(input.occurredAt).toISOString(),
+      });
+      const deliveredLocally = await channelOutputSinks.tryEmit(output);
+      if (!deliveredLocally) {
+        if (!channelBackendEgressRequester) {
+          throw new Error(
+            `Channel output sink is unavailable for ${output.target.channelKind}/${output.target.connectionId}`,
+          );
+        }
+        await channelBackendEgressRequester.emitOutput(output);
+      }
     } catch (error) {
       dispatchError ??= error;
     }
