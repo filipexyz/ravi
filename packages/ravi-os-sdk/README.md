@@ -148,6 +148,15 @@ provider- and connection-bound credential through
 `context.host.readInstallationCredential()`. It cannot enumerate credentials
 or receive the human login session.
 
+Drivers that need a local agent declare the
+`local_agent_reconciliation` host capability and call
+`context.host.reconcileLocalAgent()`. The host validates the request against
+the channel instance, applies the local `native-channel-default` template, and
+returns only the bounded reconciliation result. Reconciliation runs through
+Ravi's in-process authorization path; no context key or local admin credential
+is exposed to the driver. The default template accepts managed instructions
+but grants no requested capability aliases or runtime overrides.
+
 Drivers can reserve provider-owned slash actions with the `inbound_actions`
 capability and an exact `inboundActions` list repeated in the module, driver,
 and runtime descriptors. The runtime implements

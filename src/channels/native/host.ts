@@ -19,6 +19,13 @@ import {
   requestChannelRuntimeInterrupt,
 } from "../runtime-events.js";
 import type { NativeChannelDriverHost } from "./driver.js";
+import {
+  LocalAgentReconciliationRequestSchema,
+  LocalAgentReconciliationResultSchema,
+  type LocalAgentReconciliationRequest,
+  type LocalAgentReconciliationResult,
+} from "../../../packages/ravi-os-sdk/src/local-agent-reconciliation.js";
+import { createNativeChannelLocalAgentReconciler, type NativeChannelLocalAgentReconciler } from "./local-agent-host.js";
 
 export interface NativeChannelDriverHostLease {
   readonly host: NativeChannelDriverHost;
@@ -30,15 +37,21 @@ export type NativeChannelInstallationCredentialResolver = (input: {
   readonly connection?: string;
 }) => RemoteInstallationCredential | null | Promise<RemoteInstallationCredential | null>;
 
+export type NativeChannelLocalAgentResolver = (
+  input: LocalAgentReconciliationRequest,
+) => LocalAgentReconciliationResult | Promise<LocalAgentReconciliationResult>;
+
 export function createNativeChannelDriverHostLease(options: {
   channel: ChannelConfig;
   provider: string;
   resolveInstallationCredential?: NativeChannelInstallationCredentialResolver;
+  reconcileLocalAgent?: NativeChannelLocalAgentResolver;
 }): NativeChannelDriverHostLease {
   const channelInstanceId = ChannelBackendOpaqueIdSchema.parse(options.channel.name);
   const provider = ChannelBackendWireKindSchema.parse(options.provider);
   const unregister: Array<() => void> = [];
   let disposed = false;
+  let localAgentReconciler: NativeChannelLocalAgentReconciler | undefined;
 
   const ensureActive = () => {
     if (disposed) throw new Error("native_channel_driver_host_disposed");
@@ -76,6 +89,20 @@ export function createNativeChannelDriverHostLease(options: {
         throw new Error("native_channel_driver_scope_mismatch");
       }
       return structuredClone(credential);
+    },
+    async reconcileLocalAgent(input) {
+      ensureActive();
+      const request = LocalAgentReconciliationRequestSchema.parse(input);
+      if (request.sourceId !== channelInstanceId) {
+        throw new Error("native_channel_driver_scope_mismatch");
+      }
+      const resolve =
+        options.reconcileLocalAgent ??
+        ((scopedRequest: LocalAgentReconciliationRequest) => {
+          localAgentReconciler ??= createNativeChannelLocalAgentReconciler();
+          return localAgentReconciler.reconcile(scopedRequest);
+        });
+      return LocalAgentReconciliationResultSchema.parse(await resolve(request));
     },
     async ingress(input) {
       ensureActive();

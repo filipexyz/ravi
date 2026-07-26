@@ -12,6 +12,10 @@ import {
 import type { ChannelAdapterHealth } from "../health.js";
 import type { RemoteInstallationCredential } from "../../cloud-auth/remote-login.js";
 import type {
+  LocalAgentReconciliationRequest,
+  LocalAgentReconciliationResult,
+} from "../../../packages/ravi-os-sdk/src/local-agent-reconciliation.js";
+import type {
   ChannelInterruptRequest,
   ChannelInterruptResult,
   ChannelRuntimeEventSink,
@@ -58,12 +62,15 @@ export const NativeInboundChannelActionNamesSchema = z
   .max(32)
   .refine((actions) => new Set(actions).size === actions.length);
 
-export const NativeChannelDriverHostCapabilitySchema = z.enum(["installation_credentials"]);
+export const NativeChannelDriverHostCapabilitySchema = z.enum([
+  "installation_credentials",
+  "local_agent_reconciliation",
+]);
 
 export const NativeChannelDriverHostCapabilitiesSchema = z
   .array(NativeChannelDriverHostCapabilitySchema)
   .min(1)
-  .max(1)
+  .max(NativeChannelDriverHostCapabilitySchema.options.length)
   .refine((capabilities) => new Set(capabilities).size === capabilities.length);
 
 export const NativeChannelDriverModuleSpecifierSchema = z
@@ -231,6 +238,7 @@ export interface NativeChannelDriverChannelConfig {
 
 export interface NativeChannelDriverHost {
   readInstallationCredential(): Promise<RemoteInstallationCredential | null>;
+  reconcileLocalAgent?(request: LocalAgentReconciliationRequest): Promise<LocalAgentReconciliationResult>;
   ingress(request: ChannelIngressRequest): Promise<ChannelIngressResult>;
   interrupt(request: ChannelInterruptRequest): Promise<ChannelInterruptResult>;
   readback(request: ChannelRuntimeReadbackRequest): Promise<ChannelRuntimeReadbackResult>;
@@ -563,6 +571,9 @@ export class NativeChannelDriverManager {
 function assertHostCapabilities(descriptor: NativeChannelDriverDescriptor, host: NativeChannelDriverHost): void {
   for (const capability of descriptor.requiredHostCapabilities ?? []) {
     if (capability === "installation_credentials" && typeof host.readInstallationCredential !== "function") {
+      throw new NativeChannelDriverContractError("host_capability_missing");
+    }
+    if (capability === "local_agent_reconciliation" && typeof host.reconcileLocalAgent !== "function") {
       throw new NativeChannelDriverContractError("host_capability_missing");
     }
   }

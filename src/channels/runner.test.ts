@@ -18,7 +18,13 @@ import type {
   NativeInboundChannelActionResponder,
   NativeInboundChannelActionResponderConnection,
 } from "./inbound-actions.js";
-import type { NativeInboundChannelActionHandler } from "./native/driver.js";
+import {
+  NATIVE_CHANNEL_DRIVER_PROTOCOL,
+  NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+  NativeChannelDriverManager,
+  NativeChannelDriverRegistry,
+  type NativeInboundChannelActionHandler,
+} from "./native/driver.js";
 import { installationChannelName, mergeInstallationCredentialChannels } from "./native/installation-channels.js";
 import { createSlackNativeChannelDriver } from "./slack/driver.js";
 
@@ -167,6 +173,73 @@ describe("channel runner native delivery registry", () => {
       },
     });
     expect(JSON.stringify(channels)).not.toContain("must-not-enter-channel-config");
+  });
+
+  it("provides host-owned local agent reconciliation through the runner lifecycle", async () => {
+    let reconciliationCapability: unknown;
+    const stop = mock(async () => {});
+    const registry = new NativeChannelDriverRegistry();
+    registry.register({
+      descriptor: {
+        protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+        schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+        driverId: "example.native",
+        provider: "example",
+        capabilities: ["inbound"],
+        requiredHostCapabilities: ["local_agent_reconciliation"],
+      },
+      createRuntime(context) {
+        reconciliationCapability = context.host.reconcileLocalAgent;
+        return {
+          descriptor: {
+            protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+            schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+            driverId: "example.native",
+            provider: "example",
+            runtimeId: "example-runtime-a",
+            channelInstanceId: context.channel.name,
+            capabilities: ["inbound"],
+          },
+          start: mock(async () => {}),
+          stop,
+          health: () => ({ status: "connected" as const }),
+        };
+      },
+    });
+    const manager = new NativeChannelDriverManager({
+      channels: {
+        "example-channel-a": {
+          name: "example-channel-a",
+          provider: "example",
+          enabled: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+      registry,
+    });
+
+    await manager.start();
+
+    expect(typeof reconciliationCapability).toBe("function");
+    expect(manager.health()).toEqual([
+      {
+        id: "example:example-channel-a:example-runtime-a",
+        channelId: "example",
+        status: "connected",
+      },
+    ]);
+
+    await manager.stop();
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(manager.health()).toEqual([
+      {
+        id: "example:example-channel-a:example-runtime-a",
+        channelId: "example",
+        status: "disconnected",
+      },
+    ]);
   });
 
   it("starts one inbound action responder only when a native runtime exposes handlers", () => {

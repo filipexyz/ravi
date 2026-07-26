@@ -68,11 +68,12 @@
         "requiredHostCapabilities": {
           "items": {
             "enum": [
-              "installation_credentials"
+              "installation_credentials",
+              "local_agent_reconciliation"
             ],
             "type": "string"
           },
-          "maxItems": 1,
+          "maxItems": 2,
           "minItems": 1,
           "type": "array"
         },
@@ -94,18 +95,20 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "items": {
         "enum": [
-          "installation_credentials"
+          "installation_credentials",
+          "local_agent_reconciliation"
         ],
         "type": "string"
       },
-      "maxItems": 1,
+      "maxItems": 2,
       "minItems": 1,
       "type": "array"
     },
     "NativeChannelDriverHostCapability": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "enum": [
-        "installation_credentials"
+        "installation_credentials",
+        "local_agent_reconciliation"
       ],
       "type": "string"
     },
@@ -448,6 +451,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "capsuleVersion": 1,
   "compatibilityProfile": "additive-v1",
-  "sourceDigest": "4b604dae68aaaeba81fd68ceb6c2864a0bdafc5bb61f0c70d2aeaff696794733",
+  "sourceDigest": "ab2475d54a833066b96e0d9aa127f3961fb589b33829012006c176d74a2e94ce",
   "title": "native-channel-driver channel capability"
 }
