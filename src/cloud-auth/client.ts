@@ -324,6 +324,7 @@ export function credentialsFromConsoleResponse(
   return {
     version: 1,
     consoleUrl,
+    ...(previous?.authMode === undefined ? {} : { authMode: previous.authMode }),
     installationId:
       stringValue(source.installationId) ??
       stringValue(root.installationId) ??
