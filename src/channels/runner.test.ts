@@ -9,9 +9,11 @@ import {
   pruneChannelOutboundReceiptLedger,
   runChannelOutboundLedgerMaintenance,
   slackAdapterHealth,
+  startChannelRunnerBackendEgressResponder,
   startChannelRunnerInboundActionResponder,
   startChannelOutboundReceiptPruner,
 } from "./runner.js";
+import type { ChannelBackendEgressResponder, ChannelBackendEgressResponderConnection } from "./backend-egress.js";
 import type {
   NativeInboundChannelActionResponder,
   NativeInboundChannelActionResponderConnection,
@@ -201,6 +203,23 @@ describe("channel runner native delivery registry", () => {
       connection,
       handlers: [handler],
     });
+  });
+
+  it("registers one cross-process backend egress responder with the runner connection", () => {
+    const connection = {} as ChannelBackendEgressResponderConnection;
+    const responder = {
+      stop: mock(async () => {}),
+    } satisfies ChannelBackendEgressResponder;
+    const startResponder = mock(() => responder);
+
+    expect(
+      startChannelRunnerBackendEgressResponder({
+        connection,
+        startResponder,
+      }),
+    ).toBe(responder);
+    expect(startResponder).toHaveBeenCalledTimes(1);
+    expect(startResponder).toHaveBeenCalledWith({ connection });
   });
 });
 

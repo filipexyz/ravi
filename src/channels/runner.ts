@@ -45,7 +45,11 @@ import {
   ensureChannelOutboundInfrastructure,
 } from "./outbound-stream.js";
 import { ChannelPresenceConsumer } from "./presence-consumer.js";
-import { startChannelBackendEgressResponder, type ChannelBackendEgressResponder } from "./backend-egress.js";
+import {
+  startChannelBackendEgressResponder,
+  type ChannelBackendEgressResponder,
+  type ChannelBackendEgressResponderConnection,
+} from "./backend-egress.js";
 import { createSlackNativeChannelDriver, slackNativeRuntimeHealth } from "./slack/driver.js";
 import type { SlackSocketModeStatus } from "./slack/index.js";
 
@@ -76,6 +80,15 @@ export function startChannelRunnerInboundActionResponder(options: {
   return (options.startResponder ?? startNativeInboundChannelActionResponder)({
     connection: options.connection,
     handlers: options.handlers,
+  });
+}
+
+export function startChannelRunnerBackendEgressResponder(options: {
+  connection: ChannelBackendEgressResponderConnection;
+  startResponder?: typeof startChannelBackendEgressResponder;
+}): ChannelBackendEgressResponder {
+  return (options.startResponder ?? startChannelBackendEgressResponder)({
+    connection: options.connection,
   });
 }
 
@@ -149,7 +162,7 @@ export class ChannelRunner {
     });
 
     await this.startNativeChannels(env);
-    this.backendEgressResponder = startChannelBackendEgressResponder({
+    this.backendEgressResponder = startChannelRunnerBackendEgressResponder({
       connection: getNats(),
     });
 
