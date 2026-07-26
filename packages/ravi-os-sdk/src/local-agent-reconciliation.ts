@@ -576,7 +576,7 @@ export class LocalAgentReconciler {
         );
       }
 
-      const existing = await this.runtime.inspect(agentId);
+      let existing = await this.runtime.inspect(agentId);
       if (
         existing !== null &&
         normalizePath(existing.cwd) !== normalizePath(workspace)
@@ -626,12 +626,27 @@ export class LocalAgentReconciler {
           )) || changed;
       }
 
+      const createdLocally = existing === null;
       if (existing === null) {
-        await this.runtime.create({
-          agentId,
-          cwd: workspace,
-          runtime,
-        });
+        try {
+          await this.runtime.create({
+            agentId,
+            cwd: workspace,
+            runtime,
+          });
+        } catch (error) {
+          const recovered = await this.runtime.inspect(agentId);
+          if (
+            recovered === null ||
+            normalizePath(recovered.cwd) !== normalizePath(workspace)
+          ) {
+            throw error;
+          }
+          existing = recovered;
+          changed =
+            (await this.runtime.configureRuntime(recovered, runtime)) ||
+            changed;
+        }
         changed = true;
       } else {
         changed =
@@ -666,7 +681,7 @@ export class LocalAgentReconciler {
         schemaVersion: LOCAL_AGENT_RECONCILIATION_SCHEMA_VERSION,
         requestId: request.requestId,
         disposition:
-          existing === null
+          createdLocally
             ? "created"
             : changed
               ? "updated"

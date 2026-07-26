@@ -1963,7 +1963,7 @@ export const agentPermissionsReturnSchema = z.object({
   after: agentRuntimePermissionsConfigReturnSchema.optional(),
   defaults: jsonObjectSchema.nullable().optional(),
   command: z.string().optional(),
-  agent: jsonObjectSchema.optional(),
+  agent: agentJsonSummaryReturnSchema.optional(),
 });
 
 export const agentDebounceReturnSchema = z
