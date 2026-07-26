@@ -5,13 +5,14 @@
       "items": {
         "enum": [
           "inbound",
+          "inbound_actions",
           "text_delivery",
           "chat_actions",
           "presence"
         ],
         "type": "string"
       },
-      "maxItems": 4,
+      "maxItems": 5,
       "minItems": 1,
       "type": "array"
     },
@@ -19,6 +20,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "enum": [
         "inbound",
+        "inbound_actions",
         "text_delivery",
         "chat_actions",
         "presence"
@@ -32,19 +34,28 @@
           "items": {
             "enum": [
               "inbound",
+              "inbound_actions",
               "text_delivery",
               "chat_actions",
               "presence"
             ],
             "type": "string"
           },
-          "maxItems": 4,
+          "maxItems": 5,
           "minItems": 1,
           "type": "array"
         },
         "driverId": {
           "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
           "type": "string"
+        },
+        "inboundActions": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
         },
         "protocol": {
           "const": "ravi.channel.native-driver",
@@ -101,6 +112,14 @@
     "NativeChannelDriverModuleConfig": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
+        "inboundActions": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
+        },
         "moduleSpecifier": {
           "pattern": "^(?:@[a-z0-9][a-z0-9._-]*\\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*|file:\\/\\/\\/[^\\u0000-\\u001f\\u007f]+)$",
           "type": "string"
@@ -133,13 +152,14 @@
           "items": {
             "enum": [
               "inbound",
+              "inbound_actions",
               "text_delivery",
               "chat_actions",
               "presence"
             ],
             "type": "string"
           },
-          "maxItems": 4,
+          "maxItems": 5,
           "minItems": 1,
           "type": "array"
         },
@@ -150,6 +170,14 @@
         "driverId": {
           "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
           "type": "string"
+        },
+        "inboundActions": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+            "type": "string"
+          },
+          "maxItems": 32,
+          "type": "array"
         },
         "protocol": {
           "const": "ravi.channel.native-driver",
@@ -176,6 +204,203 @@
         "runtimeId",
         "channelInstanceId",
         "capabilities"
+      ],
+      "type": "object"
+    },
+    "NativeInboundChannelActionNames": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+        "type": "string"
+      },
+      "maxItems": 32,
+      "type": "array"
+    },
+    "NativeInboundChannelActionRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "hasArguments": {
+          "type": "boolean"
+        },
+        "identity": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "channelKind": {
+              "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+              "type": "string"
+            },
+            "conversationId": {
+              "type": "string"
+            },
+            "messageId": {
+              "type": "string"
+            },
+            "senderId": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "channelKind",
+            "accountId",
+            "conversationId",
+            "senderId",
+            "messageId"
+          ],
+          "type": "object"
+        },
+        "protocol": {
+          "const": "ravi.channel.native-driver",
+          "type": "string"
+        },
+        "requestedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "action",
+        "hasArguments",
+        "identity",
+        "requestedAt"
+      ],
+      "type": "object"
+    },
+    "NativeInboundChannelActionResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "completedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "disposition": {
+          "enum": [
+            "handled",
+            "pass"
+          ],
+          "type": "string"
+        },
+        "error": {
+          "properties": {
+            "category": {
+              "enum": [
+                "validation",
+                "authentication",
+                "authorization",
+                "capacity",
+                "availability",
+                "internal"
+              ],
+              "type": "string"
+            },
+            "code": {
+              "enum": [
+                "INVALID_REQUEST",
+                "IDEMPOTENCY_CONFLICT",
+                "UNAUTHENTICATED",
+                "PERMISSION_DENIED",
+                "LOCAL_PERMISSION_DENIED",
+                "NOT_FOUND",
+                "RATE_LIMITED",
+                "OVERLOADED",
+                "UNAVAILABLE",
+                "INTERNAL"
+              ],
+              "type": "string"
+            },
+            "correlationId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "retryAfterMs": {
+              "exclusiveMinimum": 0,
+              "maximum": 86400000,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "code",
+            "category",
+            "retryable"
+          ],
+          "type": "object"
+        },
+        "protocol": {
+          "const": "ravi.channel.native-driver",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "disposition",
+        "completedAt"
+      ],
+      "type": "object"
+    },
+    "NativeInboundChannelIdentity": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "channelKind": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "conversationId": {
+          "type": "string"
+        },
+        "messageId": {
+          "type": "string"
+        },
+        "senderId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "channelKind",
+        "accountId",
+        "conversationId",
+        "senderId",
+        "messageId"
       ],
       "type": "object"
     },
@@ -223,6 +448,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "capsuleVersion": 1,
   "compatibilityProfile": "additive-v1",
-  "sourceDigest": "4d43634a31d850c846d4add5964262f39781103f710099d38748f59778937fce",
+  "sourceDigest": "4b604dae68aaaeba81fd68ceb6c2864a0bdafc5bb61f0c70d2aeaff696794733",
   "title": "native-channel-driver channel capability"
 }

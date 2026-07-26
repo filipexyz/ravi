@@ -4,6 +4,11 @@ import { configStore } from "../config-store.js";
 import { listRemoteInstallationCredentials } from "../cloud-auth/installation-storage.js";
 import { logger } from "../utils/logger.js";
 import {
+  startNativeInboundChannelActionResponder,
+  type NativeInboundChannelActionResponder,
+  type NativeInboundChannelActionResponderConnection,
+} from "./inbound-actions.js";
+import {
   startChannelRunnerHealthResponder,
   type ChannelAdapterHealth,
   type ChannelRunnerHealthResponder,
@@ -15,6 +20,7 @@ import {
   NativeChannelDriverRegistry,
   loadNativeChannelDriverModules,
   parseNativeChannelDriverModuleConfigs,
+  type NativeInboundChannelActionHandler,
   type NativeChannelDriverRuntime,
 } from "./native/driver.js";
 import { mergeInstallationCredentialChannels } from "./native/installation-channels.js";
@@ -60,6 +66,18 @@ export function collectNativeRuntimeDeliveries(
   };
 }
 
+export function startChannelRunnerInboundActionResponder(options: {
+  connection: NativeInboundChannelActionResponderConnection;
+  handlers: readonly NativeInboundChannelActionHandler[];
+  startResponder?: typeof startNativeInboundChannelActionResponder;
+}): NativeInboundChannelActionResponder | null {
+  if (options.handlers.length === 0) return null;
+  return (options.startResponder ?? startNativeInboundChannelActionResponder)({
+    connection: options.connection,
+    handlers: options.handlers,
+  });
+}
+
 type ReceiptPruneTimer = ReturnType<typeof setInterval>;
 
 export interface ChannelOutboundReceiptPrunerOptions {
@@ -92,6 +110,7 @@ export class ChannelRunner {
   private actionDeliveries: NativeChatActionDelivery[] = [];
   private presenceDeliveries: NativePresenceDelivery[] = [];
   private nativeChannelManager: NativeChannelDriverManager | null = null;
+  private inboundActionResponder: NativeInboundChannelActionResponder | null = null;
   private adapterStatuses = new Map<string, AdapterStatus>();
   private stopReceiptPruner: (() => void) | null = null;
   private healthResponder: ChannelRunnerHealthResponder | null = null;
@@ -172,6 +191,8 @@ export class ChannelRunner {
     this.outboundConsumer = null;
     await this.presenceConsumer?.stop();
     this.presenceConsumer = null;
+    await this.inboundActionResponder?.stop();
+    this.inboundActionResponder = null;
     await this.nativeChannelManager?.stop();
     this.nativeChannelManager = null;
     this.deliveries = [];
@@ -240,6 +261,10 @@ export class ChannelRunner {
       registry,
     });
     await this.nativeChannelManager.start();
+    this.inboundActionResponder = startChannelRunnerInboundActionResponder({
+      connection: getNats(),
+      handlers: this.nativeChannelManager.inboundActionHandlers(),
+    });
     this.deliveries.push(...this.nativeChannelManager.deliveries());
     this.actionDeliveries.push(...this.nativeChannelManager.actionDeliveries());
     this.presenceDeliveries.push(...this.nativeChannelManager.presenceDeliveries());

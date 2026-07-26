@@ -148,6 +148,15 @@ provider- and connection-bound credential through
 `context.host.readInstallationCredential()`. It cannot enumerate credentials
 or receive the human login session.
 
+Drivers can reserve provider-owned slash actions with the `inbound_actions`
+capability and an exact `inboundActions` list repeated in the module, driver,
+and runtime descriptors. The runtime implements
+`inboundActions.supports(action)` and `inboundActions.handle(request)`. The
+host sends only a bounded authenticated channel identity, the declared action
+name, and a `hasArguments` boolean; command arguments are never exposed to the
+driver. Declared actions are fail-closed and never fall through to model
+processing when the runtime cannot answer.
+
 ### Reconcile Locally Managed Agents
 
 Node-side integrations can reconcile an external desired identity into a

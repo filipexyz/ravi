@@ -22,9 +22,11 @@ import {
   loadNativeChannelDriverModules,
   parseNativeChannelDriverModuleConfigs,
   type NativeChannelDriver,
+  type NativeChannelDriverCapability,
   type NativeChannelDriverDescriptor,
   type NativeChannelDriverHost,
   type NativeChannelDriverModuleConfig,
+  type NativeInboundChannelActionRequest,
   type NativeChannelRuntimeDescriptor,
 } from "./driver.js";
 import { createNativeChannelDriverHostLease, type NativeChannelDriverHostLease } from "./host.js";
@@ -118,7 +120,7 @@ function fullDriver(
   options: {
     health?: () => unknown;
     runtimeProvider?: string;
-    runtimeCapabilities?: Array<"inbound" | "text_delivery" | "chat_actions" | "presence">;
+    runtimeCapabilities?: NativeChannelDriverCapability[];
   } = {},
 ): NativeChannelDriver {
   const delivery = {
@@ -169,6 +171,47 @@ function fullDriver(
   };
 }
 
+function inboundActionDriver(
+  options: { includeHandler?: boolean; supports?: boolean; driverActions?: string[]; runtimeActions?: string[] } = {},
+): NativeChannelDriver {
+  const base = fullDriver();
+  const driverActions = options.driverActions ?? ["account.connect"];
+  const runtimeActions = options.runtimeActions ?? driverActions;
+  return {
+    descriptor: {
+      ...base.descriptor,
+      capabilities: [...base.descriptor.capabilities, "inbound_actions"],
+      inboundActions: driverActions,
+    },
+    async createRuntime(context) {
+      const runtime = await base.createRuntime(context);
+      return {
+        ...runtime,
+        descriptor: {
+          ...runtime.descriptor,
+          capabilities: [...runtime.descriptor.capabilities, "inbound_actions"],
+          inboundActions: runtimeActions,
+        },
+        ...(options.includeHandler === false
+          ? {}
+          : {
+              inboundActions: {
+                supports: mock(() => options.supports ?? true),
+                handle: mock(async (request: NativeInboundChannelActionRequest) => ({
+                  protocol: request.protocol,
+                  schemaVersion: request.schemaVersion,
+                  requestId: request.requestId,
+                  disposition: "handled" as const,
+                  text: "Action completed.",
+                  completedAt: "2026-07-24T18:00:02.000Z",
+                })),
+              },
+            }),
+      };
+    },
+  };
+}
+
 describe("native channel driver contract", () => {
   it("parses the generated module, driver, and runtime descriptors", async () => {
     const moduleConfig = await generatedFixture<NativeChannelDriverModuleConfig>("module-config.json");
@@ -199,6 +242,43 @@ describe("native channel driver contract", () => {
     expect(loaded).toEqual({ loadedProviders: ["example"], failures: [] });
     expect(registry.get("example")?.descriptor.driverId).toBe("example.native");
     expect(NATIVE_CHANNEL_DRIVER_MODULES_ENV).toBe("RAVI_NATIVE_CHANNEL_DRIVERS");
+  });
+
+  it("requires module, driver, and runtime action declarations to agree", async () => {
+    const driver = inboundActionDriver();
+    const matchingRegistry = new NativeChannelDriverRegistry();
+    const matching = await loadNativeChannelDriverModules(
+      [
+        {
+          protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+          schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+          provider: "example",
+          moduleSpecifier: "@example/driver",
+          inboundActions: ["account.connect"],
+        },
+      ],
+      matchingRegistry,
+      async () => ({ nativeChannelDriver: driver }),
+    );
+    expect(matching).toEqual({ loadedProviders: ["example"], failures: [] });
+
+    const mismatchedRegistry = new NativeChannelDriverRegistry();
+    const mismatched = await loadNativeChannelDriverModules(
+      [
+        {
+          protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+          schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+          provider: "example",
+          moduleSpecifier: "@example/driver",
+        },
+      ],
+      mismatchedRegistry,
+      async () => ({ nativeChannelDriver: driver }),
+    );
+    expect(mismatched).toEqual({
+      loadedProviders: [],
+      failures: [{ provider: "example", reason: "invalid_module_export" }],
+    });
   });
 
   it("rejects remote, inferred, duplicate, and incompatible module declarations", async () => {
@@ -331,6 +411,57 @@ describe("native channel driver contract", () => {
         status: "disconnected",
       },
     ]);
+  });
+
+  it("exposes only validated native inbound action handlers", async () => {
+    const registry = new NativeChannelDriverRegistry();
+    registry.register(inboundActionDriver());
+    const manager = new NativeChannelDriverManager({
+      channels: { "example-channel-a": channel() },
+      registry,
+      createHostLease: () => hostLease(),
+    });
+
+    await manager.start();
+
+    expect(manager.inboundActionHandlers()).toHaveLength(1);
+    expect(manager.health()[0]).toMatchObject({ status: "connected" });
+    await manager.stop();
+  });
+
+  it("fails closed on missing, unsupported, and mismatched inbound action surfaces", async () => {
+    const cases: Array<{ driver: NativeChannelDriver; reason: string }> = [
+      {
+        driver: inboundActionDriver({ includeHandler: false }),
+        reason: "runtime_surface_mismatch",
+      },
+      {
+        driver: inboundActionDriver({ supports: false }),
+        reason: "runtime_surface_mismatch",
+      },
+      {
+        driver: inboundActionDriver({ runtimeActions: ["workspace.open"] }),
+        reason: "runtime_capability_mismatch",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const registry = new NativeChannelDriverRegistry();
+      registry.register(testCase.driver);
+      const manager = new NativeChannelDriverManager({
+        channels: { "example-channel-a": channel() },
+        registry,
+        createHostLease: () => hostLease(),
+      });
+
+      await manager.start();
+
+      expect(manager.inboundActionHandlers()).toEqual([]);
+      expect(manager.health()[0]).toMatchObject({
+        status: "failed",
+        reason: testCase.reason,
+      });
+    }
   });
 
   it("fails closed on provider, capability, surface, and health mismatches", async () => {

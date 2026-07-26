@@ -1564,6 +1564,7 @@ export class OmniConsumer {
     if (rawText.startsWith("/")) {
       const handled = await handleSlashCommand({
         text: rawText,
+        messageId: payload.externalId,
         senderId: senderPhone,
         chatId: chatJid,
         isGroup,

@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { ChannelConfig } from "../../router/router-db.js";
 import {
   ChannelBackendOpaqueIdSchema,
+  ChannelSafeErrorSchema,
   ChannelBackendWireKindSchema,
   type ChannelIngressRequest,
   type ChannelIngressResult,
@@ -23,44 +24,165 @@ import { createNativeChannelDriverHostLease, type NativeChannelDriverHostLease }
 export const NATIVE_CHANNEL_DRIVER_PROTOCOL = "ravi.channel.native-driver" as const;
 export const NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION = 1 as const;
 export const NATIVE_CHANNEL_DRIVER_MODULES_ENV = "RAVI_NATIVE_CHANNEL_DRIVERS" as const;
+export const MAX_NATIVE_INBOUND_ACTION_IDENTITY_BYTES = 512;
+export const MAX_NATIVE_INBOUND_ACTION_RESPONSE_BYTES = 4_096;
 
-export const NativeChannelDriverCapabilitySchema = z.enum(["inbound", "text_delivery", "chat_actions", "presence"]);
+const nativeChannelTextEncoder = new TextEncoder();
 
-export const NativeChannelDriverCapabilitiesSchema = z.array(NativeChannelDriverCapabilitySchema).min(1).max(4);
+function boundedNativeChannelString(maxBytes: number, label: string) {
+  return z
+    .string()
+    .refine((value) => nativeChannelTextEncoder.encode(value).byteLength >= 1, `${label} must not be empty`)
+    .refine(
+      (value) => nativeChannelTextEncoder.encode(value).byteLength <= maxBytes,
+      `${label} exceeds ${maxBytes} UTF-8 bytes`,
+    );
+}
+
+export const NativeChannelDriverCapabilitySchema = z.enum([
+  "inbound",
+  "inbound_actions",
+  "text_delivery",
+  "chat_actions",
+  "presence",
+]);
+
+export const NativeChannelDriverCapabilitiesSchema = z
+  .array(NativeChannelDriverCapabilitySchema)
+  .min(1)
+  .max(NativeChannelDriverCapabilitySchema.options.length)
+  .refine((capabilities) => new Set(capabilities).size === capabilities.length);
+
+export const NativeInboundChannelActionNamesSchema = z
+  .array(ChannelBackendWireKindSchema)
+  .max(32)
+  .refine((actions) => new Set(actions).size === actions.length);
 
 export const NativeChannelDriverHostCapabilitySchema = z.enum(["installation_credentials"]);
 
-export const NativeChannelDriverHostCapabilitiesSchema = z.array(NativeChannelDriverHostCapabilitySchema).min(1).max(1);
+export const NativeChannelDriverHostCapabilitiesSchema = z
+  .array(NativeChannelDriverHostCapabilitySchema)
+  .min(1)
+  .max(1)
+  .refine((capabilities) => new Set(capabilities).size === capabilities.length);
 
 export const NativeChannelDriverModuleSpecifierSchema = z
   .string()
   .regex(/^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*|file:\/\/\/[^\u0000-\u001f\u007f]+)$/);
 
-export const NativeChannelDriverModuleConfigSchema = z.object({
-  protocol: z.literal(NATIVE_CHANNEL_DRIVER_PROTOCOL),
-  schemaVersion: z.literal(NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION),
-  provider: ChannelBackendWireKindSchema,
-  moduleSpecifier: NativeChannelDriverModuleSpecifierSchema,
-});
+export const NativeChannelDriverModuleConfigSchema = z
+  .object({
+    protocol: z.literal(NATIVE_CHANNEL_DRIVER_PROTOCOL),
+    schemaVersion: z.literal(NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION),
+    provider: ChannelBackendWireKindSchema,
+    moduleSpecifier: NativeChannelDriverModuleSpecifierSchema,
+    inboundActions: NativeInboundChannelActionNamesSchema.optional(),
+  })
+  .strict();
 
-export const NativeChannelDriverDescriptorSchema = z.object({
-  protocol: z.literal(NATIVE_CHANNEL_DRIVER_PROTOCOL),
-  schemaVersion: z.literal(NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION),
-  driverId: ChannelBackendWireKindSchema,
-  provider: ChannelBackendWireKindSchema,
-  capabilities: NativeChannelDriverCapabilitiesSchema,
-  requiredHostCapabilities: NativeChannelDriverHostCapabilitiesSchema.optional(),
-});
+export const NativeChannelDriverDescriptorSchema = z
+  .object({
+    protocol: z.literal(NATIVE_CHANNEL_DRIVER_PROTOCOL),
+    schemaVersion: z.literal(NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION),
+    driverId: ChannelBackendWireKindSchema,
+    provider: ChannelBackendWireKindSchema,
+    capabilities: NativeChannelDriverCapabilitiesSchema,
+    inboundActions: NativeInboundChannelActionNamesSchema.optional(),
+    requiredHostCapabilities: NativeChannelDriverHostCapabilitiesSchema.optional(),
+  })
+  .superRefine(validateInboundActionDeclaration);
 
-export const NativeChannelRuntimeDescriptorSchema = z.object({
-  protocol: z.literal(NATIVE_CHANNEL_DRIVER_PROTOCOL),
-  schemaVersion: z.literal(NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION),
-  driverId: ChannelBackendWireKindSchema,
-  provider: ChannelBackendWireKindSchema,
-  runtimeId: ChannelBackendOpaqueIdSchema,
-  channelInstanceId: ChannelBackendOpaqueIdSchema,
-  capabilities: NativeChannelDriverCapabilitiesSchema,
-});
+export const NativeChannelRuntimeDescriptorSchema = z
+  .object({
+    protocol: z.literal(NATIVE_CHANNEL_DRIVER_PROTOCOL),
+    schemaVersion: z.literal(NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION),
+    driverId: ChannelBackendWireKindSchema,
+    provider: ChannelBackendWireKindSchema,
+    runtimeId: ChannelBackendOpaqueIdSchema,
+    channelInstanceId: ChannelBackendOpaqueIdSchema,
+    capabilities: NativeChannelDriverCapabilitiesSchema,
+    inboundActions: NativeInboundChannelActionNamesSchema.optional(),
+  })
+  .superRefine(validateInboundActionDeclaration);
+
+function validateInboundActionDeclaration(
+  value: {
+    capabilities: readonly string[];
+    inboundActions?: readonly string[];
+  },
+  context: z.RefinementCtx,
+): void {
+  const declared = value.capabilities.includes("inbound_actions");
+  if (declared !== (value.inboundActions !== undefined && value.inboundActions.length > 0)) {
+    context.addIssue({
+      code: "custom",
+      path: ["inboundActions"],
+      message: "inbound_actions capability requires a non-empty action declaration",
+    });
+  }
+}
+
+export const NativeInboundChannelIdentitySchema = z
+  .object({
+    channelKind: ChannelBackendWireKindSchema,
+    accountId: boundedNativeChannelString(
+      MAX_NATIVE_INBOUND_ACTION_IDENTITY_BYTES,
+      "native inbound action account identity",
+    ),
+    conversationId: boundedNativeChannelString(
+      MAX_NATIVE_INBOUND_ACTION_IDENTITY_BYTES,
+      "native inbound action conversation identity",
+    ),
+    senderId: boundedNativeChannelString(
+      MAX_NATIVE_INBOUND_ACTION_IDENTITY_BYTES,
+      "native inbound action sender identity",
+    ),
+    messageId: boundedNativeChannelString(
+      MAX_NATIVE_INBOUND_ACTION_IDENTITY_BYTES,
+      "native inbound action message identity",
+    ),
+  })
+  .strict();
+
+export const NativeInboundChannelActionRequestSchema = z
+  .object({
+    protocol: z.literal(NATIVE_CHANNEL_DRIVER_PROTOCOL),
+    schemaVersion: z.literal(NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION),
+    requestId: ChannelBackendOpaqueIdSchema,
+    action: ChannelBackendWireKindSchema,
+    hasArguments: z.boolean(),
+    identity: NativeInboundChannelIdentitySchema,
+    requestedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict();
+
+export const NativeInboundChannelActionResultSchema = z
+  .object({
+    protocol: z.literal(NATIVE_CHANNEL_DRIVER_PROTOCOL),
+    schemaVersion: z.literal(NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION),
+    requestId: ChannelBackendOpaqueIdSchema,
+    disposition: z.enum(["handled", "pass"]),
+    text: boundedNativeChannelString(
+      MAX_NATIVE_INBOUND_ACTION_RESPONSE_BYTES,
+      "native inbound action response",
+    ).optional(),
+    error: ChannelSafeErrorSchema.optional(),
+    completedAt: z.iso.datetime({ offset: true }),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    const responseFields = Number(value.text !== undefined) + Number(value.error !== undefined);
+    if (
+      (value.disposition === "handled" && responseFields !== 1) ||
+      (value.disposition === "pass" && responseFields !== 0)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["disposition"],
+        message: "handled actions require exactly one response; pass actions carry none",
+      });
+    }
+  });
 
 export const NativeChannelRuntimeHealthSchema = z.object({
   status: z.enum(["disabled", "starting", "connected", "degraded", "reconnecting", "disconnected", "failed"]),
@@ -76,6 +198,10 @@ export type NativeChannelDriverModuleConfig = z.infer<typeof NativeChannelDriver
 export type NativeChannelDriverDescriptor = z.infer<typeof NativeChannelDriverDescriptorSchema>;
 export type NativeChannelRuntimeDescriptor = z.infer<typeof NativeChannelRuntimeDescriptorSchema>;
 export type NativeChannelRuntimeHealth = z.infer<typeof NativeChannelRuntimeHealthSchema>;
+export type NativeInboundChannelActionNames = z.infer<typeof NativeInboundChannelActionNamesSchema>;
+export type NativeInboundChannelIdentity = z.infer<typeof NativeInboundChannelIdentitySchema>;
+export type NativeInboundChannelActionRequest = z.infer<typeof NativeInboundChannelActionRequestSchema>;
+export type NativeInboundChannelActionResult = z.infer<typeof NativeInboundChannelActionResultSchema>;
 
 export type NativeChannelDriverFailureReason =
   | "invalid_driver_configuration"
@@ -125,12 +251,20 @@ export interface NativeChannelDriverContext {
 
 export interface NativeChannelDriverRuntime {
   readonly descriptor: NativeChannelRuntimeDescriptor;
+  readonly inboundActions?: NativeInboundChannelActionHandler;
   readonly delivery?: NativeTextDelivery;
   readonly actions?: NativeChatActionDelivery;
   readonly presence?: NativePresenceDelivery;
   start(): void | Promise<void>;
   stop(): void | Promise<void>;
   health(): NativeChannelRuntimeHealth;
+}
+
+export interface NativeInboundChannelActionHandler {
+  supports(action: string): boolean;
+  handle(
+    request: NativeInboundChannelActionRequest,
+  ): NativeInboundChannelActionResult | Promise<NativeInboundChannelActionResult>;
 }
 
 export interface NativeChannelDriver {
@@ -243,6 +377,9 @@ export async function loadNativeChannelDriverModules(
       if (descriptor.provider !== config.provider) {
         throw new NativeChannelDriverContractError("provider_mismatch");
       }
+      if (!sameStrings(descriptor.inboundActions ?? [], config.inboundActions ?? [])) {
+        throw new NativeChannelDriverContractError("invalid_module_export");
+      }
       registry.register(driver);
       loadedProviders.push(config.provider);
     } catch (error) {
@@ -314,6 +451,10 @@ export class NativeChannelDriverManager {
 
   actionDeliveries(): NativeChatActionDelivery[] {
     return this.active.flatMap(({ runtime }) => (runtime.actions ? [runtime.actions] : []));
+  }
+
+  inboundActionHandlers(): NativeInboundChannelActionHandler[] {
+    return this.active.flatMap(({ runtime }) => (runtime.inboundActions ? [runtime.inboundActions] : []));
   }
 
   presenceDeliveries(): NativePresenceDelivery[] {
@@ -476,6 +617,9 @@ function validateRuntime(
   if (descriptor.capabilities.some((capability) => !driver.capabilities.includes(capability))) {
     throw new NativeChannelDriverContractError("runtime_capability_mismatch");
   }
+  if (!sameStrings(descriptor.inboundActions ?? [], driver.inboundActions ?? [])) {
+    throw new NativeChannelDriverContractError("runtime_capability_mismatch");
+  }
   if (
     typeof runtime.start !== "function" ||
     typeof runtime.stop !== "function" ||
@@ -486,12 +630,31 @@ function validateRuntime(
   validateOptionalSurface(descriptor, "text_delivery", runtime.delivery, "deliverText");
   validateOptionalSurface(descriptor, "chat_actions", runtime.actions, "executeChatAction");
   validateOptionalSurface(descriptor, "presence", runtime.presence, "sendPresence");
+  const declaresInboundActions = descriptor.capabilities.includes("inbound_actions");
+  const hasInboundActions =
+    isRecord(runtime.inboundActions) &&
+    typeof runtime.inboundActions.supports === "function" &&
+    typeof runtime.inboundActions.handle === "function";
+  if (declaresInboundActions !== hasInboundActions) {
+    throw new NativeChannelDriverContractError("runtime_surface_mismatch");
+  }
+  for (const action of descriptor.inboundActions ?? []) {
+    let supported = false;
+    try {
+      supported = runtime.inboundActions?.supports(action) === true;
+    } catch {
+      supported = false;
+    }
+    if (!supported) {
+      throw new NativeChannelDriverContractError("runtime_surface_mismatch");
+    }
+  }
   return descriptor;
 }
 
 function validateOptionalSurface(
   descriptor: NativeChannelRuntimeDescriptor,
-  capability: Exclude<NativeChannelDriverCapability, "inbound">,
+  capability: Exclude<NativeChannelDriverCapability, "inbound" | "inbound_actions">,
   surface: unknown,
   method: string,
 ): void {
@@ -526,4 +689,8 @@ function driverFailureReason(
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function sameStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
