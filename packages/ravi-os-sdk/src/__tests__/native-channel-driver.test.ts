@@ -2,10 +2,14 @@ import { describe, expect, it } from "bun:test";
 import {
   NATIVE_CHANNEL_DRIVER_PROTOCOL,
   NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+  MAX_NATIVE_INBOUND_ACTION_IDENTITY_BYTES,
+  MAX_NATIVE_INBOUND_ACTION_RESPONSE_BYTES,
   NativeChannelDriverDescriptorSchema,
   NativeChannelDriverHostCapabilitiesSchema,
   NativeChannelDriverModuleConfigSchema,
   NativeChannelDriverModuleSpecifierSchema,
+  NativeInboundChannelActionRequestSchema,
+  NativeInboundChannelActionResultSchema,
   NativeChannelRuntimeDescriptorSchema,
   NativeChannelRuntimeHealthSchema,
   type NativeChannelDriver,
@@ -23,14 +27,72 @@ describe("native channel driver SDK contract", () => {
     const driverDescriptor = await fixture("driver-descriptor.json");
     const runtimeDescriptor = await fixture("runtime-descriptor.json");
     const installationCredential = await fixture("installation-credential.json");
+    const inboundActionRequest = await fixture("inbound-action-request.json");
+    const inboundActionResult = await fixture("inbound-action-result.json");
 
     expect(NativeChannelDriverModuleConfigSchema.parse(moduleConfig)).toEqual(moduleConfig);
     expect(NativeChannelDriverDescriptorSchema.parse(driverDescriptor)).toEqual(driverDescriptor);
     expect(NativeChannelRuntimeDescriptorSchema.parse(runtimeDescriptor)).toEqual(runtimeDescriptor);
+    expect(NativeInboundChannelActionRequestSchema.parse(inboundActionRequest)).toEqual(
+      inboundActionRequest,
+    );
+    expect(NativeInboundChannelActionResultSchema.parse(inboundActionResult)).toEqual(
+      inboundActionResult,
+    );
     expect(installationCredential).toMatchObject({ provider: "example" });
     expect(NativeChannelDriverHostCapabilitiesSchema.parse(["installation_credentials"])).toEqual([
       "installation_credentials",
     ]);
+  });
+
+  it("requires an explicit action declaration and exactly one handled response", async () => {
+    const descriptor = await fixture<Record<string, unknown>>("driver-descriptor.json");
+    const request = await fixture<Record<string, unknown>>("inbound-action-request.json");
+    const handled = await fixture<Record<string, unknown>>("inbound-action-result.json");
+
+    expect(
+      NativeChannelDriverDescriptorSchema.safeParse({
+        ...descriptor,
+        inboundActions: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      NativeInboundChannelActionResultSchema.safeParse({
+        ...handled,
+        text: undefined,
+      }).success,
+    ).toBe(false);
+    expect(
+      NativeInboundChannelActionResultSchema.safeParse({
+        ...handled,
+        error: {
+          code: "UNAVAILABLE",
+          category: "availability",
+          retryable: true,
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      NativeChannelDriverDescriptorSchema.safeParse({
+        ...descriptor,
+        capabilities: ["inbound", "inbound"],
+      }).success,
+    ).toBe(false);
+    expect(
+      NativeInboundChannelActionRequestSchema.safeParse({
+        ...request,
+        identity: {
+          ...(request.identity as Record<string, unknown>),
+          senderId: "é".repeat(MAX_NATIVE_INBOUND_ACTION_IDENTITY_BYTES / 2 + 1),
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      NativeInboundChannelActionResultSchema.safeParse({
+        ...handled,
+        text: "é".repeat(MAX_NATIVE_INBOUND_ACTION_RESPONSE_BYTES / 2 + 1),
+      }).success,
+    ).toBe(false);
   });
 
   it("accepts only installed package names and absolute local file URLs", () => {

@@ -5,8 +5,18 @@
  * of slash commands intercepted at the gateway layer.
  */
 
+import { randomUUID } from "node:crypto";
 import type { RouterConfig } from "../router/types.js";
 import { getContact } from "../contacts.js";
+import {
+  NATIVE_CHANNEL_DRIVER_PROTOCOL,
+  NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+  NativeInboundChannelActionRequestSchema,
+  type NativeInboundChannelActionRequest,
+  type NativeInboundChannelActionResult,
+} from "../channels/native/driver.js";
+import { configuredNativeInboundActionNames, requestNativeInboundChannelAction } from "../channels/inbound-actions.js";
+import { getNats } from "../nats.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("slash");
@@ -41,6 +51,7 @@ export interface SlashContext {
 
 interface HandleInput {
   text: string;
+  messageId: string;
   senderId: string;
   senderName?: string;
   chatId: string;
@@ -52,11 +63,20 @@ interface HandleInput {
   send: (accountId: string, chatId: string, text: string) => Promise<void>;
 }
 
+export interface HandleSlashCommandOptions {
+  nativeInboundActions?: ReadonlySet<string>;
+  requestNativeInboundAction?: (
+    request: NativeInboundChannelActionRequest,
+  ) => Promise<NativeInboundChannelActionResult | null>;
+}
+
 // ============================================================================
 // Registry
 // ============================================================================
 
 const commands = new Map<string, SlashCommand>();
+let configuredActionSource: string | undefined;
+let configuredActions = new Set<string>();
 
 export function registerCommand(cmd: SlashCommand): void {
   commands.set(cmd.name.toLowerCase(), cmd);
@@ -97,12 +117,48 @@ export function parseSlashCommand(text: string): { name: string; args: string[] 
  * Returns true if the command was handled (intercepted), false if it should
  * fall through to normal message processing.
  */
-export async function handleSlashCommand(input: HandleInput): Promise<boolean> {
+export async function handleSlashCommand(
+  input: HandleInput,
+  options: HandleSlashCommandOptions = {},
+): Promise<boolean> {
   const parsed = parseSlashCommand(input.text);
   if (!parsed) return false;
 
   const cmd = getCommand(parsed.name);
-  if (!cmd) return false; // Unknown command → fall through
+  if (!cmd) {
+    if (!(options.nativeInboundActions ?? nativeInboundActions()).has(parsed.name)) return false;
+    const request = NativeInboundChannelActionRequestSchema.parse({
+      protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+      schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+      requestId: `channel-action-${randomUUID()}`,
+      action: parsed.name,
+      hasArguments: parsed.args.length > 0,
+      identity: {
+        channelKind: input.channelType,
+        accountId: input.accountId,
+        conversationId: input.chatId,
+        senderId: input.senderId,
+        messageId: input.messageId,
+      },
+      requestedAt: new Date().toISOString(),
+    });
+    let result;
+    try {
+      result = options.requestNativeInboundAction
+        ? await options.requestNativeInboundAction(request)
+        : await requestNativeInboundChannelAction(request, {
+            connection: getNats(),
+          });
+    } catch {
+      result = null;
+    }
+    if (result?.disposition === "handled" && result.text !== undefined) {
+      await input.send(input.accountId, input.chatId, result.text);
+      return true;
+    }
+    await input.send(input.accountId, input.chatId, `⚠️ /${parsed.name} is temporarily unavailable.`);
+    return true;
+  }
 
   // Permission check
   if (cmd.permission === "admin") {
@@ -111,7 +167,6 @@ export async function handleSlashCommand(input: HandleInput): Promise<boolean> {
     if (!isAdmin) {
       log.info("Slash command denied (no admin tag)", {
         command: parsed.name,
-        senderId: input.senderId,
       });
       return false; // No permission → fall through as normal message
     }
@@ -119,8 +174,7 @@ export async function handleSlashCommand(input: HandleInput): Promise<boolean> {
 
   log.info("Executing slash command", {
     command: parsed.name,
-    senderId: input.senderId,
-    args: parsed.args,
+    hasArguments: parsed.args.length > 0,
   });
 
   try {
@@ -141,10 +195,22 @@ export async function handleSlashCommand(input: HandleInput): Promise<boolean> {
     if (response) {
       await input.send(input.accountId, input.chatId, response);
     }
-  } catch (err) {
-    log.error("Slash command error", { command: parsed.name, error: err });
+  } catch {
+    log.error("Slash command error", { command: parsed.name, code: "handler_failed" });
     await input.send(input.accountId, input.chatId, `⚠️ Error executing /${parsed.name}`);
   }
 
   return true;
+}
+
+function nativeInboundActions(): ReadonlySet<string> {
+  const source = process.env.RAVI_NATIVE_CHANNEL_DRIVERS;
+  if (source === configuredActionSource) return configuredActions;
+  configuredActionSource = source;
+  try {
+    configuredActions = new Set(configuredNativeInboundActionNames(source));
+  } catch {
+    configuredActions = new Set();
+  }
+  return configuredActions;
 }

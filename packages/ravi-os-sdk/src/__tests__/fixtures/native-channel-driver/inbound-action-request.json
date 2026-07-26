@@ -1,0 +1,15 @@
+{
+  "action": "account.connect",
+  "hasArguments": false,
+  "identity": {
+    "accountId": "account-a",
+    "channelKind": "example",
+    "conversationId": "conversation-a",
+    "messageId": "message-a",
+    "senderId": "sender-a"
+  },
+  "protocol": "ravi.channel.native-driver",
+  "requestedAt": "2026-07-24T18:00:01.000Z",
+  "requestId": "channel-action-request-a",
+  "schemaVersion": 1
+}

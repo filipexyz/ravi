@@ -166,6 +166,14 @@ When the configured local post-login provider supports identity linking,
 stdin. The challenge is intentionally unavailable as an argument or option so
 it cannot enter shell history, process titles, or CLI audit input.
 
+Native channel drivers may also declare a bounded set of inbound actions in
+their module, driver, and runtime descriptors. Declared slash actions are
+intercepted before model processing and dispatched to the channel runner over
+ephemeral request/reply transport. Only the action name, whether arguments
+were present, and the authenticated channel identity cross that boundary; raw
+arguments do not. A declared action fails closed with a safe unavailable
+response when its runtime is absent or unhealthy.
+
 The proprietary server policy for hosted artifacts, billing, quotas, private asset auth, custom domains, and Console product behavior intentionally lives outside this open-source repo.
 
 ### Build Against The SDK

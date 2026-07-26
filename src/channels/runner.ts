@@ -4,6 +4,10 @@ import { configStore } from "../config-store.js";
 import { listRemoteInstallationCredentials } from "../cloud-auth/installation-storage.js";
 import { logger } from "../utils/logger.js";
 import {
+  startNativeInboundChannelActionResponder,
+  type NativeInboundChannelActionResponder,
+} from "./inbound-actions.js";
+import {
   startChannelRunnerHealthResponder,
   type ChannelAdapterHealth,
   type ChannelRunnerHealthResponder,
@@ -92,6 +96,7 @@ export class ChannelRunner {
   private actionDeliveries: NativeChatActionDelivery[] = [];
   private presenceDeliveries: NativePresenceDelivery[] = [];
   private nativeChannelManager: NativeChannelDriverManager | null = null;
+  private inboundActionResponder: NativeInboundChannelActionResponder | null = null;
   private adapterStatuses = new Map<string, AdapterStatus>();
   private stopReceiptPruner: (() => void) | null = null;
   private healthResponder: ChannelRunnerHealthResponder | null = null;
@@ -172,6 +177,8 @@ export class ChannelRunner {
     this.outboundConsumer = null;
     await this.presenceConsumer?.stop();
     this.presenceConsumer = null;
+    await this.inboundActionResponder?.stop();
+    this.inboundActionResponder = null;
     await this.nativeChannelManager?.stop();
     this.nativeChannelManager = null;
     this.deliveries = [];
@@ -240,6 +247,13 @@ export class ChannelRunner {
       registry,
     });
     await this.nativeChannelManager.start();
+    const inboundActionHandlers = this.nativeChannelManager.inboundActionHandlers();
+    if (inboundActionHandlers.length > 0) {
+      this.inboundActionResponder = startNativeInboundChannelActionResponder({
+        connection: getNats(),
+        handlers: inboundActionHandlers,
+      });
+    }
     this.deliveries.push(...this.nativeChannelManager.deliveries());
     this.actionDeliveries.push(...this.nativeChannelManager.actionDeliveries());
     this.presenceDeliveries.push(...this.nativeChannelManager.presenceDeliveries());
