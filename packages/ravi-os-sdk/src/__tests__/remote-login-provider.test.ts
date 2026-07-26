@@ -4,6 +4,8 @@ import {
   REMOTE_LOGIN_DISCOVERY_SCHEMA_VERSION,
   REMOTE_LOGIN_PROVIDER_PROTOCOL,
   REMOTE_LOGIN_PROVIDER_SCHEMA_VERSION,
+  RemoteIdentityLinkChallengeSchema,
+  RemoteIdentityLinkResultSchema,
   RemoteInstallationCredentialSchema,
   RemoteLoginAuthorizedRequestSchema,
   RemoteLoginAuthorizedResponseSchema,
@@ -28,6 +30,8 @@ describe("remote login provider SDK contract", () => {
     expect(RemoteLoginAuthorizedResponseSchema.parse(await fixture("authorized-response.json"))).toBeDefined();
     expect(RemoteLoginProviderDescriptorSchema.parse(await fixture("provider-descriptor.json"))).toBeDefined();
     expect(RemoteInstallationCredentialSchema.parse(await fixture("installation-credential.json"))).toBeDefined();
+    expect(RemoteIdentityLinkChallengeSchema.parse(await fixture("identity-link-challenge.json"))).toBeDefined();
+    expect(RemoteIdentityLinkResultSchema.parse(await fixture("identity-link-result.json"))).toBeDefined();
     expect(
       RemoteLoginProviderModuleConfigSchema.parse(await fixture("module-config.json")),
     ).toMatchObject({ provider: "example" });
@@ -72,6 +76,14 @@ describe("remote login provider SDK contract", () => {
           publicMetadata: { installationId: "installation_1" },
         });
       },
+      consumeIdentityLinkChallenge: async (_context, challenge) => {
+        expect(challenge).toHaveLength(43);
+        return RemoteIdentityLinkResultSchema.parse({
+          provider: "example",
+          disposition: "linked",
+          publicMetadata: { linkId: "link_1" },
+        });
+      },
     };
 
     expect(discovery.installationProvider).toBe("example");
@@ -95,6 +107,21 @@ describe("remote login provider SDK contract", () => {
     ).resolves.toMatchObject({
       provider: "example",
       credentialId: "credential_1",
+    });
+    await expect(
+      provider.consumeIdentityLinkChallenge?.(
+        {
+          endpointUrl: discovery.issuer,
+          discovery,
+          authorization: {
+            request: async () => ({ status: 200 }),
+          },
+        },
+        RemoteIdentityLinkChallengeSchema.parse("A".repeat(43)),
+      ),
+    ).resolves.toMatchObject({
+      provider: "example",
+      disposition: "linked",
     });
   });
 

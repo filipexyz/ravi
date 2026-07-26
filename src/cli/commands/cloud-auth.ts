@@ -24,6 +24,7 @@ import {
 } from "../../cloud-auth/installation-storage.js";
 import {
   discoverRemoteLoginEndpoint,
+  consumeRemoteIdentityLinkChallenge,
   createRemoteLoginAuthorization,
   loadRemoteLoginProvider,
   normalizeRemoteLoginEndpoint,
@@ -57,6 +58,10 @@ export interface CloudWhoamiOptions {
   json?: boolean;
 }
 
+export interface CloudLinkOptions {
+  json?: boolean;
+}
+
 export interface CloudLogoutOptions {
   console?: string;
   json?: boolean;
@@ -73,6 +78,7 @@ export interface CloudAuthCommandDeps {
   now?: () => string;
   isInteractive?: boolean;
   promptEndpoint?: (defaultEndpoint: string) => Promise<string>;
+  readIdentityLinkChallenge?: () => Promise<string>;
   discoverEndpoint?: (endpointUrl: string) => Promise<RemoteLoginDiscovery>;
   ensureClientInstallationId?: (seed?: string) => string;
   readInstallationCredential?: (endpointUrl?: string) => StoredRemoteInstallationCredential | null;
@@ -232,6 +238,68 @@ export async function runWhoami(options: CloudWhoamiOptions = {}, deps: CloudAut
       : { installationCredential: toSafeRemoteInstallationCredential(storedInstallation) }),
   };
   printPayload(payload, options.json, () => printWhoami(session));
+  return payload;
+}
+
+export async function runLink(options: CloudLinkOptions = {}, deps: CloudAuthCommandDeps = {}) {
+  const read = deps.readCredentials ?? readCloudCredentials;
+  const write = deps.writeCredentials ?? writeCloudCredentials;
+  const del = deps.deleteCredentials ?? deleteCloudCredentials;
+  const env = deps.env ?? process.env;
+  const credentials = requireStoredCredentials(read());
+  if (credentials.authMode !== "remote") {
+    throw new CloudAuthError("PAYLOAD_INVALID", "The active CLI login does not support remote identity linking.");
+  }
+  const discovery = await (deps.discoverEndpoint ?? discoverRemoteLoginEndpoint)(credentials.consoleUrl);
+  if (!discovery.installationProvider) {
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      "The active remote endpoint does not advertise a local post-login provider.",
+    );
+  }
+  const client =
+    deps.client ??
+    new ConsoleApiClient({
+      consoleUrl: credentials.consoleUrl,
+      authConfigEndpoint: discovery.authConfigEndpoint,
+      sessionEndpoints: discovery.sessionEndpoints,
+    });
+  const session = await getMeWithAutoRefresh({
+    client,
+    credentials,
+    write,
+    delete: del,
+  });
+  const provider = await (
+    deps.loadProvider ??
+    ((providerId: string) =>
+      loadRemoteLoginProvider(providerId, parseRemoteLoginProviderModuleConfigs(env.RAVI_REMOTE_LOGIN_PROVIDERS)))
+  )(discovery.installationProvider);
+  const challenge = await (deps.readIdentityLinkChallenge ?? readIdentityLinkChallenge)();
+  const link = await consumeRemoteIdentityLinkChallenge(
+    provider,
+    {
+      endpointUrl: credentials.consoleUrl,
+      discovery,
+      authorization: createRemoteLoginAuthorization({
+        endpointUrl: credentials.consoleUrl,
+        accessToken: session.credentials.accessToken,
+      }),
+    },
+    challenge,
+  );
+  const payload = {
+    success: true,
+    endpointUrl: credentials.consoleUrl,
+    link,
+  };
+  printPayload(payload, options.json, () => {
+    console.log(
+      link.disposition === "linked"
+        ? `✓ Identity linked through ${link.provider}`
+        : `✓ Identity was already linked through ${link.provider}`,
+    );
+  });
   return payload;
 }
 
@@ -427,6 +495,83 @@ async function promptForEndpoint(defaultEndpoint: string): Promise<string> {
   } finally {
     readline.close();
   }
+}
+
+async function readIdentityLinkChallenge(): Promise<string> {
+  if (process.stdin.isTTY && process.stderr.isTTY && typeof process.stdin.setRawMode === "function") {
+    return promptForIdentityLinkChallenge();
+  }
+  let value = "";
+  for await (const chunk of process.stdin) {
+    value += typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8");
+    if (Buffer.byteLength(value, "utf8") > 1_024) {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Identity link input exceeds the supported size.");
+    }
+  }
+  return value.trim();
+}
+
+async function promptForIdentityLinkChallenge(): Promise<string> {
+  const input = process.stdin;
+  const wasRaw = input.isRaw;
+  const wasPaused = input.isPaused();
+  process.stderr.write("Identity link challenge: ");
+  input.setRawMode(true);
+  input.resume();
+  return new Promise<string>((resolve, reject) => {
+    let value = "";
+    let settled = false;
+    const finish = (result: { value: string } | { error: Error }) => {
+      if (settled) return;
+      settled = true;
+      input.off("data", onData);
+      input.off("error", onError);
+      input.setRawMode(wasRaw);
+      if (wasPaused) input.pause();
+      process.stderr.write("\n");
+      if ("error" in result) {
+        reject(result.error);
+      } else {
+        resolve(result.value.trim());
+      }
+    };
+    const onError = () => {
+      finish({
+        error: new CloudAuthError("PAYLOAD_INVALID", "Identity link input could not be read."),
+      });
+    };
+    const onData = (chunk: Buffer | string) => {
+      const text = typeof chunk === "string" ? chunk : chunk.toString("utf8");
+      for (const character of text) {
+        if (character === "\r" || character === "\n") {
+          finish({ value });
+          return;
+        }
+        if (character === "\u0003" || character === "\u0004") {
+          finish({
+            error: new CloudAuthError("PAYLOAD_INVALID", "Identity linking was cancelled."),
+          });
+          return;
+        }
+        if (character === "\u007f" || character === "\b") {
+          value = value.slice(0, -1);
+          continue;
+        }
+        if (character < " " || character === "\u007f") {
+          continue;
+        }
+        value += character;
+        if (Buffer.byteLength(value, "utf8") > 1_024) {
+          finish({
+            error: new CloudAuthError("PAYLOAD_INVALID", "Identity link input exceeds the supported size."),
+          });
+          return;
+        }
+      }
+    };
+    input.on("error", onError);
+    input.on("data", onData);
+  });
 }
 
 async function exchangeUntilComplete(input: {

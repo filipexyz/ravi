@@ -4,7 +4,9 @@ import {
   REMOTE_LOGIN_DISCOVERY_SCHEMA_VERSION,
   REMOTE_LOGIN_PROVIDER_PROTOCOL,
   REMOTE_LOGIN_PROVIDER_SCHEMA_VERSION,
+  RemoteIdentityLinkResultSchema,
   RemoteLoginContractError,
+  consumeRemoteIdentityLinkChallenge,
   createRemoteLoginAuthorization,
   discoverRemoteLoginEndpoint,
   loadRemoteLoginProvider,
@@ -89,6 +91,13 @@ describe("remote post-login provider contract", () => {
         material: { privateKeyPem: "secret-key-material" },
         publicMetadata: { installationId: "installation_1" },
       })),
+      consumeIdentityLinkChallenge: mock(async () =>
+        RemoteIdentityLinkResultSchema.parse({
+          provider: "example",
+          disposition: "linked",
+          publicMetadata: { linkId: "link_1" },
+        }),
+      ),
     };
     const loaded = await loadRemoteLoginProvider("example", configs, async () => ({
       remoteLoginProvider: provider,
@@ -114,6 +123,62 @@ describe("remote post-login provider contract", () => {
       publicMetadata: { installationId: "installation_1" },
     });
     expect(provider.reconcileInstallation).toHaveBeenCalledTimes(1);
+    await expect(
+      consumeRemoteIdentityLinkChallenge(
+        loaded,
+        {
+          endpointUrl: "https://auth.example",
+          discovery,
+          authorization: {
+            request: async () => ({ status: 200 }),
+          },
+        },
+        "A".repeat(43),
+      ),
+    ).resolves.toEqual({
+      provider: "example",
+      disposition: "linked",
+      publicMetadata: { linkId: "link_1" },
+    });
+    expect(provider.consumeIdentityLinkChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endpointUrl: "https://auth.example",
+      }),
+      "A".repeat(43),
+    );
+  });
+
+  it("fails closed when identity linking is unsupported or the challenge is not high entropy", async () => {
+    const provider = {
+      descriptor: {
+        protocol: REMOTE_LOGIN_PROVIDER_PROTOCOL,
+        schemaVersion: REMOTE_LOGIN_PROVIDER_SCHEMA_VERSION,
+        provider: "example",
+      },
+      reconcileInstallation: async () => ({
+        provider: "example",
+        credentialId: "credential_1",
+        material: {},
+      }),
+    };
+    const context = {
+      endpointUrl: discovery.issuer,
+      discovery,
+      authorization: {
+        request: async () => ({ status: 200 }),
+      },
+    };
+
+    await expect(consumeRemoteIdentityLinkChallenge(provider, context, "short")).rejects.toEqual(
+      expect.objectContaining({
+        reason: "invalid_identity_link_challenge",
+      }),
+    );
+    await expect(consumeRemoteIdentityLinkChallenge(provider, context, "A".repeat(43))).rejects.toEqual(
+      expect.objectContaining({
+        reason: "identity_link_not_supported",
+      }),
+    );
   });
 
   it("keeps the human credential inside a same-origin request capability", async () => {
