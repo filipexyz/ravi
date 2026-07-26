@@ -42,6 +42,7 @@ const fetchCachedOmniMediaMock = mock(async () => null as Buffer | null);
 const fetchOmniMediaMock = mock(async () => null as Buffer | null);
 const saveToAgentAttachmentsMock = mock(async () => null as string | null);
 const transcribeAudioMock = mock(async () => ({ text: "" }));
+const handleSlashCommandMock = mock(async (_input: Record<string, unknown>) => false);
 let stateDir: string | null = null;
 let agentCwd = "/tmp/ravi-agent";
 let contactIntakeMode: "off" | "discovered" | "pending" = "off";
@@ -88,7 +89,7 @@ mock.module("./session-stream.js", () => ({
 }));
 
 mock.module("../slash/index.js", () => ({
-  handleSlashCommand: mock(async () => false),
+  handleSlashCommand: handleSlashCommandMock,
 }));
 
 // Note: we intentionally do NOT override `matchRoute` here. Overriding a
@@ -315,10 +316,12 @@ describe("OmniConsumer channel context", () => {
     fetchOmniMediaMock.mockClear();
     saveToAgentAttachmentsMock.mockClear();
     transcribeAudioMock.mockClear();
+    handleSlashCommandMock.mockClear();
     fetchCachedOmniMediaMock.mockImplementation(async () => null);
     fetchOmniMediaMock.mockImplementation(async () => null);
     saveToAgentAttachmentsMock.mockImplementation(async () => null);
     transcribeAudioMock.mockImplementation(async () => ({ text: "" }));
+    handleSlashCommandMock.mockImplementation(async () => false);
   });
 
   afterEach(async () => {
@@ -391,6 +394,55 @@ describe("OmniConsumer channel context", () => {
       groupId: "120363424772797713",
       groupMembers: ["Luis Filipe", "R M"],
     });
+  });
+
+  it("passes the provider message identifier to intercepted slash commands", async () => {
+    handleSlashCommandMock.mockImplementation(async () => true);
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-native-action",
+      type: "message.received",
+      payload: {
+        externalId: "msg-native-action",
+        chatId: "120363424772797713@g.us",
+        from: "178035101794451",
+        content: {
+          type: "text",
+          text: "/connect",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          chatName: "ravi - dev",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(handleSlashCommandMock).toHaveBeenCalledTimes(1);
+    expect(handleSlashCommandMock.mock.calls[0]?.[0]).toMatchObject({
+      text: "/connect",
+      messageId: "msg-native-action",
+      senderId: "178035101794451",
+      chatId: "120363424772797713@g.us",
+      channelType: "whatsapp-baileys",
+      accountId: "main",
+    });
+    expect(promptCalls).toHaveLength(0);
   });
 
   it("resolves new WhatsApp LID group senders through contact intake without canonicalizing the group as a DM", async () => {
