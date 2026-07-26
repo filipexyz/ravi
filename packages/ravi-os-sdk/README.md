@@ -140,6 +140,14 @@ returns a bounded opaque renewable credential. Ravi stores that credential
 separately from the human CLI session, redacts its material from command
 output, and preserves it when `ravi logout` removes the human session.
 
+When an explicitly installed native channel driver uses the same provider,
+the channel runner starts one hidden runtime for each non-expired installation
+credential. The driver declares
+`requiredHostCapabilities: ["installation_credentials"]` and reads only its
+provider- and connection-bound credential through
+`context.host.readInstallationCredential()`. It cannot enumerate credentials
+or receive the human login session.
+
 ### Reconcile Locally Managed Agents
 
 Node-side integrations can reconcile an external desired identity into a

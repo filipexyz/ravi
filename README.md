@@ -155,6 +155,11 @@ An explicit endpoint publishes a versioned login contract at
 Endpoint-specific post-login integration is opt-in and loads only a local
 provider module explicitly configured by the operator.
 
+An explicitly installed native channel driver whose provider matches the
+stored installation credential may reconnect without a human session. Ravi
+passes that credential through a provider- and connection-scoped host
+capability; drivers do not read credential files directly.
+
 The proprietary server policy for hosted artifacts, billing, quotas, private asset auth, custom domains, and Console product behavior intentionally lives outside this open-source repo.
 
 ### Build Against The SDK

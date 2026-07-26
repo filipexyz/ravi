@@ -54,6 +54,17 @@
           "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
           "type": "string"
         },
+        "requiredHostCapabilities": {
+          "items": {
+            "enum": [
+              "installation_credentials"
+            ],
+            "type": "string"
+          },
+          "maxItems": 1,
+          "minItems": 1,
+          "type": "array"
+        },
         "schemaVersion": {
           "const": 1,
           "type": "number"
@@ -67,6 +78,25 @@
         "capabilities"
       ],
       "type": "object"
+    },
+    "NativeChannelDriverHostCapabilities": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "enum": [
+          "installation_credentials"
+        ],
+        "type": "string"
+      },
+      "maxItems": 1,
+      "minItems": 1,
+      "type": "array"
+    },
+    "NativeChannelDriverHostCapability": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        "installation_credentials"
+      ],
+      "type": "string"
     },
     "NativeChannelDriverModuleConfig": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -148,12 +178,51 @@
         "capabilities"
       ],
       "type": "object"
+    },
+    "RemoteInstallationCredential": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "credentialId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "material": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "provider": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "publicMetadata": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "provider",
+        "credentialId",
+        "material"
+      ],
+      "type": "object"
     }
   },
   "$id": "urn:ravi:channel-capsule:native-channel-driver:v1",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "capsuleVersion": 1,
   "compatibilityProfile": "additive-v1",
-  "sourceDigest": "816c67787b76c5b98f6ab356b0f178fdeda35cf0d81f92aa9b2a75655b370464",
+  "sourceDigest": "4d43634a31d850c846d4add5964262f39781103f710099d38748f59778937fce",
   "title": "native-channel-driver channel capability"
 }
