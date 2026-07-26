@@ -1,0 +1,30 @@
+{
+  "protocol": "ravi.execution.authority",
+  "schemaVersion": 1,
+  "kind": "binding_authority_envelope",
+  "envelopeId": "envelope-a",
+  "bindingId": "binding-a",
+  "bindingRevision": 3,
+  "runtimeKeyId": "runtime-key-a",
+  "issuer": "https://hub.example.test",
+  "audience": "runtime-a",
+  "authorityDomain": "authority-a",
+  "policyRevision": 11,
+  "keySetRevision": 4,
+  "capabilities": [
+    "external.issue.create",
+    "data.read"
+  ],
+  "resourceScopes": [
+    {
+      "kind": "resource",
+      "resourceId": "resource-a"
+    }
+  ],
+  "resourceMappingId": "mapping-a",
+  "channelMode": "bidirectional",
+  "recoveryMode": "replay",
+  "issuedAt": "2026-07-26T17:00:00.000Z",
+  "notBefore": "2026-07-26T17:00:00.000Z",
+  "expiresAt": "2026-07-26T20:00:00.000Z"
+}

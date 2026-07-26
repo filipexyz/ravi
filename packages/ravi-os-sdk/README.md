@@ -121,6 +121,7 @@ import { RaviClient } from "@ravi-os/sdk/client";
 import type { NativeChannelDriver } from "@ravi-os/sdk/native-channel-driver";
 import { LocalAgentReconciler } from "@ravi-os/sdk/local-agent-reconciliation";
 import type { RemoteLoginProvider } from "@ravi-os/sdk/remote-login-provider";
+import { authorizeExecutionEffect } from "@ravi-os/sdk/execution-authority";
 import { createHttpTransport } from "@ravi-os/sdk/transport/http";
 ```
 
@@ -165,6 +166,26 @@ host sends only a bounded authenticated channel identity, the declared action
 name, and a `hasArguments` boolean; command arguments are never exposed to the
 driver. Declared actions are fail-closed and never fall through to model
 processing when the runtime cannot answer.
+
+### Enforce Remote Execution Authority Locally
+
+Remote coordinators can request local effects without becoming the local
+authorization authority. The neutral execution-authority contract separates:
+
+- a locally accepted, signed binding envelope that sets a maximum;
+- a short-lived signed route lease and monotonically fenced epoch;
+- an exact signed capability grant for one execution or operation;
+- an optional signed, single-use approval for the exact request digest; and
+- local attenuation, local policy, and runtime constraints.
+
+Call `authorizeExecutionEffect()` immediately before every observable effect,
+not only when accepting a command. Any mismatch or local denial fails closed.
+If an approved effect is allowed, persist the returned approval-consumption
+identity atomically with the operation journal before executing it.
+
+The same module exports key-rotation validation and replay recovery decisions.
+An ambiguous `non_repeatable` outcome always resolves to manual intervention;
+it is never retried or failed over automatically.
 
 ### Reconcile Locally Managed Agents
 
