@@ -9,8 +9,14 @@ import {
   pruneChannelOutboundReceiptLedger,
   runChannelOutboundLedgerMaintenance,
   slackAdapterHealth,
+  startChannelRunnerInboundActionResponder,
   startChannelOutboundReceiptPruner,
 } from "./runner.js";
+import type {
+  NativeInboundChannelActionResponder,
+  NativeInboundChannelActionResponderConnection,
+} from "./inbound-actions.js";
+import type { NativeInboundChannelActionHandler } from "./native/driver.js";
 import { installationChannelName, mergeInstallationCredentialChannels } from "./native/installation-channels.js";
 import { createSlackNativeChannelDriver } from "./slack/driver.js";
 
@@ -159,6 +165,42 @@ describe("channel runner native delivery registry", () => {
       },
     });
     expect(JSON.stringify(channels)).not.toContain("must-not-enter-channel-config");
+  });
+
+  it("starts one inbound action responder only when a native runtime exposes handlers", () => {
+    const connection = {} as NativeInboundChannelActionResponderConnection;
+    const handler = {
+      supports: (action: string) => action === "connect",
+      handle: mock(async () => {
+        throw new Error("not invoked by runner registration");
+      }),
+    } satisfies NativeInboundChannelActionHandler;
+    const responder = {
+      stop: mock(async () => {}),
+    } satisfies NativeInboundChannelActionResponder;
+    const startResponder = mock(() => responder);
+
+    expect(
+      startChannelRunnerInboundActionResponder({
+        connection,
+        handlers: [],
+        startResponder,
+      }),
+    ).toBeNull();
+    expect(startResponder).not.toHaveBeenCalled();
+
+    expect(
+      startChannelRunnerInboundActionResponder({
+        connection,
+        handlers: [handler],
+        startResponder,
+      }),
+    ).toBe(responder);
+    expect(startResponder).toHaveBeenCalledTimes(1);
+    expect(startResponder).toHaveBeenCalledWith({
+      connection,
+      handlers: [handler],
+    });
   });
 });
 

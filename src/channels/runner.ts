@@ -6,6 +6,7 @@ import { logger } from "../utils/logger.js";
 import {
   startNativeInboundChannelActionResponder,
   type NativeInboundChannelActionResponder,
+  type NativeInboundChannelActionResponderConnection,
 } from "./inbound-actions.js";
 import {
   startChannelRunnerHealthResponder,
@@ -19,6 +20,7 @@ import {
   NativeChannelDriverRegistry,
   loadNativeChannelDriverModules,
   parseNativeChannelDriverModuleConfigs,
+  type NativeInboundChannelActionHandler,
   type NativeChannelDriverRuntime,
 } from "./native/driver.js";
 import { mergeInstallationCredentialChannels } from "./native/installation-channels.js";
@@ -62,6 +64,18 @@ export function collectNativeRuntimeDeliveries(
     actionDeliveries: runtimes.flatMap((runtime) => (runtime.actions ? [runtime.actions] : [])),
     presenceDeliveries: runtimes.flatMap((runtime) => (runtime.presence ? [runtime.presence] : [])),
   };
+}
+
+export function startChannelRunnerInboundActionResponder(options: {
+  connection: NativeInboundChannelActionResponderConnection;
+  handlers: readonly NativeInboundChannelActionHandler[];
+  startResponder?: typeof startNativeInboundChannelActionResponder;
+}): NativeInboundChannelActionResponder | null {
+  if (options.handlers.length === 0) return null;
+  return (options.startResponder ?? startNativeInboundChannelActionResponder)({
+    connection: options.connection,
+    handlers: options.handlers,
+  });
 }
 
 type ReceiptPruneTimer = ReturnType<typeof setInterval>;
@@ -247,13 +261,10 @@ export class ChannelRunner {
       registry,
     });
     await this.nativeChannelManager.start();
-    const inboundActionHandlers = this.nativeChannelManager.inboundActionHandlers();
-    if (inboundActionHandlers.length > 0) {
-      this.inboundActionResponder = startNativeInboundChannelActionResponder({
-        connection: getNats(),
-        handlers: inboundActionHandlers,
-      });
-    }
+    this.inboundActionResponder = startChannelRunnerInboundActionResponder({
+      connection: getNats(),
+      handlers: this.nativeChannelManager.inboundActionHandlers(),
+    });
     this.deliveries.push(...this.nativeChannelManager.deliveries());
     this.actionDeliveries.push(...this.nativeChannelManager.actionDeliveries());
     this.presenceDeliveries.push(...this.nativeChannelManager.presenceDeliveries());
