@@ -1,0 +1,244 @@
+{
+  "$defs": {
+    "RemoteInstallationCredential": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "credentialId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "expiresAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "material": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "provider": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "publicMetadata": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "provider",
+        "credentialId",
+        "material"
+      ],
+      "type": "object"
+    },
+    "RemoteLoginAuthorizedRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST"
+          ],
+          "type": "string"
+        },
+        "path": {
+          "pattern": "^\\/(?!\\/)(?!.*\\\\)[^\\u0000-\\u001f\\u007f#]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "path"
+      ],
+      "type": "object"
+    },
+    "RemoteLoginAuthorizedResponse": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "body": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "status": {
+          "maximum": 599,
+          "minimum": 100,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "type": "object"
+    },
+    "RemoteLoginDiscovery": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "authConfigEndpoint": {
+          "format": "uri",
+          "type": "string"
+        },
+        "installationProvider": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "issuer": {
+          "format": "uri",
+          "type": "string"
+        },
+        "protocol": {
+          "const": "ravi.auth.discovery",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "sessionEndpoints": {
+          "additionalProperties": false,
+          "properties": {
+            "exchange": {
+              "format": "uri",
+              "type": "string"
+            },
+            "logout": {
+              "format": "uri",
+              "type": "string"
+            },
+            "me": {
+              "format": "uri",
+              "type": "string"
+            },
+            "refresh": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          "required": [
+            "exchange",
+            "refresh",
+            "logout",
+            "me"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "issuer",
+        "authConfigEndpoint",
+        "sessionEndpoints"
+      ],
+      "type": "object"
+    },
+    "RemoteLoginInstallationMetadata": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "clientInstallationId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "hostname": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "raviVersion": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "clientInstallationId",
+        "name",
+        "hostname",
+        "platform"
+      ],
+      "type": "object"
+    },
+    "RemoteLoginProviderDescriptor": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "protocol": {
+          "const": "ravi.auth.post-login",
+          "type": "string"
+        },
+        "provider": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "provider"
+      ],
+      "type": "object"
+    },
+    "RemoteLoginProviderModuleConfig": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "moduleSpecifier": {
+          "pattern": "^(?:@[a-z0-9][a-z0-9._-]*\\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*|file:\\/\\/\\/[^\\u0000-\\u001f\\u007f]+)$",
+          "type": "string"
+        },
+        "protocol": {
+          "const": "ravi.auth.post-login",
+          "type": "string"
+        },
+        "provider": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "provider",
+        "moduleSpecifier"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "urn:ravi:channel-capsule:remote-login-provider:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "capsuleVersion": 1,
+  "compatibilityProfile": "additive-v1",
+  "sourceDigest": "ffa2384caf33507d6b65e49ed43e087d522ea81cf062082c834d82748649b6bd",
+  "title": "remote-login-provider channel capability"
+}

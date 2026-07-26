@@ -59,6 +59,40 @@ describe("CLI root version", () => {
     expect(result.stdout).toContain("ravi --help");
   });
 
+  it("documents explicit remote and legacy endpoint selection for login", () => {
+    const stateDir = join(tmpdir(), `ravi-login-help-${process.pid}`);
+    const result = spawnSync("bun", ["src/cli/index.ts", "login", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: testEnv(stateDir),
+    });
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("--endpoint <url>");
+    expect(result.stdout).toContain("--console <url>");
+    expect(result.stdout).toContain("--json");
+    expect(result.stdout).toContain("--no-open");
+
+    const whoami = spawnSync("bun", ["src/cli/index.ts", "whoami", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: testEnv(stateDir),
+    });
+    const logout = spawnSync("bun", ["src/cli/index.ts", "logout", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: testEnv(stateDir),
+    });
+    rmSync(stateDir, { recursive: true, force: true });
+
+    expect(whoami.status).toBe(0);
+    expect(logout.status).toBe(0);
+    expect(whoami.stdout).not.toContain("--endpoint");
+    expect(whoami.stdout).not.toContain("--console");
+    expect(logout.stdout).not.toContain("--endpoint");
+    expect(logout.stdout).not.toContain("--console");
+  });
+
   it("suggests the plural tasks command for singular task help", () => {
     const stateDir = join(tmpdir(), `ravi-root-task-suggestion-${process.pid}`);
     const result = spawnSync("bun", ["src/cli/index.ts", "task", "--help"], {

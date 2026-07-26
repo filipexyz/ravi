@@ -12,7 +12,7 @@
 import "./env.js";
 
 import "reflect-metadata";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -119,8 +119,9 @@ program
 
 program
   .command("login")
-  .description("Link this local Ravi CLI to a Console-compatible endpoint")
-  .option("--console <url>", "Console base URL", "https://console.ravi.bot")
+  .description("Link this local Ravi CLI to a remote authentication endpoint")
+  .option("--endpoint <url>", "Remote authentication endpoint")
+  .option("--console <url>", "Legacy Console base URL")
   .option("--json", "Print raw JSON result")
   .option("--no-open", "Do not open a browser")
   .option("--no-poll", "Do not poll the exchange endpoint when auth is pending")
@@ -129,6 +130,7 @@ program
   .action(
     async (options: {
       console?: string;
+      endpoint?: string;
       json?: boolean;
       open?: boolean;
       poll?: boolean;
@@ -150,8 +152,8 @@ program
 
 program
   .command("whoami")
-  .description("Show the linked Ravi Cloud CLI identity")
-  .option("--console <url>", "Console base URL")
+  .description("Show the linked Ravi CLI identity")
+  .addOption(new Option("--console <url>", "Legacy Console base URL").hideHelp())
   .option("--json", "Print raw JSON result")
   .action(async (options: { console?: string; json?: boolean }) => {
     await runWithCliAudit(
@@ -168,8 +170,8 @@ program
 
 program
   .command("logout")
-  .description("Remove local Ravi Cloud CLI credentials and revoke them in Console when possible")
-  .option("--console <url>", "Console base URL")
+  .description("Remove the local human CLI session and revoke it remotely when possible")
+  .addOption(new Option("--console <url>", "Legacy Console base URL").hideHelp())
   .option("--json", "Print raw JSON result")
   .action(async (options: { console?: string; json?: boolean }) => {
     await runWithCliAudit(

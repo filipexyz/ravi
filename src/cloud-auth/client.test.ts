@@ -134,6 +134,74 @@ describe("ConsoleApiClient", () => {
     ]);
   });
 
+  it("uses every endpoint supplied by a discovered remote contract", async () => {
+    const calls: FetchCall[] = [];
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://auth.example",
+      authConfigEndpoint: "https://auth.example/v1/auth/config",
+      sessionEndpoints: {
+        exchange: "https://auth.example/v1/auth/exchange",
+        refresh: "https://auth.example/v1/auth/refresh",
+        logout: "https://auth.example/v1/auth/logout",
+        me: "https://auth.example/v1/me",
+      },
+      fetch: async (url, init) => {
+        calls.push(recordFetchCall(url, init));
+        const path = new URL(url).pathname;
+        if (path === "/v1/auth/config") {
+          return jsonResponse({
+            configured: true,
+            clientId: "ravi-cli",
+            mode: "console_device",
+            endpoints: {
+              deviceAuthorization: "https://auth.example/v1/auth/device",
+              token: null,
+            },
+          });
+        }
+        if (path === "/v1/me") {
+          return jsonResponse({ user: { email: "alice@example.com" } });
+        }
+        if (path === "/v1/auth/logout") {
+          return jsonResponse({ success: true });
+        }
+        return jsonResponse({
+          accessToken: "access-secret",
+          refreshToken: "refresh-secret",
+        });
+      },
+    });
+
+    await client.getAuthConfig();
+    const credentials = await client.exchange({
+      installationId: "client_installation_1",
+      deviceCode: "device-secret",
+    });
+    await client.refresh(
+      {
+        installationId: "client_installation_1",
+        refreshToken: credentials.refreshToken,
+      },
+      credentials,
+    );
+    await client.me(credentials.accessToken);
+    await client.logout(
+      {
+        installationId: "client_installation_1",
+        refreshToken: credentials.refreshToken,
+      },
+      credentials.accessToken,
+    );
+
+    expect(calls.map((call) => call.url)).toEqual([
+      "https://auth.example/v1/auth/config",
+      "https://auth.example/v1/auth/exchange",
+      "https://auth.example/v1/auth/refresh",
+      "https://auth.example/v1/me",
+      "https://auth.example/v1/auth/logout",
+    ]);
+  });
+
   it("creates artifact upload sessions through the CLI bearer endpoint", async () => {
     const calls: FetchCall[] = [];
     const client = new ConsoleApiClient({

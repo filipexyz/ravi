@@ -1,0 +1,7 @@
+{
+  "clientInstallationId": "client-installation-a",
+  "hostname": "example-host",
+  "name": "Example runtime",
+  "platform": "example-platform",
+  "raviVersion": "1.0.0"
+}

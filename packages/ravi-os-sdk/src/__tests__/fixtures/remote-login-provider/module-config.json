@@ -1,0 +1,6 @@
+{
+  "moduleSpecifier": "@example/remote-login-provider",
+  "protocol": "ravi.auth.post-login",
+  "provider": "example",
+  "schemaVersion": 1
+}
