@@ -2185,8 +2185,11 @@ const finishIfReady = () => {
       item: {
         id: "dyn_tool_1",
         type: "dynamicToolCall",
-        tool: "tools_list",
-        arguments: { verbose: true },
+        tool: "tools_invoke",
+        arguments: {
+          name: "contacts_list",
+          args: { verbose: true },
+        },
         success: toolResponse.success,
         contentItems: toolResponse.contentItems,
         status: "completed",
@@ -2256,8 +2259,11 @@ rl.on("line", (line) => {
         callId: "dyn_tool_1",
         threadId: "thread_tool",
         turnId: "turn_tool",
-        tool: "tools_list",
-        arguments: { verbose: true },
+        tool: "tools_invoke",
+        arguments: {
+          name: "contacts_list",
+          args: { verbose: true },
+        },
       },
     });
   }
@@ -2283,12 +2289,15 @@ rl.on("line", (line) => {
 
     expect(toolStarted[0]?.toolUse).toEqual({
       id: "dyn_tool_1",
-      name: "tools_list",
-      input: { verbose: true },
+      name: "contacts_list",
+      input: {
+        name: "contacts_list",
+        args: { verbose: true },
+      },
     });
     expect(toolStarted[0]?.metadata?.item?.type).toBe("dynamic_tool_call");
     expect(toolCompleted[0]?.toolUseId).toBe("dyn_tool_1");
-    expect(toolCompleted[0]?.toolName).toBe("tools_list");
+    expect(toolCompleted[0]?.toolName).toBe("contacts_list");
     expect(toolCompleted[0]?.content).toEqual([{ type: "inputText", text: CODEX_DYNAMIC_TOOL_DISABLED_TEXT }]);
     expect(toolCompleted[0]?.isError).toBe(true);
     expect(response).toEqual({

@@ -2434,7 +2434,7 @@ function extractCliToolStarted(item: unknown): RuntimeToolUse | null {
   }
 
   const toolName =
-    record.type === "dynamic_tool_call" ? (firstString(record.tool) ?? record.type) : normalizeCliToolName(record.type);
+    record.type === "dynamic_tool_call" ? dynamicToolDisplayName(record) : normalizeCliToolName(record.type);
   const toolUseId = firstString(record.id);
   if (!toolUseId) {
     return null;
@@ -2455,7 +2455,7 @@ function extractCliToolCompleted(item: unknown): ToolCompletedEvent | null {
 
   const toolUseId = firstString(record.id);
   const toolName =
-    record.type === "dynamic_tool_call" ? (firstString(record.tool) ?? record.type) : normalizeCliToolName(record.type);
+    record.type === "dynamic_tool_call" ? dynamicToolDisplayName(record) : normalizeCliToolName(record.type);
   const status = typeof record.status === "string" ? record.status : "completed";
 
   const result: ToolCompletedEvent = {
@@ -2490,6 +2490,15 @@ function normalizeCliToolName(type: string): string {
     return "shell";
   }
   return type;
+}
+
+function dynamicToolDisplayName(item: Record<string, unknown>): string {
+  const wrapperName = firstString(item.tool) ?? "dynamic_tool_call";
+  if (wrapperName !== "tools_invoke") {
+    return wrapperName;
+  }
+  const input = asRecord(item.arguments);
+  return firstString(input?.name) ?? wrapperName;
 }
 
 function extractCliToolInput(item: Record<string, unknown>): unknown {
