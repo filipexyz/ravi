@@ -209,16 +209,34 @@ export const ChannelRuntimeReadbackRequestSchema = z.object({
   binding: LocalChannelMessageBindingSchema,
 });
 
-export const ChannelRuntimeReadbackResultSchema = z.object({
-  protocol: z.literal(CHANNEL_RUNTIME_EVENTS_PROTOCOL),
-  schemaVersion: z.literal(CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION),
-  requestId: ChannelBackendOpaqueIdSchema,
-  binding: LocalChannelMessageBindingSchema,
-  state: ChannelTurnStateSchema,
-  lastSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  assistantMessageId: ChannelBackendOpaqueIdSchema.optional(),
-  observedAt: z.string().datetime({ offset: true }),
-});
+export const ChannelRuntimeReadbackResultSchema = z
+  .object({
+    protocol: z.literal(CHANNEL_RUNTIME_EVENTS_PROTOCOL),
+    schemaVersion: z.literal(CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION),
+    requestId: ChannelBackendOpaqueIdSchema,
+    binding: LocalChannelMessageBindingSchema,
+    state: ChannelTurnStateSchema,
+    lastSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    assistantMessageId: ChannelBackendOpaqueIdSchema.optional(),
+    runtimeGenerationId: ChannelBackendOpaqueIdSchema.optional(),
+    lastEventRuntimeGenerationId: ChannelBackendOpaqueIdSchema.optional(),
+    terminalEvent: ChannelTerminalOutputEventSchema.optional(),
+    observedAt: z.string().datetime({ offset: true }),
+  })
+  .superRefine((value, context) => {
+    if (!value.terminalEvent) return;
+    if (
+      value.terminalEvent.payload.state !== value.state ||
+      value.terminalEvent.sequence !== value.lastSequence ||
+      value.terminalEvent.correlation.binding.turnId !== value.binding.turnId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["terminalEvent"],
+        message: "terminal readback event must match the readback state, sequence, and binding",
+      });
+    }
+  });
 
 export type ChannelRuntimeCorrelation = z.infer<typeof ChannelRuntimeCorrelationSchema>;
 export type ChannelTurnState = z.infer<typeof ChannelTurnStateSchema>;

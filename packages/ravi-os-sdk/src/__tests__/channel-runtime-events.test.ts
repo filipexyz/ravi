@@ -53,6 +53,7 @@ describe("channel runtime events contract", () => {
     const interruptRequest = await fixture<ChannelInterruptRequest>("interrupt-request.json");
     const interruptResult = await fixture<ChannelInterruptResult>("interrupt-result.json");
     const terminal = await fixture<KnownChannelRuntimeEvent>("event-terminal.json");
+    const readback = await fixture<ChannelRuntimeReadbackResult>("readback-result.json");
 
     expect(
       ChannelInterruptRequestSchema.safeParse({
@@ -72,6 +73,12 @@ describe("channel runtime events contract", () => {
         payload: {
           state: "completed",
         },
+      }).success,
+    ).toBe(false);
+    expect(
+      ChannelRuntimeReadbackResultSchema.safeParse({
+        ...readback,
+        lastSequence: readback.lastSequence + 1,
       }).success,
     ).toBe(false);
   });

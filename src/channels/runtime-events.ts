@@ -3,6 +3,7 @@ import { z } from "zod";
 import { nats } from "../nats.js";
 import {
   dbClaimChannelBackendRuntimeInterrupt,
+  dbGetChatMessage,
   dbGetChannelBackendIngressReceiptByTurnId,
   dbGetChannelBackendRuntimeInterrupt,
   dbGetChannelBackendRuntimeState,
@@ -12,6 +13,7 @@ import {
   dbReleaseChannelBackendRuntimeInterrupt,
   type ChannelBackendIngressReceiptRecord,
   type ChannelBackendRuntimeState,
+  type ChannelBackendRuntimeStateRecord,
 } from "../router/router-db.js";
 import type { ChannelBackendPromptMetadata } from "../runtime/message-types.js";
 import type { RuntimeEvent } from "../runtime/types.js";
@@ -38,6 +40,7 @@ export const CHANNEL_RUNTIME_EVENTS_PROTOCOL = "ravi.channel.runtime-events" as 
 export const CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION = 1 as const;
 
 const textEncoder = new TextEncoder();
+let channelRuntimeGenerationId = newRuntimeGenerationId();
 
 function boundedUtf8String(maxBytes: number, label: string, minBytes = 1) {
   return z
@@ -235,16 +238,34 @@ export const ChannelRuntimeReadbackRequestSchema = z.object({
   binding: LocalChannelMessageBindingSchema,
 });
 
-export const ChannelRuntimeReadbackResultSchema = z.object({
-  protocol: z.literal(CHANNEL_RUNTIME_EVENTS_PROTOCOL),
-  schemaVersion: z.literal(CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION),
-  requestId: ChannelBackendOpaqueIdSchema,
-  binding: LocalChannelMessageBindingSchema,
-  state: ChannelTurnStateSchema,
-  lastSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  assistantMessageId: ChannelBackendOpaqueIdSchema.optional(),
-  observedAt: z.string().datetime({ offset: true }),
-});
+export const ChannelRuntimeReadbackResultSchema = z
+  .object({
+    protocol: z.literal(CHANNEL_RUNTIME_EVENTS_PROTOCOL),
+    schemaVersion: z.literal(CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION),
+    requestId: ChannelBackendOpaqueIdSchema,
+    binding: LocalChannelMessageBindingSchema,
+    state: ChannelTurnStateSchema,
+    lastSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    assistantMessageId: ChannelBackendOpaqueIdSchema.optional(),
+    runtimeGenerationId: ChannelBackendOpaqueIdSchema.optional(),
+    lastEventRuntimeGenerationId: ChannelBackendOpaqueIdSchema.optional(),
+    terminalEvent: ChannelTerminalOutputEventSchema.optional(),
+    observedAt: z.string().datetime({ offset: true }),
+  })
+  .superRefine((value, context) => {
+    if (!value.terminalEvent) return;
+    if (
+      value.terminalEvent.payload.state !== value.state ||
+      value.terminalEvent.sequence !== value.lastSequence ||
+      value.terminalEvent.correlation.binding.turnId !== value.binding.turnId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["terminalEvent"],
+        message: "terminal readback event must match the readback state, sequence, and binding",
+      });
+    }
+  });
 
 export type ChannelRuntimeCorrelation = z.infer<typeof ChannelRuntimeCorrelationSchema>;
 export type KnownChannelRuntimeEvent = z.infer<typeof KnownChannelRuntimeEventSchema>;
@@ -320,6 +341,12 @@ export function setChannelRuntimeAbortPublisherForTests(publisher?: ChannelRunti
     (async (topic, payload) => {
       await nats.emit(topic, payload);
     });
+}
+
+export function setChannelRuntimeGenerationIdForTests(generationId?: string): void {
+  channelRuntimeGenerationId = generationId
+    ? ChannelBackendOpaqueIdSchema.parse(generationId)
+    : newRuntimeGenerationId();
 }
 
 export async function projectChannelRuntimeEvent(input: {
@@ -576,6 +603,7 @@ export function readChannelRuntime(input: ChannelRuntimeReadbackRequest): Channe
     throw new Error("Channel runtime binding was not found");
   }
   const runtime = dbGetChannelBackendRuntimeState(receipt.turnId);
+  const terminalEvent = runtime ? terminalEventFromReadback(request.binding, receipt, runtime) : undefined;
   return ChannelRuntimeReadbackResultSchema.parse({
     protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
     schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
@@ -584,6 +612,9 @@ export function readChannelRuntime(input: ChannelRuntimeReadbackRequest): Channe
     state: runtime?.state ?? "accepted",
     lastSequence: runtime?.lastSequence ?? 0,
     ...(runtime?.assistantMessageId ? { assistantMessageId: runtime.assistantMessageId } : {}),
+    runtimeGenerationId: channelRuntimeGenerationId,
+    ...(runtime?.runtimeGenerationId ? { lastEventRuntimeGenerationId: runtime.runtimeGenerationId } : {}),
+    ...(terminalEvent ? { terminalEvent } : {}),
     observedAt: new Date().toISOString(),
   });
 }
@@ -611,6 +642,8 @@ async function recordAndEmit(
     state: input.state,
     assistantDelta: input.assistantDelta,
     assistantText: input.assistantText,
+    runtimeGenerationId: channelRuntimeGenerationId,
+    terminalError: input.safeError,
     occurredAt: input.occurredAt,
   });
   const payload =
@@ -824,4 +857,54 @@ function semanticEventId(namespace: string, ...parts: string[]): string {
 
 function sinkKey(channelKind: string, connectionId: string): string {
   return `${channelKind}\u0000${connectionId}`;
+}
+
+function newRuntimeGenerationId(): string {
+  return `runtime_${randomUUID().replace(/-/g, "")}`;
+}
+
+function terminalEventFromReadback(
+  binding: LocalChannelMessageBinding,
+  receipt: ChannelBackendIngressReceiptRecord,
+  runtime: ChannelBackendRuntimeStateRecord,
+): z.infer<typeof ChannelTerminalOutputEventSchema> | undefined {
+  if (!isTerminalState(runtime.state)) return undefined;
+
+  let payload: z.infer<typeof ChannelTerminalOutputPayloadSchema>;
+  if (runtime.state === "completed") {
+    if (!runtime.assistantMessageId) return undefined;
+    const message = dbGetChatMessage(runtime.assistantMessageId);
+    const parsedContent = ChannelContentSchema.safeParse(message?.content?.blocks);
+    if (!parsedContent.success) return undefined;
+    payload = {
+      state: "completed",
+      assistantMessageId: runtime.assistantMessageId,
+      content: parsedContent.data,
+    };
+  } else if (runtime.state === "failed") {
+    const parsedError = ChannelSafeErrorSchema.safeParse(runtime.terminalError);
+    if (!parsedError.success) return undefined;
+    payload = {
+      state: "failed",
+      error: parsedError.data,
+    };
+  } else {
+    payload = { state: "interrupted" };
+  }
+
+  return ChannelTerminalOutputEventSchema.parse({
+    protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+    schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+    eventId: semanticEventId("turn.terminal_output", binding.turnId, String(runtime.lastSequence)),
+    kind: "turn.terminal_output",
+    occurredAt: new Date(runtime.updatedAt).toISOString(),
+    sequence: runtime.lastSequence,
+    correlation: {
+      correlationId: receipt.initialRequestId,
+      causationId: receipt.initialRequestId,
+      ingressRequestId: receipt.initialRequestId,
+      binding,
+    },
+    payload,
+  });
 }

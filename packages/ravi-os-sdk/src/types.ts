@@ -2543,12 +2543,56 @@ export type ChannelsBackendRuntimeReadbackReturn = {
     sessionId: string;
     turnId: string;
   };
+  lastEventRuntimeGenerationId?: string;
   lastSequence: number;
   observedAt: string;
   protocol: "ravi.channel.runtime-events";
   requestId: string;
+  runtimeGenerationId?: string;
   schemaVersion: 1;
   state: "accepted" | "running" | "waiting_approval" | "completed" | "failed" | "interrupted";
+  terminalEvent?: {
+    correlation: {
+      binding: {
+        agentId: string;
+        channelInstanceId: string;
+        chatId: string;
+        messageId: string;
+        sessionId: string;
+        turnId: string;
+      };
+      causationId?: string;
+      correlationId: string;
+      ingressRequestId: string;
+    };
+    eventId: string;
+    kind: "turn.terminal_output";
+    occurredAt: string;
+    payload: {
+      assistantMessageId?: string;
+      content?: Array<({
+        text: string;
+        type: "text";
+      }) | ({
+        artifactId: string;
+        mediaType?: string;
+        name?: string;
+        sizeBytes?: number;
+        type: "artifact";
+      })>;
+      error?: {
+        category: "validation" | "authentication" | "authorization" | "capacity" | "availability" | "internal";
+        code: "INVALID_REQUEST" | "IDEMPOTENCY_CONFLICT" | "UNAUTHENTICATED" | "PERMISSION_DENIED" | "LOCAL_PERMISSION_DENIED" | "NOT_FOUND" | "RATE_LIMITED" | "OVERLOADED" | "UNAVAILABLE" | "INTERNAL";
+        correlationId?: string;
+        retryAfterMs?: number;
+        retryable: boolean;
+      };
+      state: "completed" | "failed" | "interrupted";
+    };
+    protocol: "ravi.channel.runtime-events";
+    schemaVersion: 1;
+    sequence: number;
+  };
 };
 
 /** Input shape for `channels.create`. */
