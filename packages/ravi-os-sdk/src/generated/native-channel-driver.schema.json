@@ -69,11 +69,12 @@
           "items": {
             "enum": [
               "installation_credentials",
-              "local_agent_reconciliation"
+              "local_agent_reconciliation",
+              "local_agent_actions"
             ],
             "type": "string"
           },
-          "maxItems": 2,
+          "maxItems": 3,
           "minItems": 1,
           "type": "array"
         },
@@ -96,11 +97,12 @@
       "items": {
         "enum": [
           "installation_credentials",
-          "local_agent_reconciliation"
+          "local_agent_reconciliation",
+          "local_agent_actions"
         ],
         "type": "string"
       },
-      "maxItems": 2,
+      "maxItems": 3,
       "minItems": 1,
       "type": "array"
     },
@@ -108,7 +110,8 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "enum": [
         "installation_credentials",
-        "local_agent_reconciliation"
+        "local_agent_reconciliation",
+        "local_agent_actions"
       ],
       "type": "string"
     },
@@ -407,6 +410,239 @@
       ],
       "type": "object"
     },
+    "NativeLocalAgentActionDescriptor": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "inputSchema": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "sourceAccountId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "toolName": {
+          "pattern": "^[a-z][a-z0-9_]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "toolName",
+        "description",
+        "inputSchema"
+      ],
+      "type": "object"
+    },
+    "NativeLocalAgentActionRequest": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "arguments": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "protocol": {
+          "const": "ravi.channel.native-driver",
+          "type": "string"
+        },
+        "requestedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "sessionName": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "source": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "channelKind": {
+              "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+              "type": "string"
+            },
+            "conversationId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "threadId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "channelKind",
+            "accountId",
+            "conversationId"
+          ],
+          "type": "object"
+        },
+        "toolName": {
+          "pattern": "^[a-z][a-z0-9_]{0,127}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "toolName",
+        "arguments",
+        "agentId",
+        "sessionName",
+        "source",
+        "requestedAt"
+      ],
+      "type": "object"
+    },
+    "NativeLocalAgentActionResult": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "completedAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "disposition": {
+          "enum": [
+            "completed",
+            "rejected"
+          ],
+          "type": "string"
+        },
+        "error": {
+          "properties": {
+            "category": {
+              "enum": [
+                "validation",
+                "authentication",
+                "authorization",
+                "capacity",
+                "availability",
+                "internal"
+              ],
+              "type": "string"
+            },
+            "code": {
+              "enum": [
+                "INVALID_REQUEST",
+                "IDEMPOTENCY_CONFLICT",
+                "UNAUTHENTICATED",
+                "PERMISSION_DENIED",
+                "LOCAL_PERMISSION_DENIED",
+                "NOT_FOUND",
+                "RATE_LIMITED",
+                "OVERLOADED",
+                "UNAVAILABLE",
+                "INTERNAL"
+              ],
+              "type": "string"
+            },
+            "correlationId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "retryable": {
+              "type": "boolean"
+            },
+            "retryAfterMs": {
+              "exclusiveMinimum": 0,
+              "maximum": 86400000,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "code",
+            "category",
+            "retryable"
+          ],
+          "type": "object"
+        },
+        "protocol": {
+          "const": "ravi.channel.native-driver",
+          "type": "string"
+        },
+        "requestId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "text": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "disposition",
+        "completedAt"
+      ],
+      "type": "object"
+    },
+    "NativeLocalAgentActionSource": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "channelKind": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "conversationId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "threadId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "channelKind",
+        "accountId",
+        "conversationId"
+      ],
+      "type": "object"
+    },
+    "NativeLocalAgentActionToolName": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "pattern": "^[a-z][a-z0-9_]{0,127}$",
+      "type": "string"
+    },
     "RemoteInstallationCredential": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
@@ -451,6 +687,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "capsuleVersion": 1,
   "compatibilityProfile": "additive-v1",
-  "sourceDigest": "ab2475d54a833066b96e0d9aa127f3961fb589b33829012006c176d74a2e94ce",
+  "sourceDigest": "68f08f202a5edaba75c6158112ee3823f62d8e14eb948884bcea7e67b7b15d75",
   "title": "native-channel-driver channel capability"
 }

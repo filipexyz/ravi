@@ -34,6 +34,7 @@ import type {
   RuntimeCapabilities,
 } from "./types.js";
 import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from "./skill-gate.js";
+import { nativeLocalAgentActions } from "../channels/native/agent-actions.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
@@ -104,7 +105,22 @@ function getRuntimeDynamicToolSpecsForContext(context: ContextRecord): RuntimeDy
       .map((tool) => tool.name),
   );
 
-  return getRuntimeDynamicToolSpecs().filter((tool) => allowedToolNames.has(tool.name));
+  const commandTools = getRuntimeDynamicToolSpecs().filter((tool) => allowedToolNames.has(tool.name));
+  const commandToolNames = new Set(commandTools.map(({ name }) => name));
+  const nativeActions = nativeLocalAgentActions
+    .list(context)
+    .filter(
+      ({ toolName }) => !commandToolNames.has(toolName) && canWithCapabilityContext(context, "use", "tool", toolName),
+    )
+    .map(
+      ({ toolName, description, inputSchema }) =>
+        ({
+          name: toolName,
+          description,
+          inputSchema,
+        }) satisfies RuntimeDynamicToolSpec,
+    );
+  return [...commandTools, ...nativeActions].sort((left, right) => left.name.localeCompare(right.name));
 }
 
 function canAdvertiseRuntimeDynamicTool(context: ContextRecord, tool: ExportedTool): boolean {
@@ -232,10 +248,7 @@ async function executeRuntimeDynamicTool(
 ): Promise<RuntimeDynamicToolCallResult> {
   const tool = getRuntimeDynamicToolDefinitions().find((candidate) => candidate.name === request.toolName);
   if (!tool) {
-    return {
-      success: false,
-      contentItems: [{ type: "inputText", text: `Unknown Ravi dynamic tool: ${request.toolName}` }],
-    };
+    return executeNativeLocalAgentAction(options, request, executionOptions);
   }
 
   const authorization = await authorizeRuntimeDynamicToolCall(options, tool, executionOptions?.eventData);
@@ -284,6 +297,90 @@ async function executeRuntimeDynamicTool(
     return buildRuntimeDynamicToolResult(result);
   } finally {
     clearTimeout(timeoutHandle);
+  }
+}
+
+async function executeNativeLocalAgentAction(
+  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName">,
+  request: RuntimeDynamicToolCallRequest,
+  executionOptions?: RuntimeDynamicToolExecutionOptions,
+): Promise<RuntimeDynamicToolCallResult> {
+  const available = nativeLocalAgentActions.list(options.context).some(({ toolName }) => toolName === request.toolName);
+  if (!available) {
+    return {
+      success: false,
+      contentItems: [
+        {
+          type: "inputText",
+          text: `Unknown Ravi dynamic tool: ${request.toolName}`,
+        },
+      ],
+    };
+  }
+  const authorization = await authorizeRuntimeContext({
+    context: options.context,
+    permission: "use",
+    objectType: "tool",
+    objectId: request.toolName,
+    eventData: executionOptions?.eventData,
+  });
+  if (!authorization.allowed) {
+    return {
+      success: false,
+      reason: authorization.reason,
+      contentItems: [
+        {
+          type: "inputText",
+          text: authorization.reason ?? `${request.toolName} tool permission denied.`,
+        },
+      ],
+    };
+  }
+  try {
+    const result = await nativeLocalAgentActions.invoke({
+      context: options.context,
+      toolName: request.toolName,
+      arguments: normalizeDynamicToolArguments(request.arguments),
+      ...(request.callId === undefined ? {} : { requestId: request.callId }),
+    });
+    if (result === undefined) {
+      return {
+        success: false,
+        contentItems: [
+          {
+            type: "inputText",
+            text: `${request.toolName} is unavailable for this turn.`,
+          },
+        ],
+      };
+    }
+    if (result.disposition === "rejected") {
+      return {
+        success: false,
+        reason: result.error?.code,
+        contentItems: [
+          {
+            type: "inputText",
+            text: `Action rejected: ${result.error?.code ?? "UNAVAILABLE"}`,
+          },
+        ],
+      };
+    }
+    return {
+      success: true,
+      contentItems: [{ type: "inputText", text: result.text! }],
+    };
+  } catch {
+    return {
+      success: false,
+      reason: "native_local_agent_action_failed",
+      contentItems: [
+        {
+          type: "inputText",
+          text: `${request.toolName} could not be completed.`,
+        },
+      ],
+    };
   }
 }
 
