@@ -2,430 +2,323 @@
 name: agents-manager
 description: |
   Gerencia agents do sistema Ravi. Use quando o usuário quiser:
-  - Criar, configurar ou deletar agents
-  - Gerenciar permissões de tools (whitelist/bypass)
-  - Configurar permissões de Bash (allowlist/denylist)
-  - Ver ou resetar sessões de agents
-  - Configurar debounce de mensagens
-  - Entender como rotear mensagens pra um agent
+  - Criar, admitir, inspecionar, configurar ou deletar agents
+  - Escolher provider, modelo direto ou runtime model preset
+  - Autorizar skills e capabilities pelo contrato de least privilege
+  - Validar continuidade, rotas, sessões e entrega por trace
+  - Configurar effort, debounce, modo ou execução remota
 ---
 
 # Agents Manager
 
-Agents são identidades operacionais do Ravi com configurações específicas: diretório, runtime provider, modelo, permissões, sessões e rotas. Cada agent tem seu workspace, sessões independentes e pode atender canais/contatos diferentes.
-
-**Importante:** Criar ou modificar agents **não requer restart** do daemon. Tudo atualiza em tempo real.
-
-## Fluxo Completo: Criar um Agent e Colocar pra Funcionar
-
-### 1. Criar o agent
-
-```bash
-ravi agents create <id> <cwd> [--provider <provider>] [--model <model>]
-```
-
-O `cwd` é o diretório onde fica o `AGENTS.md` do agent (suas instruções canônicas). Crie o diretório e o `AGENTS.md` antes. O Ravi materializa um `CLAUDE.md` de compatibilidade quando necessário.
-
-**Regra de criação completa:** agent novo deve nascer com as configurações runtime conhecidas, não ser criado "cru" para depois corrigir manualmente. Quando souber o runtime, passe `--provider` e `--model` no `agents create`; quando estiver criando junto com WhatsApp, passe `--agent-provider` e `--agent-model` no `whatsapp group create --create-agent`. Antes de colocar o agent numa rota live, garanta que o Permission Provider Runtime vai materializar as capabilities necessárias para ele.
-
-## Runtimes Disponíveis
-
-`provider` define qual runtime executa as sessões do agent. `model` é interpretado pelo provider configurado.
-
-Providers built-in atuais:
-
-| Provider | Uso esperado | Modelo |
-|----------|--------------|--------|
-| `codex` | Runtime default por subprocess/RPC com CLI Ravi via shell/contexto e controle de runtime. | Ex: `gpt-5.5`, `gpt-5.4`, `gpt-4.1-mini`. |
-| `claude` | Runtime completo para agents que precisam de hooks, plugins, MCP e remote spawn. | Selector nativo do provider, ou default quando vazio. |
-| `pi` | Runtime por Pi coding agent em RPC, bom para agentes rápidos/dev e providers externos. | Use `provider/model`, ex: `kimi-coding/kimi-for-coding` ou `openai/gpt-4.1-mini`. |
-
-Comandos comuns:
-
-```bash
-# Criar já usando runtime específico
-ravi agents create familia-sp ~/ravi/familia-sp --provider pi --model kimi-coding/kimi-for-coding
-
-# Criar com o runtime default recomendado
-ravi agents create familia-sp ~/ravi/familia-sp --provider codex --model gpt-5.5
-
-# Trocar runtime do agent
-ravi agents set familia-sp provider pi
-
-# Setar modelo do provider atual
-ravi agents set familia-sp model kimi-coding/kimi-for-coding
-
-# Voltar para outro runtime
-ravi agents set familia-sp provider codex
-ravi agents set familia-sp model gpt-5.5
-```
-
-Notas operacionais:
-
-- Mudar `provider` ou `model` não requer restart do daemon.
-- Sessões já ativas não mudam retroativamente no meio de um turno; a troca vale para o próximo start/turn compatível.
-- Para agents novos, prefira criar já com provider/model corretos. Use `agents set` para correção ou migração de agent existente, não como etapa normal de criação.
-- Provider ids são abertos em config, mas só providers registrados no daemon executam. Se salvar um provider inexistente, a falha aparece no start da sessão.
-- `pi` exige selector de modelo completo quando o valor também é um provider do Pi. `kimi-coding` sozinho é inválido; use `kimi-coding/<model-id>`.
-- `pi` usa ferramentas nativas do provider no MVP. Se o agent precisa executar tools/comandos, configure permissões coerentes antes de colocar em rota live.
-
-### 2. Rotear mensagens pro agent
-
-Existem duas formas de rotear:
-
-**Por rota (padrão de grupo/contato):**
-```bash
-ravi instances routes add <instance> <pattern> <agent>
-```
-
-Patterns suportados:
-- `group:120363425628305127` — grupo específico
-- `lid:178035101794451` — contato específico (por lid)
-- `5511*` — todos com DDD 11
-- `*` — catch-all
-
-**Por contato (assignment direto):**
-```bash
-ravi contacts approve <phone> <agent>
-# ou
-ravi contacts set <phone> agent <agent>
-```
-
-### 3. Ativar em grupo WhatsApp
-
-Grupos novos precisam ser **aprovados** antes de funcionar.
-
-**Instrua o usuário a:**
-1. Criar um grupo no WhatsApp e adicionar o bot
-2. Mandar uma mensagem qualquer no grupo (isso faz o grupo aparecer como **pending**)
-
-**Depois, VOCÊ (o agent) deve executar:**
-```bash
-ravi contacts pending                            # Checar pendentes — o grupo aparece aqui
-ravi contacts approve <group-id> <agent>                       # Aprovar e associar ao agent
-ravi instances routes add main <group-id> <agent>              # Criar rota pro grupo
-```
-
-**IMPORTANTE:** Não peça o ID do grupo pro usuário. Rode `ravi contacts pending` pra descobrir o ID automaticamente. O usuário já mandou a mensagem — o grupo já está lá.
-
-Tudo atualiza em tempo real. **Não precisa reiniciar o daemon.**
-
-### Como novos contatos/grupos aparecem?
-
-Quando alguém novo manda mensagem (ou o bot é adicionado a um grupo novo), o contato/grupo aparece como **pending** automaticamente. Nenhuma mensagem é processada até ser aprovado.
-
-```bash
-ravi contacts pending     # Ver contatos/grupos pendentes
-```
-
-Pra aprovar e rotear:
-```bash
-ravi contacts approve <phone> <agent>   # Aprova e associa ao agent
-ravi contacts approve <phone>           # Aprova sem associar (usa rota ou default)
-ravi contacts block <phone>             # Bloqueia
-```
-
-### Prioridade de roteamento
-
-Quando uma mensagem chega, o sistema resolve o agent nesta ordem:
-
-1. **Contato tem agent?** → usa o agent do contato
-2. **Tem rota que casa?** → usa o agent da rota (prioridade maior primeiro)
-3. **Account ID casa com agent?** → usa (Matrix multi-account)
-4. **Nenhum match** → usa o agent default (geralmente `main`)
-
-## Comandos Disponíveis
-
-### Listar agents
-```bash
-ravi agents list
-```
-
-### Ver detalhes
-```bash
-ravi agents show <id>
-```
-
-### Criar agent
-```bash
-ravi agents create <id> <cwd> --provider codex --model gpt-5.5
-```
-
-### Sincronizar instruções legadas
-```bash
-ravi agents sync-instructions
-ravi agents sync-instructions --agent <id>
-ravi agents sync-instructions --materialize-missing
-```
-
-### Deletar agent
-```bash
-ravi agents delete <id>
-```
-
-### Configurar propriedades
-```bash
-ravi agents set <id> <key> <value>
-```
-
-Keys:
-- `name` — Nome do agent
-- `cwd` — Diretório de trabalho
-- `provider` — Runtime provider (`claude`, `codex`, `pi`, ou outro provider registrado)
-- `model` — Modelo/selector interpretado pelo provider atual
-- `dmScope` — Escopo de sessão DM:
-  - `main` — Todas as DMs numa sessão só
-  - `per-peer` — Uma sessão por contato (default)
-  - `per-channel-peer` — Por canal + contato
-  - `per-account-channel-peer` — Isolamento total
-- `systemPromptAppend` — Texto adicional no system prompt
-- `matrixAccount` — Conta Matrix associada
-
-## Permissões / Provider Runtime
-
-O Ravi autoriza execução pelo Permission Provider Runtime. Para fluxos
-recorrentes iniciados por humanos, a superfície normal é `ravi permissions`:
-ela monta um plano provider-owned que aplica o profile/tag no ator e garante o
-ceiling do executor agent no mesmo passo.
-
-```bash
-# Resolver a partir de um denial real
-ravi permissions resolve <denial-id>
-ravi permissions resolve <denial-id> --apply
-
-# Criar/aplicar profile quando não há denial id
-ravi permissions allow <profile> \
-  --to contact:<contact-id> \
-  --agent <executor-agent-id> \
-  --capabilities <permission>:<objectType>:<objectId>
-
-ravi permissions allow <profile> ... --apply
-```
-
-`allow` e `resolve` fazem dry-run por padrão. Use `--apply` só depois de
-conferir o plano.
-
-Para permissões operacionais agent-only, use `ravi agents permissions`: ele
-grava a configuração de runtime em `agent.defaults.runtimePermissions` e o
-provider `agent-default-capabilities` materializa as capabilities no contexto do
-agent.
-
-```bash
-# Ver perfil runtime salvo no agent
-ravi agents permissions <id>
-
-# Inspecionar materialização efetiva antes de pedir nova autoridade
-ravi permissions materialize --subject-type agent --subject-id <id> --json
-
-# Voltar ao bootstrap mínimo
-ravi agents permissions <id> none
-
-# Capability explícita de bootstrap quando ainda não existe profile agent-only
-ravi agents permissions <id> bootstrap --capabilities execute:executable:omni
-```
-
-Para acesso recorrente, prefira criar/aplicar um permission profile ou tag
-provider-owned com `ravi permissions allow/resolve`. Capability solta é
-diagnóstico ou bootstrap de profile novo. `full-access` é break-glass: só use
-quando o operador pedir explicitamente.
-
-Quando um agent recém-criado pedir permissão, não devolva uma lista longa de
-capabilities como primeira opção. Se houver denial id, recomende
-`ravi permissions resolve <denial-id>`. Sem denial id, recomende
-`ravi permissions allow <profile> --to contact:<id> --agent <agent>`. Use
-capability crua só em `--capabilities` para criar um profile/tag estreito
-quando não existir bundle adequado.
-
-Ver skill `permissions-manager` para documentação completa.
-
-Para comandos CLI decorados com `@CommandAccess`, prefira capabilities
-semânticas no formato `<read|mutate>:<resource>:<action>`, por exemplo
-`read:tasks.profiles:list`. `execute:group:*` e `execute:group:<grupo>` são
-compatibilidade ampla; não use como recomendação padrão para agents novos.
-
-### Provider runtime vs hooks externos
-
-`full-access` em `ravi agents permissions` materializa `admin system:*` como
-capability de snapshot do Ravi para o agent e para automações que rodam em nome
-dele. Isso não desativa automaticamente hooks globais do provider, denylist
-local, PreToolUse externo ou políticas instaladas fora do Ravi.
-
-Quando Bash ainda é negado depois de `ravi agents permissions <id> full-access`:
-
-1. Leia a mensagem de denial e identifique se veio do Ravi ou do provider/hook externo.
-2. Verifique hooks locais do workspace do agent antes de mudar grants.
-3. Se o agent precisa executar scripts próprios, prefira permitir o script/binário específico em vez de contornar tudo.
-4. Um bypass local de hook só deve ser usado como decisão explícita do operador, em workspace controlado, e documentado no `AGENTS.md` do agent.
-
-Agents podem editar código/scripts próprios dentro do seu `cwd` quando a tarefa permitir, mas não devem reverter mudanças feitas por outro agente/operador sem inspecionar o diff e confirmar a intenção.
-
-## Debounce de Mensagens
-
-Agrupa mensagens rápidas antes de processar:
-
-```bash
-ravi agents debounce <id> <ms>   # Definir (ex: 2000 = 2s)
-ravi agents debounce <id> 0      # Desabilitar
-ravi agents debounce <id>        # Ver atual
-```
-
-## Sessões
-
-### Ver sessões
-```bash
-ravi agents session <id>
-```
-
-### Resetar sessão
-```bash
-ravi agents reset <id>              # Sessão principal
-ravi agents reset <id> <sessionKey> # Sessão específica
-ravi agents reset <id> all          # Todas as sessões
-```
-
-## Interação
-
-### Enviar prompt
-```bash
-ravi agents run <id> "prompt"
-```
-
-### Chat interativo
-```bash
-ravi agents chat <id>
-```
-
-## Receita Completa: Agent Pessoal com Grupo WhatsApp
-
-Agents pessoais são agents dedicados a um aspecto da vida do usuário (comunicação, journaling, estratégia, etc). Cada um tem seu grupo WhatsApp exclusivo.
-
-**Conceito importante:** O agent já nasce dentro do WhatsApp. Ele não precisa de nenhuma tool pra enviar mensagens — toda resposta dele já chega automaticamente no WhatsApp. Ele deve saber disso no `AGENTS.md`.
-
-### Passo a passo
-
-#### 1. Criar diretório e AGENTS.md
-
-```bash
-mkdir -p ~/ravi/<agent-id>
-```
-
-Escreva o `AGENTS.md` com a identidade e instruções do agent. Estrutura recomendada:
+Agents são identidades operacionais persistidas no Ravi. Cadastro não significa
+admissão: um agent só está pronto quando instruções, skills, permissões, runtime
+efetivo e entrada operacional correspondem ao papel aprovado.
+
+O contrato normativo é `.ravi/specs/agents/admission`.
+
+## Invariantes
+
+- Defina papel, fronteiras e necessidades antes de conceder autoridade ou rota.
+- `AGENTS.md` instrui o agent, mas não autoriza skill, tool, CLI ou provider.
+- Skills customizadas exigem grant explícito. Skills de sistema derivam das
+  capabilities efetivas; grant manual não substitui permissão.
+- Permissões seguem least privilege e devem ser provadas por `materialize`.
+  `full-access` não é default de criação.
+- Provider/model persistidos não bastam quando há política de continuidade:
+  valide o alvo efetivo com `show` e `explain`.
+- Agent conversacional exige readback da rota e smoke controlado. Agent interno
+  exige evidência equivalente de execução controlada.
+- Não use reset, restart, delete ou permissão ampla para mascarar divergência.
+- Antes de operar, leia `ravi agents --help` e o contrato de cada tool
+  necessária com `ravi tools show <tool>`.
+
+## Fluxo de admissão
+
+### 1. Definir manifesto e workspace
+
+Escolha um `id` estável e um `cwd` próprio. Escreva o `AGENTS.md` canônico antes
+de colocar o agent em rota.
+
+Estrutura mínima:
 
 ```markdown
-# <Nome do Agent>
+# <Nome>
 
-## Quem Você É
-- Papel, personalidade, tom de voz
-- O que você faz e o que NÃO faz
+## Papel
+- Responsabilidade e objetivo
 
 ## Contexto
-- Você já está conversando pelo WhatsApp com o usuário
-- Toda mensagem que você envia chega diretamente no WhatsApp
-- Você NÃO precisa de nenhuma tool pra enviar mensagens
+- Dados, sistemas e canais disponíveis
 
-## Como Funciona
-- Metodologia, frameworks, abordagem
-- Exemplos de interação
+## Necessidades
+- Skills customizadas
+- Capabilities mínimas
+- Provider/model ou preset aprovado
 
-## Regras
-- Limites, boundaries, o que evitar
+## Limites
+- Ações proibidas, aprovações e escalonamento
 ```
 
-**Dicas pro AGENTS.md:**
-- Dê personalidade — agents genéricos são chatos
-- Seja específico sobre o que o agent faz e não faz
-- Inclua que ele já está no WhatsApp (não precisa de tool pra mensagem)
-- Adapte o tom pro contexto (coach é diferente de diário é diferente de estrategista)
+O manifesto de necessidades é input para a admissão, não prova de autorização.
 
-#### 2. Criar o agent no sistema
+### 2. Criar com runtime aprovado
+
+Prefira um model preset quando a política de runtime for reutilizável:
 
 ```bash
-ravi agents create <agent-id> ~/ravi/<agent-id> --provider codex --model gpt-5.5
+ravi runtime presets list --json
+ravi runtime presets show <preset-id> --json
+ravi agents create <agent-id> <cwd> \
+  --model-preset <preset-id> \
+  --json
 ```
 
-#### 3. Criar grupo WhatsApp dedicado
-
-O usuário cria um grupo no WhatsApp (ex: "Vida - Comunicação") e adiciona o bot. Ao enviar a primeira mensagem no grupo, o contato aparece automaticamente como **pending**.
-
-#### 4. Aprovar e rotear o grupo
-
-**Não peça o ID do grupo pro usuário.** Rode o CLI pra descobrir:
+Para um binding exclusivo:
 
 ```bash
-# Ver grupos/contatos pendentes
-ravi contacts pending
-
-# Aprovar o grupo
-ravi contacts approve <group-id>
-
-# Criar rota pro agent
-ravi instances routes add main <group-id> <agent-id>
+ravi agents create <agent-id> <cwd> \
+  --provider <provider-id> \
+  --model <model-selector> \
+  --json
 ```
 
-O `group-id` tem formato `group:120363406060070449`.
+`--model` e `--model-preset` são mutuamente exclusivos. Se `--provider` for
+usado com preset, ele deve coincidir com o provider do preset. Não use
+`--allow-runtime-mismatch` sem diagnóstico explícito da diferença entre o CLI e
+o runtime live.
 
-#### 5. Pronto!
-
-O agent já está respondendo no grupo. Não precisa reiniciar o daemon.
-
-### Exemplo real: Agent de comunicação
+Leia de volta o cadastro:
 
 ```bash
-# 1. Criar diretório
-mkdir -p ~/ravi/comm
-
-# 2. Escrever AGENTS.md (com identidade de coach de comunicação)
-
-# 3. Criar agent já com runtime completo
-ravi agents create comm ~/ravi/comm --provider codex --model gpt-5.5
-
-# 4. Usuário cria grupo "Vida - Comunicação" no WhatsApp e manda msg
-
-# 5. Aprovar e rotear
-ravi contacts pending                          # Encontra group:120363406060070449
-ravi contacts approve group:120363406060070449  # Aprova
-ravi instances routes add main group:120363406060070449 comm   # Roteia pro comm
+ravi agents show <agent-id> --json
 ```
 
-## Exemplos Práticos
+Confira ao menos `cwd`, provider/model ou preset persistidos e a resolução
+retornada. Não conclua o runtime efetivo apenas pelo campo `model`.
 
-### Criar agent pra atendimento
+### 3. Autorizar skills
+
+Primeiro inspecione a allowlist resolvida:
 
 ```bash
-# 1. Criar diretório e AGENTS.md
-mkdir -p ~/ravi/atendimento
-# (crie o AGENTS.md com as instruções do agent)
-
-# 2. Criar agent
-ravi agents create atendimento ~/ravi/atendimento --provider codex --model gpt-5.5
-
-# 3. Rotear grupo pro agent
-ravi instances routes add main group:120363425628305127 atendimento
-
-# 4. Inspecionar autoridade e aplicar o profile/tag mínimo necessário
-ravi permissions materialize --subject-type agent --subject-id atendimento --json
+ravi skills inspect <agent-id> --json
 ```
 
-### Aprovar contato e associar a agent
+Para cada skill customizada necessária:
 
 ```bash
-# Ver pendentes
-ravi contacts pending
-
-# Aprovar e associar
-ravi contacts approve 5511999999999 atendimento
-
-# Ou aprovar com modo "mention" (só responde quando mencionado)
-ravi contacts approve 5511999999999 atendimento mention
+ravi skills grant <agent-id> <skill-name> \
+  --note "<necessidade aprovada>" \
+  --json
+ravi skills inspect <agent-id> --json
 ```
 
-### Configurar rota com prioridade
+O segundo `inspect` deve mostrar a skill e sua proveniência em
+`provenance.fromGrants`. Para skill de sistema, não use `skills grant`: conceda
+a capability mínima correspondente e confirme a skill em
+`provenance.fromCapabilities`.
+
+### 4. Planejar, aplicar e provar permissões
+
+Leia primeiro a autoridade materializada:
 
 ```bash
-# Rota específica (prioridade alta)
-ravi instances routes add main group:123456789 vendas
-ravi instances routes set main group:123456789 priority 10
-
-# Rota catch-all (prioridade baixa)
-ravi instances routes add main "*" main
+ravi permissions materialize \
+  --subject-type agent \
+  --subject-id <agent-id> \
+  --json
 ```
+
+Quando faltar um profile/tag, gere um plano estreito:
+
+```bash
+ravi permissions allow <profile> \
+  --to agent:<agent-id> \
+  --agent <agent-id> \
+  --capabilities <capability-1>,<capability-2> \
+  --json
+```
+
+`permissions allow` é dry-run por padrão. Revise o plano e obtenha a aprovação
+exigida antes de aplicar:
+
+```bash
+ravi permissions allow <profile> \
+  --to agent:<agent-id> \
+  --agent <agent-id> \
+  --capabilities <capability-1>,<capability-2> \
+  --apply \
+  --json
+
+ravi permissions materialize \
+  --subject-type agent \
+  --subject-id <agent-id> \
+  --json
+```
+
+O readback deve conter apenas as capabilities necessárias. Em fluxo iniciado
+por contato ou automação, valide separadamente a autoridade do ator; o teto do
+executor agent não concede autoridade ao chamador.
+
+### 5. Validar continuidade e runtime efetivo
+
+Consulte a política e a elegibilidade sem iniciar provider call:
+
+```bash
+ravi runtime continuity show <agent-id> --json
+ravi runtime continuity explain <agent-id> --json
+```
+
+Essas leituras não habilitam continuidade. Compare a ordem de targets elegíveis
+com o provider/model ou preset aprovado. Configuração de cadastro e estado
+efetivo de continuidade são camadas diferentes.
+
+Não declare failover funcional a partir de configuração. Isso exige que o mesmo
+logical request registre a troca de target e uma única entrega terminal
+observada.
+
+### 6. Criar e ler de volta a rota
+
+Para canal externo já aprovado, crie a rota pela superfície da instância:
+
+```bash
+ravi instances routes add <instance> <pattern> <agent-id>
+ravi instances routes show <instance> <pattern> --json
+```
+
+O readback deve apontar para o agent esperado. Aprovação de contato, criação de
+grupo e política de resposta pertencem às skills específicas do canal; não
+invente IDs nem trate o cadastro do agent como rota.
+
+Quando a superfície transacional de WhatsApp for aplicável:
+
+```bash
+ravi whatsapp group create "<nome-do-grupo>" --agent <agent-id>
+```
+
+Mesmo nesse fluxo, leia de volta a rota antes de considerar o wiring correto.
+
+### 7. Fazer smoke controlado e provar pelo trace
+
+Dispare uma mensagem sintética pelo canal ou mecanismo operacional aprovado. Não
+use atalhos de interação removidos como prova de admissão.
+
+Depois leia a sessão real:
+
+```bash
+ravi sessions trace <session-name-or-key> \
+  --explain \
+  --json
+```
+
+O trace deve confirmar:
+
+- `route.resolved` para o agent quando houver canal externo;
+- `adapter.request` no provider/target esperado;
+- `assistant.message`;
+- `turn.complete`;
+- emissão e entrega observada quando houver resposta externa.
+
+Filtre por `--message`, `--run`, `--turn` ou `--correlation` quando precisar
+isolar o smoke. Não use `--show-user-prompt`, `--show-system-prompt` ou `--raw`
+em relatórios que possam expor dados sensíveis.
+
+Em qualquer divergência, pare na camada divergente. Não faça reset/restart nem
+amplie permissões como tentativa genérica de correção.
+
+## Administração após a admissão
+
+### Alterar runtime
+
+Associar um preset limpa o modelo direto atomicamente:
+
+```bash
+ravi agents set <agent-id> modelPreset <preset-id> --json
+```
+
+Associar um modelo direto limpa a referência ao preset:
+
+```bash
+ravi agents set <agent-id> model <model-selector> --json
+```
+
+Para remover somente a referência ao preset:
+
+```bash
+ravi agents set <agent-id> modelPreset clear --json
+```
+
+Overrides de prompt, task, profile ou sessão podem prevalecer sobre o agent.
+Após uma mudança, repita `agents show`, `continuity show/explain` e o smoke
+quando a alteração afetar o alvo operacional.
+
+### Propriedades comuns
+
+```bash
+ravi agents set <agent-id> name "<nome>" --json
+ravi agents set <agent-id> effort medium --json
+ravi agents set <agent-id> dmScope per-peer --json
+ravi agents set <agent-id> groupDebounceMs 2000 --json
+```
+
+Valores de `dmScope`: `main`, `per-peer`, `per-channel-peer` e
+`per-account-channel-peer`.
+
+### Debounce e modo
+
+```bash
+ravi agents debounce <agent-id> <ms>
+ravi agents debounce <agent-id> 0
+ravi agents debounce <agent-id>
+ravi agents set <agent-id> mode active --json
+ravi agents set <agent-id> mode sentinel --json
+```
+
+Use `sentinel` somente quando o desenho operacional exigir essa semântica.
+
+### Execução remota
+
+```bash
+ravi agents set <agent-id> remote <vmid|hostname|worker:id> --json
+ravi agents set <agent-id> remoteUser <unix-user> --json
+```
+
+Valide conectividade e autoridade remotas antes de colocar uma rota em produção.
+
+### Deletar
+
+Delete é destrutivo e exige decisão explícita. Antes, leia dependentes por
+`agents show`, sessões e rotas. Remover o cadastro não prova que referências
+operacionais externas foram removidas.
+
+```bash
+ravi agents delete <agent-id> --json
+```
+
+## Checklist de aceitação
+
+Um agent só está admitido quando:
+
+1. `agents show --json` confirma diretório e runtime gravados.
+2. `skills inspect --json` contém as skills customizadas necessárias, e skills
+   de sistema derivam de capabilities.
+3. `permissions materialize` confirma capabilities mínimas.
+4. `runtime continuity show/explain` foi lido antes de afirmar o target efetivo.
+5. Quando há canal externo, `instances routes show` confirma a rota.
+6. O trace do smoke contém dispatch, request, resposta, terminal do turno e,
+   quando aplicável, entrega observada.
+
+Até todas as evidências existirem, o agent permanece em configuração.
+
+## Anti-patterns
+
+- Usar `AGENTS.md` como prova de autorização.
+- Hardcodar modelo sem consultar preset e continuidade.
+- Informar `--model` e `--model-preset` juntos.
+- Conceder skill de sistema por grant manual.
+- Dar `full-access` por padrão.
+- Declarar rota correta sem readback.
+- Declarar sucesso sem trace terminal.
+- Resetar sessão ou reiniciar daemon como primeira tentativa.
+- Editar SQLite, config gerada, cache ou cópia instalada da skill.
