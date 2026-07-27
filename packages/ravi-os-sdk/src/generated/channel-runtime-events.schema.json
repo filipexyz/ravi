@@ -97,6 +97,14 @@
           "maximum": 9007199254740991,
           "type": "integer"
         },
+        "phase": {
+          "enum": [
+            "commentary",
+            "final_answer",
+            "unknown"
+          ],
+          "type": "string"
+        },
         "text": {
           "type": "string"
         }
@@ -105,6 +113,78 @@
         "blockIndex",
         "deltaSequence",
         "text"
+      ],
+      "type": "object"
+    },
+    "ChannelAssistantMessagePayload": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "content": {
+          "items": {
+            "oneOf": [
+              {
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "const": "text",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "text"
+                ],
+                "type": "object"
+              },
+              {
+                "properties": {
+                  "artifactId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                    "type": "string"
+                  },
+                  "mediaType": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$",
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "sizeBytes": {
+                    "maximum": 9007199254740991,
+                    "minimum": 0,
+                    "type": "integer"
+                  },
+                  "type": {
+                    "const": "artifact",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "artifactId"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "type": "array"
+        },
+        "phase": {
+          "enum": [
+            "commentary",
+            "final_answer",
+            "unknown"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase",
+        "content"
       ],
       "type": "object"
     },
@@ -1121,6 +1201,14 @@
                   "maximum": 9007199254740991,
                   "type": "integer"
                 },
+                "phase": {
+                  "enum": [
+                    "commentary",
+                    "final_answer",
+                    "unknown"
+                  ],
+                  "type": "string"
+                },
                 "text": {
                   "type": "string"
                 }
@@ -1129,6 +1217,177 @@
                 "blockIndex",
                 "deltaSequence",
                 "text"
+              ],
+              "type": "object"
+            },
+            "protocol": {
+              "const": "ravi.channel.runtime-events",
+              "type": "string"
+            },
+            "schemaVersion": {
+              "const": 1,
+              "type": "number"
+            },
+            "sequence": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "protocol",
+            "schemaVersion",
+            "eventId",
+            "kind",
+            "occurredAt",
+            "sequence",
+            "correlation",
+            "payload"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "correlation": {
+              "properties": {
+                "binding": {
+                  "properties": {
+                    "agentId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "channelInstanceId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "chatId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "messageId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "sessionId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    },
+                    "turnId": {
+                      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "channelInstanceId",
+                    "agentId",
+                    "chatId",
+                    "messageId",
+                    "sessionId",
+                    "turnId"
+                  ],
+                  "type": "object"
+                },
+                "causationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "correlationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "ingressRequestId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "correlationId",
+                "ingressRequestId",
+                "binding"
+              ],
+              "type": "object"
+            },
+            "eventId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "kind": {
+              "const": "turn.assistant_message",
+              "type": "string"
+            },
+            "occurredAt": {
+              "format": "date-time",
+              "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+              "type": "string"
+            },
+            "payload": {
+              "properties": {
+                "content": {
+                  "items": {
+                    "oneOf": [
+                      {
+                        "properties": {
+                          "text": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "const": "text",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "text"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "artifactId": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                            "type": "string"
+                          },
+                          "mediaType": {
+                            "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$",
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "sizeBytes": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "type": {
+                            "const": "artifact",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "type",
+                          "artifactId"
+                        ],
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "maxItems": 256,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "phase": {
+                  "enum": [
+                    "commentary",
+                    "final_answer",
+                    "unknown"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "phase",
+                "content"
               ],
               "type": "object"
             },
@@ -1853,6 +2112,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "capsuleVersion": 1,
   "compatibilityProfile": "additive-v1",
-  "sourceDigest": "816c67787b76c5b98f6ab356b0f178fdeda35cf0d81f92aa9b2a75655b370464",
+  "sourceDigest": "8ff6df3bbd8ac1bade14b8d13dd69c6bb045c91b1f6d2c85de280903608eb68b",
   "title": "channel-runtime-events channel capability"
 }

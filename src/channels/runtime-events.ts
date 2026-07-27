@@ -88,6 +88,12 @@ export const ChannelAssistantDeltaPayloadSchema = z.object({
   blockIndex: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   deltaSequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   text: boundedUtf8String(CHANNEL_BACKEND_MAX_TEXT_BYTES, "assistant delta"),
+  phase: z.enum(["commentary", "final_answer", "unknown"]).optional(),
+});
+
+export const ChannelAssistantMessagePayloadSchema = z.object({
+  phase: z.enum(["commentary", "final_answer", "unknown"]),
+  content: ChannelContentSchema,
 });
 
 export const ChannelTerminalOutputPayloadSchema = z
@@ -163,6 +169,10 @@ export const ChannelAssistantDeltaEventSchema = defineChannelRuntimeEvent(
   "turn.assistant_delta",
   ChannelAssistantDeltaPayloadSchema,
 );
+export const ChannelAssistantMessageEventSchema = defineChannelRuntimeEvent(
+  "turn.assistant_message",
+  ChannelAssistantMessagePayloadSchema,
+);
 export const ChannelTerminalOutputEventSchema = defineChannelRuntimeEvent(
   "turn.terminal_output",
   ChannelTerminalOutputPayloadSchema,
@@ -183,6 +193,7 @@ export const ChannelApprovalResolvedEventSchema = defineChannelRuntimeEvent(
 export const KnownChannelRuntimeEventSchema = z.union([
   ChannelTurnStateChangedEventSchema,
   ChannelAssistantDeltaEventSchema,
+  ChannelAssistantMessageEventSchema,
   ChannelTerminalOutputEventSchema,
   ChannelToolSummaryEventSchema,
   ChannelApprovalRequestedEventSchema,
@@ -342,6 +353,7 @@ export async function projectChannelRuntimeEvent(input: {
 
   const event = input.event;
   if (event.type === "text.delta" && event.text) {
+    const phase = channelAssistantPhase(event.metadata);
     const chunks = splitChannelText(event.text);
     for (const text of chunks) {
       await append({
@@ -352,11 +364,23 @@ export async function projectChannelRuntimeEvent(input: {
           blockIndex: 0,
           deltaSequence,
           text,
+          phase,
         }),
         occurredAt,
         sinks,
       });
     }
+  } else if (event.type === "assistant.message" && event.text.trim()) {
+    await append({
+      metadata,
+      kind: "turn.assistant_message",
+      payload: {
+        phase: channelAssistantPhase(event.metadata),
+        content: channelTextContent(event.text.trim()),
+      },
+      occurredAt,
+      sinks,
+    });
   } else if (event.type === "tool.started") {
     await append({
       metadata,
@@ -732,6 +756,11 @@ function safeRuntimeError(correlationId: string, retryable: boolean): ChannelSaf
     retryable,
     correlationId,
   });
+}
+
+function channelAssistantPhase(metadata: RuntimeEvent["metadata"]): "commentary" | "final_answer" | "unknown" {
+  const phase = metadata?.item?.phase;
+  return phase === "commentary" || phase === "final_answer" ? phase : "unknown";
 }
 
 function isTerminalState(state: ChannelBackendRuntimeState): boolean {

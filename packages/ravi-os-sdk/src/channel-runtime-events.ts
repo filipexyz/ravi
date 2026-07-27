@@ -62,6 +62,12 @@ export const ChannelAssistantDeltaPayloadSchema = z.object({
   blockIndex: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   deltaSequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   text: boundedUtf8String(CHANNEL_BACKEND_MAX_TEXT_BYTES, "assistant delta"),
+  phase: z.enum(["commentary", "final_answer", "unknown"]).optional(),
+});
+
+export const ChannelAssistantMessagePayloadSchema = z.object({
+  phase: z.enum(["commentary", "final_answer", "unknown"]),
+  content: ChannelContentSchema,
 });
 
 export const ChannelTerminalOutputPayloadSchema = z
@@ -137,6 +143,10 @@ export const ChannelAssistantDeltaEventSchema = defineChannelRuntimeEvent(
   "turn.assistant_delta",
   ChannelAssistantDeltaPayloadSchema,
 );
+export const ChannelAssistantMessageEventSchema = defineChannelRuntimeEvent(
+  "turn.assistant_message",
+  ChannelAssistantMessagePayloadSchema,
+);
 export const ChannelTerminalOutputEventSchema = defineChannelRuntimeEvent(
   "turn.terminal_output",
   ChannelTerminalOutputPayloadSchema,
@@ -157,6 +167,7 @@ export const ChannelApprovalResolvedEventSchema = defineChannelRuntimeEvent(
 export const KnownChannelRuntimeEventSchema = z.union([
   ChannelTurnStateChangedEventSchema,
   ChannelAssistantDeltaEventSchema,
+  ChannelAssistantMessageEventSchema,
   ChannelTerminalOutputEventSchema,
   ChannelToolSummaryEventSchema,
   ChannelApprovalRequestedEventSchema,
