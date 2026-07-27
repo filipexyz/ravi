@@ -687,6 +687,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "capsuleVersion": 1,
   "compatibilityProfile": "additive-v1",
-  "sourceDigest": "68f08f202a5edaba75c6158112ee3823f62d8e14eb948884bcea7e67b7b15d75",
+  "sourceDigest": "838e646ed2c4ab9d5d631231355cf7275f779ce99612154a4cd37aa9a827f212",
   "title": "native-channel-driver channel capability"
 }
