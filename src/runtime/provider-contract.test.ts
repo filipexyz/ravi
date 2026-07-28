@@ -165,7 +165,7 @@ describe("runtime provider contract", () => {
         operations: ["thread.list", "thread.read", "thread.rollback", "thread.fork", "turn.steer", "turn.interrupt"],
       },
       dynamicTools: {
-        mode: "none",
+        mode: "host",
       },
       execution: {
         mode: "subprocess-rpc",

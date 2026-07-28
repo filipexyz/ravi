@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { StoredRemoteInstallationCredential } from "../cloud-auth/installation-storage.js";
+import type { ContextRecord } from "../router/router-db.js";
 import { CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS } from "./outbound-publish-outbox.js";
 import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
 import {
@@ -25,6 +26,7 @@ import {
   NativeChannelDriverRegistry,
   type NativeInboundChannelActionHandler,
 } from "./native/driver.js";
+import { nativeLocalAgentActions } from "./native/agent-actions.js";
 import { installationChannelName, mergeInstallationCredentialChannels } from "./native/installation-channels.js";
 import { createSlackNativeChannelDriver } from "./slack/driver.js";
 
@@ -240,6 +242,94 @@ describe("channel runner native delivery registry", () => {
         status: "disconnected",
       },
     ]);
+  });
+
+  it("disposes source-scoped local agent actions with the native runner lifecycle", async () => {
+    nativeLocalAgentActions.clearForTests();
+    const registry = new NativeChannelDriverRegistry();
+    registry.register({
+      descriptor: {
+        protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+        schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+        driverId: "example.native",
+        provider: "example",
+        capabilities: ["inbound"],
+        requiredHostCapabilities: ["local_agent_actions"],
+      },
+      createRuntime(context) {
+        context.host.registerLocalAgentAction?.(
+          {
+            toolName: "example_create_space",
+            description: "Create a provider-owned collaboration space.",
+            inputSchema: {
+              type: "object",
+              properties: { name: { type: "string" } },
+            },
+            sourceAccountId: "account-1",
+          },
+          async (request) => ({
+            protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+            schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+            requestId: request.requestId,
+            disposition: "completed",
+            text: "Created.",
+            completedAt: "2026-07-26T12:00:01.000Z",
+          }),
+        );
+        return {
+          descriptor: {
+            protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+            schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+            driverId: "example.native",
+            provider: "example",
+            runtimeId: "example-runtime-a",
+            channelInstanceId: context.channel.name,
+            capabilities: ["inbound"],
+          },
+          start: mock(async () => {}),
+          stop: mock(async () => {}),
+          health: () => ({ status: "connected" as const }),
+        };
+      },
+    });
+    const manager = new NativeChannelDriverManager({
+      channels: {
+        "example-channel-a": {
+          name: "example-channel-a",
+          provider: "example",
+          enabled: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      },
+      registry,
+    });
+    const runtimeContext: ContextRecord = {
+      contextId: "context-1",
+      contextKey: "context-key-1",
+      kind: "turn-runtime",
+      agentId: "agent-1",
+      sessionName: "session-1",
+      source: {
+        channel: "example",
+        accountId: "account-1",
+        chatId: "conversation-1",
+      },
+      capabilities: [],
+      createdAt: Date.parse("2026-07-26T12:00:00.000Z"),
+    };
+
+    try {
+      await manager.start();
+      expect(nativeLocalAgentActions.list(runtimeContext).map(({ toolName }) => toolName)).toEqual([
+        "example_create_space",
+      ]);
+    } finally {
+      await manager.stop();
+    }
+
+    expect(nativeLocalAgentActions.list(runtimeContext)).toEqual([]);
+    nativeLocalAgentActions.clearForTests();
   });
 
   it("starts one inbound action responder only when a native runtime exposes handlers", () => {
