@@ -51,6 +51,12 @@ If neither source is available, the daemon starts without channel support (no Wh
 | `ELEVENLABS_API_KEY` | — | ElevenLabs for text-to-speech generation |
 | `ELEVENLABS_VOICE_ID` | `JBFqnCBsd6RMkjVDRZzb` | ElevenLabs voice ID for TTS |
 
+### Runtime Resilience (optional)
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `RAVI_RUNTIME_EVENT_LOOP_MAX_RESTARTS` | `2` | Maximum automatic restarts after a provider event loop closes. Set to `0` to disable automatic replay |
+
 ### Model Overrides (optional)
 
 | Variable | Default | Description |

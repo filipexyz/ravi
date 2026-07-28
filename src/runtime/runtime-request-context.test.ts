@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { createContact } from "../contacts.js";
 import { canWithCapabilities } from "../permissions/provider-runtime.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { dbCreateAgent, dbGetContext, dbUpdateAgent } from "../router/router-db.js";
-import { getOrCreateSession } from "../router/sessions.js";
+import { dbBindSessionToChat, dbCreateAgent, dbGetContext, dbUpdateAgent, dbUpsertChat } from "../router/router-db.js";
+import { getOrCreateSession, resetSession } from "../router/sessions.js";
 import { dbCreateTagDefinition } from "../tags/index.js";
 import { dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
 import type { AgentConfig } from "../router/index.js";
@@ -11,6 +11,7 @@ import type { TaskRuntimeResolution } from "../tasks/types.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from "./runtime-request-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
+import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
 
 let stateDir: string | null = null;
 
@@ -103,6 +104,51 @@ describe("runtime request context authority", () => {
     } else {
       process.env.RAVI_TURN_SCOPED_AUTHORITY = previous;
     }
+  });
+
+  it("keeps agent capabilities when a reset session contributes only a reply surface", () => {
+    dbCreateAgent({ id: agent.id, cwd: agent.cwd });
+    const session = getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "main",
+      platformChatId: "120363428243036323@g.us",
+      normalizedChatId: "group:120363428243036323",
+      chatType: "group",
+      title: "Runtime test",
+    });
+    dbBindSessionToChat({
+      sessionKey,
+      chatId: chat.id,
+      agentId: agent.id,
+      bindingReason: "test",
+    });
+    resetSession(sessionKey);
+
+    const prompt: RuntimeLaunchPrompt = { prompt: "internal post-reset prompt" };
+    const resolvedSource = resolveRuntimePromptSource(prompt, session);
+    const { runtimeContext } = buildRuntimeRequestContext({
+      dbSessionKey: sessionKey,
+      sessionName,
+      sessionCwd: agent.cwd,
+      agent,
+      prompt,
+      runtimeProviderId: "codex",
+      model: "gpt-5",
+      runtimeResolution,
+      resolvedSource,
+    });
+
+    expect(resolvedSource?.canonicalChatId).toBe(chat.id);
+    expect(runtimeContext.metadata).toMatchObject({
+      actorPrincipal: "unknown",
+      actorResolution: "not_applicable",
+      surfacePrincipal: `chat:${chat.id}`,
+      agentIdentityCompartment: `chat:${chat.id}`,
+    });
+    expect(runtimeContext.capabilities.length).toBeGreaterThan(0);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Read")).toBe(true);
+    expect(canWithCapabilities(runtimeContext.capabilities, "use", "tool", "Bash")).toBe(true);
   });
 
   it("keeps actor and surface as audit-only branches in agent identity turns", () => {

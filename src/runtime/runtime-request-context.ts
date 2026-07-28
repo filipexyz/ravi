@@ -234,7 +234,11 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
   const surfacePrincipal = resolveSurfacePrincipal(actorMetadata);
   const actorDisplayName = cleanStringValue(actorMetadata?.senderName);
   const surfaceDisplayName = cleanStringValue(actorMetadata?.groupName);
-  const actorResolution = resolveActorResolution(actorMetadata, actorPrincipal);
+  const actorResolution = resolveActorResolution(
+    actorMetadata,
+    actorPrincipal,
+    hasPromptExternalAuthoritySurface(options.prompt),
+  );
 
   return buildAgentIdentityRuntimeContextInput({
     agentId: options.agentId,
@@ -423,10 +427,15 @@ function isExternalAuthoritySurface(
 function resolveActorResolution(
   actorMetadata: MessageActorMetadata | undefined,
   actorPrincipal: AuthorityPrincipal | null,
+  promptHasExternalAuthoritySurface: boolean,
 ): "resolved" | "missing_contact" | "not_applicable" {
   if (actorPrincipal) return "resolved";
-  if (isExternalAuthoritySurface(actorMetadata)) return "missing_contact";
+  if (promptHasExternalAuthoritySurface && isExternalAuthoritySurface(actorMetadata)) return "missing_contact";
   return "not_applicable";
+}
+
+function hasPromptExternalAuthoritySurface(prompt: RuntimeLaunchPrompt): boolean {
+  return isExternalAuthoritySurface(prompt.source) || isExternalAuthoritySurface(prompt.context);
 }
 
 function resolveActorPrincipal(actorMetadata: MessageActorMetadata | undefined): AuthorityPrincipal | null {

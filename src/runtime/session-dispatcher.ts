@@ -40,8 +40,7 @@ import {
   type PendingRuntimeSessionStart,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { formatUserFacingTurnFailure } from "./public-failure.js";
-import { resolveSessionOutputTarget } from "./session-output-target.js";
+import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
   buildRuntimeSessionPoolSnapshot,
@@ -53,7 +52,7 @@ import {
 
 const log = logger.child("runtime:session-dispatcher");
 const RUNTIME_EVENT_LOOP_CLOSED_REASON = "runtime_event_loop_closed";
-const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
+const DEFAULT_RUNTIME_EVENT_LOOP_MAX_RESTARTS = 2;
 const RUNTIME_RESTART_EXHAUSTED_ERROR =
   "Runtime provider stream closed repeatedly. Automatic recovery was stopped; send a new message to retry.";
 const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
@@ -89,7 +88,9 @@ export interface RuntimeSessionDispatcherOptions {
   maxConcurrentSessions: number;
   interactiveReservedSessions: number;
   safeEmit: RuntimeSafeEmit;
+  notifyRuntimeRecoveryExhausted(input: RuntimeRecoveryExhaustedAlertInput): Promise<void>;
   getConfigModel(): string;
+  maxRuntimeEventLoopRestarts?: number;
 }
 
 export interface RuntimeAbortProvenance {
@@ -112,8 +113,11 @@ export class RuntimeSessionDispatcher {
   readonly pendingStartSessions = new Set<string>();
   readonly startingSessions = new Set<string>();
   private readonly runtimeEventLoopRestartAttempts = new Map<string, number>();
+  private readonly maxRuntimeEventLoopRestarts: number;
 
-  constructor(private readonly options: RuntimeSessionDispatcherOptions) {}
+  constructor(private readonly options: RuntimeSessionDispatcherOptions) {
+    this.maxRuntimeEventLoopRestarts = options.maxRuntimeEventLoopRestarts ?? resolveRuntimeEventLoopMaxRestarts();
+  }
 
   getRuntimeSessionPoolSnapshot(): RuntimeSessionPoolSnapshot {
     return buildRuntimeSessionPoolSnapshot(this.streamingSessions, {
@@ -1445,7 +1449,8 @@ export class RuntimeSessionDispatcher {
       reason === RUNTIME_EVENT_LOOP_CLOSED_REASON
         ? (this.runtimeEventLoopRestartAttempts.get(sessionName) ?? 0) + 1
         : undefined;
-    if (restartAttempt !== undefined && restartAttempt > MAX_RUNTIME_EVENT_LOOP_RESTARTS) {
+    if (restartAttempt !== undefined && restartAttempt > this.maxRuntimeEventLoopRestarts) {
+      const stashedQueueSize = stashed.length;
       recordRuntimeTraceEvent({
         sessionKey: traceIdentity.sessionKey,
         sessionName,
@@ -1459,9 +1464,11 @@ export class RuntimeSessionDispatcher {
         error: RUNTIME_RESTART_EXHAUSTED_ERROR,
         payloadJson: {
           reason,
-          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
-          stashedQueueSize: stashed.length,
-          resumeStashedMessages: true,
+          restartAttempts: this.maxRuntimeEventLoopRestarts,
+          stashedQueueSize,
+          resumeStashedMessages: false,
+          stashedMessagesDropped: stashedQueueSize,
+          userResponseSuppressed: true,
         },
       });
       updateRuntimeLiveState(sessionName, {
@@ -1475,8 +1482,10 @@ export class RuntimeSessionDispatcher {
         .safeEmit(`ravi.session.${sessionName}.runtime`, {
           type: "dispatch.restart_suppressed",
           reason,
-          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
-          stashedQueueSize: stashed.length,
+          restartAttempts: this.maxRuntimeEventLoopRestarts,
+          stashedQueueSize,
+          stashedMessagesDropped: stashedQueueSize,
+          userResponseSuppressed: true,
           error: RUNTIME_RESTART_EXHAUSTED_ERROR,
           ...(prompt.source ? { _source: prompt.source } : {}),
           timestamp: new Date().toISOString(),
@@ -1485,29 +1494,35 @@ export class RuntimeSessionDispatcher {
           log.warn("Failed to emit suppressed runtime restart event", { sessionName, reason, error });
         });
 
-      const outputTarget = resolveSessionOutputTarget({
+      this.stashedMessages.delete(sessionName);
+      this.runtimeEventLoopRestartAttempts.delete(sessionName);
+      log.error("Runtime recovery exhausted; suppressed channel response and dropped stashed replay", {
+        sessionName,
         sessionKey: traceIdentity.sessionKey,
-        fallback: prompt.source,
-      }).target;
-      if (outputTarget) {
-        const routerConfig = configStore.getConfig();
-        const agentId = traceIdentity.agentId ?? prompt._agentId;
-        const agent = agentId ? routerConfig.agents[agentId] : undefined;
-        if (agent?.mode !== "sentinel") {
-          await nats
-            .emit(`ravi.session.${sessionName}.response`, {
-              response: formatUserFacingTurnFailure(RUNTIME_RESTART_EXHAUSTED_ERROR),
-              target: outputTarget,
-              _emitId: Math.random().toString(36).slice(2, 8),
-              _instanceId: this.options.instanceId,
-              _pid: process.pid,
-              _v: 2,
-            })
-            .catch((error) => {
-              log.warn("Failed to emit exhausted runtime recovery response", { sessionName, reason, error });
-            });
-        }
-      }
+        agentId: traceIdentity.agentId ?? prompt._agentId,
+        provider: prompt._runtimeProviderId,
+        reason,
+        restartAttempts: this.maxRuntimeEventLoopRestarts,
+        stashedMessagesDropped: stashedQueueSize,
+      });
+      await this.options
+        .notifyRuntimeRecoveryExhausted({
+          sessionKey: traceIdentity.sessionKey,
+          sessionName,
+          ...((traceIdentity.agentId ?? prompt._agentId) ? { agentId: traceIdentity.agentId ?? prompt._agentId } : {}),
+          ...(prompt._runtimeProviderId ? { provider: prompt._runtimeProviderId } : {}),
+          reason,
+          restartAttempts: this.maxRuntimeEventLoopRestarts,
+          stashedQueueSize,
+          ...(prompt.context?.messageId ? { sourceMessageId: prompt.context.messageId } : {}),
+        })
+        .catch((error) => {
+          log.warn("Failed to notify operator about exhausted runtime recovery", {
+            sessionName,
+            reason,
+            error,
+          });
+        });
       return;
     }
     if (restartAttempt !== undefined) {
@@ -1529,7 +1544,7 @@ export class RuntimeSessionDispatcher {
         ...(restartAttempt !== undefined
           ? {
               restartAttempt,
-              maxRestartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+              maxRestartAttempts: this.maxRuntimeEventLoopRestarts,
             }
           : {}),
         stashedQueueSize: stashed.length,
@@ -1733,6 +1748,15 @@ export class RuntimeSessionDispatcher {
 
     return "accepted";
   }
+}
+
+export function resolveRuntimeEventLoopMaxRestarts(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): number {
+  const raw = env.RAVI_RUNTIME_EVENT_LOOP_MAX_RESTARTS?.trim();
+  if (!raw) return DEFAULT_RUNTIME_EVENT_LOOP_MAX_RESTARTS;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : DEFAULT_RUNTIME_EVENT_LOOP_MAX_RESTARTS;
 }
 
 export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, barrier: DeliveryBarrier): boolean {
