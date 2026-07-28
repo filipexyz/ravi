@@ -45908,6 +45908,56 @@ export const ProjectsFixturesSeedReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `projects.focus`. */
+export const ProjectsFocusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "clear": {
+      "description": "Clear the explicit focus and return to the heuristic",
+      "type": "boolean"
+    },
+    "project": {
+      "description": "Project id or slug",
+      "type": "string"
+    },
+    "runId": {
+      "description": "Workflow run id to focus (omit with --clear)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `projects.focus`. */
+export const ProjectsFocusReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "focusedWorkflowRunId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "details",
+    "focusedWorkflowRunId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.init`. */
 export const ProjectsInitInputSchema = {
   "additionalProperties": false,
@@ -47633,6 +47683,48 @@ export const ProjectsTasksDispatchReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `projects.tasks.list`. */
+export const ProjectsTasksListInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "description": "Project id or slug",
+      "type": "string"
+    },
+    "status": {
+      "description": "Filter by task status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `projects.tasks.list`. */
+export const ProjectsTasksListReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "tasks": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "total": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "total",
+    "tasks"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `projects.update`. */
 export const ProjectsUpdateInputSchema = {
   "additionalProperties": false,
@@ -47783,6 +47875,59 @@ export const ProjectsWorkflowsStartReturnSchema = {
   "required": [
     "details",
     "workflow"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `projects.workflows.unlink`. */
+export const ProjectsWorkflowsUnlinkInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "project": {
+      "description": "Project id or slug",
+      "type": "string"
+    },
+    "runId": {
+      "description": "Workflow run id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "project",
+    "runId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `projects.workflows.unlink`. */
+export const ProjectsWorkflowsUnlinkReturnSchema = {
+  "additionalProperties": {},
+  "properties": {
+    "details": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    },
+    "promotedPrimaryWorkflowRunId": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "removedWorkflow": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
+    }
+  },
+  "required": [
+    "details",
+    "removedWorkflow",
+    "promotedPrimaryWorkflowRunId"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

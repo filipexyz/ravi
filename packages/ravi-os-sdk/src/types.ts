@@ -9044,6 +9044,20 @@ export type ProjectsFixturesSeedReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `projects.focus`. */
+export type ProjectsFocusInput = {
+  clear?: boolean;
+  project: string;
+  runId?: string;
+};
+
+/** Return shape for `projects.focus`. */
+export type ProjectsFocusReturn = {
+  details: Record<string, unknown>;
+  focusedWorkflowRunId: string | null;
+  [k: string]: unknown;
+};
+
 /** Input shape for `projects.init`. */
 export type ProjectsInitInput = {
   hypothesis?: string;
@@ -9394,6 +9408,19 @@ export type ProjectsTasksDispatchReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `projects.tasks.list`. */
+export type ProjectsTasksListInput = {
+  project: string;
+  status?: string;
+};
+
+/** Return shape for `projects.tasks.list`. */
+export type ProjectsTasksListReturn = {
+  tasks: Array<Record<string, unknown>>;
+  total: number;
+  [k: string]: unknown;
+};
+
 /** Input shape for `projects.update`. */
 export type ProjectsUpdateInput = {
   hypothesis?: string;
@@ -9437,6 +9464,20 @@ export type ProjectsWorkflowsStartInput = {
 export type ProjectsWorkflowsStartReturn = {
   details: Record<string, unknown>;
   workflow: Record<string, unknown>;
+  [k: string]: unknown;
+};
+
+/** Input shape for `projects.workflows.unlink`. */
+export type ProjectsWorkflowsUnlinkInput = {
+  project: string;
+  runId: string;
+};
+
+/** Return shape for `projects.workflows.unlink`. */
+export type ProjectsWorkflowsUnlinkReturn = {
+  details: Record<string, unknown>;
+  promotedPrimaryWorkflowRunId: string | null;
+  removedWorkflow: Record<string, unknown>;
   [k: string]: unknown;
 };
 
