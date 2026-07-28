@@ -33,6 +33,7 @@ import {
   requestChannelRuntimeInterrupt,
   setChannelBackendEgressRequesterForRuntime,
   setChannelRuntimeAbortPublisherForTests,
+  setChannelRuntimeGenerationIdForTests,
   type ChannelInterruptRequest,
   type KnownChannelRuntimeEvent,
 } from "./runtime-events.js";
@@ -43,6 +44,7 @@ let unregisterRuntimeEvents: (() => void) | undefined;
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-channel-runtime-events-");
+  setChannelRuntimeGenerationIdForTests("runtime-generation-a");
   dbCreateAgent({
     id: "agent-a",
     name: "Agent A",
@@ -59,6 +61,7 @@ afterEach(async () => {
   setChannelBackendPromptPublisherForTests();
   setChannelBackendEgressRequesterForRuntime();
   setChannelRuntimeAbortPublisherForTests();
+  setChannelRuntimeGenerationIdForTests();
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
 });
@@ -89,12 +92,23 @@ describe("channel runtime event projection", () => {
       "channel_backend_runtime_state",
     ]);
     expect(stateColumns).toEqual(
-      new Set(["turn_id", "state", "last_sequence", "last_delta_sequence", "assistant_message_id", "updated_at"]),
+      new Set([
+        "turn_id",
+        "state",
+        "last_sequence",
+        "last_delta_sequence",
+        "assistant_message_id",
+        "runtime_generation_id",
+        "terminal_error_json",
+        "updated_at",
+      ]),
     );
   });
 
-  it("adds the delta sequence column to an existing runtime state table", () => {
+  it("adds readback metadata columns to an existing runtime state table", () => {
     getDb().exec("ALTER TABLE channel_backend_runtime_state DROP COLUMN last_delta_sequence");
+    getDb().exec("ALTER TABLE channel_backend_runtime_state DROP COLUMN runtime_generation_id");
+    getDb().exec("ALTER TABLE channel_backend_runtime_state DROP COLUMN terminal_error_json");
     closeRouterDb();
 
     const stateColumns = new Set(
@@ -106,6 +120,8 @@ describe("channel runtime event projection", () => {
     );
 
     expect(stateColumns).toContain("last_delta_sequence");
+    expect(stateColumns).toContain("runtime_generation_id");
+    expect(stateColumns).toContain("terminal_error_json");
   });
 
   it("emits ordered safe events and persists one canonical terminal assistant message", async () => {
@@ -193,18 +209,20 @@ describe("channel runtime event projection", () => {
       content: [{ type: "text", text: "Hello world" }],
     });
 
-    expect(
-      readChannelRuntime({
-        protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
-        schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
-        requestId: "readback-a",
-        binding: metadata.binding,
-      }),
-    ).toMatchObject({
+    const readback = readChannelRuntime({
+      protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+      schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+      requestId: "readback-a",
+      binding: metadata.binding,
+    });
+    expect(readback).toMatchObject({
       state: "completed",
       lastSequence: 4,
       assistantMessageId: runtime?.assistantMessageId,
+      runtimeGenerationId: "runtime-generation-a",
+      lastEventRuntimeGenerationId: "runtime-generation-a",
     });
+    expect(readback.terminalEvent).toEqual(lastTerminalEvent(events));
   });
 
   it("projects approval lifecycle and failures without provider payloads", async () => {
@@ -286,6 +304,45 @@ describe("channel runtime event projection", () => {
         }),
       }),
     ]);
+    const readback = readChannelRuntime({
+      protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+      schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+      requestId: "readback-failed",
+      binding: metadata.binding,
+    });
+    expect(readback.terminalEvent).toEqual(lastTerminalEvent(events));
+  });
+
+  it("distinguishes a nonterminal turn left by an earlier runtime generation", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+
+    await projectChannelRuntimeEvent({
+      metadata,
+      event: {
+        type: "text.delta",
+        text: "partial",
+      },
+      occurredAt: Date.parse("2026-07-24T18:00:01.000Z"),
+      sinks: runtimeSinks(metadata, events),
+    });
+
+    setChannelRuntimeGenerationIdForTests("runtime-generation-b");
+    const readback = readChannelRuntime({
+      protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+      schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+      requestId: "readback-after-restart",
+      binding: metadata.binding,
+    });
+
+    expect(readback).toMatchObject({
+      state: "running",
+      lastSequence: 2,
+      runtimeGenerationId: "runtime-generation-b",
+      lastEventRuntimeGenerationId: "runtime-generation-a",
+    });
+    expect(readback.terminalEvent).toBeUndefined();
+    expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("running");
   });
 
   it("keeps terminal readback durable when delivery sinks are temporarily unavailable", async () => {
@@ -491,6 +548,14 @@ describe("channel runtime event projection", () => {
       },
     });
     expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)?.state).toBe("interrupted");
+    expect(
+      readChannelRuntime({
+        protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+        schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+        requestId: "readback-interrupted",
+        binding: metadata.binding,
+      }).terminalEvent,
+    ).toEqual(lastTerminalEvent(events));
   });
 });
 
@@ -587,6 +652,16 @@ function runtimeSinks(
     },
   });
   return sinks;
+}
+
+function lastTerminalEvent(
+  events: KnownChannelRuntimeEvent[],
+): Extract<KnownChannelRuntimeEvent, { kind: "turn.terminal_output" }> {
+  const event = events.at(-1);
+  if (event?.kind !== "turn.terminal_output") {
+    throw new Error("Expected the last runtime event to be terminal output");
+  }
+  return event;
 }
 
 async function acceptedMetadata(): Promise<ChannelBackendPromptMetadata> {

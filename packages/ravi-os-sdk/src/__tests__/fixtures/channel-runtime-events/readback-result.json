@@ -8,10 +8,43 @@
     "sessionId": "session-a",
     "turnId": "turn-a"
   },
+  "lastEventRuntimeGenerationId": "runtime-generation-a",
   "lastSequence": 7,
   "observedAt": "2026-07-24T18:00:01.000Z",
   "protocol": "ravi.channel.runtime-events",
   "requestId": "readback-a",
+  "runtimeGenerationId": "runtime-generation-b",
   "schemaVersion": 1,
-  "state": "completed"
+  "state": "completed",
+  "terminalEvent": {
+    "correlation": {
+      "binding": {
+        "agentId": "agent-a",
+        "channelInstanceId": "channel-instance-a",
+        "chatId": "chat-a",
+        "messageId": "message-a",
+        "sessionId": "session-a",
+        "turnId": "turn-a"
+      },
+      "causationId": "request-a",
+      "correlationId": "correlation-a",
+      "ingressRequestId": "request-a"
+    },
+    "eventId": "event-terminal",
+    "kind": "turn.terminal_output",
+    "occurredAt": "2026-07-24T18:00:01.000Z",
+    "payload": {
+      "assistantMessageId": "message-assistant-a",
+      "content": [
+        {
+          "text": "fixture output",
+          "type": "text"
+        }
+      ],
+      "state": "completed"
+    },
+    "protocol": "ravi.channel.runtime-events",
+    "schemaVersion": 1,
+    "sequence": 7
+  }
 }

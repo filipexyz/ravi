@@ -298,6 +298,17 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/channels/", "src/router/", "src/runtime/"]);
   });
 
+  it("accepts channel runtime event coverage across channel and router persistence changes", () => {
+    const result = runCoverageGate([
+      "src/channels/runtime-events.ts",
+      "src/router/router-db.ts",
+      "src/channels/runtime-events.test.ts",
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/channels/", "src/router/"]);
+  });
+
   it("requires a focused native channel test in the diff", () => {
     const missing = runCoverageGate(["src/channels/slack/socket-mode.ts"]);
     const covered = runCoverageGate(["src/channels/slack/socket-mode.ts", "src/channels/slack/socket-mode.test.ts"]);

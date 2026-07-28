@@ -51,13 +51,13 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/readback-request.json"
     },
     {
-      "sha256": "4011d825fc92b9b5daebd9cddc6d1b8b25a4fb65b7f1c444ac37c25ece466794",
-      "sizeBytes": 435,
+      "sha256": "d20766ec0d53748c364a24c712f5ef52ec5be5b0233cffb20bac871e02ab732f",
+      "sizeBytes": 1355,
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/readback-result.json"
     },
     {
-      "sha256": "b915595ef0e0ced0d265513907129933ffdd7eedbec976d659586390ff900510",
-      "sizeBytes": 65760,
+      "sha256": "d78c34055418d51a3bd544f2ffc685cfa18b9b574cae03dfdf6198f4c8198bcf",
+      "sizeBytes": 73755,
       "targetPath": "packages/ravi-os-sdk/src/generated/channel-runtime-events.schema.json"
     }
   ],
@@ -88,7 +88,7 @@
     "packages/ravi-os-sdk/src/generated/channel-runtime-events.schema.json"
   ],
   "formatVersion": 1,
-  "outputDigest": "739740b863bcb0bb889ae6dc4cdd15e5ede22410259fb82983405b00c46e9e71",
+  "outputDigest": "a2d413d743f0c95fcead51f7f15d32a17db34d9fb965c8f7712adcc76ec3ba5c",
   "rationale": "Channel backends need provider-independent turn lifecycle, delta, terminal, approval, interrupt, and readback contracts.",
   "schemaAllowlist": [
     {
@@ -243,12 +243,15 @@
         "state",
         "lastSequence",
         "assistantMessageId",
+        "runtimeGenerationId",
+        "lastEventRuntimeGenerationId",
+        "terminalEvent",
         "observedAt"
       ],
       "schema": "ChannelRuntimeReadbackResult"
     }
   ],
-  "sourceDigest": "8ff6df3bbd8ac1bade14b8d13dd69c6bb045c91b1f6d2c85de280903608eb68b",
+  "sourceDigest": "77fffe4234a1fed76de12bd97da784d9b3bfacec75c437c5e8954a2b464de058",
   "targetRepository": "filipexyz/ravi",
   "validations": [
     {
