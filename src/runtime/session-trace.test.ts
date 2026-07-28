@@ -33,7 +33,9 @@ import {
   shouldSuppressUserFacingRuntimeLimitFailure,
 } from "./host-event-loop.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
+import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import { buildRuntimeStartRequest, resolveRuntimeCredentialUpstreamProvider } from "./runtime-request-builder.js";
+import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
 import type {
   RuntimeCapabilities,
   RuntimeEvent,
@@ -1242,6 +1244,70 @@ describe("runtime session trace instrumentation", () => {
       autoRecovered: true,
     });
     expect(getSessionTurn("turn-stream-closed-before-tool")?.status).toBe("aborted");
+  });
+
+  it("records exhausted recovery without publishing a user-facing response", async () => {
+    const alerts: RuntimeRecoveryExhaustedAlertInput[] = [];
+    const runtimeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const responseTopics: string[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string) => {
+      if (topic.endsWith(".response")) responseTopics.push(topic);
+    });
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "trace-test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async (topic, data) => {
+        runtimeEvents.push({ topic, data });
+      },
+      notifyRuntimeRecoveryExhausted: async (input) => {
+        alerts.push(input);
+      },
+      getConfigModel: () => MODEL,
+    });
+    dispatcher.stashedMessages.set(SESSION_KEY, [
+      createQueuedRuntimeUserMessage({
+        prompt: "retry this turn",
+        source,
+        _agentId: AGENT_ID,
+        _runtimeProviderId: PROVIDER,
+      }),
+    ]);
+
+    let starts = 0;
+    dispatcher.startStreamingSession = async () => {
+      starts++;
+    };
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    try {
+      await recovery.restartStashedSession(SESSION_KEY, "runtime_event_loop_closed");
+      await recovery.restartStashedSession(SESSION_KEY, "runtime_event_loop_closed");
+      await recovery.restartStashedSession(SESSION_KEY, "runtime_event_loop_closed");
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    const suppression = listSessionEvents(SESSION_KEY).find(
+      (event) => event.eventType === "dispatch.restart_suppressed",
+    );
+    expect(starts).toBe(2);
+    expect(responseTopics).toEqual([]);
+    expect(dispatcher.stashedMessages.has(SESSION_KEY)).toBe(true);
+    expect(alerts).toHaveLength(1);
+    expect(runtimeEvents).toHaveLength(1);
+    expect(suppression).toMatchObject({
+      status: "blocked",
+      payloadJson: {
+        reason: "runtime_event_loop_closed",
+        restartAttempts: 2,
+        stashedQueueSize: 1,
+        resumeStashedMessages: true,
+        userResponseSuppressed: true,
+      },
+    });
   });
 
   it("closes the provider handle and event iterator when the host session is aborted", async () => {
