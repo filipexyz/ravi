@@ -69,6 +69,10 @@ export function getAllCliToolNames(): string[] {
   return getCachedTools().map((t) => t.name);
 }
 
+export function getCliToolDefinition(name: string): ExportedTool | undefined {
+  return getCachedTools().find((tool) => tool.name === name);
+}
+
 /**
  * Get CLI tools grouped by command group.
  */

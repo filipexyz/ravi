@@ -440,6 +440,7 @@ mock.module("./cli/context.js", () => ({
 
 mock.module("./cli/tool-definitions.js", () => ({
   getAllCommandClasses: () => [],
+  getCliToolDefinition: () => undefined,
   createSdkTools: () => [
     {
       name: "tools_list",

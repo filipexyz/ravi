@@ -6,6 +6,7 @@ import {
   ChannelRuntimeReadbackRequestSchema,
   ChannelRuntimeReadbackResultSchema,
   ChannelTerminalOutputEventSchema,
+  ChannelToolPresentationParameterSchema,
   KnownChannelRuntimeEventSchema,
   createChannelRuntimeClient,
   type ChannelInterruptRequest,
@@ -79,6 +80,33 @@ describe("channel runtime events contract", () => {
       ChannelRuntimeReadbackResultSchema.safeParse({
         ...readback,
         lastSequence: readback.lastSequence + 1,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("requires tool parameters to carry either a safe value or a redaction marker", () => {
+    expect(
+      ChannelToolPresentationParameterSchema.safeParse({
+        name: "query",
+        value: "safe summary",
+      }).success,
+    ).toBe(true);
+    expect(
+      ChannelToolPresentationParameterSchema.safeParse({
+        name: "token",
+        redacted: true,
+      }).success,
+    ).toBe(true);
+    expect(
+      ChannelToolPresentationParameterSchema.safeParse({
+        name: "token",
+      }).success,
+    ).toBe(false);
+    expect(
+      ChannelToolPresentationParameterSchema.safeParse({
+        name: "token",
+        value: "must-not-cross-the-boundary",
+        redacted: true,
       }).success,
     ).toBe(false);
   });

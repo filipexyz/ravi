@@ -10,6 +10,12 @@ import {
 
 export const CHANNEL_RUNTIME_EVENTS_PROTOCOL = "ravi.channel.runtime-events" as const;
 export const CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION = 1 as const;
+export const MAX_CHANNEL_TOOL_PRESENTATION_TITLE_BYTES = 256;
+export const MAX_CHANNEL_TOOL_PRESENTATION_SUMMARY_BYTES = 1_024;
+export const MAX_CHANNEL_TOOL_PRESENTATION_PARAMETER_NAME_BYTES = 96;
+export const MAX_CHANNEL_TOOL_PRESENTATION_PARAMETER_LABEL_BYTES = 256;
+export const MAX_CHANNEL_TOOL_PRESENTATION_PARAMETER_VALUE_BYTES = 512;
+export const MAX_CHANNEL_TOOL_PRESENTATION_PARAMETERS = 8;
 
 const textEncoder = new TextEncoder();
 
@@ -97,10 +103,66 @@ export const ChannelTerminalOutputPayloadSchema = z
     }
   });
 
+export const ChannelToolPresentationParameterSchema = z
+  .object({
+    name: boundedUtf8String(
+      MAX_CHANNEL_TOOL_PRESENTATION_PARAMETER_NAME_BYTES,
+      "tool presentation parameter name",
+    ).regex(
+      /^[A-Za-z][A-Za-z0-9._-]*$/,
+      "tool presentation parameter name must be portable",
+    ),
+    label: boundedUtf8String(
+      MAX_CHANNEL_TOOL_PRESENTATION_PARAMETER_LABEL_BYTES,
+      "tool presentation parameter label",
+    ).optional(),
+    value: boundedUtf8String(
+      MAX_CHANNEL_TOOL_PRESENTATION_PARAMETER_VALUE_BYTES,
+      "tool presentation parameter value",
+    ).optional(),
+    redacted: z.boolean().optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.value === undefined && value.redacted !== true) {
+      context.addIssue({
+        code: "custom",
+        path: ["value"],
+        message: "tool presentation parameter requires a value or explicit redaction",
+      });
+    }
+    if (value.value !== undefined && value.redacted === true) {
+      context.addIssue({
+        code: "custom",
+        path: ["value"],
+        message: "tool presentation parameter cannot contain a value when redacted",
+      });
+    }
+  });
+
+export const ChannelToolPresentationSchema = z.object({
+  title: boundedUtf8String(
+    MAX_CHANNEL_TOOL_PRESENTATION_TITLE_BYTES,
+    "tool presentation title",
+  ),
+  summary: boundedUtf8String(
+    MAX_CHANNEL_TOOL_PRESENTATION_SUMMARY_BYTES,
+    "tool presentation summary",
+  ).optional(),
+  category: ChannelBackendWireKindSchema.optional(),
+  operation: z.enum(["read", "mutate", "execute", "ask"]).optional(),
+  risk: z.enum(["low", "medium", "high", "destructive"]).optional(),
+  parameters: z
+    .array(ChannelToolPresentationParameterSchema)
+    .max(MAX_CHANNEL_TOOL_PRESENTATION_PARAMETERS)
+    .optional(),
+});
+
 export const ChannelToolSummaryPayloadSchema = z.object({
   toolCallId: ChannelBackendOpaqueIdSchema,
   toolName: ChannelBackendWireKindSchema,
   phase: z.enum(["requested", "running", "completed", "failed", "denied"]),
+  presentation: ChannelToolPresentationSchema.optional(),
+  durationMs: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
   error: ChannelSafeErrorSchema.optional(),
 });
 
@@ -240,6 +302,8 @@ export const ChannelRuntimeReadbackResultSchema = z
 
 export type ChannelRuntimeCorrelation = z.infer<typeof ChannelRuntimeCorrelationSchema>;
 export type ChannelTurnState = z.infer<typeof ChannelTurnStateSchema>;
+export type ChannelToolPresentationParameter = z.infer<typeof ChannelToolPresentationParameterSchema>;
+export type ChannelToolPresentation = z.infer<typeof ChannelToolPresentationSchema>;
 export type KnownChannelRuntimeEvent = z.infer<typeof KnownChannelRuntimeEventSchema>;
 export type ChannelInterruptRequest = z.infer<typeof ChannelInterruptRequestSchema>;
 export type ChannelInterruptResult = z.infer<typeof ChannelInterruptResultSchema>;

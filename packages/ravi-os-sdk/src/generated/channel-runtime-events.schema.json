@@ -1030,9 +1030,98 @@
       ],
       "type": "object"
     },
+    "ChannelToolPresentation": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "category": {
+          "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+          "type": "string"
+        },
+        "operation": {
+          "enum": [
+            "read",
+            "mutate",
+            "execute",
+            "ask"
+          ],
+          "type": "string"
+        },
+        "parameters": {
+          "items": {
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "name": {
+                "pattern": "^[A-Za-z][A-Za-z0-9._-]*$",
+                "type": "string"
+              },
+              "redacted": {
+                "type": "boolean"
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ],
+            "type": "object"
+          },
+          "maxItems": 8,
+          "type": "array"
+        },
+        "risk": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "destructive"
+          ],
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ],
+      "type": "object"
+    },
+    "ChannelToolPresentationParameter": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[A-Za-z][A-Za-z0-9._-]*$",
+          "type": "string"
+        },
+        "redacted": {
+          "type": "boolean"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
     "ChannelToolSummaryPayload": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "properties": {
+        "durationMs": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
         "error": {
           "properties": {
             "category": {
@@ -1090,6 +1179,67 @@
             "denied"
           ],
           "type": "string"
+        },
+        "presentation": {
+          "properties": {
+            "category": {
+              "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+              "type": "string"
+            },
+            "operation": {
+              "enum": [
+                "read",
+                "mutate",
+                "execute",
+                "ask"
+              ],
+              "type": "string"
+            },
+            "parameters": {
+              "items": {
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "pattern": "^[A-Za-z][A-Za-z0-9._-]*$",
+                    "type": "string"
+                  },
+                  "redacted": {
+                    "type": "boolean"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "type": "object"
+              },
+              "maxItems": 8,
+              "type": "array"
+            },
+            "risk": {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "destructive"
+              ],
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "title"
+          ],
+          "type": "object"
         },
         "toolCallId": {
           "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
@@ -1945,6 +2095,11 @@
             },
             "payload": {
               "properties": {
+                "durationMs": {
+                  "maximum": 9007199254740991,
+                  "minimum": 0,
+                  "type": "integer"
+                },
                 "error": {
                   "properties": {
                     "category": {
@@ -2002,6 +2157,67 @@
                     "denied"
                   ],
                   "type": "string"
+                },
+                "presentation": {
+                  "properties": {
+                    "category": {
+                      "pattern": "^[a-z][a-z0-9]*(?:[._-][a-z0-9]+)*$",
+                      "type": "string"
+                    },
+                    "operation": {
+                      "enum": [
+                        "read",
+                        "mutate",
+                        "execute",
+                        "ask"
+                      ],
+                      "type": "string"
+                    },
+                    "parameters": {
+                      "items": {
+                        "properties": {
+                          "label": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "pattern": "^[A-Za-z][A-Za-z0-9._-]*$",
+                            "type": "string"
+                          },
+                          "redacted": {
+                            "type": "boolean"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "name"
+                        ],
+                        "type": "object"
+                      },
+                      "maxItems": 8,
+                      "type": "array"
+                    },
+                    "risk": {
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high",
+                        "destructive"
+                      ],
+                      "type": "string"
+                    },
+                    "summary": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "title"
+                  ],
+                  "type": "object"
                 },
                 "toolCallId": {
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
@@ -2342,6 +2558,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "capsuleVersion": 1,
   "compatibilityProfile": "additive-v1",
-  "sourceDigest": "77fffe4234a1fed76de12bd97da784d9b3bfacec75c437c5e8954a2b464de058",
+  "sourceDigest": "85fd4f904c63918d58c87e93ce8d99a3b3777727946a78a86f67510120f939b4",
   "title": "channel-runtime-events channel capability"
 }
