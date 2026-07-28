@@ -20374,6 +20374,1458 @@ export const CloudScopeShowReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `cnpj.export-crm`. */
+export const CnpjExportCrmInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "apply": {
+      "description": "Write the pinned selection to CRM; default is dry-run",
+      "type": "boolean"
+    },
+    "baseUrl": {
+      "description": "Required exact private endpoint: http://100.77.169.127:8090",
+      "format": "uri",
+      "type": "string"
+    },
+    "capitalMax": {
+      "description": "Preview filter: maximum non-negative share capital",
+      "pattern": "^(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+      "type": "string"
+    },
+    "capitalMin": {
+      "description": "Preview filter: minimum non-negative share capital",
+      "pattern": "^(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+      "type": "string"
+    },
+    "city": {
+      "description": "Preview filter: municipality/city",
+      "type": "string"
+    },
+    "cnae": {
+      "description": "Preview filter: CNAE activity code or prefix",
+      "type": "string"
+    },
+    "cnpjs": {
+      "description": "Apply-only comma-separated explicit CNPJ selection, maximum 100",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Preview size, 1-100 (default: 20)",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "openedFrom": {
+      "description": "Preview filter: opening-date lower bound, YYYY-MM-DD",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    },
+    "openedTo": {
+      "description": "Preview filter: opening-date upper bound, YYYY-MM-DD",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    },
+    "originFilters": {
+      "description": "Apply-only provenance JSON emitted inside the dry-run nextCommand",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Required CRM owner, e.g. agent:main",
+      "type": "string"
+    },
+    "page": {
+      "description": "Preview provider page, >=1",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "query": {
+      "description": "Preview filter: company name or free text",
+      "type": "string"
+    },
+    "selectionHash": {
+      "description": "Apply-only hash emitted by the dry-run preview",
+      "type": "string"
+    },
+    "size": {
+      "description": "Preview filter: MICROEMPRESA|EPP|GRANDES",
+      "enum": [
+        "MICROEMPRESA",
+        "EPP",
+        "GRANDES"
+      ],
+      "type": "string"
+    },
+    "timeoutMs": {
+      "description": "Total request timeout, 100-30000ms",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "uf": {
+      "description": "Preview filter: two-letter uppercase Brazilian state",
+      "pattern": "^[A-Z]{2}$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cnpj.export-crm`. */
+export const CnpjExportCrmReturnSchema = {
+  "oneOf": [
+    {
+      "additionalProperties": false,
+      "properties": {
+        "candidates": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cnpj": {
+                "maxLength": 14,
+                "minLength": 14,
+                "type": "string"
+              },
+              "industry": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "legalName": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "openedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "registrationStatus": {
+                "type": "number"
+              },
+              "uf": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "cnpj",
+              "name",
+              "legalName",
+              "industry",
+              "uf",
+              "registrationStatus",
+              "openedAt"
+            ],
+            "type": "object"
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "dedupe": {
+          "additionalProperties": false,
+          "properties": {
+            "inputCount": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "removedDuplicates": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "uniqueCount": {
+              "maximum": 9007199254740991,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "inputCount",
+            "uniqueCount",
+            "removedDuplicates"
+          ],
+          "type": "object"
+        },
+        "filters": {
+          "additionalProperties": false,
+          "properties": {
+            "capitalMax": {
+              "type": "number"
+            },
+            "capitalMin": {
+              "type": "number"
+            },
+            "cidade": {
+              "type": "string"
+            },
+            "cnae": {
+              "type": "string"
+            },
+            "dataInicioMax": {
+              "type": "string"
+            },
+            "dataInicioMin": {
+              "type": "string"
+            },
+            "limit": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "page": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "porte": {
+              "enum": [
+                "MICROEMPRESA",
+                "EPP",
+                "GRANDES"
+              ],
+              "type": "string"
+            },
+            "q": {
+              "type": "string"
+            },
+            "uf": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "page",
+            "limit"
+          ],
+          "type": "object"
+        },
+        "mode": {
+          "const": "dry-run",
+          "type": "string"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "owner": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "user",
+                "agent",
+                "team",
+                "system"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "selectionHash": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "source": {
+          "additionalProperties": false,
+          "properties": {
+            "app": {
+              "const": "cnpj-server",
+              "type": "string"
+            },
+            "baseUrl": {
+              "const": "http://100.77.169.127:8090",
+              "type": "string"
+            },
+            "crmMutation": {
+              "type": "boolean"
+            },
+            "readOnly": {
+              "const": true,
+              "type": "boolean"
+            },
+            "transport": {
+              "const": "tailscale",
+              "type": "string"
+            }
+          },
+          "required": [
+            "app",
+            "transport",
+            "baseUrl",
+            "readOnly",
+            "crmMutation"
+          ],
+          "type": "object"
+        },
+        "success": {
+          "const": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "success",
+        "mode",
+        "source",
+        "owner",
+        "filters",
+        "candidates",
+        "dedupe",
+        "selectionHash",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "applied": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "failed": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "mode": {
+          "const": "apply",
+          "type": "string"
+        },
+        "originFilters": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "owner": {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "user",
+                "agent",
+                "team",
+                "system"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "id"
+          ],
+          "type": "object"
+        },
+        "requested": {
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "results": {
+          "items": {
+            "anyOf": [
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "cnpj": {
+                    "maxLength": 14,
+                    "minLength": 14,
+                    "type": "string"
+                  },
+                  "factId": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "const": "created-or-reused",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cnpj",
+                  "status",
+                  "accountId",
+                  "factId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "cnpj": {
+                    "maxLength": 14,
+                    "minLength": 14,
+                    "type": "string"
+                  },
+                  "error": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "category": {
+                        "enum": [
+                          "corrigir",
+                          "retry",
+                          "autorizar",
+                          "parar"
+                        ],
+                        "type": "string"
+                      },
+                      "code": {
+                        "type": "string"
+                      },
+                      "message": {
+                        "type": "string"
+                      },
+                      "nextAction": {
+                        "type": "string"
+                      },
+                      "retryable": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": [
+                      "code",
+                      "category",
+                      "retryable",
+                      "message",
+                      "nextAction"
+                    ],
+                    "type": "object"
+                  },
+                  "status": {
+                    "const": "failed",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cnpj",
+                  "status",
+                  "error"
+                ],
+                "type": "object"
+              }
+            ]
+          },
+          "maxItems": 100,
+          "type": "array"
+        },
+        "selectionHash": {
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "type": "string"
+        },
+        "source": {
+          "additionalProperties": false,
+          "properties": {
+            "app": {
+              "const": "cnpj-server",
+              "type": "string"
+            },
+            "baseUrl": {
+              "const": "http://100.77.169.127:8090",
+              "type": "string"
+            },
+            "crmMutation": {
+              "type": "boolean"
+            },
+            "readOnly": {
+              "const": true,
+              "type": "boolean"
+            },
+            "transport": {
+              "const": "tailscale",
+              "type": "string"
+            }
+          },
+          "required": [
+            "app",
+            "transport",
+            "baseUrl",
+            "readOnly",
+            "crmMutation"
+          ],
+          "type": "object"
+        },
+        "status": {
+          "enum": [
+            "completed",
+            "partial",
+            "failed"
+          ],
+          "type": "string"
+        },
+        "success": {
+          "const": true,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "success",
+        "mode",
+        "source",
+        "owner",
+        "selectionHash",
+        "originFilters",
+        "status",
+        "requested",
+        "applied",
+        "failed",
+        "results"
+      ],
+      "type": "object"
+    }
+  ]
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cnpj.get`. */
+export const CnpjGetInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "baseUrl": {
+      "description": "Required exact private endpoint: http://100.77.169.127:8090",
+      "format": "uri",
+      "type": "string"
+    },
+    "cnpj": {
+      "description": "Brazilian CNPJ, formatted or 14 digits",
+      "minLength": 1,
+      "type": "string"
+    },
+    "timeoutMs": {
+      "description": "Total request timeout, 100-30000ms",
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "required": [
+    "cnpj"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cnpj.get`. */
+export const CnpjGetReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "empresa": {
+          "additionalProperties": false,
+          "properties": {
+            "capital_social": {
+              "type": "number"
+            },
+            "cnpj_base": {
+              "type": "string"
+            },
+            "ente_federativo_responsavel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "natureza_juridica": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "porte_empresa": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "qualificacao_responsavel": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "razao_social": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "cnpj_base",
+            "razao_social",
+            "natureza_juridica",
+            "qualificacao_responsavel",
+            "capital_social",
+            "porte_empresa",
+            "ente_federativo_responsavel"
+          ],
+          "type": "object"
+        },
+        "estabelecimento": {
+          "additionalProperties": false,
+          "properties": {
+            "bairro": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cep": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cnae_principal": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cnae_secundarios": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "cnpj_base": {
+              "type": "string"
+            },
+            "cnpj_completo": {
+              "type": "string"
+            },
+            "cnpj_dv": {
+              "type": "string"
+            },
+            "cnpj_ordem": {
+              "type": "string"
+            },
+            "complemento": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "data_inicio_atividade": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "data_situacao_cadastral": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ddd_1": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ddd_2": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "email": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "logradouro": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "matriz_filial": {
+              "type": "number"
+            },
+            "motivo_situacao_cadastral": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "municipio_codigo": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nome_cidade_exterior": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "nome_fantasia": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "numero": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "pais_codigo": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "situacao_cadastral": {
+              "type": "number"
+            },
+            "telefone_1": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "telefone_2": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "tipo_logradouro": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "uf": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "cnpj_completo",
+            "cnpj_base",
+            "cnpj_ordem",
+            "cnpj_dv",
+            "matriz_filial",
+            "nome_fantasia",
+            "situacao_cadastral",
+            "data_situacao_cadastral",
+            "motivo_situacao_cadastral",
+            "nome_cidade_exterior",
+            "pais_codigo",
+            "data_inicio_atividade",
+            "cnae_principal",
+            "cnae_secundarios",
+            "tipo_logradouro",
+            "logradouro",
+            "numero",
+            "complemento",
+            "bairro",
+            "cep",
+            "uf",
+            "municipio_codigo",
+            "ddd_1",
+            "telefone_1",
+            "ddd_2",
+            "telefone_2",
+            "email"
+          ],
+          "type": "object"
+        },
+        "simples": {
+          "additionalProperties": false,
+          "properties": {
+            "data_exclusao_mei": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "data_exclusao_simples": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "data_opcao_mei": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "data_opcao_simples": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "opcao_mei": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "opcao_simples": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "opcao_simples",
+            "data_opcao_simples",
+            "data_exclusao_simples",
+            "opcao_mei",
+            "data_opcao_mei",
+            "data_exclusao_mei"
+          ],
+          "type": "object"
+        },
+        "socios": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "cpf_cnpj_socio": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "data_entrada": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "identificador_socio": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "nome_socio": {
+                "type": "string"
+              },
+              "qualificacao_socio": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "identificador_socio",
+              "nome_socio",
+              "cpf_cnpj_socio",
+              "qualificacao_socio",
+              "data_entrada"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "empresa",
+        "estabelecimento",
+        "socios"
+      ],
+      "type": "object"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "app": {
+          "const": "cnpj-server",
+          "type": "string"
+        },
+        "baseUrl": {
+          "const": "http://100.77.169.127:8090",
+          "type": "string"
+        },
+        "readOnly": {
+          "const": true,
+          "type": "boolean"
+        },
+        "transport": {
+          "const": "tailscale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "app",
+        "transport",
+        "baseUrl",
+        "readOnly"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "success",
+    "source",
+    "data"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cnpj.health`. */
+export const CnpjHealthInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "baseUrl": {
+      "description": "Required exact private endpoint: http://100.77.169.127:8090",
+      "format": "uri",
+      "type": "string"
+    },
+    "timeoutMs": {
+      "description": "Total request timeout, 100-30000ms",
+      "pattern": "^\\d+$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cnpj.health`. */
+export const CnpjHealthReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "app": {
+      "const": "cnpj-server",
+      "type": "string"
+    },
+    "baseUrl": {
+      "const": "http://100.77.169.127:8090",
+      "type": "string"
+    },
+    "engine": {
+      "type": "string"
+    },
+    "externalCheckPerformed": {
+      "const": true,
+      "type": "boolean"
+    },
+    "latencyMs": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "readOnly": {
+      "const": true,
+      "type": "boolean"
+    },
+    "ready": {
+      "const": true,
+      "type": "boolean"
+    },
+    "returned": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    },
+    "transport": {
+      "const": "tailscale",
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "app",
+    "ready",
+    "readOnly",
+    "transport",
+    "baseUrl",
+    "externalCheckPerformed",
+    "latencyMs",
+    "returned",
+    "totalResults"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `cnpj.search`. */
+export const CnpjSearchInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "baseUrl": {
+      "description": "Required exact private endpoint: http://100.77.169.127:8090",
+      "format": "uri",
+      "type": "string"
+    },
+    "capitalMax": {
+      "description": "Maximum share capital, non-negative",
+      "pattern": "^(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+      "type": "string"
+    },
+    "capitalMin": {
+      "description": "Minimum share capital, non-negative",
+      "pattern": "^(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+      "type": "string"
+    },
+    "city": {
+      "description": "Municipality/city name",
+      "type": "string"
+    },
+    "cnae": {
+      "description": "CNAE activity code or prefix",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size, 1-100",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "openedFrom": {
+      "description": "Opening date lower bound, YYYY-MM-DD",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    },
+    "openedTo": {
+      "description": "Opening date upper bound, YYYY-MM-DD",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "type": "string"
+    },
+    "page": {
+      "description": "Provider page number, >=1",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "query": {
+      "description": "Company name or free-text query",
+      "type": "string"
+    },
+    "size": {
+      "description": "Company size: MICROEMPRESA|EPP|GRANDES",
+      "enum": [
+        "MICROEMPRESA",
+        "EPP",
+        "GRANDES"
+      ],
+      "type": "string"
+    },
+    "timeoutMs": {
+      "description": "Total request timeout, 100-30000ms",
+      "pattern": "^\\d+$",
+      "type": "string"
+    },
+    "uf": {
+      "description": "Two-letter uppercase Brazilian state code",
+      "pattern": "^[A-Z]{2}$",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `cnpj.search`. */
+export const CnpjSearchReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "engine": {
+      "type": "string"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "cnae_principal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cnpj_completo": {
+            "type": "string"
+          },
+          "data_inicio_atividade": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "nome_fantasia": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "razao_social": {
+            "type": "string"
+          },
+          "situacao_cadastral": {
+            "type": "number"
+          },
+          "uf": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "cnpj_completo",
+          "razao_social",
+          "nome_fantasia",
+          "uf",
+          "cnae_principal",
+          "situacao_cadastral"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "nextCommand": {
+          "type": "string"
+        },
+        "nextPage": {
+          "maximum": 9007199254740991,
+          "minimum": 2,
+          "type": "integer"
+        },
+        "page": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "returned": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "page",
+        "limit",
+        "returned",
+        "hasMore"
+      ],
+      "type": "object"
+    },
+    "query": {
+      "additionalProperties": false,
+      "properties": {
+        "capitalMax": {
+          "type": "number"
+        },
+        "capitalMin": {
+          "type": "number"
+        },
+        "cidade": {
+          "type": "string"
+        },
+        "cnae": {
+          "type": "string"
+        },
+        "dataInicioMax": {
+          "type": "string"
+        },
+        "dataInicioMin": {
+          "type": "string"
+        },
+        "limit": {
+          "maximum": 100,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "page": {
+          "maximum": 9007199254740991,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "porte": {
+          "enum": [
+            "MICROEMPRESA",
+            "EPP",
+            "GRANDES"
+          ],
+          "type": "string"
+        },
+        "q": {
+          "type": "string"
+        },
+        "uf": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "page",
+        "limit"
+      ],
+      "type": "object"
+    },
+    "source": {
+      "additionalProperties": false,
+      "properties": {
+        "app": {
+          "const": "cnpj-server",
+          "type": "string"
+        },
+        "baseUrl": {
+          "const": "http://100.77.169.127:8090",
+          "type": "string"
+        },
+        "readOnly": {
+          "const": true,
+          "type": "boolean"
+        },
+        "transport": {
+          "const": "tailscale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "app",
+        "transport",
+        "baseUrl",
+        "readOnly"
+      ],
+      "type": "object"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "totalResults": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "success",
+    "source",
+    "query",
+    "items",
+    "totalResults",
+    "pagination"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `commands.list`. */
 export const CommandsListInputSchema = {
   "additionalProperties": false,
@@ -27766,6 +29218,371 @@ export const CrmAccountShowReturnSchema = {
   "required": [
     "target",
     "crm"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.accounts`. */
+export const CrmAccountsInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "lifecycle": {
+      "description": "Filter by CRM lifecycle, e.g. lead",
+      "type": "string"
+    },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching accounts to skip (default: 0)",
+      "type": "string"
+    },
+    "owner": {
+      "description": "Filter by owner, e.g. agent:main",
+      "type": "string"
+    },
+    "source": {
+      "description": "Filter by account source, e.g. cnpj-server",
+      "type": "string"
+    }
+  },
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.accounts`. */
+export const CrmAccountsReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "accounts": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "contactCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lifecycle": {
+            "enum": [
+              "unknown",
+              "lead",
+              "qualified",
+              "active",
+              "onboarding",
+              "waiting",
+              "at_risk",
+              "dormant",
+              "churned",
+              "partner",
+              "vendor",
+              "internal"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "openOpportunityCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "openValueCents": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "orgContactId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerType": {
+            "anyOf": [
+              {
+                "enum": [
+                  "user",
+                  "agent",
+                  "team",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priority": {
+            "enum": [
+              "low",
+              "normal",
+              "high",
+              "urgent"
+            ],
+            "type": "string"
+          },
+          "relationshipHealth": {
+            "enum": [
+              "unknown",
+              "good",
+              "neutral",
+              "needs_attention",
+              "at_risk"
+            ],
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "orgContactId",
+          "name",
+          "domain",
+          "lifecycle",
+          "relationshipHealth",
+          "priority",
+          "ownerType",
+          "ownerId",
+          "source",
+          "contactCount",
+          "openOpportunityCount",
+          "openValueCents",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "items": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "contactCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "domain": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lifecycle": {
+            "enum": [
+              "unknown",
+              "lead",
+              "qualified",
+              "active",
+              "onboarding",
+              "waiting",
+              "at_risk",
+              "dormant",
+              "churned",
+              "partner",
+              "vendor",
+              "internal"
+            ],
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "openOpportunityCount": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          },
+          "openValueCents": {
+            "maximum": 9007199254740991,
+            "minimum": -9007199254740991,
+            "type": "integer"
+          },
+          "orgContactId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "ownerType": {
+            "anyOf": [
+              {
+                "enum": [
+                  "user",
+                  "agent",
+                  "team",
+                  "system"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "priority": {
+            "enum": [
+              "low",
+              "normal",
+              "high",
+              "urgent"
+            ],
+            "type": "string"
+          },
+          "relationshipHealth": {
+            "enum": [
+              "unknown",
+              "good",
+              "neutral",
+              "needs_attention",
+              "at_risk"
+            ],
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "orgContactId",
+          "name",
+          "domain",
+          "lifecycle",
+          "relationshipHealth",
+          "priority",
+          "ownerType",
+          "ownerId",
+          "source",
+          "contactCount",
+          "openOpportunityCount",
+          "openValueCents",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total",
+        "hasMore",
+        "nextOffset",
+        "nextCommand"
+      ],
+      "type": "object"
+    },
+    "total": {
+      "maximum": 9007199254740991,
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "total",
+    "pagination",
+    "items",
+    "accounts"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;

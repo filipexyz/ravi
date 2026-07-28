@@ -18,6 +18,7 @@ export * from "./chats.js";
 export * from "./cloud-auth.js";
 export * from "./cloud-projects.js";
 export * from "./cloud-scope.js";
+export * from "./cnpj.js";
 export * from "./commands.js";
 export * from "./connectors.js";
 export * from "./contacts.js";

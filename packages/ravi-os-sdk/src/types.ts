@@ -3766,6 +3766,264 @@ export type CloudScopeShowReturn = {
   success: true;
 };
 
+/** Input shape for `cnpj.export-crm`. */
+export type CnpjExportCrmInput = {
+  apply?: boolean;
+  baseUrl?: string;
+  capitalMax?: string;
+  capitalMin?: string;
+  city?: string;
+  cnae?: string;
+  cnpjs?: string;
+  limit?: string;
+  openedFrom?: string;
+  openedTo?: string;
+  originFilters?: string;
+  owner?: string;
+  page?: string;
+  query?: string;
+  selectionHash?: string;
+  size?: "MICROEMPRESA" | "EPP" | "GRANDES";
+  timeoutMs?: string;
+  uf?: string;
+};
+
+/** Return shape for `cnpj.export-crm`. */
+export type CnpjExportCrmReturn = ({
+  candidates: Array<{
+    cnpj: string;
+    industry: string | null;
+    legalName: string;
+    name: string;
+    openedAt: string | null;
+    registrationStatus: number;
+    uf: string | null;
+  }>;
+  dedupe: {
+    inputCount: number;
+    removedDuplicates: number;
+    uniqueCount: number;
+  };
+  filters: {
+    capitalMax?: number;
+    capitalMin?: number;
+    cidade?: string;
+    cnae?: string;
+    dataInicioMax?: string;
+    dataInicioMin?: string;
+    limit: number;
+    page: number;
+    porte?: "MICROEMPRESA" | "EPP" | "GRANDES";
+    q?: string;
+    uf?: string;
+  };
+  mode: "dry-run";
+  nextCommand: string | null;
+  owner: {
+    id: string;
+    type: "user" | "agent" | "team" | "system";
+  };
+  selectionHash: string;
+  source: {
+    app: "cnpj-server";
+    baseUrl: "http://100.77.169.127:8090";
+    crmMutation: boolean;
+    readOnly: true;
+    transport: "tailscale";
+  };
+  success: true;
+}) | ({
+  applied: number;
+  failed: number;
+  mode: "apply";
+  originFilters: Record<string, unknown>;
+  owner: {
+    id: string;
+    type: "user" | "agent" | "team" | "system";
+  };
+  requested: number;
+  results: Array<({
+    accountId: string;
+    cnpj: string;
+    factId: string;
+    status: "created-or-reused";
+  }) | ({
+    cnpj: string;
+    error: {
+      category: "corrigir" | "retry" | "autorizar" | "parar";
+      code: string;
+      message: string;
+      nextAction: string;
+      retryable: boolean;
+    };
+    status: "failed";
+  })>;
+  selectionHash: string;
+  source: {
+    app: "cnpj-server";
+    baseUrl: "http://100.77.169.127:8090";
+    crmMutation: boolean;
+    readOnly: true;
+    transport: "tailscale";
+  };
+  status: "completed" | "partial" | "failed";
+  success: true;
+});
+
+/** Input shape for `cnpj.get`. */
+export type CnpjGetInput = {
+  baseUrl?: string;
+  cnpj: string;
+  timeoutMs?: string;
+};
+
+/** Return shape for `cnpj.get`. */
+export type CnpjGetReturn = {
+  data: {
+    empresa: {
+      capital_social: number;
+      cnpj_base: string;
+      ente_federativo_responsavel: string | null;
+      natureza_juridica: number | null;
+      porte_empresa: number | null;
+      qualificacao_responsavel: number | null;
+      razao_social: string;
+    };
+    estabelecimento: {
+      bairro: string | null;
+      cep: string | null;
+      cnae_principal: string | null;
+      cnae_secundarios: string | null;
+      cnpj_base: string;
+      cnpj_completo: string;
+      cnpj_dv: string;
+      cnpj_ordem: string;
+      complemento: string | null;
+      data_inicio_atividade: string | null;
+      data_situacao_cadastral: string | null;
+      ddd_1: string | null;
+      ddd_2: string | null;
+      email: string | null;
+      logradouro: string | null;
+      matriz_filial: number;
+      motivo_situacao_cadastral: number | null;
+      municipio_codigo: number | null;
+      nome_cidade_exterior: string | null;
+      nome_fantasia: string | null;
+      numero: string | null;
+      pais_codigo: number | null;
+      situacao_cadastral: number;
+      telefone_1: string | null;
+      telefone_2: string | null;
+      tipo_logradouro: string | null;
+      uf: string | null;
+    };
+    simples?: {
+      data_exclusao_mei: string | null;
+      data_exclusao_simples: string | null;
+      data_opcao_mei: string | null;
+      data_opcao_simples: string | null;
+      opcao_mei: string | null;
+      opcao_simples: string | null;
+    };
+    socios: Array<{
+      cpf_cnpj_socio: string | null;
+      data_entrada: string | null;
+      identificador_socio: number | null;
+      nome_socio: string;
+      qualificacao_socio: number | null;
+    }>;
+  };
+  source: {
+    app: "cnpj-server";
+    baseUrl: "http://100.77.169.127:8090";
+    readOnly: true;
+    transport: "tailscale";
+  };
+  success: true;
+};
+
+/** Input shape for `cnpj.health`. */
+export type CnpjHealthInput = {
+  baseUrl?: string;
+  timeoutMs?: string;
+};
+
+/** Return shape for `cnpj.health`. */
+export type CnpjHealthReturn = {
+  app: "cnpj-server";
+  baseUrl: "http://100.77.169.127:8090";
+  engine?: string;
+  externalCheckPerformed: true;
+  latencyMs: number;
+  readOnly: true;
+  ready: true;
+  returned: number;
+  success: true;
+  totalResults: number;
+  transport: "tailscale";
+};
+
+/** Input shape for `cnpj.search`. */
+export type CnpjSearchInput = {
+  baseUrl?: string;
+  capitalMax?: string;
+  capitalMin?: string;
+  city?: string;
+  cnae?: string;
+  limit?: string;
+  openedFrom?: string;
+  openedTo?: string;
+  page?: string;
+  query?: string;
+  size?: "MICROEMPRESA" | "EPP" | "GRANDES";
+  timeoutMs?: string;
+  uf?: string;
+};
+
+/** Return shape for `cnpj.search`. */
+export type CnpjSearchReturn = {
+  engine?: string;
+  items: Array<{
+    cnae_principal: string | null;
+    cnpj_completo: string;
+    data_inicio_atividade?: string | null;
+    nome_fantasia: string | null;
+    razao_social: string;
+    situacao_cadastral: number;
+    uf: string | null;
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand?: string;
+    nextPage?: number;
+    page: number;
+    returned: number;
+  };
+  query: {
+    capitalMax?: number;
+    capitalMin?: number;
+    cidade?: string;
+    cnae?: string;
+    dataInicioMax?: string;
+    dataInicioMin?: string;
+    limit: number;
+    page: number;
+    porte?: "MICROEMPRESA" | "EPP" | "GRANDES";
+    q?: string;
+    uf?: string;
+  };
+  source: {
+    app: "cnpj-server";
+    baseUrl: "http://100.77.169.127:8090";
+    readOnly: true;
+    transport: "tailscale";
+  };
+  success: true;
+  totalResults: number;
+};
+
 /** Input shape for `commands.list`. */
 export type CommandsListInput = {
   agent?: string;
@@ -5251,6 +5509,62 @@ export type CrmAccountShowReturn = {
   crm: Record<string, unknown>;
   target: string;
   [k: string]: unknown;
+};
+
+/** Input shape for `crm.accounts`. */
+export type CrmAccountsInput = {
+  lifecycle?: string;
+  limit?: string;
+  offset?: string;
+  owner?: string;
+  source?: string;
+};
+
+/** Return shape for `crm.accounts`. */
+export type CrmAccountsReturn = {
+  accounts: Array<{
+    accountId: string;
+    contactCount: number;
+    domain: string | null;
+    lifecycle: "unknown" | "lead" | "qualified" | "active" | "onboarding" | "waiting" | "at_risk" | "dormant" | "churned" | "partner" | "vendor" | "internal";
+    name: string;
+    openOpportunityCount: number;
+    openValueCents: number;
+    orgContactId: string | null;
+    ownerId: string | null;
+    ownerType: ("user" | "agent" | "team" | "system") | null;
+    priority: "low" | "normal" | "high" | "urgent";
+    relationshipHealth: "unknown" | "good" | "neutral" | "needs_attention" | "at_risk";
+    source: string;
+    updatedAt: string;
+  }>;
+  items: Array<{
+    accountId: string;
+    contactCount: number;
+    domain: string | null;
+    lifecycle: "unknown" | "lead" | "qualified" | "active" | "onboarding" | "waiting" | "at_risk" | "dormant" | "churned" | "partner" | "vendor" | "internal";
+    name: string;
+    openOpportunityCount: number;
+    openValueCents: number;
+    orgContactId: string | null;
+    ownerId: string | null;
+    ownerType: ("user" | "agent" | "team" | "system") | null;
+    priority: "low" | "normal" | "high" | "urgent";
+    relationshipHealth: "unknown" | "good" | "neutral" | "needs_attention" | "at_risk";
+    source: string;
+    updatedAt: string;
+  }>;
+  pagination: {
+    hasMore: boolean;
+    limit: number;
+    nextCommand: string | null;
+    nextOffset: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+    [k: string]: unknown;
+  };
+  total: number;
 };
 
 /** Input shape for `crm.board`. */

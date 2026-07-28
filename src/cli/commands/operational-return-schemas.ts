@@ -40,6 +40,47 @@ export const pagedItemsReturnSchema = z
   })
   .passthrough();
 
+const crmAccountCardSchema = z
+  .object({
+    accountId: z.string(),
+    orgContactId: z.string().nullable(),
+    name: z.string(),
+    domain: z.string().nullable(),
+    lifecycle: z.enum([
+      "unknown",
+      "lead",
+      "qualified",
+      "active",
+      "onboarding",
+      "waiting",
+      "at_risk",
+      "dormant",
+      "churned",
+      "partner",
+      "vendor",
+      "internal",
+    ]),
+    relationshipHealth: z.enum(["unknown", "good", "neutral", "needs_attention", "at_risk"]),
+    priority: z.enum(["low", "normal", "high", "urgent"]),
+    ownerType: z.enum(["user", "agent", "team", "system"]).nullable(),
+    ownerId: z.string().nullable(),
+    source: z.string(),
+    contactCount: z.number().int().min(0),
+    openOpportunityCount: z.number().int().min(0),
+    openValueCents: z.number().int(),
+    updatedAt: z.string(),
+  })
+  .strict();
+
+export const crmAccountsReturnSchema = z
+  .object({
+    total: z.number().int().min(0),
+    pagination: offsetPaginationReturnSchema,
+    items: z.array(crmAccountCardSchema),
+    accounts: z.array(crmAccountCardSchema),
+  })
+  .strict();
+
 export const changedEntityReturnSchema = z
   .object({
     status: z.string(),

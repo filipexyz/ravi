@@ -1,0 +1,87 @@
+{
+  "schema": "ravi.app/v1",
+  "id": "cnpj-server",
+  "name": "CNPJ Server",
+  "version": "0.1.0",
+  "description": "Consulta o CNPJ Server privado em modo read-only e exporta seleções explícitas para o Ravi CRM.",
+  "interfaces": {
+    "cli": {
+      "command": "ravi cnpj",
+      "json": true,
+      "health": "ravi cnpj health --base-url http://100.77.169.127:8090 --json"
+    }
+  },
+  "operations": {
+    "cnpj-server.help": {
+      "interface": "builtin",
+      "handler": "apps.help",
+      "mutating": false
+    },
+    "cnpj-server.check": {
+      "interface": "builtin",
+      "handler": "apps.manifest.check",
+      "mutating": false
+    },
+    "cnpj-server.health": {
+      "interface": "cli",
+      "command": "ravi cnpj health {args} --json",
+      "mutating": false,
+      "permission": "cnpj:read"
+    },
+    "cnpj-server.get": {
+      "interface": "cli",
+      "command": "ravi cnpj get {args} --json",
+      "mutating": false,
+      "permission": "cnpj:read"
+    },
+    "cnpj-server.search": {
+      "interface": "cli",
+      "command": "ravi cnpj search {args} --json",
+      "mutating": false,
+      "permission": "cnpj:read"
+    },
+    "cnpj-server.export-crm": {
+      "interface": "cli",
+      "command": "ravi cnpj export-crm {args} --json",
+      "mutating": true,
+      "permission": "write_contacts"
+    }
+  },
+  "operationClasses": {
+    "read": ["cnpj-server.health", "cnpj-server.get", "cnpj-server.search"],
+    "write": ["cnpj-server.export-crm"],
+    "destructive": [],
+    "financial": []
+  },
+  "permissions": {
+    "required": ["cnpj:read"],
+    "optional": [],
+    "mutating": ["write_contacts"]
+  },
+  "storage": {
+    "sqlite": [],
+    "files": []
+  },
+  "artifacts": [],
+  "events": {
+    "emits": [],
+    "consumes": []
+  },
+  "skills": ["ravi-system-cnpj-server"],
+  "health": {
+    "checks": [
+      {
+        "type": "builtin",
+        "handler": "apps.manifest.check"
+      },
+      {
+        "type": "cli",
+        "command": "ravi cnpj health --base-url http://100.77.169.127:8090 --json"
+      }
+    ]
+  },
+  "versioning": {
+    "compatibility": "semver",
+    "migrations": []
+  }
+}

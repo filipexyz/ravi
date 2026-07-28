@@ -4,6 +4,7 @@ import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   changedEntityReturnSchema,
+  crmAccountsReturnSchema,
   crmBoardReturnSchema,
   crmOpportunityContactsReturnSchema,
   crmOpportunityReturnSchema,
@@ -48,6 +49,7 @@ import {
   linkCrmAccountContact,
   linkCrmOpportunityContact,
   listCrmContactCards,
+  listCrmAccountCards,
   listCrmFacts,
   listCrmNextActions,
   listCrmOpportunityBoard,
@@ -69,7 +71,7 @@ import {
   type CrmOwnerType,
 } from "../../contacts.js";
 import { dbListRoutes } from "../../router/router-db.js";
-import { canAccessContact, getScopeContext, isScopeEnforced } from "../../permissions/scope.js";
+import { canAccessContact, canWriteContacts, getScopeContext, isScopeEnforced } from "../../permissions/scope.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -465,6 +467,12 @@ function listReadableCrmContactIds(): string[] | undefined {
   return getAllContactAccessRecords()
     .filter((contact) => canReadCrmContactRecord(scopeCtx, contact))
     .map((contact) => contact.id);
+}
+
+function assertCanRecoverUnlinkedCrmAccounts(): void {
+  const scopeCtx = getScopeContext();
+  if (!isScopeEnforced(scopeCtx) || canWriteContacts(scopeCtx)) return;
+  fail(`Permission denied: agent:${scopeCtx.agentId ?? "unknown"} requires write_contacts`);
 }
 
 function contactIdsFromCrmRecord(record: object): string[] {
@@ -955,6 +963,79 @@ export class ACrmCommands {
     for (const contact of page.items) {
       console.log(
         `- ${contact.contactId} ${contact.displayName ?? "-"} lifecycle=${contact.lifecycle ?? "unknown"} next=${contact.nextActionSummary ?? "-"}`,
+      );
+    }
+    if (pagination.nextCommand) console.log(`\nNext page:\n  ${pagination.nextCommand}`);
+    return payload;
+  }
+
+  @Scope("open")
+  @Command({
+    name: "accounts",
+    description: "List CRM account cards, including accounts with no contacts or opportunities",
+    helpAfter: `
+USE
+  Recover CRM accounts as a bounded page, including CNPJ Server leads that have no linked contacts or opportunities.
+
+NÃO USE
+  To inspect one known account, use \`ravi crm account <id> --json\`.
+
+EXAMPLES
+  ravi crm accounts --source cnpj-server --lifecycle lead --owner agent:main --limit 50 --offset 0 --json
+  ravi crm accounts --source cnpj-server --limit 10 --json
+
+ON ERROR
+  Invalid owner or pagination input → correct the flag and retry this read-only command.
+
+FORMATO
+  Returns total, offset pagination, items, and accounts. Exit codes: 0 success, 1 error.
+
+FONTES
+  Existing crm_account_cards view joined to crm_accounts for source filtering; no new table or view.
+`,
+  })
+  @CommandAccess({ kind: "read", resource: "crm", action: "accounts", risk: "low" })
+  @Returns(crmAccountsReturnSchema)
+  accounts(
+    @Option({ flags: "--source <source>", description: "Filter by account source, e.g. cnpj-server" }) source?: string,
+    @Option({ flags: "--lifecycle <status>", description: "Filter by CRM lifecycle, e.g. lead" })
+    lifecycle?: string,
+    @Option({ flags: "--owner <type:id>", description: "Filter by owner, e.g. agent:main" }) owner?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching accounts to skip (default: 0)" })
+    offset?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    assertCanRecoverUnlinkedCrmAccounts();
+    const ownerFilter = parseOwner(owner);
+    const page = listCrmAccountCards({
+      ...ownerFilter,
+      source,
+      lifecycle,
+      limit,
+      offset,
+    });
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "crm", "accounts"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      options: ["--source", source, "--lifecycle", lifecycle, "--owner", owner],
+    });
+    const payload = { total: page.total, pagination, items: page.items, accounts: page.items };
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+    if (page.items.length === 0) {
+      console.log("No CRM accounts found.");
+      return payload;
+    }
+    console.log(`\nCRM accounts (${page.items.length} returned of ${page.total}):\n`);
+    for (const account of page.items) {
+      console.log(
+        `- ${account.accountId} ${account.name} lifecycle=${account.lifecycle} source=${account.source} owner=${account.ownerType ?? "-"}:${account.ownerId ?? "-"}`,
       );
     }
     if (pagination.nextCommand) console.log(`\nNext page:\n  ${pagination.nextCommand}`);

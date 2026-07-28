@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { getScopeMetadata } from "../decorators.js";
 
 afterAll(() => mock.restore());
 
@@ -12,6 +13,7 @@ let crmTask: Record<string, unknown> | null = null;
 let taskRecords: Array<Record<string, unknown>> = [];
 let nextActionRecords: Array<Record<string, unknown>> = [];
 let contactCardRecords: Array<Record<string, unknown>> = [];
+let accountCardRecords: Array<Record<string, unknown>> = [];
 let opportunityBoardRecords: Array<Record<string, unknown>> = [];
 let opportunityContactRecords: Array<Record<string, unknown>> = [];
 let pipelineRecords: Array<Record<string, unknown>> = [];
@@ -19,7 +21,9 @@ let pipelineStageRecords: Array<Record<string, unknown>> = [];
 let pipelineTopicRecords: Array<Record<string, unknown>> = [];
 let factRecords: Array<Record<string, unknown>> = [];
 let scopeEnforced = false;
+let writeContactsAllowed = false;
 let readableContactIds = new Set<string>();
+let accountCardListCalls = 0;
 let lastAccountCreateInput: Record<string, unknown> | null = null;
 let lastOpportunityCreateInput: Record<string, unknown> | null = null;
 let lastTaskCreateInput: Record<string, unknown> | null = null;
@@ -76,6 +80,7 @@ mock.module("../../permissions/scope.js", () => ({
   getScopeContext: () => ({ agentId: "scoped-agent" }),
   isScopeEnforced: () => scopeEnforced,
   canAccessContact: (_scopeCtx: unknown, contact: { id: string }) => readableContactIds.has(contact.id),
+  canWriteContacts: () => writeContactsAllowed,
 }));
 
 mock.module("../../contacts.js", () => ({
@@ -104,6 +109,26 @@ mock.module("../../contacts.js", () => ({
     pageRecords(filterReadableRecords(nextActionRecords, options), options),
   listCrmContactCards: (options: { limit?: string; offset?: string; readableContactIds?: readonly string[] }) =>
     pageRecords(filterReadableRecords(contactCardRecords, options), options),
+  listCrmAccountCards: (options: {
+    limit?: string;
+    offset?: string;
+    source?: string;
+    lifecycle?: string;
+    ownerType?: string;
+    ownerId?: string;
+  }) => {
+    accountCardListCalls += 1;
+    return pageRecords(
+      accountCardRecords.filter(
+        (record) =>
+          (!options.source || record.source === options.source) &&
+          (!options.lifecycle || record.lifecycle === options.lifecycle) &&
+          (!options.ownerType || record.ownerType === options.ownerType) &&
+          (!options.ownerId || record.ownerId === options.ownerId),
+      ),
+      options,
+    );
+  },
   listCrmOpportunityBoard: (options: { pipelineRef?: string } = {}) =>
     options.pipelineRef
       ? opportunityBoardRecords.filter((record) => record.pipelineId === options.pipelineRef)
@@ -374,7 +399,9 @@ function silenceLogs(run: () => unknown): void {
 describe("CRM commands", () => {
   beforeEach(() => {
     scopeEnforced = false;
+    writeContactsAllowed = false;
     readableContactIds = new Set<string>();
+    accountCardListCalls = 0;
     crmContactProfile = {
       contactId: "contact-1",
       lifecycle: "lead",
@@ -433,6 +460,24 @@ describe("CRM commands", () => {
         displayName: "Alice",
         lifecycle: "lead",
         nextActionSummary: "Follow up",
+      },
+    ];
+    accountCardRecords = [
+      {
+        accountId: "crm_acc_cnpj_1",
+        orgContactId: null,
+        name: "BANCO DO BRASIL",
+        domain: null,
+        lifecycle: "lead",
+        relationshipHealth: "unknown",
+        priority: "normal",
+        ownerType: "agent",
+        ownerId: "main",
+        source: "cnpj-server",
+        contactCount: 0,
+        openOpportunityCount: 0,
+        openValueCents: 0,
+        updatedAt: "2026-07-28 12:00:00",
       },
     ];
     opportunityBoardRecords = [
@@ -657,6 +702,47 @@ describe("CRM commands", () => {
     expect(((contactPayload.crm as Record<string, unknown>).profile as Record<string, unknown>).lifecycle).toBe("lead");
     expect(((accountPayload.crm as Record<string, unknown>).account as Record<string, unknown>).id).toBe("crm_acc_1");
     expect((opportunityPayload.opportunity as Record<string, unknown>).id).toBe("crm_opp_1");
+  });
+
+  it("lists unlinked CNPJ Server accounts for a local operator without requiring write_contacts", () => {
+    const payload = captureJson(() => {
+      new ACrmCommands().accounts("cnpj-server", "lead", "agent:main", "1", "0", true);
+    });
+
+    expect(getScopeMetadata(ACrmCommands).get("accounts")).toBe("open");
+    expect(payload.total).toBe(1);
+    expect((payload.accounts as Array<Record<string, unknown>>)[0]).toMatchObject({
+      accountId: "crm_acc_cnpj_1",
+      source: "cnpj-server",
+      lifecycle: "lead",
+      contactCount: 0,
+      openOpportunityCount: 0,
+    });
+    expect((payload.pagination as Record<string, unknown>).nextCommand).toBeNull();
+  });
+
+  it("denies unlinked CRM account recovery to a scoped runtime without write_contacts", () => {
+    scopeEnforced = true;
+
+    expect(() => new ACrmCommands().accounts("cnpj-server", "lead", undefined, "10", "0", true)).toThrow(
+      "requires write_contacts",
+    );
+    expect(accountCardListCalls).toBe(0);
+  });
+
+  it("lets a scoped CRM writer recover an imported unlinked account", () => {
+    scopeEnforced = true;
+    writeContactsAllowed = true;
+
+    const payload = captureJson(() => {
+      new ACrmCommands().accounts("cnpj-server", "lead", undefined, "10", "0", true);
+    });
+
+    expect(accountCardListCalls).toBe(1);
+    expect(payload.total).toBe(1);
+    expect(payload.accounts).toEqual([
+      expect.objectContaining({ accountId: "crm_acc_cnpj_1", orgContactId: null, source: "cnpj-server" }),
+    ]);
   });
 
   it("keeps explicit show subcommands compatible", () => {

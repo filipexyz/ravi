@@ -2139,6 +2139,32 @@ export interface ListCrmContactCardsOptions extends CrmReadableContactFilterOpti
   ownerId?: string | null;
 }
 
+export interface CrmAccountCard {
+  accountId: string;
+  orgContactId: string | null;
+  name: string;
+  domain: string | null;
+  lifecycle: CrmContactLifecycle;
+  relationshipHealth: CrmRelationshipHealth;
+  priority: CrmPriority;
+  ownerType: CrmOwnerType | null;
+  ownerId: string | null;
+  source: string;
+  contactCount: number;
+  openOpportunityCount: number;
+  openValueCents: number;
+  updatedAt: string;
+}
+
+export interface ListCrmAccountCardsOptions {
+  limit?: number | string | null;
+  offset?: number | string | null;
+  lifecycle?: CrmContactLifecycle | string | null;
+  ownerType?: CrmOwnerType | string | null;
+  ownerId?: string | null;
+  source?: string | null;
+}
+
 export interface CrmContactProfileCard {
   contact: CanonicalContact;
   policy: ContactPolicy | null;
@@ -2672,6 +2698,23 @@ interface CrmContactCardRow {
   next_action_at: string | null;
   next_action_summary: string | null;
   next_task_id: string | null;
+  updated_at: string;
+}
+
+interface CrmAccountCardRow {
+  account_id: string;
+  org_contact_id: string | null;
+  name: string;
+  domain: string | null;
+  lifecycle: CrmContactLifecycle;
+  relationship_health: CrmRelationshipHealth;
+  priority: CrmPriority;
+  owner_type: CrmOwnerType | null;
+  owner_id: string | null;
+  source: string;
+  contact_count: number;
+  open_opportunity_count: number;
+  open_value_cents: number;
   updated_at: string;
 }
 
@@ -3660,6 +3703,25 @@ function rowToCrmContactCard(row: CrmContactCardRow): CrmContactCard {
     nextActionAt: row.next_action_at,
     nextActionSummary: row.next_action_summary,
     nextTaskId: row.next_task_id,
+    updatedAt: row.updated_at,
+  };
+}
+
+function rowToCrmAccountCard(row: CrmAccountCardRow): CrmAccountCard {
+  return {
+    accountId: row.account_id,
+    orgContactId: row.org_contact_id,
+    name: row.name,
+    domain: row.domain,
+    lifecycle: row.lifecycle,
+    relationshipHealth: row.relationship_health,
+    priority: row.priority,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+    source: row.source,
+    contactCount: row.contact_count,
+    openOpportunityCount: row.open_opportunity_count,
+    openValueCents: row.open_value_cents,
     updatedAt: row.updated_at,
   };
 }
@@ -4855,6 +4917,43 @@ export function listCrmContactCards(options: ListCrmContactCardsOptions = {}): L
     )
     .all(...params, limit, offset) as CrmContactCardRow[];
   return { total, limit, offset, items: rows.map(rowToCrmContactCard) };
+}
+
+export function listCrmAccountCards(options: ListCrmAccountCardsOptions = {}): ListPage<CrmAccountCard> {
+  const database = ensureDb();
+  const where: string[] = ["accounts.archived_at IS NULL"];
+  const params: Array<string | number> = [];
+  if (options.lifecycle?.trim()) {
+    where.push("cards.lifecycle = ?");
+    params.push(normalizeCrmEnum<CrmContactLifecycle>(options.lifecycle, CRM_CONTACT_LIFECYCLES, "unknown"));
+  }
+  if (options.ownerType || options.ownerId) {
+    const owner = normalizeOptionalCrmOwner({ ownerType: options.ownerType, ownerId: options.ownerId });
+    where.push("cards.owner_type = ?", "cards.owner_id = ?");
+    params.push(owner.ownerType!, owner.ownerId!);
+  }
+  if (options.source?.trim()) {
+    where.push("accounts.source = ?");
+    params.push(options.source.trim());
+  }
+  const { limit, offset } = normalizeLimitOffsetPage(options, { defaultLimit: 50, maxLimit: 500 });
+  const from = "crm_account_cards cards JOIN crm_accounts accounts ON accounts.id = cards.account_id";
+  const clause = buildSqlWhereClause(where);
+  const count = database.prepare(`SELECT COUNT(*) AS total FROM ${from} ${clause}`).get(...params) as
+    | { total: number }
+    | undefined;
+  const rows = database
+    .prepare(
+      `
+      SELECT cards.*, accounts.source
+      FROM ${from}
+      ${clause}
+      ORDER BY cards.updated_at DESC, cards.name, cards.account_id
+      LIMIT ? OFFSET ?
+    `,
+    )
+    .all(...params, limit, offset) as CrmAccountCardRow[];
+  return { total: count?.total ?? 0, limit, offset, items: rows.map(rowToCrmAccountCard) };
 }
 
 export function createCrmAccount(input: CreateCrmAccountInput): CrmAccount {
