@@ -1507,6 +1507,22 @@ export function dbListTaskEvents(taskId: string, limit = 100): TaskEvent[] {
   return rows.map(rowToEvent);
 }
 
+/**
+ * Returns the `limit` MOST RECENT events of a task, in ascending chronological
+ * order (oldest of the slice first). Unlike dbListTaskEvents — which returns the
+ * OLDEST `limit` events — this selects with ORDER BY created_at DESC, id DESC
+ * and then re-orders the slice ascending, so callers that derive "latest event"
+ * signals stay correct for tasks with more than `limit` events.
+ */
+export function dbListRecentTaskEvents(taskId: string, limit = 100): TaskEvent[] {
+  ensureTaskSchema();
+  const db = getDb();
+  const rows = db
+    .prepare("SELECT * FROM task_events WHERE task_id = ? ORDER BY created_at DESC, id DESC LIMIT ?")
+    .all(taskId, limit) as TaskEventRow[];
+  return rows.map(rowToEvent).reverse();
+}
+
 export function dbAddTaskComment(taskId: string, input: TaskCommentInput): TaskComment {
   ensureTaskSchema();
   const db = getDb();

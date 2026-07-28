@@ -1,4 +1,4 @@
-import { dbGetActiveAssignment, dbGetTask, dbListTaskEvents } from "../tasks/task-db.js";
+import { dbGetActiveAssignment, dbGetTask, dbListRecentTaskEvents } from "../tasks/task-db.js";
 import { getTaskDocPath, readTaskDocFrontmatter, taskDocExists } from "../tasks/task-doc.js";
 import type { TaskAssignment, TaskEvent, TaskPriority, TaskStatus } from "../tasks/types.js";
 import { getWorkflowRunDetails } from "../workflows/service.js";
@@ -277,7 +277,7 @@ export function collectProjectRealityState(details: ProjectDetails): ProjectReal
 
         for (const [taskId, attempt] of attemptsByTaskId) {
           const task = dbGetTask(taskId);
-          const events = task ? dbListTaskEvents(taskId, 200) : [];
+          const events = task ? dbListRecentTaskEvents(taskId, 200) : [];
           const checkpointEvent = latestEvent(events, "task.checkpoint.missed");
           const progressEvent = latestEvent(events, "task.progress");
           tasks.set(`${linkedWorkflow.workflowRunId}:${node.id}:${taskId}`, {

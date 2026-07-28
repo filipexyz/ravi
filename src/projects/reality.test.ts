@@ -1,5 +1,84 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, mock } from "bun:test";
 import { projectRealityReturnSchema } from "../cli/commands/operational-return-schemas.js";
+import type { TaskEvent } from "../tasks/types.js";
+import type { ProjectDetails } from "./types.js";
+
+// Events for a high-volume task: 250 old progress events followed by one recent
+// checkpoint miss. The mocks below mirror the REAL SQL semantics:
+// - dbListTaskEvents:      ORDER BY created_at ASC LIMIT ?  (oldest slice)
+// - dbListRecentTaskEvents: ORDER BY created_at DESC, id DESC LIMIT ?, re-ordered ASC
+const HIGH_VOLUME_BASE_AT = REALITY_FIXTURE_EVALUATED_AT - 1_000_000;
+const highVolumeEvents: TaskEvent[] = [
+  ...Array.from({ length: 250 }, (_, index) => ({
+    id: index + 1,
+    taskId: "task-high-volume",
+    type: "task.progress" as const,
+    message: `Progress sync ${index + 1}`,
+    createdAt: HIGH_VOLUME_BASE_AT + index,
+  })),
+  {
+    id: 251,
+    taskId: "task-high-volume",
+    type: "task.checkpoint.missed" as const,
+    message: "Checkpoint missed; report still pending.",
+    createdAt: HIGH_VOLUME_BASE_AT + 300,
+  },
+];
+
+mock.module("../tasks/task-db.js", () => ({
+  dbGetTask: (taskId: string) => ({
+    id: taskId,
+    title: "High-volume task",
+    status: "in_progress",
+    priority: "high",
+    progress: 65,
+    summary: null,
+    blockerReason: null,
+  }),
+  dbGetActiveAssignment: () => ({
+    id: "assignment-high-volume",
+    status: "accepted",
+    checkpointDueAt: REALITY_FIXTURE_EVALUATED_AT + 60_000,
+    checkpointLastReportAt: HIGH_VOLUME_BASE_AT,
+    checkpointOverdueCount: 0,
+  }),
+  dbListTaskEvents: (taskId: string, limit = 100) =>
+    highVolumeEvents
+      .filter((event) => event.taskId === taskId)
+      .sort((left, right) => left.createdAt - right.createdAt)
+      .slice(0, limit),
+  dbListRecentTaskEvents: (taskId: string, limit = 100) =>
+    highVolumeEvents
+      .filter((event) => event.taskId === taskId)
+      .sort((left, right) => right.createdAt - left.createdAt || right.id - left.id)
+      .slice(0, limit)
+      .reverse(),
+}));
+
+mock.module("../workflows/service.js", () => ({
+  getWorkflowRunDetails: (workflowRunId: string) => ({
+    run: { id: workflowRunId, title: "High-volume workflow", status: "running" },
+    nodes: [
+      {
+        id: "wf-node-high-volume",
+        specNodeKey: "implement",
+        label: "Implement",
+        kind: "task",
+        requirement: "required",
+        releaseMode: "auto",
+        status: "running",
+        currentTaskId: "task-high-volume",
+        taskAttempts: [{ taskId: "task-high-volume", attempt: 1 }],
+      },
+    ],
+  }),
+}));
+
+mock.module("../tasks/task-doc.js", () => ({
+  getTaskDocPath: (task: { id: string }) => `/state/tasks/${task.id}/TASK.md`,
+  taskDocExists: () => false,
+  readTaskDocFrontmatter: () => ({}),
+}));
 import {
   blockedHotPathFixture,
   emptyProjectFallbackFixture,
@@ -9,7 +88,7 @@ import {
   REALITY_FIXTURE_EVALUATED_AT,
   runtimeDocumentDivergenceFixture,
 } from "./__fixtures__/reality.js";
-import { buildProjectReality } from "./reality.js";
+import { buildProjectReality, collectProjectRealityState } from "./reality.js";
 
 describe("project reality projection", () => {
   it("keeps task runtime authoritative when TASK.md diverges", () => {
@@ -158,6 +237,70 @@ describe("project reality projection", () => {
       },
     });
     expect(projectRealityReturnSchema.parse(projection)).toEqual(projection);
+  });
+
+  it("reads the most recent task events for high-volume tasks", () => {
+    const details = {
+      project: {
+        id: "proj-high-volume",
+        slug: "high-volume",
+        title: "High volume",
+        status: "active",
+        summary: "",
+        hypothesis: "",
+        nextStep: "",
+        lastSignalAt: REALITY_FIXTURE_EVALUATED_AT,
+        createdAt: REALITY_FIXTURE_EVALUATED_AT,
+        updatedAt: REALITY_FIXTURE_EVALUATED_AT,
+      },
+      tags: [],
+      links: [],
+      linkedWorkflows: [
+        {
+          linkId: "link-high-volume",
+          role: "primary",
+          workflowRunId: "wf-run-high-volume",
+          workflowRunTitle: "High-volume workflow",
+          workflowRunStatus: "running",
+          workflowSpecId: null,
+          workflowSpecTitle: null,
+          createdAt: REALITY_FIXTURE_EVALUATED_AT,
+          updatedAt: REALITY_FIXTURE_EVALUATED_AT,
+        },
+      ],
+      workflowAggregate: null,
+      operational: null,
+    } as unknown as ProjectDetails;
+
+    const state = collectProjectRealityState(details);
+    const task = state.tasks.find((candidate) => candidate.task_id === "task-high-volume");
+
+    // The recent checkpoint miss (event 251) must be visible even though the task
+    // has more than 200 older progress events.
+    expect(task?.latest_checkpoint_event).toEqual({
+      event_id: 251,
+      created_at: HIGH_VOLUME_BASE_AT + 300,
+      message: "Checkpoint missed; report still pending.",
+    });
+    expect(task?.latest_progress_at).toBe(HIGH_VOLUME_BASE_AT + 249);
+
+    const projection = buildProjectReality(state, REALITY_FIXTURE_EVALUATED_AT);
+    expect(projection.attention_signals).toContainEqual(
+      expect.objectContaining({
+        type: "missing_report",
+        source: "checkpoint_event",
+        signal: expect.objectContaining({
+          ref: "task_event:251",
+          event_id: 251,
+          task_id: "task-high-volume",
+        }),
+      }),
+    );
+    expect(projection.recommended_next_action).toMatchObject({
+      type: "request_checkpoint_report",
+      source: "checkpoint_event",
+      signal: { ref: "task_event:251" },
+    });
   });
 
   it("includes source, reason, and signal reference in every recommendation", () => {
