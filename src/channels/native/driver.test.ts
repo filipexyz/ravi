@@ -30,6 +30,7 @@ import {
   type NativeChannelRuntimeDescriptor,
 } from "./driver.js";
 import { createNativeChannelDriverHostLease, type NativeChannelDriverHostLease } from "./host.js";
+import { nativeLocalAgentActions } from "./agent-actions.js";
 
 const generatedFixtureDirectory = new URL(
   "../../../packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/",
@@ -577,6 +578,46 @@ describe("native channel driver contract", () => {
     expect(lease.dispose).toHaveBeenCalledTimes(1);
   });
 
+  it("fails closed when local agent actions are required but absent", async () => {
+    const registry = new NativeChannelDriverRegistry();
+    const driver = fullDriver();
+    const createRuntime = mock(driver.createRuntime.bind(driver));
+    registry.register({
+      ...driver,
+      descriptor: {
+        ...driver.descriptor,
+        requiredHostCapabilities: ["installation_credentials", "local_agent_actions"],
+      },
+      createRuntime,
+    });
+    const lease = hostLease();
+    const incompleteHost = {
+      ...lease.host,
+      registerLocalAgentAction: undefined,
+    } as unknown as NativeChannelDriverHost;
+    const manager = new NativeChannelDriverManager({
+      channels: { "example-channel-a": channel() },
+      registry,
+      createHostLease: () => ({
+        host: incompleteHost,
+        dispose: lease.dispose,
+      }),
+    });
+
+    await manager.start();
+
+    expect(createRuntime).not.toHaveBeenCalled();
+    expect(manager.health()).toEqual([
+      {
+        id: "example:example-channel-a",
+        channelId: "example",
+        status: "failed",
+        reason: "host_capability_missing",
+      },
+    ]);
+    expect(lease.dispose).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps module loader failures stable and free of thrown details", async () => {
     const registry = new NativeChannelDriverRegistry();
     const result = await loadNativeChannelDriverModules(
@@ -788,6 +829,69 @@ describe("native channel driver contract", () => {
 
     lease.dispose();
     await expect(lease.host.reconcileLocalAgent?.(request)).rejects.toThrow("host_disposed");
+  });
+
+  it("scopes local agent actions to the provider account and disposes them with the host", async () => {
+    nativeLocalAgentActions.clearForTests();
+    const lease = createNativeChannelDriverHostLease({
+      channel: channel(),
+      provider: "example",
+    });
+    lease.host.registerLocalAgentAction?.(
+      {
+        toolName: "example_create_space",
+        description: "Create a provider-owned collaboration space.",
+        inputSchema: {
+          type: "object",
+          properties: { name: { type: "string" } },
+        },
+        sourceAccountId: "account-1",
+      },
+      async (request) => ({
+        protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+        schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+        requestId: request.requestId,
+        disposition: "completed",
+        text: "Created.",
+        completedAt: "2026-07-26T12:00:01.000Z",
+      }),
+    );
+    const context = {
+      contextId: "context-1",
+      contextKey: "context-key-1",
+      kind: "turn-runtime",
+      agentId: "agent-1",
+      sessionName: "session-1",
+      source: {
+        channel: "example",
+        accountId: "account-1",
+        chatId: "conversation-1",
+      },
+      capabilities: [],
+      createdAt: Date.parse("2026-07-26T12:00:00.000Z"),
+    };
+
+    expect(nativeLocalAgentActions.list(context)).toHaveLength(1);
+    lease.dispose();
+    expect(nativeLocalAgentActions.list(context)).toEqual([]);
+    expect(() =>
+      lease.host.registerLocalAgentAction?.(
+        {
+          toolName: "example_create_space",
+          description: "Create a provider-owned collaboration space.",
+          inputSchema: { type: "object", properties: {} },
+        },
+        async (request) => ({
+          protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+          schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+          requestId: request.requestId,
+          disposition: "completed",
+          text: "Created.",
+          completedAt: "2026-07-26T12:00:01.000Z",
+        }),
+      ),
+    ).toThrow("host_disposed");
+    nativeLocalAgentActions.clearForTests();
   });
 
   it("rejects duplicate driver ownership without replacing the registered driver", () => {

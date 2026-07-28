@@ -26,6 +26,8 @@ import {
   type LocalAgentReconciliationResult,
 } from "../../../packages/ravi-os-sdk/src/local-agent-reconciliation.js";
 import { createNativeChannelLocalAgentReconciler, type NativeChannelLocalAgentReconciler } from "./local-agent-host.js";
+import { nativeLocalAgentActions } from "./agent-actions.js";
+import { NativeLocalAgentActionDescriptorSchema, type NativeLocalAgentActionHandler } from "./driver.js";
 
 export interface NativeChannelDriverHostLease {
   readonly host: NativeChannelDriverHost;
@@ -103,6 +105,21 @@ export function createNativeChannelDriverHostLease(options: {
           return localAgentReconciler.reconcile(scopedRequest);
         });
       return LocalAgentReconciliationResultSchema.parse(await resolve(request));
+    },
+    registerLocalAgentAction(descriptorInput, handler) {
+      ensureActive();
+      const descriptor = NativeLocalAgentActionDescriptorSchema.parse(descriptorInput);
+      if (typeof handler !== "function") {
+        throw new TypeError("native_local_agent_action_handler_invalid");
+      }
+      return register(
+        nativeLocalAgentActions.register({
+          provider,
+          channelInstanceId,
+          descriptor,
+          handler: handler as NativeLocalAgentActionHandler,
+        }),
+      );
     },
     async ingress(input) {
       ensureActive();

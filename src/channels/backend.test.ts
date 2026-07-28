@@ -25,6 +25,7 @@ import {
   ChannelRuntimeEventSinkRegistry,
   projectChannelRuntimeEvent,
   readChannelRuntime,
+  type KnownChannelRuntimeEvent,
 } from "./runtime-events.js";
 
 let stateDir: string | null = null;
@@ -115,11 +116,11 @@ describe("channel backend ingress", () => {
       connectionId: "connection-a",
       conversationId: "external-conversation-a",
     };
-    const events: string[] = [];
+    const events: KnownChannelRuntimeEvent[] = [];
     const sinks = new ChannelRuntimeEventSinkRegistry();
     const unregister = sinks.register(target, {
       async emit(event) {
-        events.push(event.kind);
+        events.push(event);
       },
     });
 
@@ -137,11 +138,43 @@ describe("channel backend ingress", () => {
         occurredAt: Date.parse("2026-07-24T18:00:01.000Z"),
         sinks,
       });
+      await projectChannelRuntimeEvent({
+        metadata: {
+          protocol: CHANNEL_BACKEND_PROTOCOL,
+          schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
+          ingressRequestId: result.requestId,
+          correlationId: result.requestId,
+          binding: result.binding,
+          target,
+        },
+        event: {
+          type: "assistant.message",
+          text: "Still working.",
+          metadata: {
+            item: {
+              id: "commentary-a",
+              phase: "commentary",
+            },
+          },
+        },
+        occurredAt: Date.parse("2026-07-24T18:00:02.000Z"),
+        sinks,
+      });
     } finally {
       unregister();
     }
 
-    expect(events).toEqual(["turn.state_changed", "turn.assistant_delta"]);
+    expect(events.map(({ kind }) => kind)).toEqual([
+      "turn.state_changed",
+      "turn.assistant_delta",
+      "turn.assistant_message",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      payload: {
+        phase: "commentary",
+        content: [{ type: "text", text: "Still working." }],
+      },
+    });
     expect(
       readChannelRuntime({
         protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
@@ -152,7 +185,7 @@ describe("channel backend ingress", () => {
     ).toMatchObject({
       binding: result.binding,
       state: "running",
-      lastSequence: 2,
+      lastSequence: 3,
     });
   });
 
