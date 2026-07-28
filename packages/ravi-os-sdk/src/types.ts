@@ -3836,7 +3836,19 @@ export type CnpjExportCrmReturn = ({
   applied: number;
   failed: number;
   mode: "apply";
-  originFilters: Record<string, unknown>;
+  originFilters: {
+    capitalMax?: number;
+    capitalMin?: number;
+    cidade?: string;
+    cnae?: string;
+    dataInicioMax?: string;
+    dataInicioMin?: string;
+    limit?: number;
+    page?: number;
+    porte?: "MICROEMPRESA" | "EPP" | "GRANDES";
+    q?: string;
+    uf?: string;
+  };
   owner: {
     id: string;
     type: "user" | "agent" | "team" | "system";
@@ -5555,14 +5567,13 @@ export type CrmAccountsReturn = {
     updatedAt: string;
   }>;
   pagination: {
-    hasMore: boolean;
+    hasMore?: boolean;
     limit: number;
-    nextCommand: string | null;
-    nextOffset: number | null;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
 };

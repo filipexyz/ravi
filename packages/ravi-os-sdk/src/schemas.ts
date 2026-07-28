@@ -20724,9 +20724,50 @@ export const CnpjExportCrmReturnSchema = {
           "type": "string"
         },
         "originFilters": {
-          "additionalProperties": {},
-          "propertyNames": {
-            "type": "string"
+          "additionalProperties": false,
+          "properties": {
+            "capitalMax": {
+              "type": "number"
+            },
+            "capitalMin": {
+              "type": "number"
+            },
+            "cidade": {
+              "type": "string"
+            },
+            "cnae": {
+              "type": "string"
+            },
+            "dataInicioMax": {
+              "type": "string"
+            },
+            "dataInicioMin": {
+              "type": "string"
+            },
+            "limit": {
+              "maximum": 100,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "page": {
+              "maximum": 9007199254740991,
+              "minimum": 1,
+              "type": "integer"
+            },
+            "porte": {
+              "enum": [
+                "MICROEMPRESA",
+                "EPP",
+                "GRANDES"
+              ],
+              "type": "string"
+            },
+            "q": {
+              "type": "string"
+            },
+            "uf": {
+              "type": "string"
+            }
           },
           "type": "object"
         },
@@ -29523,7 +29564,7 @@ export const CrmAccountsReturnSchema = {
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -29565,10 +29606,7 @@ export const CrmAccountsReturnSchema = {
         "limit",
         "offset",
         "returned",
-        "total",
-        "hasMore",
-        "nextOffset",
-        "nextCommand"
+        "total"
       ],
       "type": "object"
     },

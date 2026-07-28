@@ -393,11 +393,8 @@ describe("CnpjCommands contract", () => {
       true,
     );
 
-    if (!searchResult.pagination.nextCommand || !exportResult.nextCommand) {
-      throw new Error("Expected copyable search and export next commands");
-    }
-    const searchTokens = parsePosixCommand(searchResult.pagination.nextCommand);
-    const exportTokens = parsePosixCommand(exportResult.nextCommand);
+    const searchTokens = parsePosixCommand(requireCopyableCommand(searchResult.pagination.nextCommand));
+    const exportTokens = parsePosixCommand(requireCopyableCommand(exportResult.nextCommand));
     expect(searchTokens[searchTokens.indexOf("--query") + 1]).toBe(query);
     const originFilters = exportTokens[exportTokens.indexOf("--origin-filters") + 1];
     expect(JSON.parse(originFilters)).toMatchObject({ q: query });
@@ -520,6 +517,11 @@ function parsePosixCommand(command: string): string[] {
   expect(result.status).toBe(0);
   expect(result.stderr).toBe("");
   return result.stdout.split("\0").filter(Boolean);
+}
+
+function requireCopyableCommand(command: string | null | undefined): string {
+  if (!command) throw new Error("Expected a copyable next command");
+  return command;
 }
 
 function company() {

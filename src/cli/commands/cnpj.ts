@@ -73,6 +73,7 @@ const searchQuerySchema = z
     limit: z.number().int().min(1).max(100),
   })
   .strict();
+const originFiltersSchema = searchQuerySchema.partial().strict();
 
 const searchReturnSchema = z
   .object({
@@ -173,7 +174,7 @@ const exportCrmReturnSchema = z.discriminatedUnion("mode", [
       source: exportSourceSchema,
       owner: ownerSchema,
       selectionHash: z.string().regex(/^sha256:[a-f0-9]{64}$/),
-      originFilters: z.record(z.string(), z.unknown()),
+      originFilters: originFiltersSchema,
       status: z.enum(["completed", "partial", "failed"]),
       requested: z.number().int().min(1).max(CNPJ_CRM_EXPORT_LIMIT),
       applied: z.number().int().min(0),
@@ -654,7 +655,7 @@ function hasRawDiscoveryFilter(filters: {
   return Object.values(filters).some((value) => value !== undefined && String(value).trim() !== "");
 }
 
-function parseOriginFilters(value: string | undefined): Record<string, unknown> {
+function parseOriginFilters(value: string | undefined): z.infer<typeof originFiltersSchema> {
   if (!value) {
     throw cliError(
       "INVALID_SEARCH",
@@ -672,14 +673,15 @@ function parseOriginFilters(value: string | undefined): Record<string, unknown> 
       "Copy the complete --origin-filters value from the dry-run nextCommand.",
     );
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  const result = originFiltersSchema.safeParse(parsed);
+  if (!result.success) {
     throw cliError(
       "INVALID_SEARCH",
-      "--origin-filters must be a JSON object.",
+      "--origin-filters must contain only supported CNPJ search fields.",
       "Copy the complete --origin-filters value from the dry-run nextCommand.",
     );
   }
-  return parsed as Record<string, unknown>;
+  return result.data;
 }
 
 function cliError(code: ConstructorParameters<typeof CnpjServerError>[0]["code"], message: string, nextAction: string) {

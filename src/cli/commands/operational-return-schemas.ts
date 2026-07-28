@@ -75,7 +75,7 @@ const crmAccountCardSchema = z
 export const crmAccountsReturnSchema = z
   .object({
     total: z.number().int().min(0),
-    pagination: offsetPaginationReturnSchema,
+    pagination: strictCliOffsetPaginationSchema.strict(),
     items: z.array(crmAccountCardSchema),
     accounts: z.array(crmAccountCardSchema),
   })
