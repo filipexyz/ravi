@@ -27,6 +27,7 @@ import {
   dbListTasks,
   dbListTaskComments,
   dbListTaskEvents,
+  dbListRecentTaskEvents,
   dbRegisterTaskCheckpointMiss,
   dbReportTaskProgress,
   dbUnarchiveTask,
@@ -1215,5 +1216,80 @@ describe("task-db", () => {
 
     expect(dbGetTask(child.task.id)?.parentTaskId).toBe(parent.task.id);
     expect(dbListChildTasks(parent.task.id).map((task) => task.id)).toEqual([child.task.id]);
+  });
+});
+
+describe("dbListRecentTaskEvents", () => {
+  function insertEvent(taskId: string, createdAt: number, message: string): number {
+    getDb()
+      .prepare(
+        `INSERT INTO task_events (
+          task_id, type, actor, agent_id, session_name, message, progress, related_task_id, created_at
+        ) VALUES (?, 'task.progress', 'test', NULL, NULL, ?, NULL, NULL, ?)`,
+      )
+      .run(taskId, message, createdAt);
+    return (getDb().prepare("SELECT last_insert_rowid() AS id").get() as { id: number }).id;
+  }
+
+  it("returns the N most recent events in ascending order when the task has more than N events", () => {
+    const created = dbCreateTask({
+      title: "Recent events window",
+      instructions: "Only the newest events should be returned",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const baseAt = 1_800_000_000_000;
+    const eventIds = [created.event.id];
+    for (let index = 1; index <= 9; index += 1) {
+      eventIds.push(insertEvent(created.task.id, baseAt + index, `progress ${index}`));
+    }
+    // Keep created.event older than every inserted event.
+    getDb().prepare("UPDATE task_events SET created_at = ? WHERE id = ?").run(baseAt, created.event.id);
+
+    const recent = dbListRecentTaskEvents(created.task.id, 3);
+
+    expect(recent.map((event) => event.id)).toEqual(eventIds.slice(-3));
+    expect(recent.map((event) => event.createdAt)).toEqual([baseAt + 7, baseAt + 8, baseAt + 9]);
+    expect(recent.map((event) => event.message)).toEqual(["progress 7", "progress 8", "progress 9"]);
+  });
+
+  it("breaks created_at ties by id so the newest inserted events win", () => {
+    const created = dbCreateTask({
+      title: "Recent events tie break",
+      instructions: "Equal timestamps must be ordered by id",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const sameAt = 1_800_000_000_000;
+    getDb().prepare("UPDATE task_events SET created_at = ? WHERE task_id = ?").run(sameAt, created.task.id);
+    const secondId = insertEvent(created.task.id, sameAt, "second");
+    const thirdId = insertEvent(created.task.id, sameAt, "third");
+
+    const recent = dbListRecentTaskEvents(created.task.id, 2);
+
+    expect(recent.map((event) => event.id)).toEqual([secondId, thirdId]);
+  });
+
+  it("returns everything when the event count equals the limit exactly", () => {
+    const created = dbCreateTask({
+      title: "Recent events exact edge",
+      instructions: "N equals limit must return all events",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const baseAt = 1_800_000_000_000;
+    getDb().prepare("UPDATE task_events SET created_at = ? WHERE id = ?").run(baseAt, created.event.id);
+    const secondId = insertEvent(created.task.id, baseAt + 1, "second");
+
+    const recent = dbListRecentTaskEvents(created.task.id, 2);
+
+    expect(recent.map((event) => event.id)).toEqual([created.event.id, secondId]);
+  });
+
+  it("returns an empty list for a task without events", () => {
+    expect(dbListRecentTaskEvents("task-without-events", 5)).toEqual([]);
   });
 });
