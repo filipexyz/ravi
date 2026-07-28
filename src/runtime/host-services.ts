@@ -37,6 +37,7 @@ import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from ".
 import { nativeLocalAgentActions } from "../channels/native/agent-actions.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
+const DYNAMIC_TOOL_TIMEOUT_MS = 60_000;
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
 let cachedRuntimeDynamicToolSpecs: RuntimeDynamicToolSpec[] | null = null;
 
@@ -106,7 +107,7 @@ function getRuntimeDynamicToolSpecsForContext(context: ContextRecord): RuntimeDy
   );
 
   const commandTools = getRuntimeDynamicToolSpecs().filter((tool) => allowedToolNames.has(tool.name));
-  const commandToolNames = new Set(commandTools.map(({ name }) => name));
+  const commandToolNames = new Set(getRuntimeDynamicToolDefinitions().map(({ name }) => name));
   const nativeActions = nativeLocalAgentActions
     .list(context)
     .filter(
@@ -144,6 +145,21 @@ function canAdvertiseRuntimeDynamicTool(context: ContextRecord, tool: ExportedTo
       );
     default:
       return false;
+  }
+}
+
+async function runDynamicToolWithTimeout<T>(toolName: string, operation: () => Promise<T> | T): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutError = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(
+      () => reject(new Error(`Dynamic tool ${toolName} timed out after ${DYNAMIC_TOOL_TIMEOUT_MS}ms`)),
+      DYNAMIC_TOOL_TIMEOUT_MS,
+    );
+  });
+  try {
+    return await Promise.race([Promise.resolve().then(operation), timeoutError]);
+  } finally {
+    clearTimeout(timeoutHandle);
   }
 }
 
@@ -284,20 +300,10 @@ async function executeRuntimeDynamicTool(
   }
 
   const args = normalizeDynamicToolArguments(request.arguments);
-  const DYNAMIC_TOOL_TIMEOUT_MS = 60_000;
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const timeoutError = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(
-      () => reject(new Error(`Dynamic tool ${tool.name} timed out after ${DYNAMIC_TOOL_TIMEOUT_MS}ms`)),
-      DYNAMIC_TOOL_TIMEOUT_MS,
-    );
-  });
-  try {
-    const result = await Promise.race([runWithContext(options.toolContext, () => tool.handler(args)), timeoutError]);
-    return buildRuntimeDynamicToolResult(result);
-  } finally {
-    clearTimeout(timeoutHandle);
-  }
+  const result = await runDynamicToolWithTimeout(tool.name, () =>
+    runWithContext(options.toolContext, () => tool.handler(args)),
+  );
+  return buildRuntimeDynamicToolResult(result);
 }
 
 async function executeNativeLocalAgentAction(
@@ -337,12 +343,14 @@ async function executeNativeLocalAgentAction(
     };
   }
   try {
-    const result = await nativeLocalAgentActions.invoke({
-      context: options.context,
-      toolName: request.toolName,
-      arguments: normalizeDynamicToolArguments(request.arguments),
-      ...(request.callId === undefined ? {} : { requestId: request.callId }),
-    });
+    const result = await runDynamicToolWithTimeout(request.toolName, () =>
+      nativeLocalAgentActions.invoke({
+        context: options.context,
+        toolName: request.toolName,
+        arguments: normalizeDynamicToolArguments(request.arguments),
+        ...(request.callId === undefined ? {} : { requestId: request.callId }),
+      }),
+    );
     if (result === undefined) {
       return {
         success: false,
