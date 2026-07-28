@@ -45305,6 +45305,146 @@ export const PermissionsCheckReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `permissions.diff`. */
+export const PermissionsDiffInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "description": "Agent id whose configured profile is compared to the live context snapshot",
+      "type": "string"
+    },
+    "session": {
+      "description": "Resolve the live context of this session instead of the most recent agent context",
+      "type": "string"
+    }
+  },
+  "required": [
+    "agentId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `permissions.diff`. */
+export const PermissionsDiffReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "agentId": {
+      "type": "string"
+    },
+    "configuredCount": {
+      "type": "number"
+    },
+    "context": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "actorResolution": {
+              "type": "string"
+            },
+            "capabilityCount": {
+              "type": "number"
+            },
+            "contextId": {
+              "type": "string"
+            },
+            "kind": {
+              "type": "string"
+            },
+            "sessionName": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "contextId",
+            "kind",
+            "capabilityCount"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "diagnosis": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "type": "object"
+    },
+    "effectiveCount": {
+      "type": "number"
+    },
+    "entries": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "capability": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "lost",
+              "extra"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "capability",
+          "status"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "session": {
+      "type": "string"
+    },
+    "summary": {
+      "additionalProperties": false,
+      "properties": {
+        "extra": {
+          "type": "number"
+        },
+        "lost": {
+          "type": "number"
+        },
+        "ok": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "ok",
+        "lost",
+        "extra"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "agentId",
+    "context",
+    "configuredCount",
+    "effectiveCount",
+    "entries",
+    "summary"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `permissions.materialize`. */
 export const PermissionsMaterializeInputSchema = {
   "additionalProperties": false,

@@ -8896,6 +8896,40 @@ export type PermissionsCheckReturn = {
   };
 };
 
+/** Input shape for `permissions.diff`. */
+export type PermissionsDiffInput = {
+  agentId: string;
+  session?: string;
+};
+
+/** Return shape for `permissions.diff`. */
+export type PermissionsDiffReturn = {
+  agentId: string;
+  configuredCount: number;
+  context: ({
+    actorResolution?: string;
+    capabilityCount: number;
+    contextId: string;
+    kind: string;
+    sessionName?: string;
+  }) | null;
+  diagnosis?: {
+    code: string;
+    message: string;
+  };
+  effectiveCount: number;
+  entries: Array<{
+    capability: string;
+    status: "ok" | "lost" | "extra";
+  }>;
+  session?: string;
+  summary: {
+    extra: number;
+    lost: number;
+    ok: number;
+  };
+};
+
 /** Input shape for `permissions.materialize`. */
 export type PermissionsMaterializeInput = {
   subjectId?: string;

@@ -4,6 +4,7 @@ import { createContact, getContact } from "../../contacts.js";
 import { recordPermissionDenial } from "../../permissions/denials.js";
 import { readAgentRuntimePermissionsConfig } from "../../permissions/agent-default-capabilities-provider.js";
 import { dbCreateAgent } from "../../router/router-db.js";
+import { createRuntimeContext } from "../../runtime/context-registry.js";
 import { dbCreateTagDefinition, dbGetTagDefinition } from "../../tags/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 
@@ -50,10 +51,20 @@ mock.module("../../permissions/provider-runtime.js", () => ({
     objectId: request.objectId,
   }),
   materializeSubjectCapabilities: (subjectType: string, subjectId: string) =>
-    subjectType === "agent" && subjectId === "main"
-      ? [{ permission: "view", objectType: "agent", objectId: "*", source: "agent-default-capabilities:agent:main" }]
-      : [],
+    subjectType === "agent" ? (MOCK_AGENT_CAPABILITIES[subjectId] ?? []) : [],
 }));
+
+const MOCK_AGENT_CAPABILITIES: Record<
+  string,
+  Array<{ permission: string; objectType: string; objectId: string; source?: string }>
+> = {
+  main: [{ permission: "view", objectType: "agent", objectId: "*", source: "agent-default-capabilities:agent:main" }],
+  "ghost-agent": [
+    { permission: "view", objectType: "project", objectId: "*" },
+    { permission: "view", objectType: "agent", objectId: "*" },
+    { permission: "execute", objectType: "executable", objectId: "curl" },
+  ],
+};
 
 const { PermissionsCommands } = await import("./permissions.js");
 
@@ -251,5 +262,101 @@ describe("PermissionsCommands provider-runtime surface", () => {
     expect(readAgentRuntimePermissionsConfig("resolve-agent")?.capabilities).toEqual([
       { permission: "execute", objectType: "executable", objectId: "curl" },
     ]);
+  });
+});
+
+describe("PermissionsCommands diff", () => {
+  let stateDir: string | null = null;
+
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-permissions-diff-test-");
+    dbCreateAgent({ id: "ghost-agent", cwd: "/tmp" });
+  });
+
+  afterEach(async () => {
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  it("reports every configured capability as lost when the live snapshot is empty (missing_contact)", () => {
+    createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "ghost-agent",
+      sessionName: "wa-session",
+      capabilities: [],
+      metadata: { actorResolution: "missing_contact" },
+    });
+
+    const commands = new PermissionsCommands();
+    const payload = commands.diff("ghost-agent", undefined, true);
+
+    expect(payload.summary).toEqual({ ok: 0, lost: 3, extra: 0 });
+    expect(payload.entries.every((entry) => entry.status === "lost")).toBe(true);
+    expect(payload.diagnosis).toMatchObject({ code: "missing_contact" });
+    expect(payload.context).toMatchObject({ kind: "turn-runtime", sessionName: "wa-session" });
+  });
+
+  it("reports only the diverging capabilities when the live snapshot is partial", () => {
+    createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "ghost-agent",
+      sessionName: "wa-session",
+      capabilities: [{ permission: "view", objectType: "project", objectId: "*" }],
+      metadata: { actorResolution: "resolved" },
+    });
+
+    const commands = new PermissionsCommands();
+    const payload = commands.diff("ghost-agent", undefined, true);
+
+    expect(payload.summary).toEqual({ ok: 1, lost: 2, extra: 0 });
+    expect(payload.entries.find((entry) => entry.capability === "view:project:*")?.status).toBe("ok");
+    expect(payload.entries.find((entry) => entry.capability === "execute:executable:curl")?.status).toBe("lost");
+  });
+
+  it("reports no divergence when the live snapshot matches the configured profile", () => {
+    createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "ghost-agent",
+      sessionName: "wa-session",
+      capabilities: [
+        { permission: "view", objectType: "project", objectId: "*" },
+        { permission: "view", objectType: "agent", objectId: "*" },
+        { permission: "execute", objectType: "executable", objectId: "curl" },
+      ],
+      metadata: { actorResolution: "resolved" },
+    });
+
+    const commands = new PermissionsCommands();
+    const payload = commands.diff("ghost-agent", undefined, true);
+
+    expect(payload.summary).toEqual({ ok: 3, lost: 0, extra: 0 });
+    expect(payload.diagnosis).toBeUndefined();
+  });
+
+  it("selects the live context for the requested session", () => {
+    createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "ghost-agent",
+      sessionName: "other-session",
+      capabilities: [],
+      metadata: { actorResolution: "missing_contact" },
+    });
+    const target = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "ghost-agent",
+      sessionName: "target-session",
+      capabilities: [
+        { permission: "view", objectType: "project", objectId: "*" },
+        { permission: "view", objectType: "agent", objectId: "*" },
+        { permission: "execute", objectType: "executable", objectId: "curl" },
+      ],
+      metadata: { actorResolution: "resolved" },
+    });
+
+    const commands = new PermissionsCommands();
+    const payload = commands.diff("ghost-agent", "target-session", true);
+
+    expect(payload.context?.contextId).toBe(target.contextId);
+    expect(payload.summary).toEqual({ ok: 3, lost: 0, extra: 0 });
   });
 });

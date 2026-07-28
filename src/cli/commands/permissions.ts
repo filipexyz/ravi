@@ -30,6 +30,7 @@ import {
   getConfiguredPermissionProviders,
 } from "../../permissions/provider-registry.js";
 import { authorizePermission, materializeSubjectCapabilities } from "../../permissions/provider-runtime.js";
+import { dbListContexts, type ContextRecord } from "../../router/router-db.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -185,6 +186,39 @@ const permissionsResolveReturnSchema = permissionsAllowReturnSchema.extend({
     contextId: z.string().nullable(),
   }),
   guidance: permissionsCheckReturnSchema.shape.guidance.optional(),
+});
+
+const permissionsDiffReturnSchema = z.object({
+  agentId: z.string(),
+  session: z.string().optional(),
+  context: z
+    .object({
+      contextId: z.string(),
+      kind: z.string(),
+      sessionName: z.string().optional(),
+      actorResolution: z.string().optional(),
+      capabilityCount: z.number(),
+    })
+    .nullable(),
+  diagnosis: z
+    .object({
+      code: z.string(),
+      message: z.string(),
+    })
+    .optional(),
+  configuredCount: z.number(),
+  effectiveCount: z.number(),
+  entries: z.array(
+    z.object({
+      capability: z.string(),
+      status: z.enum(["ok", "lost", "extra"]),
+    }),
+  ),
+  summary: z.object({
+    ok: z.number(),
+    lost: z.number(),
+    extra: z.number(),
+  }),
 });
 
 @Group({
@@ -433,6 +467,79 @@ export class PermissionsCommands {
         `${capability.permission} ${capability.objectType}:${capability.objectId}` +
           (capability.source ? ` (${capability.source})` : ""),
       );
+    }
+    return payload;
+  }
+
+  @Command({
+    name: "diff",
+    description: "Diff an agent's configured capability profile against the live context snapshot",
+  })
+  @CommandAccess({ kind: "read", resource: "permissions", action: "diff", risk: "low" })
+  @Returns(permissionsDiffReturnSchema)
+  diff(
+    @Arg("agentId", { description: "Agent id whose configured profile is compared to the live context snapshot" })
+    agentId: string,
+    @Option({
+      flags: "--session <name>",
+      description: "Resolve the live context of this session instead of the most recent agent context",
+    })
+    session?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    const normalizedAgentId = requiredOption(agentId, "agentId");
+    const normalizedSession = session?.trim() || undefined;
+    const configured = materializeSubjectCapabilities("agent", normalizedAgentId);
+    const context = findLiveContextForDiff(normalizedAgentId, normalizedSession);
+    const effective = context?.capabilities ?? [];
+    const entries = diffCapabilities(configured, effective);
+    const summary = {
+      ok: entries.filter((entry) => entry.status === "ok").length,
+      lost: entries.filter((entry) => entry.status === "lost").length,
+      extra: entries.filter((entry) => entry.status === "extra").length,
+    };
+    const diagnosis = diagnosePermissionsDiff(context, summary);
+    const payload = {
+      agentId: normalizedAgentId,
+      ...(normalizedSession ? { session: normalizedSession } : {}),
+      context: context ? serializeDiffContext(context) : null,
+      ...(diagnosis ? { diagnosis } : {}),
+      configuredCount: configured.length,
+      effectiveCount: effective.length,
+      entries,
+      summary,
+    };
+
+    if (asJson) {
+      printJson(payload);
+      return payload;
+    }
+
+    console.log(`permissions diff: agent:${normalizedAgentId}`);
+    if (payload.context) {
+      const parts = [`kind=${payload.context.kind}`];
+      if (payload.context.sessionName) parts.push(`session=${payload.context.sessionName}`);
+      if (payload.context.actorResolution) parts.push(`actorResolution=${payload.context.actorResolution}`);
+      console.log(`context: ${payload.context.contextId} (${parts.join(", ")})`);
+    } else {
+      console.log("context: no live runtime context found");
+    }
+    if (payload.diagnosis) {
+      console.log(`diagnosis: ${payload.diagnosis.message}`);
+    }
+    for (const entry of entries) {
+      if (entry.status === "ok") {
+        console.log(`✓ ${entry.capability}`);
+      } else if (entry.status === "lost") {
+        console.log(`❌ ${entry.capability} (lost)`);
+      } else {
+        console.log(`+ ${entry.capability} (snapshot only)`);
+      }
+    }
+    if (summary.lost === 0 && summary.extra === 0) {
+      console.log(`no divergence: ${summary.ok} effective capabilities match the configured profile`);
+    } else {
+      console.log(`summary: ${summary.ok} ok, ${summary.lost} lost, ${summary.extra} snapshot-only`);
     }
     return payload;
   }
@@ -933,4 +1040,82 @@ function requiredOption(value: string | undefined, name: string): string {
     throw new Error(`Missing required option ${name}`);
   }
   return normalized;
+}
+
+function findLiveContextForDiff(agentId: string, session?: string): ContextRecord | null {
+  const contexts = dbListContexts({ agentId, includeInactive: false }).filter((ctx) =>
+    session ? ctx.sessionName === session : true,
+  );
+  const kindRank = (kind: string) => (kind === "turn-runtime" ? 0 : kind === "agent-runtime" ? 1 : 2);
+  contexts.sort(
+    (a, b) =>
+      kindRank(a.kind) - kindRank(b.kind) ||
+      (b.lastUsedAt ?? b.createdAt) - (a.lastUsedAt ?? a.createdAt) ||
+      b.createdAt - a.createdAt,
+  );
+  return contexts[0] ?? null;
+}
+
+function serializeDiffContext(context: ContextRecord) {
+  const actorResolution = context.metadata?.actorResolution;
+  return {
+    contextId: context.contextId,
+    kind: context.kind,
+    ...(context.sessionName ? { sessionName: context.sessionName } : {}),
+    ...(typeof actorResolution === "string" && actorResolution ? { actorResolution } : {}),
+    capabilityCount: context.capabilities.length,
+  };
+}
+
+function diffCapabilities(
+  configured: AuthorizationCapability[],
+  effective: AuthorizationCapability[],
+): Array<{ capability: string; status: "ok" | "lost" | "extra" }> {
+  const configuredKeys = new Set(configured.map(formatCanonicalCapability));
+  const effectiveKeys = new Set(effective.map(formatCanonicalCapability));
+  const entries: Array<{ capability: string; status: "ok" | "lost" | "extra" }> = [];
+  for (const capability of configuredKeys) {
+    entries.push({ capability, status: effectiveKeys.has(capability) ? "ok" : "lost" });
+  }
+  for (const capability of effectiveKeys) {
+    if (!configuredKeys.has(capability)) {
+      entries.push({ capability, status: "extra" });
+    }
+  }
+  return entries;
+}
+
+function diagnosePermissionsDiff(
+  context: ContextRecord | null,
+  summary: { ok: number; lost: number; extra: number },
+): { code: string; message: string } | undefined {
+  if (!context) {
+    return {
+      code: "no_live_context",
+      message:
+        "No live runtime context found for this agent; any running turn will authorize against an empty or stale snapshot.",
+    };
+  }
+  if (context.capabilities.length > 0) {
+    if (summary.lost > 0) {
+      return {
+        code: "stale_snapshot",
+        message:
+          "The live context snapshot is missing configured capabilities; profile changes do not revoke live contexts, so the snapshot may predate the current profile.",
+      };
+    }
+    return undefined;
+  }
+  const actorResolution = context.metadata?.actorResolution;
+  if (actorResolution === "missing_contact") {
+    return {
+      code: "missing_contact",
+      message:
+        "Actor identity was not resolved (missing_contact); identity capabilities were never materialized into the live context snapshot, so every check is denied.",
+    };
+  }
+  return {
+    code: "empty_snapshot",
+    message: "The live context snapshot holds no capabilities; every authorization check against it is denied.",
+  };
 }
