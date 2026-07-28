@@ -845,6 +845,20 @@ function resolveLinkTarget(
   }
 }
 
+const PROJECT_FOCUS_HELP_AFTER = `
+USE
+  Pin the project's focused workflow run explicitly, or clear the pin to return to the heuristic.
+
+REGRAS HARD
+  Focus requires an active (non-terminal) linked run; terminal runs (done/failed/cancelled/archived) are rejected.
+  If the focused run later becomes terminal or stale-terminal, reads silently fall back to the heuristic.
+  The stored focus is not cleared on read; use --clear to remove it explicitly.
+
+EXAMPLES
+  ravi projects focus ravi-core wf-run-123
+  ravi projects focus ravi-core --clear
+`;
+
 @Group({
   name: "projects",
   description: "Project alignment/context substrate",
@@ -1168,7 +1182,11 @@ export class ProjectCommands {
     }
   }
 
-  @Command({ name: "focus", description: "Pin or clear the explicit focused workflow run of a project" })
+  @Command({
+    name: "focus",
+    description: "Pin or clear the explicit focused workflow run of a project",
+    helpAfter: PROJECT_FOCUS_HELP_AFTER,
+  })
   @CommandAccess({ kind: "mutate", resource: "projects", action: "focus", risk: "medium" })
   @Returns(projectFocusReturnSchema)
   focus(

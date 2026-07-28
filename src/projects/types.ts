@@ -68,6 +68,7 @@ export interface ProjectWorkflowLinkSurface {
   workflowRunId: string;
   workflowRunTitle: string | null;
   workflowRunStatus: WorkflowRunStatus | null;
+  workflowRunUpdatedAt: number | null;
   workflowSpecId: string | null;
   workflowSpecTitle: string | null;
   createdAt: number;

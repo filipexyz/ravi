@@ -791,6 +791,10 @@ describe("projects service", () => {
     });
 
     db.prepare("UPDATE workflow_runs SET status = 'failed' WHERE id IN (?, ?)").run(staleRun.run.id, recentRun.run.id);
+    db.prepare("UPDATE workflow_runs SET updated_at = ? WHERE id = ?").run(
+      Date.now() - TERMINAL_WORKFLOW_GRACE_MS - 60_000,
+      staleRun.run.id,
+    );
     db.prepare("UPDATE project_links SET updated_at = ? WHERE project_id = ? AND asset_id = ?").run(
       Date.now() - TERMINAL_WORKFLOW_GRACE_MS - 60_000,
       staleProject.id,
@@ -812,6 +816,201 @@ describe("projects service", () => {
     expect(recentDetails?.workflowAggregate?.failed).toBe(1);
     expect(recentDetails?.operational?.runtimeStatus).toBe("failed");
     expect(recentDetails?.operational?.hottestWorkflowRunId).toBe(recentRun.run.id);
+  });
+
+  it("does not promote a stale terminal support workflow when unlinking the primary", () => {
+    const db = getDb();
+    const spec = createWorkflowSpec({
+      id: "wf-spec-project-unlink-stale-support",
+      title: "Project unlink stale support",
+      createdBy: "test",
+      nodes: [
+        {
+          key: "ship",
+          label: "Ship",
+          kind: "task",
+          requirement: "required",
+          releaseMode: "auto",
+        },
+      ],
+    });
+    createdWorkflowSpecIds.push(spec.id);
+    const primaryRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-unlink-stale-primary",
+      createdBy: "test",
+    });
+    const supportRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-unlink-stale-support",
+      createdBy: "test",
+    });
+    createdWorkflowRunIds.push(primaryRun.run.id, supportRun.run.id);
+
+    const project = createProject({ title: "Project Unlink Stale Support" });
+    createdProjectIds.push(project.id);
+    linkProject({
+      projectRef: project.id,
+      assetType: "workflow",
+      assetId: primaryRun.run.id,
+      role: "primary",
+      createdBy: "test",
+    });
+    attachProjectWorkflowRun({
+      projectRef: project.id,
+      workflowRunId: supportRun.run.id,
+      createdBy: "test",
+    });
+
+    const staleAt = Date.now() - TERMINAL_WORKFLOW_GRACE_MS - 60_000;
+    db.prepare("UPDATE workflow_runs SET status = 'failed', updated_at = ? WHERE id = ?").run(
+      staleAt,
+      supportRun.run.id,
+    );
+    db.prepare("UPDATE project_links SET updated_at = ? WHERE project_id = ? AND asset_id = ?").run(
+      staleAt,
+      project.id,
+      supportRun.run.id,
+    );
+
+    const detached = detachProjectWorkflowRun({
+      projectRef: project.id,
+      workflowRunId: primaryRun.run.id,
+    });
+
+    expect(detached.promotedPrimaryWorkflowRunId).toBeNull();
+    expect(detached.details.linkedWorkflows).toHaveLength(1);
+    expect(detached.details.linkedWorkflows[0]).toMatchObject({
+      workflowRunId: supportRun.run.id,
+      role: "support",
+    });
+    expect(detached.details.workflowAggregate).toMatchObject({
+      total: 1,
+      overallStatus: null,
+      primaryWorkflowRunId: null,
+      focusedWorkflowRunId: null,
+    });
+    expect(detached.details.operational?.runtimeStatus).toBeNull();
+  });
+
+  it("keeps recently failed runs with old links in the aggregate by using the run clock", () => {
+    const db = getDb();
+    const spec = createWorkflowSpec({
+      id: "wf-spec-project-run-clock",
+      title: "Project run clock",
+      createdBy: "test",
+      nodes: [
+        {
+          key: "ship",
+          label: "Ship",
+          kind: "task",
+          requirement: "required",
+          releaseMode: "auto",
+        },
+      ],
+    });
+    createdWorkflowSpecIds.push(spec.id);
+    const freshFailedRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-fresh-failed",
+      createdBy: "test",
+    });
+    const oldFailedRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-old-failed",
+      createdBy: "test",
+    });
+    createdWorkflowRunIds.push(freshFailedRun.run.id, oldFailedRun.run.id);
+
+    const freshProject = createProject({ title: "Fresh failed old link project" });
+    const oldProject = createProject({ title: "Old failed old link project" });
+    createdProjectIds.push(freshProject.id, oldProject.id);
+
+    linkProject({
+      projectRef: freshProject.id,
+      assetType: "workflow",
+      assetId: freshFailedRun.run.id,
+      role: "primary",
+      createdBy: "test",
+    });
+    linkProject({
+      projectRef: oldProject.id,
+      assetType: "workflow",
+      assetId: oldFailedRun.run.id,
+      role: "primary",
+      createdBy: "test",
+    });
+
+    const staleAt = Date.now() - TERMINAL_WORKFLOW_GRACE_MS - 60_000;
+    db.prepare("UPDATE workflow_runs SET status = 'failed', updated_at = ? WHERE id = ?").run(
+      Date.now(),
+      freshFailedRun.run.id,
+    );
+    db.prepare("UPDATE workflow_runs SET status = 'failed', updated_at = ? WHERE id = ?").run(
+      staleAt,
+      oldFailedRun.run.id,
+    );
+    db.prepare("UPDATE project_links SET updated_at = ?").run(staleAt);
+
+    const freshDetails = getProjectDetails(freshProject.id);
+    expect(freshDetails?.workflowAggregate?.overallStatus).toBe("failed");
+    expect(freshDetails?.operational?.runtimeStatus).toBe("failed");
+
+    const oldDetails = getProjectDetails(oldProject.id);
+    expect(oldDetails?.workflowAggregate?.overallStatus).toBeNull();
+    expect(oldDetails?.operational?.runtimeStatus).toBeNull();
+  });
+
+  it("rejects focusing a terminal workflow run and falls back when the focused run turns terminal", () => {
+    const db = getDb();
+    const spec = createWorkflowSpec({
+      id: "wf-spec-project-terminal-focus",
+      title: "Project terminal focus",
+      createdBy: "test",
+      nodes: [
+        {
+          key: "ship",
+          label: "Ship",
+          kind: "task",
+          requirement: "required",
+          releaseMode: "auto",
+        },
+      ],
+    });
+    createdWorkflowSpecIds.push(spec.id);
+    const firstRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-terminal-focus-first",
+      createdBy: "test",
+    });
+    const secondRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-terminal-focus-second",
+      createdBy: "test",
+    });
+    createdWorkflowRunIds.push(firstRun.run.id, secondRun.run.id);
+
+    const project = createProject({ title: "Project Terminal Focus" });
+    createdProjectIds.push(project.id);
+    linkProject({
+      projectRef: project.id,
+      assetType: "workflow",
+      assetId: firstRun.run.id,
+      role: "primary",
+      createdBy: "test",
+    });
+    attachProjectWorkflowRun({
+      projectRef: project.id,
+      workflowRunId: secondRun.run.id,
+      createdBy: "test",
+    });
+
+    db.prepare("UPDATE workflow_runs SET status = 'failed' WHERE id = ?").run(secondRun.run.id);
+    expect(() => setProjectFocusedWorkflow(project.id, secondRun.run.id)).toThrow(
+      `Workflow ${secondRun.run.id} is terminal (status failed); focus requires an active run.`,
+    );
+
+    const focused = setProjectFocusedWorkflow(project.id, firstRun.run.id);
+    expect(focused.details.workflowAggregate?.focusedWorkflowRunId).toBe(firstRun.run.id);
+
+    db.prepare("UPDATE workflow_runs SET status = 'failed' WHERE id = ?").run(firstRun.run.id);
+    const afterTerminal = getProjectDetails(project.id);
+    expect(afterTerminal?.project.focusedWorkflowRunId).toBe(firstRun.run.id);
+    expect(afterTerminal?.workflowAggregate?.focusedWorkflowRunId).toBe(secondRun.run.id);
   });
 
   it("keeps explicit focus stable across link touches and falls back to the heuristic when cleared", () => {

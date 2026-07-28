@@ -119,10 +119,13 @@ const VALID_PROJECT_WORKFLOW_ROLES = new Set<ProjectWorkflowLinkRole>(["primary"
 export const TERMINAL_WORKFLOW_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
 const TERMINAL_WORKFLOW_STATUSES = new Set<WorkflowRunStatus>(["done", "failed", "cancelled", "archived"]);
 
+// Staleness uses the freshest of the link clock and the run clock: nothing touches the
+// project link when the run itself changes status, so a run that failed one hour ago must
+// keep counting even if its link has been idle for longer than the grace window.
 function isStaleTerminalWorkflow(workflow: ProjectWorkflowLinkSurface, now = Date.now()): boolean {
   return (
     Boolean(workflow.workflowRunStatus && TERMINAL_WORKFLOW_STATUSES.has(workflow.workflowRunStatus)) &&
-    now - workflow.updatedAt > TERMINAL_WORKFLOW_GRACE_MS
+    now - Math.max(workflow.updatedAt, workflow.workflowRunUpdatedAt ?? 0) > TERMINAL_WORKFLOW_GRACE_MS
   );
 }
 
@@ -201,6 +204,7 @@ function buildProjectWorkflowSurface(link: ProjectDetails["links"][number]): Pro
     workflowRunId: link.assetId,
     workflowRunTitle: details?.run.title ?? null,
     workflowRunStatus: details?.run.status ?? null,
+    workflowRunUpdatedAt: details?.run.updatedAt ?? null,
     workflowSpecId: details?.spec.id ?? null,
     workflowSpecTitle: details?.spec.title ?? null,
     createdAt: link.createdAt,
@@ -769,8 +773,10 @@ export function detachProjectWorkflowRun(input: DetachProjectWorkflowRunInput): 
 
   let promotedPrimaryWorkflowRunId: string | null = null;
   if (linked.role === "primary") {
+    // Only non-stale-terminal workflows are eligible: promoting a stale terminal run would
+    // rewrite its link clock and resurrect it as primary/focus/hottest with a dead status.
     const successor = details.linkedWorkflows
-      .filter((workflow) => workflow.workflowRunId !== workflowRunId)
+      .filter((workflow) => workflow.workflowRunId !== workflowRunId && !isStaleTerminalWorkflow(workflow))
       .sort(
         (left, right) => right.updatedAt - left.updatedAt || left.workflowRunId.localeCompare(right.workflowRunId),
       )[0];
@@ -812,6 +818,11 @@ export function setProjectFocusedWorkflow(
     const linked = details.linkedWorkflows.find((workflow) => workflow.workflowRunId === normalizedRunId);
     if (!linked) {
       throw new Error(`Workflow ${normalizedRunId} is not linked to project ${details.project.slug}.`);
+    }
+    if (isTerminalWorkflowStatus(linked.workflowRunStatus)) {
+      throw new Error(
+        `Workflow ${normalizedRunId} is terminal (status ${linked.workflowRunStatus}); focus requires an active run.`,
+      );
     }
   }
 

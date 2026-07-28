@@ -60,6 +60,7 @@ const projectDetails: ProjectDetails = {
       workflowRunId: "wf-run-1",
       workflowRunTitle: "Ship smoke",
       workflowRunStatus: "ready",
+      workflowRunUpdatedAt: 1_711_234_567_000,
       workflowSpecId: "wf-spec-1",
       workflowSpecTitle: "Ship smoke",
       createdAt: 1_711_234_567_000,
