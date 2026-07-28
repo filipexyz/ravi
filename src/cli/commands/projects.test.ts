@@ -726,6 +726,7 @@ describe("ProjectCommands", () => {
         true,
         undefined,
         undefined,
+        undefined,
         true,
       );
     } finally {
@@ -747,6 +748,40 @@ describe("ProjectCommands", () => {
     expect(emittedTaskEvents.map((entry) => (entry.event as Record<string, unknown>).type)).toEqual([
       "task.created",
       "task.dispatched",
+    ]);
+  });
+
+  it("forwards profile --input values when creating project-scoped tasks", async () => {
+    const commands = new ProjectTaskCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      await commands.create(
+        "ops-cadence",
+        "ship",
+        "Ship smoke",
+        "Run the project smoke test",
+        "wf-run-1",
+        "high",
+        "auditor",
+        false,
+        undefined,
+        undefined,
+        ["escopo=tiny", "periodo=2026-07"],
+        true,
+      );
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(createProjectTaskCalls).toEqual([
+      expect.objectContaining({
+        projectRef: "ops-cadence",
+        nodeKey: "ship",
+        profileId: "auditor",
+        profileInput: { escopo: "tiny", periodo: "2026-07" },
+      }),
     ]);
   });
 

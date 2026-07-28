@@ -280,7 +280,7 @@ function formatRuntimeListLabel(resolution: TaskRuntimeResolution): string {
   return `${model}${effort}${thinking}`.slice(0, 18);
 }
 
-function parseProfileInputs(raw?: string[] | string): Record<string, string> | undefined {
+export function parseProfileInputs(raw?: string[] | string): Record<string, string> | undefined {
   const values = Array.isArray(raw) ? raw : raw ? [raw] : [];
   if (values.length === 0) {
     return undefined;
