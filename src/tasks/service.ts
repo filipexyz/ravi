@@ -1348,6 +1348,7 @@ function assertTaskDispatchProviderModelCompatibility(
   input: DispatchTaskInput,
   agentId: string,
   sessionModelOverride?: string | null,
+  sessionProviderOverride?: string | null,
 ): void {
   const agent = getAgent(agentId);
   if (!agent) {
@@ -1380,11 +1381,13 @@ function assertTaskDispatchProviderModelCompatibility(
     return;
   }
 
-  const result = validateProviderModelCompatibility(selection.effectiveProvider, model);
+  const effectiveProvider = sessionProviderOverride ?? selection.effectiveProvider;
+  const providerSource = sessionProviderOverride ? "session provider override" : "agent default";
+  const result = validateProviderModelCompatibility(effectiveProvider, model);
   if (!result.ok) {
     throw new Error(
       `Task ${task.id} dispatch blocked for agent '${agentId}' ` +
-        `(model source: ${runtime.sources.model ?? "unknown"}). ${result.error}`,
+        `(model source: ${runtime.sources.model ?? "unknown"}, provider source: ${providerSource}). ${result.error}`,
     );
   }
 }
@@ -1429,6 +1432,7 @@ function prepareTaskDispatchContext(
     input,
     resolvedAgent.id,
     existingSession?.modelOverride,
+    existingSession?.runtimeProviderOverride,
   );
 
   let sessionName = existingSession?.name ?? input.sessionName;

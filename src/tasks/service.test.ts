@@ -1364,6 +1364,63 @@ describe("task substrate contract", () => {
     expect(getTaskDetails(created.task.id).activeAssignment).toBeNull();
   });
 
+  it("rejects dispatch when the session provider override conflicts with the effective model", async () => {
+    const agentId = "codex-agent-session-claude-override";
+    const sessionName = "codex-agent-claude-override-work";
+    createdAgentIds.push(agentId);
+    createdSessionNames.push(sessionName);
+    dbCreateAgent({ id: agentId, cwd: "/tmp/ravi-provider-model-agent", provider: "codex", model: "codex" });
+    getOrCreateSession(`agent:${agentId}:provider-override`, agentId, "/tmp/ravi-provider-model-agent", {
+      name: sessionName,
+      runtimeProviderOverride: "claude",
+    });
+
+    const created = createTask({
+      title: "Session provider override conflicts with model",
+      instructions: "The session override sets the real runtime provider, so codex model must be rejected",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    await expect(
+      dispatchTask(created.task.id, {
+        agentId,
+        sessionName,
+        assignedBy: "test",
+      }),
+    ).rejects.toThrow(/session provider override.*model 'codex'.*provider 'claude'/i);
+
+    expect(dbGetTask(created.task.id)?.status).toBe("open");
+    expect(getTaskDetails(created.task.id).activeAssignment).toBeNull();
+  });
+
+  it("dispatches when the session provider override makes the provider/model pair valid", async () => {
+    const agentId = "claude-agent-session-codex-override";
+    const sessionName = "claude-agent-codex-override-work";
+    createdAgentIds.push(agentId);
+    createdSessionNames.push(sessionName);
+    dbCreateAgent({ id: agentId, cwd: "/tmp/ravi-provider-model-agent", provider: "claude", model: "codex" });
+    getOrCreateSession(`agent:${agentId}:provider-override`, agentId, "/tmp/ravi-provider-model-agent", {
+      name: sessionName,
+      runtimeProviderOverride: "codex",
+    });
+
+    const created = createTask({
+      title: "Session provider override fixes the pair",
+      instructions: "The session override provider codex makes the codex model valid",
+      createdBy: "test",
+      profileId: "task-doc-none",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const dispatched = await dispatchTask(created.task.id, {
+      agentId,
+      sessionName,
+      assignedBy: "test",
+    });
+    expect(dispatched.task.status).toBe("dispatched");
+  });
+
   it("rejects a launch plan when the agent model is incompatible with its provider", async () => {
     const agentId = "claude-launch-plan-agent";
     createdAgentIds.push(agentId);
