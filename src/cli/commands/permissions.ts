@@ -1049,9 +1049,9 @@ function findLiveContextForDiff(agentId: string, session?: string): ContextRecor
   const kindRank = (kind: string) => (kind === "turn-runtime" ? 0 : kind === "agent-runtime" ? 1 : 2);
   contexts.sort(
     (a, b) =>
-      kindRank(a.kind) - kindRank(b.kind) ||
       (b.lastUsedAt ?? b.createdAt) - (a.lastUsedAt ?? a.createdAt) ||
-      b.createdAt - a.createdAt,
+      b.createdAt - a.createdAt ||
+      kindRank(a.kind) - kindRank(b.kind),
   );
   return contexts[0] ?? null;
 }

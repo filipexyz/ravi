@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun
 import { createContact, getContact } from "../../contacts.js";
 import { recordPermissionDenial } from "../../permissions/denials.js";
 import { readAgentRuntimePermissionsConfig } from "../../permissions/agent-default-capabilities-provider.js";
-import { dbCreateAgent } from "../../router/router-db.js";
+import { dbCreateAgent, dbTouchContext } from "../../router/router-db.js";
 import { createRuntimeContext } from "../../runtime/context-registry.js";
 import { dbCreateTagDefinition, dbGetTagDefinition } from "../../tags/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -358,5 +358,36 @@ describe("PermissionsCommands diff", () => {
 
     expect(payload.context?.contextId).toBe(target.contextId);
     expect(payload.summary).toEqual({ ok: 3, lost: 0, extra: 0 });
+  });
+
+  it("prefers the most recently used live context over an older turn-runtime context", () => {
+    const now = Date.now();
+    const stale = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: "ghost-agent",
+      sessionName: "stale-session",
+      capabilities: [],
+      metadata: { actorResolution: "missing_contact" },
+    });
+    const fresh = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "ghost-agent",
+      capabilities: [
+        { permission: "view", objectType: "project", objectId: "*" },
+        { permission: "view", objectType: "agent", objectId: "*" },
+        { permission: "execute", objectType: "executable", objectId: "curl" },
+      ],
+      metadata: { actorResolution: "resolved" },
+    });
+    dbTouchContext(stale.contextId, now - 60_000);
+    dbTouchContext(fresh.contextId, now);
+
+    const commands = new PermissionsCommands();
+    const payload = commands.diff("ghost-agent", undefined, true);
+
+    expect(payload.context?.contextId).toBe(fresh.contextId);
+    expect(payload.context?.kind).toBe("agent-runtime");
+    expect(payload.summary).toEqual({ ok: 3, lost: 0, extra: 0 });
+    expect(payload.diagnosis).toBeUndefined();
   });
 });
