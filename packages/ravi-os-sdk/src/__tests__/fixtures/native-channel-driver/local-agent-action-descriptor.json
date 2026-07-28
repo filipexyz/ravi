@@ -1,0 +1,16 @@
+{
+  "description": "Create a provider-owned collaboration space.",
+  "inputSchema": {
+    "properties": {
+      "name": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "name"
+    ],
+    "type": "object"
+  },
+  "sourceAccountId": "account-a",
+  "toolName": "example_create_space"
+}

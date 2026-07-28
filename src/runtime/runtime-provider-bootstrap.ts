@@ -53,11 +53,29 @@ export async function prepareRuntimeProviderBootstrap(
     ...(discoveredPlugins.length > 0 ? { plugins: discoveredPlugins } : {}),
     hostServices,
   });
+  const dynamicToolBridge =
+    options.runtimeCapabilities.dynamicTools.mode === "host"
+      ? {
+          dynamicTools: hostServices.listDynamicTools(),
+          handleRuntimeToolCall: (request: Parameters<RuntimeHostServices["executeDynamicTool"]>[0]) =>
+            hostServices.executeDynamicTool(request),
+        }
+      : undefined;
+  const resolvedProviderBootstrap =
+    dynamicToolBridge === undefined
+      ? providerBootstrap
+      : {
+          ...(providerBootstrap ?? {}),
+          startRequest: {
+            ...(providerBootstrap?.startRequest ?? {}),
+            ...dynamicToolBridge,
+          },
+        };
   const runtimePlugins = options.runtimeCapabilities.supportsPlugins ? discoveredPlugins : [];
 
   return {
     hostServices,
-    ...(providerBootstrap ? { providerBootstrap } : {}),
+    ...(resolvedProviderBootstrap ? { providerBootstrap: resolvedProviderBootstrap } : {}),
     runtimePlugins,
   };
 }
