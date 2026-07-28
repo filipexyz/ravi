@@ -8,7 +8,7 @@ const nullableNumber = z.number().nullable();
 
 export const cnpjCompanySchema = z
   .object({
-    cnpj_base: z.string(),
+    cnpj_base: z.string().regex(/^\d{8}$/),
     razao_social: z.string(),
     natureza_juridica: nullableNumber,
     qualificacao_responsavel: nullableNumber,
@@ -20,10 +20,10 @@ export const cnpjCompanySchema = z
 
 export const cnpjEstablishmentSchema = z
   .object({
-    cnpj_completo: z.string(),
-    cnpj_base: z.string(),
-    cnpj_ordem: z.string(),
-    cnpj_dv: z.string(),
+    cnpj_completo: z.string().refine(isValidCnpj, "CNPJ check digits are invalid"),
+    cnpj_base: z.string().regex(/^\d{8}$/),
+    cnpj_ordem: z.string().regex(/^\d{4}$/),
+    cnpj_dv: z.string().regex(/^\d{2}$/),
     matriz_filial: z.number(),
     nome_fantasia: nullableString,
     situacao_cadastral: z.number(),
@@ -97,7 +97,7 @@ export const cnpjSearchResponseSchema = z
     motor: z.string().optional(),
     pagina: z.number().int().min(1),
     resultados: z.number().int().min(0),
-    itens: z.array(cnpjSearchItemSchema),
+    itens: z.array(cnpjSearchItemSchema).max(100),
   })
   .strict();
 
@@ -221,7 +221,18 @@ export class CnpjServerClient {
       });
     }
 
-    return this.request(`/api/v1/cnpj/${normalized}`, cnpjFullResponseSchema, normalized);
+    const response = await this.request(`/api/v1/cnpj/${normalized}`, cnpjFullResponseSchema, normalized);
+    const returned = response.estabelecimento.cnpj_completo;
+    const reconstructed =
+      response.estabelecimento.cnpj_base + response.estabelecimento.cnpj_ordem + response.estabelecimento.cnpj_dv;
+    if (
+      returned !== normalized ||
+      reconstructed !== returned ||
+      response.empresa.cnpj_base !== response.estabelecimento.cnpj_base
+    ) {
+      throw invalidResponse("CNPJ Server returned company identity fields that do not match the requested CNPJ.");
+    }
+    return response;
   }
 
   async search(params: CnpjSearchParams = {}): Promise<CnpjSearchResponse> {
@@ -239,7 +250,14 @@ export class CnpjServerClient {
     append(search, "page", validated.page);
     append(search, "limit", validated.limit);
 
-    return this.request(`/api/v1/busca?${search.toString()}`, cnpjSearchResponseSchema);
+    const response = await this.request(`/api/v1/busca?${search.toString()}`, cnpjSearchResponseSchema);
+    if (response.pagina !== validated.page) {
+      throw invalidResponse("CNPJ Server returned a page that does not match the requested page.");
+    }
+    if (response.itens.length > validated.limit) {
+      throw invalidResponse("CNPJ Server returned more items than the requested limit.");
+    }
+    return response;
   }
 
   private async request<T>(path: string, schema: z.ZodType<T>, notFoundValue?: string): Promise<T> {

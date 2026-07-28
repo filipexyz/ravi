@@ -4,7 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { listCrmAccountCards, listCrmFacts } from "../../contacts.js";
 import { CnpjServerError, type CnpjFullResponse, type CnpjServerClient } from "./client.js";
-import { applyCnpjCrmSelection, cnpjSelectionHash, defaultCnpjCrmAdapter, normalizePinnedCnpjs } from "./crm-export.js";
+import {
+  applyCnpjCrmSelection,
+  cnpjSelectionHash,
+  type CnpjCrmAdapter,
+  defaultCnpjCrmAdapter,
+  normalizePinnedCnpjs,
+} from "./crm-export.js";
 
 const previousStateDir = process.env.RAVI_STATE_DIR;
 let stateDir = "";
@@ -91,6 +97,43 @@ describe("CNPJ Server CRM export", () => {
     });
     expect(show).toHaveBeenCalledTimes(2);
     expect(listCrmAccountCards({ source: "cnpj-server" }).total).toBe(1);
+  });
+
+  it("does not call the CRM adapter after the client rejects a mismatched company identity", async () => {
+    const cnpjs = ["00000000000191"];
+    const show = mock(async () => {
+      throw new CnpjServerError({
+        code: "INVALID_RESPONSE",
+        category: "parar",
+        retryable: false,
+        message: "CNPJ Server returned company identity fields that do not match the requested CNPJ.",
+        nextAction: "Stop and inspect the upstream contract before relying on this response.",
+      });
+    });
+    const createAccount = mock(() => {
+      throw new Error("CRM account mutation must not run");
+    });
+    const confirmFact = mock(() => {
+      throw new Error("CRM fact mutation must not run");
+    });
+    const crm = { createAccount, confirmFact } as unknown as CnpjCrmAdapter;
+
+    const result = await applyCnpjCrmSelection({ show } as Pick<CnpjServerClient, "show">, crm, {
+      cnpjs,
+      owner: { type: "agent", id: "main" },
+      originFilters: { uf: "DF" },
+      selectionHash: cnpjSelectionHash(cnpjs),
+    });
+
+    expect(result).toMatchObject({
+      status: "failed",
+      requested: 1,
+      applied: 0,
+      failed: 1,
+      results: [{ cnpj: "00000000000191", status: "failed", error: { code: "INVALID_RESPONSE" } }],
+    });
+    expect(createAccount).not.toHaveBeenCalled();
+    expect(confirmFact).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid or oversized selection before any lookup", () => {

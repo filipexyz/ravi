@@ -78,6 +78,18 @@ function fullCompanyResponse() {
   };
 }
 
+function searchItem(cnpj = "00000000000191") {
+  return {
+    cnpj_completo: cnpj,
+    razao_social: "BANCO DO BRASIL SA",
+    nome_fantasia: "BANCO DO BRASIL",
+    uf: "DF",
+    cnae_principal: "6422100",
+    situacao_cadastral: 2,
+    data_inicio_atividade: "1966-08-01",
+  };
+}
+
 describe("CnpjServerClient", () => {
   it("accepts only the exact validated Tailscale endpoint", () => {
     expect(validateCnpjBaseUrl(CNPJ_TAILSCALE_BASE_URL)).toBe(CNPJ_TAILSCALE_BASE_URL);
@@ -124,6 +136,29 @@ describe("CnpjServerClient", () => {
       details: { code: "INVALID_CNPJ", category: "corrigir", retryable: false },
     });
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("rejects company identity fields that do not match the requested CNPJ", async () => {
+    const otherCompany = fullCompanyResponse();
+    otherCompany.empresa.cnpj_base = "33000167";
+    otherCompany.estabelecimento.cnpj_completo = "33000167000101";
+    otherCompany.estabelecimento.cnpj_base = "33000167";
+    otherCompany.estabelecimento.cnpj_dv = "01";
+
+    const inconsistentSegments = fullCompanyResponse();
+    inconsistentSegments.estabelecimento.cnpj_ordem = "0002";
+
+    for (const payload of [otherCompany, inconsistentSegments]) {
+      const client = new CnpjServerClient({
+        baseUrl: CNPJ_TAILSCALE_BASE_URL,
+        fetch: fakeFetch(() => json(payload)),
+      });
+
+      await expect(client.show("00.000.000/0001-91")).rejects.toMatchObject({
+        details: { code: "INVALID_RESPONSE", category: "parar", retryable: false },
+      });
+      mock.restore();
+    }
   });
 
   it("accepts the sanitized raw live empty-search envelope with an absent optional engine", async () => {
@@ -176,6 +211,31 @@ describe("CnpjServerClient", () => {
       data_inicio_max: "2026-06-30",
       page: "2",
       limit: "25",
+    });
+  });
+
+  it("rejects upstream pages that do not match the requested page or limit", async () => {
+    const wrongPageClient = new CnpjServerClient({
+      baseUrl: CNPJ_TAILSCALE_BASE_URL,
+      fetch: fakeFetch(() => json({ itens: [], pagina: 1, resultados: 0 })),
+    });
+    await expect(wrongPageClient.search({ page: 2, limit: 1 })).rejects.toMatchObject({
+      details: { code: "INVALID_RESPONSE", category: "parar", retryable: false },
+    });
+    mock.restore();
+
+    const oversizedPageClient = new CnpjServerClient({
+      baseUrl: CNPJ_TAILSCALE_BASE_URL,
+      fetch: fakeFetch(() =>
+        json({
+          itens: [searchItem(), searchItem("33000167000101")],
+          pagina: 1,
+          resultados: 2,
+        }),
+      ),
+    });
+    await expect(oversizedPageClient.search({ page: 1, limit: 1 })).rejects.toMatchObject({
+      details: { code: "INVALID_RESPONSE", category: "parar", retryable: false },
     });
   });
 

@@ -20995,6 +20995,7 @@ export const CnpjGetReturnSchema = {
               "type": "number"
             },
             "cnpj_base": {
+              "pattern": "^\\d{8}$",
               "type": "string"
             },
             "ente_federativo_responsavel": {
@@ -21096,15 +21097,18 @@ export const CnpjGetReturnSchema = {
               ]
             },
             "cnpj_base": {
+              "pattern": "^\\d{8}$",
               "type": "string"
             },
             "cnpj_completo": {
               "type": "string"
             },
             "cnpj_dv": {
+              "pattern": "^\\d{2}$",
               "type": "string"
             },
             "cnpj_ordem": {
+              "pattern": "^\\d{4}$",
               "type": "string"
             },
             "complemento": {
