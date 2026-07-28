@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { listCrmAccountCards, listCrmFacts } from "../../contacts.js";
-import { CnpjServerError, type CnpjFullResponse, type CnpjServerClient } from "./client.js";
+import { CNPJ_TAILSCALE_BASE_URL, type CnpjFullResponse, CnpjServerClient, CnpjServerError } from "./client.js";
 import {
   applyCnpjCrmSelection,
   cnpjSelectionHash,
@@ -101,15 +101,14 @@ describe("CNPJ Server CRM export", () => {
 
   it("does not call the CRM adapter after the client rejects a mismatched company identity", async () => {
     const cnpjs = ["00000000000191"];
-    const show = mock(async () => {
-      throw new CnpjServerError({
-        code: "INVALID_RESPONSE",
-        category: "parar",
-        retryable: false,
-        message: "CNPJ Server returned company identity fields that do not match the requested CNPJ.",
-        nextAction: "Stop and inspect the upstream contract before relying on this response.",
-      });
-    });
+    const fetch = mock(
+      async () =>
+        new Response(JSON.stringify(company("33000167000101")), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    ) as unknown as typeof globalThis.fetch;
+    const client = new CnpjServerClient({ baseUrl: CNPJ_TAILSCALE_BASE_URL, fetch });
     const createAccount = mock(() => {
       throw new Error("CRM account mutation must not run");
     });
@@ -118,7 +117,7 @@ describe("CNPJ Server CRM export", () => {
     });
     const crm = { createAccount, confirmFact } as unknown as CnpjCrmAdapter;
 
-    const result = await applyCnpjCrmSelection({ show } as Pick<CnpjServerClient, "show">, crm, {
+    const result = await applyCnpjCrmSelection(client, crm, {
       cnpjs,
       owner: { type: "agent", id: "main" },
       originFilters: { uf: "DF" },
@@ -132,6 +131,7 @@ describe("CNPJ Server CRM export", () => {
       failed: 1,
       results: [{ cnpj: "00000000000191", status: "failed", error: { code: "INVALID_RESPONSE" } }],
     });
+    expect(fetch).toHaveBeenCalledTimes(1);
     expect(createAccount).not.toHaveBeenCalled();
     expect(confirmFact).not.toHaveBeenCalled();
   });
