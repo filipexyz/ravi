@@ -1538,6 +1538,216 @@ export const workflowTaskCreateReturnSchema = z
 export const projectDetailsReturnSchema = looseObjectSchema;
 export const projectResourceReturnSchema = looseObjectSchema;
 
+const projectRealitySignalReferenceSchema = z
+  .object({
+    kind: z.enum([
+      "required_blocker",
+      "checkpoint_overdue",
+      "missing_report",
+      "document_divergence",
+      "missing_workflow",
+      "missing_task",
+      "project_next_step",
+      "focused_workflow_ready",
+      "current_task",
+      "project_without_execution",
+    ]),
+    ref: z.string(),
+    project_id: z.string(),
+    workflow_run_id: z.string().optional(),
+    node_run_id: z.string().optional(),
+    task_id: z.string().optional(),
+    event_id: z.number().int().optional(),
+    field: z.string().optional(),
+  })
+  .strict();
+
+const projectRealityWorkflowNodeSchema = z
+  .object({
+    node_run_id: z.string(),
+    node_key: z.string(),
+    node_label: z.string(),
+    kind: z.enum(["task", "gate", "approval"]),
+    requirement: z.enum(["required", "optional"]),
+    release_mode: z.enum(["auto", "manual"]),
+    status: z.enum([
+      "pending",
+      "awaiting_release",
+      "ready",
+      "running",
+      "blocked",
+      "done",
+      "failed",
+      "skipped",
+      "cancelled",
+      "archived",
+    ]),
+    current_task_id: z.string().nullable(),
+    task_attempt_ids: z.array(z.string()),
+  })
+  .strict();
+
+const projectRealityWorkflowSchema = z
+  .object({
+    workflow_run_id: z.string(),
+    title: z.string().nullable(),
+    status: z
+      .enum(["draft", "waiting", "ready", "running", "blocked", "done", "failed", "cancelled", "archived"])
+      .nullable(),
+    role: z.string().nullable(),
+    is_focused: z.boolean(),
+    exists: z.boolean(),
+    nodes: z.array(projectRealityWorkflowNodeSchema),
+  })
+  .strict();
+
+const projectRealityTaskDocumentSchema = z
+  .object({
+    path: z.string(),
+    exists: z.boolean(),
+    frontmatter: z
+      .object({
+        title: z.string().nullable(),
+        status: z.enum(["open", "dispatched", "in_progress", "blocked", "done", "failed"]).nullable(),
+        priority: z.enum(["low", "normal", "high", "urgent"]).nullable(),
+        progress: z.number().nullable(),
+        summary: z.string().nullable(),
+        blocker_reason: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
+
+const projectRealityTaskSchema = z
+  .object({
+    task_id: z.string(),
+    title: z.string().nullable(),
+    status: z.enum(["open", "dispatched", "in_progress", "blocked", "done", "failed"]).nullable(),
+    priority: z.enum(["low", "normal", "high", "urgent"]).nullable(),
+    progress: z.number().nullable(),
+    summary: z.string().nullable(),
+    blocker_reason: z.string().nullable(),
+    workflow_run_id: z.string(),
+    node_run_id: z.string(),
+    node_key: z.string(),
+    node_label: z.string(),
+    node_requirement: z.enum(["required", "optional"]),
+    is_current: z.boolean(),
+    attempt: z.number().int().nullable(),
+    assignment: z
+      .object({
+        assignment_id: z.string(),
+        status: z.enum(["assigned", "accepted", "blocked", "done", "failed", "superseded"]),
+        checkpoint_due_at: z.number().nullable(),
+        checkpoint_last_report_at: z.number().nullable(),
+        checkpoint_overdue_count: z.number().int().nonnegative(),
+      })
+      .strict()
+      .nullable(),
+    latest_checkpoint_event: z
+      .object({
+        event_id: z.number().int(),
+        created_at: z.number(),
+        message: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
+    latest_progress_at: z.number().nullable(),
+    document: projectRealityTaskDocumentSchema,
+  })
+  .strict();
+
+const projectRealitySourceSchema = z.enum([
+  "task_runtime",
+  "workflow_runtime",
+  "checkpoint_event",
+  "project_next_step",
+  "project_state",
+  "task_document",
+]);
+
+export const projectRealityReturnSchema = z
+  .object({
+    evaluated_at: z.number(),
+    authority: z
+      .object({
+        project: z.literal("project_record"),
+        workflows: z.literal("workflow_runtime"),
+        tasks: z.literal("task_runtime"),
+        task_document: z.literal("non_authoritative"),
+      })
+      .strict(),
+    authoritative_state: z
+      .object({
+        project: z
+          .object({
+            project_id: z.string(),
+            slug: z.string(),
+            status: z.enum(["active", "paused", "blocked", "done", "archived"]),
+            next_step: z.string(),
+          })
+          .strict(),
+        workflows: z.array(projectRealityWorkflowSchema),
+        tasks: z.array(projectRealityTaskSchema),
+      })
+      .strict(),
+    attention_signals: z.array(
+      z
+        .object({
+          type: projectRealitySignalReferenceSchema.shape.kind,
+          severity: z.enum(["blocking", "attention"]),
+          source: projectRealitySourceSchema,
+          reason: z.string(),
+          signal: projectRealitySignalReferenceSchema,
+        })
+        .strict(),
+    ),
+    document_divergences: z.array(
+      z
+        .object({
+          task_id: z.string(),
+          document_path: z.string(),
+          field: z.enum(["title", "status", "priority", "progress", "summary", "blocker_reason"]),
+          runtime_value: z.union([z.string(), z.number(), z.null()]),
+          document_value: z.union([z.string(), z.number(), z.null()]),
+          authoritative_source: z.literal("task_runtime"),
+          signal: projectRealitySignalReferenceSchema,
+        })
+        .strict(),
+    ),
+    recommended_next_action: z
+      .object({
+        type: z.enum([
+          "resolve_required_blocker",
+          "request_checkpoint_report",
+          "follow_project_next_step",
+          "advance_focused_workflow",
+          "continue_current_task",
+          "reconcile_workflow_link",
+          "define_project_execution",
+        ]),
+        action: z.string(),
+        source: projectRealitySourceSchema.exclude(["task_document"]),
+        reason: z.string(),
+        signal: projectRealitySignalReferenceSchema,
+        precedence: z
+          .object({
+            rank: z.number().int().min(1).max(5),
+            rule: z.string(),
+          })
+          .strict(),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const projectStatusReturnSchema = projectDetailsReturnSchema
+  .extend({
+    reality: projectRealityReturnSchema,
+  })
+  .passthrough();
+
 export const projectInitReturnSchema = z
   .object({
     details: projectDetailsReturnSchema,

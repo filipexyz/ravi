@@ -4279,7 +4279,7 @@ export class RaviClient {
         body: { project },
       });
     },
-    /** Show one project with workflow runtime rollup */
+    /** Show one project with authoritative runtime reality and one explained next action */
     status: async (project: string): Promise<ProjectsStatusReturn> => {
       return this.transport.call({
         groupSegments: ["projects"],

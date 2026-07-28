@@ -46501,7 +46501,929 @@ export const ProjectsStatusInputSchema = {
 /** JSON Schema for the return shape of `projects.status`. */
 export const ProjectsStatusReturnSchema = {
   "additionalProperties": {},
-  "properties": {},
+  "properties": {
+    "reality": {
+      "additionalProperties": false,
+      "properties": {
+        "attention_signals": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "reason": {
+                "type": "string"
+              },
+              "severity": {
+                "enum": [
+                  "blocking",
+                  "attention"
+                ],
+                "type": "string"
+              },
+              "signal": {
+                "additionalProperties": false,
+                "properties": {
+                  "event_id": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  },
+                  "field": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "required_blocker",
+                      "checkpoint_overdue",
+                      "missing_report",
+                      "document_divergence",
+                      "missing_workflow",
+                      "missing_task",
+                      "project_next_step",
+                      "focused_workflow_ready",
+                      "current_task",
+                      "project_without_execution"
+                    ],
+                    "type": "string"
+                  },
+                  "node_run_id": {
+                    "type": "string"
+                  },
+                  "project_id": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "task_id": {
+                    "type": "string"
+                  },
+                  "workflow_run_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "ref",
+                  "project_id"
+                ],
+                "type": "object"
+              },
+              "source": {
+                "enum": [
+                  "task_runtime",
+                  "workflow_runtime",
+                  "checkpoint_event",
+                  "project_next_step",
+                  "project_state",
+                  "task_document"
+                ],
+                "type": "string"
+              },
+              "type": {
+                "enum": [
+                  "required_blocker",
+                  "checkpoint_overdue",
+                  "missing_report",
+                  "document_divergence",
+                  "missing_workflow",
+                  "missing_task",
+                  "project_next_step",
+                  "focused_workflow_ready",
+                  "current_task",
+                  "project_without_execution"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "severity",
+              "source",
+              "reason",
+              "signal"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "authoritative_state": {
+          "additionalProperties": false,
+          "properties": {
+            "project": {
+              "additionalProperties": false,
+              "properties": {
+                "next_step": {
+                  "type": "string"
+                },
+                "project_id": {
+                  "type": "string"
+                },
+                "slug": {
+                  "type": "string"
+                },
+                "status": {
+                  "enum": [
+                    "active",
+                    "paused",
+                    "blocked",
+                    "done",
+                    "archived"
+                  ],
+                  "type": "string"
+                }
+              },
+              "required": [
+                "project_id",
+                "slug",
+                "status",
+                "next_step"
+              ],
+              "type": "object"
+            },
+            "tasks": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "assignment": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assignment_id": {
+                            "type": "string"
+                          },
+                          "checkpoint_due_at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "checkpoint_last_report_at": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "checkpoint_overdue_count": {
+                            "maximum": 9007199254740991,
+                            "minimum": 0,
+                            "type": "integer"
+                          },
+                          "status": {
+                            "enum": [
+                              "assigned",
+                              "accepted",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "superseded"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "assignment_id",
+                          "status",
+                          "checkpoint_due_at",
+                          "checkpoint_last_report_at",
+                          "checkpoint_overdue_count"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "attempt": {
+                    "anyOf": [
+                      {
+                        "maximum": 9007199254740991,
+                        "minimum": -9007199254740991,
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "blocker_reason": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "document": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "exists": {
+                        "type": "boolean"
+                      },
+                      "frontmatter": {
+                        "anyOf": [
+                          {
+                            "additionalProperties": false,
+                            "properties": {
+                              "blocker_reason": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "priority": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "low",
+                                      "normal",
+                                      "high",
+                                      "urgent"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "progress": {
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "status": {
+                                "anyOf": [
+                                  {
+                                    "enum": [
+                                      "open",
+                                      "dispatched",
+                                      "in_progress",
+                                      "blocked",
+                                      "done",
+                                      "failed"
+                                    ],
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "summary": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              },
+                              "title": {
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
+                              }
+                            },
+                            "required": [
+                              "title",
+                              "status",
+                              "priority",
+                              "progress",
+                              "summary",
+                              "blocker_reason"
+                            ],
+                            "type": "object"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "path": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "path",
+                      "exists",
+                      "frontmatter"
+                    ],
+                    "type": "object"
+                  },
+                  "is_current": {
+                    "type": "boolean"
+                  },
+                  "latest_checkpoint_event": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "created_at": {
+                            "type": "number"
+                          },
+                          "event_id": {
+                            "maximum": 9007199254740991,
+                            "minimum": -9007199254740991,
+                            "type": "integer"
+                          },
+                          "message": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          }
+                        },
+                        "required": [
+                          "event_id",
+                          "created_at",
+                          "message"
+                        ],
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "latest_progress_at": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "node_key": {
+                    "type": "string"
+                  },
+                  "node_label": {
+                    "type": "string"
+                  },
+                  "node_requirement": {
+                    "enum": [
+                      "required",
+                      "optional"
+                    ],
+                    "type": "string"
+                  },
+                  "node_run_id": {
+                    "type": "string"
+                  },
+                  "priority": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "low",
+                          "normal",
+                          "high",
+                          "urgent"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "progress": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "open",
+                          "dispatched",
+                          "in_progress",
+                          "blocked",
+                          "done",
+                          "failed"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "summary": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "task_id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "workflow_run_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "task_id",
+                  "title",
+                  "status",
+                  "priority",
+                  "progress",
+                  "summary",
+                  "blocker_reason",
+                  "workflow_run_id",
+                  "node_run_id",
+                  "node_key",
+                  "node_label",
+                  "node_requirement",
+                  "is_current",
+                  "attempt",
+                  "assignment",
+                  "latest_checkpoint_event",
+                  "latest_progress_at",
+                  "document"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "workflows": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "exists": {
+                    "type": "boolean"
+                  },
+                  "is_focused": {
+                    "type": "boolean"
+                  },
+                  "nodes": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "current_task_id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "kind": {
+                          "enum": [
+                            "task",
+                            "gate",
+                            "approval"
+                          ],
+                          "type": "string"
+                        },
+                        "node_key": {
+                          "type": "string"
+                        },
+                        "node_label": {
+                          "type": "string"
+                        },
+                        "node_run_id": {
+                          "type": "string"
+                        },
+                        "release_mode": {
+                          "enum": [
+                            "auto",
+                            "manual"
+                          ],
+                          "type": "string"
+                        },
+                        "requirement": {
+                          "enum": [
+                            "required",
+                            "optional"
+                          ],
+                          "type": "string"
+                        },
+                        "status": {
+                          "enum": [
+                            "pending",
+                            "awaiting_release",
+                            "ready",
+                            "running",
+                            "blocked",
+                            "done",
+                            "failed",
+                            "skipped",
+                            "cancelled",
+                            "archived"
+                          ],
+                          "type": "string"
+                        },
+                        "task_attempt_ids": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "required": [
+                        "node_run_id",
+                        "node_key",
+                        "node_label",
+                        "kind",
+                        "requirement",
+                        "release_mode",
+                        "status",
+                        "current_task_id",
+                        "task_attempt_ids"
+                      ],
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "role": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "status": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "draft",
+                          "waiting",
+                          "ready",
+                          "running",
+                          "blocked",
+                          "done",
+                          "failed",
+                          "cancelled",
+                          "archived"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "workflow_run_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "workflow_run_id",
+                  "title",
+                  "status",
+                  "role",
+                  "is_focused",
+                  "exists",
+                  "nodes"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "project",
+            "workflows",
+            "tasks"
+          ],
+          "type": "object"
+        },
+        "authority": {
+          "additionalProperties": false,
+          "properties": {
+            "project": {
+              "const": "project_record",
+              "type": "string"
+            },
+            "task_document": {
+              "const": "non_authoritative",
+              "type": "string"
+            },
+            "tasks": {
+              "const": "task_runtime",
+              "type": "string"
+            },
+            "workflows": {
+              "const": "workflow_runtime",
+              "type": "string"
+            }
+          },
+          "required": [
+            "project",
+            "workflows",
+            "tasks",
+            "task_document"
+          ],
+          "type": "object"
+        },
+        "document_divergences": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "authoritative_source": {
+                "const": "task_runtime",
+                "type": "string"
+              },
+              "document_path": {
+                "type": "string"
+              },
+              "document_value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "field": {
+                "enum": [
+                  "title",
+                  "status",
+                  "priority",
+                  "progress",
+                  "summary",
+                  "blocker_reason"
+                ],
+                "type": "string"
+              },
+              "runtime_value": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "signal": {
+                "additionalProperties": false,
+                "properties": {
+                  "event_id": {
+                    "maximum": 9007199254740991,
+                    "minimum": -9007199254740991,
+                    "type": "integer"
+                  },
+                  "field": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "enum": [
+                      "required_blocker",
+                      "checkpoint_overdue",
+                      "missing_report",
+                      "document_divergence",
+                      "missing_workflow",
+                      "missing_task",
+                      "project_next_step",
+                      "focused_workflow_ready",
+                      "current_task",
+                      "project_without_execution"
+                    ],
+                    "type": "string"
+                  },
+                  "node_run_id": {
+                    "type": "string"
+                  },
+                  "project_id": {
+                    "type": "string"
+                  },
+                  "ref": {
+                    "type": "string"
+                  },
+                  "task_id": {
+                    "type": "string"
+                  },
+                  "workflow_run_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "kind",
+                  "ref",
+                  "project_id"
+                ],
+                "type": "object"
+              },
+              "task_id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "task_id",
+              "document_path",
+              "field",
+              "runtime_value",
+              "document_value",
+              "authoritative_source",
+              "signal"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "evaluated_at": {
+          "type": "number"
+        },
+        "recommended_next_action": {
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "type": "string"
+            },
+            "precedence": {
+              "additionalProperties": false,
+              "properties": {
+                "rank": {
+                  "maximum": 5,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "rule": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "rank",
+                "rule"
+              ],
+              "type": "object"
+            },
+            "reason": {
+              "type": "string"
+            },
+            "signal": {
+              "additionalProperties": false,
+              "properties": {
+                "event_id": {
+                  "maximum": 9007199254740991,
+                  "minimum": -9007199254740991,
+                  "type": "integer"
+                },
+                "field": {
+                  "type": "string"
+                },
+                "kind": {
+                  "enum": [
+                    "required_blocker",
+                    "checkpoint_overdue",
+                    "missing_report",
+                    "document_divergence",
+                    "missing_workflow",
+                    "missing_task",
+                    "project_next_step",
+                    "focused_workflow_ready",
+                    "current_task",
+                    "project_without_execution"
+                  ],
+                  "type": "string"
+                },
+                "node_run_id": {
+                  "type": "string"
+                },
+                "project_id": {
+                  "type": "string"
+                },
+                "ref": {
+                  "type": "string"
+                },
+                "task_id": {
+                  "type": "string"
+                },
+                "workflow_run_id": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "kind",
+                "ref",
+                "project_id"
+              ],
+              "type": "object"
+            },
+            "source": {
+              "enum": [
+                "task_runtime",
+                "workflow_runtime",
+                "checkpoint_event",
+                "project_next_step",
+                "project_state"
+              ],
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "resolve_required_blocker",
+                "request_checkpoint_report",
+                "follow_project_next_step",
+                "advance_focused_workflow",
+                "continue_current_task",
+                "reconcile_workflow_link",
+                "define_project_execution"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "action",
+            "source",
+            "reason",
+            "signal",
+            "precedence"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "evaluated_at",
+        "authority",
+        "authoritative_state",
+        "attention_signals",
+        "document_divergences",
+        "recommended_next_action"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "reality"
+  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 

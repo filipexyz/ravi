@@ -9202,7 +9202,140 @@ export type ProjectsStatusInput = {
 };
 
 /** Return shape for `projects.status`. */
-export type ProjectsStatusReturn = Record<string, unknown>;
+export type ProjectsStatusReturn = {
+  reality: {
+    attention_signals: Array<{
+      reason: string;
+      severity: "blocking" | "attention";
+      signal: {
+        event_id?: number;
+        field?: string;
+        kind: "required_blocker" | "checkpoint_overdue" | "missing_report" | "document_divergence" | "missing_workflow" | "missing_task" | "project_next_step" | "focused_workflow_ready" | "current_task" | "project_without_execution";
+        node_run_id?: string;
+        project_id: string;
+        ref: string;
+        task_id?: string;
+        workflow_run_id?: string;
+      };
+      source: "task_runtime" | "workflow_runtime" | "checkpoint_event" | "project_next_step" | "project_state" | "task_document";
+      type: "required_blocker" | "checkpoint_overdue" | "missing_report" | "document_divergence" | "missing_workflow" | "missing_task" | "project_next_step" | "focused_workflow_ready" | "current_task" | "project_without_execution";
+    }>;
+    authoritative_state: {
+      project: {
+        next_step: string;
+        project_id: string;
+        slug: string;
+        status: "active" | "paused" | "blocked" | "done" | "archived";
+      };
+      tasks: Array<{
+        assignment: ({
+          assignment_id: string;
+          checkpoint_due_at: number | null;
+          checkpoint_last_report_at: number | null;
+          checkpoint_overdue_count: number;
+          status: "assigned" | "accepted" | "blocked" | "done" | "failed" | "superseded";
+        }) | null;
+        attempt: number | null;
+        blocker_reason: string | null;
+        document: {
+          exists: boolean;
+          frontmatter: ({
+            blocker_reason: string | null;
+            priority: ("low" | "normal" | "high" | "urgent") | null;
+            progress: number | null;
+            status: ("open" | "dispatched" | "in_progress" | "blocked" | "done" | "failed") | null;
+            summary: string | null;
+            title: string | null;
+          }) | null;
+          path: string;
+        };
+        is_current: boolean;
+        latest_checkpoint_event: ({
+          created_at: number;
+          event_id: number;
+          message: string | null;
+        }) | null;
+        latest_progress_at: number | null;
+        node_key: string;
+        node_label: string;
+        node_requirement: "required" | "optional";
+        node_run_id: string;
+        priority: ("low" | "normal" | "high" | "urgent") | null;
+        progress: number | null;
+        status: ("open" | "dispatched" | "in_progress" | "blocked" | "done" | "failed") | null;
+        summary: string | null;
+        task_id: string;
+        title: string | null;
+        workflow_run_id: string;
+      }>;
+      workflows: Array<{
+        exists: boolean;
+        is_focused: boolean;
+        nodes: Array<{
+          current_task_id: string | null;
+          kind: "task" | "gate" | "approval";
+          node_key: string;
+          node_label: string;
+          node_run_id: string;
+          release_mode: "auto" | "manual";
+          requirement: "required" | "optional";
+          status: "pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived";
+          task_attempt_ids: string[];
+        }>;
+        role: string | null;
+        status: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+        title: string | null;
+        workflow_run_id: string;
+      }>;
+    };
+    authority: {
+      project: "project_record";
+      task_document: "non_authoritative";
+      tasks: "task_runtime";
+      workflows: "workflow_runtime";
+    };
+    document_divergences: Array<{
+      authoritative_source: "task_runtime";
+      document_path: string;
+      document_value: string | number | null;
+      field: "title" | "status" | "priority" | "progress" | "summary" | "blocker_reason";
+      runtime_value: string | number | null;
+      signal: {
+        event_id?: number;
+        field?: string;
+        kind: "required_blocker" | "checkpoint_overdue" | "missing_report" | "document_divergence" | "missing_workflow" | "missing_task" | "project_next_step" | "focused_workflow_ready" | "current_task" | "project_without_execution";
+        node_run_id?: string;
+        project_id: string;
+        ref: string;
+        task_id?: string;
+        workflow_run_id?: string;
+      };
+      task_id: string;
+    }>;
+    evaluated_at: number;
+    recommended_next_action: {
+      action: string;
+      precedence: {
+        rank: number;
+        rule: string;
+      };
+      reason: string;
+      signal: {
+        event_id?: number;
+        field?: string;
+        kind: "required_blocker" | "checkpoint_overdue" | "missing_report" | "document_divergence" | "missing_workflow" | "missing_task" | "project_next_step" | "focused_workflow_ready" | "current_task" | "project_without_execution";
+        node_run_id?: string;
+        project_id: string;
+        ref: string;
+        task_id?: string;
+        workflow_run_id?: string;
+      };
+      source: "task_runtime" | "workflow_runtime" | "checkpoint_event" | "project_next_step" | "project_state";
+      type: "resolve_required_blocker" | "request_checkpoint_report" | "follow_project_next_step" | "advance_focused_workflow" | "continue_current_task" | "reconcile_workflow_link" | "define_project_execution";
+    };
+  };
+  [k: string]: unknown;
+};
 
 /** Input shape for `projects.tasks.attach`. */
 export type ProjectsTasksAttachInput = {

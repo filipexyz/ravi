@@ -2,6 +2,9 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+import type { ProjectRealityProjection } from "../../projects/reality.js";
+import type { ProjectDetails } from "../../projects/types.js";
+import { projectStatusReturnSchema } from "./operational-return-schemas.js";
 
 const actualTasksIndexModule = await import("../../tasks/index.js");
 
@@ -22,7 +25,7 @@ const ensuredSessionCalls: Array<Record<string, unknown>> = [];
 const emittedTaskEvents: Array<Record<string, unknown>> = [];
 const projectResourceLinks = new Map<string, Record<string, unknown>>();
 
-const projectDetails = {
+const projectDetails: ProjectDetails = {
   project: {
     id: "proj-1",
     slug: "ops-cadence",
@@ -32,7 +35,10 @@ const projectDetails = {
     hypothesis: "Workflow is the primary attachment",
     nextStep: "Attach the run",
     lastSignalAt: 1_711_234_567_000,
+    createdAt: 1_711_234_567_000,
+    updatedAt: 1_711_234_567_000,
   },
+  tags: [],
   links: [
     {
       id: "plink-1",
@@ -96,6 +102,43 @@ const projectDetails = {
     hottestTaskStatus: "in_progress",
     hottestTaskProgress: 42,
     hottestTaskPriority: "high",
+  },
+};
+
+const projectReality: ProjectRealityProjection = {
+  evaluated_at: 1_711_234_567_000,
+  authority: {
+    project: "project_record",
+    workflows: "workflow_runtime",
+    tasks: "task_runtime",
+    task_document: "non_authoritative",
+  },
+  authoritative_state: {
+    project: {
+      project_id: "proj-1",
+      slug: "ops-cadence",
+      status: "active",
+      next_step: "Attach the run",
+    },
+    workflows: [],
+    tasks: [],
+  },
+  attention_signals: [],
+  document_divergences: [],
+  recommended_next_action: {
+    type: "follow_project_next_step",
+    action: "Attach the run",
+    source: "project_next_step",
+    reason: "No blocker or overdue checkpoint precedes the manual next step.",
+    signal: {
+      kind: "project_next_step",
+      ref: "project:proj-1:next_step",
+      project_id: "proj-1",
+    },
+    precedence: {
+      rank: 3,
+      rule: "required_blocker > overdue_checkpoint_or_missing_report > project_next_step > focused_workflow_ready > runtime_fallback",
+    },
   },
 };
 
@@ -317,6 +360,7 @@ mock.module("../../projects/index.js", () => ({
     getProjectDetailsCalls.push(ref);
     return projectDetails;
   },
+  getProjectReality: () => projectReality,
   listProjects: (query: Record<string, unknown>) => {
     listProjectsCalls.push(query);
     return [
@@ -887,6 +931,28 @@ describe("ProjectCommands", () => {
     expect(output).toContain("Lead:      task Ship release :: in_progress · 42%");
     expect(output).toContain("Primary:   wf-run-1 :: ready :: Ship smoke");
     expect(output).toContain("Focus:     wf-run-1 :: ready :: Ship smoke :: role primary");
+    expect(output).toContain("Reality:");
+    expect(output).toContain("Action:    Attach the run");
+    expect(output).toContain("Source:    project_next_step");
+    expect(output).toContain("Signal:    project:proj-1:next_step");
+  });
+
+  it("preserves the project status payload and adds one reality projection", () => {
+    const commands = new ProjectCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      const payload = commands.status("ops-cadence", true);
+      expect(payload).toEqual({
+        ...projectDetails,
+        reality: projectReality,
+      });
+      expect(payload.reality.recommended_next_action).toEqual(projectReality.recommended_next_action);
+      expect(projectStatusReturnSchema.parse(payload)).toEqual(payload);
+    } finally {
+      console.log = originalLog;
+    }
   });
 
   it("lists operational next surfaces with runtime lead and next step", () => {

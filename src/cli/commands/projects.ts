@@ -13,6 +13,7 @@ import {
   initProject,
   getProjectResourceLink,
   getProjectDetails,
+  getProjectReality,
   linkProject,
   listProjectResourceLinks,
   listProjectStatusEntries,
@@ -36,6 +37,7 @@ import type {
   ProjectWorkflowLinkRole,
   ProjectWorkflowTemplateId,
 } from "../../projects/types.js";
+import type { ProjectRealityProjection } from "../../projects/reality.js";
 import type { TaskEvent, TaskPriority, TaskRecord } from "../../tasks/types.js";
 import { getAgent } from "../../router/config.js";
 import { expandHome, getOrCreateSession, resolveSession } from "../../router/index.js";
@@ -48,6 +50,7 @@ import {
   projectResourceReturnSchema,
   projectResourcesImportReturnSchema,
   projectResourcesListReturnSchema,
+  projectStatusReturnSchema,
   projectTaskOperationReturnSchema,
   projectWorkflowOperationReturnSchema,
   projectsListReturnSchema,
@@ -66,6 +69,36 @@ const VALID_RESOURCE_TYPES = new Set<ProjectResourceType>([
   "contact",
 ]);
 const VALID_TASK_PRIORITIES = new Set<TaskPriority>(["low", "normal", "high", "urgent"]);
+const PROJECT_STATUS_HELP_AFTER = `
+USE
+  Read the authoritative operational reality of one project before choosing the next move.
+  The command reconciles project, workflow, task/checkpoint runtime, and existing TASK.md frontmatter.
+
+NÃO USE
+  Do not use this command to mutate project, workflow, task, or TASK.md state.
+  Use projects update, projects tasks, workflows runs, or tasks report only after reviewing this read-only result.
+
+REGRAS HARD
+  Recommendation precedence is deterministic:
+  required blocker > overdue checkpoint/missing report > project.next_step > focused workflow ready > runtime fallback.
+  Task runtime is authoritative over TASK.md. Document divergence is attention, never lifecycle truth.
+
+EXAMPLES
+  ravi projects status ravi-core
+  ravi projects status ravi-core --json
+
+ON ERROR
+  Project not found -> verify the id/slug with: ravi projects list --json --limit 50
+  Missing linked workflow/task -> inspect attention_signals and reconcile the referenced signal; this command does not repair it.
+
+FORMATO
+  JSON preserves the existing project status payload and adds reality.
+  reality.recommended_next_action is exactly one object with source, reason, signal.ref, and precedence.
+  Exit 0 on success; exit 1 on validation/read failure.
+
+FONTES
+  Project record/links, workflow runtime, task runtime/assignments/events, and existing TASK.md frontmatter.
+`;
 
 function parseMetadata(value?: string): Record<string, unknown> | undefined {
   if (!value?.trim()) return undefined;
@@ -688,6 +721,16 @@ function printProjectStatus(details: NonNullable<ReturnType<typeof getProjectDet
   }
 }
 
+function printProjectReality(reality: ProjectRealityProjection): void {
+  console.log("\nReality:");
+  console.log(`  Action:    ${reality.recommended_next_action.action}`);
+  console.log(`  Source:    ${reality.recommended_next_action.source}`);
+  console.log(`  Signal:    ${reality.recommended_next_action.signal.ref}`);
+  console.log(`  Reason:    ${reality.recommended_next_action.reason}`);
+  console.log(`  Attention: ${reality.attention_signals.length}`);
+  console.log(`  Doc drift: ${reality.document_divergences.length}`);
+}
+
 async function emitTaskMutation(task: TaskRecord, event: TaskEvent): Promise<void> {
   const { emitTaskEvent } = await import("../../tasks/index.js");
   await emitTaskEvent(task, event);
@@ -1009,9 +1052,13 @@ export class ProjectCommands {
     return details;
   }
 
-  @Command({ name: "status", description: "Show one project with workflow runtime rollup" })
+  @Command({
+    name: "status",
+    description: "Show one project with authoritative runtime reality and one explained next action",
+    helpAfter: PROJECT_STATUS_HELP_AFTER,
+  })
   @CommandAccess({ kind: "read", resource: "projects", action: "status", risk: "low" })
-  @Returns(projectDetailsReturnSchema)
+  @Returns(projectStatusReturnSchema)
   status(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1021,12 +1068,19 @@ export class ProjectCommands {
       fail(`Project not found: ${projectRef}`);
     }
 
+    const reality = getProjectReality(details);
+    const payload = {
+      ...details,
+      reality,
+    };
+
     if (asJson) {
-      console.log(JSON.stringify(details, null, 2));
+      console.log(JSON.stringify(payload, null, 2));
     } else {
       printProjectStatus(details);
+      printProjectReality(reality);
     }
-    return details;
+    return payload;
   }
 
   @Command({ name: "next", description: "List projects as an operational next-work surface" })
