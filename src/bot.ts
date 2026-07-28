@@ -8,6 +8,7 @@ import type { RuntimeHostStreamingSession } from "./runtime/host-session.js";
 import type { PromptMessage } from "./runtime/message-types.js";
 import { RuntimeHostSubscriptions } from "./runtime/host-subscriptions.js";
 import { RuntimePromptSubscription } from "./runtime/prompt-subscription.js";
+import { notifyRuntimeRecoveryExhausted } from "./runtime/runtime-recovery-alert.js";
 import { safeEmit } from "./runtime/safe-emit.js";
 import { RuntimeSessionDispatcher, type RuntimeAbortProvenance } from "./runtime/session-dispatcher.js";
 import { resolveRuntimeInteractiveReservedSlots, resolveRuntimeSessionPoolMax } from "./runtime/session-pool.js";
@@ -61,6 +62,9 @@ export class RaviBot {
       maxConcurrentSessions,
       interactiveReservedSessions,
       safeEmit,
+      notifyRuntimeRecoveryExhausted: async (input) => {
+        await notifyRuntimeRecoveryExhausted(input);
+      },
       getConfigModel: () => this.config.model,
     });
     this.hostSubscriptions = new RuntimeHostSubscriptions({

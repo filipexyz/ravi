@@ -44,6 +44,17 @@ describe("triggers native automation support", () => {
     expect(entry?.examples.some((example) => example.includes("ravi.inbound.thread.created"))).toBe(true);
   });
 
+  it("catalogs exhausted runtime recovery as an operator alert event", () => {
+    const entry = findTriggerTopicCatalogEntry("ravi.inbox.system.runtime_recovery_exhausted");
+    const fields = new Set(entry?.schema?.fields.map((field) => field.path));
+
+    expect(entry?.category).toBe("inbox");
+    expect(entry?.messageTemplate?.template).toContain("ravi sessions trace");
+    expect(fields).toContain("sessionName");
+    expect(fields).toContain("restartAttempts");
+    expect(fields).toContain("stashedQueueSize");
+  });
+
   it("persists shell trigger command fields and clears them for agent triggers", () => {
     const trigger = dbCreateTrigger({
       name: "shell-ticket-flow",

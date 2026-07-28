@@ -40,8 +40,7 @@ import {
   type PendingRuntimeSessionStart,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { formatUserFacingTurnFailure } from "./public-failure.js";
-import { resolveSessionOutputTarget } from "./session-output-target.js";
+import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
   buildRuntimeSessionPoolSnapshot,
@@ -89,6 +88,7 @@ export interface RuntimeSessionDispatcherOptions {
   maxConcurrentSessions: number;
   interactiveReservedSessions: number;
   safeEmit: RuntimeSafeEmit;
+  notifyRuntimeRecoveryExhausted(input: RuntimeRecoveryExhaustedAlertInput): Promise<void>;
   getConfigModel(): string;
 }
 
@@ -1462,6 +1462,7 @@ export class RuntimeSessionDispatcher {
           restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
           stashedQueueSize: stashed.length,
           resumeStashedMessages: true,
+          userResponseSuppressed: true,
         },
       });
       updateRuntimeLiveState(sessionName, {
@@ -1477,6 +1478,8 @@ export class RuntimeSessionDispatcher {
           reason,
           restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
           stashedQueueSize: stashed.length,
+          resumeStashedMessages: true,
+          userResponseSuppressed: true,
           error: RUNTIME_RESTART_EXHAUSTED_ERROR,
           ...(prompt.source ? { _source: prompt.source } : {}),
           timestamp: new Date().toISOString(),
@@ -1485,29 +1488,38 @@ export class RuntimeSessionDispatcher {
           log.warn("Failed to emit suppressed runtime restart event", { sessionName, reason, error });
         });
 
-      const outputTarget = resolveSessionOutputTarget({
+      // This is an infrastructure failure, not an agent response. Keep the
+      // stashed turn available for an explicit retry, but never publish the
+      // technical failure onto the session's user-facing response subject.
+      log.error("Runtime recovery exhausted; suppressed channel response", {
+        sessionName,
         sessionKey: traceIdentity.sessionKey,
-        fallback: prompt.source,
-      }).target;
-      if (outputTarget) {
-        const routerConfig = configStore.getConfig();
-        const agentId = traceIdentity.agentId ?? prompt._agentId;
-        const agent = agentId ? routerConfig.agents[agentId] : undefined;
-        if (agent?.mode !== "sentinel") {
-          await nats
-            .emit(`ravi.session.${sessionName}.response`, {
-              response: formatUserFacingTurnFailure(RUNTIME_RESTART_EXHAUSTED_ERROR),
-              target: outputTarget,
-              _emitId: Math.random().toString(36).slice(2, 8),
-              _instanceId: this.options.instanceId,
-              _pid: process.pid,
-              _v: 2,
-            })
-            .catch((error) => {
-              log.warn("Failed to emit exhausted runtime recovery response", { sessionName, reason, error });
-            });
-        }
-      }
+        agentId: traceIdentity.agentId ?? prompt._agentId,
+        provider: prompt._runtimeProviderId,
+        reason,
+        restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+        stashedQueueSize: stashed.length,
+      });
+      await this.options
+        .notifyRuntimeRecoveryExhausted({
+          sessionKey: traceIdentity.sessionKey,
+          sessionName,
+          ...((traceIdentity.agentId ?? prompt._agentId) ? { agentId: traceIdentity.agentId ?? prompt._agentId } : {}),
+          ...(prompt._runtimeProviderId ? { provider: prompt._runtimeProviderId } : {}),
+          reason,
+          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          stashedQueueSize: stashed.length,
+          ...((prompt.context?.messageId ?? prompt.source?.sourceMessageId)
+            ? { sourceMessageId: prompt.context?.messageId ?? prompt.source?.sourceMessageId }
+            : {}),
+        })
+        .catch((error) => {
+          log.warn("Failed to notify operator about exhausted runtime recovery", {
+            sessionName,
+            reason,
+            error,
+          });
+        });
       return;
     }
     if (restartAttempt !== undefined) {
