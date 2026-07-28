@@ -14312,6 +14312,10 @@ export const ChannelsBackendRuntimeReadbackReturnSchema = {
       ],
       "type": "object"
     },
+    "lastEventRuntimeGenerationId": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+      "type": "string"
+    },
     "lastSequence": {
       "maximum": 9007199254740991,
       "minimum": 0,
@@ -14330,6 +14334,10 @@ export const ChannelsBackendRuntimeReadbackReturnSchema = {
       "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
       "type": "string"
     },
+    "runtimeGenerationId": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+      "type": "string"
+    },
     "schemaVersion": {
       "const": 1,
       "type": "number"
@@ -14344,6 +14352,235 @@ export const ChannelsBackendRuntimeReadbackReturnSchema = {
         "interrupted"
       ],
       "type": "string"
+    },
+    "terminalEvent": {
+      "additionalProperties": false,
+      "properties": {
+        "correlation": {
+          "additionalProperties": false,
+          "properties": {
+            "binding": {
+              "additionalProperties": false,
+              "properties": {
+                "agentId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "channelInstanceId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "chatId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "messageId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "sessionId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "turnId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "channelInstanceId",
+                "agentId",
+                "chatId",
+                "messageId",
+                "sessionId",
+                "turnId"
+              ],
+              "type": "object"
+            },
+            "causationId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "correlationId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "ingressRequestId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            }
+          },
+          "required": [
+            "correlationId",
+            "ingressRequestId",
+            "binding"
+          ],
+          "type": "object"
+        },
+        "eventId": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+          "type": "string"
+        },
+        "kind": {
+          "const": "turn.terminal_output",
+          "type": "string"
+        },
+        "occurredAt": {
+          "format": "date-time",
+          "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+          "type": "string"
+        },
+        "payload": {
+          "additionalProperties": false,
+          "properties": {
+            "assistantMessageId": {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+              "type": "string"
+            },
+            "content": {
+              "items": {
+                "oneOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "text": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "const": "text",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "text"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "artifactId": {
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                        "type": "string"
+                      },
+                      "mediaType": {
+                        "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$",
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "sizeBytes": {
+                        "maximum": 9007199254740991,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "type": {
+                        "const": "artifact",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "artifactId"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              },
+              "maxItems": 256,
+              "minItems": 1,
+              "type": "array"
+            },
+            "error": {
+              "additionalProperties": false,
+              "properties": {
+                "category": {
+                  "enum": [
+                    "validation",
+                    "authentication",
+                    "authorization",
+                    "capacity",
+                    "availability",
+                    "internal"
+                  ],
+                  "type": "string"
+                },
+                "code": {
+                  "enum": [
+                    "INVALID_REQUEST",
+                    "IDEMPOTENCY_CONFLICT",
+                    "UNAUTHENTICATED",
+                    "PERMISSION_DENIED",
+                    "LOCAL_PERMISSION_DENIED",
+                    "NOT_FOUND",
+                    "RATE_LIMITED",
+                    "OVERLOADED",
+                    "UNAVAILABLE",
+                    "INTERNAL"
+                  ],
+                  "type": "string"
+                },
+                "correlationId": {
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                  "type": "string"
+                },
+                "retryAfterMs": {
+                  "exclusiveMinimum": 0,
+                  "maximum": 86400000,
+                  "type": "integer"
+                },
+                "retryable": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "code",
+                "category",
+                "retryable"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "enum": [
+                "completed",
+                "failed",
+                "interrupted"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "state"
+          ],
+          "type": "object"
+        },
+        "protocol": {
+          "const": "ravi.channel.runtime-events",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "const": 1,
+          "type": "number"
+        },
+        "sequence": {
+          "maximum": 9007199254740991,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "protocol",
+        "schemaVersion",
+        "eventId",
+        "kind",
+        "occurredAt",
+        "sequence",
+        "correlation",
+        "payload"
+      ],
+      "type": "object"
     }
   },
   "required": [

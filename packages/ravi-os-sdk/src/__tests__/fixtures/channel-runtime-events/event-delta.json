@@ -18,6 +18,7 @@
   "payload": {
     "blockIndex": 0,
     "deltaSequence": 1,
+    "phase": "commentary",
     "text": "fixture delta"
   },
   "protocol": "ravi.channel.runtime-events",

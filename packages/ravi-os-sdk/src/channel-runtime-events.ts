@@ -62,6 +62,12 @@ export const ChannelAssistantDeltaPayloadSchema = z.object({
   blockIndex: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
   deltaSequence: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   text: boundedUtf8String(CHANNEL_BACKEND_MAX_TEXT_BYTES, "assistant delta"),
+  phase: z.enum(["commentary", "final_answer", "unknown"]).optional(),
+});
+
+export const ChannelAssistantMessagePayloadSchema = z.object({
+  phase: z.enum(["commentary", "final_answer", "unknown"]),
+  content: ChannelContentSchema,
 });
 
 export const ChannelTerminalOutputPayloadSchema = z
@@ -137,6 +143,10 @@ export const ChannelAssistantDeltaEventSchema = defineChannelRuntimeEvent(
   "turn.assistant_delta",
   ChannelAssistantDeltaPayloadSchema,
 );
+export const ChannelAssistantMessageEventSchema = defineChannelRuntimeEvent(
+  "turn.assistant_message",
+  ChannelAssistantMessagePayloadSchema,
+);
 export const ChannelTerminalOutputEventSchema = defineChannelRuntimeEvent(
   "turn.terminal_output",
   ChannelTerminalOutputPayloadSchema,
@@ -157,6 +167,7 @@ export const ChannelApprovalResolvedEventSchema = defineChannelRuntimeEvent(
 export const KnownChannelRuntimeEventSchema = z.union([
   ChannelTurnStateChangedEventSchema,
   ChannelAssistantDeltaEventSchema,
+  ChannelAssistantMessageEventSchema,
   ChannelTerminalOutputEventSchema,
   ChannelToolSummaryEventSchema,
   ChannelApprovalRequestedEventSchema,
@@ -198,16 +209,34 @@ export const ChannelRuntimeReadbackRequestSchema = z.object({
   binding: LocalChannelMessageBindingSchema,
 });
 
-export const ChannelRuntimeReadbackResultSchema = z.object({
-  protocol: z.literal(CHANNEL_RUNTIME_EVENTS_PROTOCOL),
-  schemaVersion: z.literal(CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION),
-  requestId: ChannelBackendOpaqueIdSchema,
-  binding: LocalChannelMessageBindingSchema,
-  state: ChannelTurnStateSchema,
-  lastSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
-  assistantMessageId: ChannelBackendOpaqueIdSchema.optional(),
-  observedAt: z.string().datetime({ offset: true }),
-});
+export const ChannelRuntimeReadbackResultSchema = z
+  .object({
+    protocol: z.literal(CHANNEL_RUNTIME_EVENTS_PROTOCOL),
+    schemaVersion: z.literal(CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION),
+    requestId: ChannelBackendOpaqueIdSchema,
+    binding: LocalChannelMessageBindingSchema,
+    state: ChannelTurnStateSchema,
+    lastSequence: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER),
+    assistantMessageId: ChannelBackendOpaqueIdSchema.optional(),
+    runtimeGenerationId: ChannelBackendOpaqueIdSchema.optional(),
+    lastEventRuntimeGenerationId: ChannelBackendOpaqueIdSchema.optional(),
+    terminalEvent: ChannelTerminalOutputEventSchema.optional(),
+    observedAt: z.string().datetime({ offset: true }),
+  })
+  .superRefine((value, context) => {
+    if (!value.terminalEvent) return;
+    if (
+      value.terminalEvent.payload.state !== value.state ||
+      value.terminalEvent.sequence !== value.lastSequence ||
+      value.terminalEvent.correlation.binding.turnId !== value.binding.turnId
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["terminalEvent"],
+        message: "terminal readback event must match the readback state, sequence, and binding",
+      });
+    }
+  });
 
 export type ChannelRuntimeCorrelation = z.infer<typeof ChannelRuntimeCorrelationSchema>;
 export type ChannelTurnState = z.infer<typeof ChannelTurnStateSchema>;

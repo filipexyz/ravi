@@ -26,6 +26,7 @@ describe("channel runtime events contract", () => {
     for (const name of [
       "event-state.json",
       "event-delta.json",
+      "event-assistant-message.json",
       "event-tool.json",
       "event-approval-requested.json",
       "event-approval-resolved.json",
@@ -52,6 +53,7 @@ describe("channel runtime events contract", () => {
     const interruptRequest = await fixture<ChannelInterruptRequest>("interrupt-request.json");
     const interruptResult = await fixture<ChannelInterruptResult>("interrupt-result.json");
     const terminal = await fixture<KnownChannelRuntimeEvent>("event-terminal.json");
+    const readback = await fixture<ChannelRuntimeReadbackResult>("readback-result.json");
 
     expect(
       ChannelInterruptRequestSchema.safeParse({
@@ -71,6 +73,12 @@ describe("channel runtime events contract", () => {
         payload: {
           state: "completed",
         },
+      }).success,
+    ).toBe(false);
+    expect(
+      ChannelRuntimeReadbackResultSchema.safeParse({
+        ...readback,
+        lastSequence: readback.lastSequence + 1,
       }).success,
     ).toBe(false);
   });

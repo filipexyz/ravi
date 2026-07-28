@@ -352,6 +352,8 @@ interface ChannelBackendRuntimeStateRow {
   last_sequence: number;
   last_delta_sequence: number;
   assistant_message_id: string | null;
+  runtime_generation_id: string | null;
+  terminal_error_json: string | null;
   updated_at: number;
 }
 
@@ -820,6 +822,8 @@ export interface ChannelBackendRuntimeStateRecord {
   lastSequence: number;
   lastDeltaSequence: number;
   assistantMessageId?: string;
+  runtimeGenerationId?: string;
+  terminalError?: Record<string, unknown>;
   updatedAt: number;
 }
 
@@ -828,6 +832,8 @@ export interface RecordChannelBackendRuntimeEventInput {
   state?: ChannelBackendRuntimeState;
   assistantDelta?: boolean;
   assistantText?: string;
+  runtimeGenerationId: string;
+  terminalError?: Record<string, unknown>;
   occurredAt?: number;
 }
 
@@ -1530,6 +1536,8 @@ function getDb(): Database {
         CHECK(last_delta_sequence >= 0),
       assistant_message_id TEXT
         REFERENCES chat_messages(id) ON DELETE RESTRICT,
+      runtime_generation_id TEXT,
+      terminal_error_json TEXT,
       updated_at INTEGER NOT NULL
     );
 
@@ -3007,6 +3015,8 @@ function getDb(): Database {
     "last_delta_sequence",
     "INTEGER NOT NULL DEFAULT 0 CHECK(last_delta_sequence >= 0)",
   );
+  ensureColumn(db, "channel_backend_runtime_state", "runtime_generation_id", "TEXT");
+  ensureColumn(db, "channel_backend_runtime_state", "terminal_error_json", "TEXT");
   ensureIdentityChatMigrations(db);
   ensureAgentVisibilityMigration(db);
   backfillChatModelOnce(db);
@@ -3943,12 +3953,15 @@ function rowToChannelBackendIngressReceipt(row: ChannelBackendIngressReceiptRow)
 }
 
 function rowToChannelBackendRuntimeState(row: ChannelBackendRuntimeStateRow): ChannelBackendRuntimeStateRecord {
+  const terminalError = parseJsonRecord(row.terminal_error_json);
   return {
     turnId: row.turn_id,
     state: row.state,
     lastSequence: row.last_sequence,
     lastDeltaSequence: row.last_delta_sequence,
     ...(row.assistant_message_id ? { assistantMessageId: row.assistant_message_id } : {}),
+    ...(row.runtime_generation_id ? { runtimeGenerationId: row.runtime_generation_id } : {}),
+    ...(terminalError ? { terminalError } : {}),
     updatedAt: row.updated_at,
   };
 }
@@ -6675,6 +6688,7 @@ export function dbRecordChannelBackendRuntimeEvent(
     getDb(),
     (database) => {
       const turnId = normalizeOpaqueCanonicalId(input.turnId, "turnId");
+      const runtimeGenerationId = normalizeOpaqueCanonicalId(input.runtimeGenerationId, "runtimeGenerationId");
       const occurredAt = input.occurredAt ?? Date.now();
       if (!Number.isSafeInteger(occurredAt) || occurredAt < 0) {
         throw new Error("occurredAt must be a non-negative Unix millisecond timestamp");
@@ -6737,6 +6751,7 @@ export function dbRecordChannelBackendRuntimeEvent(
 
       const nextSequence = current.lastSequence + 1;
       const nextDeltaSequence = current.lastDeltaSequence + (input.assistantDelta ? 1 : 0);
+      const terminalErrorJson = input.terminalError === undefined ? undefined : JSON.stringify(input.terminalError);
       database
         .prepare(
           `
@@ -6746,9 +6761,11 @@ export function dbRecordChannelBackendRuntimeEvent(
             last_sequence,
             last_delta_sequence,
             assistant_message_id,
+            runtime_generation_id,
+            terminal_error_json,
             updated_at
           )
-          VALUES (?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(turn_id) DO UPDATE SET
             state = excluded.state,
             last_sequence = excluded.last_sequence,
@@ -6757,10 +6774,24 @@ export function dbRecordChannelBackendRuntimeEvent(
               excluded.assistant_message_id,
               channel_backend_runtime_state.assistant_message_id
             ),
+            runtime_generation_id = excluded.runtime_generation_id,
+            terminal_error_json = COALESCE(
+              excluded.terminal_error_json,
+              channel_backend_runtime_state.terminal_error_json
+            ),
             updated_at = excluded.updated_at
         `,
         )
-        .run(turnId, nextState, nextSequence, nextDeltaSequence, assistantMessageId ?? null, occurredAt);
+        .run(
+          turnId,
+          nextState,
+          nextSequence,
+          nextDeltaSequence,
+          assistantMessageId ?? null,
+          runtimeGenerationId,
+          terminalErrorJson ?? null,
+          occurredAt,
+        );
       const runtimeRow = database
         .prepare("SELECT * FROM channel_backend_runtime_state WHERE turn_id = ?")
         .get(turnId) as ChannelBackendRuntimeStateRow | undefined;

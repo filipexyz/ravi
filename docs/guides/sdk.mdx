@@ -202,11 +202,16 @@ const sink: ChannelRuntimeEventSink = {
 ```
 
 Lifecycle events use a monotonically increasing sequence per local turn and
-cover state, assistant deltas, tool summaries, approvals, and terminal output.
-Readback remains available after reconnects, including the canonical assistant
-message id after successful completion. Interrupt publication is idempotent and
-requires the same concrete local-agent authorization boundary as ingress.
-Provider-native payloads and diagnostics are not part of this contract.
+cover state, phase-tagged assistant messages and deltas, tool summaries,
+approvals, and terminal output. Commentary remains a separate lifecycle event;
+completed terminal output contains only the final assistant response. Readback
+remains available after reconnects, including the canonical assistant message
+id and exact durable terminal event after successful completion. The current
+and last-event runtime generation ids let a caller distinguish a live
+nonterminal turn from state orphaned by a process restart without assuming
+that retry is safe. Interrupt publication is idempotent and requires the same
+concrete local-agent authorization boundary as ingress. Provider-native
+payloads and diagnostics are not part of this contract.
 
 The projected runtime schema and fixtures live beside the backend capsule under
 `packages/ravi-os-sdk/src/generated` and
