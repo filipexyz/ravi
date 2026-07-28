@@ -1,0 +1,17 @@
+{
+  "agentId": "agent-a",
+  "arguments": {
+    "name": "roadmap"
+  },
+  "protocol": "ravi.channel.native-driver",
+  "requestedAt": "2026-07-24T18:00:01.000Z",
+  "requestId": "local-agent-action-a",
+  "schemaVersion": 1,
+  "sessionName": "session-a",
+  "source": {
+    "accountId": "account-a",
+    "channelKind": "example",
+    "conversationId": "conversation-a"
+  },
+  "toolName": "example_create_space"
+}

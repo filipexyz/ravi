@@ -1,8 +1,8 @@
 {
   "artifacts": [
     {
-      "sha256": "e20f0bb904c3742e85e31cc10ea8211229b6838f495272a14bd6fc056174385e",
-      "sizeBytes": 396,
+      "sha256": "056d9a7937fa057ea90f72ab30855a595e88531fd87c887829387203b9c4c936",
+      "sizeBytes": 423,
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/driver-descriptor.json"
     },
     {
@@ -21,6 +21,21 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/installation-credential.json"
     },
     {
+      "sha256": "062b8df900ed52f13b9fe68329a11a76c711ceae33e71dcaffdf75981b4eefb0",
+      "sizeBytes": 299,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/local-agent-action-descriptor.json"
+    },
+    {
+      "sha256": "de723184195655ab62bb1ed859c2df6a2d47b6351f3ce92ed2ef626e718b55a9",
+      "sizeBytes": 407,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/local-agent-action-request.json"
+    },
+    {
+      "sha256": "3a8abf7fe2ebadcfa3664df18df40942d270edbcb0b0d8aac4fd0f217f986ee9",
+      "sizeBytes": 211,
+      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/local-agent-action-result.json"
+    },
+    {
       "sha256": "d499e48cc64516a307e70a817b38e87a648be5cb4f95aa7e2bb066c261ef3f3a",
       "sizeBytes": 198,
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/module-config.json"
@@ -31,8 +46,8 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/runtime-descriptor.json"
     },
     {
-      "sha256": "62860dba85f9fd292f8f0ebaa1be9e791bbc999e41be71c92d69c110bd2f0af4",
-      "sizeBytes": 12729,
+      "sha256": "104e326cdb967bd518d9dcc2592594fb18918b077fbcc6140a9fae3a57f5241b",
+      "sizeBytes": 19586,
       "targetPath": "packages/ravi-os-sdk/src/generated/native-channel-driver.schema.json"
     }
   ],
@@ -52,14 +67,17 @@
     "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/inbound-action-request.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/inbound-action-result.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/installation-credential.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/local-agent-action-descriptor.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/local-agent-action-request.json",
+    "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/local-agent-action-result.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/module-config.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/runtime-descriptor.json",
     "packages/ravi-os-sdk/src/generated/native-channel-driver.capsule.json",
     "packages/ravi-os-sdk/src/generated/native-channel-driver.schema.json"
   ],
   "formatVersion": 1,
-  "outputDigest": "e0cdaaee77da043ffd34a5c017d6cbc288d9a69acfeebc728333a1d5a19177b2",
-  "rationale": "Channel runners need a versioned provider-neutral boundary to load explicitly configured local channel drivers, bind matching installation credentials, reconcile locally managed agents without exporting runtime authorization, and include runtimes in lifecycle and health.",
+  "outputDigest": "15151358749e25b525f5bb4bfae815c5204379c1fc31c6d1de4db4528cbb4dac",
+  "rationale": "Channel runners need a versioned provider-neutral boundary to load explicitly configured local channel drivers, bind matching installation credentials, reconcile locally managed agents, register source-scoped local actions without exporting runtime authorization, and include runtimes in lifecycle and health.",
   "schemaAllowlist": [
     {
       "fields": [],
@@ -151,6 +169,54 @@
       "schema": "NativeInboundChannelActionResult"
     },
     {
+      "fields": [],
+      "schema": "NativeLocalAgentActionToolName"
+    },
+    {
+      "fields": [
+        "toolName",
+        "description",
+        "inputSchema",
+        "sourceAccountId"
+      ],
+      "schema": "NativeLocalAgentActionDescriptor"
+    },
+    {
+      "fields": [
+        "channelKind",
+        "accountId",
+        "conversationId",
+        "threadId"
+      ],
+      "schema": "NativeLocalAgentActionSource"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "toolName",
+        "arguments",
+        "agentId",
+        "sessionName",
+        "source",
+        "requestedAt"
+      ],
+      "schema": "NativeLocalAgentActionRequest"
+    },
+    {
+      "fields": [
+        "protocol",
+        "schemaVersion",
+        "requestId",
+        "disposition",
+        "text",
+        "error",
+        "completedAt"
+      ],
+      "schema": "NativeLocalAgentActionResult"
+    },
+    {
       "fields": [
         "provider",
         "credentialId",
@@ -161,7 +227,7 @@
       "schema": "RemoteInstallationCredential"
     }
   ],
-  "sourceDigest": "ab2475d54a833066b96e0d9aa127f3961fb589b33829012006c176d74a2e94ce",
+  "sourceDigest": "838e646ed2c4ab9d5d631231355cf7275f779ce99612154a4cd37aa9a827f212",
   "targetRepository": "filipexyz/ravi",
   "validations": [
     {

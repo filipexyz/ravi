@@ -1,0 +1,32 @@
+{
+  "protocol": "ravi.execution.authority",
+  "schemaVersion": 1,
+  "kind": "operation_approval_request",
+  "approvalId": "approval-a",
+  "challengeId": "challenge-a",
+  "principalId": "principal-a",
+  "envelopeId": "envelope-a",
+  "bindingId": "binding-a",
+  "bindingRevision": 3,
+  "executionId": "execution-a",
+  "operationId": "operation-a",
+  "routeScope": "route-a",
+  "routeLeaseId": "lease-a",
+  "routeEpoch": 7,
+  "requiredCapability": "external.issue.create",
+  "resourceScopes": [
+    {
+      "kind": "resource",
+      "resourceId": "resource-a"
+    }
+  ],
+  "resourceMappingId": "mapping-a",
+  "requestDigest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "replayClass": "non_repeatable",
+  "policyRevision": 11,
+  "issuer": "https://hub.example.test",
+  "audience": "runtime-a",
+  "issuedAt": "2026-07-26T18:00:00.000Z",
+  "notBefore": "2026-07-26T18:00:00.000Z",
+  "expiresAt": "2026-07-26T18:04:00.000Z"
+}
