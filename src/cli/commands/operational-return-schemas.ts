@@ -1777,6 +1777,28 @@ export const projectWorkflowOperationReturnSchema = z
   })
   .passthrough();
 
+export const projectWorkflowUnlinkReturnSchema = z
+  .object({
+    details: projectDetailsReturnSchema,
+    removedWorkflow: looseObjectSchema,
+    promotedPrimaryWorkflowRunId: z.string().nullable(),
+  })
+  .passthrough();
+
+export const projectFocusReturnSchema = z
+  .object({
+    details: projectDetailsReturnSchema,
+    focusedWorkflowRunId: z.string().nullable(),
+  })
+  .passthrough();
+
+export const projectTasksListReturnSchema = z
+  .object({
+    total: z.number(),
+    tasks: z.array(looseObjectSchema),
+  })
+  .passthrough();
+
 export const projectTaskOperationReturnSchema = z
   .object({
     details: projectDetailsReturnSchema,

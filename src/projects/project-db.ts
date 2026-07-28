@@ -26,6 +26,7 @@ interface ProjectRow {
   last_signal_at: number;
   owner_agent_id: string | null;
   operator_session_name: string | null;
+  focused_workflow_run_id: string | null;
   created_by: string | null;
   created_by_agent_id: string | null;
   created_by_session_name: string | null;
@@ -83,6 +84,7 @@ function rowToProject(row: ProjectRow): ProjectRecord {
     lastSignalAt: row.last_signal_at,
     ...(row.owner_agent_id ? { ownerAgentId: row.owner_agent_id } : {}),
     ...(row.operator_session_name ? { operatorSessionName: row.operator_session_name } : {}),
+    ...(row.focused_workflow_run_id ? { focusedWorkflowRunId: row.focused_workflow_run_id } : {}),
     ...(row.created_by ? { createdBy: row.created_by } : {}),
     ...(row.created_by_agent_id ? { createdByAgentId: row.created_by_agent_id } : {}),
     ...(row.created_by_session_name ? { createdBySessionName: row.created_by_session_name } : {}),
@@ -162,6 +164,11 @@ function ensureProjectSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_project_links_project ON project_links(project_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_project_links_asset ON project_links(asset_type, asset_id, updated_at DESC);
   `);
+
+  const projectColumns = db.prepare("PRAGMA table_info(projects)").all() as Array<{ name: string }>;
+  if (!projectColumns.some((column) => column.name === "focused_workflow_run_id")) {
+    db.exec("ALTER TABLE projects ADD COLUMN focused_workflow_run_id TEXT");
+  }
 
   schemaReady = true;
   schemaDbPath = currentDbPath;
@@ -499,6 +506,45 @@ export function dbTouchProjectSignal(ref: string, lastSignalAt: number): Project
     SET last_signal_at = ?, updated_at = ?
     WHERE id = ?
   `).run(lastSignalAt, now, project.id);
+
+  return dbGetProject(project.id)!;
+}
+
+export function dbDeleteProjectLink(
+  projectRef: string,
+  assetType: ProjectLink["assetType"],
+  assetId: string,
+): ProjectLink {
+  ensureProjectSchema();
+  const project = getProjectRow(projectRef);
+  if (!project) {
+    throw new Error(`Project not found: ${projectRef}`);
+  }
+
+  const existing = getProjectLinkRow(project.id, assetType, assetId);
+  if (!existing) {
+    throw new Error(`Link not found on project ${project.slug}: ${assetType}:${assetId}`);
+  }
+
+  const db = getDb();
+  db.prepare("DELETE FROM project_links WHERE id = ?").run(existing.id);
+  return rowToProjectLink(existing);
+}
+
+export function dbSetProjectFocusedWorkflowRun(ref: string, workflowRunId: string | null): ProjectRecord {
+  ensureProjectSchema();
+  const db = getDb();
+  const project = getProjectRow(ref);
+  if (!project) {
+    throw new Error(`Project not found: ${ref}`);
+  }
+
+  const now = Date.now();
+  db.prepare(`
+    UPDATE projects
+    SET focused_workflow_run_id = ?, updated_at = ?
+    WHERE id = ?
+  `).run(workflowRunId, now, project.id);
 
   return dbGetProject(project.id)!;
 }

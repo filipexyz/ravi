@@ -9,6 +9,7 @@ import {
   attachProjectWorkflowRun,
   createProject,
   createProjectTask,
+  detachProjectWorkflowRun,
   dispatchProjectTask,
   initProject,
   getProjectResourceLink,
@@ -17,10 +18,12 @@ import {
   linkProject,
   listProjectResourceLinks,
   listProjectStatusEntries,
+  listProjectTasks,
   listProjects,
   normalizeProjectStatus,
   normalizeProjectWorkflowLinkRole,
   requireProjectWorkflowTemplateId,
+  setProjectFocusedWorkflow,
   startProjectWorkflowRun,
   updateProject,
 } from "../../projects/index.js";
@@ -38,7 +41,7 @@ import type {
   ProjectWorkflowTemplateId,
 } from "../../projects/types.js";
 import type { ProjectRealityProjection } from "../../projects/reality.js";
-import type { TaskEvent, TaskPriority, TaskRecord } from "../../tasks/types.js";
+import type { TaskEvent, TaskPriority, TaskRecord, TaskStatus } from "../../tasks/types.js";
 import { getAgent } from "../../router/config.js";
 import { expandHome, getOrCreateSession, resolveSession } from "../../router/index.js";
 import { getSpec } from "../../specs/index.js";
@@ -46,13 +49,16 @@ import { getWorkflowRunDetails } from "../../workflows/index.js";
 import {
   projectDetailsReturnSchema,
   projectFixturesSeedReturnSchema,
+  projectFocusReturnSchema,
   projectInitReturnSchema,
   projectResourceReturnSchema,
   projectResourcesImportReturnSchema,
   projectResourcesListReturnSchema,
   projectStatusReturnSchema,
   projectTaskOperationReturnSchema,
+  projectTasksListReturnSchema,
   projectWorkflowOperationReturnSchema,
+  projectWorkflowUnlinkReturnSchema,
   projectsListReturnSchema,
   projectsNextReturnSchema,
 } from "./operational-return-schemas.js";
@@ -69,6 +75,7 @@ const VALID_RESOURCE_TYPES = new Set<ProjectResourceType>([
   "contact",
 ]);
 const VALID_TASK_PRIORITIES = new Set<TaskPriority>(["low", "normal", "high", "urgent"]);
+const VALID_TASK_STATUSES = new Set<TaskStatus>(["open", "dispatched", "in_progress", "blocked", "done", "failed"]);
 const PROJECT_STATUS_HELP_AFTER = `
 USE
   Read the authoritative operational reality of one project before choosing the next move.
@@ -1161,6 +1168,43 @@ export class ProjectCommands {
     }
   }
 
+  @Command({ name: "focus", description: "Pin or clear the explicit focused workflow run of a project" })
+  @CommandAccess({ kind: "mutate", resource: "projects", action: "focus", risk: "medium" })
+  @Returns(projectFocusReturnSchema)
+  focus(
+    @Arg("project", { description: "Project id or slug" }) projectRef: string,
+    @Arg("runId", { description: "Workflow run id to focus (omit with --clear)", required: false })
+    workflowRunId?: string,
+    @Option({ flags: "--clear", description: "Clear the explicit focus and return to the heuristic" })
+    clear?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const normalizedRunId = workflowRunId?.trim() || null;
+      if (clear && normalizedRunId) {
+        fail("Pass either a run id or --clear, not both.");
+      }
+      if (!clear && !normalizedRunId) {
+        fail("Pass a workflow run id to focus, or --clear to reset the focus.");
+      }
+
+      const result = setProjectFocusedWorkflow(projectRef, clear ? null : normalizedRunId);
+
+      if (asJson) {
+        console.log(JSON.stringify(result, null, 2));
+      } else if (result.focusedWorkflowRunId) {
+        console.log(`\n✓ Focused workflow ${result.focusedWorkflowRunId} on ${result.details.project.slug}`);
+        printProjectStatus(result.details);
+      } else {
+        console.log(`\n✓ Cleared explicit focus on ${result.details.project.slug} (heuristic focus restored)`);
+        printProjectStatus(result.details);
+      }
+      return result;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   @Command({ name: "link", description: "Link workflow/session/agent/resource/spec context to a project" })
   @CommandAccess({ kind: "mutate", resource: "projects", action: "link", risk: "medium" })
   @Returns(projectDetailsReturnSchema)
@@ -1284,6 +1328,36 @@ export class ProjectWorkflowCommands {
       fail(error instanceof Error ? error.message : String(error));
     }
   }
+  @Command({ name: "unlink", description: "Remove a workflow run link from a project" })
+  @CommandAccess({ kind: "mutate", resource: "projects.workflows", action: "unlink", risk: "medium" })
+  @Returns(projectWorkflowUnlinkReturnSchema)
+  unlink(
+    @Arg("project", { description: "Project id or slug" }) projectRef: string,
+    @Arg("runId", { description: "Workflow run id" }) workflowRunId: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const result = detachProjectWorkflowRun({
+        projectRef,
+        workflowRunId,
+      });
+
+      if (asJson) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(
+          `\n✓ Unlinked workflow ${result.removedWorkflow.workflowRunId} from ${result.details.project.slug}`,
+        );
+        if (result.promotedPrimaryWorkflowRunId) {
+          console.log(`  Primary: promoted to ${result.promotedPrimaryWorkflowRunId}`);
+        }
+        printProjectStatus(result.details);
+      }
+      return result;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
 }
 
 @Group({
@@ -1291,6 +1365,51 @@ export class ProjectWorkflowCommands {
   description: "Project-scoped task operations",
 })
 export class ProjectTaskCommands {
+  @Command({ name: "list", description: "List tasks attached to a project through its workflow runs" })
+  @CommandAccess({ kind: "read", resource: "projects.tasks", action: "list", risk: "low" })
+  @Returns(projectTasksListReturnSchema)
+  list(
+    @Arg("project", { description: "Project id or slug" }) projectRef: string,
+    @Option({ flags: "--status <status>", description: "Filter by task status" }) status?: string,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+  ) {
+    try {
+      const normalizedStatus = status?.trim().toLowerCase() as TaskStatus | undefined;
+      if (normalizedStatus && !VALID_TASK_STATUSES.has(normalizedStatus)) {
+        fail(`Invalid status: ${status}. Use open|dispatched|in_progress|blocked|done|failed.`);
+      }
+      const tasks = listProjectTasks(projectRef, {
+        ...(normalizedStatus ? { status: normalizedStatus } : {}),
+      });
+      const payload = {
+        total: tasks.length,
+        project: projectRef,
+        filters: {
+          status: status?.trim() || null,
+        },
+        tasks,
+      };
+
+      if (asJson) {
+        console.log(JSON.stringify(payload, null, 2));
+      } else if (tasks.length === 0) {
+        console.log("\nNo project tasks found.\n");
+      } else {
+        console.log(`\nProject tasks (${tasks.length}):\n`);
+        for (const task of tasks) {
+          const progress = typeof task.progress === "number" ? ` :: ${task.progress}%` : "";
+          const workflow = task.workflowRunTitle ?? task.workflowRunId;
+          console.log(
+            `- ${task.taskId} :: ${task.title ?? "-"} :: ${task.status ?? "missing"}${progress} :: node ${task.nodeKey} :: workflow ${workflow}`,
+          );
+        }
+      }
+      return payload;
+    } catch (error) {
+      fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   @Command({ name: "create", description: "Create a task attempt from a project workflow node" })
   @CommandAccess({ kind: "mutate", resource: "projects.tasks", action: "create", risk: "medium" })
   @Returns(projectTaskOperationReturnSchema)

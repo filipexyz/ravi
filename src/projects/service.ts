@@ -1,8 +1,10 @@
 import {
   dbFindProjectByLinkedAsset,
   dbCreateProject,
+  dbDeleteProjectLink,
   dbGetProjectDetails,
   dbListProjects,
+  dbSetProjectFocusedWorkflowRun,
   dbTouchProjectSignal,
   dbUpdateProject,
   dbUpsertProjectLink,
@@ -16,6 +18,8 @@ import type {
   CreateProjectInput,
   CreateProjectTaskInput,
   CreateProjectTaskResult,
+  DetachProjectWorkflowRunInput,
+  DetachProjectWorkflowRunResult,
   DispatchProjectTaskInput,
   DispatchProjectTaskResult,
   ProjectDetails,
@@ -32,11 +36,14 @@ import type {
   ProjectTaskActorInput,
   ProjectTaskDispatchOptions,
   ProjectTaskLaunchResult,
+  ProjectTaskListEntry,
+  ProjectTaskListQuery,
   ProjectTaskSurface,
   ProjectWorkflowAggregate,
   ProjectWorkflowDefaults,
   ProjectWorkflowLinkSurface,
   ProjectWorkflowLinkRole,
+  SetProjectFocusedWorkflowResult,
   StartProjectWorkflowRunInput,
   StartProjectWorkflowRunResult,
   UpdateProjectInput,
@@ -56,6 +63,7 @@ import type {
   WorkflowRunStatus,
 } from "../workflows/types.js";
 import type { DispatchTaskInput, TaskRecord } from "../tasks/types.js";
+import { dbGetTask } from "../tasks/task-db.js";
 
 const VALID_PROJECT_STATUSES = new Set<ProjectStatus>(["active", "paused", "blocked", "done", "archived"]);
 const DEFAULT_PROJECT_HYPOTHESIS = "Needs hypothesis";
@@ -107,6 +115,20 @@ const VALID_PROJECT_RESOURCE_TYPES = new Set<ProjectResourceType>([
   "contact",
 ]);
 const VALID_PROJECT_WORKFLOW_ROLES = new Set<ProjectWorkflowLinkRole>(["primary", "support"]);
+
+export const TERMINAL_WORKFLOW_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+const TERMINAL_WORKFLOW_STATUSES = new Set<WorkflowRunStatus>(["done", "failed", "cancelled", "archived"]);
+
+function isStaleTerminalWorkflow(workflow: ProjectWorkflowLinkSurface, now = Date.now()): boolean {
+  return (
+    Boolean(workflow.workflowRunStatus && TERMINAL_WORKFLOW_STATUSES.has(workflow.workflowRunStatus)) &&
+    now - workflow.updatedAt > TERMINAL_WORKFLOW_GRACE_MS
+  );
+}
+
+function isTerminalWorkflowStatus(status: WorkflowRunStatus | null): boolean {
+  return Boolean(status && TERMINAL_WORKFLOW_STATUSES.has(status));
+}
 
 type WorkflowHeatCandidate = {
   link: ProjectWorkflowLinkSurface;
@@ -207,21 +229,37 @@ function compareWorkflowFocus(left: ProjectWorkflowLinkSurface, right: ProjectWo
   );
 }
 
-function pickFocusedWorkflow(workflows: ProjectWorkflowLinkSurface[]): ProjectWorkflowLinkSurface | null {
+function pickFocusedWorkflow(
+  workflows: ProjectWorkflowLinkSurface[],
+  explicitFocusedRunId?: string | null,
+): ProjectWorkflowLinkSurface | null {
+  if (explicitFocusedRunId) {
+    const explicit = workflows.find(
+      (workflow) =>
+        workflow.workflowRunId === explicitFocusedRunId && !isTerminalWorkflowStatus(workflow.workflowRunStatus),
+    );
+    if (explicit) {
+      return explicit;
+    }
+  }
   return [...workflows].sort(compareWorkflowFocus)[0] ?? null;
 }
 
-function deriveProjectWorkflowAggregate(workflows: ProjectWorkflowLinkSurface[]): ProjectWorkflowAggregate | null {
+function deriveProjectWorkflowAggregate(
+  workflows: ProjectWorkflowLinkSurface[],
+  explicitFocusedRunId?: string | null,
+): ProjectWorkflowAggregate | null {
   if (workflows.length === 0) {
     return null;
   }
 
+  const relevant = workflows.filter((workflow) => !isStaleTerminalWorkflow(workflow));
   const primary =
-    workflows.find((workflow) => workflow.role === "primary") ??
-    [...workflows].sort(
+    relevant.find((workflow) => workflow.role === "primary") ??
+    [...relevant].sort(
       (left, right) => right.updatedAt - left.updatedAt || left.workflowRunId.localeCompare(right.workflowRunId),
     )[0];
-  const focused = pickFocusedWorkflow(workflows);
+  const focused = pickFocusedWorkflow(relevant, explicitFocusedRunId);
 
   const aggregate: ProjectWorkflowAggregate = {
     total: workflows.length,
@@ -245,7 +283,7 @@ function deriveProjectWorkflowAggregate(workflows: ProjectWorkflowLinkSurface[])
     overallStatus: null,
   };
 
-  for (const workflow of workflows) {
+  for (const workflow of relevant) {
     if (!workflow.workflowRunStatus) {
       aggregate.missing += 1;
       continue;
@@ -282,6 +320,7 @@ function compareWorkflowHeat(left: WorkflowHeatCandidate, right: WorkflowHeatCan
 
 function pickHottestWorkflow(workflows: ProjectWorkflowLinkSurface[]): WorkflowHeatCandidate | null {
   const candidates = workflows
+    .filter((workflow) => !isStaleTerminalWorkflow(workflow))
     .map((workflow) => ({
       link: workflow,
       details: getWorkflowRunDetails(workflow.workflowRunId),
@@ -349,7 +388,7 @@ function enrichProjectDetails(details: ProjectDetails): ProjectDetails {
   const linkedWorkflows = details.links
     .filter((link) => link.assetType === "workflow")
     .map(buildProjectWorkflowSurface);
-  const workflowAggregate = deriveProjectWorkflowAggregate(linkedWorkflows);
+  const workflowAggregate = deriveProjectWorkflowAggregate(linkedWorkflows, details.project.focusedWorkflowRunId);
   return {
     ...details,
     linkedWorkflows,
@@ -713,6 +752,77 @@ export function attachProjectWorkflowRun(input: AttachProjectWorkflowRunInput): 
   };
 }
 
+export function detachProjectWorkflowRun(input: DetachProjectWorkflowRunInput): DetachProjectWorkflowRunResult {
+  const projectRef = normalizeText(input.projectRef, "Project reference");
+  const workflowRunId = normalizeText(input.workflowRunId, "Workflow run id");
+  const details = getProjectDetails(projectRef);
+  if (!details) {
+    throw new Error(`Project not found: ${projectRef}`);
+  }
+
+  const linked = details.linkedWorkflows.find((workflow) => workflow.workflowRunId === workflowRunId);
+  if (!linked) {
+    throw new Error(`Workflow ${workflowRunId} is not linked to project ${details.project.slug}.`);
+  }
+
+  dbDeleteProjectLink(details.project.id, "workflow", workflowRunId);
+
+  let promotedPrimaryWorkflowRunId: string | null = null;
+  if (linked.role === "primary") {
+    const successor = details.linkedWorkflows
+      .filter((workflow) => workflow.workflowRunId !== workflowRunId)
+      .sort(
+        (left, right) => right.updatedAt - left.updatedAt || left.workflowRunId.localeCompare(right.workflowRunId),
+      )[0];
+    if (successor) {
+      dbUpsertProjectLink({
+        projectRef: details.project.id,
+        assetType: "workflow",
+        assetId: successor.workflowRunId,
+        role: "primary",
+      });
+      promotedPrimaryWorkflowRunId = successor.workflowRunId;
+    }
+  }
+
+  if (details.project.focusedWorkflowRunId === workflowRunId) {
+    dbSetProjectFocusedWorkflowRun(details.project.id, null);
+  }
+
+  dbTouchProjectSignal(details.project.id, Date.now());
+  return {
+    details: getProjectDetails(details.project.id)!,
+    removedWorkflow: linked,
+    promotedPrimaryWorkflowRunId,
+  };
+}
+
+export function setProjectFocusedWorkflow(
+  projectRef: string,
+  workflowRunId?: string | null,
+): SetProjectFocusedWorkflowResult {
+  const normalizedProjectRef = normalizeText(projectRef, "Project reference");
+  const normalizedRunId = normalizeNullableText(workflowRunId) ?? null;
+  const details = getProjectDetails(normalizedProjectRef);
+  if (!details) {
+    throw new Error(`Project not found: ${normalizedProjectRef}`);
+  }
+
+  if (normalizedRunId) {
+    const linked = details.linkedWorkflows.find((workflow) => workflow.workflowRunId === normalizedRunId);
+    if (!linked) {
+      throw new Error(`Workflow ${normalizedRunId} is not linked to project ${details.project.slug}.`);
+    }
+  }
+
+  dbSetProjectFocusedWorkflowRun(details.project.id, normalizedRunId);
+  dbTouchProjectSignal(details.project.id, Date.now());
+  return {
+    details: getProjectDetails(details.project.id)!,
+    focusedWorkflowRunId: normalizedRunId,
+  };
+}
+
 export function startProjectWorkflowRun(input: StartProjectWorkflowRunInput): StartProjectWorkflowRunResult {
   const projectRef = normalizeText(input.projectRef, "Project reference");
   const workflowSpecId = normalizeText(input.workflowSpecId, "Workflow spec id");
@@ -894,4 +1004,53 @@ export function linkProject(input: UpsertProjectLinkInput & { lastSignalAt?: num
   });
   dbTouchProjectSignal(normalizedProjectRef, input.lastSignalAt ?? Date.now());
   return getProjectDetails(normalizedProjectRef)!;
+}
+
+export function listProjectTasks(projectRef: string, query: ProjectTaskListQuery = {}): ProjectTaskListEntry[] {
+  const details = requireProjectDetails(projectRef);
+  const entries: ProjectTaskListEntry[] = [];
+
+  for (const linkedWorkflow of details.linkedWorkflows) {
+    const workflow = getWorkflowRunDetails(linkedWorkflow.workflowRunId);
+    if (!workflow) {
+      continue;
+    }
+
+    for (const node of workflow.nodes) {
+      const attemptsByTaskId = new Map<string, number | null>(
+        node.taskAttempts.map((attempt) => [attempt.taskId, attempt.attempt]),
+      );
+      if (node.currentTaskId && !attemptsByTaskId.has(node.currentTaskId)) {
+        attemptsByTaskId.set(node.currentTaskId, null);
+      }
+
+      for (const [taskId, attempt] of attemptsByTaskId) {
+        const task = dbGetTask(taskId);
+        if (query.status && task?.status !== query.status) {
+          continue;
+        }
+        entries.push({
+          taskId,
+          title: task?.title ?? null,
+          status: task?.status ?? null,
+          progress: task?.progress ?? null,
+          priority: task?.priority ?? null,
+          nodeRunId: node.id,
+          nodeKey: node.specNodeKey,
+          nodeLabel: node.label,
+          workflowRunId: linkedWorkflow.workflowRunId,
+          workflowRunTitle: workflow.run.title ?? linkedWorkflow.workflowRunTitle,
+          isCurrent: node.currentTaskId === taskId,
+          attempt,
+        });
+      }
+    }
+  }
+
+  return entries.sort(
+    (left, right) =>
+      left.workflowRunId.localeCompare(right.workflowRunId) ||
+      left.nodeKey.localeCompare(right.nodeKey) ||
+      left.taskId.localeCompare(right.taskId),
+  );
 }

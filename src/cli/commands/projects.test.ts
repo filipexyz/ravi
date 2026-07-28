@@ -16,6 +16,9 @@ const createProjectTaskCalls: Array<Record<string, unknown>> = [];
 const attachProjectTaskCalls: Array<Record<string, unknown>> = [];
 const dispatchProjectTaskCalls: Array<Record<string, unknown>> = [];
 const attachProjectWorkflowRunCalls: Array<Record<string, unknown>> = [];
+const detachProjectWorkflowRunCalls: Array<Record<string, unknown>> = [];
+const setProjectFocusedWorkflowCalls: Array<Record<string, unknown>> = [];
+const listProjectTasksCalls: Array<Record<string, unknown>> = [];
 const startProjectWorkflowRunCalls: Array<Record<string, unknown>> = [];
 const listProjectsCalls: Array<Record<string, unknown>> = [];
 const listProjectStatusEntriesCalls: Array<Record<string, unknown>> = [];
@@ -320,6 +323,40 @@ mock.module("../../projects/index.js", () => ({
       },
     };
   },
+  detachProjectWorkflowRun: (input: Record<string, unknown>) => {
+    detachProjectWorkflowRunCalls.push(input);
+    return {
+      details: projectDetails,
+      removedWorkflow: projectDetails.linkedWorkflows[0],
+      promotedPrimaryWorkflowRunId: null,
+    };
+  },
+  setProjectFocusedWorkflow: (projectRef: string, workflowRunId?: string | null) => {
+    setProjectFocusedWorkflowCalls.push({ projectRef, workflowRunId: workflowRunId ?? null });
+    return {
+      details: projectDetails,
+      focusedWorkflowRunId: workflowRunId ?? null,
+    };
+  },
+  listProjectTasks: (projectRef: string, query?: Record<string, unknown>) => {
+    listProjectTasksCalls.push({ projectRef, ...(query ?? {}) });
+    return [
+      {
+        taskId: "task-ship",
+        title: "Ship release",
+        status: "in_progress",
+        progress: 42,
+        priority: "high",
+        nodeRunId: "node-run-1",
+        nodeKey: "ship",
+        nodeLabel: "Ship smoke",
+        workflowRunId: "wf-run-1",
+        workflowRunTitle: "Ship smoke",
+        isCurrent: true,
+        attempt: 1,
+      },
+    ].filter((task) => !query?.status || task.status === query.status);
+  },
   initProject: (input: Record<string, unknown>) => {
     initProjectCalls.push(input);
     return {
@@ -570,6 +607,9 @@ describe("ProjectCommands", () => {
     attachProjectTaskCalls.length = 0;
     dispatchProjectTaskCalls.length = 0;
     attachProjectWorkflowRunCalls.length = 0;
+    detachProjectWorkflowRunCalls.length = 0;
+    setProjectFocusedWorkflowCalls.length = 0;
+    listProjectTasksCalls.length = 0;
     startProjectWorkflowRunCalls.length = 0;
     listProjectsCalls.length = 0;
     listProjectStatusEntriesCalls.length = 0;
@@ -749,6 +789,71 @@ describe("ProjectCommands", () => {
         projectRef: "ops-cadence",
         workflowRunId: "wf-run-1",
         role: "primary",
+      }),
+    ]);
+  });
+
+  it("unlinks workflow runs from the project surface", () => {
+    const commands = new ProjectWorkflowCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      commands.unlink("ops-cadence", "wf-run-1", true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(detachProjectWorkflowRunCalls).toEqual([
+      expect.objectContaining({
+        projectRef: "ops-cadence",
+        workflowRunId: "wf-run-1",
+      }),
+    ]);
+  });
+
+  it("pins and clears the explicit project workflow focus", () => {
+    const commands = new ProjectCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      commands.focus("ops-cadence", "wf-run-1", undefined, true);
+      commands.focus("ops-cadence", undefined, true, true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(setProjectFocusedWorkflowCalls).toEqual([
+      { projectRef: "ops-cadence", workflowRunId: "wf-run-1" },
+      { projectRef: "ops-cadence", workflowRunId: null },
+    ]);
+  });
+
+  it("lists project tasks with status filters", () => {
+    const commands = new ProjectTaskCommands();
+    const originalLog = console.log;
+    const logs: string[] = [];
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+
+    try {
+      commands.list("ops-cadence", "in_progress", true);
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(listProjectTasksCalls).toEqual([{ projectRef: "ops-cadence", status: "in_progress" }]);
+    const payload = JSON.parse(logs.join("\n")) as Record<string, unknown>;
+    expect(payload.total).toBe(1);
+    expect(payload.tasks).toEqual([
+      expect.objectContaining({
+        taskId: "task-ship",
+        title: "Ship release",
+        status: "in_progress",
+        nodeKey: "ship",
+        workflowRunId: "wf-run-1",
       }),
     ]);
   });

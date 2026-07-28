@@ -48,6 +48,7 @@ export interface ProjectRecord {
   lastSignalAt: number;
   ownerAgentId?: string;
   operatorSessionName?: string;
+  focusedWorkflowRunId?: string;
   createdBy?: string;
   createdByAgentId?: string;
   createdBySessionName?: string;
@@ -314,6 +315,41 @@ export interface AttachProjectWorkflowRunResult {
   details: ProjectDetails;
   workflow: ProjectWorkflowLinkSurface;
   defaults: ProjectWorkflowDefaults;
+}
+
+export interface DetachProjectWorkflowRunInput {
+  projectRef: string;
+  workflowRunId: string;
+}
+
+export interface DetachProjectWorkflowRunResult {
+  details: ProjectDetails;
+  removedWorkflow: ProjectWorkflowLinkSurface;
+  promotedPrimaryWorkflowRunId: string | null;
+}
+
+export interface SetProjectFocusedWorkflowResult {
+  details: ProjectDetails;
+  focusedWorkflowRunId: string | null;
+}
+
+export interface ProjectTaskListEntry {
+  taskId: string;
+  title: string | null;
+  status: TaskStatus | null;
+  progress: number | null;
+  priority: TaskPriority | null;
+  nodeRunId: string;
+  nodeKey: string;
+  nodeLabel: string;
+  workflowRunId: string;
+  workflowRunTitle: string | null;
+  isCurrent: boolean;
+  attempt: number | null;
+}
+
+export interface ProjectTaskListQuery {
+  status?: TaskStatus;
 }
 
 export interface StartProjectWorkflowRunInput {

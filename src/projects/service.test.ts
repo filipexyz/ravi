@@ -5,13 +5,17 @@ import {
   attachProjectWorkflowRun,
   createProjectTask,
   createProject,
+  detachProjectWorkflowRun,
   getProjectResourceLink,
   getProjectDetails,
   linkProject,
   listProjectResourceLinks,
   listProjectStatusEntries,
+  listProjectTasks,
   listProjects,
+  setProjectFocusedWorkflow,
   startProjectWorkflowRun,
+  TERMINAL_WORKFLOW_GRACE_MS,
   updateProject,
 } from "./index.js";
 import { createWorkflowSpec, startWorkflowRun } from "../workflows/index.js";
@@ -668,5 +672,273 @@ describe("projects service", () => {
         createdBy: "test",
       }),
     ).toThrow(`Workflow ${run.run.id} already linked to project ${first.id}.`);
+  });
+
+  it("unlinks a workflow run, promotes the latest support to primary, and clears explicit focus", () => {
+    const spec = createWorkflowSpec({
+      id: "wf-spec-project-unlink",
+      title: "Project unlink",
+      createdBy: "test",
+      nodes: [
+        {
+          key: "ship",
+          label: "Ship",
+          kind: "task",
+          requirement: "required",
+          releaseMode: "auto",
+        },
+      ],
+    });
+    createdWorkflowSpecIds.push(spec.id);
+    const primaryRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-unlink-primary",
+      createdBy: "test",
+    });
+    const supportRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-unlink-support",
+      createdBy: "test",
+    });
+    createdWorkflowRunIds.push(primaryRun.run.id, supportRun.run.id);
+
+    const project = createProject({ title: "Project Unlink" });
+    createdProjectIds.push(project.id);
+    linkProject({
+      projectRef: project.id,
+      assetType: "workflow",
+      assetId: primaryRun.run.id,
+      role: "primary",
+      createdBy: "test",
+    });
+    attachProjectWorkflowRun({
+      projectRef: project.id,
+      workflowRunId: supportRun.run.id,
+      createdBy: "test",
+    });
+    setProjectFocusedWorkflow(project.id, primaryRun.run.id);
+
+    const detached = detachProjectWorkflowRun({
+      projectRef: project.id,
+      workflowRunId: primaryRun.run.id,
+    });
+
+    expect(detached.removedWorkflow.workflowRunId).toBe(primaryRun.run.id);
+    expect(detached.promotedPrimaryWorkflowRunId).toBe(supportRun.run.id);
+    expect(detached.details.linkedWorkflows).toHaveLength(1);
+    expect(detached.details.linkedWorkflows[0]).toMatchObject({
+      workflowRunId: supportRun.run.id,
+      role: "primary",
+    });
+    expect(detached.details.project.focusedWorkflowRunId).toBeUndefined();
+    expect(detached.details.workflowAggregate).toMatchObject({
+      total: 1,
+      primaryWorkflowRunId: supportRun.run.id,
+      focusedWorkflowRunId: supportRun.run.id,
+    });
+
+    expect(() =>
+      detachProjectWorkflowRun({
+        projectRef: project.id,
+        workflowRunId: primaryRun.run.id,
+      }),
+    ).toThrow(`Workflow ${primaryRun.run.id} is not linked to project ${project.slug}.`);
+  });
+
+  it("excludes stale terminal workflows from the aggregate and the hottest surface", () => {
+    const db = getDb();
+    const spec = createWorkflowSpec({
+      id: "wf-spec-project-stale-terminal",
+      title: "Project stale terminal",
+      createdBy: "test",
+      nodes: [
+        {
+          key: "ship",
+          label: "Ship",
+          kind: "task",
+          requirement: "required",
+          releaseMode: "auto",
+        },
+      ],
+    });
+    createdWorkflowSpecIds.push(spec.id);
+
+    const staleRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-stale-failed",
+      createdBy: "test",
+    });
+    const recentRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-recent-failed",
+      createdBy: "test",
+    });
+    createdWorkflowRunIds.push(staleRun.run.id, recentRun.run.id);
+
+    const staleProject = createProject({ title: "Stale failed project" });
+    const recentProject = createProject({ title: "Recent failed project" });
+    createdProjectIds.push(staleProject.id, recentProject.id);
+
+    linkProject({
+      projectRef: staleProject.id,
+      assetType: "workflow",
+      assetId: staleRun.run.id,
+      role: "primary",
+      createdBy: "test",
+    });
+    linkProject({
+      projectRef: recentProject.id,
+      assetType: "workflow",
+      assetId: recentRun.run.id,
+      role: "primary",
+      createdBy: "test",
+    });
+
+    db.prepare("UPDATE workflow_runs SET status = 'failed' WHERE id IN (?, ?)").run(staleRun.run.id, recentRun.run.id);
+    db.prepare("UPDATE project_links SET updated_at = ? WHERE project_id = ? AND asset_id = ?").run(
+      Date.now() - TERMINAL_WORKFLOW_GRACE_MS - 60_000,
+      staleProject.id,
+      staleRun.run.id,
+    );
+
+    const staleDetails = getProjectDetails(staleProject.id);
+    expect(staleDetails?.workflowAggregate?.overallStatus).toBeNull();
+    expect(staleDetails?.workflowAggregate?.failed).toBe(0);
+    expect(staleDetails?.workflowAggregate?.total).toBe(1);
+    expect(staleDetails?.operational?.runtimeStatus).toBeNull();
+    expect(staleDetails?.operational?.hottestWorkflowRunId).toBeNull();
+
+    const staleEntry = listProjectStatusEntries().find((entry) => entry.project.id === staleProject.id);
+    expect(staleEntry?.operational?.runtimeStatus).toBeNull();
+
+    const recentDetails = getProjectDetails(recentProject.id);
+    expect(recentDetails?.workflowAggregate?.overallStatus).toBe("failed");
+    expect(recentDetails?.workflowAggregate?.failed).toBe(1);
+    expect(recentDetails?.operational?.runtimeStatus).toBe("failed");
+    expect(recentDetails?.operational?.hottestWorkflowRunId).toBe(recentRun.run.id);
+  });
+
+  it("keeps explicit focus stable across link touches and falls back to the heuristic when cleared", () => {
+    const spec = createWorkflowSpec({
+      id: "wf-spec-project-explicit-focus",
+      title: "Project explicit focus",
+      createdBy: "test",
+      nodes: [
+        {
+          key: "ship",
+          label: "Ship",
+          kind: "task",
+          requirement: "required",
+          releaseMode: "auto",
+        },
+      ],
+    });
+    createdWorkflowSpecIds.push(spec.id);
+    const firstRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-focus-first",
+      createdBy: "test",
+    });
+    const secondRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-focus-second",
+      createdBy: "test",
+    });
+    const thirdRun = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-focus-third",
+      createdBy: "test",
+    });
+    createdWorkflowRunIds.push(firstRun.run.id, secondRun.run.id, thirdRun.run.id);
+
+    const project = createProject({ title: "Project Explicit Focus" });
+    createdProjectIds.push(project.id);
+    linkProject({
+      projectRef: project.id,
+      assetType: "workflow",
+      assetId: firstRun.run.id,
+      role: "primary",
+      createdBy: "test",
+    });
+    attachProjectWorkflowRun({
+      projectRef: project.id,
+      workflowRunId: secondRun.run.id,
+      createdBy: "test",
+    });
+
+    const focused = setProjectFocusedWorkflow(project.id, firstRun.run.id);
+    expect(focused.focusedWorkflowRunId).toBe(firstRun.run.id);
+    expect(focused.details.project.focusedWorkflowRunId).toBe(firstRun.run.id);
+    expect(focused.details.workflowAggregate?.focusedWorkflowRunId).toBe(firstRun.run.id);
+
+    linkProject({
+      projectRef: project.id,
+      assetType: "workflow",
+      assetId: thirdRun.run.id,
+      role: "support",
+      createdBy: "test",
+    });
+    const afterLink = getProjectDetails(project.id);
+    expect(afterLink?.workflowAggregate?.focusedWorkflowRunId).toBe(firstRun.run.id);
+
+    const cleared = setProjectFocusedWorkflow(project.id, null);
+    expect(cleared.focusedWorkflowRunId).toBeNull();
+    expect(cleared.details.project.focusedWorkflowRunId).toBeUndefined();
+    expect(cleared.details.workflowAggregate?.focusedWorkflowRunId).toBe(thirdRun.run.id);
+
+    expect(() => setProjectFocusedWorkflow(project.id, "wf-run-not-linked")).toThrow(
+      `Workflow wf-run-not-linked is not linked to project ${project.slug}.`,
+    );
+  });
+
+  it("lists project tasks through the task -> node run -> run -> link chain with status filters", async () => {
+    const spec = createWorkflowSpec({
+      id: "wf-spec-project-task-list",
+      title: "Project task list",
+      createdBy: "test",
+      nodes: [
+        {
+          key: "ship",
+          label: "Ship",
+          kind: "task",
+          requirement: "required",
+          releaseMode: "auto",
+        },
+      ],
+    });
+    createdWorkflowSpecIds.push(spec.id);
+    const run = startWorkflowRun(spec.id, {
+      runId: "wf-run-project-task-list",
+      createdBy: "test",
+    });
+    createdWorkflowRunIds.push(run.run.id);
+
+    const project = createProject({ title: "Project Task List" });
+    createdProjectIds.push(project.id);
+    linkProject({
+      projectRef: project.id,
+      assetType: "workflow",
+      assetId: run.run.id,
+      role: "primary",
+      createdBy: "test",
+    });
+
+    const created = await createProjectTask({
+      projectRef: project.id,
+      nodeKey: "ship",
+      title: "Ship attempt",
+      instructions: "Execute the concrete workflow task",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const tasks = listProjectTasks(project.id);
+    expect(tasks).toEqual([
+      expect.objectContaining({
+        taskId: created.task.id,
+        title: "Ship attempt",
+        status: "open",
+        nodeKey: "ship",
+        nodeLabel: "Ship",
+        workflowRunId: run.run.id,
+        isCurrent: true,
+      }),
+    ]);
+
+    expect(listProjectTasks(project.id, { status: "done" })).toEqual([]);
+    expect(() => listProjectTasks("proj-missing")).toThrow("Project not found: proj-missing");
   });
 });
