@@ -76,6 +76,32 @@ When a delivery job creates or updates an outbound `ChannelMessage`, the resulti
 
 Delivery receipts MUST NOT be interpreted as agent runtime status. Agent runtime status MUST NOT overwrite delivery state.
 
+## Tool Activity Presentation
+
+Channel runtime events MAY carry a bounded, provider-neutral presentation for
+each tool lifecycle. The runtime host, not a provider adapter or downstream
+client, owns this presentation.
+
+The presentation MAY contain:
+
+- the registered tool description;
+- canonical capability/resource category;
+- read, mutate, execute, or ask operation;
+- declared risk;
+- a bounded summary and parameter list derived from the invocation;
+- terminal duration.
+
+Descriptions and semantic metadata MUST come from the runtime tool registry.
+Invocation values MUST be allowlisted, bounded, and sanitized before channel
+projection. Credentials, authorization material, Message content, patches,
+environment values, local paths, provider-native payloads, and raw tool output
+MUST NOT enter the presentation.
+
+Unknown tools fall back to their exact normalized name without downstream
+lexical inference. A downstream client MUST NOT translate or tokenize a tool
+name to invent its meaning. The opaque tool-call id remains lifecycle
+correlation metadata and need not be displayed.
+
 ## Durable Outbound Boundary
 
 Outbound channel delivery MUST use a durable delivery boundary between the Ravi runtime daemon and channel adapters.

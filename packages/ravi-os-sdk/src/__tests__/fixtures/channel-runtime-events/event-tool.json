@@ -16,7 +16,22 @@
   "kind": "turn.tool_summary",
   "occurredAt": "2026-07-24T18:00:01.000Z",
   "payload": {
+    "durationMs": 18,
     "phase": "completed",
+    "presentation": {
+      "category": "records",
+      "operation": "read",
+      "parameters": [
+        {
+          "label": "Lookup scope",
+          "name": "scope",
+          "value": "current conversation"
+        }
+      ],
+      "risk": "low",
+      "summary": "scope=current conversation",
+      "title": "Look up local records"
+    },
     "toolCallId": "tool-call-a",
     "toolName": "local.lookup"
   },

@@ -213,6 +213,14 @@ that retry is safe. Interrupt publication is idempotent and requires the same
 concrete local-agent authorization boundary as ingress. Provider-native
 payloads and diagnostics are not part of this contract.
 
+Tool summaries may include a runtime-authored `presentation` with the
+registered description, canonical category, operation, risk, bounded safe
+parameters and invocation summary. Terminal summaries may also include
+`durationMs`. These fields are already sanitized at the runtime boundary;
+clients should render them directly and must not derive labels by splitting or
+translating `toolName`. Raw tool input, output, credentials and local paths are
+not part of the presentation contract.
+
 The projected runtime schema and fixtures live beside the backend capsule under
 `packages/ravi-os-sdk/src/generated` and
 `packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events`.

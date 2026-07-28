@@ -31,8 +31,8 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-terminal.json"
     },
     {
-      "sha256": "f03d98b52d36df036138d8e3a9b9db78e7063a27136954461546fcc148ea0cc9",
-      "sizeBytes": 645,
+      "sha256": "acff1c9ca4ce0c66ec1506d45ac72b560e6c9c76a7dc647015b28a2764e1d883",
+      "sizeBytes": 1014,
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/event-tool.json"
     },
     {
@@ -56,8 +56,8 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/channel-runtime-events/readback-result.json"
     },
     {
-      "sha256": "d78c34055418d51a3bd544f2ffc685cfa18b9b574cae03dfdf6198f4c8198bcf",
-      "sizeBytes": 73755,
+      "sha256": "fe69eb8d333831da890c605dc86b33de0b1700218bdccf559845ab1a4fe3b9cd",
+      "sizeBytes": 79575,
       "targetPath": "packages/ravi-os-sdk/src/generated/channel-runtime-events.schema.json"
     }
   ],
@@ -88,7 +88,7 @@
     "packages/ravi-os-sdk/src/generated/channel-runtime-events.schema.json"
   ],
   "formatVersion": 1,
-  "outputDigest": "a2d413d743f0c95fcead51f7f15d32a17db34d9fb965c8f7712adcc76ec3ba5c",
+  "outputDigest": "717e29d27a932622c87ad674c852a43a334472da265c696117c0771a2869a586",
   "rationale": "Channel backends need provider-independent turn lifecycle, delta, terminal, approval, interrupt, and readback contracts.",
   "schemaAllowlist": [
     {
@@ -176,9 +176,31 @@
     },
     {
       "fields": [
+        "name",
+        "label",
+        "value",
+        "redacted"
+      ],
+      "schema": "ChannelToolPresentationParameter"
+    },
+    {
+      "fields": [
+        "title",
+        "summary",
+        "category",
+        "operation",
+        "risk",
+        "parameters"
+      ],
+      "schema": "ChannelToolPresentation"
+    },
+    {
+      "fields": [
         "toolCallId",
         "toolName",
         "phase",
+        "presentation",
+        "durationMs",
         "error"
       ],
       "schema": "ChannelToolSummaryPayload"
@@ -251,7 +273,7 @@
       "schema": "ChannelRuntimeReadbackResult"
     }
   ],
-  "sourceDigest": "77fffe4234a1fed76de12bd97da784d9b3bfacec75c437c5e8954a2b464de058",
+  "sourceDigest": "85fd4f904c63918d58c87e93ce8d99a3b3777727946a78a86f67510120f939b4",
   "targetRepository": "filipexyz/ravi",
   "validations": [
     {

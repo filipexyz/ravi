@@ -156,6 +156,19 @@ describe("channel runtime event projection", () => {
         },
         rawEvent: { token: "provider-secret-must-not-leak" },
       },
+      toolPresentation: {
+        title: "Look up local records",
+        summary: "scope=current conversation",
+        category: "records",
+        operation: "read",
+        risk: "low",
+        parameters: [
+          {
+            name: "scope",
+            value: "current conversation",
+          },
+        ],
+      },
       occurredAt: Date.parse("2026-07-24T18:00:02.000Z"),
       sinks,
     });
@@ -183,6 +196,19 @@ describe("channel runtime event projection", () => {
         blockIndex: 0,
         deltaSequence: 1,
         text: "Hello",
+      },
+    });
+    expect(events[2]).toMatchObject({
+      payload: {
+        toolName: "local.lookup",
+        phase: "running",
+        presentation: {
+          title: "Look up local records",
+          summary: "scope=current conversation",
+          category: "records",
+          operation: "read",
+          risk: "low",
+        },
       },
     });
     expect(JSON.stringify(events)).not.toContain("provider-secret-must-not-leak");
@@ -431,6 +457,20 @@ describe("channel runtime event projection", () => {
         metadata: { item: { id: "commentary-a", phase: "commentary" } },
       },
       {
+        type: "tool.started",
+        toolUse: {
+          id: "tool-self-chat",
+          name: "self_chat",
+          input: { depth: "summary" },
+        },
+      },
+      {
+        type: "tool.completed",
+        toolUseId: "tool-self-chat",
+        toolName: "self_chat",
+        content: [{ type: "text", text: "safe result" }],
+      },
+      {
         type: "assistant.message",
         text: "Final answer only.",
         metadata: { item: { id: "final-a", phase: "final_answer" } },
@@ -470,6 +510,8 @@ describe("channel runtime event projection", () => {
       "turn.state_changed",
       "turn.assistant_delta",
       "turn.assistant_message",
+      "turn.tool_summary",
+      "turn.tool_summary",
       "turn.assistant_message",
       "turn.terminal_output",
     ]);
@@ -486,6 +528,30 @@ describe("channel runtime event projection", () => {
       },
     });
     expect(events[3]).toMatchObject({
+      payload: {
+        toolName: "self_chat",
+        phase: "running",
+        presentation: {
+          title: "Show the current chat binding and participants",
+          category: "self",
+          operation: "read",
+          risk: "low",
+          summary: "depth=summary",
+        },
+      },
+    });
+    expect(events[4]).toMatchObject({
+      payload: {
+        toolName: "self_chat",
+        phase: "completed",
+        presentation: {
+          title: "Show the current chat binding and participants",
+          summary: "depth=summary",
+        },
+        durationMs: expect.any(Number),
+      },
+    });
+    expect(events[5]).toMatchObject({
       payload: {
         phase: "final_answer",
         content: [{ type: "text", text: "Final answer only." }],
@@ -504,7 +570,7 @@ describe("channel runtime event projection", () => {
     });
     expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
       state: "completed",
-      lastSequence: 5,
+      lastSequence: 7,
     });
     expect(emitSpy.mock.calls.some(([topic]) => String(topic).endsWith(".response"))).toBe(false);
     expect(streaming.currentChannelBackend).toBeUndefined();

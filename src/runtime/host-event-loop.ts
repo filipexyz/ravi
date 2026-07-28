@@ -72,6 +72,7 @@ import type {
   RuntimeSkillVisibilitySnapshot,
 } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
+import { buildRuntimeToolPresentation } from "./tool-presentation.js";
 
 const log = logger.child("bot");
 
@@ -884,11 +885,30 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const projectRuntimeEventToChannel = async (event: RuntimeEvent, projectedResponseText?: string) => {
     const metadata = streaming.currentChannelBackend;
     if (!metadata) return;
+    const toolProjection =
+      event.type === "tool.started"
+        ? {
+            toolPresentation: buildRuntimeToolPresentation(event.toolUse.name, event.toolUse.input),
+          }
+        : event.type === "tool.completed"
+          ? {
+              toolPresentation: buildRuntimeToolPresentation(
+                streaming.currentToolName ?? event.toolName ?? "tool",
+                streaming.currentToolInput,
+              ),
+              ...(streaming.toolStartTime === undefined
+                ? {}
+                : {
+                    toolDurationMs: Date.now() - streaming.toolStartTime,
+                  }),
+            }
+          : {};
     try {
       await projectChannelRuntimeEvent({
         metadata,
         event,
         ...(projectedResponseText !== undefined ? { responseText: projectedResponseText } : {}),
+        ...toolProjection,
       });
     } catch (error) {
       log.warn("Channel runtime event projection failed", {
