@@ -363,8 +363,21 @@ describe("channel runtime event projection", () => {
       },
     });
     const runtimeSession = runtimeHandle([
-      { type: "text.delta", text: "Hello" },
-      { type: "assistant.message", text: "Hello world" },
+      {
+        type: "text.delta",
+        text: "Checking",
+        metadata: { item: { id: "commentary-a", phase: "commentary" } },
+      },
+      {
+        type: "assistant.message",
+        text: "Checking the durable state.",
+        metadata: { item: { id: "commentary-a", phase: "commentary" } },
+      },
+      {
+        type: "assistant.message",
+        text: "Final answer only.",
+        metadata: { item: { id: "final-a", phase: "final_answer" } },
+      },
       {
         type: "turn.complete",
         usage: { inputTokens: 3, outputTokens: 2 },
@@ -399,12 +412,42 @@ describe("channel runtime event projection", () => {
     expect(events.map((event) => event.kind)).toEqual([
       "turn.state_changed",
       "turn.assistant_delta",
+      "turn.assistant_message",
+      "turn.assistant_message",
       "turn.terminal_output",
     ]);
+    expect(events[1]).toMatchObject({
+      payload: {
+        phase: "commentary",
+        text: "Checking",
+      },
+    });
+    expect(events[2]).toMatchObject({
+      payload: {
+        phase: "commentary",
+        content: [{ type: "text", text: "Checking the durable state." }],
+      },
+    });
+    expect(events[3]).toMatchObject({
+      payload: {
+        phase: "final_answer",
+        content: [{ type: "text", text: "Final answer only." }],
+      },
+    });
+    expect(events.at(-1)).toMatchObject({
+      payload: {
+        state: "completed",
+        content: [{ type: "text", text: "Final answer only." }],
+      },
+    });
     expect(outputs).toHaveLength(1);
+    expect(outputs[0]).toMatchObject({
+      kind: "assistant_message",
+      content: [{ type: "text", text: "Final answer only." }],
+    });
     expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
       state: "completed",
-      lastSequence: 3,
+      lastSequence: 5,
     });
     expect(emitSpy.mock.calls.some(([topic]) => String(topic).endsWith(".response"))).toBe(false);
     expect(streaming.currentChannelBackend).toBeUndefined();

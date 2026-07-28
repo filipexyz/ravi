@@ -26,6 +26,7 @@ describe("channel runtime events contract", () => {
     for (const name of [
       "event-state.json",
       "event-delta.json",
+      "event-assistant-message.json",
       "event-tool.json",
       "event-approval-requested.json",
       "event-approval-resolved.json",

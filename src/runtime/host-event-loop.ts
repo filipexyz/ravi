@@ -129,6 +129,16 @@ function truncateLiveSummary(value: unknown, maxLength = 180): string | undefine
   return text || undefined;
 }
 
+function appendAssistantResponse(current: string, next: string): string {
+  const trimmed = next.trim();
+  if (!trimmed) return current;
+  return current ? `${current}\n\n${trimmed}` : trimmed;
+}
+
+function isCommentaryResponse(metadata: RuntimeEventMetadata | undefined): boolean {
+  return metadata?.item?.phase === "commentary";
+}
+
 function summarizeRuntimeFailureRawEvent(rawEvent?: Record<string, unknown>): Record<string, unknown> | undefined {
   if (!rawEvent) return undefined;
 
@@ -1582,7 +1592,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               provider: runtimeSession.provider,
             });
           } else {
-            responseText += messageText;
+            if (!isCommentaryResponse(event.metadata)) {
+              responseText = appendAssistantResponse(responseText, messageText);
+            }
             ensureCurrentTurnUserObservation();
             pushObservationEvent("message.assistant", {
               preview: truncateObservationPreview(messageText),

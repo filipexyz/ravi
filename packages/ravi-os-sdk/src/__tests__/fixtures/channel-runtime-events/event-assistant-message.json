@@ -12,20 +12,19 @@
     "correlationId": "correlation-a",
     "ingressRequestId": "request-a"
   },
-  "eventId": "event-terminal",
-  "kind": "turn.terminal_output",
+  "eventId": "event-assistant-message",
+  "kind": "turn.assistant_message",
   "occurredAt": "2026-07-24T18:00:01.000Z",
   "payload": {
-    "assistantMessageId": "message-assistant-a",
     "content": [
       {
-        "text": "fixture output",
+        "text": "fixture progress",
         "type": "text"
       }
     ],
-    "state": "completed"
+    "phase": "commentary"
   },
   "protocol": "ravi.channel.runtime-events",
   "schemaVersion": 1,
-  "sequence": 7
+  "sequence": 3
 }

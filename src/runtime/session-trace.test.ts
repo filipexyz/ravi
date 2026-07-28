@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { saveMessage } from "../db.js";
+import { getRecentHistory, saveMessage } from "../db.js";
 import { nats } from "../nats.js";
 import { attachChatToSession } from "../router/sessions.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
@@ -1150,6 +1150,48 @@ describe("runtime session trace instrumentation", () => {
       "assistant.message",
       "turn.complete",
     ]);
+  });
+
+  it("persists final assistant output without concatenating commentary", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-final-with-commentary");
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "assistant.message",
+          text: "Checking the durable state.",
+          metadata: {
+            item: {
+              id: "commentary-a",
+              phase: "commentary",
+            },
+          },
+        },
+        {
+          type: "assistant.message",
+          text: "Final answer only.",
+          metadata: {
+            item: {
+              id: "final-a",
+              phase: "final_answer",
+            },
+          },
+        },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+    );
+
+    expect(
+      getRecentHistory(SESSION_NAME)
+        .filter(({ role }) => role === "assistant")
+        .map(({ content }) => content),
+    ).toEqual(["Final answer only."]);
   });
 
   it("records provider turn interruptions as terminal interrupted turns", async () => {

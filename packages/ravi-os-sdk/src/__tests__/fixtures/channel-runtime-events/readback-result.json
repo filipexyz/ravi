@@ -8,7 +8,7 @@
     "sessionId": "session-a",
     "turnId": "turn-a"
   },
-  "lastSequence": 6,
+  "lastSequence": 7,
   "observedAt": "2026-07-24T18:00:01.000Z",
   "protocol": "ravi.channel.runtime-events",
   "requestId": "readback-a",
