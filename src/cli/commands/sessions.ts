@@ -67,6 +67,7 @@ import {
 import { getDefaultModelForProvider } from "../../runtime/model-catalog.js";
 import type { ChannelContext, ResponseMessage, SessionRelayAction } from "../../runtime/message-types.js";
 import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
+import { toPersistedChannelContext } from "../../channels/context.js";
 import {
   CHAT_ACTION_DESCRIPTORS,
   resolveChatActionAvailability,
@@ -5255,7 +5256,7 @@ export class SessionCommands {
 
     if (session.lastContext) {
       try {
-        context = JSON.parse(session.lastContext) as ChannelContext;
+        context = toPersistedChannelContext(JSON.parse(session.lastContext) as ChannelContext);
       } catch {
         /* ignore */
       }

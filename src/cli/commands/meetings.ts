@@ -452,25 +452,13 @@ function buildNativeMeetingRuntimeSessionPlan(input: {
       lastAccountId: GOOGLE_MEET_PROVIDER_ID,
       lastTo: providerMeetingId,
     });
-    updateSessionContext(
-      sessionKey,
-      JSON.stringify({
-        channelId: MEETING_CHANNEL_ID,
-        channelName: "Meet",
-        isGroup: true,
-        groupId: providerMeetingId,
-        groupName: title,
-        meeting: {
-          provider: GOOGLE_MEET_PROVIDER_ID,
-          providerMeetingId,
-          url: input.url,
-          bridgeDir,
-          originSessionKey: input.origin.sessionKey ?? null,
-          originSessionName: input.origin.sessionName ?? null,
-          originAgentId: input.origin.agentId ?? null,
-        },
-      }),
-    );
+    updateSessionContext(sessionKey, {
+      channelId: MEETING_CHANNEL_ID,
+      channelName: "Meet",
+      isGroup: true,
+      groupId: providerMeetingId,
+      groupName: title,
+    });
   }
 
   return {

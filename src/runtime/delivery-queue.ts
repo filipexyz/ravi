@@ -35,6 +35,12 @@ export function createQueuedRuntimeUserMessage(prompt: RuntimePromptDeliveryMess
   };
 }
 
+export function hasIsolatedRuntimeTurnEnvelope(
+  prompt: Pick<RuntimeLaunchPrompt, "_channelBackend" | "_turnOrigin"> | null | undefined,
+): boolean {
+  return prompt?._channelBackend !== undefined || prompt?._turnOrigin !== undefined;
+}
+
 function cloneRuntimeLaunchPrompt(prompt: RuntimePromptDeliveryMessage): RuntimeLaunchPrompt {
   return {
     ...prompt,
@@ -97,9 +103,9 @@ export function getDeliverableRuntimeMessages(
     ),
   );
   // These envelopes bind authority to one logical turn. Never let adjacent
-  // messages borrow their channel binding or authenticated origin.
-  const firstIsolatedTurnIndex = deliverable.findIndex(
-    (message) => message.launchPrompt?._channelBackend !== undefined || message.launchPrompt?._turnOrigin !== undefined,
+  // messages borrow their channel binding or validated internal origin.
+  const firstIsolatedTurnIndex = deliverable.findIndex((message) =>
+    hasIsolatedRuntimeTurnEnvelope(message.launchPrompt),
   );
   if (firstIsolatedTurnIndex === 0) {
     return deliverable.slice(0, 1);

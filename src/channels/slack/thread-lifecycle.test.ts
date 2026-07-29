@@ -103,6 +103,13 @@ describe("Slack thread lifecycle", () => {
       lastAccountId: "ravi-slack",
       lastThreadId: fixture.threadTs,
     });
+    expect(JSON.parse(child!.lastContext!)).toEqual({
+      channelId: "slack",
+      channelName: "Slack",
+      isGroup: true,
+      groupName: "C123",
+      groupId: "C123",
+    });
     expect(listSessionSubscriptions(child!.sessionKey)).toEqual([
       expect.objectContaining({
         role: "primary",
