@@ -118,6 +118,8 @@ export interface RuntimeHostStreamingSession {
   traceRunId?: string;
   /** Pending message ids yielded to the currently active provider turn. */
   currentTurnPendingIds?: string[];
+  /** Whether a newer prompt intentionally preempted the active provider turn. */
+  currentTurnSuperseded?: boolean;
   /** Whether the current provider turn has started at least one tool. Used to block unsafe replay. */
   currentTurnToolStarted?: boolean;
   /** Current Session Trace turn ID while a provider turn is active. */
@@ -150,13 +152,14 @@ export function stashPendingRuntimeMessages(
   session: RuntimeHostStreamingSession,
   stashedMessages: Map<string, RuntimeUserMessage[]>,
 ): void {
-  if (session.pendingMessages.length === 0) {
+  const replayableMessages = getReplayablePendingRuntimeMessages(session);
+  if (replayableMessages.length === 0) {
     return;
   }
 
   stashedMessages.set(
     sessionName,
-    session.pendingMessages.map((message) => ({ ...message })),
+    replayableMessages.map((message) => ({ ...message })),
   );
 }
 
@@ -170,9 +173,11 @@ export function stashCurrentTurnRuntimeMessages(
     return 0;
   }
 
-  const messages = session.pendingMessages
-    .filter((message) => message.pendingId && currentTurnPendingIds.has(message.pendingId))
-    .map((message) => ({ ...message }));
+  const messages = (
+    session.currentTurnSuperseded
+      ? getReplayablePendingRuntimeMessages(session)
+      : session.pendingMessages.filter((message) => message.pendingId && currentTurnPendingIds.has(message.pendingId))
+  ).map((message) => ({ ...message }));
 
   if (messages.length === 0) {
     return 0;
@@ -180,6 +185,21 @@ export function stashCurrentTurnRuntimeMessages(
 
   stashedMessages.set(sessionName, messages);
   return messages.length;
+}
+
+export function getReplayablePendingRuntimeMessages(session: RuntimeHostStreamingSession): RuntimeUserMessage[] {
+  if (!session.currentTurnSuperseded) {
+    return session.pendingMessages;
+  }
+
+  const currentTurnPendingIds = new Set(session.currentTurnPendingIds ?? []);
+  if (currentTurnPendingIds.size === 0) {
+    return session.pendingMessages;
+  }
+
+  return session.pendingMessages.filter(
+    (message) => !message.pendingId || !currentTurnPendingIds.has(message.pendingId),
+  );
 }
 
 export function shutdownRuntimeStreamingSession(session: RuntimeHostStreamingSession, reason?: string): void {

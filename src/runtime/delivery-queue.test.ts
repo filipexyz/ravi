@@ -5,7 +5,11 @@ import {
   getDeliverableRuntimeMessages,
   shouldInterruptRuntimeForIncoming,
 } from "./delivery-queue.js";
-import { shutdownRuntimeStreamingSession } from "./host-session.js";
+import {
+  shutdownRuntimeStreamingSession,
+  stashCurrentTurnRuntimeMessages,
+  stashPendingRuntimeMessages,
+} from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeSessionHandle } from "./types.js";
@@ -172,6 +176,84 @@ describe("runtime delivery queue", () => {
       interrupt: true,
       reason: "response",
     });
+  });
+
+  it("delivers the steering prompt next instead of replaying the superseded channel turn", async () => {
+    const active = createQueuedRuntimeUserMessage(channelPrompt("implement the old plan", "turn-a"));
+    const steering = createQueuedRuntimeUserMessage(channelPrompt("stop and use the new plan", "turn-b"));
+    const session = makeStreamingSession({
+      pendingMessages: [active],
+    });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+    });
+
+    const first = await generator.next();
+    expect(first.value).toMatchObject({
+      message: { content: "implement the old plan" },
+    });
+
+    session.pendingMessages.push(steering);
+    session.currentTurnSuperseded = true;
+    session.interrupted = true;
+    session.turnActive = false;
+    session.onTurnComplete?.();
+
+    const second = await generator.next();
+    expect(second.value).toMatchObject({
+      message: { content: "stop and use the new plan" },
+    });
+    expect(session.pendingMessages).toEqual([steering]);
+
+    session.done = true;
+    session.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
+  it("replays the active prompt after an unexpected provider interruption", async () => {
+    const active = createQueuedRuntimeUserMessage(channelPrompt("keep this work", "turn-a"));
+    const session = makeStreamingSession({
+      pendingMessages: [active],
+    });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+    });
+
+    await generator.next();
+    session.interrupted = true;
+    session.turnActive = false;
+    session.onTurnComplete?.();
+
+    const replay = await generator.next();
+    expect(replay.value).toMatchObject({
+      message: { content: "keep this work" },
+    });
+    expect(session.pendingMessages).toEqual([active]);
+
+    session.done = true;
+    session.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
+  it("stashes only the successor when an interrupted turn was intentionally superseded", () => {
+    const active = createQueuedRuntimeUserMessage(channelPrompt("old work", "turn-a"));
+    const steering = createQueuedRuntimeUserMessage(channelPrompt("new direction", "turn-b"));
+    const session = makeStreamingSession({
+      pendingMessages: [active, steering],
+      currentTurnPendingIds: [active.pendingId!],
+      currentTurnSuperseded: true,
+    });
+    const pendingStash = new Map();
+    const currentTurnStash = new Map();
+
+    stashPendingRuntimeMessages("dev", session, pendingStash);
+    expect(pendingStash.get("dev")).toEqual([steering]);
+    expect(stashCurrentTurnRuntimeMessages("dev", session, currentTurnStash)).toBe(1);
+    expect(currentTurnStash.get("dev")).toEqual([steering]);
   });
 
   it("delivers at most one channel backend message in a local runtime turn", () => {

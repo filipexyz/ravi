@@ -2,7 +2,11 @@ import { DEFAULT_DELIVERY_BARRIER, type DeliveryBarrier } from "../delivery-barr
 import type { RuntimeTraceTurnStartResult } from "../session-trace/runtime-trace.js";
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
-import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
+import {
+  getReplayablePendingRuntimeMessages,
+  type RuntimeHostStreamingSession,
+  type RuntimeUserMessage,
+} from "./host-session.js";
 import type { RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimePromptMessage } from "./types.js";
 
@@ -225,6 +229,7 @@ export async function* createRuntimeMessageGenerator({
       deliverable.map((message) => message.pendingId).filter((pendingId): pendingId is string => Boolean(pendingId)),
     );
     session.currentTurnPendingIds = [...yieldedIds];
+    session.currentTurnSuperseded = false;
     const combined = deliverable.map((m) => m.message.content).join("\n\n");
     log.info("Generator: yielding", {
       sessionName,
@@ -280,8 +285,17 @@ export async function* createRuntimeMessageGenerator({
 
     await turnCompleted;
 
-    if (session.interrupted) {
-      log.info("Generator: turn interrupted, keeping queue", {
+    if (session.interrupted && session.currentTurnSuperseded) {
+      const queuedBefore = session.pendingMessages.length;
+      session.pendingMessages = getReplayablePendingRuntimeMessages(session);
+      log.info("Generator: superseded turn interrupted, releasing successor", {
+        sessionName,
+        cleared: queuedBefore - session.pendingMessages.length,
+        remaining: session.pendingMessages.length,
+      });
+      session.interrupted = false;
+    } else if (session.interrupted) {
+      log.info("Generator: provider interrupted unexpectedly, keeping queue for replay", {
         sessionName,
         count: session.pendingMessages.length,
       });
@@ -297,5 +311,6 @@ export async function* createRuntimeMessageGenerator({
       });
     }
     session.currentTurnPendingIds = undefined;
+    session.currentTurnSuperseded = false;
   }
 }

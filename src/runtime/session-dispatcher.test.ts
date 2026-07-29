@@ -616,6 +616,14 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-active", reason: "test", createdAt: now });
 
       const dispatcher = createDispatcher(2);
+      const supersededMessage = createQueuedRuntimeUserMessage({
+        prompt: "superseded user work",
+        deliveryBarrier: "after_tool",
+      });
+      const queuedMessage = createQueuedRuntimeUserMessage({
+        prompt: "queued user work",
+        deliveryBarrier: "after_response",
+      });
       dispatcher.streamingSessions.set(
         "restart-active",
         createActiveSession({
@@ -632,12 +640,9 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
             rawSenderId: "178035101794451",
             normalizedSenderId: "5511947879044",
           },
-          pendingMessages: [
-            createQueuedRuntimeUserMessage({
-              prompt: "queued user work",
-              deliveryBarrier: "after_response",
-            }),
-          ],
+          pendingMessages: [supersededMessage, queuedMessage],
+          currentTurnPendingIds: [supersededMessage.pendingId!],
+          currentTurnSuperseded: true,
         }),
       );
       dispatcher.streamingSessions.set(
@@ -879,12 +884,19 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         sourceMessageId: "1783105248.141999",
       };
       const interrupt = mock(async () => {});
+      const activeMessage = createQueuedRuntimeUserMessage({
+        prompt: "active work",
+        deliveryBarrier: "after_tool",
+        source: activeSource,
+      });
       const dispatcher = createDispatcher(2);
       const activeSession = createActiveSession({
         agentId: "main",
         turnActive: true,
         currentEffort: "xhigh",
         currentSource: activeSource,
+        pendingMessages: [activeMessage],
+        currentTurnPendingIds: [activeMessage.pendingId!],
         queryHandle: {
           provider: "codex",
           events: (async function* () {})(),
@@ -915,9 +927,10 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       });
 
       expect(activeSession.currentSource).toEqual(activeSource);
-      expect(activeSession.pendingMessages).toHaveLength(1);
-      expect(activeSession.pendingMessages[0]?.deliveryBarrier).toBe("after_tool");
-      expect(activeSession.pendingMessages[0]?.launchPrompt?.source).toEqual(slackSource);
+      expect(activeSession.pendingMessages).toHaveLength(2);
+      expect(activeSession.pendingMessages[1]?.deliveryBarrier).toBe("after_tool");
+      expect(activeSession.pendingMessages[1]?.launchPrompt?.source).toEqual(slackSource);
+      expect(activeSession.currentTurnSuperseded).toBe(true);
       expect(activeSession.interrupted).toBe(true);
       expect(interrupt).toHaveBeenCalledTimes(1);
     } finally {
