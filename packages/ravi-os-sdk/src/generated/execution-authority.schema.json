@@ -2233,7 +2233,7 @@
   },
   "protocol": "ravi.execution.authority",
   "schemaVersion": 1,
-  "sourceDigest": "6b805f9e92d13a078daa09ac37383b290b92928925301401356ae6d8a71d791e",
+  "sourceDigest": "b157659a853cccc64e7586321c92c9b997bdfaa2b4f6fd4824311214901e58f6",
   "sourcePath": "packages/ravi-os-sdk/src/execution-authority.ts",
   "title": "Ravi neutral execution authority contract"
 }
