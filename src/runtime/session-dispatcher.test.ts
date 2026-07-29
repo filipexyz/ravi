@@ -1,4 +1,5 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { nats } from "../nats.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import {
   RuntimeSessionDispatcher,
@@ -10,6 +11,7 @@ import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { RuntimeHostSubscriptions } from "./host-subscriptions.js";
 import type { RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
+import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
 import { deleteSession, getOrCreateSession, getSessionByName, setSessionEphemeral } from "../router/sessions.js";
 import {
@@ -29,6 +31,7 @@ function createDispatcher(maxConcurrentSessions = 10, interactiveReservedSession
     maxConcurrentSessions,
     interactiveReservedSessions,
     safeEmit: async () => {},
+    notifyRuntimeRecoveryExhausted: async () => {},
     getConfigModel: () => "test-model",
   });
 }
@@ -205,8 +208,15 @@ describe("RuntimeSessionDispatcher debounce", () => {
 });
 
 describe("RuntimeSessionDispatcher runtime recovery", () => {
-  it("stops replaying a stashed turn after repeated event-loop closures", async () => {
+  afterEach(() => mock.restore());
+
+  it("suppresses the channel response and alerts the operator after repeated event-loop closures", async () => {
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const channelResponses: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const alerts: RuntimeRecoveryExhaustedAlertInput[] = [];
+    spyOn(nats, "emit").mockImplementation(async (topic, data) => {
+      if (topic.endsWith(".response")) channelResponses.push({ topic, data });
+    });
     const dispatcher = new RuntimeSessionDispatcher({
       instanceId: "test",
       maxConcurrentSessions: 10,
@@ -214,11 +224,20 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
       safeEmit: async (topic, data) => {
         emitted.push({ topic, data });
       },
+      notifyRuntimeRecoveryExhausted: async (input) => {
+        alerts.push(input);
+      },
       getConfigModel: () => "test-model",
     });
     dispatcher.stashedMessages.set("recovery-loop", [
       createQueuedRuntimeUserMessage({
         prompt: "retry me",
+        source: {
+          channel: "slack",
+          accountId: "main",
+          chatId: "C123",
+          sourceMessageId: "message-123",
+        },
         _agentId: "main",
       }),
     ]);
@@ -236,6 +255,17 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
     await recovery.restartStashedSession("recovery-loop", "runtime_event_loop_closed");
 
     expect(starts).toBe(2);
+    expect(channelResponses).toEqual([]);
+    expect(dispatcher.stashedMessages.has("recovery-loop")).toBe(true);
+    expect(alerts).toEqual([
+      expect.objectContaining({
+        sessionName: "recovery-loop",
+        reason: "runtime_event_loop_closed",
+        restartAttempts: 2,
+        stashedQueueSize: 1,
+        sourceMessageId: "message-123",
+      }),
+    ]);
     expect(emitted).toHaveLength(1);
     expect(emitted[0]).toMatchObject({
       topic: "ravi.session.recovery-loop.runtime",
@@ -243,6 +273,9 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
         type: "dispatch.restart_suppressed",
         reason: "runtime_event_loop_closed",
         restartAttempts: 2,
+        stashedQueueSize: 1,
+        resumeStashedMessages: true,
+        userResponseSuppressed: true,
       },
     });
   });
