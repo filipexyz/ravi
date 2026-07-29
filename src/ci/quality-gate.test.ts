@@ -314,6 +314,10 @@ describe("runCoverageGate", () => {
     const covered = runCoverageGate(["src/channels/slack/socket-mode.ts", "src/channels/slack/socket-mode.test.ts"]);
     const healthCovered = runCoverageGate(["src/channels/health.ts", "src/channels/health.test.ts"]);
     const mediaCovered = runCoverageGate(["src/channels/slack/media.ts", "src/channels/slack/media.test.ts"]);
+    const sessionPromptCovered = runCoverageGate([
+      "src/channels/session-prompt.ts",
+      "src/channels/session-prompt.test.ts",
+    ]);
 
     expect(missing.ok).toBe(false);
     expect(missing.triggeredPrefixes).toEqual(["src/channels/", "src/channels/slack/socket-mode.ts"]);
@@ -323,6 +327,8 @@ describe("runCoverageGate", () => {
     expect(healthCovered.ok).toBe(true);
     expect(mediaCovered.ok).toBe(true);
     expect(mediaCovered.triggeredPrefixes).toEqual(["src/channels/"]);
+    expect(sessionPromptCovered.ok).toBe(true);
+    expect(sessionPromptCovered.triggeredPrefixes).toEqual(["src/channels/"]);
   });
 
   it("passes when the session stream focused test is in the diff", () => {
