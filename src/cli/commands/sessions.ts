@@ -65,7 +65,8 @@ import {
   listRegisteredRuntimeProviderIds,
 } from "../../runtime/provider-registry.js";
 import { getDefaultModelForProvider } from "../../runtime/model-catalog.js";
-import type { ChannelContext, ResponseMessage } from "../../runtime/message-types.js";
+import type { ChannelContext, ResponseMessage, SessionRelayAction } from "../../runtime/message-types.js";
+import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
 import {
   CHAT_ACTION_DESCRIPTORS,
   resolveChatActionAvailability,
@@ -4230,6 +4231,7 @@ export class SessionCommands {
     } else {
       try {
         await this.emitToSession(
+          "send",
           sessionName,
           fullPrompt,
           session,
@@ -4322,7 +4324,16 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
+    await this.emitToSession(
+      "ask",
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      deliveryBarrier,
+      delivery.source,
+    );
     if (asJson) {
       const payload = {
         action: "ask",
@@ -4395,7 +4406,16 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
+    await this.emitToSession(
+      "answer",
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      deliveryBarrier,
+      delivery.source,
+    );
     if (asJson) {
       const payload = {
         action: "answer",
@@ -4460,7 +4480,16 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
+    await this.emitToSession(
+      "execute",
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      deliveryBarrier,
+      delivery.source,
+    );
     if (asJson) {
       const payload = {
         action: "execute",
@@ -4524,7 +4553,16 @@ export class SessionCommands {
     const deliveryBarrier = delivery.barrier;
     const { source, context } = this.resolveSource(session, channel, to);
 
-    await this.emitToSession(session.name ?? target, prompt, session, channel, to, deliveryBarrier, delivery.source);
+    await this.emitToSession(
+      "inform",
+      session.name ?? target,
+      prompt,
+      session,
+      channel,
+      to,
+      deliveryBarrier,
+      delivery.source,
+    );
     if (asJson) {
       const payload = {
         action: "inform",
@@ -5267,9 +5305,10 @@ export class SessionCommands {
   }
 
   /**
-   * Fire-and-forget emit to a session (for ask/answer/execute/inform).
+   * Fire-and-forget emit to a session.
    */
   private async emitToSession(
+    action: SessionRelayAction,
     sessionName: string,
     prompt: string,
     session: SessionEntry,
@@ -5292,6 +5331,7 @@ export class SessionCommands {
       deliveryBarrier,
       deliveryBarrierSource,
       ...(promptPayload ?? {}),
+      _turnOrigin: buildSessionRelayTurnOrigin(action, getContext()),
     } as Record<string, unknown>);
   }
 
@@ -5418,6 +5458,7 @@ export class SessionCommands {
       deliveryBarrier,
       deliveryBarrierSource,
       ...(options.promptPayload ?? {}),
+      _turnOrigin: buildSessionRelayTurnOrigin("send", getContext()),
     } as Record<string, unknown>);
 
     const completionState = await completion;

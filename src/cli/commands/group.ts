@@ -40,6 +40,7 @@ import { ensureAgentInstructionFiles } from "../../runtime/agent-instructions.js
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
 import { ensureAgentCanViewAgent } from "../../permissions/agent-default-capabilities-provider.js";
+import { buildSystemTurnOrigin } from "../../runtime/turn-origin.js";
 import { nats } from "../../nats.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1265,6 +1266,7 @@ export class GroupCommands {
             accountId: acctId,
             chatId: `group:${groupId}`,
           },
+          _turnOrigin: buildSystemTurnOrigin("whatsapp.group.create"),
         });
         jsonPayload.inform = { status: "sent", sessionName: session.name ?? sessionName };
         if (!asJson) console.log(`  Inform:       sent`);

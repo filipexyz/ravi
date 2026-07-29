@@ -588,6 +588,57 @@ describe("SessionCommands delivery barriers", () => {
     expect(publishedPrompts).toHaveLength(1);
     expect(publishedPrompts[0]?.payload.deliveryBarrier).toBe("after_response");
     expect(publishedPrompts[0]?.payload.deliveryBarrierSource).toBe("default");
+    expect(publishedPrompts[0]?.payload._turnOrigin).toMatchObject({
+      protocol: "ravi.runtime.turn-origin",
+      schemaVersion: 1,
+      producer: "session-relay",
+      action: "send",
+      principal: {
+        type: "automation",
+        id: "operator:local",
+      },
+    });
+  });
+
+  it("publishes authenticated origin for every session relay action", async () => {
+    toolContext = {
+      suppressCliOutput: true,
+      agentId: "origin-agent",
+      sessionKey: "agent:origin-agent:main",
+      sessionName: "origin",
+    };
+    const commands = new SessionCommands();
+
+    await commands.send("dev", "send");
+    await commands.ask("dev", "ask", "display-only");
+    await commands.answer("dev", "answer", "display-only");
+    await commands.execute("dev", "execute");
+    await commands.inform("dev", "inform");
+
+    expect(publishedPrompts).toHaveLength(5);
+    expect(
+      publishedPrompts.map(({ payload }) => ({
+        action: (payload._turnOrigin as Record<string, unknown>).action,
+        principal: (payload._turnOrigin as Record<string, unknown>).principal,
+      })),
+    ).toEqual([
+      { action: "send", principal: { type: "agent", id: "origin-agent" } },
+      { action: "ask", principal: { type: "agent", id: "origin-agent" } },
+      { action: "answer", principal: { type: "agent", id: "origin-agent" } },
+      { action: "execute", principal: { type: "agent", id: "origin-agent" } },
+      { action: "inform", principal: { type: "agent", id: "origin-agent" } },
+    ]);
+    for (const { payload } of publishedPrompts) {
+      expect(payload._turnOrigin).toMatchObject({
+        protocol: "ravi.runtime.turn-origin",
+        schemaVersion: 1,
+        producer: "session-relay",
+        session: {
+          key: "agent:origin-agent:main",
+          name: "origin",
+        },
+      });
+    }
   });
 
   it("returns a structured receipt when invoked through the SDK gateway context", async () => {
