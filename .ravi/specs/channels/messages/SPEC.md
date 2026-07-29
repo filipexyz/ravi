@@ -83,3 +83,26 @@ Replies, quotes and mentions MUST resolve to canonical references when possible 
 New outbound agent messages MUST preserve the stable origin session key as a
 queryable field. A mutable session-action target MUST NOT be inferred from
 agent identity alone.
+
+## Runtime Admission
+
+Canonical channel storage and runtime prompt admission are separate
+operations.
+
+- Receiving, storing, synchronizing, editing, reacting to, or delivering a
+  `ChannelMessage` MUST NOT by itself create a provider turn.
+- A native channel provider MUST explicitly admit an inbound message or
+  action to `ChannelBackend` before Ravi materializes a canonical prompt turn.
+- Provider admission SHOULD be based on explicit execution intent such as a
+  direct agent surface, mention, command, interactive action, or configured
+  automation.
+- Ordinary conversation that is not admitted MAY remain fully available to
+  the channel product without a Ravi session or provider invocation.
+- Replaying canonical channel history MUST NOT retroactively admit a prompt
+  turn.
+- Admission identity and idempotency MUST remain stable across delivery
+  retries. One admitted intent MUST materialize at most one canonical prompt
+  turn.
+- The provider decides whether a product message is execution intent; the
+  generic backend MUST NOT infer private product policy from text, channel
+  membership, or participant ordering.
