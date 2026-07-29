@@ -12,7 +12,7 @@ import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { buildRuntimeRequestContext, refreshRuntimeRequestContextForTurn } from "./runtime-request-context.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
-import { buildSessionRelayTurnOrigin, buildSystemTurnOrigin } from "./turn-origin.js";
+import { buildChannelTurnOrigin, buildSessionRelayTurnOrigin } from "./turn-origin.js";
 
 let stateDir: string | null = null;
 
@@ -868,19 +868,22 @@ describe("runtime request context authority", () => {
     expect(runtimeContext.capabilities).toHaveLength(0);
   });
 
-  it("runs system lifecycle prompts under a typed automation origin", () => {
+  it("runs provider-neutral channel lifecycle prompts under a typed automation origin", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
 
     const prompt: RuntimeLaunchPrompt = {
       prompt: "[System] Inform: introduce yourself",
       source: {
-        channel: "whatsapp",
+        channel: "telegram",
         accountId: "main",
-        chatId: "test-group@g.us",
+        chatId: "test-group",
         canonicalChatId: "chat_group_1",
       },
-      _turnOrigin: buildSystemTurnOrigin("whatsapp.group.create"),
+      _turnOrigin: buildChannelTurnOrigin("session.bootstrap", {
+        type: "automation",
+        id: "channels:session.bootstrap",
+      }),
     };
 
     const { runtimeContext } = buildRuntimeRequestContext({
@@ -896,9 +899,13 @@ describe("runtime request context authority", () => {
     });
 
     expect(runtimeContext.metadata).toMatchObject({
-      actorPrincipal: "automation:whatsapp.group.create",
+      actorPrincipal: "automation:channels:session.bootstrap",
       actorResolution: "resolved",
       agentIdentityCompartment: "chat:chat_group_1",
+      turnOrigin: {
+        producer: "channel",
+        action: "session.bootstrap",
+      },
       turnProvenance: {
         origin: "system",
         background: true,

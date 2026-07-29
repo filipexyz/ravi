@@ -155,20 +155,18 @@ export interface SessionRelayTurnOriginMetadata extends RuntimeTurnOriginEnvelop
   };
 }
 
-export interface SystemTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
-  producer: "system";
-  action: "whatsapp.group.create";
-  principal: {
-    type: "automation";
-    id: "whatsapp.group.create";
-  };
+export type ChannelTurnAction = "session.bootstrap" | "session.return";
+
+export interface ChannelTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
+  producer: "channel";
+  action: ChannelTurnAction;
 }
 
 /**
  * Authenticated cause of an internal turn. This is authority provenance only;
  * `source` and `context` continue to describe its reply surface.
  */
-export type RuntimeTurnOriginMetadata = SessionRelayTurnOriginMetadata | SystemTurnOriginMetadata;
+export type RuntimeTurnOriginMetadata = SessionRelayTurnOriginMetadata | ChannelTurnOriginMetadata;
 
 /** Prompt message structure */
 export interface PromptMessage {

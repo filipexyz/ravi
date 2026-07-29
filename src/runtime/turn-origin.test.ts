@@ -1,5 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { buildSessionRelayTurnOrigin, buildSystemTurnOrigin, resolveRuntimeTurnOrigin } from "./turn-origin.js";
+import {
+  buildChannelTurnOrigin,
+  buildRuntimeCallerPrincipal,
+  buildSessionRelayTurnOrigin,
+  resolveRuntimeTurnOrigin,
+} from "./turn-origin.js";
 
 describe("runtime turn origin", () => {
   it("builds an agent-authenticated session relay envelope", () => {
@@ -34,9 +39,30 @@ describe("runtime turn origin", () => {
     });
   });
 
+  it("derives the same authenticated caller principal for any internal producer", () => {
+    expect(buildRuntimeCallerPrincipal({ agentId: "origin-agent" })).toEqual({
+      type: "agent",
+      id: "origin-agent",
+    });
+    expect(buildRuntimeCallerPrincipal({ sessionKey: "agent:origin-agent:main" })).toEqual({
+      type: "automation",
+      id: "session:agent:origin-agent:main",
+    });
+  });
+
   it("accepts only known producer and action combinations", () => {
-    expect(resolveRuntimeTurnOrigin(buildSystemTurnOrigin("whatsapp.group.create"))).toEqual(
-      buildSystemTurnOrigin("whatsapp.group.create"),
+    expect(
+      resolveRuntimeTurnOrigin(
+        buildChannelTurnOrigin("session.bootstrap", {
+          type: "automation",
+          id: "operator:local",
+        }),
+      ),
+    ).toEqual(
+      buildChannelTurnOrigin("session.bootstrap", {
+        type: "automation",
+        id: "operator:local",
+      }),
     );
     expect(
       resolveRuntimeTurnOrigin({
@@ -45,6 +71,15 @@ describe("runtime turn origin", () => {
         producer: "session-relay",
         action: "grant",
         principal: { type: "agent", id: "origin-agent" },
+      }),
+    ).toBeNull();
+    expect(
+      resolveRuntimeTurnOrigin({
+        protocol: "ravi.runtime.turn-origin",
+        schemaVersion: 1,
+        producer: "channel",
+        action: "whatsapp.group.create",
+        principal: { type: "automation", id: "operator:local" },
       }),
     ).toBeNull();
     expect(

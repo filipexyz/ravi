@@ -1,14 +1,17 @@
 import type {
+  ChannelTurnAction,
+  ChannelTurnOriginMetadata,
+  RuntimeTurnOriginPrincipal,
   RuntimeTurnOriginMetadata,
   SessionRelayAction,
   SessionRelayTurnOriginMetadata,
-  SystemTurnOriginMetadata,
 } from "./message-types.js";
 
 export const RUNTIME_TURN_ORIGIN_PROTOCOL = "ravi.runtime.turn-origin" as const;
 export const RUNTIME_TURN_ORIGIN_SCHEMA_VERSION = 1 as const;
 
 const SESSION_RELAY_ACTIONS = new Set<SessionRelayAction>(["send", "ask", "answer", "execute", "inform"]);
+const CHANNEL_TURN_ACTIONS = new Set<ChannelTurnAction>(["session.bootstrap", "session.return"]);
 
 export interface SessionRelayOriginContext {
   agentId?: string;
@@ -33,23 +36,31 @@ export function buildSessionRelayTurnOrigin(
     schemaVersion: RUNTIME_TURN_ORIGIN_SCHEMA_VERSION,
     producer: "session-relay",
     action,
-    principal: agentId
-      ? { type: "agent", id: agentId }
-      : { type: "automation", id: sessionKey ? `session:${sessionKey}` : "operator:local" },
+    principal: buildRuntimeCallerPrincipal({ agentId, sessionKey, sessionName }),
     ...(session ? { session } : {}),
   };
 }
 
-export function buildSystemTurnOrigin(action: SystemTurnOriginMetadata["action"]): SystemTurnOriginMetadata {
+export function buildRuntimeCallerPrincipal(context?: SessionRelayOriginContext): RuntimeTurnOriginPrincipal {
+  const agentId = cleanString(context?.agentId);
+  if (agentId) return { type: "agent", id: agentId };
+  const sessionKey = cleanString(context?.sessionKey);
+  return { type: "automation", id: sessionKey ? `session:${sessionKey}` : "operator:local" };
+}
+
+export function buildChannelTurnOrigin(
+  action: ChannelTurnAction,
+  principal: RuntimeTurnOriginPrincipal,
+): ChannelTurnOriginMetadata {
+  if (!isChannelTurnAction(action)) throw new Error(`Unsupported channel turn action: ${action}`);
+  const resolvedPrincipal = resolvePrincipal(principal);
+  if (!resolvedPrincipal) throw new Error("Channel turn origin requires a valid principal");
   return {
     protocol: RUNTIME_TURN_ORIGIN_PROTOCOL,
     schemaVersion: RUNTIME_TURN_ORIGIN_SCHEMA_VERSION,
-    producer: "system",
+    producer: "channel",
     action,
-    principal: {
-      type: "automation",
-      id: action,
-    },
+    principal: resolvedPrincipal,
   };
 }
 
@@ -78,21 +89,13 @@ export function resolveRuntimeTurnOrigin(value: unknown): RuntimeTurnOriginMetad
     };
   }
 
-  if (
-    value.producer === "system" &&
-    value.action === "whatsapp.group.create" &&
-    principal.type === "automation" &&
-    principal.id === "whatsapp.group.create"
-  ) {
+  if (value.producer === "channel" && isChannelTurnAction(value.action)) {
     return {
       protocol: RUNTIME_TURN_ORIGIN_PROTOCOL,
       schemaVersion: RUNTIME_TURN_ORIGIN_SCHEMA_VERSION,
-      producer: "system",
-      action: "whatsapp.group.create",
-      principal: {
-        type: "automation",
-        id: "whatsapp.group.create",
-      },
+      producer: "channel",
+      action: value.action,
+      principal,
     };
   }
 
@@ -118,6 +121,10 @@ function resolveSession(value: unknown): SessionRelayTurnOriginMetadata["session
 
 function isSessionRelayAction(value: unknown): value is SessionRelayAction {
   return typeof value === "string" && SESSION_RELAY_ACTIONS.has(value as SessionRelayAction);
+}
+
+function isChannelTurnAction(value: unknown): value is ChannelTurnAction {
+  return typeof value === "string" && CHANNEL_TURN_ACTIONS.has(value as ChannelTurnAction);
 }
 
 function cleanString(value: unknown): string | undefined {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { nats } from "../../nats.js";
 import { publishSessionPrompt, type PublishSessionPromptOptions } from "../../omni/session-stream.js";
+import { publishChannelSessionPrompt } from "../session-prompt.js";
 import {
   attachChatToSession,
   ensureUniqueName,
@@ -21,7 +22,12 @@ import {
   dbUpsertChat,
 } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
-import type { MessageContext, MessageTarget } from "../../runtime/message-types.js";
+import type {
+  ChannelTurnAction,
+  MessageContext,
+  MessageTarget,
+  RuntimeTurnOriginPrincipal,
+} from "../../runtime/message-types.js";
 import { logger } from "../../utils/logger.js";
 import {
   claimSlackThreadCreation,
@@ -100,12 +106,21 @@ export async function finalizeSlackThreadCreation(
 
   try {
     const materialized = materializeSlackThreadChild(record);
-    await dependencies.publishPrompt(
-      materialized.childSessionName,
-      buildSlackThreadInitialPrompt(record, materialized),
+    await publishChannelSessionPrompt(
       {
-        messageId: `slack-thread-start:${record.requestId}`,
+        sessionName: materialized.childSessionName,
+        action: "session.bootstrap",
+        principal: resolveChannelLifecyclePrincipal(
+          "session.bootstrap",
+          record.initiatorSessionKey ?? record.parentSessionKey,
+          materialized.agentId,
+        ),
+        payload: buildSlackThreadInitialPrompt(record, materialized),
+        options: {
+          messageId: `slack-thread-start:${record.requestId}`,
+        },
       },
+      dependencies.publishPrompt,
     );
     const completed = completeSlackThreadCreation({
       requestId: record.requestId,
@@ -323,29 +338,34 @@ export async function deliverSlackThreadParentReturn(
       actorType: "system",
       suppressPresence: true,
     };
-    await dependencies.publishPrompt(
-      parent.name ?? parent.sessionKey,
+    await publishChannelSessionPrompt(
       {
-        prompt: [
-          `[System] Inform: Slack thread ${record.providerThreadId} concluída.`,
-          `Resultado: ${record.closeResult}`,
-        ].join("\n"),
-        source,
-        deliveryBarrier: "after_tool",
-        deliveryBarrierSource: "default",
-        _slackThreadLifecycle: {
-          eventId: record.parentEventId,
-          eventType: "thread.closed",
-          requestId: record.requestId,
-          parentSessionKey: record.parentSessionKey,
-          childSessionKey: record.childSessionKey,
-          childSessionName: record.childSessionName,
-          providerThreadId: record.providerThreadId,
-          result: record.closeResult,
-          closeSequence: record.closeSequence,
+        sessionName: parent.name ?? parent.sessionKey,
+        action: "session.return",
+        principal: resolveChannelLifecyclePrincipal("session.return", record.childSessionKey),
+        payload: {
+          prompt: [
+            `[System] Inform: Slack thread ${record.providerThreadId} concluída.`,
+            `Resultado: ${record.closeResult}`,
+          ].join("\n"),
+          source,
+          deliveryBarrier: "after_tool",
+          deliveryBarrierSource: "default",
+          _slackThreadLifecycle: {
+            eventId: record.parentEventId,
+            eventType: "thread.closed",
+            requestId: record.requestId,
+            parentSessionKey: record.parentSessionKey,
+            childSessionKey: record.childSessionKey,
+            childSessionName: record.childSessionName,
+            providerThreadId: record.providerThreadId,
+            result: record.closeResult,
+            closeSequence: record.closeSequence,
+          },
         },
+        options: { messageId: record.parentEventId },
       },
-      { messageId: record.parentEventId },
+      dependencies.publishPrompt,
     );
     completeSlackThreadParentReturn({ requestId, claimId });
     return true;
@@ -573,4 +593,13 @@ function stringField(record: Record<string, unknown>, field: string): string | u
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function resolveChannelLifecyclePrincipal(
+  action: ChannelTurnAction,
+  sessionKey?: string,
+  fallbackAgentId?: string,
+): RuntimeTurnOriginPrincipal {
+  const agentId = (sessionKey ? getSession(sessionKey)?.agentId : undefined) ?? fallbackAgentId;
+  return agentId ? { type: "agent", id: agentId } : { type: "automation", id: `channels:${action}` };
 }

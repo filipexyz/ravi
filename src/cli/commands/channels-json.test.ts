@@ -46,6 +46,7 @@ let omniGroupParticipantUpdates: Array<{
 }> = [];
 let omniGroupInvites: Array<{ op: string; instanceId: string; groupJid?: string; code?: string }> = [];
 let omniGroupMutations: Array<{ op: string; instanceId: string; groupJid: string; value?: string }> = [];
+let publishedPrompts: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
 let toolContext: Record<string, unknown> | undefined;
 let firstAccountName = "main";
 
@@ -285,7 +286,9 @@ mock.module("../../router/router-db.js", () => ({
 }));
 
 mock.module("../../omni/session-stream.js", () => ({
-  publishSessionPrompt: mock(async () => {}),
+  publishSessionPrompt: mock(async (sessionName: string, payload: Record<string, unknown>) => {
+    publishedPrompts.push({ sessionName, payload });
+  }),
 }));
 
 mock.module("../../router/session-key.js", () => ({
@@ -399,6 +402,7 @@ describe("channel command --json output", () => {
     omniGroupParticipantUpdates = [];
     omniGroupInvites = [];
     omniGroupMutations = [];
+    publishedPrompts = [];
     toolContext = undefined;
     firstAccountName = "main";
     for (const key of actorEnvKeys) {
@@ -483,6 +487,8 @@ describe("channel command --json output", () => {
 
   it("creates an agent, WhatsApp group route, and chat/session binding in one command", async () => {
     toolContext = {
+      agentId: "origin-agent",
+      sessionKey: "agent:origin-agent:main",
       context: {
         metadata: {
           senderPhone: "5511888888888",
@@ -554,6 +560,28 @@ describe("channel command --json output", () => {
       changedCount: 1,
     });
     expect(payload.session).toMatchObject({ status: "created", agent: "launch-agent" });
+    expect(publishedPrompts).toEqual([
+      {
+        sessionName: "main-launch",
+        payload: expect.objectContaining({
+          source: {
+            channel: "whatsapp",
+            accountId: "main",
+            chatId: "group:120363",
+          },
+          _turnOrigin: {
+            protocol: "ravi.runtime.turn-origin",
+            schemaVersion: 1,
+            producer: "channel",
+            action: "session.bootstrap",
+            principal: {
+              type: "agent",
+              id: "origin-agent",
+            },
+          },
+        }),
+      },
+    ]);
   });
 
   it("defaults WhatsApp group creation to the current context account before the first configured account", async () => {
