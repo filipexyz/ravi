@@ -465,7 +465,7 @@ function materializeSlackThreadChild(record: SlackThreadLifecycleRecord): {
     setOutputTarget: true,
   });
   const context = buildSlackThreadMessageContext(record, threadChat.id, child.agentId);
-  updateSessionContext(child.sessionKey, JSON.stringify(context));
+  updateSessionContext(child.sessionKey, context);
   return {
     childSessionKey: child.sessionKey,
     childSessionName: child.name ?? childSessionName,

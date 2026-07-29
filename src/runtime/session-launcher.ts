@@ -20,7 +20,7 @@ import {
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
-import type { ChannelContext, RuntimeLaunchPrompt } from "./message-types.js";
+import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { shouldUseTurnScopedAuthorityForPrompt } from "./runtime-request-context.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
@@ -56,15 +56,7 @@ export function updateRuntimeSessionMetadata(sessionKey: string, prompt: Runtime
   }
 
   if (prompt.context?.senderId) {
-    const channelCtx: ChannelContext = {
-      channelId: prompt.context.channelId,
-      channelName: prompt.context.channelName,
-      isGroup: prompt.context.isGroup,
-      groupName: prompt.context.groupName,
-      groupId: prompt.context.groupId,
-      groupMembers: prompt.context.groupMembers,
-    };
-    updateSessionContext(sessionKey, JSON.stringify(channelCtx));
+    updateSessionContext(sessionKey, prompt.context);
     if (prompt.context.groupName) {
       updateSessionDisplayName(sessionKey, prompt.context.groupName);
     }

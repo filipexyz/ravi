@@ -746,7 +746,7 @@ describe("runtime request context authority", () => {
     expect(canWithCapabilities(runtimeContext.capabilities, "admin", "system", "*")).toBe(false);
   });
 
-  it("uses authenticated relay origin while keeping the target chat as the compartment", () => {
+  it("uses validated internal relay origin while keeping the target chat as the compartment", () => {
     dbCreateAgent({ id: agent.id, cwd: agent.cwd });
     getOrCreateSession(sessionKey, agent.id, agent.cwd, { name: sessionName });
 

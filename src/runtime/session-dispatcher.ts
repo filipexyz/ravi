@@ -16,6 +16,7 @@ import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
   createQueuedRuntimeUserMessage,
   getRuntimePromptDeliveryBarrier,
+  hasIsolatedRuntimeTurnEnvelope,
   hasDeliverableRuntimeMessages,
   shouldInterruptRuntimeForIncoming,
   wakeRuntimeSessionIfDeliverable,
@@ -42,7 +43,6 @@ import {
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
-import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
 import {
   buildRuntimeSessionPoolSnapshot,
   classifyRuntimeSessionStartLane,
@@ -1779,6 +1779,16 @@ function buildDebouncedRuntimePrompts(messages: RuntimeLaunchPrompt[]): RuntimeL
   let currentKey: string | null = null;
 
   for (const message of messages) {
+    if (hasIsolatedRuntimeTurnEnvelope(message)) {
+      if (currentBatch.length > 0) {
+        batches.push(currentBatch);
+        currentBatch = [];
+      }
+      batches.push([message]);
+      currentKey = null;
+      continue;
+    }
+
     const key = getDebounceCompatibilityKey(message);
     if (currentBatch.length > 0 && currentKey !== key) {
       batches.push(currentBatch);
@@ -1824,13 +1834,7 @@ function getDebounceCompatibilityKey(prompt: RuntimeLaunchPrompt): string {
     deliveryClass,
     source: prompt.source ? getMessageTargetKey(prompt.source) : "",
     approvalSource: prompt._approvalSource ? getMessageTargetKey(prompt._approvalSource) : "",
-    turnOrigin: getDebounceTurnOriginKey(prompt),
   });
-}
-
-function getDebounceTurnOriginKey(prompt: RuntimeLaunchPrompt): string {
-  if (prompt._turnOrigin === undefined) return "";
-  return JSON.stringify(resolveRuntimeTurnOrigin(prompt._turnOrigin) ?? { invalid: true });
 }
 
 function getMessageTargetKey(target: RuntimeMessageTarget): string {

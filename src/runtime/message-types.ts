@@ -3,6 +3,8 @@ import type { ThreadHandoffPromptMetadata } from "../threads/types.js";
 import type { RuntimeEventMetadata } from "./types.js";
 import type { RuntimeProviderId } from "./types.js";
 
+export type { ChannelContext } from "../channels/context.js";
+
 export interface MessageActorMetadata {
   /** Canonical chat id from the Ravi chat model. Raw chat ids remain in chatId as provenance. */
   canonicalChatId?: string;
@@ -47,20 +49,6 @@ export interface MessageContext extends MessageActorMetadata {
   isMentioned?: boolean;
   botTag?: string;
   timestamp: number;
-}
-
-/**
- * Stable presentation metadata persisted for reply routing. Actor identity is
- * deliberately excluded and must never be reconstructed from this snapshot.
- */
-export interface ChannelContext {
-  channelId: string;
-  channelName: string;
-  isGroup: boolean;
-  groupName?: string;
-  groupId?: string;
-  groupMembers?: string[];
-  botTag?: string;
 }
 
 /** Message routing target */
@@ -163,8 +151,9 @@ export interface ChannelTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
 }
 
 /**
- * Authenticated cause of an internal turn. This is authority provenance only;
- * `source` and `context` continue to describe its reply surface.
+ * Validated cause asserted by a trusted internal prompt producer. This is not
+ * a credential: access to the internal prompt bus is the trust boundary.
+ * `source` and `context` continue to describe the reply surface.
  */
 export type RuntimeTurnOriginMetadata = SessionRelayTurnOriginMetadata | ChannelTurnOriginMetadata;
 
@@ -224,7 +213,7 @@ export interface PromptMessage {
   _daemonRestartResume?: DaemonRestartResumePromptMetadata;
   /** Provider-neutral identity for prompts accepted through a channel backend. */
   _channelBackend?: ChannelBackendPromptMetadata;
-  /** Authenticated provenance for internal producers whose reply surface is not their actor. */
+  /** Validated provenance asserted by a trusted internal producer; not a credential. */
   _turnOrigin?: RuntimeTurnOriginMetadata;
 }
 

@@ -19,6 +19,7 @@ export interface PublishChannelSessionPromptInput {
 /**
  * Canonical publisher for channel-generated internal turns. Channel-specific
  * data stays in source/context; authority provenance stays provider-neutral.
+ * This publisher is for trusted Ravi channel code, not untrusted client input.
  */
 export async function publishChannelSessionPrompt(
   input: PublishChannelSessionPromptInput,

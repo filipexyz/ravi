@@ -6,6 +6,7 @@
  */
 
 import type { Statement } from "bun:sqlite";
+import { toPersistedChannelContext, type ChannelContext } from "../channels/context.js";
 import type { SessionEntry } from "./types.js";
 import {
   dbCreateSessionChatSubscription,
@@ -755,9 +756,9 @@ export function updateSessionDisplayName(sessionKey: string, displayName: string
 /**
  * Update session's channel context (stable group/channel metadata as JSON)
  */
-export function updateSessionContext(sessionKey: string, contextJson: string): void {
+export function updateSessionContext(sessionKey: string, context: ChannelContext): void {
   const s = getStatements();
-  s.updateContext.run(contextJson, Date.now(), sessionKey);
+  s.updateContext.run(JSON.stringify(toPersistedChannelContext(context)), Date.now(), sessionKey);
 }
 
 /**

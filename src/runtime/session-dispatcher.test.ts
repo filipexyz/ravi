@@ -194,6 +194,78 @@ describe("RuntimeSessionDispatcher debounce", () => {
     });
   });
 
+  it("keeps each channel backend binding in its own debounced turn", async () => {
+    const dispatcher = createDispatcher();
+    const prompts: RuntimeLaunchPrompt[] = [];
+    (
+      dispatcher as unknown as { handlePromptImmediate: typeof dispatcher.handlePromptImmediate }
+    ).handlePromptImmediate = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
+      prompts.push(prompt);
+    });
+
+    const source = { channel: "custom", accountId: "connection-a", chatId: "conversation-a" };
+    dispatcher.handlePromptWithDebounce(
+      "session",
+      {
+        prompt: "primeiro turno",
+        source,
+        _agentId: "agent-a",
+        _channelBackend: channelBackendMetadata("turn-1"),
+      },
+      60_000,
+    );
+    dispatcher.handlePromptWithDebounce(
+      "session",
+      {
+        prompt: "segundo turno",
+        source,
+        _agentId: "agent-a",
+        _channelBackend: channelBackendMetadata("turn-2"),
+      },
+      60_000,
+    );
+
+    await dispatcher.flushDebounce("session");
+
+    expect(prompts.map((prompt) => prompt.prompt)).toEqual(["primeiro turno", "segundo turno"]);
+    expect(prompts.map((prompt) => prompt._channelBackend?.binding.turnId)).toEqual(["turn-1", "turn-2"]);
+  });
+
+  it("keeps repeated typed origins in separate debounced turns", async () => {
+    const dispatcher = createDispatcher();
+    const prompts: RuntimeLaunchPrompt[] = [];
+    (
+      dispatcher as unknown as { handlePromptImmediate: typeof dispatcher.handlePromptImmediate }
+    ).handlePromptImmediate = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
+      prompts.push(prompt);
+    });
+    const originContext = {
+      agentId: "origin-agent",
+      sessionKey: "agent:origin-agent:main",
+    };
+
+    dispatcher.handlePromptWithDebounce(
+      "session",
+      {
+        prompt: "primeiro inform",
+        _turnOrigin: buildSessionRelayTurnOrigin("inform", originContext),
+      },
+      60_000,
+    );
+    dispatcher.handlePromptWithDebounce(
+      "session",
+      {
+        prompt: "segundo inform",
+        _turnOrigin: buildSessionRelayTurnOrigin("inform", originContext),
+      },
+      60_000,
+    );
+
+    await dispatcher.flushDebounce("session");
+
+    expect(prompts.map((prompt) => prompt.prompt)).toEqual(["primeiro inform", "segundo inform"]);
+  });
+
   it("cancels debounce timers and pending starts during shutdown", async () => {
     const dispatcher = createDispatcher();
     const handlePromptImmediate = mock(async () => {});
@@ -255,6 +327,28 @@ describe("RuntimeSessionDispatcher debounce", () => {
     expect(second[1]?.deliveryBarrier).toBe("after_response");
   });
 });
+
+function channelBackendMetadata(turnId: string): NonNullable<RuntimeLaunchPrompt["_channelBackend"]> {
+  return {
+    protocol: "ravi.channel.backend",
+    schemaVersion: 1,
+    ingressRequestId: `request-${turnId}`,
+    correlationId: `correlation-${turnId}`,
+    binding: {
+      channelInstanceId: "channel-instance-a",
+      agentId: "agent-a",
+      chatId: "chat-a",
+      messageId: `message-${turnId}`,
+      sessionId: "session-a",
+      turnId,
+    },
+    target: {
+      channelKind: "custom",
+      connectionId: "connection-a",
+      conversationId: "conversation-a",
+    },
+  };
+}
 
 describe("RuntimeSessionDispatcher runtime recovery", () => {
   afterEach(() => mock.restore());

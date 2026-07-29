@@ -600,7 +600,39 @@ describe("SessionCommands delivery barriers", () => {
     });
   });
 
-  it("publishes authenticated origin for every session relay action", async () => {
+  it("strips historical actor identity before republishing stored channel context", async () => {
+    resolvedSession = {
+      ...resolvedSession,
+      lastChannel: "slack",
+      lastAccountId: "main",
+      lastTo: "C123",
+      lastContext: JSON.stringify({
+        channelId: "slack",
+        channelName: "Slack",
+        isGroup: true,
+        groupId: "C123",
+        groupName: "Engineering",
+        senderId: "agent:operator:main",
+        actorType: "agent",
+        actorAgentId: "operator",
+      }),
+    };
+    const commands = new SessionCommands();
+
+    await captureLogsAsync(async () => {
+      await commands.send("dev", "hello");
+    });
+
+    expect(publishedPrompts[0]?.payload.context).toEqual({
+      channelId: "slack",
+      channelName: "Slack",
+      isGroup: true,
+      groupName: "Engineering",
+      groupId: "C123",
+    });
+  });
+
+  it("publishes validated internal origin for every session relay action", async () => {
     toolContext = {
       suppressCliOutput: true,
       agentId: "origin-agent",

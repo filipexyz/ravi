@@ -66,7 +66,9 @@ export function buildChannelTurnOrigin(
 
 /**
  * Validate the wire envelope before it can affect authority or turn
- * classification. Extra fields are intentionally discarded.
+ * classification. Extra fields are intentionally discarded. This validates
+ * shape, not producer identity: authenticity comes from restricting the
+ * internal session-prompt bus to trusted Ravi producers.
  */
 export function resolveRuntimeTurnOrigin(value: unknown): RuntimeTurnOriginMetadata | null {
   if (!isRecord(value)) return null;

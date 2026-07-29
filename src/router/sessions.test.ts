@@ -3,10 +3,12 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import {
   getOrCreateSession,
   getSession,
+  updateSessionContext,
   updateSessionEffortOverride,
   updateSessionRuntimeProviderOverride,
   updateSessionThreadId,
 } from "./sessions.js";
+import type { MessageContext } from "../runtime/message-types.js";
 
 let stateDir: string | null = null;
 
@@ -73,5 +75,40 @@ describe("sessions store", () => {
 
     updateSessionThreadId(session.sessionKey, null);
     expect(getSession(session.sessionKey)?.lastThreadId).toBeUndefined();
+  });
+
+  it("persists only stable channel presentation fields from richer message context", () => {
+    const session = getOrCreateSession("agent:dev:channel-context", "dev", "/tmp/dev");
+    const messageContext: MessageContext = {
+      channelId: "slack",
+      channelName: "Slack",
+      accountId: "main",
+      instanceId: "slack-main",
+      chatId: "C123",
+      canonicalChatId: "chat-123",
+      messageId: "m-1",
+      senderId: "agent:operator:main",
+      senderName: "Operator",
+      actorType: "agent",
+      actorAgentId: "operator",
+      isGroup: true,
+      groupId: "C123",
+      groupName: "Engineering",
+      groupMembers: ["Operator", "Ravi"],
+      botTag: "@ravi",
+      timestamp: 1,
+    };
+
+    updateSessionContext(session.sessionKey, messageContext);
+
+    expect(JSON.parse(getSession(session.sessionKey)!.lastContext!)).toEqual({
+      channelId: "slack",
+      channelName: "Slack",
+      isGroup: true,
+      groupName: "Engineering",
+      groupId: "C123",
+      groupMembers: ["Operator", "Ravi"],
+      botTag: "@ravi",
+    });
   });
 });
