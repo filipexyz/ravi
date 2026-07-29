@@ -20,6 +20,7 @@ import type { AgentConfig } from "../../router/index.js";
 import {
   dbFindChatMessage,
   dbGetChat,
+  dbGetChannelBackendIngressReceiptByTurnId,
   dbGetContext,
   dbListChatParticipants,
   dbUpsertChat,
@@ -44,6 +45,13 @@ import {
   createSlackNativeRuntimesFromEnv,
   slackClientMessageId,
 } from "./socket-mode.js";
+import {
+  acceptSlackInboundEnvelope,
+  claimSlackInboundEnvelope,
+  getSlackInboundEnvelope,
+  markSlackInboundEnvelopeProcessed,
+  pruneProcessedSlackInboundEnvelopes,
+} from "./inbound-inbox.js";
 import {
   createSlackThreadLifecycle,
   getSlackThreadLifecycle,
@@ -592,6 +600,15 @@ describe("Slack Socket Mode routing", () => {
         chatId: "C123",
         sourceMessageId: "1713000000.000100",
       },
+      _channelBackend: {
+        protocol: "ravi.channel.backend",
+        schemaVersion: 1,
+        target: {
+          channelKind: "slack",
+          connectionId: "ravi-rbbt-slack",
+          conversationId: "C123",
+        },
+      },
     });
     expect(
       (published[0]?.payload.source as { suppressPresence?: boolean } | undefined)?.suppressPresence,
@@ -604,6 +621,18 @@ describe("Slack Socket Mode routing", () => {
       instanceId: "slack-instance-1",
       platformChatId: "C123",
     });
+    const backend = published[0]?.payload._channelBackend as
+      | { binding?: { turnId?: string; chatId?: string; messageId?: string } }
+      | undefined;
+    expect(backend?.binding?.chatId).toBe(canonicalChatId);
+    expect(dbGetChannelBackendIngressReceiptByTurnId(backend?.binding?.turnId ?? "")).toMatchObject({
+      state: "published",
+      chatId: canonicalChatId,
+      messageId: backend?.binding?.messageId,
+      prompt: {
+        prompt: expect.stringContaining("<@U123>: ravi?"),
+      },
+    });
     const session = getSessionByName("ravi-hil");
     expect(typeof session?.sessionKey).toBe("string");
     expect(listSessionSubscriptions(session!.sessionKey)).toEqual([
@@ -613,6 +642,167 @@ describe("Slack Socket Mode routing", () => {
         speechMode: "speak",
       }),
     ]);
+  });
+
+  it("persists a message envelope before ack and resumes it after transient publication failure", async () => {
+    const config: RouterConfig = {
+      agents: {
+        "ravi-hil": {
+          id: "ravi-hil",
+          cwd: "/tmp/ravi-hil",
+          dmScope: "per-peer",
+        },
+      },
+      routes: [
+        {
+          pattern: "group:C123",
+          accountId: "ravi-rbbt-slack",
+          agent: "ravi-hil",
+          session: "ravi-hil",
+          priority: 100,
+          policy: "open",
+          channel: "slack",
+        },
+      ],
+      defaultAgent: "ravi-hil",
+      defaultDmScope: "per-peer",
+      accountAgents: { "ravi-rbbt-slack": "ravi-hil" },
+      instanceToAccount: {},
+      instances: {},
+    };
+    const envelope: SlackSocketEnvelope = {
+      envelope_id: "env-durable-a",
+      payload: {
+        token: "must-not-be-persisted",
+        team_id: "T1",
+        event_id: "Ev-durable-a",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          channel: "C123",
+          channel_type: "channel",
+          user: "U123",
+          text: "durable?",
+          ts: "1713000000.000200",
+        },
+      },
+    };
+    const failing = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => config,
+      publishPrompt: async () => {
+        throw new Error("publisher unavailable");
+      },
+      webClient: {} as never,
+    });
+    let acknowledged = false;
+
+    await expect(
+      failing.handleEnvelope(envelope, async (envelopeId) => {
+        acknowledged = true;
+        expect(envelopeId).toBe("env-durable-a");
+        expect(getSlackInboundEnvelope("slack-instance-1", envelopeId)).toMatchObject({
+          state: "accepted",
+        });
+        expect(JSON.stringify(getSlackInboundEnvelope("slack-instance-1", envelopeId)?.envelope)).not.toContain(
+          "must-not-be-persisted",
+        );
+      }),
+    ).rejects.toThrow("slack_channel_backend_unavailable");
+    expect(acknowledged).toBe(true);
+    expect(getSlackInboundEnvelope("slack-instance-1", "env-durable-a")).toMatchObject({
+      state: "accepted",
+    });
+
+    const published: Record<string, unknown>[] = [];
+    const recovered = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "ravi-rbbt-slack",
+      routeAccountId: "ravi-rbbt-slack",
+      instanceId: "slack-instance-1",
+      getRouterConfig: () => config,
+      publishPrompt: async (_sessionName, payload) => {
+        published.push(payload);
+      },
+      webClient: {} as never,
+    });
+
+    expect(await recovered.resumePendingInboundEnvelopes()).toEqual({
+      scanned: 1,
+      processed: 1,
+      busy: 0,
+      failed: 0,
+    });
+    expect(published).toHaveLength(1);
+    expect(getSlackInboundEnvelope("slack-instance-1", "env-durable-a")).toMatchObject({
+      state: "processed",
+    });
+  });
+
+  it("prunes only processed inbound envelopes outside the retention window", () => {
+    const envelope = (envelopeId: string): SlackSocketEnvelope => ({
+      envelope_id: envelopeId,
+      payload: {
+        event: {
+          type: "message",
+          channel: "C123",
+          user: "U123",
+          text: envelopeId,
+          ts: "1713000000.000200",
+        },
+      },
+    });
+    const processEnvelope = (envelopeId: string, acceptedAt: number, processedAt: number) => {
+      acceptSlackInboundEnvelope({
+        scopeId: "slack-instance-1",
+        envelopeId,
+        envelope: envelope(envelopeId),
+        acceptedAt,
+      });
+      const claimId = `claim-${envelopeId}`;
+      expect(
+        claimSlackInboundEnvelope({
+          scopeId: "slack-instance-1",
+          envelopeId,
+          claimId,
+          claimedAt: processedAt - 1,
+        }).status,
+      ).toBe("acquired");
+      markSlackInboundEnvelopeProcessed({
+        scopeId: "slack-instance-1",
+        envelopeId,
+        claimId,
+        processedAt,
+      });
+    };
+
+    processEnvelope("env-expired", 1_000, 3_000);
+    processEnvelope("env-retained", 4_000, 6_000);
+    acceptSlackInboundEnvelope({
+      scopeId: "slack-instance-1",
+      envelopeId: "env-pending",
+      envelope: envelope("env-pending"),
+      acceptedAt: 1_000,
+    });
+
+    expect(
+      pruneProcessedSlackInboundEnvelopes({
+        scopeId: "slack-instance-1",
+        olderThan: 4_000,
+      }),
+    ).toBe(1);
+    expect(getSlackInboundEnvelope("slack-instance-1", "env-expired")).toBeNull();
+    expect(getSlackInboundEnvelope("slack-instance-1", "env-retained")).toMatchObject({
+      state: "processed",
+    });
+    expect(getSlackInboundEnvelope("slack-instance-1", "env-pending")).toMatchObject({
+      state: "accepted",
+    });
   });
 
   it("routes Slack inbound to an existing chat subscription when no route matches", async () => {

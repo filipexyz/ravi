@@ -6,18 +6,23 @@ import {
   dbGetChannelBackendIngressReceipt,
   dbGetChatMessage,
   dbGetSessionChatBinding,
+  dbUpsertChat,
+  dbUpsertChatMessage,
 } from "../router/router-db.js";
-import { closeSessionStore } from "../router/sessions.js";
+import { closeSessionStore, getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   acceptChannelIngress,
+  acceptResolvedChannelIngress,
   CHANNEL_BACKEND_PROTOCOL,
   CHANNEL_BACKEND_SCHEMA_VERSION,
   ChannelOutputSinkRegistry,
+  resumePendingChannelIngressPublications,
   setChannelBackendPromptPublisherForTests,
   type ChannelBackendPromptPublisher,
   type ChannelIngressRequest,
   type ChannelOutputEnvelope,
+  type ResolvedChannelIngressRequest,
 } from "./backend.js";
 import {
   CHANNEL_RUNTIME_EVENTS_PROTOCOL,
@@ -293,6 +298,107 @@ describe("channel backend ingress", () => {
     expect(duplicate.disposition).toBe("duplicate");
     expect(publisher).toHaveBeenCalledTimes(1);
   });
+
+  it("reuses provider-normalized Chat, Message, Session, and prompt through resolved ingress", async () => {
+    const publishPrompt = mock(
+      async (_sessionName: string, _payload: Record<string, unknown>, _options?: { messageId?: string }) => {},
+    );
+    const resolved = resolvedRequest();
+
+    const result = await acceptResolvedChannelIngress(resolved, { publishPrompt });
+    const duplicate = await acceptResolvedChannelIngress(
+      {
+        ...resolved,
+        request: {
+          ...resolved.request,
+          requestId: "resolved-request-retry",
+        },
+      },
+      { publishPrompt },
+    );
+
+    expect(result).toMatchObject({
+      disposition: "accepted",
+      binding: {
+        chatId: resolved.canonical.chatId,
+        messageId: resolved.canonical.messageId,
+        sessionId: resolved.session.name,
+      },
+    });
+    expect(duplicate).toMatchObject({
+      disposition: "duplicate",
+      binding: result.binding,
+    });
+    expect(dbGetChatMessage(resolved.canonical.messageId)).toMatchObject({
+      chatId: resolved.canonical.chatId,
+      channel: "slack",
+      instanceId: "channel-instance-a",
+    });
+    expect(dbGetChannelBackendIngressReceipt("channel-instance-a", "resolved-idempotency-a")).toMatchObject({
+      state: "published",
+      chatId: resolved.canonical.chatId,
+      messageId: resolved.canonical.messageId,
+      sessionKey: resolved.session.key,
+      sessionName: resolved.session.name,
+      prompt: resolved.prompt,
+    });
+    expect(publishPrompt).toHaveBeenCalledTimes(1);
+    expect(publishPrompt.mock.calls[0]?.[1]).toMatchObject({
+      ...resolved.prompt,
+      _channelBackend: {
+        binding: result.binding,
+      },
+    });
+  });
+
+  it("resumes a durable resolved prompt after publication failure and process restart", async () => {
+    const rejected = await acceptResolvedChannelIngress(resolvedRequest(), {
+      publishPrompt: async () => {
+        throw new Error("publisher unavailable");
+      },
+    });
+    expect(rejected).toMatchObject({
+      disposition: "rejected",
+      error: {
+        code: "UNAVAILABLE",
+        retryable: true,
+      },
+    });
+    expect(dbGetChannelBackendIngressReceipt("channel-instance-a", "resolved-idempotency-a")).toMatchObject({
+      state: "accepted",
+      prompt: {
+        prompt: "normalized provider prompt",
+      },
+    });
+
+    closeSessionStore();
+    closeRouterDb();
+    const publishPrompt = mock(
+      async (_sessionName: string, _payload: Record<string, unknown>, _options?: { messageId?: string }) => {},
+    );
+    const resumed = await resumePendingChannelIngressPublications({ publishPrompt });
+
+    expect(resumed).toEqual({
+      scanned: 1,
+      published: 1,
+      busy: 0,
+      failed: 0,
+    });
+    expect(publishPrompt).toHaveBeenCalledTimes(1);
+    expect(publishPrompt.mock.calls[0]?.[1]).toMatchObject({
+      prompt: "normalized provider prompt",
+      _channelBackend: {
+        target: {
+          channelKind: "slack",
+          connectionId: "connection-a",
+          conversationId: "C123",
+        },
+      },
+    });
+    expect(dbGetChannelBackendIngressReceipt("channel-instance-a", "resolved-idempotency-a")).toMatchObject({
+      state: "published",
+    });
+  });
 });
 
 describe("channel backend output sinks", () => {
@@ -330,6 +436,86 @@ function request(overrides: Partial<ChannelIngressRequest> = {}): ChannelIngress
     content: [{ type: "text", text: "fixture input" }],
     receivedAt: "2026-07-24T18:00:00.000Z",
     ...overrides,
+  };
+}
+
+function resolvedRequest(): ResolvedChannelIngressRequest {
+  const chat = dbUpsertChat({
+    channel: "slack",
+    instanceId: "channel-instance-a",
+    platformChatId: "C123",
+    chatType: "group",
+    seenAt: Date.parse("2026-07-24T18:00:00.000Z"),
+  });
+  const message = dbUpsertChatMessage({
+    chatId: chat.id,
+    channel: "slack",
+    instanceId: "channel-instance-a",
+    providerMessageId: "1713000000.000100",
+    rawChatId: "C123",
+    rawSenderId: "U123",
+    normalizedSenderId: "U123",
+    actorType: "unknown",
+    content: {
+      type: "text",
+      text: "fixture input",
+    },
+    providerTimestamp: Date.parse("2026-07-24T18:00:00.000Z"),
+    ingestedAt: Date.parse("2026-07-24T18:00:00.000Z"),
+  });
+  const session = getOrCreateSession(
+    "agent:agent-a:slack:channel-instance-a:group:C123",
+    "agent-a",
+    "/tmp/ravi-channel-agent-a",
+    {
+      name: "resolved-session-a",
+      channel: "slack",
+      accountId: "connection-a",
+      chatType: "group",
+      lastChannel: "slack",
+      lastAccountId: "connection-a",
+      lastTo: "C123",
+    },
+  );
+  return {
+    request: request({
+      requestId: "resolved-request-a",
+      idempotencyKey: "resolved-idempotency-a",
+      external: {
+        channelKind: "slack",
+        connectionId: "connection-a",
+        conversationId: "C123",
+        senderId: "U123",
+        messageId: "1713000000.000100",
+      },
+    }),
+    canonical: {
+      chatId: chat.id,
+      messageId: message.canonicalMessageId,
+    },
+    session: {
+      key: session.sessionKey,
+      name: session.name!,
+    },
+    prompt: {
+      prompt: "normalized provider prompt",
+      source: {
+        channel: "slack",
+        accountId: "connection-a",
+        instanceId: "channel-instance-a",
+        chatId: "C123",
+        canonicalChatId: chat.id,
+      },
+      context: {
+        channelId: "slack",
+        accountId: "connection-a",
+        instanceId: "channel-instance-a",
+        chatId: "C123",
+        messageId: "1713000000.000100",
+      },
+      deliveryBarrier: "after_tool",
+      deliveryBarrierSource: "default",
+    },
   };
 }
 

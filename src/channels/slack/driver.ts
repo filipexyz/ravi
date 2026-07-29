@@ -1,4 +1,5 @@
 import type { ChannelConfig } from "../../router/router-db.js";
+import type { ChannelOutputEnvelope } from "../backend.js";
 import {
   NATIVE_CHANNEL_DRIVER_PROTOCOL,
   NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
@@ -8,7 +9,12 @@ import {
   type NativeChannelDriver,
   type NativeChannelRuntimeHealth,
 } from "../native/driver.js";
-import { createSlackNativeRuntimeFromEnv, type SlackNativeRuntime, type SlackSocketModeStatus } from "./socket-mode.js";
+import {
+  createSlackNativeRuntimeFromEnv,
+  decodeSlackBackendConversationId,
+  type SlackNativeRuntime,
+  type SlackSocketModeStatus,
+} from "./socket-mode.js";
 
 export interface SlackNativeChannelDriverOptions {
   readonly createRuntime?: (
@@ -53,17 +59,78 @@ export function createSlackNativeChannelDriver(
         channelInstanceId: channel.name,
         capabilities: [...descriptor.capabilities],
       });
+      const unregisterOutputSink = context.host.registerOutputSink(
+        {
+          channelKind: descriptor.provider,
+          connectionId: native.accountId,
+        },
+        {
+          async emit(envelope) {
+            const target = decodeSlackBackendConversationId(envelope.target.conversationId);
+            await native.delivery.deliverText({
+              sessionName: envelope.binding.sessionId,
+              emitId: envelope.outputId,
+              idempotencyKey: envelope.outputId,
+              target: {
+                channel: descriptor.provider,
+                accountId: native.accountId,
+                instanceId: native.instanceId,
+                chatId: target.channelId,
+                ...(target.threadTs ? { threadId: target.threadTs } : {}),
+              },
+              text: renderSlackBackendOutput(envelope),
+            });
+          },
+        },
+      );
+      const unregisterRuntimeEventSink = context.host.registerRuntimeEventSink(
+        {
+          channelKind: descriptor.provider,
+          connectionId: native.accountId,
+        },
+        {
+          async emit() {
+            // Runtime events are durable in the backend even when Slack has no
+            // equivalent compact projection for an intermediate state.
+          },
+        },
+      );
+      let disposed = false;
+      const disposeBackendSinks = () => {
+        if (disposed) return;
+        disposed = true;
+        unregisterRuntimeEventSink();
+        unregisterOutputSink();
+      };
       return {
         descriptor: runtimeDescriptor,
         delivery: native.delivery,
         actions: native.actions,
         presence: native.presence,
         start: () => native.socketMode.start(),
-        stop: () => native.socketMode.stop(),
+        async stop() {
+          disposeBackendSinks();
+          await native.socketMode.stop();
+        },
         health: () => slackNativeRuntimeHealth(native.socketMode.status()),
       };
     },
   };
+}
+
+function renderSlackBackendOutput(envelope: ChannelOutputEnvelope): string {
+  if (envelope.kind === "safe_error") {
+    return `Unable to complete the request (${envelope.error?.code ?? "INTERNAL"}).`;
+  }
+  return (envelope.content ?? [])
+    .map((block) =>
+      block.type === "text"
+        ? block.text
+        : block.name
+          ? `[Attachment: ${block.name}]`
+          : `[Attachment: ${block.artifactId}]`,
+    )
+    .join("\n");
 }
 
 export function slackNativeRuntimeHealth(status: SlackSocketModeStatus): NativeChannelRuntimeHealth {

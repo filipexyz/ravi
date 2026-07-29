@@ -6,12 +6,14 @@ import {
   dbBindSessionToChat,
   dbClaimChannelBackendIngressPublication,
   dbGetAgent,
+  dbGetChatMessage,
+  dbListPendingChannelBackendIngressReceipts,
   dbMarkChannelBackendIngressPublished,
   dbReleaseChannelBackendIngressPublication,
   type ChannelBackendIngressReceiptRecord,
 } from "../router/router-db.js";
 import { getAgentCwd } from "../router/resolver.js";
-import { getOrCreateSession, updateSessionName } from "../router/sessions.js";
+import { getOrCreateSession, getSession, updateSessionName } from "../router/sessions.js";
 import type { ChannelBackendPromptMetadata, MessageContext, MessageTarget } from "../runtime/message-types.js";
 import { logger } from "../utils/logger.js";
 
@@ -19,6 +21,7 @@ export const CHANNEL_BACKEND_PROTOCOL = "ravi.channel.backend" as const;
 export const CHANNEL_BACKEND_SCHEMA_VERSION = 1 as const;
 export const CHANNEL_BACKEND_MAX_CONTENT_BLOCKS = 256;
 export const CHANNEL_BACKEND_MAX_TEXT_BYTES = 1_048_576;
+export const CHANNEL_BACKEND_PUBLICATION_RETRY_INTERVAL_MS = 5_000;
 
 const log = logger.child("channels:backend");
 const textEncoder = new TextEncoder();
@@ -111,6 +114,33 @@ export const ChannelIngressRequestSchema = z.object({
   receivedAt: z.string().datetime({ offset: true }),
 });
 
+export const ResolvedChannelIngressRequestSchema = z
+  .object({
+    request: ChannelIngressRequestSchema,
+    canonical: z
+      .object({
+        chatId: ChannelBackendOpaqueIdSchema,
+        messageId: ChannelBackendOpaqueIdSchema,
+      })
+      .strict(),
+    session: z
+      .object({
+        key: boundedUtf8String(512, "resolved Session key"),
+        name: ChannelBackendOpaqueIdSchema,
+      })
+      .strict(),
+    prompt: z
+      .object({
+        prompt: boundedUtf8String(CHANNEL_BACKEND_MAX_TEXT_BYTES, "resolved Channel prompt"),
+        source: z.record(z.string(), z.unknown()),
+        context: z.record(z.string(), z.unknown()),
+        deliveryBarrier: z.enum(["after_tool", "after_response"]).optional(),
+        deliveryBarrierSource: boundedUtf8String(64, "delivery barrier source").optional(),
+      })
+      .passthrough(),
+  })
+  .strict();
+
 export const ChannelIngressResultSchema = z
   .object({
     protocol: z.literal(CHANNEL_BACKEND_PROTOCOL),
@@ -184,6 +214,7 @@ export type ExternalChannelIdentity = z.infer<typeof ExternalChannelIdentitySche
 export type ExternalChannelTarget = z.infer<typeof ExternalChannelTargetSchema>;
 export type LocalChannelMessageBinding = z.infer<typeof LocalChannelMessageBindingSchema>;
 export type ChannelIngressRequest = z.infer<typeof ChannelIngressRequestSchema>;
+export type ResolvedChannelIngressRequest = z.infer<typeof ResolvedChannelIngressRequestSchema>;
 export type ChannelIngressResult = z.infer<typeof ChannelIngressResultSchema>;
 export type ChannelOutputEnvelope = z.infer<typeof ChannelOutputEnvelopeSchema>;
 
@@ -243,6 +274,24 @@ export function setChannelBackendPromptPublisherForTests(publisher?: ChannelBack
 
 export async function acceptChannelIngress(input: ChannelIngressRequest): Promise<ChannelIngressResult> {
   const request = ChannelIngressRequestSchema.parse(input);
+  return acceptParsedChannelIngress(request);
+}
+
+export async function acceptResolvedChannelIngress(
+  input: ResolvedChannelIngressRequest,
+  options: {
+    publishPrompt?: ChannelBackendPromptPublisher;
+  } = {},
+): Promise<ChannelIngressResult> {
+  const resolved = ResolvedChannelIngressRequestSchema.parse(input);
+  return acceptParsedChannelIngress(resolved.request, resolved, options.publishPrompt);
+}
+
+async function acceptParsedChannelIngress(
+  request: ChannelIngressRequest,
+  resolved?: ResolvedChannelIngressRequest,
+  promptPublisher: ChannelBackendPromptPublisher = channelBackendPromptPublisher,
+): Promise<ChannelIngressResult> {
   if (!dbGetAgent(request.agentId)) {
     return rejectedIngress(request, {
       code: "NOT_FOUND",
@@ -252,13 +301,21 @@ export async function acceptChannelIngress(input: ChannelIngressRequest): Promis
     });
   }
 
-  const identity = deriveLocalIdentity(request);
+  const derivedIdentity = deriveLocalIdentity(request);
+  const identity =
+    resolved === undefined
+      ? derivedIdentity
+      : {
+          ...derivedIdentity,
+          sessionKey: resolved.session.key,
+          sessionName: resolved.session.name,
+        };
   let acceptance: ReturnType<typeof dbAcceptChannelBackendIngress>;
   try {
     acceptance = dbAcceptChannelBackendIngress({
       channelInstanceId: request.channelInstanceId,
       idempotencyKey: request.idempotencyKey,
-      requestFingerprint: requestFingerprint(request),
+      requestFingerprint: requestFingerprint(request, resolved),
       requestId: request.requestId,
       localActorId: request.localActorId,
       agentId: request.agentId,
@@ -269,6 +326,12 @@ export async function acceptChannelIngress(input: ChannelIngressRequest): Promis
       external: request.external,
       content: { blocks: request.content },
       receivedAt: Date.parse(request.receivedAt),
+      ...(resolved === undefined
+        ? {}
+        : {
+            canonical: resolved.canonical,
+            prompt: resolved.prompt,
+          }),
     });
   } catch (error) {
     if (isIdempotencyConflict(error)) {
@@ -302,7 +365,11 @@ export async function acceptChannelIngress(input: ChannelIngressRequest): Promis
   }
 
   try {
-    ensureChannelBackendSession(acceptance.receipt);
+    if (resolved === undefined) {
+      ensureChannelBackendSession(acceptance.receipt);
+    } else {
+      assertResolvedChannelBackendSession(acceptance.receipt, resolved);
+    }
   } catch (error) {
     log.error("Channel ingress session binding failed", {
       requestId: request.requestId,
@@ -317,45 +384,21 @@ export async function acceptChannelIngress(input: ChannelIngressRequest): Promis
     });
   }
 
-  const claimId = randomUUID();
-  const claim = dbClaimChannelBackendIngressPublication({
-    receiptId: acceptance.receipt.id,
-    claimId,
-  });
-  let receipt = claim.receipt;
-  if (claim.status === "acquired") {
-    try {
-      await channelBackendPromptPublisher(receipt.sessionName, buildPromptPayload(receipt, request.content), {
-        messageId: receipt.id,
-      });
-      receipt = dbMarkChannelBackendIngressPublished({
-        receiptId: receipt.id,
-        claimId,
-      });
-    } catch (error) {
-      try {
-        dbReleaseChannelBackendIngressPublication({
-          receiptId: receipt.id,
-          claimId,
-        });
-      } catch (releaseError) {
-        log.error("Channel ingress publication claim release failed", {
-          receiptId: receipt.id,
-          errorKind: errorKind(releaseError),
-        });
-      }
-      log.warn("Channel ingress prompt publication failed", {
-        requestId: request.requestId,
-        receiptId: receipt.id,
-        errorKind: errorKind(error),
-      });
-      return rejectedIngress(request, {
-        code: "UNAVAILABLE",
-        category: "availability",
-        retryable: true,
-        correlationId: request.requestId,
-      });
-    }
+  let receipt = acceptance.receipt;
+  try {
+    receipt = (await publishAcceptedChannelIngressReceipt(receipt, promptPublisher)).receipt;
+  } catch (error) {
+    log.warn("Channel ingress prompt publication failed", {
+      requestId: request.requestId,
+      receiptId: receipt.id,
+      errorKind: errorKind(error),
+    });
+    return rejectedIngress(request, {
+      code: "UNAVAILABLE",
+      category: "availability",
+      retryable: true,
+      correlationId: request.requestId,
+    });
   }
 
   return ChannelIngressResultSchema.parse({
@@ -366,6 +409,147 @@ export async function acceptChannelIngress(input: ChannelIngressRequest): Promis
     binding: bindingFromReceipt(receipt),
     acceptedAt: new Date(receipt.acceptedAt).toISOString(),
   });
+}
+
+export interface ResumePendingChannelIngressPublicationsResult {
+  scanned: number;
+  published: number;
+  busy: number;
+  failed: number;
+}
+
+export async function resumePendingChannelIngressPublications(
+  options: { limit?: number; now?: number; publishPrompt?: ChannelBackendPromptPublisher } = {},
+): Promise<ResumePendingChannelIngressPublicationsResult> {
+  const pending = dbListPendingChannelBackendIngressReceipts({
+    ...(options.limit === undefined ? {} : { limit: options.limit }),
+    ...(options.now === undefined ? {} : { now: options.now }),
+  });
+  const result: ResumePendingChannelIngressPublicationsResult = {
+    scanned: pending.length,
+    published: 0,
+    busy: 0,
+    failed: 0,
+  };
+  const publisher = options.publishPrompt ?? channelBackendPromptPublisher;
+  for (const receipt of pending) {
+    try {
+      assertPersistedChannelBackendSession(receipt);
+      const publication = await publishAcceptedChannelIngressReceipt(receipt, publisher);
+      if (publication.status === "busy") {
+        result.busy += 1;
+      } else {
+        result.published += 1;
+      }
+    } catch (error) {
+      result.failed += 1;
+      log.warn("Pending Channel ingress publication retry failed", {
+        receiptId: receipt.id,
+        errorKind: errorKind(error),
+      });
+    }
+  }
+  return result;
+}
+
+type ChannelBackendPublicationRetryTimer = ReturnType<typeof setInterval>;
+
+export function startChannelBackendPublicationReconciler(
+  options: {
+    intervalMs?: number;
+    limit?: number;
+    publishPrompt?: ChannelBackendPromptPublisher;
+    setInterval?: (callback: () => void, intervalMs: number) => ChannelBackendPublicationRetryTimer;
+    clearInterval?: (timer: ChannelBackendPublicationRetryTimer) => void;
+  } = {},
+): () => void {
+  const intervalMs = options.intervalMs ?? CHANNEL_BACKEND_PUBLICATION_RETRY_INTERVAL_MS;
+  if (!Number.isSafeInteger(intervalMs) || intervalMs < 1_000) {
+    throw new Error("Channel backend publication retry interval must be at least 1000 milliseconds");
+  }
+  const scheduleInterval = options.setInterval ?? setInterval;
+  const cancelInterval = options.clearInterval ?? clearInterval;
+  let retrying = false;
+  const retry = () => {
+    if (retrying) return;
+    retrying = true;
+    void resumePendingChannelIngressPublications({
+      ...(options.limit === undefined ? {} : { limit: options.limit }),
+      ...(options.publishPrompt === undefined ? {} : { publishPrompt: options.publishPrompt }),
+    })
+      .catch((error) => {
+        log.warn("Channel ingress publication reconciliation failed", {
+          errorKind: errorKind(error),
+        });
+      })
+      .finally(() => {
+        retrying = false;
+      });
+  };
+  retry();
+  const timer = scheduleInterval(retry, intervalMs);
+  timer.unref?.();
+  return () => cancelInterval(timer);
+}
+
+async function publishAcceptedChannelIngressReceipt(
+  receipt: ChannelBackendIngressReceiptRecord,
+  promptPublisher: ChannelBackendPromptPublisher,
+): Promise<{
+  status: "published" | "busy";
+  receipt: ChannelBackendIngressReceiptRecord;
+}> {
+  const claimId = randomUUID();
+  const claim = dbClaimChannelBackendIngressPublication({
+    receiptId: receipt.id,
+    claimId,
+  });
+  if (claim.status === "published") {
+    return { status: "published", receipt: claim.receipt };
+  }
+  if (claim.status === "busy") {
+    return { status: "busy", receipt: claim.receipt };
+  }
+  try {
+    await promptPublisher(claim.receipt.sessionName, promptPayloadFromReceipt(claim.receipt), {
+      messageId: claim.receipt.id,
+    });
+    return {
+      status: "published",
+      receipt: dbMarkChannelBackendIngressPublished({
+        receiptId: claim.receipt.id,
+        claimId,
+      }),
+    };
+  } catch (error) {
+    try {
+      dbReleaseChannelBackendIngressPublication({
+        receiptId: claim.receipt.id,
+        claimId,
+      });
+    } catch (releaseError) {
+      log.error("Channel ingress publication claim release failed", {
+        receiptId: claim.receipt.id,
+        errorKind: errorKind(releaseError),
+      });
+    }
+    throw error;
+  }
+}
+
+function promptPayloadFromReceipt(receipt: ChannelBackendIngressReceiptRecord): Record<string, unknown> {
+  if (receipt.prompt) {
+    return {
+      ...receipt.prompt,
+      _channelBackend: backendPromptMetadata(receipt),
+    };
+  }
+  const message = dbGetChatMessage(receipt.messageId);
+  if (!message) {
+    throw new Error(`Channel backend ingress Message is unavailable: ${receipt.messageId}`);
+  }
+  const content = ChannelContentSchema.parse(message.content?.blocks);
+  return buildPromptPayload(receipt, content);
 }
 
 function deriveLocalIdentity(request: ChannelIngressRequest): {
@@ -394,7 +578,7 @@ function deriveLocalIdentity(request: ChannelIngressRequest): {
   };
 }
 
-function requestFingerprint(request: ChannelIngressRequest): string {
+function requestFingerprint(request: ChannelIngressRequest, resolved?: ResolvedChannelIngressRequest): string {
   return createHash("sha256")
     .update(
       canonicalJson({
@@ -403,6 +587,12 @@ function requestFingerprint(request: ChannelIngressRequest): string {
         agentId: request.agentId,
         external: request.external,
         content: request.content,
+        ...(resolved === undefined
+          ? {}
+          : {
+              canonical: resolved.canonical,
+              session: resolved.session,
+            }),
       }),
     )
     .digest("hex");
@@ -451,24 +641,36 @@ function ensureChannelBackendSession(receipt: ChannelBackendIngressReceiptRecord
   });
 }
 
+function assertResolvedChannelBackendSession(
+  receipt: ChannelBackendIngressReceiptRecord,
+  resolved: ResolvedChannelIngressRequest,
+): void {
+  if (
+    receipt.chatId !== resolved.canonical.chatId ||
+    receipt.messageId !== resolved.canonical.messageId ||
+    receipt.sessionKey !== resolved.session.key ||
+    receipt.sessionName !== resolved.session.name
+  ) {
+    throw new Error("Resolved Channel ingress binding mismatch");
+  }
+  const session = getSession(receipt.sessionKey);
+  if (session === null || session.agentId !== receipt.agentId || session.name !== receipt.sessionName) {
+    throw new Error("Resolved Channel ingress Session mismatch");
+  }
+}
+
+function assertPersistedChannelBackendSession(receipt: ChannelBackendIngressReceiptRecord): void {
+  const session = getSession(receipt.sessionKey);
+  if (session === null || session.agentId !== receipt.agentId || session.name !== receipt.sessionName) {
+    throw new Error("Persisted Channel ingress Session mismatch");
+  }
+}
+
 function buildPromptPayload(
   receipt: ChannelBackendIngressReceiptRecord,
   content: ChannelContent,
 ): Record<string, unknown> {
-  const binding = bindingFromReceipt(receipt);
-  const target = {
-    channelKind: receipt.external.channelKind,
-    connectionId: receipt.external.connectionId,
-    conversationId: receipt.external.conversationId,
-  };
-  const metadata: ChannelBackendPromptMetadata = {
-    protocol: CHANNEL_BACKEND_PROTOCOL,
-    schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
-    ingressRequestId: receipt.initialRequestId,
-    correlationId: receipt.initialRequestId,
-    binding,
-    target,
-  };
+  const metadata = backendPromptMetadata(receipt);
   const source: MessageTarget = {
     channel: receipt.external.channelKind,
     accountId: receipt.external.connectionId,
@@ -504,6 +706,21 @@ function buildPromptPayload(
     deliveryBarrierSource: "default",
     _agentId: receipt.agentId,
     _channelBackend: metadata,
+  };
+}
+
+function backendPromptMetadata(receipt: ChannelBackendIngressReceiptRecord): ChannelBackendPromptMetadata {
+  return {
+    protocol: CHANNEL_BACKEND_PROTOCOL,
+    schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
+    ingressRequestId: receipt.initialRequestId,
+    correlationId: receipt.initialRequestId,
+    binding: bindingFromReceipt(receipt),
+    target: {
+      channelKind: receipt.external.channelKind,
+      connectionId: receipt.external.connectionId,
+      conversationId: receipt.external.conversationId,
+    },
   };
 }
 

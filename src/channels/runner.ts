@@ -50,6 +50,7 @@ import {
   type ChannelBackendEgressResponder,
   type ChannelBackendEgressResponderConnection,
 } from "./backend-egress.js";
+import { startChannelBackendPublicationReconciler } from "./backend.js";
 import { createSlackNativeChannelDriver, slackNativeRuntimeHealth } from "./slack/driver.js";
 import type { SlackSocketModeStatus } from "./slack/index.js";
 
@@ -129,6 +130,7 @@ export class ChannelRunner {
   private stopReceiptPruner: (() => void) | null = null;
   private healthResponder: ChannelRunnerHealthResponder | null = null;
   private backendEgressResponder: ChannelBackendEgressResponder | null = null;
+  private stopBackendPublicationReconciler: (() => void) | null = null;
 
   constructor(private readonly options: ChannelRunnerOptions = {}) {}
 
@@ -162,6 +164,7 @@ export class ChannelRunner {
     });
 
     await this.startNativeChannels(env);
+    this.stopBackendPublicationReconciler = startChannelBackendPublicationReconciler();
     this.backendEgressResponder = startChannelRunnerBackendEgressResponder({
       connection: getNats(),
     });
@@ -202,6 +205,8 @@ export class ChannelRunner {
     this.healthResponder = null;
     this.stopReceiptPruner?.();
     this.stopReceiptPruner = null;
+    this.stopBackendPublicationReconciler?.();
+    this.stopBackendPublicationReconciler = null;
     log.info("Stopping channel runner", { pid: process.pid });
     await this.outboundPublishReconciler?.stop();
     this.outboundPublishReconciler = null;
