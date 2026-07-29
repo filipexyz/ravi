@@ -338,6 +338,7 @@ interface ChannelBackendIngressReceiptRow {
   session_name: string;
   turn_id: string;
   external_json: string;
+  prompt_json: string | null;
   state: ChannelBackendIngressPublicationState;
   publish_claim_id: string | null;
   publish_claim_expires_at: number | null;
@@ -800,6 +801,7 @@ export interface ChannelBackendIngressReceiptRecord {
   sessionName: string;
   turnId: string;
   external: ChannelBackendExternalIdentityRecord;
+  prompt?: Record<string, unknown>;
   state: ChannelBackendIngressPublicationState;
   publishClaimId?: string;
   publishClaimExpiresAt?: number;
@@ -874,6 +876,11 @@ export interface AcceptChannelBackendIngressInput {
   content: Record<string, unknown>;
   receivedAt: number;
   acceptedAt?: number;
+  prompt?: Record<string, unknown>;
+  canonical?: {
+    chatId: string;
+    messageId: string;
+  };
 }
 
 export type AcceptChannelBackendIngressResult =
@@ -1500,6 +1507,7 @@ function getDb(): Database {
       session_name TEXT NOT NULL,
       turn_id TEXT NOT NULL,
       external_json TEXT NOT NULL,
+      prompt_json TEXT,
       state TEXT NOT NULL DEFAULT 'accepted'
         CHECK(state IN ('accepted', 'publishing', 'published')),
       publish_claim_id TEXT,
@@ -3017,6 +3025,7 @@ function getDb(): Database {
   );
   ensureColumn(db, "channel_backend_runtime_state", "runtime_generation_id", "TEXT");
   ensureColumn(db, "channel_backend_runtime_state", "terminal_error_json", "TEXT");
+  ensureColumn(db, "channel_backend_ingress_receipts", "prompt_json", "TEXT");
   ensureIdentityChatMigrations(db);
   ensureAgentVisibilityMigration(db);
   backfillChatModelOnce(db);
@@ -3913,6 +3922,7 @@ function rowToChatMessageWithSortKey(row: ChatMessageWithSortKeyRow): ChatMessag
 
 function rowToChannelBackendIngressReceipt(row: ChannelBackendIngressReceiptRow): ChannelBackendIngressReceiptRecord {
   const external = parseJsonRecord(row.external_json);
+  const prompt = parseJsonRecord(row.prompt_json);
   if (
     !external ||
     typeof external.channelKind !== "string" ||
@@ -3943,6 +3953,7 @@ function rowToChannelBackendIngressReceipt(row: ChannelBackendIngressReceiptRow)
       senderId: external.senderId,
       messageId: external.messageId,
     },
+    ...(prompt ? { prompt } : {}),
     state: row.state,
     ...(row.publish_claim_id ? { publishClaimId: row.publish_claim_id } : {}),
     ...(row.publish_claim_expires_at !== null ? { publishClaimExpiresAt: row.publish_claim_expires_at } : {}),
@@ -5113,20 +5124,36 @@ function acceptChannelBackendIngress(
     };
   }
 
-  const chatResult = ensureActorAgentChat(database, {
-    actorId: localActorId,
-    agentId,
-    clientRequestId: requestId,
-    seenAt: receivedAt,
-  });
-  const messageResult = createCanonicalActorMessage(database, {
-    chatId: chatResult.chat.id,
-    actorId: localActorId,
-    clientMessageId,
-    content: input.content,
-    messageType: "channel",
-    createdAt: receivedAt,
-  });
+  let chatId: string;
+  let message: ChatMessageWithSortKey;
+  if (input.canonical) {
+    chatId = normalizeCanonicalChatId(input.canonical.chatId);
+    const messageId = normalizeOpaqueCanonicalId(input.canonical.messageId, "canonical.messageId");
+    message = channelBackendMessageWithSortKey(database, messageId);
+    if (message.chatId !== chatId) {
+      throw new Error("Canonical Channel ingress Message does not belong to its Chat");
+    }
+    if (message.channel !== input.external.channelKind || message.instanceId !== channelInstanceId) {
+      throw new Error("Canonical Channel ingress Message does not match provider scope");
+    }
+  } else {
+    const chatResult = ensureActorAgentChat(database, {
+      actorId: localActorId,
+      agentId,
+      clientRequestId: requestId,
+      seenAt: receivedAt,
+    });
+    const messageResult = createCanonicalActorMessage(database, {
+      chatId: chatResult.chat.id,
+      actorId: localActorId,
+      clientMessageId,
+      content: input.content,
+      messageType: "channel",
+      createdAt: receivedAt,
+    });
+    chatId = chatResult.chat.id;
+    message = messageResult.message;
+  }
   const receiptId = semanticId("channel_ingress", [channelInstanceId, idempotencyKey]);
   database
     .prepare(
@@ -5135,6 +5162,7 @@ function acceptChannelBackendIngress(
         id, channel_instance_id, idempotency_key, request_fingerprint,
         initial_request_id, local_actor_id, agent_id, chat_id, message_id,
         session_key, session_name, turn_id, external_json, state,
+        prompt_json,
         publish_claim_id, publish_claim_expires_at, published_at,
         accepted_at, updated_at
       )
@@ -5142,6 +5170,7 @@ function acceptChannelBackendIngress(
         ?, ?, ?, ?,
         ?, ?, ?, ?, ?,
         ?, ?, ?, ?, 'accepted',
+        ?,
         NULL, NULL, NULL,
         ?, ?
       )
@@ -5155,12 +5184,13 @@ function acceptChannelBackendIngress(
       requestId,
       localActorId,
       agentId,
-      chatResult.chat.id,
-      messageResult.canonicalMessageId,
+      chatId,
+      message.id,
       sessionKey,
       sessionName,
       turnId,
       canonicalJsonRecord({ ...input.external }),
+      input.prompt === undefined ? null : canonicalJsonRecord(input.prompt),
       acceptedAt,
       acceptedAt,
     );
@@ -5170,7 +5200,7 @@ function acceptChannelBackendIngress(
   return {
     status: "accepted",
     receipt: rowToChannelBackendIngressReceipt(row),
-    message: messageResult.message,
+    message,
   };
 }
 
@@ -6672,6 +6702,39 @@ export function dbGetChannelBackendIngressReceiptByTurnId(turnId: string): Chann
     .prepare("SELECT * FROM channel_backend_ingress_receipts WHERE turn_id = ?")
     .get(normalizeOpaqueCanonicalId(turnId, "turnId")) as ChannelBackendIngressReceiptRow | undefined;
   return row ? rowToChannelBackendIngressReceipt(row) : null;
+}
+
+export function dbListPendingChannelBackendIngressReceipts(
+  input: { limit?: number; now?: number } = {},
+): ChannelBackendIngressReceiptRecord[] {
+  const limit = input.limit ?? 100;
+  const now = input.now ?? Date.now();
+  if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1_000) {
+    throw new Error("limit must be an integer between 1 and 1000");
+  }
+  if (!Number.isSafeInteger(now) || now < 0) {
+    throw new Error("now must be a non-negative Unix millisecond timestamp");
+  }
+  const rows = getDb()
+    .prepare(
+      `
+      SELECT *
+      FROM channel_backend_ingress_receipts
+      WHERE state = 'accepted'
+         OR (
+           state = 'publishing'
+           AND (
+             publish_claim_id IS NULL
+             OR publish_claim_expires_at IS NULL
+             OR publish_claim_expires_at <= ?
+           )
+         )
+      ORDER BY accepted_at ASC, id ASC
+      LIMIT ?
+    `,
+    )
+    .all(now, limit) as ChannelBackendIngressReceiptRow[];
+  return rows.map(rowToChannelBackendIngressReceipt);
 }
 
 export function dbGetChannelBackendRuntimeState(turnId: string): ChannelBackendRuntimeStateRecord | null {

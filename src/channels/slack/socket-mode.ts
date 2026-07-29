@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { WebSocket as NodeWebSocket } from "ws";
 import { configStore } from "../../config-store.js";
 import { resolvePlatformIdentity, type PlatformIdentity } from "../../contacts.js";
@@ -37,6 +37,12 @@ import type {
   NativeTextDeliveryRequest,
   NativeTextDeliveryResult,
 } from "../native/types.js";
+import {
+  CHANNEL_BACKEND_PROTOCOL,
+  CHANNEL_BACKEND_SCHEMA_VERSION,
+  acceptResolvedChannelIngress,
+  type ChannelContent,
+} from "../backend.js";
 import { SlackWebApiClient } from "./client.js";
 import { resolveSlackCredentialConfigFromEnv, type SlackCredentialResolver } from "./credentials.js";
 import {
@@ -49,6 +55,16 @@ import {
   type SlackScopedIdentityResolution,
 } from "./instance-alias.js";
 import { storeSlackInteractionResponseUrl } from "./interactions.js";
+import {
+  acceptSlackInboundEnvelope,
+  claimSlackInboundEnvelope,
+  listPendingSlackInboundEnvelopes,
+  markSlackInboundEnvelopeProcessed,
+  pruneProcessedSlackInboundEnvelopes,
+  releaseSlackInboundEnvelopeClaim,
+  SLACK_INBOUND_ENVELOPE_RETENTION_MS,
+  type SlackInboundEnvelopeRecord,
+} from "./inbound-inbox.js";
 import { registerSlackThreadInboundLifecycle } from "./thread-lifecycle.js";
 import {
   cleanSlackId,
@@ -78,6 +94,8 @@ const DEFAULT_SLACK_AUTH_TEST_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_HEARTBEAT_INTERVAL_MS = 10_000;
 const DEFAULT_SLACK_PONG_TIMEOUT_MS = 5_000;
 const DEFAULT_SLACK_HELLO_TIMEOUT_MS = 10_000;
+const DEFAULT_SLACK_INBOUND_RECONCILE_INTERVAL_MS = 5_000;
+const DEFAULT_SLACK_INBOUND_PRUNE_INTERVAL_MS = 6 * 60 * 60_000;
 const SLACK_FILE_INFO_RETRY_DELAYS_MS = [0, 250, 750, 1_500] as const;
 
 type PublishPrompt = typeof publishSessionPrompt;
@@ -580,6 +598,9 @@ export class SlackSocketModeService {
   private connectedAt: number | undefined;
   private lastPongAt: number | undefined;
   private reconnectCount = 0;
+  private inboundReconcileTimer: ReturnType<typeof setInterval> | null = null;
+  private reconcilingInbound = false;
+  private lastInboundPruneAt = 0;
 
   constructor(private readonly options: SlackSocketModeServiceOptions) {
     this.routingPolicy = normalizeSlackRoutingPolicy({
@@ -623,11 +644,16 @@ export class SlackSocketModeService {
     this.connectedAt = undefined;
     this.reconnectCount = 0;
     this.setLifecycle("connecting", "opening_socket");
+    this.startInboundReconciler();
     this.loopPromise = this.runLoop();
   }
 
   async stop(): Promise<void> {
     this.running = false;
+    if (this.inboundReconcileTimer) {
+      clearInterval(this.inboundReconcileTimer);
+      this.inboundReconcileTimer = null;
+    }
     this.interruptConnectionOpen?.();
     this.interruptConnectionOpen = null;
     this.interruptReconnectDelay?.();
@@ -657,6 +683,25 @@ export class SlackSocketModeService {
     ack: (envelopeId: string) => Promise<void> | void = async () => {},
   ): Promise<"duplicate" | "ignored" | "processed"> {
     const envelopeId = cleanSlackId(envelope.envelope_id);
+    const messageEvent = envelopeEvent(envelope);
+    if (envelopeId && messageEvent && isSlackMessageEventStructurallyEligible(messageEvent)) {
+      const accepted = acceptSlackInboundEnvelope({
+        scopeId: this.inboundScopeId(),
+        envelopeId,
+        envelope: durableSlackEnvelope(envelope),
+        acceptedAt: this.now(),
+      });
+      await ack(envelopeId);
+      if (accepted.status === "conflict") {
+        log.warn("Conflicting Slack Socket Mode envelope ignored", {
+          envelopeId,
+          accountId: this.options.accountId,
+        });
+        return "duplicate";
+      }
+      return this.processDurableInboundEnvelope(accepted.record);
+    }
+
     if (envelopeId) {
       await ack(envelopeId);
       if (this.seenEnvelopeIds.has(envelopeId)) {
@@ -683,6 +728,131 @@ export class SlackSocketModeService {
 
     await this.routeMessage(normalized);
     return "processed";
+  }
+
+  async resumePendingInboundEnvelopes(): Promise<{
+    scanned: number;
+    processed: number;
+    busy: number;
+    failed: number;
+  }> {
+    const pending = listPendingSlackInboundEnvelopes({
+      scopeId: this.inboundScopeId(),
+      now: this.now(),
+    });
+    const result = {
+      scanned: pending.length,
+      processed: 0,
+      busy: 0,
+      failed: 0,
+    };
+    for (const record of pending) {
+      try {
+        const disposition = await this.processDurableInboundEnvelope(record);
+        if (disposition === "duplicate") {
+          result.busy += 1;
+        } else {
+          result.processed += 1;
+        }
+      } catch (error) {
+        result.failed += 1;
+        log.warn("Pending Slack inbound envelope retry failed", {
+          envelopeId: record.envelopeId,
+          accountId: this.options.accountId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    return result;
+  }
+
+  private async processDurableInboundEnvelope(
+    record: SlackInboundEnvelopeRecord,
+  ): Promise<"duplicate" | "ignored" | "processed"> {
+    const claimId = randomUUID();
+    const claim = claimSlackInboundEnvelope({
+      scopeId: record.scopeId,
+      envelopeId: record.envelopeId,
+      claimId,
+      claimedAt: this.now(),
+    });
+    if (claim.status !== "acquired") return "duplicate";
+    try {
+      const normalized = await this.normalizeEnvelope(claim.record.envelope);
+      if (!normalized) {
+        markSlackInboundEnvelopeProcessed({
+          scopeId: record.scopeId,
+          envelopeId: record.envelopeId,
+          claimId,
+          processedAt: this.now(),
+        });
+        return "ignored";
+      }
+      await this.routeMessage(normalized);
+      markSlackInboundEnvelopeProcessed({
+        scopeId: record.scopeId,
+        envelopeId: record.envelopeId,
+        claimId,
+        processedAt: this.now(),
+      });
+      return "processed";
+    } catch (error) {
+      try {
+        releaseSlackInboundEnvelopeClaim({
+          scopeId: record.scopeId,
+          envelopeId: record.envelopeId,
+          claimId,
+          releasedAt: this.now(),
+        });
+      } catch (releaseError) {
+        log.error("Slack inbound envelope claim release failed", {
+          envelopeId: record.envelopeId,
+          accountId: this.options.accountId,
+          error: releaseError instanceof Error ? releaseError.message : String(releaseError),
+        });
+      }
+      throw error;
+    }
+  }
+
+  private inboundScopeId(): string {
+    return this.options.instanceId ?? this.options.accountId;
+  }
+
+  private startInboundReconciler(): void {
+    if (this.inboundReconcileTimer) return;
+    const reconcile = () => {
+      if (this.reconcilingInbound) return;
+      this.reconcilingInbound = true;
+      const now = this.now();
+      if (now - this.lastInboundPruneAt >= DEFAULT_SLACK_INBOUND_PRUNE_INTERVAL_MS) {
+        try {
+          pruneProcessedSlackInboundEnvelopes({
+            scopeId: this.inboundScopeId(),
+            olderThan: Math.max(0, now - SLACK_INBOUND_ENVELOPE_RETENTION_MS),
+          });
+          this.lastInboundPruneAt = now;
+        } catch (error) {
+          log.warn("Slack inbound envelope retention cleanup failed", {
+            accountId: this.options.accountId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+      void this.resumePendingInboundEnvelopes()
+        .catch((error) => {
+          log.warn("Slack inbound envelope reconciliation failed", {
+            accountId: this.options.accountId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        })
+        .finally(() => {
+          this.reconcilingInbound = false;
+        });
+    };
+    reconcile();
+    this.inboundReconcileTimer = setInterval(reconcile, DEFAULT_SLACK_INBOUND_RECONCILE_INTERVAL_MS);
+    this.inboundReconcileTimer.unref?.();
   }
 
   private async runLoop(): Promise<void> {
@@ -1280,7 +1450,7 @@ export class SlackSocketModeService {
       senderKind: message.senderKind,
     });
     const processedFiles = await this.processFiles(message, resolved.agent.cwd);
-    dbUpsertChatMessage({
+    const canonicalMessage = dbUpsertChatMessage({
       chatId: canonicalChat.id,
       channel: "slack",
       instanceId,
@@ -1409,13 +1579,55 @@ export class SlackSocketModeService {
       ...actorIdentity,
     };
 
-    await this.publishPrompt(sessionName, {
-      prompt: formatSlackPrompt(message, processedFiles),
-      source,
-      context,
-      deliveryBarrier: "after_tool",
-      deliveryBarrierSource: "default",
+    const backendIdentity = slackBackendIngressIdentity({
+      instanceId,
+      agentId: resolved.agent.id,
+      message,
+      actorIdentity,
     });
+    const ingress = await acceptResolvedChannelIngress(
+      {
+        request: {
+          protocol: CHANNEL_BACKEND_PROTOCOL,
+          schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
+          requestId: backendIdentity.requestId,
+          idempotencyKey: backendIdentity.idempotencyKey,
+          localActorId: backendIdentity.localActorId,
+          channelInstanceId: instanceId,
+          agentId: resolved.agent.id,
+          external: {
+            channelKind: "slack",
+            connectionId: this.options.accountId,
+            conversationId: slackBackendConversationId(message),
+            senderId: message.userId,
+            messageId: message.ts,
+          },
+          content: slackBackendContent(message, processedFiles),
+          receivedAt: new Date(message.eventTimeMs).toISOString(),
+        },
+        canonical: {
+          chatId: canonicalChat.id,
+          messageId: canonicalMessage.canonicalMessageId,
+        },
+        session: {
+          key: resolved.sessionKey,
+          name: sessionName,
+        },
+        prompt: {
+          prompt: formatSlackPrompt(message, processedFiles),
+          source: { ...source },
+          context: { ...context },
+          deliveryBarrier: "after_tool",
+          deliveryBarrierSource: "default",
+        },
+      },
+      {
+        publishPrompt: this.publishPrompt,
+      },
+    );
+    if (ingress.disposition === "rejected") {
+      throw new Error(`slack_channel_backend_${ingress.error?.code.toLowerCase() ?? "rejected"}`);
+    }
   }
 
   private async publishSlackThreadCreatedEvent(input: {
@@ -2175,6 +2387,101 @@ function formatSlackPrompt(message: SlackNormalizedMessage, files: readonly Proc
     new Date(message.eventTimeMs).toISOString(),
   ].filter(Boolean);
   return `[${parts.join(" ")}]\n<@${message.userId}>: ${formatSlackMessageBody(message, files)}`;
+}
+
+function slackBackendIngressIdentity(input: {
+  instanceId: string;
+  agentId: string;
+  message: SlackNormalizedMessage;
+  actorIdentity: SlackActorIdentity;
+}): {
+  requestId: string;
+  idempotencyKey: string;
+  localActorId: string;
+} {
+  const messageIdentity = slackBackendDigest([input.instanceId, input.message.channelId, input.message.ts]);
+  const requestIdentity = slackBackendDigest([
+    messageIdentity,
+    input.message.eventId ?? "",
+    input.message.envelopeId ?? "",
+  ]);
+  const actorIdentity = slackBackendDigest([
+    input.instanceId,
+    input.actorIdentity.actorType,
+    input.actorIdentity.contactId ??
+      input.actorIdentity.actorAgentId ??
+      input.actorIdentity.normalizedSenderId ??
+      input.message.userId,
+    input.agentId,
+  ]);
+  return {
+    requestId: `slack_request_${requestIdentity}`,
+    idempotencyKey: `slack_ingress_${messageIdentity}`,
+    localActorId: `slack_actor_${actorIdentity}`,
+  };
+}
+
+export function encodeSlackBackendConversationId(message: SlackNormalizedMessage): string {
+  return message.thread.outboundThreadTs
+    ? `${message.channelId}~${message.thread.outboundThreadTs}`
+    : message.channelId;
+}
+
+export function decodeSlackBackendConversationId(conversationId: string): {
+  channelId: string;
+  threadTs?: string;
+} {
+  const separator = conversationId.indexOf("~");
+  if (separator === -1) return { channelId: conversationId };
+  const channelId = conversationId.slice(0, separator);
+  const threadTs = conversationId.slice(separator + 1);
+  if (!channelId || !threadTs || threadTs.includes("~")) {
+    throw new Error("invalid_slack_backend_conversation");
+  }
+  return { channelId, threadTs };
+}
+
+function slackBackendConversationId(message: SlackNormalizedMessage): string {
+  return encodeSlackBackendConversationId(message);
+}
+
+function slackBackendContent(message: SlackNormalizedMessage, files: readonly ProcessedSlackFile[]): ChannelContent {
+  const content: ChannelContent = [];
+  const text = message.text.trim();
+  if (text) content.push({ type: "text", text });
+  for (const file of files) {
+    const name = fileDisplayName(file);
+    const mediaType = file.mimeType?.match(/^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$/)
+      ? file.mimeType
+      : undefined;
+    content.push({
+      type: "artifact",
+      artifactId: `slack_file_${slackBackendDigest([file.id])}`,
+      ...(name && Buffer.byteLength(name, "utf8") <= 256 ? { name } : {}),
+      ...(mediaType ? { mediaType } : {}),
+      ...(file.sizeBytes !== undefined && Number.isSafeInteger(file.sizeBytes) && file.sizeBytes >= 0
+        ? { sizeBytes: file.sizeBytes }
+        : {}),
+    });
+  }
+  if (content.length === 0) content.push({ type: "text", text: "[message]" });
+  return content;
+}
+
+function slackBackendDigest(parts: readonly string[]): string {
+  return createHash("sha256").update(parts.join("\u001f"), "utf8").digest("hex").slice(0, 32);
+}
+
+function durableSlackEnvelope(envelope: SlackSocketEnvelope): SlackSocketEnvelope {
+  return JSON.parse(
+    JSON.stringify(envelope, (key, value) => {
+      const normalizedKey = key.toLowerCase();
+      if (normalizedKey === "token" || normalizedKey === "response_url" || normalizedKey === "response_urls") {
+        return undefined;
+      }
+      return value;
+    }),
+  ) as SlackSocketEnvelope;
 }
 
 function positiveDuration(value: number | undefined, fallback: number): number {

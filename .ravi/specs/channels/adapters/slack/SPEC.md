@@ -28,6 +28,20 @@ The Slack adapter MUST support:
 - working presence via temporary reaction on the inbound Slack message;
 - delivery event emission.
 
+An eligible Message envelope MUST be persisted in a bounded, secret-redacted
+Slack inbox before Socket Mode acknowledgement. Inbox processing MUST use a
+leased claim, resume after failure or restart, and treat the backend receipt as
+the next durable boundary. Envelope payloads MUST NOT retain verification
+tokens, response URLs, or credential material.
+
+Normal admitted Slack messages MUST enter the provider-neutral Channel Backend
+after Slack normalization, actor resolution, route selection, canonical
+Chat/Message persistence, and thread lifecycle handling. The adapter MUST NOT
+publish the ordinary inbound Session prompt as a parallel path. Slack-specific
+identity, visibility, routing, thread, file, and policy facts remain adapter
+inputs; the backend owns durable ingress receipt, prompt publication claim,
+local binding, and runtime correlation.
+
 ## Socket Liveness
 
 The adapter MUST verify Socket Mode liveness independently of application
