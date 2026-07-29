@@ -15,6 +15,7 @@ import {
   startChannelOutboundReceiptPruner,
 } from "./runner.js";
 import type { ChannelBackendEgressResponder, ChannelBackendEgressResponderConnection } from "./backend-egress.js";
+import type { ChannelOutputSink } from "./backend.js";
 import type {
   NativeInboundChannelActionResponder,
   NativeInboundChannelActionResponderConnection,
@@ -28,6 +29,7 @@ import {
 } from "./native/driver.js";
 import { nativeLocalAgentActions } from "./native/agent-actions.js";
 import { installationChannelName, mergeInstallationCredentialChannels } from "./native/installation-channels.js";
+import type { ChannelRuntimeEventSink } from "./runtime-events.js";
 import { createSlackNativeChannelDriver } from "./slack/driver.js";
 
 describe("channel runner native delivery registry", () => {
@@ -101,13 +103,26 @@ describe("channel runner native delivery registry", () => {
         })),
       },
     );
+    let outputSink: ChannelOutputSink | undefined;
+    let runtimeEventSink: ChannelRuntimeEventSink | undefined;
+    const unregisterOutputSink = mock(() => {});
+    const unregisterRuntimeEventSink = mock(() => {});
     const runtime = await driver.createRuntime({
       channel: {
         name: "slack-a",
         provider: "slack",
         credentialConnection: "connection-a",
       },
-      host: {} as never,
+      host: {
+        registerOutputSink: mock((_target, sink: ChannelOutputSink) => {
+          outputSink = sink;
+          return unregisterOutputSink;
+        }),
+        registerRuntimeEventSink: mock((_target, sink: ChannelRuntimeEventSink) => {
+          runtimeEventSink = sink;
+          return unregisterRuntimeEventSink;
+        }),
+      } as never,
     });
 
     expect(driver.descriptor).toMatchObject({
@@ -123,6 +138,41 @@ describe("channel runner native delivery registry", () => {
     expect(runtime.delivery).toBe(delivery);
     expect(runtime.actions).toBe(actions);
     expect(runtime.presence).toBe(presence);
+    expect(outputSink).toBeDefined();
+    expect(runtimeEventSink).toBeDefined();
+    await outputSink!.emit({
+      protocol: "ravi.channel.backend",
+      schemaVersion: 1,
+      outputId: "output-a",
+      correlationId: "correlation-a",
+      binding: {
+        channelInstanceId: "slack-a",
+        agentId: "agent-a",
+        chatId: "chat-a",
+        messageId: "message-a",
+        sessionId: "session-a",
+        turnId: "turn-a",
+      },
+      target: {
+        channelKind: "slack",
+        connectionId: "slack-a",
+        conversationId: "C123~1713000000.000100",
+      },
+      kind: "assistant_message",
+      content: [{ type: "text", text: "done" }],
+      emittedAt: "2026-07-29T12:00:00.000Z",
+    });
+    expect(delivery.deliverText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionName: "session-a",
+        idempotencyKey: "output-a",
+        text: "done",
+        target: expect.objectContaining({
+          chatId: "C123",
+          threadId: "1713000000.000100",
+        }),
+      }),
+    );
     await runtime.start();
     expect(start).toHaveBeenCalledTimes(1);
     expect(runtime.health()).toMatchObject({
@@ -132,6 +182,8 @@ describe("channel runner native delivery registry", () => {
     });
     await runtime.stop();
     expect(stop).toHaveBeenCalledTimes(1);
+    expect(unregisterOutputSink).toHaveBeenCalledTimes(1);
+    expect(unregisterRuntimeEventSink).toHaveBeenCalledTimes(1);
   });
 
   it("materializes one credential-backed native runtime without copying credential material", () => {

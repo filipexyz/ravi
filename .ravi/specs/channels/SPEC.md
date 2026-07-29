@@ -4,6 +4,7 @@ title: Channels
 kind: domain
 domain: channels
 capabilities:
+  - backend
   - chat-actions
   - chats
   - meetings
@@ -30,6 +31,12 @@ Ravi MUST abstract Omni as a transport/gateway adapter. Product and agent-facing
 ## Invariants
 
 - Ravi MUST own operational behavior such as routing, presence lifecycle, task notifications, and runtime-originated outbound intent.
+- Every native provider MUST enter Session/Turn execution through the
+  provider-neutral Channel Backend after provider normalization and Ravi route
+  resolution. A provider adapter MUST NOT publish an ordinary inbound prompt
+  directly.
+- The Channel Backend MUST durably accept canonical Chat/Message identity and
+  an idempotency receipt before prompt publication.
 - Transport adapters MUST only deliver channel-specific payloads and report delivery state.
 - Ravi MUST NOT patch transport code to compensate for broken runtime lifecycle or routing rules without evidence that the transport contract is wrong.
 - Omni/raw channel identifiers MUST remain stored as provenance and debugging data, but they MUST NOT be the primary product model exposed to agents or operators.
@@ -61,6 +68,10 @@ Ravi owns semantics:
 - event/audit shape consumed by agents and UI
 
 Feature code SHOULD depend on the Ravi semantic layer first. Direct Omni access is allowed only inside channel adapters, diagnostics, migration, and low-level debugging paths.
+
+## Children
+
+- `channels/backend`
 
 ## Validation
 
