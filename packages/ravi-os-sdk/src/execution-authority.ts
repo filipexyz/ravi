@@ -11,6 +11,14 @@ export const MAX_EXECUTION_GRANT_LIFETIME_MS = 300_000;
 export const MAX_ROUTE_LEASE_LIFETIME_MS = 300_000;
 export const MAX_APPROVAL_LIFETIME_MS = 900_000;
 export const MAX_AUTHORITY_KEY_OVERLAP_MS = 900_000;
+/**
+ * Maximum tolerated positive difference between an authority issuer's clock
+ * and the runtime clock when evaluating start-of-validity boundaries.
+ *
+ * This tolerance never extends expiration, retirement, or revocation
+ * boundaries.
+ */
+export const EXECUTION_AUTHORITY_CLOCK_SKEW_TOLERANCE_MS = 5_000;
 
 const textEncoder = new TextEncoder();
 
@@ -874,7 +882,12 @@ function checkArtifactTime(
   artifact: SignedAuthorityArtifact,
   nowMs: number,
 ): ExecutionAuthorityDenialReason | undefined {
-  if (nowMs < Date.parse(artifact.claims.notBefore)) return "not_yet_valid";
+  if (
+    nowMs + EXECUTION_AUTHORITY_CLOCK_SKEW_TOLERANCE_MS <
+    Date.parse(artifact.claims.notBefore)
+  ) {
+    return "not_yet_valid";
+  }
   if (nowMs >= Date.parse(artifact.claims.expiresAt)) return "expired";
   return undefined;
 }
@@ -898,7 +911,7 @@ async function verifyArtifact(
   const keyEnd = Date.parse(key.notAfter);
   const artifactIssuedAt = Date.parse(artifact.claims.issuedAt);
   if (
-    nowMs < keyStart ||
+    nowMs + EXECUTION_AUTHORITY_CLOCK_SKEW_TOLERANCE_MS < keyStart ||
     nowMs >= keyEnd ||
     artifactIssuedAt < keyStart ||
     artifactIssuedAt >= keyEnd
@@ -1116,7 +1129,10 @@ export async function authorizeExecutionEffect(
   if (trustedKeys.revision < exact.minimumKeySetRevision) {
     return denied("key_set_downgrade");
   }
-  if (nowMs < Date.parse(trustedKeys.acceptedAt)) {
+  if (
+    nowMs + EXECUTION_AUTHORITY_CLOCK_SKEW_TOLERANCE_MS <
+    Date.parse(trustedKeys.acceptedAt)
+  ) {
     return denied("key_inactive");
   }
   if (
@@ -1463,7 +1479,8 @@ export function validateAuthorityKeySetAdvance(
   if (
     activeKey === undefined ||
     activeKey.status !== "active" ||
-    nowMs < Date.parse(activeKey.notBefore) ||
+    nowMs + EXECUTION_AUTHORITY_CLOCK_SKEW_TOLERANCE_MS <
+      Date.parse(activeKey.notBefore) ||
     nowMs >= Date.parse(activeKey.notAfter)
   ) {
     return { accepted: false, reason: "active_key_invalid" };
