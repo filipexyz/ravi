@@ -1,5 +1,6 @@
 import { describe, expect, it, mock } from "bun:test";
 import type { PublishSessionPromptOptions } from "../omni/session-stream.js";
+import { toPersistedChannelContext, type ChannelContext } from "./context.js";
 import { publishChannelSessionPrompt } from "./session-prompt.js";
 
 describe("channel session prompt", () => {
@@ -81,6 +82,31 @@ describe("channel session prompt", () => {
       producer: "channel",
       action: "session.return",
       principal: { type: "automation", id: "channels:session.return" },
+    });
+  });
+
+  it("keeps persisted channel context limited to presentation metadata", () => {
+    const persisted = toPersistedChannelContext({
+      channelId: "slack",
+      channelName: "Slack",
+      isGroup: true,
+      groupId: "group-1",
+      groupName: "Support",
+      groupMembers: ["Alice", "Bob"],
+      botTag: "@ravi",
+      actorId: "actor-1",
+      senderId: "sender-1",
+      messageId: "message-1",
+    } as ChannelContext & Record<string, unknown>);
+
+    expect(persisted).toEqual({
+      channelId: "slack",
+      channelName: "Slack",
+      isGroup: true,
+      groupId: "group-1",
+      groupName: "Support",
+      groupMembers: ["Alice", "Bob"],
+      botTag: "@ravi",
     });
   });
 });
