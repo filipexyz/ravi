@@ -42,6 +42,7 @@ import {
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
+import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
 import {
   buildRuntimeSessionPoolSnapshot,
   classifyRuntimeSessionStartLane,
@@ -1823,7 +1824,13 @@ function getDebounceCompatibilityKey(prompt: RuntimeLaunchPrompt): string {
     deliveryClass,
     source: prompt.source ? getMessageTargetKey(prompt.source) : "",
     approvalSource: prompt._approvalSource ? getMessageTargetKey(prompt._approvalSource) : "",
+    turnOrigin: getDebounceTurnOriginKey(prompt),
   });
+}
+
+function getDebounceTurnOriginKey(prompt: RuntimeLaunchPrompt): string {
+  if (prompt._turnOrigin === undefined) return "";
+  return JSON.stringify(resolveRuntimeTurnOrigin(prompt._turnOrigin) ?? { invalid: true });
 }
 
 function getMessageTargetKey(target: RuntimeMessageTarget): string {

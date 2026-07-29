@@ -24,6 +24,7 @@ import {
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { querySessionTrace } from "../session-trace/query.js";
 import { dbCompleteTask, dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
+import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 
 function createDispatcher(maxConcurrentSessions = 10, interactiveReservedSessions = 0) {
   return new RuntimeSessionDispatcher({
@@ -143,6 +144,54 @@ describe("RuntimeSessionDispatcher debounce", () => {
     expect(prompts[1].prompt).toBe("mensagem humana");
     expect(prompts[1].deliveryBarrier).toBe("after_tool");
     expect(prompts[1].taskBarrierTaskId).toBeUndefined();
+  });
+
+  it("does not merge prompts across typed authority origins", async () => {
+    const dispatcher = createDispatcher();
+    const prompts: RuntimeLaunchPrompt[] = [];
+    (
+      dispatcher as unknown as { handlePromptImmediate: typeof dispatcher.handlePromptImmediate }
+    ).handlePromptImmediate = mock(async (_sessionName: string, prompt: RuntimeLaunchPrompt) => {
+      prompts.push(prompt);
+    });
+
+    const source = { channel: "telegram", accountId: "main", chatId: "group:123" };
+    dispatcher.handlePromptWithDebounce(
+      "session",
+      {
+        prompt: "mensagem externa",
+        source,
+        _agentId: "agent-a",
+        deliveryBarrier: "after_tool",
+      },
+      60_000,
+    );
+    dispatcher.handlePromptWithDebounce(
+      "session",
+      {
+        prompt: "[System] Inform: mensagem interna",
+        source,
+        _agentId: "agent-a",
+        deliveryBarrier: "after_tool",
+        _turnOrigin: buildSessionRelayTurnOrigin("inform", {
+          agentId: "origin-agent",
+          sessionKey: "agent:origin-agent:main",
+        }),
+      },
+      60_000,
+    );
+
+    await dispatcher.flushDebounce("session");
+
+    expect(prompts).toHaveLength(2);
+    expect(prompts[0]?.prompt).toBe("mensagem externa");
+    expect(prompts[0]?._turnOrigin).toBeUndefined();
+    expect(prompts[1]?.prompt).toBe("[System] Inform: mensagem interna");
+    expect(prompts[1]?._turnOrigin).toMatchObject({
+      producer: "session-relay",
+      action: "inform",
+      principal: { type: "agent", id: "origin-agent" },
+    });
   });
 
   it("cancels debounce timers and pending starts during shutdown", async () => {

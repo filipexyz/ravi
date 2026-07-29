@@ -96,14 +96,16 @@ export function getDeliverableRuntimeMessages(
       })(),
     ),
   );
-  const firstChannelBackendIndex = deliverable.findIndex(
-    (message) => message.launchPrompt?._channelBackend !== undefined,
+  // These envelopes bind authority to one logical turn. Never let adjacent
+  // messages borrow their channel binding or authenticated origin.
+  const firstIsolatedTurnIndex = deliverable.findIndex(
+    (message) => message.launchPrompt?._channelBackend !== undefined || message.launchPrompt?._turnOrigin !== undefined,
   );
-  if (firstChannelBackendIndex === 0) {
+  if (firstIsolatedTurnIndex === 0) {
     return deliverable.slice(0, 1);
   }
-  if (firstChannelBackendIndex > 0) {
-    return deliverable.slice(0, firstChannelBackendIndex);
+  if (firstIsolatedTurnIndex > 0) {
+    return deliverable.slice(0, firstIsolatedTurnIndex);
   }
   return deliverable;
 }
