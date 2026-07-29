@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "bun:test";
 import {
   ApprovalConsumptionRecordSchema,
   BindingAuthorityEnvelopeClaimsSchema,
+  EXECUTION_AUTHORITY_CLOCK_SKEW_TOLERANCE_MS,
   ExactExecutionEffectSchema,
   ExecutionCapabilityGrantClaimsSchema,
   LocalAuthorityAttenuationSchema,
@@ -327,6 +328,122 @@ describe("execution authority public contract", () => {
         }).success,
       ).toBe(true);
     }
+  });
+
+  it("tolerates bounded issuer clock skew without extending expiration", async () => {
+    const artifacts = await validArtifacts();
+    const authorityNow = "2026-07-26T18:01:00.000Z";
+    const runtimeNow = "2026-07-26T18:00:59.700Z";
+    const envelopeClaims = BindingAuthorityEnvelopeClaimsSchema.parse({
+      ...artifacts.envelopeClaims,
+      issuedAt: authorityNow,
+      notBefore: authorityNow,
+    });
+    const leaseClaims = SignedExecutionRouteLeaseSchema.shape.claims.parse({
+      ...artifacts.leaseClaims,
+      issuedAt: authorityNow,
+      notBefore: authorityNow,
+    });
+    const grantClaims = ExecutionCapabilityGrantClaimsSchema.parse({
+      ...artifacts.grantClaims,
+      issuedAt: authorityNow,
+      notBefore: authorityNow,
+    });
+    const approvalRequest = OperationApprovalRequestSchema.parse({
+      ...artifacts.approvalRequest,
+      issuedAt: authorityNow,
+      notBefore: authorityNow,
+    });
+    const decision = await approvalDecision(approvalRequest, {
+      decidedAt: authorityNow,
+      issuedAt: authorityNow,
+      notBefore: authorityNow,
+    });
+    const skewedKeySet = TrustedAuthorityKeySetSchema.parse({
+      ...keySet([
+        {
+          ...activeKey(),
+          notBefore: authorityNow,
+        },
+      ]),
+      acceptedAt: authorityNow,
+    });
+
+    await expect(
+      authorizeExecutionEffect({
+        ...artifacts.input,
+        now: runtimeNow,
+        keySet: skewedKeySet,
+        acceptedEnvelope: await signClaims(envelopeClaims),
+        routeLease: await signClaims(leaseClaims),
+        grant: await signClaims(grantClaims),
+        approval: {
+          required: true,
+          decision,
+          consumedApprovalIds: new Set(),
+        },
+      }),
+    ).resolves.toMatchObject({ allowed: true });
+
+    const beyondTolerance = new Date(
+      Date.parse(NOW) + EXECUTION_AUTHORITY_CLOCK_SKEW_TOLERANCE_MS + 1,
+    ).toISOString();
+    const futureGrantClaims = ExecutionCapabilityGrantClaimsSchema.parse({
+      ...artifacts.grantClaims,
+      issuedAt: NOW,
+      notBefore: beyondTolerance,
+    });
+    await expect(
+      authorizeExecutionEffect({
+        ...artifacts.input,
+        grant: await signClaims(futureGrantClaims),
+      }),
+    ).resolves.toEqual({ allowed: false, reason: "not_yet_valid" });
+
+    await expect(
+      authorizeExecutionEffect({
+        ...artifacts.input,
+        now: artifacts.grantClaims.expiresAt,
+      }),
+    ).resolves.toEqual({ allowed: false, reason: "expired" });
+
+    const nextKeySet = TrustedAuthorityKeySetSchema.parse({
+      ...keySet(
+        [
+          {
+            ...activeKey(),
+            status: "retiring",
+            retiredAt: authorityNow,
+            acceptUntil: "2026-07-26T18:06:00.000Z",
+          },
+          {
+            ...activeKey(nextPublicKey, "hub-key-b"),
+            notBefore: authorityNow,
+          },
+        ],
+        "hub-key-b",
+        5,
+      ),
+      acceptedAt: authorityNow,
+    });
+    expect(
+      validateAuthorityKeySetAdvance(
+        artifacts.keySet,
+        nextKeySet,
+        runtimeNow,
+      ),
+    ).toEqual({ accepted: true });
+    expect(
+      validateAuthorityKeySetAdvance(
+        artifacts.keySet,
+        nextKeySet,
+        new Date(
+          Date.parse(authorityNow) -
+            EXECUTION_AUTHORITY_CLOCK_SKEW_TOLERANCE_MS -
+            1,
+        ).toISOString(),
+      ),
+    ).toEqual({ accepted: false, reason: "active_key_invalid" });
   });
 
   it("fails closed for every exact-effect mismatch", async () => {
