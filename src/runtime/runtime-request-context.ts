@@ -18,7 +18,7 @@ import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { buildRuntimeEnv, buildTaskRuntimeEnv } from "./host-env.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
-import type { MessageActorMetadata, RuntimeLaunchPrompt } from "./message-types.js";
+import type { MessageActorMetadata, RuntimeLaunchPrompt, RuntimeTurnOriginMetadata } from "./message-types.js";
 import {
   createRuntimeContext,
   DEFAULT_DERIVED_CONTEXT_TTL_MS,
@@ -27,6 +27,7 @@ import {
 } from "./runtime-context-store.js";
 import type { RuntimeCapabilities, RuntimeProviderId } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
+import { resolveRuntimeTurnOrigin } from "./turn-origin.js";
 
 export interface RuntimeRequestContextOptions {
   dbSessionKey: string;
@@ -234,7 +235,11 @@ function buildAgentIdentityRuntimeContextInputForPrompt(options: {
   const surfacePrincipal = resolveSurfacePrincipal(actorMetadata);
   const actorDisplayName = cleanStringValue(actorMetadata?.senderName);
   const surfaceDisplayName = cleanStringValue(actorMetadata?.groupName);
-  const actorResolution = resolveActorResolution(actorMetadata, actorPrincipal);
+  const actorResolution = resolveActorResolution(
+    actorMetadata,
+    actorPrincipal,
+    hasPromptExternalAuthoritySurface(options.prompt),
+  );
 
   return buildAgentIdentityRuntimeContextInput({
     agentId: options.agentId,
@@ -336,7 +341,7 @@ function resolveAgentIdentityCompartment(
       id: surfacePrincipal.subjectId,
     };
   }
-  if (actorPrincipal?.subjectType === "automation") {
+  if (actorPrincipal?.subjectType === "automation" && !resolveRuntimeTurnOrigin(prompt._turnOrigin)) {
     return {
       type: "automation",
       id: actorPrincipal.subjectId,
@@ -375,26 +380,49 @@ function resolveAuthorityActorMetadata(
   | undefined {
   const source = resolvedSource ?? prompt.source;
   const context = prompt.context;
-  const automationPrincipal = resolveAutomationPromptPrincipal(prompt, source, context);
-  if (!source && !context && !automationPrincipal) return undefined;
+  const turnOrigin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
+  const promptPrincipal =
+    resolveTurnOriginPrincipal(turnOrigin) ?? resolveAutomationPromptPrincipal(prompt, source, context);
+  const promptIdentityProvenance = turnOrigin
+    ? buildTurnOriginIdentityProvenance(turnOrigin)
+    : buildAutomationIdentityProvenance(prompt);
+  if (!source && !context && !promptPrincipal) return undefined;
   return {
     ...(source ?? {}),
     ...(context ?? {}),
     canonicalChatId: context?.canonicalChatId ?? source?.canonicalChatId,
-    actorType: automationPrincipal ? "automation" : (context?.actorType ?? source?.actorType),
-    contactId: automationPrincipal ? undefined : (context?.contactId ?? source?.contactId),
-    actorAgentId: automationPrincipal ? undefined : (context?.actorAgentId ?? source?.actorAgentId),
-    automationId: automationPrincipal?.subjectId,
-    identityProvenance:
-      context?.identityProvenance ?? source?.identityProvenance ?? buildAutomationIdentityProvenance(prompt),
-    platformIdentityId: context?.platformIdentityId ?? source?.platformIdentityId,
-    rawSenderId: context?.rawSenderId ?? source?.rawSenderId,
-    normalizedSenderId: context?.normalizedSenderId ?? source?.normalizedSenderId,
+    actorType: promptPrincipal
+      ? promptPrincipal.subjectType === "agent"
+        ? "agent"
+        : "automation"
+      : (context?.actorType ?? source?.actorType),
+    contactId: promptPrincipal ? undefined : (context?.contactId ?? source?.contactId),
+    actorAgentId:
+      promptPrincipal?.subjectType === "agent"
+        ? promptPrincipal.subjectId
+        : promptPrincipal
+          ? undefined
+          : (context?.actorAgentId ?? source?.actorAgentId),
+    automationId:
+      promptPrincipal?.subjectType === "automation"
+        ? promptPrincipal.subjectId
+        : promptPrincipal
+          ? undefined
+          : (context?.automationId ?? source?.automationId),
+    identityProvenance: promptIdentityProvenance ?? context?.identityProvenance ?? source?.identityProvenance,
+    platformIdentityId: promptPrincipal ? undefined : (context?.platformIdentityId ?? source?.platformIdentityId),
+    rawSenderId: promptPrincipal ? undefined : (context?.rawSenderId ?? source?.rawSenderId),
+    normalizedSenderId: promptPrincipal ? undefined : (context?.normalizedSenderId ?? source?.normalizedSenderId),
+    identityConfidence: promptPrincipal ? undefined : (context?.identityConfidence ?? source?.identityConfidence),
     accountId: context?.accountId ?? source?.accountId,
     chatId: context?.chatId ?? source?.chatId,
     threadId: source?.threadId,
     sourceMessageId: source?.sourceMessageId,
-    senderName: context?.senderName,
+    senderName: turnOrigin
+      ? turnOrigin.producer === "session-relay"
+        ? (turnOrigin.session?.name ?? turnOrigin.principal.id)
+        : turnOrigin.principal.id
+      : context?.senderName,
     groupName: context?.groupName,
   };
 }
@@ -411,6 +439,10 @@ function isExternalAuthoritySurface(
       })
     | undefined,
 ): boolean {
+  // TUI is a local outbound-suppression sentinel, not an external actor surface.
+  if (actorMetadata?.channel === "tui" || actorMetadata?.channelId === "tui") {
+    return false;
+  }
   return Boolean(
     actorMetadata?.channel ||
       actorMetadata?.channelId ||
@@ -423,10 +455,17 @@ function isExternalAuthoritySurface(
 function resolveActorResolution(
   actorMetadata: MessageActorMetadata | undefined,
   actorPrincipal: AuthorityPrincipal | null,
+  promptHasExternalAuthoritySurface: boolean,
 ): "resolved" | "missing_contact" | "not_applicable" {
   if (actorPrincipal) return "resolved";
-  if (isExternalAuthoritySurface(actorMetadata)) return "missing_contact";
+  if (promptHasExternalAuthoritySurface && isExternalAuthoritySurface(actorMetadata)) return "missing_contact";
   return "not_applicable";
+}
+
+function hasPromptExternalAuthoritySurface(prompt: RuntimeLaunchPrompt): boolean {
+  // A resolved source may be only the session's persisted reply target. Missing
+  // actor identity is fail-closed only when the producer supplied the surface.
+  return isExternalAuthoritySurface(prompt.source) || isExternalAuthoritySurface(prompt.context);
 }
 
 function resolveActorPrincipal(actorMetadata: MessageActorMetadata | undefined): AuthorityPrincipal | null {
@@ -462,6 +501,7 @@ function buildRuntimeContextMetadata(options: {
   approvalSource?: RuntimeMessageTarget;
 }): Record<string, unknown> {
   const actorMetadata = buildRuntimeContextActorMetadata(options.prompt, options.resolvedSource);
+  const turnOrigin = resolveRuntimeTurnOrigin(options.prompt._turnOrigin);
   return {
     runtimeProvider: options.runtimeProviderId,
     runtimeModel: options.model,
@@ -481,6 +521,7 @@ function buildRuntimeContextMetadata(options: {
     runtimeThinkingSource: options.runtimeResolution.sources.thinking,
     ...(options.approvalSource ? { approvalSource: options.approvalSource } : {}),
     ...(actorMetadata ? { actor: actorMetadata, actorMetadata } : {}),
+    ...(turnOrigin ? { turnOrigin } : {}),
     ...(options.prompt._observation ? { observation: { ...options.prompt._observation } } : {}),
     ...(options.prompt._thread ? { raviThread: options.prompt._thread } : {}),
   };
@@ -492,6 +533,7 @@ function buildRuntimeContextActorMetadata(
 ): Record<string, unknown> | null {
   const actor = resolveAuthorityActorMetadata(prompt, resolvedSource);
   const context = prompt.context;
+  const turnOrigin = resolveRuntimeTurnOrigin(prompt._turnOrigin);
   const metadata: Record<string, unknown> = {};
   copyStringField(metadata, "canonicalChatId", actor?.canonicalChatId);
   copyStringField(metadata, "channel", actor?.channel);
@@ -507,13 +549,23 @@ function buildRuntimeContextActorMetadata(
   copyStringField(metadata, "platformIdentityId", actor?.platformIdentityId);
   copyStringField(metadata, "rawSenderId", actor?.rawSenderId);
   copyStringField(metadata, "normalizedSenderId", actor?.normalizedSenderId);
-  copyStringField(metadata, "senderId", context?.senderId);
-  copyStringField(metadata, "senderName", context?.senderName);
-  copyStringField(metadata, "senderPhone", context?.senderPhone);
+  if (!turnOrigin) {
+    copyStringField(metadata, "senderId", context?.senderId);
+    copyStringField(metadata, "senderPhone", context?.senderPhone);
+  }
+  copyStringField(metadata, "senderName", actor?.senderName);
   copyStringField(metadata, "groupName", context?.groupName);
   if (typeof actor?.identityConfidence === "number") metadata.identityConfidence = actor.identityConfidence;
   if (actor?.identityProvenance) metadata.identityProvenance = actor.identityProvenance;
   return Object.keys(metadata).length > 0 ? metadata : null;
+}
+
+function resolveTurnOriginPrincipal(turnOrigin: RuntimeTurnOriginMetadata | null): AuthorityPrincipal | null {
+  if (!turnOrigin) return null;
+  return {
+    subjectType: turnOrigin.principal.type,
+    subjectId: turnOrigin.principal.id,
+  };
 }
 
 function resolveAutomationPromptPrincipal(
@@ -552,6 +604,16 @@ function resolveAutomationPromptPrincipal(
     return { subjectType: "automation", subjectId: "daemon-restart" };
   }
   return null;
+}
+
+function buildTurnOriginIdentityProvenance(turnOrigin: RuntimeTurnOriginMetadata): Record<string, unknown> {
+  return {
+    source: turnOrigin.producer,
+    protocol: turnOrigin.protocol,
+    schemaVersion: turnOrigin.schemaVersion,
+    action: turnOrigin.action,
+    ...(turnOrigin.producer === "session-relay" && turnOrigin.session ? { session: turnOrigin.session } : {}),
+  };
 }
 
 function hasResolvedExternalActor(

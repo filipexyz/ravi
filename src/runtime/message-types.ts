@@ -49,7 +49,10 @@ export interface MessageContext extends MessageActorMetadata {
   timestamp: number;
 }
 
-/** Stable channel/group metadata persisted in session for cross-send reuse */
+/**
+ * Stable presentation metadata persisted for reply routing. Actor identity is
+ * deliberately excluded and must never be reconstructed from this snapshot.
+ */
 export interface ChannelContext {
   channelId: string;
   channelName: string;
@@ -130,6 +133,41 @@ export interface ChannelBackendPromptMetadata {
   };
 }
 
+export type SessionRelayAction = "send" | "ask" | "answer" | "execute" | "inform";
+
+export interface RuntimeTurnOriginPrincipal {
+  type: "agent" | "automation";
+  id: string;
+}
+
+interface RuntimeTurnOriginEnvelope {
+  protocol: "ravi.runtime.turn-origin";
+  schemaVersion: 1;
+  principal: RuntimeTurnOriginPrincipal;
+}
+
+export interface SessionRelayTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
+  producer: "session-relay";
+  action: SessionRelayAction;
+  session?: {
+    key?: string;
+    name?: string;
+  };
+}
+
+export type ChannelTurnAction = "session.bootstrap" | "session.return";
+
+export interface ChannelTurnOriginMetadata extends RuntimeTurnOriginEnvelope {
+  producer: "channel";
+  action: ChannelTurnAction;
+}
+
+/**
+ * Authenticated cause of an internal turn. This is authority provenance only;
+ * `source` and `context` continue to describe its reply surface.
+ */
+export type RuntimeTurnOriginMetadata = SessionRelayTurnOriginMetadata | ChannelTurnOriginMetadata;
+
 /** Prompt message structure */
 export interface PromptMessage {
   prompt: string;
@@ -186,6 +224,8 @@ export interface PromptMessage {
   _daemonRestartResume?: DaemonRestartResumePromptMetadata;
   /** Provider-neutral identity for prompts accepted through a channel backend. */
   _channelBackend?: ChannelBackendPromptMetadata;
+  /** Authenticated provenance for internal producers whose reply surface is not their actor. */
+  _turnOrigin?: RuntimeTurnOriginMetadata;
 }
 
 export type RuntimeLaunchPrompt = PromptMessage;

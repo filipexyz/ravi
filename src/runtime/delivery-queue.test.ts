@@ -7,6 +7,7 @@ import {
 } from "./delivery-queue.js";
 import { shutdownRuntimeStreamingSession } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
+import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeSessionHandle } from "./types.js";
 
 function makeRuntimeSession(): RuntimeSessionHandle {
@@ -198,6 +199,29 @@ describe("runtime delivery queue", () => {
 
     session.pendingMessages.shift();
     expect(getDeliverableRuntimeMessages("dev", session)).toEqual([normalAfter]);
+  });
+
+  it("isolates typed internal origins from surrounding external messages", () => {
+    const externalBefore = createQueuedRuntimeUserMessage({ prompt: "external before" });
+    const internal = createQueuedRuntimeUserMessage({
+      prompt: "internal",
+      _turnOrigin: buildSessionRelayTurnOrigin("inform", {
+        agentId: "origin-agent",
+        sessionKey: "agent:origin-agent:main",
+      }),
+    });
+    const externalAfter = createQueuedRuntimeUserMessage({ prompt: "external after" });
+    const session = makeStreamingSession({
+      pendingMessages: [externalBefore, internal, externalAfter],
+    });
+
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([externalBefore]);
+
+    session.pendingMessages.shift();
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([internal]);
+
+    session.pendingMessages.shift();
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([externalAfter]);
   });
 });
 

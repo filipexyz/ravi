@@ -20,7 +20,7 @@ import {
   dbUpsertChatParticipant,
   getFirstAccountName,
 } from "../../router/router-db.js";
-import { publishSessionPrompt } from "../../omni/session-stream.js";
+import { publishChannelSessionPrompt } from "../../channels/session-prompt.js";
 import { resolveOmniGroupMetadata } from "../../omni/group-metadata-cache.js";
 import { prepareOmniMentionMessage } from "../../omni/mentions.js";
 import { OmniSender } from "../../omni/sender.js";
@@ -40,6 +40,7 @@ import { ensureAgentInstructionFiles } from "../../runtime/agent-instructions.js
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
 import { ensureAgentCanViewAgent } from "../../permissions/agent-default-capabilities-provider.js";
+import { buildRuntimeCallerPrincipal } from "../../runtime/turn-origin.js";
 import { nats } from "../../nats.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1258,12 +1259,17 @@ export class GroupCommands {
         const memberList = participants.join(", ");
         const inform = `[System] Inform: Você foi adicionado ao grupo WhatsApp "${name}" com os membros: ${memberList}. Se apresente brevemente.`;
 
-        await publishSessionPrompt(session.name ?? sessionName, {
-          prompt: inform,
-          source: {
-            channel: "whatsapp",
-            accountId: acctId,
-            chatId: `group:${groupId}`,
+        await publishChannelSessionPrompt({
+          sessionName: session.name ?? sessionName,
+          action: "session.bootstrap",
+          principal: buildRuntimeCallerPrincipal(getContext()),
+          payload: {
+            prompt: inform,
+            source: {
+              channel: "whatsapp",
+              accountId: acctId,
+              chatId: `group:${groupId}`,
+            },
           },
         });
         jsonPayload.inform = { status: "sent", sessionName: session.name ?? sessionName };

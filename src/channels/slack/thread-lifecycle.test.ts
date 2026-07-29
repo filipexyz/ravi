@@ -79,6 +79,16 @@ describe("Slack thread lifecycle", () => {
           actorType: "agent",
           actorAgentId: "ravi",
         },
+        _turnOrigin: {
+          protocol: "ravi.runtime.turn-origin",
+          schemaVersion: 1,
+          producer: "channel",
+          action: "session.bootstrap",
+          principal: {
+            type: "agent",
+            id: "ravi",
+          },
+        },
       },
       options: {
         messageId: `slack-thread-start:${fixture.requestId}`,
@@ -297,6 +307,16 @@ describe("Slack thread lifecycle", () => {
             childSessionKey: child.sessionKey,
             closeSequence: 2,
           }),
+          _turnOrigin: {
+            protocol: "ravi.runtime.turn-origin",
+            schemaVersion: 1,
+            producer: "channel",
+            action: "session.return",
+            principal: {
+              type: "agent",
+              id: "ravi",
+            },
+          },
         }),
       },
     ]);
