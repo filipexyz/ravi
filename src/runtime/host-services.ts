@@ -111,7 +111,9 @@ function getRuntimeDynamicToolSpecsForContext(context: ContextRecord): RuntimeDy
   const nativeActions = nativeLocalAgentActions
     .list(context)
     .filter(
-      ({ toolName }) => !commandToolNames.has(toolName) && canWithCapabilityContext(context, "use", "tool", toolName),
+      ({ toolName, authorizationMode }) =>
+        !commandToolNames.has(toolName) &&
+        (authorizationMode === "driver_handler" || canWithCapabilityContext(context, "use", "tool", toolName)),
     )
     .map(
       ({ toolName, description, inputSchema }) =>
@@ -311,8 +313,8 @@ async function executeNativeLocalAgentAction(
   request: RuntimeDynamicToolCallRequest,
   executionOptions?: RuntimeDynamicToolExecutionOptions,
 ): Promise<RuntimeDynamicToolCallResult> {
-  const available = nativeLocalAgentActions.list(options.context).some(({ toolName }) => toolName === request.toolName);
-  if (!available) {
+  const action = nativeLocalAgentActions.list(options.context).find(({ toolName }) => toolName === request.toolName);
+  if (action === undefined) {
     return {
       success: false,
       contentItems: [
@@ -323,24 +325,26 @@ async function executeNativeLocalAgentAction(
       ],
     };
   }
-  const authorization = await authorizeRuntimeContext({
-    context: options.context,
-    permission: "use",
-    objectType: "tool",
-    objectId: request.toolName,
-    eventData: executionOptions?.eventData,
-  });
-  if (!authorization.allowed) {
-    return {
-      success: false,
-      reason: authorization.reason,
-      contentItems: [
-        {
-          type: "inputText",
-          text: authorization.reason ?? `${request.toolName} tool permission denied.`,
-        },
-      ],
-    };
+  if (action.authorizationMode !== "driver_handler") {
+    const authorization = await authorizeRuntimeContext({
+      context: options.context,
+      permission: "use",
+      objectType: "tool",
+      objectId: request.toolName,
+      eventData: executionOptions?.eventData,
+    });
+    if (!authorization.allowed) {
+      return {
+        success: false,
+        reason: authorization.reason,
+        contentItems: [
+          {
+            type: "inputText",
+            text: authorization.reason ?? `${request.toolName} tool permission denied.`,
+          },
+        ],
+      };
+    }
   }
   try {
     const result = await runDynamicToolWithTimeout(request.toolName, () =>

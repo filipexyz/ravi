@@ -30,6 +30,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/session-prompt.test.ts",
     "src/channels/slack/media.test.ts",
     "src/channels/slack/socket-mode.test.ts",
+    "src/runtime/native-local-agent-actions.test.ts",
   ],
   "src/omni/": [
     "src/omni/consumer-context.test.ts",
@@ -52,6 +53,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/channels/backend.test.ts",
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
+    "src/runtime/native-local-agent-actions.test.ts",
     "src/runtime/context-registry.test.ts",
     "src/runtime/observation-plane.test.ts",
     "src/runtime/runtime-request-context.test.ts",

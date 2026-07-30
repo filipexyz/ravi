@@ -410,10 +410,25 @@
       ],
       "type": "object"
     },
+    "NativeLocalAgentActionAuthorizationMode": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        "runtime_context",
+        "driver_handler"
+      ],
+      "type": "string"
+    },
     "NativeLocalAgentActionDescriptor": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": false,
       "properties": {
+        "authorizationMode": {
+          "enum": [
+            "runtime_context",
+            "driver_handler"
+          ],
+          "type": "string"
+        },
         "description": {
           "type": "string"
         },
@@ -687,6 +702,6 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "capsuleVersion": 1,
   "compatibilityProfile": "additive-v1",
-  "sourceDigest": "838e646ed2c4ab9d5d631231355cf7275f779ce99612154a4cd37aa9a827f212",
+  "sourceDigest": "aefbbeba765dd9293320b992b9d171ab7ec278596b6db4b82f17e0aefb820913",
   "title": "native-channel-driver channel capability"
 }
