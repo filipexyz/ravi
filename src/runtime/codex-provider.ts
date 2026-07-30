@@ -1100,7 +1100,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     });
   }
 
-  async function handleServerRequest(id: string, method: string, params: Record<string, unknown>): Promise<void> {
+  async function handleServerRequest(
+    id: string | number,
+    method: string,
+    params: Record<string, unknown>,
+  ): Promise<void> {
     if (isCodexApprovalRequestMethod(method)) {
       const request = buildRuntimeApprovalRequest(method, params, activeTurn, currentThreadId);
       activeTurn?.queue.push(buildApprovalTraceEvent("approval.requested", request));
@@ -1143,7 +1147,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
   }
 
-  async function handleDynamicToolCall(id: string, params: Record<string, unknown>): Promise<void> {
+  async function handleDynamicToolCall(id: string | number, params: Record<string, unknown>): Promise<void> {
     const request = buildRuntimeDynamicToolCallRequest(params, activeTurn, currentThreadId);
     activeTurn?.queue.push(buildDynamicToolTraceEvent("item.started", request));
 
@@ -1393,9 +1397,11 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
 
   function routeAppServerMessage(message: CodexJsonRpcMessage): void {
     if (typeof message.id === "string" || typeof message.id === "number") {
-      const requestId = String(message.id);
       if (typeof message.method === "string") {
-        void handleServerRequest(requestId, message.method, asRecord(message.params) ?? {}).catch((error) => {
+        // JSON-RPC request ids are type-sensitive in the Codex app-server
+        // callback registry. Preserve the original string/number representation
+        // when replying to a server-initiated request.
+        void handleServerRequest(message.id, message.method, asRecord(message.params) ?? {}).catch((error) => {
           if (activeTurn) {
             settleTurn(activeTurn, { exitCode: 1, stderr: getStderr() }, { failQueue: error });
           }
@@ -1403,6 +1409,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         return;
       }
 
+      const requestId = String(message.id);
       const pending = pendingRequests.get(requestId);
       if (pending) {
         pendingRequests.delete(requestId);
