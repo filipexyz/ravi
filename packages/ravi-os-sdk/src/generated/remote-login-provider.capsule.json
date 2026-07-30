@@ -16,16 +16,6 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/discovery.json"
     },
     {
-      "sha256": "bb8009bdc6a93da1574fdcc59da340f090236d308d5d5d20624e2518c56769f3",
-      "sizeBytes": 46,
-      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/identity-link-challenge.json"
-    },
-    {
-      "sha256": "76ecb3d077b0d315dba697c8d3c055659db789d2faf7aba8da3423f1762462a3",
-      "sizeBytes": 105,
-      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/identity-link-result.json"
-    },
-    {
       "sha256": "f69ab6d8aceb58dfaa3775b71c14892f3d64252046506c7cd016a82d8813b8e5",
       "sizeBytes": 236,
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/installation-credential.json"
@@ -46,13 +36,13 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/provider-descriptor.json"
     },
     {
-      "sha256": "dcf4ac1a88ea5371a487f75eaea1b169a3f1609c1f4023ba75960ce380a119d4",
-      "sizeBytes": 7387,
+      "sha256": "e941d8337ae59c44ecf411e7d76c6e081a2f028f01f5741f837a749aa2a6d5ad",
+      "sizeBytes": 6502,
       "targetPath": "packages/ravi-os-sdk/src/generated/remote-login-provider.schema.json"
     }
   ],
   "capsule": "remote-login-provider",
-  "capsuleVersion": 2,
+  "capsuleVersion": 1,
   "compatibilityProfile": "additive-v1",
   "exclusions": [
     "taxonomy-boundary-v1",
@@ -66,8 +56,6 @@
     "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/authorized-request.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/authorized-response.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/discovery.json",
-    "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/identity-link-challenge.json",
-    "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/identity-link-result.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/installation-credential.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/installation-metadata.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/remote-login-provider/module-config.json",
@@ -76,8 +64,8 @@
     "packages/ravi-os-sdk/src/generated/remote-login-provider.schema.json"
   ],
   "formatVersion": 1,
-  "outputDigest": "40f7377ba25dc2bcf95371e1691c513c2957ff427fea1cd9d31b4b28e0cb2797",
-  "rationale": "Remote endpoint login needs a versioned provider-neutral boundary for explicit local post-login reconciliation and authenticated identity linking without loading code from the endpoint.",
+  "outputDigest": "940b72acd4cffb9320f513b09c2a6361eed48079e51515cab860ade2ac049920",
+  "rationale": "Remote endpoint login needs a versioned provider-neutral boundary for explicit local post-login reconciliation without loading code from the endpoint.",
   "schemaAllowlist": [
     {
       "fields": [
@@ -141,21 +129,9 @@
         "expiresAt"
       ],
       "schema": "RemoteInstallationCredential"
-    },
-    {
-      "fields": [],
-      "schema": "RemoteIdentityLinkChallenge"
-    },
-    {
-      "fields": [
-        "provider",
-        "disposition",
-        "publicMetadata"
-      ],
-      "schema": "RemoteIdentityLinkResult"
     }
   ],
-  "sourceDigest": "aed678d9df212b483293d88b9c1af99184da433efbed78c48e0d5b79447c9866",
+  "sourceDigest": "ffa2384caf33507d6b65e49ed43e087d522ea81cf062082c834d82748649b6bd",
   "targetRepository": "filipexyz/ravi",
   "validations": [
     {

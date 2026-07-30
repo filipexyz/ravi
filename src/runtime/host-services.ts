@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { runWithContext } from "../cli/context.js";
 import { getAllCommandClasses, createSdkTools } from "../cli/tool-definitions.js";
 import { extractTools, type ExportedTool, type ToolResult } from "../cli/tools-export.js";
@@ -35,24 +34,8 @@ import type {
   RuntimeCapabilities,
 } from "./types.js";
 import { evaluateRuntimeCommandSkillGate, evaluateRuntimeToolSkillGate } from "./skill-gate.js";
-import { nativeLocalAgentActions } from "../channels/native/agent-actions.js";
-import {
-  requestNativeLocalAgentAction,
-  type NativeLocalAgentActionBridgeRequester,
-} from "../channels/native/agent-action-bridge.js";
-import {
-  mergeNativeLocalAgentActionDescriptors,
-  resolveNativeLocalAgentActionTurnMetadata,
-} from "../channels/native/agent-action-turn.js";
-import {
-  NATIVE_CHANNEL_DRIVER_PROTOCOL,
-  NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
-  NativeLocalAgentActionRequestSchema,
-  type NativeLocalAgentActionDescriptor,
-} from "../channels/native/driver.js";
 
 const RUNTIME_BUILTIN_EXECUTABLES = new Set(["ravi"]);
-const DYNAMIC_TOOL_TIMEOUT_MS = 60_000;
 let cachedRuntimeDynamicTools: ExportedTool[] | null = null;
 let cachedRuntimeDynamicToolSpecs: RuntimeDynamicToolSpec[] | null = null;
 
@@ -66,7 +49,6 @@ export interface RuntimeHostServicesOptions {
   approvalSource?: ApprovalTarget;
   toolContext: Record<string, unknown>;
   onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
-  nativeLocalAgentActionRequester?: NativeLocalAgentActionBridgeRequester;
 }
 
 function hasUnrestrictedToolExecution(agentId: string): boolean {
@@ -122,44 +104,7 @@ function getRuntimeDynamicToolSpecsForContext(context: ContextRecord): RuntimeDy
       .map((tool) => tool.name),
   );
 
-  const commandTools = getRuntimeDynamicToolSpecs().filter((tool) => allowedToolNames.has(tool.name));
-  const commandToolNames = new Set(getRuntimeDynamicToolDefinitions().map(({ name }) => name));
-  const nativeActions = getNativeLocalAgentActionsForContext(context)
-    .filter(
-      ({ descriptor }) =>
-        !commandToolNames.has(descriptor.toolName) &&
-        (descriptor.authorizationMode === "driver_handler" ||
-          canWithCapabilityContext(context, "use", "tool", descriptor.toolName)),
-    )
-    .map(
-      ({ descriptor: { toolName, description, inputSchema } }) =>
-        ({
-          name: toolName,
-          description,
-          inputSchema,
-        }) satisfies RuntimeDynamicToolSpec,
-    );
-  return [...commandTools, ...nativeActions].sort((left, right) => left.name.localeCompare(right.name));
-}
-
-interface ResolvedNativeLocalAgentAction {
-  readonly descriptor: NativeLocalAgentActionDescriptor;
-  readonly channelInstanceId?: string;
-}
-
-function getNativeLocalAgentActionsForContext(context: ContextRecord): ResolvedNativeLocalAgentAction[] {
-  const localDescriptors = nativeLocalAgentActions.list(context);
-  const turnMetadata = resolveNativeLocalAgentActionTurnMetadata(
-    context.metadata?.nativeLocalAgentActions,
-    context.source,
-  );
-  const turnDescriptors = turnMetadata?.descriptors ?? [];
-  return mergeNativeLocalAgentActionDescriptors([localDescriptors, turnDescriptors]).map((descriptor) => ({
-    descriptor,
-    ...(turnDescriptors.some(({ toolName }) => toolName === descriptor.toolName) && turnMetadata
-      ? { channelInstanceId: turnMetadata.source.channelInstanceId }
-      : {}),
-  }));
+  return getRuntimeDynamicToolSpecs().filter((tool) => allowedToolNames.has(tool.name));
 }
 
 function canAdvertiseRuntimeDynamicTool(context: ContextRecord, tool: ExportedTool): boolean {
@@ -183,21 +128,6 @@ function canAdvertiseRuntimeDynamicTool(context: ContextRecord, tool: ExportedTo
       );
     default:
       return false;
-  }
-}
-
-async function runDynamicToolWithTimeout<T>(toolName: string, operation: () => Promise<T> | T): Promise<T> {
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const timeoutError = new Promise<never>((_, reject) => {
-    timeoutHandle = setTimeout(
-      () => reject(new Error(`Dynamic tool ${toolName} timed out after ${DYNAMIC_TOOL_TIMEOUT_MS}ms`)),
-      DYNAMIC_TOOL_TIMEOUT_MS,
-    );
-  });
-  try {
-    return await Promise.race([Promise.resolve().then(operation), timeoutError]);
-  } finally {
-    clearTimeout(timeoutHandle);
   }
 }
 
@@ -295,14 +225,17 @@ async function authorizeRuntimeCapability(
 async function executeRuntimeDynamicTool(
   options: Pick<
     RuntimeHostServicesOptions,
-    "context" | "agentId" | "sessionName" | "toolContext" | "onSkillGatePersisted" | "nativeLocalAgentActionRequester"
+    "context" | "agentId" | "sessionName" | "toolContext" | "onSkillGatePersisted"
   >,
   request: RuntimeDynamicToolCallRequest,
   executionOptions?: RuntimeDynamicToolExecutionOptions,
 ): Promise<RuntimeDynamicToolCallResult> {
   const tool = getRuntimeDynamicToolDefinitions().find((candidate) => candidate.name === request.toolName);
   if (!tool) {
-    return executeNativeLocalAgentAction(options, request, executionOptions);
+    return {
+      success: false,
+      contentItems: [{ type: "inputText", text: `Unknown Ravi dynamic tool: ${request.toolName}` }],
+    };
   }
 
   const authorization = await authorizeRuntimeDynamicToolCall(options, tool, executionOptions?.eventData);
@@ -338,136 +271,20 @@ async function executeRuntimeDynamicTool(
   }
 
   const args = normalizeDynamicToolArguments(request.arguments);
-  const result = await runDynamicToolWithTimeout(tool.name, () =>
-    runWithContext(options.toolContext, () => tool.handler(args)),
-  );
-  return buildRuntimeDynamicToolResult(result);
-}
-
-async function executeNativeLocalAgentAction(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "nativeLocalAgentActionRequester">,
-  request: RuntimeDynamicToolCallRequest,
-  executionOptions?: RuntimeDynamicToolExecutionOptions,
-): Promise<RuntimeDynamicToolCallResult> {
-  const action = getNativeLocalAgentActionsForContext(options.context).find(
-    ({ descriptor }) => descriptor.toolName === request.toolName,
-  );
-  if (action === undefined) {
-    return {
-      success: false,
-      contentItems: [
-        {
-          type: "inputText",
-          text: `Unknown Ravi dynamic tool: ${request.toolName}`,
-        },
-      ],
-    };
-  }
-  if (action.descriptor.authorizationMode !== "driver_handler") {
-    const authorization = await authorizeRuntimeContext({
-      context: options.context,
-      permission: "use",
-      objectType: "tool",
-      objectId: request.toolName,
-      eventData: executionOptions?.eventData,
-    });
-    if (!authorization.allowed) {
-      return {
-        success: false,
-        reason: authorization.reason,
-        contentItems: [
-          {
-            type: "inputText",
-            text: authorization.reason ?? `${request.toolName} tool permission denied.`,
-          },
-        ],
-      };
-    }
-  }
-  try {
-    const actionRequest = buildNativeLocalAgentActionRequest(options.context, request);
-    if (actionRequest === undefined) {
-      return unavailableNativeLocalAgentActionResult(request.toolName);
-    }
-    const result = await runDynamicToolWithTimeout(request.toolName, async () => {
-      const localResult = await nativeLocalAgentActions.invokeRequest(actionRequest, {
-        ...(action.channelInstanceId === undefined ? {} : { channelInstanceId: action.channelInstanceId }),
-      });
-      if (localResult !== undefined) return localResult;
-      if (action.channelInstanceId === undefined) return undefined;
-      return (
-        (await (options.nativeLocalAgentActionRequester ?? requestNativeLocalAgentAction)({
-          channelInstanceId: action.channelInstanceId,
-          request: actionRequest,
-        })) ?? undefined
-      );
-    });
-    if (result === undefined) {
-      return unavailableNativeLocalAgentActionResult(request.toolName);
-    }
-    if (result.disposition === "rejected") {
-      return {
-        success: false,
-        reason: result.error?.code,
-        contentItems: [
-          {
-            type: "inputText",
-            text: `Action rejected: ${result.error?.code ?? "UNAVAILABLE"}`,
-          },
-        ],
-      };
-    }
-    return {
-      success: true,
-      contentItems: [{ type: "inputText", text: result.text! }],
-    };
-  } catch {
-    return {
-      success: false,
-      reason: "native_local_agent_action_failed",
-      contentItems: [
-        {
-          type: "inputText",
-          text: `${request.toolName} could not be completed.`,
-        },
-      ],
-    };
-  }
-}
-
-function buildNativeLocalAgentActionRequest(context: ContextRecord, request: RuntimeDynamicToolCallRequest) {
-  if (context.agentId === undefined || context.sessionName === undefined || context.source === undefined) {
-    return undefined;
-  }
-  return NativeLocalAgentActionRequestSchema.parse({
-    protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
-    schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
-    requestId: request.callId ?? `action-${randomUUID()}`,
-    toolName: request.toolName,
-    arguments: normalizeDynamicToolArguments(request.arguments),
-    agentId: context.agentId,
-    sessionName: context.sessionName,
-    source: {
-      channelKind: context.source.channel,
-      accountId: context.source.accountId,
-      conversationId: context.source.chatId,
-      ...(context.source.threadId === undefined ? {} : { threadId: context.source.threadId }),
-    },
-    requestedAt: new Date().toISOString(),
+  const DYNAMIC_TOOL_TIMEOUT_MS = 60_000;
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutError = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(
+      () => reject(new Error(`Dynamic tool ${tool.name} timed out after ${DYNAMIC_TOOL_TIMEOUT_MS}ms`)),
+      DYNAMIC_TOOL_TIMEOUT_MS,
+    );
   });
-}
-
-function unavailableNativeLocalAgentActionResult(toolName: string): RuntimeDynamicToolCallResult {
-  return {
-    success: false,
-    reason: "native_local_agent_action_unavailable",
-    contentItems: [
-      {
-        type: "inputText",
-        text: `${toolName} is unavailable for this turn.`,
-      },
-    ],
-  };
+  try {
+    const result = await Promise.race([runWithContext(options.toolContext, () => tool.handler(args)), timeoutError]);
+    return buildRuntimeDynamicToolResult(result);
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 }
 
 async function authorizeRuntimeDynamicToolCall(

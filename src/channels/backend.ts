@@ -16,7 +16,6 @@ import { getAgentCwd } from "../router/resolver.js";
 import { getOrCreateSession, getSession, updateSessionName } from "../router/sessions.js";
 import type { ChannelBackendPromptMetadata, MessageContext, MessageTarget } from "../runtime/message-types.js";
 import { logger } from "../utils/logger.js";
-import type { NativeLocalAgentActionDescriptor } from "./native/driver.js";
 
 export const CHANNEL_BACKEND_PROTOCOL = "ravi.channel.backend" as const;
 export const CHANNEL_BACKEND_SCHEMA_VERSION = 1 as const;
@@ -268,40 +267,6 @@ export type ChannelBackendPromptPublisher = (
 ) => Promise<void>;
 
 let channelBackendPromptPublisher: ChannelBackendPromptPublisher = publishSessionPrompt;
-
-export interface ChannelBackendLocalAgentActionDescriptorScope {
-  readonly agentId: string;
-  readonly sessionName: string;
-  readonly source: {
-    readonly channelKind: string;
-    readonly channelInstanceId: string;
-    readonly accountId: string;
-    readonly conversationId: string;
-  };
-}
-
-export type ChannelBackendLocalAgentActionDescriptorResolver = (
-  scope: ChannelBackendLocalAgentActionDescriptorScope,
-) => readonly NativeLocalAgentActionDescriptor[];
-
-let channelBackendLocalAgentActionDescriptorResolver: ChannelBackendLocalAgentActionDescriptorResolver | undefined;
-
-export function registerChannelBackendLocalAgentActionDescriptorResolver(
-  resolver: ChannelBackendLocalAgentActionDescriptorResolver,
-): () => void {
-  if (channelBackendLocalAgentActionDescriptorResolver !== undefined) {
-    throw new Error("channel_backend_local_agent_action_descriptor_resolver_already_registered");
-  }
-  channelBackendLocalAgentActionDescriptorResolver = resolver;
-  let active = true;
-  return () => {
-    if (!active) return;
-    active = false;
-    if (channelBackendLocalAgentActionDescriptorResolver === resolver) {
-      channelBackendLocalAgentActionDescriptorResolver = undefined;
-    }
-  };
-}
 
 export function setChannelBackendPromptPublisherForTests(publisher?: ChannelBackendPromptPublisher): void {
   channelBackendPromptPublisher = publisher ?? publishSessionPrompt;
@@ -745,7 +710,6 @@ function buildPromptPayload(
 }
 
 function backendPromptMetadata(receipt: ChannelBackendIngressReceiptRecord): ChannelBackendPromptMetadata {
-  const localAgentActions = resolveChannelBackendLocalAgentActions(receipt);
   return {
     protocol: CHANNEL_BACKEND_PROTOCOL,
     schemaVersion: CHANNEL_BACKEND_SCHEMA_VERSION,
@@ -757,39 +721,7 @@ function backendPromptMetadata(receipt: ChannelBackendIngressReceiptRecord): Cha
       connectionId: receipt.external.connectionId,
       conversationId: receipt.external.conversationId,
     },
-    ...(localAgentActions === undefined ? {} : { localAgentActions }),
   };
-}
-
-function resolveChannelBackendLocalAgentActions(
-  receipt: ChannelBackendIngressReceiptRecord,
-): ChannelBackendPromptMetadata["localAgentActions"] {
-  const resolver = channelBackendLocalAgentActionDescriptorResolver;
-  if (resolver === undefined) return undefined;
-  const source = {
-    channelKind: receipt.external.channelKind,
-    channelInstanceId: receipt.channelInstanceId,
-    accountId: receipt.external.connectionId,
-    conversationId: receipt.external.conversationId,
-  };
-  try {
-    const descriptors = resolver({
-      agentId: receipt.agentId,
-      sessionName: receipt.sessionName,
-      source,
-    });
-    if (descriptors.length === 0 || descriptors.length > 32) return undefined;
-    return {
-      source: {
-        channelKind: source.channelKind,
-        channelInstanceId: source.channelInstanceId,
-        accountId: source.accountId,
-      },
-      descriptors: descriptors.map((descriptor) => structuredClone(descriptor)),
-    };
-  } catch {
-    return undefined;
-  }
 }
 
 function bindingFromReceipt(receipt: ChannelBackendIngressReceiptRecord): LocalChannelMessageBinding {

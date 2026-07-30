@@ -54,10 +54,6 @@
       "types": "./dist/local-agent-reconciliation.d.ts",
       "default": "./dist/local-agent-reconciliation.js"
     },
-    "./execution-authority": {
-      "types": "./dist/execution-authority.d.ts",
-      "default": "./dist/execution-authority.js"
-    },
     "./transport/http": {
       "types": "./dist/transport/http.d.ts",
       "default": "./dist/transport/http.js"

@@ -17,7 +17,6 @@ import {
   CHANNEL_BACKEND_PROTOCOL,
   CHANNEL_BACKEND_SCHEMA_VERSION,
   ChannelOutputSinkRegistry,
-  registerChannelBackendLocalAgentActionDescriptorResolver,
   resumePendingChannelIngressPublications,
   setChannelBackendPromptPublisherForTests,
   type ChannelBackendPromptPublisher,
@@ -35,7 +34,6 @@ import {
 } from "./runtime-events.js";
 
 let stateDir: string | null = null;
-let disposeLocalAgentActionDescriptorResolver: (() => void) | null = null;
 
 beforeEach(async () => {
   stateDir = await createIsolatedRaviState("ravi-channel-backend-");
@@ -47,61 +45,12 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  disposeLocalAgentActionDescriptorResolver?.();
-  disposeLocalAgentActionDescriptorResolver = null;
   setChannelBackendPromptPublisherForTests();
   await cleanupIsolatedRaviState(stateDir);
   stateDir = null;
 });
 
 describe("channel backend ingress", () => {
-  it("snapshots matching local Agent actions into the accepted turn envelope", async () => {
-    const published: Array<Record<string, unknown>> = [];
-    setChannelBackendPromptPublisherForTests(async (_sessionName, payload) => {
-      published.push(payload);
-    });
-    disposeLocalAgentActionDescriptorResolver = registerChannelBackendLocalAgentActionDescriptorResolver((scope) => {
-      expect(scope).toEqual({
-        agentId: "agent-a",
-        sessionName: expect.stringMatching(/^channel-/),
-        source: {
-          channelKind: "custom",
-          channelInstanceId: "channel-instance-a",
-          accountId: "connection-a",
-          conversationId: "external-conversation-a",
-        },
-      });
-      return [
-        {
-          toolName: "custom_create_space",
-          description: "Create a provider-owned collaboration space.",
-          inputSchema: { type: "object", properties: {} },
-          sourceAccountId: "connection-a",
-          authorizationMode: "driver_handler",
-        },
-      ];
-    });
-
-    await acceptChannelIngress(request());
-
-    expect(published).toHaveLength(1);
-    expect(published[0]?._channelBackend).toMatchObject({
-      localAgentActions: {
-        source: {
-          channelKind: "custom",
-          channelInstanceId: "channel-instance-a",
-          accountId: "connection-a",
-        },
-        descriptors: [
-          {
-            toolName: "custom_create_space",
-            authorizationMode: "driver_handler",
-          },
-        ],
-      },
-    });
-  });
-
   it("persists canonical local ids and publishes one content-bearing prompt", async () => {
     const published: Array<{
       sessionName: string;

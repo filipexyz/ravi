@@ -16,9 +16,4 @@
 - Runtime events and output MUST resolve from the accepted binding.
 - Local actions MUST be bounded, unique, source-scoped, and locally
   authorized.
-- Local-action descriptors MUST cross the runner/daemon boundary only inside
-  the trusted accepted-turn envelope.
-- Cross-process invocation MUST validate request/result correlation and fail
-  closed on missing, stale, ambiguous, or mismatched ownership.
-- Local-action failure MUST NOT fall back to shell or another mutation path.
 - Public types MUST contain no hosted product entities or private policy.

@@ -61,6 +61,5 @@ export * from "./channel-backend.js";
 export * from "./channel-runtime-events.js";
 export * from "./native-channel-driver.js";
 export * from "./remote-login-provider.js";
-export * from "./execution-authority.js";
 export * from "./types.js";
 export * from "./schemas.js";

@@ -233,7 +233,7 @@ describe("createCodexRuntimeProvider", () => {
     });
   });
 
-  it("passes host-approved dynamic tools when bootstrapping a resumed app-server thread", async () => {
+  it("does not pass dynamic tools when bootstrapping a resumed app-server thread", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-resume-tools-"));
     const command = join(cwd, "fake-codex-app-server.mjs");
     const requestsPath = join(cwd, "thread-requests.jsonl");
@@ -309,7 +309,7 @@ rl.on("line", (line) => {
     expect(threadRequests).toHaveLength(1);
     expect(threadRequests[0]?.method).toBe("thread/resume");
     expect(threadRequests[0]?.params.threadId).toBe("thread_prev");
-    expect(threadRequests[0]?.params.dynamicTools).toEqual([toolSpec]);
+    expect(threadRequests[0]?.params.dynamicTools).toBeNull();
   });
 
   it("recovers a resumed multi-agent sub-agent thread into a fresh top-level thread", async () => {
@@ -2220,9 +2220,8 @@ const finishIfReady = () => {
 rl.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.id && !message.method) {
-    if (message.id === 77) {
+    if (message.id === "tool_req") {
       if (message.jsonrpc !== "2.0") throw new Error("tool response must include jsonrpc 2.0");
-      if (typeof message.id !== "number") throw new Error("numeric tool request ids must remain numeric");
       if (!Array.isArray(message.result?.contentItems)) throw new Error("tool response must use contentItems");
       if (message.result?.content_items) throw new Error("tool response must not use content_items");
     }
@@ -2254,7 +2253,7 @@ rl.on("line", (line) => {
     });
     send({
       jsonrpc: "2.0",
-      id: 77,
+      id: "tool_req",
       method: "item/tool/call",
       params: {
         callId: "dyn_tool_1",

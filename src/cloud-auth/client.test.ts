@@ -321,10 +321,7 @@ describe("ConsoleApiClient", () => {
   });
 
   it("refreshes once on AUTH_EXPIRED and preserves cached metadata omitted by refresh", async () => {
-    const previous = {
-      ...makeCredentials(),
-      authMode: "remote" as const,
-    };
+    const previous = makeCredentials();
     const calls: FetchCall[] = [];
     let meCalls = 0;
     let written: CloudCredentials | null = null;
@@ -372,7 +369,6 @@ describe("ConsoleApiClient", () => {
     expect(result.credentials.accessToken).toBe("new-access-secret");
     expect(result.me.accessTokenExpiresAt).toBe("2026-05-10T01:00:00.000Z");
     expect(written).toMatchObject({
-      authMode: "remote",
       accessToken: "new-access-secret",
       refreshToken: "new-refresh-secret",
       scopes: ["artifacts:publish"],

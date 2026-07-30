@@ -21,7 +21,7 @@ import * as allCommands from "./commands/index.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
 import { runUpdate } from "./commands/update.js";
-import { runCloudAuthRootCommand, runLink, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
+import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
 import { emitCliAuditEvent, runWithCliAudit } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
@@ -165,23 +165,6 @@ program
         closeLazyConnection: true,
       },
       () => runCloudAuthRootCommand(options.json, () => runWhoami(options)),
-    );
-  });
-
-program
-  .command("link")
-  .description("Confirm a remote identity-link challenge")
-  .option("--json", "Print raw JSON result")
-  .action(async (options: { json?: boolean }) => {
-    await runWithCliAudit(
-      {
-        group: "_root",
-        name: "link",
-        tool: "root_link",
-        input: options,
-        closeLazyConnection: true,
-      },
-      () => runCloudAuthRootCommand(options.json, () => runLink(options)),
     );
   });
 

@@ -13,9 +13,7 @@
   "protocol": "ravi.channel.native-driver",
   "provider": "example",
   "requiredHostCapabilities": [
-    "installation_credentials",
-    "local_agent_reconciliation",
-    "local_agent_actions"
+    "installation_credentials"
   ],
   "schemaVersion": 1
 }

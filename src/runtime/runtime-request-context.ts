@@ -16,7 +16,6 @@ import {
 import { materializeSubjectCapabilities } from "../permissions/provider-runtime.js";
 import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
-import { resolveNativeLocalAgentActionTurnMetadata } from "../channels/native/agent-action-turn.js";
 import { buildRuntimeEnv, buildTaskRuntimeEnv } from "./host-env.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
 import type { MessageActorMetadata, RuntimeLaunchPrompt, RuntimeTurnOriginMetadata } from "./message-types.js";
@@ -503,10 +502,6 @@ function buildRuntimeContextMetadata(options: {
 }): Record<string, unknown> {
   const actorMetadata = buildRuntimeContextActorMetadata(options.prompt, options.resolvedSource);
   const turnOrigin = resolveRuntimeTurnOrigin(options.prompt._turnOrigin);
-  const nativeLocalAgentActions = resolveNativeLocalAgentActionTurnMetadata(
-    options.prompt._channelBackend?.localAgentActions,
-    options.resolvedSource,
-  );
   return {
     runtimeProvider: options.runtimeProviderId,
     runtimeModel: options.model,
@@ -529,7 +524,6 @@ function buildRuntimeContextMetadata(options: {
     ...(turnOrigin ? { turnOrigin } : {}),
     ...(options.prompt._observation ? { observation: { ...options.prompt._observation } } : {}),
     ...(options.prompt._thread ? { raviThread: options.prompt._thread } : {}),
-    ...(nativeLocalAgentActions ? { nativeLocalAgentActions } : {}),
   };
 }
 
