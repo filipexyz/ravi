@@ -23,6 +23,12 @@ import {
   type NativeInboundChannelActionHandler,
   type NativeChannelDriverRuntime,
 } from "./native/driver.js";
+import {
+  startNativeLocalAgentActionBridgeResponder,
+  type NativeLocalAgentActionBridgeResponder,
+  type NativeLocalAgentActionBridgeResponderConnection,
+} from "./native/agent-action-bridge.js";
+import { NativeLocalAgentActionRegistry, nativeLocalAgentActions } from "./native/agent-actions.js";
 import { mergeInstallationCredentialChannels } from "./native/installation-channels.js";
 import type { NativeChatActionDelivery, NativePresenceDelivery, NativeTextDelivery } from "./native/types.js";
 import { ChannelOutboundConsumer } from "./outbound-consumer.js";
@@ -50,7 +56,10 @@ import {
   type ChannelBackendEgressResponder,
   type ChannelBackendEgressResponderConnection,
 } from "./backend-egress.js";
-import { startChannelBackendPublicationReconciler } from "./backend.js";
+import {
+  registerChannelBackendLocalAgentActionDescriptorResolver,
+  startChannelBackendPublicationReconciler,
+} from "./backend.js";
 import { createSlackNativeChannelDriver, slackNativeRuntimeHealth } from "./slack/driver.js";
 import type { SlackSocketModeStatus } from "./slack/index.js";
 
@@ -93,6 +102,29 @@ export function startChannelRunnerBackendEgressResponder(options: {
   });
 }
 
+export function startChannelRunnerLocalAgentActionResponder(options: {
+  connection: NativeLocalAgentActionBridgeResponderConnection;
+  registry?: NativeLocalAgentActionRegistry;
+  startResponder?: typeof startNativeLocalAgentActionBridgeResponder;
+}): NativeLocalAgentActionBridgeResponder {
+  return (options.startResponder ?? startNativeLocalAgentActionBridgeResponder)({
+    connection: options.connection,
+    registry: options.registry ?? nativeLocalAgentActions,
+  });
+}
+
+export function registerChannelRunnerLocalAgentActionDescriptors(
+  registry: NativeLocalAgentActionRegistry = nativeLocalAgentActions,
+): () => void {
+  return registerChannelBackendLocalAgentActionDescriptorResolver((scope) =>
+    registry.listForSource({
+      provider: scope.source.channelKind,
+      channelInstanceId: scope.source.channelInstanceId,
+      accountId: scope.source.accountId,
+    }),
+  );
+}
+
 type ReceiptPruneTimer = ReturnType<typeof setInterval>;
 
 export interface ChannelOutboundReceiptPrunerOptions {
@@ -131,6 +163,8 @@ export class ChannelRunner {
   private healthResponder: ChannelRunnerHealthResponder | null = null;
   private backendEgressResponder: ChannelBackendEgressResponder | null = null;
   private stopBackendPublicationReconciler: (() => void) | null = null;
+  private localAgentActionResponder: NativeLocalAgentActionBridgeResponder | null = null;
+  private stopLocalAgentActionDescriptorResolver: (() => void) | null = null;
 
   constructor(private readonly options: ChannelRunnerOptions = {}) {}
 
@@ -207,6 +241,8 @@ export class ChannelRunner {
     this.stopReceiptPruner = null;
     this.stopBackendPublicationReconciler?.();
     this.stopBackendPublicationReconciler = null;
+    this.stopLocalAgentActionDescriptorResolver?.();
+    this.stopLocalAgentActionDescriptorResolver = null;
     log.info("Stopping channel runner", { pid: process.pid });
     await this.outboundPublishReconciler?.stop();
     this.outboundPublishReconciler = null;
@@ -218,6 +254,8 @@ export class ChannelRunner {
     this.backendEgressResponder = null;
     await this.inboundActionResponder?.stop();
     this.inboundActionResponder = null;
+    await this.localAgentActionResponder?.stop();
+    this.localAgentActionResponder = null;
     await this.nativeChannelManager?.stop();
     this.nativeChannelManager = null;
     this.deliveries = [];
@@ -286,6 +324,10 @@ export class ChannelRunner {
       registry,
     });
     await this.nativeChannelManager.start();
+    this.stopLocalAgentActionDescriptorResolver = registerChannelRunnerLocalAgentActionDescriptors();
+    this.localAgentActionResponder = startChannelRunnerLocalAgentActionResponder({
+      connection: getNats(),
+    });
     this.inboundActionResponder = startChannelRunnerInboundActionResponder({
       connection: getNats(),
       handlers: this.nativeChannelManager.inboundActionHandlers(),

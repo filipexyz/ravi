@@ -9,6 +9,7 @@ import {
   pruneChannelOutboundPublishOutbox,
   pruneChannelOutboundReceiptLedger,
   runChannelOutboundLedgerMaintenance,
+  startChannelRunnerLocalAgentActionResponder,
   slackAdapterHealth,
   startChannelRunnerBackendEgressResponder,
   startChannelRunnerInboundActionResponder,
@@ -28,6 +29,10 @@ import {
   type NativeInboundChannelActionHandler,
 } from "./native/driver.js";
 import { nativeLocalAgentActions } from "./native/agent-actions.js";
+import type {
+  NativeLocalAgentActionBridgeResponder,
+  NativeLocalAgentActionBridgeResponderConnection,
+} from "./native/agent-action-bridge.js";
 import { installationChannelName, mergeInstallationCredentialChannels } from "./native/installation-channels.js";
 import type { ChannelRuntimeEventSink } from "./runtime-events.js";
 import { createSlackNativeChannelDriver } from "./slack/driver.js";
@@ -417,6 +422,26 @@ describe("channel runner native delivery registry", () => {
     expect(startResponder).toHaveBeenCalledWith({
       connection,
       handlers: [handler],
+    });
+  });
+
+  it("starts one local Agent action bridge responder with the runner registry", () => {
+    const connection = {} as NativeLocalAgentActionBridgeResponderConnection;
+    const responder = {
+      stop: mock(async () => {}),
+    } satisfies NativeLocalAgentActionBridgeResponder;
+    const startResponder = mock(() => responder);
+
+    expect(
+      startChannelRunnerLocalAgentActionResponder({
+        connection,
+        registry: nativeLocalAgentActions,
+        startResponder,
+      }),
+    ).toBe(responder);
+    expect(startResponder).toHaveBeenCalledWith({
+      connection,
+      registry: nativeLocalAgentActions,
     });
   });
 

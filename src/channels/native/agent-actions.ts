@@ -26,6 +26,12 @@ export interface RegisterNativeLocalAgentActionInput {
   readonly handler: NativeLocalAgentActionHandler;
 }
 
+export interface NativeLocalAgentActionRegistrationScope {
+  readonly provider: string;
+  readonly channelInstanceId?: string;
+  readonly accountId: string;
+}
+
 export class NativeLocalAgentActionRegistry {
   private readonly registrations = new Map<string, RegisteredNativeLocalAgentAction>();
 
@@ -51,8 +57,19 @@ export class NativeLocalAgentActionRegistry {
   }
 
   list(context: ContextRecord): NativeLocalAgentActionDescriptor[] {
+    const source = context.source;
+    if (source === undefined || context.agentId === undefined || context.sessionName === undefined) {
+      return [];
+    }
+    return this.listForSource({
+      provider: source.channel,
+      accountId: source.accountId,
+    });
+  }
+
+  listForSource(scope: NativeLocalAgentActionRegistrationScope): NativeLocalAgentActionDescriptor[] {
     const grouped = new Map<string, RegisteredNativeLocalAgentAction[]>();
-    for (const registration of this.matching(context)) {
+    for (const registration of this.matchingSource(scope)) {
       const entries = grouped.get(registration.descriptor.toolName) ?? [];
       entries.push(registration);
       grouped.set(registration.descriptor.toolName, entries);
@@ -70,8 +87,6 @@ export class NativeLocalAgentActionRegistry {
     readonly requestId?: string;
     readonly now?: () => string;
   }): Promise<NativeLocalAgentActionResult | undefined> {
-    const candidates = this.matching(input.context).filter(({ descriptor }) => descriptor.toolName === input.toolName);
-    if (candidates.length !== 1) return undefined;
     const agentId = input.context.agentId;
     const sessionName = input.context.sessionName;
     const source = input.context.source;
@@ -94,6 +109,20 @@ export class NativeLocalAgentActionRegistry {
       },
       requestedAt: (input.now ?? (() => new Date().toISOString()))(),
     });
+    return this.invokeRequest(request);
+  }
+
+  async invokeRequest(
+    input: Parameters<NativeLocalAgentActionHandler>[0],
+    scope: { readonly channelInstanceId?: string } = {},
+  ): Promise<NativeLocalAgentActionResult | undefined> {
+    const request = NativeLocalAgentActionRequestSchema.parse(input);
+    const candidates = this.matchingSource({
+      provider: request.source.channelKind,
+      accountId: request.source.accountId,
+      ...(scope.channelInstanceId === undefined ? {} : { channelInstanceId: scope.channelInstanceId }),
+    }).filter(({ descriptor }) => descriptor.toolName === request.toolName);
+    if (candidates.length !== 1) return undefined;
     const result = NativeLocalAgentActionResultSchema.parse(await candidates[0]!.handler(request));
     if (result.requestId !== request.requestId) {
       throw new Error("native_local_agent_action_request_mismatch");
@@ -105,15 +134,12 @@ export class NativeLocalAgentActionRegistry {
     this.registrations.clear();
   }
 
-  private matching(context: ContextRecord): RegisteredNativeLocalAgentAction[] {
-    const source = context.source;
-    if (source === undefined || context.agentId === undefined || context.sessionName === undefined) {
-      return [];
-    }
+  private matchingSource(scope: NativeLocalAgentActionRegistrationScope): RegisteredNativeLocalAgentAction[] {
     return [...this.registrations.values()].filter(
-      ({ provider, descriptor }) =>
-        provider === source.channel &&
-        (descriptor.sourceAccountId === undefined || descriptor.sourceAccountId === source.accountId),
+      ({ provider, channelInstanceId, descriptor }) =>
+        provider === scope.provider &&
+        (scope.channelInstanceId === undefined || channelInstanceId === scope.channelInstanceId) &&
+        (descriptor.sourceAccountId === undefined || descriptor.sourceAccountId === scope.accountId),
     );
   }
 }

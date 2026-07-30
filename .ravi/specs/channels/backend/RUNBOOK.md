@@ -17,3 +17,7 @@
    interruption and verify ordered readback.
 10. Register two local actions with colliding scope/name and confirm discovery
    fails closed; invoke an authorized unique action in its exact source.
+11. Run Channel runner and runtime host in separate processes. Confirm the
+    accepted prompt carries the matching descriptor, request/reply reaches the
+    runner-local handler once, and a copied source or stopped runner fails
+    closed without shell fallback.
