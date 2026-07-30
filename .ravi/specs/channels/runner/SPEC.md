@@ -21,12 +21,6 @@ normative: true
 
 `ravi daemon` MUST own sessions, agents and runtime. It MUST NOT open Slack Socket Mode connections or resolve Slack transport credentials.
 
-Driver-owned local Agent action handlers MUST remain in `ravi channels`.
-The runner MUST expose their bounded descriptors to Channel-Backend turn
-publication and serve typed internal request/reply invocation from
-`ravi daemon`. The runner MUST NOT grant runtime capability or expose driver
-credentials through that bridge.
-
 ## Outbound
 
 User-visible native channel delivery MUST cross `CHANNEL_OUTBOUND` before adapter delivery.
@@ -72,12 +66,3 @@ PID as current.
 ## Locks
 
 Adapters SHOULD use process or credential-scoped locks before opening external sockets. Slack MUST prevent duplicate Socket Mode consumers for the same connection.
-
-## Local Action Lifecycle
-
-- Descriptor publication and invocation responders MUST start only after
-  native driver runtimes have registered their actions.
-- Publication reconciliation MUST observe the current runner-local registry.
-- Shutdown MUST stop the responder and descriptor resolver before disposing
-  driver runtimes and closing NATS.
-- Missing or retired handlers MUST fail closed with bounded safe results.

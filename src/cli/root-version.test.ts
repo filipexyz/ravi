@@ -59,49 +59,27 @@ describe("CLI root version", () => {
     expect(result.stdout).toContain("ravi --help");
   });
 
-  it("documents explicit remote and legacy endpoint selection for login", () => {
-    const stateDir = join(tmpdir(), `ravi-login-help-${process.pid}`);
-    const result = spawnSync("bun", ["src/cli/index.ts", "login", "--help"], {
+  it("keeps root login scoped to Ravi Console", () => {
+    const stateDir = join(tmpdir(), `ravi-root-login-help-${process.pid}`);
+    const login = spawnSync("bun", ["src/cli/index.ts", "login", "--help"], {
       cwd: process.cwd(),
       encoding: "utf8",
       env: testEnv(stateDir),
     });
-
-    expect(result.status).toBe(0);
-    expect(result.stdout).toContain("--endpoint <url>");
-    expect(result.stdout).toContain("--console <url>");
-    expect(result.stdout).toContain("--json");
-    expect(result.stdout).toContain("--no-open");
-    expect(result.stdout).toContain("Return the public pending challenge");
-
-    const whoami = spawnSync("bun", ["src/cli/index.ts", "whoami", "--help"], {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      env: testEnv(stateDir),
-    });
-    const logout = spawnSync("bun", ["src/cli/index.ts", "logout", "--help"], {
-      cwd: process.cwd(),
-      encoding: "utf8",
-      env: testEnv(stateDir),
-    });
-    const link = spawnSync("bun", ["src/cli/index.ts", "link", "--help"], {
+    const root = spawnSync("bun", ["src/cli/index.ts", "--help"], {
       cwd: process.cwd(),
       encoding: "utf8",
       env: testEnv(stateDir),
     });
     rmSync(stateDir, { recursive: true, force: true });
 
-    expect(whoami.status).toBe(0);
-    expect(logout.status).toBe(0);
-    expect(link.status).toBe(0);
-    expect(whoami.stdout).not.toContain("--endpoint");
-    expect(whoami.stdout).not.toContain("--console");
-    expect(logout.stdout).not.toContain("--endpoint");
-    expect(logout.stdout).not.toContain("--console");
-    expect(link.stdout).toContain("--json");
-    expect(link.stdout).not.toContain("--endpoint");
-    expect(link.stdout).not.toContain("--challenge");
-    expect(link.stdout).not.toContain("<code>");
+    expect(login.status).toBe(0);
+    expect(login.stdout).toContain("Console-compatible endpoint");
+    expect(login.stdout).toContain("--console <url>");
+    expect(login.stdout).toContain("https://console.ravi.bot");
+    expect(login.stdout).not.toContain("--endpoint");
+    expect(root.status).toBe(0);
+    expect(root.stdout).not.toContain("link [options]");
   });
 
   it("suggests the plural tasks command for singular task help", () => {

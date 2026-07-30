@@ -30,7 +30,6 @@ import {
   type NativeChannelRuntimeDescriptor,
 } from "./driver.js";
 import { createNativeChannelDriverHostLease, type NativeChannelDriverHostLease } from "./host.js";
-import { nativeLocalAgentActions } from "./agent-actions.js";
 
 const generatedFixtureDirectory = new URL(
   "../../../packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/",
@@ -92,7 +91,6 @@ function ingressResult(request = ingressRequest()): ChannelIngressResult {
 
 function hostLease(overrides: Partial<NativeChannelDriverHost> = {}): NativeChannelDriverHostLease {
   const host: NativeChannelDriverHost = {
-    readInstallationCredential: mock(async () => null),
     ingress: mock(async (request) => ingressResult(request)),
     interrupt: mock(async (request) => ({
       protocol: "ravi.channel.runtime-events" as const,
@@ -146,7 +144,6 @@ function fullDriver(
       driverId: "example.native",
       provider: "example",
       capabilities: ["inbound", "text_delivery", "chat_actions", "presence"],
-      requiredHostCapabilities: ["installation_credentials"],
     },
     createRuntime(context) {
       return {
@@ -505,119 +502,6 @@ describe("native channel driver contract", () => {
     expect(JSON.stringify(manager.health())).not.toContain("sensitive-runtime-detail");
   });
 
-  it("fails closed before runtime creation when a required host capability is absent", async () => {
-    const registry = new NativeChannelDriverRegistry();
-    const driver = fullDriver();
-    const createRuntime = mock(driver.createRuntime.bind(driver));
-    registry.register({ ...driver, createRuntime });
-    const lease = hostLease();
-    const incompleteHost = {
-      ...lease.host,
-      readInstallationCredential: undefined,
-    } as unknown as NativeChannelDriverHost;
-    const manager = new NativeChannelDriverManager({
-      channels: { "example-channel-a": channel() },
-      registry,
-      createHostLease: () => ({
-        host: incompleteHost,
-        dispose: lease.dispose,
-      }),
-    });
-
-    await manager.start();
-
-    expect(createRuntime).not.toHaveBeenCalled();
-    expect(manager.health()).toEqual([
-      {
-        id: "example:example-channel-a",
-        channelId: "example",
-        status: "failed",
-        reason: "host_capability_missing",
-      },
-    ]);
-    expect(lease.dispose).toHaveBeenCalledTimes(1);
-  });
-
-  it("fails closed when local agent reconciliation is required but absent", async () => {
-    const registry = new NativeChannelDriverRegistry();
-    const driver = fullDriver();
-    const createRuntime = mock(driver.createRuntime.bind(driver));
-    registry.register({
-      ...driver,
-      descriptor: {
-        ...driver.descriptor,
-        requiredHostCapabilities: ["installation_credentials", "local_agent_reconciliation"],
-      },
-      createRuntime,
-    });
-    const lease = hostLease();
-    const incompleteHost = {
-      ...lease.host,
-      reconcileLocalAgent: undefined,
-    } as unknown as NativeChannelDriverHost;
-    const manager = new NativeChannelDriverManager({
-      channels: { "example-channel-a": channel() },
-      registry,
-      createHostLease: () => ({
-        host: incompleteHost,
-        dispose: lease.dispose,
-      }),
-    });
-
-    await manager.start();
-
-    expect(createRuntime).not.toHaveBeenCalled();
-    expect(manager.health()).toEqual([
-      {
-        id: "example:example-channel-a",
-        channelId: "example",
-        status: "failed",
-        reason: "host_capability_missing",
-      },
-    ]);
-    expect(lease.dispose).toHaveBeenCalledTimes(1);
-  });
-
-  it("fails closed when local agent actions are required but absent", async () => {
-    const registry = new NativeChannelDriverRegistry();
-    const driver = fullDriver();
-    const createRuntime = mock(driver.createRuntime.bind(driver));
-    registry.register({
-      ...driver,
-      descriptor: {
-        ...driver.descriptor,
-        requiredHostCapabilities: ["installation_credentials", "local_agent_actions"],
-      },
-      createRuntime,
-    });
-    const lease = hostLease();
-    const incompleteHost = {
-      ...lease.host,
-      registerLocalAgentAction: undefined,
-    } as unknown as NativeChannelDriverHost;
-    const manager = new NativeChannelDriverManager({
-      channels: { "example-channel-a": channel() },
-      registry,
-      createHostLease: () => ({
-        host: incompleteHost,
-        dispose: lease.dispose,
-      }),
-    });
-
-    await manager.start();
-
-    expect(createRuntime).not.toHaveBeenCalled();
-    expect(manager.health()).toEqual([
-      {
-        id: "example:example-channel-a",
-        channelId: "example",
-        status: "failed",
-        reason: "host_capability_missing",
-      },
-    ]);
-    expect(lease.dispose).toHaveBeenCalledTimes(1);
-  });
-
   it("keeps module loader failures stable and free of thrown details", async () => {
     const registry = new NativeChannelDriverRegistry();
     const result = await loadNativeChannelDriverModules(
@@ -741,157 +625,6 @@ describe("native channel driver contract", () => {
 
     lease.dispose();
     await expect(channelOutputSinks.emit(envelope)).rejects.toThrow("unavailable");
-  });
-
-  it("binds installation credential access to the configured provider and connection", async () => {
-    const resolveInstallationCredential = mock(async () => ({
-      provider: "example",
-      credentialId: "credential-1",
-      material: { privateKey: "opaque-private-material" },
-    }));
-    const lease = createNativeChannelDriverHostLease({
-      channel: {
-        ...channel(),
-        credentialConnection: "https://remote.example",
-      },
-      provider: "example",
-      resolveInstallationCredential,
-    });
-
-    await expect(lease.host.readInstallationCredential()).resolves.toEqual({
-      provider: "example",
-      credentialId: "credential-1",
-      material: { privateKey: "opaque-private-material" },
-    });
-    expect(resolveInstallationCredential).toHaveBeenCalledWith({
-      provider: "example",
-      connection: "https://remote.example",
-    });
-
-    const wrongProvider = createNativeChannelDriverHostLease({
-      channel: channel(),
-      provider: "example",
-      resolveInstallationCredential: async () => ({
-        provider: "other",
-        credentialId: "credential-2",
-        material: {},
-      }),
-    });
-    await expect(wrongProvider.host.readInstallationCredential()).rejects.toThrow("scope_mismatch");
-
-    lease.dispose();
-    await expect(lease.host.readInstallationCredential()).rejects.toThrow("host_disposed");
-    wrongProvider.dispose();
-  });
-
-  it("binds local agent reconciliation to the configured channel instance", async () => {
-    const reconcileLocalAgent = mock(async (request) => ({
-      protocol: "ravi.agent.local-reconciliation" as const,
-      schemaVersion: 1 as const,
-      requestId: request.requestId,
-      disposition: "unchanged" as const,
-      state: "ready" as const,
-      agentId: "native-channel-example",
-      appliedRevision: request.revision,
-      grantedCapabilities: [],
-      observedAt: "2026-07-26T00:00:00.000Z",
-    }));
-    const lease = createNativeChannelDriverHostLease({
-      channel: channel(),
-      provider: "example",
-      reconcileLocalAgent,
-    });
-    const request = {
-      protocol: "ravi.agent.local-reconciliation" as const,
-      schemaVersion: 1 as const,
-      requestId: "request-local-agent-1",
-      idempotencyKey: "idempotency-local-agent-1",
-      sourceId: "example-channel-a",
-      agentKey: "agent-key-1",
-      templateId: "native-channel-default",
-      revision: "a".repeat(64),
-      requestedCapabilities: [],
-    };
-
-    await expect(lease.host.reconcileLocalAgent?.(request)).resolves.toMatchObject({
-      state: "ready",
-      agentId: "native-channel-example",
-    });
-    expect(reconcileLocalAgent).toHaveBeenCalledWith(request);
-    await expect(
-      lease.host.reconcileLocalAgent?.({
-        ...request,
-        requestId: "request-local-agent-2",
-        sourceId: "other-channel",
-      }),
-    ).rejects.toThrow("scope_mismatch");
-    expect(reconcileLocalAgent).toHaveBeenCalledTimes(1);
-
-    lease.dispose();
-    await expect(lease.host.reconcileLocalAgent?.(request)).rejects.toThrow("host_disposed");
-  });
-
-  it("scopes local agent actions to the provider account and disposes them with the host", async () => {
-    nativeLocalAgentActions.clearForTests();
-    const lease = createNativeChannelDriverHostLease({
-      channel: channel(),
-      provider: "example",
-    });
-    lease.host.registerLocalAgentAction?.(
-      {
-        toolName: "example_create_space",
-        description: "Create a provider-owned collaboration space.",
-        inputSchema: {
-          type: "object",
-          properties: { name: { type: "string" } },
-        },
-        sourceAccountId: "account-1",
-      },
-      async (request) => ({
-        protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
-        schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
-        requestId: request.requestId,
-        disposition: "completed",
-        text: "Created.",
-        completedAt: "2026-07-26T12:00:01.000Z",
-      }),
-    );
-    const context = {
-      contextId: "context-1",
-      contextKey: "context-key-1",
-      kind: "turn-runtime",
-      agentId: "agent-1",
-      sessionName: "session-1",
-      source: {
-        channel: "example",
-        accountId: "account-1",
-        chatId: "conversation-1",
-      },
-      capabilities: [],
-      createdAt: Date.parse("2026-07-26T12:00:00.000Z"),
-    };
-
-    expect(nativeLocalAgentActions.list(context)).toHaveLength(1);
-    lease.dispose();
-    expect(nativeLocalAgentActions.list(context)).toEqual([]);
-    expect(() =>
-      lease.host.registerLocalAgentAction?.(
-        {
-          toolName: "example_create_space",
-          description: "Create a provider-owned collaboration space.",
-          inputSchema: { type: "object", properties: {} },
-        },
-        async (request) => ({
-          protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
-          schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
-          requestId: request.requestId,
-          disposition: "completed",
-          text: "Created.",
-          completedAt: "2026-07-26T12:00:01.000Z",
-        }),
-      ),
-    ).toThrow("host_disposed");
-    nativeLocalAgentActions.clearForTests();
   });
 
   it("rejects duplicate driver ownership without replacing the registered driver", () => {

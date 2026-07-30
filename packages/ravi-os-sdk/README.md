@@ -120,43 +120,10 @@ Deep imports are available when you want smaller bundles:
 import { RaviClient } from "@ravi-os/sdk/client";
 import type { NativeChannelDriver } from "@ravi-os/sdk/native-channel-driver";
 import { LocalAgentReconciler } from "@ravi-os/sdk/local-agent-reconciliation";
-import type { RemoteLoginProvider } from "@ravi-os/sdk/remote-login-provider";
-import { authorizeExecutionEffect } from "@ravi-os/sdk/execution-authority";
 import { createHttpTransport } from "@ravi-os/sdk/transport/http";
 ```
 
-### Extend Remote Login Locally
-
-`ravi login --endpoint https://auth.example.com` discovers the endpoint's
-versioned authentication contract. An endpoint may name a post-login provider,
-but Ravi loads it only when the operator explicitly maps that provider to a
-local package or `file:///` module:
-
-```bash
-export RAVI_REMOTE_LOGIN_PROVIDERS='[{"protocol":"ravi.auth.post-login","schemaVersion":1,"provider":"example","moduleSpecifier":"@example/ravi-login-provider"}]'
-```
-
-The module exports `remoteLoginProvider`, implements `RemoteLoginProvider`, and
-returns a bounded opaque renewable credential. Ravi stores that credential
-separately from the human CLI session, redacts its material from command
-output, and preserves it when `ravi logout` removes the human session.
-
-When an explicitly installed native channel driver uses the same provider,
-the channel runner starts one hidden runtime for each non-expired installation
-credential. The driver declares
-`requiredHostCapabilities: ["installation_credentials"]` and reads only its
-provider- and connection-bound credential through
-`context.host.readInstallationCredential()`. It cannot enumerate credentials
-or receive the human login session.
-
-Drivers that need a local agent declare the
-`local_agent_reconciliation` host capability and call
-`context.host.reconcileLocalAgent()`. The host validates the request against
-the channel instance, applies the local `native-channel-default` template, and
-returns only the bounded reconciliation result. Reconciliation runs through
-Ravi's in-process authorization path; no context key or local admin credential
-is exposed to the driver. The default template accepts managed instructions
-but grants no requested capability aliases or runtime overrides.
+### Handle Native Inbound Actions
 
 Drivers can reserve provider-owned slash actions with the `inbound_actions`
 capability and an exact `inboundActions` list repeated in the module, driver,
@@ -166,26 +133,6 @@ host sends only a bounded authenticated channel identity, the declared action
 name, and a `hasArguments` boolean; command arguments are never exposed to the
 driver. Declared actions are fail-closed and never fall through to model
 processing when the runtime cannot answer.
-
-### Enforce Remote Execution Authority Locally
-
-Remote coordinators can request local effects without becoming the local
-authorization authority. The neutral execution-authority contract separates:
-
-- a locally accepted, signed binding envelope that sets a maximum;
-- a short-lived signed route lease and monotonically fenced epoch;
-- an exact signed capability grant for one execution or operation;
-- an optional signed, single-use approval for the exact request digest; and
-- local attenuation, local policy, and runtime constraints.
-
-Call `authorizeExecutionEffect()` immediately before every observable effect,
-not only when accepting a command. Any mismatch or local denial fails closed.
-If an approved effect is allowed, persist the returned approval-consumption
-identity atomically with the operation journal before executing it.
-
-The same module exports key-rotation validation and replay recovery decisions.
-An ambiguous `non_repeatable` outcome always resolves to manual intervention;
-it is never retried or failed over automatically.
 
 ### Reconcile Locally Managed Agents
 

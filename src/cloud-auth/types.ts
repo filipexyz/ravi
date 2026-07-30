@@ -16,7 +16,6 @@ export interface CloudAuthOrganization {
 export interface CloudCredentials {
   version: 1;
   consoleUrl: string;
-  authMode?: "console" | "remote";
   installationId: string;
   accessToken: string;
   refreshToken: string;

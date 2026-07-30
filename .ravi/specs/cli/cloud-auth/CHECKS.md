@@ -7,6 +7,12 @@
 - JSON output does not print access tokens or refresh tokens.
 - File credential fallback is written with current-user-only permissions.
 - `ravi logout` deletes local credentials.
+- `ravi login --help` exposes `--console <url>` with
+  `https://console.ravi.bot` as the default.
+- `ravi login --help` does not expose `--endpoint`.
+- Root help does not expose a product-specific identity-linking command.
+- No remote-login discovery, post-login provider, or remote installation
+  credential module is present in the root auth implementation.
 
 ## Login Smoke
 

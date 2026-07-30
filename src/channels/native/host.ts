@@ -1,9 +1,4 @@
 import type { ChannelConfig } from "../../router/router-db.js";
-import { readRemoteInstallationCredential } from "../../cloud-auth/installation-storage.js";
-import {
-  RemoteInstallationCredentialSchema,
-  type RemoteInstallationCredential,
-} from "../../cloud-auth/remote-login.js";
 import {
   ChannelBackendOpaqueIdSchema,
   ChannelBackendWireKindSchema,
@@ -19,41 +14,20 @@ import {
   requestChannelRuntimeInterrupt,
 } from "../runtime-events.js";
 import type { NativeChannelDriverHost } from "./driver.js";
-import {
-  LocalAgentReconciliationRequestSchema,
-  LocalAgentReconciliationResultSchema,
-  type LocalAgentReconciliationRequest,
-  type LocalAgentReconciliationResult,
-} from "../../../packages/ravi-os-sdk/src/local-agent-reconciliation.js";
-import { createNativeChannelLocalAgentReconciler, type NativeChannelLocalAgentReconciler } from "./local-agent-host.js";
-import { nativeLocalAgentActions } from "./agent-actions.js";
-import { NativeLocalAgentActionDescriptorSchema, type NativeLocalAgentActionHandler } from "./driver.js";
 
 export interface NativeChannelDriverHostLease {
   readonly host: NativeChannelDriverHost;
   dispose(): void;
 }
 
-export type NativeChannelInstallationCredentialResolver = (input: {
-  readonly provider: string;
-  readonly connection?: string;
-}) => RemoteInstallationCredential | null | Promise<RemoteInstallationCredential | null>;
-
-export type NativeChannelLocalAgentResolver = (
-  input: LocalAgentReconciliationRequest,
-) => LocalAgentReconciliationResult | Promise<LocalAgentReconciliationResult>;
-
 export function createNativeChannelDriverHostLease(options: {
   channel: ChannelConfig;
   provider: string;
-  resolveInstallationCredential?: NativeChannelInstallationCredentialResolver;
-  reconcileLocalAgent?: NativeChannelLocalAgentResolver;
 }): NativeChannelDriverHostLease {
   const channelInstanceId = ChannelBackendOpaqueIdSchema.parse(options.channel.name);
   const provider = ChannelBackendWireKindSchema.parse(options.provider);
   const unregister: Array<() => void> = [];
   let disposed = false;
-  let localAgentReconciler: NativeChannelLocalAgentReconciler | undefined;
 
   const ensureActive = () => {
     if (disposed) throw new Error("native_channel_driver_host_disposed");
@@ -73,54 +47,6 @@ export function createNativeChannelDriverHostLease(options: {
   };
 
   const host: NativeChannelDriverHost = {
-    async readInstallationCredential() {
-      ensureActive();
-      const resolve =
-        options.resolveInstallationCredential ??
-        ((input: { readonly provider: string; readonly connection?: string }) => {
-          const stored = readRemoteInstallationCredential(input.connection);
-          return stored?.credential ?? null;
-        });
-      const resolved = await resolve({
-        provider,
-        ...(options.channel.credentialConnection ? { connection: options.channel.credentialConnection } : {}),
-      });
-      if (resolved === null) return null;
-      const credential = RemoteInstallationCredentialSchema.parse(resolved);
-      if (credential.provider !== provider) {
-        throw new Error("native_channel_driver_scope_mismatch");
-      }
-      return structuredClone(credential);
-    },
-    async reconcileLocalAgent(input) {
-      ensureActive();
-      const request = LocalAgentReconciliationRequestSchema.parse(input);
-      if (request.sourceId !== channelInstanceId) {
-        throw new Error("native_channel_driver_scope_mismatch");
-      }
-      const resolve =
-        options.reconcileLocalAgent ??
-        ((scopedRequest: LocalAgentReconciliationRequest) => {
-          localAgentReconciler ??= createNativeChannelLocalAgentReconciler();
-          return localAgentReconciler.reconcile(scopedRequest);
-        });
-      return LocalAgentReconciliationResultSchema.parse(await resolve(request));
-    },
-    registerLocalAgentAction(descriptorInput, handler) {
-      ensureActive();
-      const descriptor = NativeLocalAgentActionDescriptorSchema.parse(descriptorInput);
-      if (typeof handler !== "function") {
-        throw new TypeError("native_local_agent_action_handler_invalid");
-      }
-      return register(
-        nativeLocalAgentActions.register({
-          provider,
-          channelInstanceId,
-          descriptor,
-          handler: handler as NativeLocalAgentActionHandler,
-        }),
-      );
-    },
     async ingress(input) {
       ensureActive();
       const request = ChannelIngressRequestSchema.parse(input);

@@ -145,26 +145,9 @@ Cloud-linked artifact publishing is exposed through a generic Console-compatible
 
 ```bash
 ravi login
-ravi login --endpoint https://auth.example.com
 ravi whoami
-ravi link
 ravi artifacts publish <artifact-id-or-path> --project <project> --site <site>
 ```
-
-An explicit endpoint publishes a versioned login contract at
-`/.well-known/ravi-auth`. HTTPS is required outside loopback development.
-Endpoint-specific post-login integration is opt-in and loads only a local
-provider module explicitly configured by the operator.
-
-An explicitly installed native channel driver whose provider matches the
-stored installation credential may reconnect without a human session. Ravi
-passes that credential through a provider- and connection-scoped host
-capability; drivers do not read credential files directly.
-
-When the configured local post-login provider supports identity linking,
-`ravi link` consumes a high-entropy challenge from a hidden prompt or bounded
-stdin. The challenge is intentionally unavailable as an argument or option so
-it cannot enter shell history, process titles, or CLI audit input.
 
 Native channel drivers may also declare a bounded set of inbound actions in
 their module, driver, and runtime descriptors. Declared slash actions are
@@ -361,7 +344,6 @@ Cloud-linked commands use local Ravi CLI credentials created by:
 ```bash
 ravi login
 ravi whoami
-ravi link
 ravi logout
 ```
 

@@ -15,21 +15,11 @@ import type {
   ChannelRuntimeReadbackRequest,
   ChannelRuntimeReadbackResult,
 } from "./channel-runtime-events.js";
-import type { RemoteInstallationCredential } from "./remote-login-provider.js";
-import type {
-  LocalAgentReconciliationRequest,
-  LocalAgentReconciliationResult,
-} from "./local-agent-reconciliation.js";
 
 export const NATIVE_CHANNEL_DRIVER_PROTOCOL = "ravi.channel.native-driver" as const;
 export const NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION = 1 as const;
-export const NATIVE_CHANNEL_DEFAULT_LOCAL_AGENT_TEMPLATE_ID =
-  "native-channel-default" as const;
 export const MAX_NATIVE_INBOUND_ACTION_IDENTITY_BYTES = 512;
 export const MAX_NATIVE_INBOUND_ACTION_RESPONSE_BYTES = 4_096;
-export const MAX_NATIVE_LOCAL_AGENT_ACTION_DESCRIPTION_BYTES = 2_048;
-export const MAX_NATIVE_LOCAL_AGENT_ACTION_ARGUMENT_BYTES = 65_536;
-export const MAX_NATIVE_LOCAL_AGENT_ACTION_RESULT_BYTES = 16_384;
 
 const nativeChannelTextEncoder = new TextEncoder();
 
@@ -44,22 +34,6 @@ function boundedNativeChannelString(maxBytes: number, label: string) {
       (value) => nativeChannelTextEncoder.encode(value).byteLength <= maxBytes,
       `${label} exceeds ${maxBytes} UTF-8 bytes`,
     );
-}
-
-function hasBoundedNativeChannelJson(
-  value: unknown,
-  maximumBytes: number,
-): boolean {
-  try {
-    const serialized = JSON.stringify(value);
-    return (
-      serialized !== undefined &&
-      nativeChannelTextEncoder.encode(serialized).byteLength <=
-        maximumBytes
-    );
-  } catch {
-    return false;
-  }
 }
 
 export const NativeChannelDriverCapabilitySchema = z.enum([
@@ -81,122 +55,12 @@ export const NativeInboundChannelActionNamesSchema = z
   .max(32)
   .refine((actions) => new Set(actions).size === actions.length);
 
-export const NativeChannelDriverHostCapabilitySchema = z.enum([
-  "installation_credentials",
-  "local_agent_reconciliation",
-  "local_agent_actions",
-]);
-
-export const NativeChannelDriverHostCapabilitiesSchema = z
-  .array(NativeChannelDriverHostCapabilitySchema)
-  .min(1)
-  .max(NativeChannelDriverHostCapabilitySchema.options.length)
-  .refine((capabilities) => new Set(capabilities).size === capabilities.length);
-
 export const NativeChannelDriverModuleSpecifierSchema = z
   .string()
   .regex(
     /^(?:@[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]*|[a-z0-9][a-z0-9._-]*|file:\/\/\/[^\u0000-\u001f\u007f]+)$/,
     "must be an installed package name or an absolute file URL",
   );
-
-export const NativeLocalAgentActionToolNameSchema = z
-  .string()
-  .regex(
-    /^[a-z][a-z0-9_]{0,127}$/,
-    "local agent action tool name must be lowercase snake case",
-  );
-
-export const NativeLocalAgentActionAuthorizationModeSchema = z.enum([
-  "runtime_context",
-  "driver_handler",
-]);
-
-const NativeLocalAgentActionArgumentsSchema = z
-  .record(z.string(), z.unknown())
-  .refine(
-    (value) =>
-      hasBoundedNativeChannelJson(
-        value,
-        MAX_NATIVE_LOCAL_AGENT_ACTION_ARGUMENT_BYTES,
-      ),
-    `local agent action arguments exceed ${MAX_NATIVE_LOCAL_AGENT_ACTION_ARGUMENT_BYTES} UTF-8 bytes`,
-  );
-
-export const NativeLocalAgentActionDescriptorSchema = z
-  .object({
-    toolName: NativeLocalAgentActionToolNameSchema,
-    description: boundedNativeChannelString(
-      MAX_NATIVE_LOCAL_AGENT_ACTION_DESCRIPTION_BYTES,
-      "local agent action description",
-    ),
-    inputSchema: z
-      .record(z.string(), z.unknown())
-      .refine(
-        (value) =>
-          hasBoundedNativeChannelJson(
-            value,
-            MAX_NATIVE_LOCAL_AGENT_ACTION_ARGUMENT_BYTES,
-          ),
-        "local agent action input schema is too large",
-      ),
-    sourceAccountId: ChannelBackendOpaqueIdSchema.optional(),
-    authorizationMode: NativeLocalAgentActionAuthorizationModeSchema.optional(),
-  })
-  .strict();
-
-export const NativeLocalAgentActionSourceSchema = z
-  .object({
-    channelKind: ChannelBackendWireKindSchema,
-    accountId: ChannelBackendOpaqueIdSchema,
-    conversationId: ChannelBackendOpaqueIdSchema,
-    threadId: ChannelBackendOpaqueIdSchema.optional(),
-  })
-  .strict();
-
-export const NativeLocalAgentActionRequestSchema = z
-  .object({
-    protocol: z.literal(NATIVE_CHANNEL_DRIVER_PROTOCOL),
-    schemaVersion: z.literal(NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION),
-    requestId: ChannelBackendOpaqueIdSchema,
-    toolName: NativeLocalAgentActionToolNameSchema,
-    arguments: NativeLocalAgentActionArgumentsSchema,
-    agentId: ChannelBackendOpaqueIdSchema,
-    sessionName: ChannelBackendOpaqueIdSchema,
-    source: NativeLocalAgentActionSourceSchema,
-    requestedAt: z.iso.datetime({ offset: true }),
-  })
-  .strict();
-
-export const NativeLocalAgentActionResultSchema = z
-  .object({
-    protocol: z.literal(NATIVE_CHANNEL_DRIVER_PROTOCOL),
-    schemaVersion: z.literal(NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION),
-    requestId: ChannelBackendOpaqueIdSchema,
-    disposition: z.enum(["completed", "rejected"]),
-    text: boundedNativeChannelString(
-      MAX_NATIVE_LOCAL_AGENT_ACTION_RESULT_BYTES,
-      "local agent action result",
-    ).optional(),
-    error: ChannelSafeErrorSchema.optional(),
-    completedAt: z.iso.datetime({ offset: true }),
-  })
-  .strict()
-  .superRefine((value, context) => {
-    if (
-      (value.disposition === "completed" &&
-        (value.text === undefined || value.error !== undefined)) ||
-      (value.disposition === "rejected" &&
-        (value.error === undefined || value.text !== undefined))
-    ) {
-      context.addIssue({
-        code: "custom",
-        path: ["disposition"],
-        message:
-          "completed actions require text; rejected actions require one safe error",
-      });
-    }
-  });
 
 export const NativeChannelDriverModuleConfigSchema = z
   .object({
@@ -216,7 +80,6 @@ export const NativeChannelDriverDescriptorSchema = z
     provider: ChannelBackendWireKindSchema,
     capabilities: NativeChannelDriverCapabilitiesSchema,
     inboundActions: NativeInboundChannelActionNamesSchema.optional(),
-    requiredHostCapabilities: NativeChannelDriverHostCapabilitiesSchema.optional(),
   })
   .superRefine(validateInboundActionDeclaration);
 
@@ -332,7 +195,6 @@ export const NativeChannelRuntimeHealthSchema = z.object({
 });
 
 export type NativeChannelDriverCapability = z.infer<typeof NativeChannelDriverCapabilitySchema>;
-export type NativeChannelDriverHostCapability = z.infer<typeof NativeChannelDriverHostCapabilitySchema>;
 export type NativeChannelDriverModuleConfig = z.infer<typeof NativeChannelDriverModuleConfigSchema>;
 export type NativeChannelDriverDescriptor = z.infer<typeof NativeChannelDriverDescriptorSchema>;
 export type NativeChannelRuntimeDescriptor = z.infer<typeof NativeChannelRuntimeDescriptorSchema>;
@@ -341,18 +203,6 @@ export type NativeInboundChannelActionNames = z.infer<typeof NativeInboundChanne
 export type NativeInboundChannelIdentity = z.infer<typeof NativeInboundChannelIdentitySchema>;
 export type NativeInboundChannelActionRequest = z.infer<typeof NativeInboundChannelActionRequestSchema>;
 export type NativeInboundChannelActionResult = z.infer<typeof NativeInboundChannelActionResultSchema>;
-export type NativeLocalAgentActionDescriptor = z.infer<
-  typeof NativeLocalAgentActionDescriptorSchema
->;
-export type NativeLocalAgentActionRequest = z.infer<
-  typeof NativeLocalAgentActionRequestSchema
->;
-export type NativeLocalAgentActionResult = z.infer<
-  typeof NativeLocalAgentActionResultSchema
->;
-export type NativeLocalAgentActionHandler = (
-  request: NativeLocalAgentActionRequest,
-) => NativeLocalAgentActionResult | Promise<NativeLocalAgentActionResult>;
 
 export interface NativeChannelDriverChannelConfig {
   readonly name: string;
@@ -473,14 +323,6 @@ export interface NativeChannelPresenceDelivery {
 }
 
 export interface NativeChannelDriverHost {
-  readInstallationCredential(): Promise<RemoteInstallationCredential | null>;
-  reconcileLocalAgent?(
-    request: LocalAgentReconciliationRequest,
-  ): Promise<LocalAgentReconciliationResult>;
-  registerLocalAgentAction?(
-    descriptor: NativeLocalAgentActionDescriptor,
-    handler: NativeLocalAgentActionHandler,
-  ): () => void;
   ingress(request: ChannelIngressRequest): Promise<ChannelIngressResult>;
   interrupt(request: ChannelInterruptRequest): Promise<ChannelInterruptResult>;
   readback(request: ChannelRuntimeReadbackRequest): Promise<ChannelRuntimeReadbackResult>;

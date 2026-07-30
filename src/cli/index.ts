@@ -12,7 +12,7 @@
 import "./env.js";
 
 import "reflect-metadata";
-import { Command, Option } from "commander";
+import { Command } from "commander";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -21,7 +21,7 @@ import * as allCommands from "./commands/index.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
 import { runUpdate } from "./commands/update.js";
-import { runCloudAuthRootCommand, runLink, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
+import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
 import { emitCliAuditEvent, runWithCliAudit } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
@@ -119,18 +119,16 @@ program
 
 program
   .command("login")
-  .description("Link this local Ravi CLI to a remote authentication endpoint")
-  .option("--endpoint <url>", "Remote authentication endpoint")
-  .option("--console <url>", "Legacy Console base URL")
+  .description("Link this local Ravi CLI to a Console-compatible endpoint")
+  .option("--console <url>", "Console base URL", "https://console.ravi.bot")
   .option("--json", "Print raw JSON result")
   .option("--no-open", "Do not open a browser")
-  .option("--no-poll", "Return the public pending challenge without waiting for approval")
+  .option("--no-poll", "Do not poll the exchange endpoint when auth is pending")
   .option("--timeout-seconds <seconds>", "Maximum login polling time", "300")
   .option("--interval-seconds <seconds>", "Login polling interval")
   .action(
     async (options: {
       console?: string;
-      endpoint?: string;
       json?: boolean;
       open?: boolean;
       poll?: boolean;
@@ -152,8 +150,8 @@ program
 
 program
   .command("whoami")
-  .description("Show the linked Ravi CLI identity")
-  .addOption(new Option("--console <url>", "Legacy Console base URL").hideHelp())
+  .description("Show the linked Ravi Cloud CLI identity")
+  .option("--console <url>", "Console base URL")
   .option("--json", "Print raw JSON result")
   .action(async (options: { console?: string; json?: boolean }) => {
     await runWithCliAudit(
@@ -169,26 +167,9 @@ program
   });
 
 program
-  .command("link")
-  .description("Confirm a remote identity-link challenge")
-  .option("--json", "Print raw JSON result")
-  .action(async (options: { json?: boolean }) => {
-    await runWithCliAudit(
-      {
-        group: "_root",
-        name: "link",
-        tool: "root_link",
-        input: options,
-        closeLazyConnection: true,
-      },
-      () => runCloudAuthRootCommand(options.json, () => runLink(options)),
-    );
-  });
-
-program
   .command("logout")
-  .description("Remove the local human CLI session and revoke it remotely when possible")
-  .addOption(new Option("--console <url>", "Legacy Console base URL").hideHelp())
+  .description("Remove local Ravi Cloud CLI credentials and revoke them in Console when possible")
+  .option("--console <url>", "Console base URL")
   .option("--json", "Print raw JSON result")
   .action(async (options: { console?: string; json?: boolean }) => {
     await runWithCliAudit(

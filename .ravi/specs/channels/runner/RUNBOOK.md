@@ -46,14 +46,3 @@ On shutdown the runner must:
 3. Requeue or finish in-flight outbound jobs.
 4. Release scoped platform locks.
 5. Release runner process lock.
-
-## Debugging A Local Agent Action
-
-1. Confirm the native runtime registered one unique action for the expected
-   provider and account.
-2. Confirm Channel-Backend prompt metadata contains the bounded descriptor.
-3. Confirm runtime context source matches that descriptor envelope exactly.
-4. Confirm the internal requester reaches the runner responder and preserves
-   request/result correlation.
-5. Treat no responder, timeout, mismatch, or retired handler as unavailable;
-   never retry through shell.
