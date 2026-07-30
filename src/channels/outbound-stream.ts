@@ -45,6 +45,7 @@ export interface ChannelOutboundRequest {
     responseVersion?: number;
     runtimePid?: number;
     responsePhase?: string;
+    canonicalMessageId?: string;
   };
   content:
     | {
@@ -81,6 +82,7 @@ export interface ChannelTextOutboundJobInput {
   target: MessageTarget;
   text: string;
   responsePhase?: string;
+  canonicalMessageId?: string;
   metadata?: ResponseMessage["metadata"];
   now?: number;
 }
@@ -320,6 +322,7 @@ export function buildChannelTextOutboundJob(input: ChannelTextOutboundJobInput):
   const sessionName = input.sessionName.trim();
   const emitId = input.emitId.trim();
   const idempotencyKey = input.idempotencyKey.trim();
+  const canonicalMessageId = input.canonicalMessageId?.trim();
   if (!requestId) throw new Error("requestId is required");
   if (!sessionName) throw new Error("sessionName is required");
   if (!emitId) throw new Error("emitId is required");
@@ -345,6 +348,7 @@ export function buildChannelTextOutboundJob(input: ChannelTextOutboundJobInput):
         sessionName,
         emitId,
         ...(input.responsePhase ? { responsePhase: input.responsePhase } : {}),
+        ...(canonicalMessageId ? { canonicalMessageId } : {}),
       },
       content: {
         type: "text",

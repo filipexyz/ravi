@@ -80,6 +80,7 @@ describe("channel runner native delivery registry", () => {
       sendPresence: mock(async () => ({ provider: "slack", status: "active" as const })),
     };
     let publishAttempt = 0;
+    const resolveCanonicalMessageId = mock(() => "message-assistant-a");
     const publishOutbound = mock(async (job: ChannelOutboundJob): Promise<ChannelOutboundPublishResult | undefined> => {
       publishAttempt++;
       if (publishAttempt !== 1) return undefined;
@@ -118,6 +119,7 @@ describe("channel runner native delivery registry", () => {
           socketMode: { start, stop, status } as never,
         })),
         publishOutbound,
+        resolveCanonicalMessageId,
         now: () => 1_782_920_000_000,
       },
     );
@@ -190,6 +192,12 @@ describe("channel runner native delivery registry", () => {
     expect(deferredPublishWarning).toContain("Slack outbound publish deferred; durable retry remains pending");
     expect(deferredPublishWarning).toContain("jobId=channel-output:output-a");
     expect(deferredPublishWarning).toContain("nextAttemptAt=1782920030000");
+    expect(resolveCanonicalMessageId).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outputId: "output-a",
+        binding: expect.objectContaining({ turnId: "turn-a" }),
+      }),
+    );
     expect(publishOutbound).toHaveBeenCalledWith(
       expect.objectContaining({
         jobId: "channel-output:output-a",
@@ -200,6 +208,7 @@ describe("channel runner native delivery registry", () => {
             sessionName: "session-a",
             emitId: "output-a",
             responsePhase: "final_answer",
+            canonicalMessageId: "message-assistant-a",
           }),
           content: {
             type: "text",

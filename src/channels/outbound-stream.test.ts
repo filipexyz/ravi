@@ -104,6 +104,7 @@ describe("channel outbound jobs", () => {
       emitId: "event-commentary-a",
       idempotencyKey: "event-commentary-a",
       responsePhase: "commentary",
+      canonicalMessageId: "message-assistant-a",
       now: 1_782_920_000_000,
       target: {
         channel: "slack",
@@ -129,6 +130,7 @@ describe("channel outbound jobs", () => {
           sessionName: "ravi-channels",
           emitId: "event-commentary-a",
           responsePhase: "commentary",
+          canonicalMessageId: "message-assistant-a",
         },
         content: {
           type: "text",

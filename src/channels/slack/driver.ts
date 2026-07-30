@@ -1,4 +1,4 @@
-import type { ChannelConfig } from "../../router/router-db.js";
+import { dbGetChannelBackendRuntimeState, type ChannelConfig } from "../../router/router-db.js";
 import { logger } from "../../utils/logger.js";
 import type { ChannelOutputEnvelope } from "../backend.js";
 import { publishChannelOutboundJobDurably, type ChannelOutboundPublishResult } from "../outbound-publish-outbox.js";
@@ -25,6 +25,7 @@ export interface SlackNativeChannelDriverOptions {
     options: { channel: ChannelConfig },
   ) => Promise<SlackNativeRuntime | null>;
   readonly publishOutbound?: (job: ChannelOutboundJob) => Promise<ChannelOutboundPublishResult | undefined>;
+  readonly resolveCanonicalMessageId?: (envelope: ChannelOutputEnvelope) => string | undefined;
   readonly now?: () => number;
 }
 
@@ -68,6 +69,7 @@ export function createSlackNativeChannelDriver(
       });
       const publishOutbound =
         options.publishOutbound ?? ((job: ChannelOutboundJob) => publishChannelOutboundJobDurably(job));
+      const resolveCanonicalMessageId = options.resolveCanonicalMessageId ?? resolveRuntimeCanonicalMessageId;
       const publishOutboundObserved = async (job: ChannelOutboundJob): Promise<void> => {
         const result = await publishOutbound(job);
         if (!result || result.ok) return;
@@ -86,6 +88,11 @@ export function createSlackNativeChannelDriver(
         {
           async emit(envelope) {
             const target = decodeSlackBackendConversationId(envelope.target.conversationId);
+            const canonicalMessageId =
+              envelope.kind === "assistant_message" ? resolveCanonicalMessageId(envelope) : undefined;
+            if (envelope.kind === "assistant_message" && !canonicalMessageId) {
+              throw new NativeChannelDriverContractError("runtime_surface_mismatch");
+            }
             await publishOutboundObserved(
               buildChannelTextOutboundJob({
                 requestId: `channel-output:${envelope.outputId}`,
@@ -101,6 +108,7 @@ export function createSlackNativeChannelDriver(
                 },
                 text: renderSlackBackendOutput(envelope),
                 responsePhase: "final_answer",
+                ...(canonicalMessageId ? { canonicalMessageId } : {}),
                 ...(options.now ? { now: options.now() } : {}),
               }),
             );
@@ -161,6 +169,10 @@ export function createSlackNativeChannelDriver(
       };
     },
   };
+}
+
+function resolveRuntimeCanonicalMessageId(envelope: ChannelOutputEnvelope): string | undefined {
+  return dbGetChannelBackendRuntimeState(envelope.binding.turnId)?.assistantMessageId;
 }
 
 function renderSlackBackendOutput(envelope: ChannelOutputEnvelope): string {

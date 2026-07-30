@@ -4,11 +4,13 @@ import { flushNats as flushNatsConnection, nats, getNats } from "../nats.js";
 import { getAgentPlatformIdentity } from "../contacts.js";
 import { getSessionByName } from "../router/index.js";
 import {
+  dbGetChatMessage,
   dbGetSessionChatBinding,
   dbMarkChatMessageDeleted,
   dbMarkChatMessageEdited,
   dbSaveMessageMeta,
   dbUpsertChatMessage,
+  type ChatMessageRecord,
   type UpsertChatMessageResult,
 } from "../router/router-db.js";
 import { recordDeliveryTrace } from "../session-trace/channel-trace.js";
@@ -598,6 +600,7 @@ export interface PersistDeliveredMessageDependencies {
       confidence: number;
     } | null;
   };
+  getChatMessage(id: string): ChatMessageRecord | null;
   saveMessageMeta: typeof dbSaveMessageMeta;
   upsertChatMessage(input: Parameters<typeof dbUpsertChatMessage>[0]): UpsertChatMessageResult;
 }
@@ -622,6 +625,7 @@ const DEFAULT_PERSISTENCE_DEPENDENCIES: PersistDeliveredMessageDependencies = {
       agentIdentity,
     };
   },
+  getChatMessage: dbGetChatMessage,
   saveMessageMeta: dbSaveMessageMeta,
   upsertChatMessage: dbUpsertChatMessage,
 };
@@ -632,13 +636,13 @@ export function persistDeliveredMessage(
   text: string,
   dependencies: PersistDeliveredMessageDependencies = DEFAULT_PERSISTENCE_DEPENDENCIES,
 ): PersistedOutboundMessage {
+  const canonicalMessageId = job.request.origin.canonicalMessageId?.trim();
   const platformMessageId = delivered.platformMessageId?.trim();
-  if (!platformMessageId) {
+  if (!platformMessageId && !canonicalMessageId) {
     return {
       ...(delivered.providerTimestamp !== undefined ? { providerTimestamp: delivered.providerTimestamp } : {}),
     };
   }
-
   const target = job.request.target;
   const sessionName = job.request.origin.sessionName;
   const instanceId = target.instanceId ?? job.request.instanceId ?? target.accountId;
@@ -646,11 +650,32 @@ export function persistDeliveredMessage(
     job,
     instanceId,
   });
+  const existingCanonicalMessage = canonicalMessageId
+    ? requireMatchingCanonicalMessage({
+        canonicalMessageId,
+        targetChannel: target.channel,
+        instanceId,
+        canonicalChatId,
+        agentId,
+        originSessionKey,
+        getChatMessage: dependencies.getChatMessage,
+      })
+    : null;
+  if (!platformMessageId) {
+    return {
+      ...(existingCanonicalMessage ? { canonicalMessageId: existingCanonicalMessage.id } : {}),
+      ...(delivered.providerTimestamp !== undefined ? { providerTimestamp: delivered.providerTimestamp } : {}),
+    };
+  }
+
+  const persistedCanonicalChatId = existingCanonicalMessage?.chatId ?? canonicalChatId;
+  const persistedAgentId = existingCanonicalMessage?.agentId ?? agentId;
+  const persistedOriginSessionKey = existingCanonicalMessage?.originSessionKey ?? originSessionKey;
 
   dependencies.saveMessageMeta(platformMessageId, target.chatId, {
-    canonicalChatId,
+    canonicalChatId: persistedCanonicalChatId,
     actorType: "agent",
-    agentId,
+    agentId: persistedAgentId,
     platformIdentityId: agentIdentity?.id,
     rawSenderId: agentIdentity?.platformUserId,
     normalizedSenderId: agentIdentity?.normalizedPlatformUserId,
@@ -658,8 +683,9 @@ export function persistDeliveredMessage(
     identityProvenance: {
       source: "ravi.channels.runner",
       sessionName,
-      originSessionKey: originSessionKey ?? null,
-      agentId: agentId ?? null,
+      originSessionKey: persistedOriginSessionKey ?? null,
+      agentId: persistedAgentId ?? null,
+      canonicalMessageId: existingCanonicalMessage?.id ?? null,
       accountId: target.accountId,
       instanceId,
       channel: target.channel,
@@ -668,6 +694,14 @@ export function persistDeliveredMessage(
       idempotencyKey: job.request.idempotencyKey,
     },
   });
+
+  if (existingCanonicalMessage) {
+    return {
+      canonicalMessageId: existingCanonicalMessage.id,
+      platformMessageId,
+      ...(delivered.providerTimestamp !== undefined ? { providerTimestamp: delivered.providerTimestamp } : {}),
+    };
+  }
 
   if (!canonicalChatId || !agentId) {
     return {
@@ -712,6 +746,38 @@ export function persistDeliveredMessage(
     platformMessageId: stored.providerMessageId,
     ...(stored.providerTimestamp !== undefined ? { providerTimestamp: stored.providerTimestamp } : {}),
   };
+}
+
+function requireMatchingCanonicalMessage(input: {
+  canonicalMessageId: string;
+  targetChannel: string;
+  instanceId: string;
+  canonicalChatId?: string;
+  agentId?: string;
+  originSessionKey?: string;
+  getChatMessage(id: string): ChatMessageRecord | null;
+}): ChatMessageRecord {
+  const message = input.getChatMessage(input.canonicalMessageId);
+  if (!message) {
+    throw new Error(`Canonical outbound message not found: ${input.canonicalMessageId}`);
+  }
+  const targetChannel =
+    input.targetChannel
+      .trim()
+      .toLowerCase()
+      .replace(/-baileys$/, "") || "unknown";
+  const mismatch =
+    message.actorType !== "agent" ||
+    !message.agentId ||
+    message.channel !== targetChannel ||
+    message.instanceId !== input.instanceId ||
+    (input.canonicalChatId !== undefined && message.chatId !== input.canonicalChatId) ||
+    (input.agentId !== undefined && message.agentId !== input.agentId) ||
+    (input.originSessionKey !== undefined && message.originSessionKey !== input.originSessionKey);
+  if (mismatch) {
+    throw new Error(`Canonical outbound message does not match delivery context: ${input.canonicalMessageId}`);
+  }
+  return message;
 }
 
 export function persistDeliveredChatAction(

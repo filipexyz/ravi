@@ -863,6 +863,7 @@ describe("channel outbound consumer", () => {
           originSessionKey: "agent:main:slack:slack-main:C123",
           agentIdentity: null,
         }),
+        getChatMessage: mock(() => null),
         saveMessageMeta: saveMessageMeta as never,
         upsertChatMessage: upsertChatMessage as never,
       },
@@ -908,6 +909,7 @@ describe("channel outbound consumer", () => {
       "hello Slack",
       {
         resolveContext: () => ({}),
+        getChatMessage: mock(() => null),
         saveMessageMeta: saveMessageMeta as never,
         upsertChatMessage: upsertChatMessage as never,
       },
@@ -919,6 +921,105 @@ describe("channel outbound consumer", () => {
       platformMessageId: "1711111111.000100",
       providerTimestamp: 1_711_111_111_000,
     });
+  });
+
+  it("attaches provider delivery to a pre-persisted canonical assistant message without inserting another", () => {
+    const job = makeJob();
+    job.request.origin.canonicalMessageId = "cm_terminal";
+    const saveMessageMeta = mock(() => undefined);
+    const getChatMessage = mock(() => ({
+      id: "cm_terminal",
+      chatId: "chat_123",
+      channel: "slack",
+      instanceId: "slack-main",
+      providerMessageId: "channel-runtime-assistant",
+      rawChatId: "C123",
+      actorType: "agent",
+      agentId: "main",
+      originSessionKey: "agent:main:slack:slack-main:C123",
+      content: { blocks: [{ type: "text", text: "hello Slack" }] },
+      ingestedAt: 1_711_111_110_000,
+      createdAt: 1_711_111_110_000,
+      updatedAt: 1_711_111_110_000,
+    }));
+    const upsertChatMessage = mock(() => {
+      throw new Error("must not insert a second canonical message");
+    });
+
+    const persisted = persistDeliveredMessage(
+      job,
+      {
+        provider: "slack",
+        messageId: "slack:C123:1711111111.000100",
+        platformMessageId: "1711111111.000100",
+        providerTimestamp: 1_711_111_111_000,
+      },
+      "hello Slack",
+      {
+        resolveContext: () => ({
+          agentId: "main",
+          canonicalChatId: "chat_123",
+          originSessionKey: "agent:main:slack:slack-main:C123",
+          agentIdentity: null,
+        }),
+        getChatMessage,
+        saveMessageMeta: saveMessageMeta as never,
+        upsertChatMessage: upsertChatMessage as never,
+      },
+    );
+
+    expect(getChatMessage).toHaveBeenCalledWith("cm_terminal");
+    expect(saveMessageMeta).toHaveBeenCalledWith(
+      "1711111111.000100",
+      "C123",
+      expect.objectContaining({
+        canonicalChatId: "chat_123",
+        agentId: "main",
+        identityProvenance: expect.objectContaining({
+          canonicalMessageId: "cm_terminal",
+          providerMessageId: "1711111111.000100",
+        }),
+      }),
+    );
+    expect(upsertChatMessage).not.toHaveBeenCalled();
+    expect(persisted).toEqual({
+      canonicalMessageId: "cm_terminal",
+      platformMessageId: "1711111111.000100",
+      providerTimestamp: 1_711_111_111_000,
+    });
+  });
+
+  it("fails closed when a terminal outbound job references a missing canonical message", () => {
+    const job = makeJob();
+    job.request.origin.canonicalMessageId = "cm_missing";
+    const saveMessageMeta = mock(() => undefined);
+    const upsertChatMessage = mock(() => {
+      throw new Error("must not insert a replacement canonical message");
+    });
+
+    expect(() =>
+      persistDeliveredMessage(
+        job,
+        {
+          provider: "slack",
+          platformMessageId: "1711111111.000100",
+        },
+        "hello Slack",
+        {
+          resolveContext: () => ({
+            agentId: "main",
+            canonicalChatId: "chat_123",
+            originSessionKey: "agent:main:slack:slack-main:C123",
+            agentIdentity: null,
+          }),
+          getChatMessage: mock(() => null),
+          saveMessageMeta: saveMessageMeta as never,
+          upsertChatMessage: upsertChatMessage as never,
+        },
+      ),
+    ).toThrow("Canonical outbound message not found: cm_missing");
+    expect(saveMessageMeta).not.toHaveBeenCalled();
+    expect(upsertChatMessage).not.toHaveBeenCalled();
   });
 
   it("fingerprints equivalent request objects deterministically", () => {

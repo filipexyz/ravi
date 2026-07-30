@@ -21,3 +21,6 @@
 11. Project interrupted, sentinel, silent-token, heartbeat-only, no-response,
     and unknown-phase assistant content; confirm none enters commentary
     delivery.
+12. Deliver one terminal assistant output and confirm the provider delivery
+    identity attaches to the existing canonical Message without increasing
+    the canonical Message count.

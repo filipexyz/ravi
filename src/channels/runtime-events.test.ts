@@ -38,6 +38,8 @@ import {
   type ChannelInterruptRequest,
   type KnownChannelRuntimeEvent,
 } from "./runtime-events.js";
+import { persistDeliveredMessage } from "./outbound-consumer.js";
+import { buildChannelTextOutboundJob } from "./outbound-stream.js";
 
 let stateDir: string | null = null;
 let unregisterOutput: (() => void) | undefined;
@@ -235,6 +237,45 @@ describe("channel runtime event projection", () => {
       kind: "assistant_message",
       content: [{ type: "text", text: "Hello world" }],
     });
+    const canonicalMessageCountBeforeDelivery = (
+      getDb().prepare("SELECT COUNT(*) AS count FROM chat_messages WHERE chat_id = ?").get(metadata.binding.chatId) as {
+        count: number;
+      }
+    ).count;
+    const delivered = persistDeliveredMessage(
+      buildChannelTextOutboundJob({
+        requestId: "channel-output:terminal-a",
+        sessionName: metadata.binding.sessionId,
+        emitId: "terminal-a",
+        idempotencyKey: "terminal-a",
+        canonicalMessageId: runtime?.assistantMessageId,
+        target: {
+          channel: metadata.target.channelKind,
+          accountId: metadata.target.connectionId,
+          instanceId: metadata.binding.channelInstanceId,
+          chatId: metadata.target.conversationId,
+          canonicalChatId: metadata.binding.chatId,
+        },
+        text: "Hello world",
+      }),
+      {
+        provider: "custom",
+        platformMessageId: "provider-output-a",
+        providerTimestamp: Date.parse("2026-07-24T18:00:04.000Z"),
+      },
+      "Hello world",
+    );
+    expect(delivered).toMatchObject({
+      canonicalMessageId: runtime?.assistantMessageId,
+      platformMessageId: "provider-output-a",
+    });
+    expect(
+      (
+        getDb()
+          .prepare("SELECT COUNT(*) AS count FROM chat_messages WHERE chat_id = ?")
+          .get(metadata.binding.chatId) as { count: number }
+      ).count,
+    ).toBe(canonicalMessageCountBeforeDelivery);
 
     const readback = readChannelRuntime({
       protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
@@ -629,6 +670,18 @@ describe("channel runtime event projection", () => {
       kind: "turn.state_changed",
       payload: { state: "completed" },
     });
+    const readback = readChannelRuntime({
+      protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+      schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+      requestId: "readback-suppressed-policy-output",
+      binding: metadata.binding,
+    });
+    expect(readback).toMatchObject({
+      state: "completed",
+      lastSequence: events.at(-1)?.sequence,
+    });
+    expect(readback.assistantMessageId).toBeUndefined();
+    expect(readback.terminalEvent).toBeUndefined();
   });
 
   it("retains suppressed non-commentary outcomes locally without projecting them", async () => {
@@ -679,6 +732,18 @@ describe("channel runtime event projection", () => {
       kind: "turn.state_changed",
       payload: { state: "completed" },
     });
+    const readback = readChannelRuntime({
+      protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+      schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+      requestId: "readback-suppressed-non-commentary",
+      binding: metadata.binding,
+    });
+    expect(readback).toMatchObject({
+      state: "completed",
+      lastSequence: events.at(-1)?.sequence,
+    });
+    expect(readback.assistantMessageId).toBeUndefined();
+    expect(readback.terminalEvent).toBeUndefined();
     expect(outputs).toHaveLength(0);
     expect(
       getHistory(metadata.binding.sessionId)
@@ -779,6 +844,18 @@ describe("channel runtime event projection", () => {
       kind: "turn.state_changed",
       payload: { state: "completed" },
     });
+    const readback = readChannelRuntime({
+      protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+      schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+      requestId: "readback-sentinel-completed",
+      binding: metadata.binding,
+    });
+    expect(readback).toMatchObject({
+      state: "completed",
+      lastSequence: events.at(-1)?.sequence,
+    });
+    expect(readback.assistantMessageId).toBeUndefined();
+    expect(readback.terminalEvent).toBeUndefined();
   });
 
   it("closes an unrecoverable host loop without leaving channel readback running forever", async () => {

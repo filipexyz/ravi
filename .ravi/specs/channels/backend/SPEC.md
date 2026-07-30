@@ -124,6 +124,9 @@ MUST both recover after expiry or restart.
   delivery idempotency key.
 - A terminal assistant result MUST persist before terminal completion is
   reported.
+- Terminal transport delivery MUST correlate to that already-persisted
+  canonical assistant Message. Provider delivery identity and timestamps MUST
+  attach to it without inserting a second canonical Message.
 - Suppressed non-commentary outcomes MAY remain in the local conversation
   history for continuity and audit without becoming transport output.
 - An intentionally suppressed completed Turn terminates with
@@ -162,6 +165,8 @@ commercial policy, private endpoint schemas, or private authorization rules.
 - Slack preserves thread, actor, file, route, subscription, and delivery
   behavior after convergence.
 - Runtime readback and output correlation resolve from the accepted binding.
+- Terminal delivery preserves one canonical assistant Message while recording
+  the provider delivery identity needed for later channel actions.
 - Sanitized, provider-classified commentary reaches the original provider
   conversation through the durable outbound ledger, survives transient
   transport failure, is not duplicated across retries, and never becomes
