@@ -23,6 +23,7 @@ import {
 } from "./delivery-queue.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import {
+  getReplayablePendingRuntimeMessages,
   shutdownRuntimeStreamingSession,
   stashPendingRuntimeMessages,
   type RuntimeHostStreamingSession,
@@ -194,7 +195,7 @@ export class RuntimeSessionDispatcher {
         });
         continue;
       }
-      const pendingMessages = session.pendingMessages.map(cloneRuntimeUserMessage);
+      const pendingMessages = getReplayablePendingRuntimeMessages(session).map(cloneRuntimeUserMessage);
       const nonIdle = isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
       const snapshot = getAccumulator(sessionName, {
         agentId: session.agentId,
@@ -214,6 +215,7 @@ export class RuntimeSessionDispatcher {
           currentToolName: session.currentToolName ?? null,
           currentTaskBarrierTaskId: session.currentTaskBarrierTaskId ?? null,
           currentTurnPendingIds: session.currentTurnPendingIds ?? [],
+          currentTurnSuperseded: Boolean(session.currentTurnSuperseded),
         },
       });
       appendRestartPendingMessages(snapshot, pendingMessages);
@@ -971,6 +973,7 @@ export class RuntimeSessionDispatcher {
               this.scheduleIdleGapRecovery(sessionName, existing, sessionEntry?.sessionKey ?? sessionName);
             }
           } else {
+            existing.currentTurnSuperseded = true;
             nats
               .emit(`ravi.session.${sessionName}.runtime`, {
                 type: "turn.interrupt.requested",
@@ -1012,6 +1015,7 @@ export class RuntimeSessionDispatcher {
                 barrierSource: prompt.deliveryBarrierSource ?? null,
                 reason: decision.reason,
                 taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
+                currentTurnReplay: false,
               },
             });
             existing.interrupted = true;

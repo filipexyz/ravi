@@ -1552,7 +1552,7 @@ describe("RaviBot runtime guards", () => {
     expect(interrupt).toHaveBeenCalledTimes(1);
   });
 
-  it("suppresses recoverable abort failures from internally interrupted turns", async () => {
+  it("suppresses recoverable abort failures and retries the successor after prompt interruption", async () => {
     const sessionKey = "agent:main:interrupted-abort-no-outbound";
     let releaseAfterTool: (() => void) | undefined;
     const afterTool = new Promise<void>((resolve) => {
@@ -1613,7 +1613,7 @@ describe("RaviBot runtime guards", () => {
         provider: providerId,
         events: (async function* () {
           const retry = await request.prompt.next();
-          expect(retry.value?.message.content).toBe("first\n\nsecond");
+          expect(retry.value?.message.content).toBe("second");
           releaseRetryPrompt?.();
           yield {
             type: "assistant.message",

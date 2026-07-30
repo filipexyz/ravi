@@ -50,4 +50,6 @@
 - Immediate arrives while an unsafe tool is running and waits.
 - Operational event arrives during active task and waits for the task barrier.
 - Human channel input arrives during active text generation and can interrupt after safe barriers.
+- Human channel input that interrupts a turn is delivered next without replaying the superseded turn first.
+- Unexpected provider interruption without a newer prompt retains the active prompt for recovery replay.
 - Edited-message rebase prompt can interrupt as a documented exception.

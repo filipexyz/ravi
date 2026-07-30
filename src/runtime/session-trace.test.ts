@@ -1246,6 +1246,42 @@ describe("runtime session trace instrumentation", () => {
     expect(getSessionTurn("turn-stream-closed-before-tool")?.status).toBe("aborted");
   });
 
+  it("restarts only the successor when a superseded provider turn closes without a terminal event", async () => {
+    const superseded = createQueuedRuntimeUserMessage({
+      prompt: "superseded work",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const successor = createQueuedRuntimeUserMessage({
+      prompt: "new direction",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [superseded, successor],
+      currentTurnPendingIds: superseded.pendingId ? [superseded.pendingId] : [],
+      currentTurnSuperseded: true,
+      currentTurnToolStarted: false,
+      toolRunning: false,
+      interrupted: true,
+    });
+    seedAdapterTrace(streaming, "turn-stream-closed-after-supersede");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual(["new direction"]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
+  });
+
   it("records exhausted recovery without publishing a user-facing response", async () => {
     const alerts: RuntimeRecoveryExhaustedAlertInput[] = [];
     const runtimeEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];

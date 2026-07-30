@@ -104,6 +104,16 @@ Within the same barrier lane, delivery SHOULD be FIFO.
 
 `after_tool` and `immediate_interrupt` prompt atoms MAY request interruption only through the session dispatcher's interrupt path, with trace events that explain the source, barrier, and safety state.
 
+When a later prompt atom intentionally interrupts an active provider turn, the
+atoms already yielded to that turn MUST be dequeued before the next provider
+turn. The interrupting atom MUST become the next eligible work according to its
+lane and FIFO order. The yielded atoms remain in durable conversation history;
+they are removed only from retry ownership so the superseded turn is not
+replayed ahead of the user's new direction.
+
+An unexpected provider or runtime interruption with no interrupting prompt MUST
+keep the yielded atoms eligible for recovery replay.
+
 ## Producer Contract
 
 Every producer that calls `publishSessionPrompt` MUST choose one of these strategies:
@@ -178,6 +188,8 @@ Each queued, released, batched, bypassed, or interrupted prompt SHOULD include:
 - Human channel input MAY interrupt after safe barriers because it represents live user intent.
 - Provider adapters MUST NOT implement their own delivery queue. Queueing and interruption are runtime responsibilities.
 - A queued prompt atom MUST survive provider interruption and daemon restart according to `runtime/session-continuity`.
+- A prompt-driven interruption MUST release the interrupting atom next instead of replaying the superseded turn first.
+- An unexpected provider interruption MUST retain the active turn for recovery replay.
 - A provider turn interrupted by a later prompt MUST still produce exactly one terminal event according to `runtime`.
 - Assistant messages MUST be persisted only for non-interrupted terminal turns.
 - Queue classification MUST be deterministic for the same payload and explicit options.
@@ -192,6 +204,8 @@ Each queued, released, batched, bypassed, or interrupted prompt SHOULD include:
 - `sessions answer` enters the follow-up lane by default, unless the call explicitly opts into immediate or belongs to a traced synchronous unblock flow.
 - Operational execute/heartbeat/trigger prompts do not interrupt active task work by default.
 - Human channel messages can still interrupt after safe tool barriers.
+- A human channel message that interrupts an active turn is the next provider input; the superseded turn is not replayed ahead of it.
+- A provider interruption without a newer prompt still replays the active prompt atom.
 - Equal-lane queued events are delivered FIFO.
 - Trace explains whether a prompt was queued, released, batched, blocked, bypassed, or used to interrupt.
 - Tests cover active text generation, tool-running, unsafe tool-running, active task, idle session, daemon restart, and explicit immediate delivery.
