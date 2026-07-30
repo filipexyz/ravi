@@ -1,4 +1,5 @@
 import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barriers.js";
+import type { NativeLocalAgentActionTurnMetadata } from "../channels/native/agent-action-turn.js";
 import type { ThreadHandoffPromptMetadata } from "../threads/types.js";
 import type { RuntimeEventMetadata } from "./types.js";
 import type { RuntimeProviderId } from "./types.js";
@@ -119,6 +120,7 @@ export interface ChannelBackendPromptMetadata {
     connectionId: string;
     conversationId: string;
   };
+  localAgentActions?: NativeLocalAgentActionTurnMetadata;
 }
 
 export type SessionRelayAction = "send" | "ask" | "answer" | "execute" | "inform";

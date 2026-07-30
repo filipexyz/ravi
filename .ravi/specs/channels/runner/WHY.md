@@ -19,3 +19,7 @@ This separation avoids three failure classes:
 
 The first implementation can be one channel runner process hosting Slack. The long-term design still needs instance-level locks so a future process-per-instance model does not change semantics.
 
+The same split means a process-local driver action registry is invisible to
+the runtime daemon. A turn-scoped descriptor snapshot plus typed request/reply
+keeps handlers and credentials in the runner while letting the daemon expose
+only actions admitted for the exact accepted Channel turn.

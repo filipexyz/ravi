@@ -119,9 +119,21 @@ MUST both recover after expiry or restart.
   host ABI.
 - Registration and discovery MUST be scoped to provider, Channel instance,
   source account, active Agent, Session, and current source context.
+- The Channel runner and runtime daemon are separate processes. The backend
+  MUST snapshot only the matching bounded descriptors into its trusted
+  accepted-turn correlation envelope before prompt publication.
+- Runtime discovery MUST accept that snapshot only when its provider and
+  account exactly match the current turn source.
+- Invocation MAY cross an internal request/reply bridge to the runner-local
+  handler, but the bridge MUST carry no new authority and MUST validate the
+  complete typed request and correlated typed result.
 - Duplicate ambiguous tool names MUST fail closed.
 - Invocation MUST require the runtime's normal local tool permission
-  immediately before the handler runs.
+  immediately before the handler runs unless the descriptor explicitly makes
+  the driver handler the final authorization boundary.
+- No responder, timeout, malformed frame, correlation mismatch, source
+  mismatch, duplicate ownership, or runner restart MUST fail closed. Runtime
+  MUST NOT fall back to shell or another mutation surface.
 - Descriptors and results MUST be bounded and provider-neutral. Product Roles,
   memberships, hosted policy, and hosted product entities MUST NOT enter this
   contract.
@@ -156,6 +168,8 @@ commercial policy, private endpoint schemas, or private authorization rules.
   behavior after convergence.
 - Runtime readback and output correlation resolve from the accepted binding.
 - Local actions remain provider/account/source scoped and locally authorized.
+- A two-process fixture proves one accepted turn advertises the exact action,
+  invokes the runner-local handler once, and fails closed without a runner.
 
 ## Known Failure Modes
 

@@ -21,11 +21,11 @@ function context(overrides: Partial<ContextRecord> = {}): ContextRecord {
   };
 }
 
-function register(sourceAccountId = "account-1") {
+function register(sourceAccountId = "account-1", channelInstanceId = "example-local") {
   const requests: unknown[] = [];
   const dispose = nativeLocalAgentActions.register({
     provider: "example",
-    channelInstanceId: "example-local",
+    channelInstanceId,
     descriptor: {
       toolName: "example_create_space",
       description: "Create a provider-owned collaboration space.",
@@ -112,5 +112,43 @@ describe("native local agent action registry", () => {
         arguments: { name: "roadmap" },
       }),
     ).toBeUndefined();
+  });
+
+  it("resolves otherwise ambiguous registrations by exact Channel instance for the process bridge", async () => {
+    register("account-1", "example-a");
+    const selected = register("account-1", "example-b");
+    expect(nativeLocalAgentActions.list(context())).toEqual([]);
+    expect(
+      nativeLocalAgentActions.listForSource({
+        provider: "example",
+        channelInstanceId: "example-b",
+        accountId: "account-1",
+      }),
+    ).toHaveLength(1);
+
+    await expect(
+      nativeLocalAgentActions.invokeRequest(
+        {
+          protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+          schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+          requestId: "request-exact-instance",
+          toolName: "example_create_space",
+          arguments: { name: "roadmap" },
+          agentId: "agent-1",
+          sessionName: "session-1",
+          source: {
+            channelKind: "example",
+            accountId: "account-1",
+            conversationId: "conversation-1",
+          },
+          requestedAt: "2026-07-26T12:00:00.000Z",
+        },
+        { channelInstanceId: "example-b" },
+      ),
+    ).resolves.toMatchObject({
+      requestId: "request-exact-instance",
+      disposition: "completed",
+    });
+    expect(selected.requests).toHaveLength(1);
   });
 });
