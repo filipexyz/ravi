@@ -343,5 +343,5 @@ export function createChannelRuntimeClient(client: ChannelRuntimeCommandClient):
 }
 
 export interface ChannelRuntimeEventSink {
-  emit(event: KnownChannelRuntimeEvent, target: ExternalChannelTarget): Promise<void>;
+  emit(event: KnownChannelRuntimeEvent, target?: ExternalChannelTarget): Promise<void>;
 }

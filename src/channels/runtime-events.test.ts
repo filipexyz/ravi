@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { getHistory } from "../db.js";
 import { nats } from "../nats.js";
 import {
   closeRouterDb,
@@ -508,26 +509,18 @@ describe("channel runtime event projection", () => {
 
     expect(events.map((event) => event.kind)).toEqual([
       "turn.state_changed",
-      "turn.assistant_delta",
       "turn.assistant_message",
       "turn.tool_summary",
       "turn.tool_summary",
-      "turn.assistant_message",
       "turn.terminal_output",
     ]);
     expect(events[1]).toMatchObject({
       payload: {
         phase: "commentary",
-        text: "Checking",
-      },
-    });
-    expect(events[2]).toMatchObject({
-      payload: {
-        phase: "commentary",
         content: [{ type: "text", text: "Checking the durable state." }],
       },
     });
-    expect(events[3]).toMatchObject({
+    expect(events[2]).toMatchObject({
       payload: {
         toolName: "self_chat",
         phase: "running",
@@ -540,7 +533,7 @@ describe("channel runtime event projection", () => {
         },
       },
     });
-    expect(events[4]).toMatchObject({
+    expect(events[3]).toMatchObject({
       payload: {
         toolName: "self_chat",
         phase: "completed",
@@ -549,12 +542,6 @@ describe("channel runtime event projection", () => {
           summary: "depth=summary",
         },
         durationMs: expect.any(Number),
-      },
-    });
-    expect(events[5]).toMatchObject({
-      payload: {
-        phase: "final_answer",
-        content: [{ type: "text", text: "Final answer only." }],
       },
     });
     expect(events.at(-1)).toMatchObject({
@@ -570,7 +557,7 @@ describe("channel runtime event projection", () => {
     });
     expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
       state: "completed",
-      lastSequence: 7,
+      lastSequence: 5,
     });
     expect(emitSpy.mock.calls.some(([topic]) => String(topic).endsWith(".response"))).toBe(false);
     expect(streaming.currentChannelBackend).toBeUndefined();
@@ -594,6 +581,11 @@ describe("channel runtime event projection", () => {
 
     try {
       await runAcceptedHostRuntime(metadata, [
+        {
+          type: "text.delta",
+          text: "@@SILENT@@ No response requested.",
+          metadata: { item: { id: "silent-delta", phase: "commentary" } },
+        },
         {
           type: "assistant.message",
           text: "@@SILENT@@",
@@ -631,11 +623,68 @@ describe("channel runtime event projection", () => {
         },
       }),
     ]);
+    expect(events.some((event) => event.kind === "turn.assistant_delta")).toBe(false);
     expect(outputs).toHaveLength(0);
     expect(events.at(-1)).toMatchObject({
       kind: "turn.state_changed",
       payload: { state: "completed" },
     });
+  });
+
+  it("retains suppressed non-commentary outcomes locally without projecting them", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+      async emit(event) {
+        events.push(event);
+      },
+    });
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+
+    try {
+      await runAcceptedHostRuntime(metadata, [
+        {
+          type: "text.delta",
+          text: "Routine finished HEARTBEAT_OK",
+          metadata: { item: { id: "heartbeat-delta", phase: "final_answer" } },
+        },
+        {
+          type: "assistant.message",
+          text: "Routine finished HEARTBEAT_OK",
+          metadata: { item: { id: "heartbeat-final", phase: "final_answer" } },
+        },
+        {
+          type: "assistant.message",
+          text: "No response requested.",
+          metadata: { item: { id: "no-response-final", phase: "final_answer" } },
+        },
+        {
+          type: "turn.complete",
+          usage: { inputTokens: 2, outputTokens: 1 },
+        },
+      ]);
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(events.some((event) => event.kind === "turn.assistant_delta")).toBe(false);
+    expect(events.some((event) => event.kind === "turn.assistant_message")).toBe(false);
+    expect(events.at(-1)).toMatchObject({
+      kind: "turn.state_changed",
+      payload: { state: "completed" },
+    });
+    expect(outputs).toHaveLength(0);
+    expect(
+      getHistory(metadata.binding.sessionId)
+        .filter((message) => message.role === "assistant")
+        .map((message) => message.content),
+    ).toEqual(["Routine finished HEARTBEAT_OK\n\nNo response requested."]);
   });
 
   it("does not project assistant content from an interrupted channel turn", async () => {

@@ -617,6 +617,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
   let providerRawEventCount = 0;
   let responseText = "";
+  let channelResponseText = "";
   let observationSequence = 0;
   let observedUserTurnId: string | undefined;
   let restartStashedReason: string | undefined;
@@ -1368,8 +1369,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
 
       if (event.type === "text.delta") {
-        if (streaming.agentMode !== "sentinel") {
-          await projectRuntimeEventToChannel(event);
+        if (streaming.agentMode !== "sentinel" && !streaming.interrupted) {
+          // Raw deltas arrive before whole-message response policy can classify
+          // silent, heartbeat, no-response, or prompt-too-long content. They
+          // may advance the externally visible turn to running, but content is
+          // projected only after the complete assistant message is authorized.
+          await projectRuntimeEventToChannel({
+            type: "status",
+            status: "thinking",
+            metadata: event.metadata,
+          });
         }
         updateRuntimeLiveState(sessionName, {
           activity: "streaming",
@@ -1389,7 +1398,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (event.type !== "turn.failed" && event.type !== "assistant.message") {
         await projectRuntimeEventToChannel(
           event,
-          event.type === "turn.complete" && streaming.agentMode !== "sentinel" ? responseText : undefined,
+          event.type === "turn.complete" && streaming.agentMode !== "sentinel" ? channelResponseText : undefined,
         );
       }
 
@@ -1639,6 +1648,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               preview: messageText,
             });
 
+            if (!isCommentaryResponse(event.metadata)) {
+              responseText = appendAssistantResponse(responseText, messageText);
+            }
+
             const trimmed = messageText.trim().toLowerCase();
             if (trimmed === "prompt is too long") {
               log.warn("Prompt too long - will auto-reset session", {
@@ -1673,9 +1686,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               });
             } else {
               if (!isCommentaryResponse(event.metadata)) {
-                responseText = appendAssistantResponse(responseText, messageText);
-              }
-              if (streaming.agentMode !== "sentinel") {
+                channelResponseText = appendAssistantResponse(channelResponseText, messageText);
+              } else if (streaming.agentMode !== "sentinel") {
                 await projectRuntimeEventToChannel({
                   ...event,
                   text: messageText,
@@ -2049,6 +2061,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         // Reset for next turn
         responseText = "";
+        channelResponseText = "";
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
@@ -2094,6 +2107,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         });
         streaming.interrupted = true;
         responseText = "";
+        channelResponseText = "";
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
@@ -2171,6 +2185,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
 
         responseText = "";
+        channelResponseText = "";
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;

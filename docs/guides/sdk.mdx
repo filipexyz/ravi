@@ -195,23 +195,28 @@ The adapter-side runtime bridge consumes the event contract through
 import type { ChannelRuntimeEventSink } from "@ravi-os/sdk/channel-runtime-events";
 
 const sink: ChannelRuntimeEventSink = {
-  async emit(event) {
-    console.log(event.sequence, event.kind);
+  async emit(event, target) {
+    console.log(event.sequence, event.kind, target?.conversationId);
   },
 };
 ```
 
 Lifecycle events use a monotonically increasing sequence per local turn and
-cover state, phase-tagged assistant messages and deltas, tool summaries,
-approvals, and terminal output. Commentary remains a separate lifecycle event;
-completed terminal output contains only the final assistant response. Readback
-remains available after reconnects, including the canonical assistant message
-id and exact durable terminal event after successful completion. The current
-and last-event runtime generation ids let a caller distinguish a live
-nonterminal turn from state orphaned by a process restart without assuming
-that retry is safe. Interrupt publication is idempotent and requires the same
-concrete local-agent authorization boundary as ingress. Provider-native
-payloads and diagnostics are not part of this contract.
+cover state, policy-approved phase-tagged assistant messages, tool summaries,
+approvals, and terminal output. Raw deltas remain internal until whole-message
+response policy can classify them. Commentary remains a separate lifecycle
+event; completed terminal output contains only the final assistant response.
+The optional sink target preserves compatibility with one-argument sinks; the
+host registry supplies it whenever an event is dispatched. Readback remains
+available after reconnects, including the canonical assistant message id and
+exact durable terminal event after successful completion. A completed Turn
+whose output was intentionally suppressed has terminal state without a
+`terminalEvent`, so consumers must treat the state itself as authoritative.
+The current and last-event runtime generation ids let a caller distinguish a
+live nonterminal turn from state orphaned by a process restart without
+assuming that retry is safe. Interrupt publication is idempotent and requires
+the same concrete local-agent authorization boundary as ingress.
+Provider-native payloads and diagnostics are not part of this contract.
 
 Tool summaries may include a runtime-authored `presentation` with the
 registered description, canonical category, operation, risk, bounded safe

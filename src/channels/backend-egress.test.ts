@@ -30,6 +30,7 @@ describe("channel backend cross-process egress", () => {
     const outputs: ChannelOutputEnvelope[] = [];
     const unregisterRuntime = runtimeEventSinks.register(target, {
       async emit(event, externalTarget) {
+        if (!externalTarget) throw new Error("runtime event target is required");
         runtimeEvents.push(event);
         runtimeTargets.push(externalTarget);
       },

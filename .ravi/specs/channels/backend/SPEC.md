@@ -112,6 +112,9 @@ MUST both recover after expiry or restart.
 - Host response policy MUST run before assistant content is projected.
   Interrupted, sentinel, silent-token, heartbeat-only, and no-response
   assistant content MUST NOT reach a transport output.
+- Raw text deltas that precede whole-message response policy MUST remain
+  internal. They MAY advance a Turn to `running`, but transport sinks MUST
+  receive assistant content only after the complete message is classified.
 - Only assistant content explicitly classified as commentary MAY be
   externalized before terminal output. Unknown phases MUST remain durable
   without being treated as commentary.
@@ -121,6 +124,12 @@ MUST both recover after expiry or restart.
   delivery idempotency key.
 - A terminal assistant result MUST persist before terminal completion is
   reported.
+- Suppressed non-commentary outcomes MAY remain in the local conversation
+  history for continuity and audit without becoming transport output.
+- An intentionally suppressed completed Turn terminates with
+  `turn.state_changed{state:"completed"}` and no terminal assistant event.
+  Readback consumers MUST treat the terminal state as authoritative and MUST
+  NOT wait exclusively for `terminalEvent`.
 - Output sinks MUST be selected by provider and connection and MUST remain
   bounded and explicitly registered.
 - Runtime status and delivery status MUST remain separate.

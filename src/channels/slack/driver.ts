@@ -105,6 +105,9 @@ export function createSlackNativeChannelDriver(
         {
           async emit(event, externalTarget) {
             if (event.kind !== "turn.assistant_message" || event.payload.phase !== "commentary") return;
+            if (!externalTarget) {
+              throw new NativeChannelDriverContractError("runtime_surface_mismatch");
+            }
             const target = decodeSlackBackendConversationId(externalTarget.conversationId);
             await publishOutbound(
               buildChannelTextOutboundJob({

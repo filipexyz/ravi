@@ -328,7 +328,7 @@ export type ChannelRuntimeReadbackRequest = z.infer<typeof ChannelRuntimeReadbac
 export type ChannelRuntimeReadbackResult = z.infer<typeof ChannelRuntimeReadbackResultSchema>;
 
 export interface ChannelRuntimeEventSink {
-  emit(event: KnownChannelRuntimeEvent, target: ExternalChannelTarget): Promise<void>;
+  emit(event: KnownChannelRuntimeEvent, target?: ExternalChannelTarget): Promise<void>;
 }
 
 export class ChannelRuntimeEventSinkRegistry {

@@ -7,7 +7,12 @@
  */
 
 import { describe, expect, it } from "bun:test";
-import type { ChannelRuntimeCommandClient } from "../channel-runtime-events.js";
+import type {
+  ChannelRuntimeCommandClient,
+  ChannelRuntimeEventSink,
+  KnownChannelRuntimeEvent,
+} from "../channel-runtime-events.js";
+import type { ExternalChannelTarget } from "../channel-backend.js";
 import type { RaviClient } from "../client.js";
 import type {
   ArtifactsShowReturn,
@@ -30,6 +35,12 @@ type ExpectFalse<T extends false> = T;
 
 declare const client: RaviClient;
 type _ChannelRuntimeClientCompatible = ExpectTrue<RaviClient extends ChannelRuntimeCommandClient ? true : false>;
+type _ChannelRuntimeSinkParamsCompatible = ExpectTrue<
+  Eq<
+    Parameters<ChannelRuntimeEventSink["emit"]>,
+    [event: KnownChannelRuntimeEvent, target?: ExternalChannelTarget]
+  >
+>;
 
 // `client.artifacts.show(id)` — single positional string, return Promise<ArtifactsShowReturn>.
 type ArtifactsShowFn = typeof client.artifacts.show;
@@ -138,6 +149,7 @@ type _Touched =
   | _ChannelBackendIngressParamsOk
   | _ChannelBackendIngressReturnOk
   | _ChannelRuntimeClientCompatible
+  | _ChannelRuntimeSinkParamsCompatible
   | _ChannelBackendRuntimeInterruptParamsOk
   | _ChannelBackendRuntimeInterruptReturnOk
   | _ChannelBackendRuntimeReadbackParamsOk
