@@ -59,6 +59,29 @@ describe("CLI root version", () => {
     expect(result.stdout).toContain("ravi --help");
   });
 
+  it("keeps root login scoped to Ravi Console", () => {
+    const stateDir = join(tmpdir(), `ravi-root-login-help-${process.pid}`);
+    const login = spawnSync("bun", ["src/cli/index.ts", "login", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: testEnv(stateDir),
+    });
+    const root = spawnSync("bun", ["src/cli/index.ts", "--help"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: testEnv(stateDir),
+    });
+    rmSync(stateDir, { recursive: true, force: true });
+
+    expect(login.status).toBe(0);
+    expect(login.stdout).toContain("Console-compatible endpoint");
+    expect(login.stdout).toContain("--console <url>");
+    expect(login.stdout).toContain("https://console.ravi.bot");
+    expect(login.stdout).not.toContain("--endpoint");
+    expect(root.status).toBe(0);
+    expect(root.stdout).not.toContain("link [options]");
+  });
+
   it("suggests the plural tasks command for singular task help", () => {
     const stateDir = join(tmpdir(), `ravi-root-task-suggestion-${process.pid}`);
     const result = spawnSync("bun", ["src/cli/index.ts", "task", "--help"], {

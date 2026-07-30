@@ -36,6 +36,15 @@ artifact serving, and private asset auth lives outside this repo.
 
 - The CLI MAY support linking to `console.ravi.bot` or another configured
   Console-compatible base URL.
+- `ravi login` MUST default to `https://console.ravi.bot` and MUST select an
+  alternate Console-compatible service only through the explicit `--console`
+  option.
+- `ravi login` MUST NOT prompt for, discover, or silently reuse an unrelated
+  product endpoint.
+- The root auth surface MUST NOT expose a generic `--endpoint` option,
+  product-specific installation enrollment, or a post-login provider module.
+- An independent product or integration MUST use its own SDK, credentials, and
+  login surface instead of repurposing Ravi Console credentials.
 - The CLI MUST NOT embed WorkOS secrets, Console secrets, provider tokens, or
   Ravi Cloud business policy.
 - The CLI MUST treat the Console API as the authority for organization,
@@ -161,6 +170,9 @@ safe error code.
 ## Acceptance Criteria
 
 - `ravi login` can link a local CLI without storing provider or browser secrets.
+- `ravi login --help` identifies the Console contract and default, does not
+  expose `--endpoint`, and the root command does not expose a product-linking
+  command.
 - `ravi whoami --json` returns the linked user, organization, Console URL, local
   installation id, scopes, and expiry metadata without exposing tokens.
 - `ravi logout` deletes local credentials and asks Console to revoke the session

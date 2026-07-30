@@ -1,8 +1,8 @@
 {
   "artifacts": [
     {
-      "sha256": "cc1202c653a571b66cf7b3e961673755ee26be90727d6eab27f4d1009ae304c0",
-      "sizeBytes": 362,
+      "sha256": "10912610e3d9c2a85c859b29d190eae07dbc8e528261c3fc4447ee5a4e4901ad",
+      "sizeBytes": 294,
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/driver-descriptor.json"
     },
     {
@@ -26,8 +26,8 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/runtime-descriptor.json"
     },
     {
-      "sha256": "05feff656c1d20bd6e56cb9dc465d7b07e8080ea77b5738b4fb7896cb6d6e449",
-      "sizeBytes": 12607,
+      "sha256": "2e95bf8262d087a3085866256308f1573542648b128368e8391ebaad1827fea9",
+      "sizeBytes": 10542,
       "targetPath": "packages/ravi-os-sdk/src/generated/native-channel-driver.schema.json"
     }
   ],
@@ -52,7 +52,7 @@
     "packages/ravi-os-sdk/src/generated/native-channel-driver.schema.json"
   ],
   "formatVersion": 1,
-  "outputDigest": "10eef000c762efe4545d1a89b61b49768fcebb6fef22781da5872e543095e03e",
+  "outputDigest": "c18db769485f0faa0553b1a2a8829f4b2434b930a688c711369ae5673b26b3f9",
   "rationale": "Channel runners need a versioned provider-neutral boundary to load explicitly configured local channel drivers and include runtimes in lifecycle and health.",
   "schemaAllowlist": [
     {
