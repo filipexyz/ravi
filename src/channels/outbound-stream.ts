@@ -45,6 +45,7 @@ export interface ChannelOutboundRequest {
     responseVersion?: number;
     runtimePid?: number;
     responsePhase?: string;
+    canonicalMessageId?: string;
   };
   content:
     | {
@@ -71,6 +72,19 @@ export interface ChannelOutboundJob {
     message: string;
     retryable: boolean;
   };
+}
+
+export interface ChannelTextOutboundJobInput {
+  requestId: string;
+  sessionName: string;
+  emitId: string;
+  idempotencyKey: string;
+  target: MessageTarget;
+  text: string;
+  responsePhase?: string;
+  canonicalMessageId?: string;
+  metadata?: ResponseMessage["metadata"];
+  now?: number;
 }
 
 export type BuildChannelOutboundJobResult =
@@ -299,6 +313,50 @@ export function buildChannelOutboundJobFromResponse(
         target,
         ...(response.metadata && typeof response.metadata === "object" ? { metadata: response.metadata } : {}),
       },
+    },
+  };
+}
+
+export function buildChannelTextOutboundJob(input: ChannelTextOutboundJobInput): ChannelOutboundJob {
+  const requestId = input.requestId.trim();
+  const sessionName = input.sessionName.trim();
+  const emitId = input.emitId.trim();
+  const idempotencyKey = input.idempotencyKey.trim();
+  const canonicalMessageId = input.canonicalMessageId?.trim();
+  if (!requestId) throw new Error("requestId is required");
+  if (!sessionName) throw new Error("sessionName is required");
+  if (!emitId) throw new Error("emitId is required");
+  if (!idempotencyKey) throw new Error("idempotencyKey is required");
+  if (!input.text.trim()) throw new Error("text is required");
+
+  const now = input.now ?? Date.now();
+  const channelId = input.target.channel.trim().toLowerCase() || "unknown";
+  return {
+    jobId: requestId,
+    status: "queued",
+    attemptCount: 0,
+    createdAt: now,
+    updatedAt: now,
+    request: {
+      requestId,
+      channelId,
+      ...(input.target.instanceId ? { instanceId: input.target.instanceId } : {}),
+      accountId: input.target.accountId,
+      targetChatId: input.target.chatId,
+      ...(input.target.threadId ? { targetThreadId: input.target.threadId } : {}),
+      origin: {
+        sessionName,
+        emitId,
+        ...(input.responsePhase ? { responsePhase: input.responsePhase } : {}),
+        ...(canonicalMessageId ? { canonicalMessageId } : {}),
+      },
+      content: {
+        type: "text",
+        text: input.text,
+      },
+      idempotencyKey,
+      target: input.target,
+      ...(input.metadata ? { metadata: input.metadata } : {}),
     },
   };
 }

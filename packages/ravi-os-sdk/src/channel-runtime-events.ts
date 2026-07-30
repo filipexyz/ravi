@@ -6,6 +6,7 @@ import {
   ChannelContentSchema,
   ChannelSafeErrorSchema,
   LocalChannelMessageBindingSchema,
+  type ExternalChannelTarget,
 } from "./channel-backend.js";
 
 export const CHANNEL_RUNTIME_EVENTS_PROTOCOL = "ravi.channel.runtime-events" as const;
@@ -342,5 +343,5 @@ export function createChannelRuntimeClient(client: ChannelRuntimeCommandClient):
 }
 
 export interface ChannelRuntimeEventSink {
-  emit(event: KnownChannelRuntimeEvent): Promise<void>;
+  emit(event: KnownChannelRuntimeEvent, target?: ExternalChannelTarget): Promise<void>;
 }

@@ -617,6 +617,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
   let providerRawEventCount = 0;
   let responseText = "";
+  let channelResponseText = "";
   let observationSequence = 0;
   let observedUserTurnId: string | undefined;
   let restartStashedReason: string | undefined;
@@ -1368,7 +1369,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
 
       if (event.type === "text.delta") {
-        await projectRuntimeEventToChannel(event);
+        if (streaming.agentMode !== "sentinel" && !streaming.interrupted) {
+          // Raw deltas arrive before whole-message response policy can classify
+          // silent, heartbeat, no-response, or prompt-too-long content. They
+          // may advance the externally visible turn to running, but content is
+          // projected only after the complete assistant message is authorized.
+          await projectRuntimeEventToChannel({
+            type: "status",
+            status: "thinking",
+            metadata: event.metadata,
+          });
+        }
         updateRuntimeLiveState(sessionName, {
           activity: "streaming",
           summary: truncateLiveSummary(event.text) || "streaming",
@@ -1384,8 +1395,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       await chunkEmitTail;
 
-      if (event.type !== "turn.failed") {
-        await projectRuntimeEventToChannel(event, event.type === "turn.complete" ? responseText : undefined);
+      if (event.type !== "turn.failed" && event.type !== "assistant.message") {
+        await projectRuntimeEventToChannel(
+          event,
+          event.type === "turn.complete" && streaming.agentMode !== "sentinel" ? channelResponseText : undefined,
+        );
       }
 
       if (event.type === "provider.raw" && event.rawEvent) {
@@ -1612,9 +1626,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               provider: runtimeSession.provider,
             });
           } else {
-            if (!isCommentaryResponse(event.metadata)) {
-              responseText = appendAssistantResponse(responseText, messageText);
-            }
             ensureCurrentTurnUserObservation();
             pushObservationEvent("message.assistant", {
               preview: truncateObservationPreview(messageText),
@@ -1636,6 +1647,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               },
               preview: messageText,
             });
+
+            if (!isCommentaryResponse(event.metadata)) {
+              responseText = appendAssistantResponse(responseText, messageText);
+            }
 
             const trimmed = messageText.trim().toLowerCase();
             if (trimmed === "prompt is too long") {
@@ -1670,6 +1685,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 provider: runtimeSession.provider,
               });
             } else {
+              if (!isCommentaryResponse(event.metadata)) {
+                channelResponseText = appendAssistantResponse(channelResponseText, messageText);
+              } else if (streaming.agentMode !== "sentinel") {
+                await projectRuntimeEventToChannel({
+                  ...event,
+                  text: messageText,
+                });
+              }
               updateRuntimeLiveState(sessionName, {
                 activity: "streaming",
                 summary: truncateLiveSummary(messageText) || "response",
@@ -2038,6 +2061,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         // Reset for next turn
         responseText = "";
+        channelResponseText = "";
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
@@ -2083,6 +2107,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         });
         streaming.interrupted = true;
         responseText = "";
+        channelResponseText = "";
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
@@ -2160,6 +2185,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         }
 
         responseText = "";
+        channelResponseText = "";
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;

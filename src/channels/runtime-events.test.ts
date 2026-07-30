@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { getHistory } from "../db.js";
 import { nats } from "../nats.js";
 import {
   closeRouterDb,
@@ -37,6 +38,8 @@ import {
   type ChannelInterruptRequest,
   type KnownChannelRuntimeEvent,
 } from "./runtime-events.js";
+import { persistDeliveredMessage } from "./outbound-consumer.js";
+import { buildChannelTextOutboundJob } from "./outbound-stream.js";
 
 let stateDir: string | null = null;
 let unregisterOutput: (() => void) | undefined;
@@ -234,6 +237,45 @@ describe("channel runtime event projection", () => {
       kind: "assistant_message",
       content: [{ type: "text", text: "Hello world" }],
     });
+    const canonicalMessageCountBeforeDelivery = (
+      getDb().prepare("SELECT COUNT(*) AS count FROM chat_messages WHERE chat_id = ?").get(metadata.binding.chatId) as {
+        count: number;
+      }
+    ).count;
+    const delivered = persistDeliveredMessage(
+      buildChannelTextOutboundJob({
+        requestId: "channel-output:terminal-a",
+        sessionName: metadata.binding.sessionId,
+        emitId: "terminal-a",
+        idempotencyKey: "terminal-a",
+        canonicalMessageId: runtime?.assistantMessageId,
+        target: {
+          channel: metadata.target.channelKind,
+          accountId: metadata.target.connectionId,
+          instanceId: metadata.binding.channelInstanceId,
+          chatId: metadata.target.conversationId,
+          canonicalChatId: metadata.binding.chatId,
+        },
+        text: "Hello world",
+      }),
+      {
+        provider: "custom",
+        platformMessageId: "provider-output-a",
+        providerTimestamp: Date.parse("2026-07-24T18:00:04.000Z"),
+      },
+      "Hello world",
+    );
+    expect(delivered).toMatchObject({
+      canonicalMessageId: runtime?.assistantMessageId,
+      platformMessageId: "provider-output-a",
+    });
+    expect(
+      (
+        getDb()
+          .prepare("SELECT COUNT(*) AS count FROM chat_messages WHERE chat_id = ?")
+          .get(metadata.binding.chatId) as { count: number }
+      ).count,
+    ).toBe(canonicalMessageCountBeforeDelivery);
 
     const readback = readChannelRuntime({
       protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
@@ -508,26 +550,18 @@ describe("channel runtime event projection", () => {
 
     expect(events.map((event) => event.kind)).toEqual([
       "turn.state_changed",
-      "turn.assistant_delta",
       "turn.assistant_message",
       "turn.tool_summary",
       "turn.tool_summary",
-      "turn.assistant_message",
       "turn.terminal_output",
     ]);
     expect(events[1]).toMatchObject({
       payload: {
         phase: "commentary",
-        text: "Checking",
-      },
-    });
-    expect(events[2]).toMatchObject({
-      payload: {
-        phase: "commentary",
         content: [{ type: "text", text: "Checking the durable state." }],
       },
     });
-    expect(events[3]).toMatchObject({
+    expect(events[2]).toMatchObject({
       payload: {
         toolName: "self_chat",
         phase: "running",
@@ -540,7 +574,7 @@ describe("channel runtime event projection", () => {
         },
       },
     });
-    expect(events[4]).toMatchObject({
+    expect(events[3]).toMatchObject({
       payload: {
         toolName: "self_chat",
         phase: "completed",
@@ -549,12 +583,6 @@ describe("channel runtime event projection", () => {
           summary: "depth=summary",
         },
         durationMs: expect.any(Number),
-      },
-    });
-    expect(events[5]).toMatchObject({
-      payload: {
-        phase: "final_answer",
-        content: [{ type: "text", text: "Final answer only." }],
       },
     });
     expect(events.at(-1)).toMatchObject({
@@ -570,10 +598,264 @@ describe("channel runtime event projection", () => {
     });
     expect(dbGetChannelBackendRuntimeState(metadata.binding.turnId)).toMatchObject({
       state: "completed",
-      lastSequence: 7,
+      lastSequence: 5,
     });
     expect(emitSpy.mock.calls.some(([topic]) => String(topic).endsWith(".response"))).toBe(false);
     expect(streaming.currentChannelBackend).toBeUndefined();
+  });
+
+  it("projects only sanitized commentary after host response policy", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+      async emit(event) {
+        events.push(event);
+      },
+    });
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+
+    try {
+      await runAcceptedHostRuntime(metadata, [
+        {
+          type: "text.delta",
+          text: "@@SILENT@@ No response requested.",
+          metadata: { item: { id: "silent-delta", phase: "commentary" } },
+        },
+        {
+          type: "assistant.message",
+          text: "@@SILENT@@",
+          metadata: { item: { id: "silent-a", phase: "commentary" } },
+        },
+        {
+          type: "assistant.message",
+          text: "No response requested.",
+          metadata: { item: { id: "silent-b", phase: "commentary" } },
+        },
+        {
+          type: "assistant.message",
+          text: "Routine finished HEARTBEAT_OK",
+          metadata: { item: { id: "silent-c", phase: "commentary" } },
+        },
+        {
+          type: "assistant.message",
+          text: "@@SILENT@@ Checking the current state.",
+          metadata: { item: { id: "commentary-a", phase: "commentary" } },
+        },
+        {
+          type: "turn.complete",
+          usage: { inputTokens: 2, outputTokens: 1 },
+        },
+      ]);
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(events.filter((event) => event.kind === "turn.assistant_message")).toEqual([
+      expect.objectContaining({
+        payload: {
+          phase: "commentary",
+          content: [{ type: "text", text: "Checking the current state." }],
+        },
+      }),
+    ]);
+    expect(events.some((event) => event.kind === "turn.assistant_delta")).toBe(false);
+    expect(outputs).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      kind: "turn.state_changed",
+      payload: { state: "completed" },
+    });
+    const readback = readChannelRuntime({
+      protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+      schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+      requestId: "readback-suppressed-policy-output",
+      binding: metadata.binding,
+    });
+    expect(readback).toMatchObject({
+      state: "completed",
+      lastSequence: events.at(-1)?.sequence,
+    });
+    expect(readback.assistantMessageId).toBeUndefined();
+    expect(readback.terminalEvent).toBeUndefined();
+  });
+
+  it("retains suppressed non-commentary outcomes locally without projecting them", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+      async emit(event) {
+        events.push(event);
+      },
+    });
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+
+    try {
+      await runAcceptedHostRuntime(metadata, [
+        {
+          type: "text.delta",
+          text: "Routine finished HEARTBEAT_OK",
+          metadata: { item: { id: "heartbeat-delta", phase: "final_answer" } },
+        },
+        {
+          type: "assistant.message",
+          text: "Routine finished HEARTBEAT_OK",
+          metadata: { item: { id: "heartbeat-final", phase: "final_answer" } },
+        },
+        {
+          type: "assistant.message",
+          text: "No response requested.",
+          metadata: { item: { id: "no-response-final", phase: "final_answer" } },
+        },
+        {
+          type: "turn.complete",
+          usage: { inputTokens: 2, outputTokens: 1 },
+        },
+      ]);
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(events.some((event) => event.kind === "turn.assistant_delta")).toBe(false);
+    expect(events.some((event) => event.kind === "turn.assistant_message")).toBe(false);
+    expect(events.at(-1)).toMatchObject({
+      kind: "turn.state_changed",
+      payload: { state: "completed" },
+    });
+    const readback = readChannelRuntime({
+      protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+      schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+      requestId: "readback-suppressed-non-commentary",
+      binding: metadata.binding,
+    });
+    expect(readback).toMatchObject({
+      state: "completed",
+      lastSequence: events.at(-1)?.sequence,
+    });
+    expect(readback.assistantMessageId).toBeUndefined();
+    expect(readback.terminalEvent).toBeUndefined();
+    expect(outputs).toHaveLength(0);
+    expect(
+      getHistory(metadata.binding.sessionId)
+        .filter((message) => message.role === "assistant")
+        .map((message) => message.content),
+    ).toEqual(["Routine finished HEARTBEAT_OK\n\nNo response requested."]);
+  });
+
+  it("does not project assistant content from an interrupted channel turn", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+      async emit(event) {
+        events.push(event);
+      },
+    });
+
+    try {
+      await runAcceptedHostRuntime(
+        metadata,
+        [
+          {
+            type: "assistant.message",
+            text: "Discard this interrupted commentary.",
+            metadata: { item: { id: "commentary-a", phase: "commentary" } },
+          },
+          { type: "turn.interrupted" },
+        ],
+        (streaming) => {
+          streaming.interrupted = true;
+        },
+      );
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(events.some((event) => event.kind === "turn.assistant_message")).toBe(false);
+    expect(events.at(-1)).toMatchObject({
+      kind: "turn.terminal_output",
+      payload: { state: "interrupted" },
+    });
+  });
+
+  it("keeps sentinel assistant content off the channel output path", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+      async emit(event) {
+        events.push(event);
+      },
+    });
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+
+    try {
+      await runAcceptedHostRuntime(
+        metadata,
+        [
+          {
+            type: "text.delta",
+            text: "Hidden",
+            metadata: { item: { id: "commentary-a", phase: "commentary" } },
+          },
+          {
+            type: "assistant.message",
+            text: "Hidden commentary.",
+            metadata: { item: { id: "commentary-a", phase: "commentary" } },
+          },
+          {
+            type: "assistant.message",
+            text: "Hidden final answer.",
+            metadata: { item: { id: "final-a", phase: "final_answer" } },
+          },
+          {
+            type: "turn.complete",
+            usage: { inputTokens: 2, outputTokens: 1 },
+          },
+        ],
+        (streaming) => {
+          streaming.agentMode = "sentinel";
+        },
+      );
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(
+      events.some((event) => event.kind === "turn.assistant_delta" || event.kind === "turn.assistant_message"),
+    ).toBe(false);
+    expect(outputs).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      kind: "turn.state_changed",
+      payload: { state: "completed" },
+    });
+    const readback = readChannelRuntime({
+      protocol: CHANNEL_RUNTIME_EVENTS_PROTOCOL,
+      schemaVersion: CHANNEL_RUNTIME_EVENTS_SCHEMA_VERSION,
+      requestId: "readback-sentinel-completed",
+      binding: metadata.binding,
+    });
+    expect(readback).toMatchObject({
+      state: "completed",
+      lastSequence: events.at(-1)?.sequence,
+    });
+    expect(readback.assistantMessageId).toBeUndefined();
+    expect(readback.terminalEvent).toBeUndefined();
   });
 
   it("closes an unrecoverable host loop without leaving channel readback running forever", async () => {
@@ -820,8 +1102,39 @@ function streamingSession(
     onTurnComplete: null,
     currentToolSafety: null,
     pendingAbort: false,
-    agentMode: "sentinel",
+    agentMode: "active",
   };
+}
+
+async function runAcceptedHostRuntime(
+  metadata: ChannelBackendPromptMetadata,
+  events: RuntimeEvent[],
+  configure?: (streaming: RuntimeHostStreamingSession) => void,
+): Promise<RuntimeHostStreamingSession> {
+  const runtimeSession = runtimeHandle(events);
+  const session = resolveSession(metadata.binding.sessionId);
+  const agent = dbGetAgent(metadata.binding.agentId);
+  if (!session || !agent) throw new Error("accepted fixture did not create local runtime identities");
+  const streaming = streamingSession(metadata, runtimeSession);
+  configure?.(streaming);
+
+  await runRuntimeEventLoop({
+    runId: `channel-runtime-${metadata.binding.turnId}`,
+    sessionName: session.name!,
+    session,
+    agent,
+    streaming,
+    runtimeSession,
+    runtimeCapabilities,
+    model: "channel-runtime-model",
+    instanceId: "test-instance",
+    defaultRuntimeProviderId: "test-provider",
+    streamingSessions: new Map([[session.name!, streaming]]),
+    stashedMessages: new Map(),
+    safeEmit: async () => {},
+    drainPendingStarts: () => {},
+  });
+  return streaming;
 }
 
 const runtimeCapabilities: RuntimeCapabilities = {

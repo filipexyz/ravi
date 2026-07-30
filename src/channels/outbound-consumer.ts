@@ -4,11 +4,13 @@ import { flushNats as flushNatsConnection, nats, getNats } from "../nats.js";
 import { getAgentPlatformIdentity } from "../contacts.js";
 import { getSessionByName } from "../router/index.js";
 import {
+  dbGetChatMessage,
   dbGetSessionChatBinding,
   dbMarkChatMessageDeleted,
   dbMarkChatMessageEdited,
   dbSaveMessageMeta,
   dbUpsertChatMessage,
+  type ChatMessageRecord,
   type UpsertChatMessageResult,
 } from "../router/router-db.js";
 import { recordDeliveryTrace } from "../session-trace/channel-trace.js";
@@ -425,6 +427,18 @@ export async function processChannelOutboundJob(
           : persistChatAction(job, delivered);
       receipt = receiptStore.markPersisted(job.request.idempotencyKey, persisted);
     } catch (error) {
+      if (error instanceof CanonicalOutboundMessageContractError) {
+        return finalizePermanentCanonicalPersistenceError({
+          job,
+          receipt,
+          receiptStore,
+          error,
+          emitEvent,
+          flushTelemetry,
+          recordTrace,
+          startedAt: t0,
+        });
+      }
       return postSendPhaseFailure(job, receipt, receiptStore, "canonical_persist", error);
     }
   }
@@ -598,8 +612,16 @@ export interface PersistDeliveredMessageDependencies {
       confidence: number;
     } | null;
   };
+  getChatMessage(id: string): ChatMessageRecord | null;
   saveMessageMeta: typeof dbSaveMessageMeta;
   upsertChatMessage(input: Parameters<typeof dbUpsertChatMessage>[0]): UpsertChatMessageResult;
+}
+
+class CanonicalOutboundMessageContractError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CanonicalOutboundMessageContractError";
+  }
 }
 
 const DEFAULT_PERSISTENCE_DEPENDENCIES: PersistDeliveredMessageDependencies = {
@@ -622,6 +644,7 @@ const DEFAULT_PERSISTENCE_DEPENDENCIES: PersistDeliveredMessageDependencies = {
       agentIdentity,
     };
   },
+  getChatMessage: dbGetChatMessage,
   saveMessageMeta: dbSaveMessageMeta,
   upsertChatMessage: dbUpsertChatMessage,
 };
@@ -632,13 +655,13 @@ export function persistDeliveredMessage(
   text: string,
   dependencies: PersistDeliveredMessageDependencies = DEFAULT_PERSISTENCE_DEPENDENCIES,
 ): PersistedOutboundMessage {
+  const canonicalMessageId = job.request.origin.canonicalMessageId?.trim();
   const platformMessageId = delivered.platformMessageId?.trim();
-  if (!platformMessageId) {
+  if (!platformMessageId && !canonicalMessageId) {
     return {
       ...(delivered.providerTimestamp !== undefined ? { providerTimestamp: delivered.providerTimestamp } : {}),
     };
   }
-
   const target = job.request.target;
   const sessionName = job.request.origin.sessionName;
   const instanceId = target.instanceId ?? job.request.instanceId ?? target.accountId;
@@ -646,11 +669,32 @@ export function persistDeliveredMessage(
     job,
     instanceId,
   });
+  const existingCanonicalMessage = canonicalMessageId
+    ? requireMatchingCanonicalMessage({
+        canonicalMessageId,
+        targetChannel: target.channel,
+        instanceId,
+        canonicalChatId,
+        agentId,
+        originSessionKey,
+        getChatMessage: dependencies.getChatMessage,
+      })
+    : null;
+  if (!platformMessageId) {
+    return {
+      ...(existingCanonicalMessage ? { canonicalMessageId: existingCanonicalMessage.id } : {}),
+      ...(delivered.providerTimestamp !== undefined ? { providerTimestamp: delivered.providerTimestamp } : {}),
+    };
+  }
+
+  const persistedCanonicalChatId = existingCanonicalMessage?.chatId ?? canonicalChatId;
+  const persistedAgentId = existingCanonicalMessage?.agentId ?? agentId;
+  const persistedOriginSessionKey = existingCanonicalMessage?.originSessionKey ?? originSessionKey;
 
   dependencies.saveMessageMeta(platformMessageId, target.chatId, {
-    canonicalChatId,
+    canonicalChatId: persistedCanonicalChatId,
     actorType: "agent",
-    agentId,
+    agentId: persistedAgentId,
     platformIdentityId: agentIdentity?.id,
     rawSenderId: agentIdentity?.platformUserId,
     normalizedSenderId: agentIdentity?.normalizedPlatformUserId,
@@ -658,16 +702,33 @@ export function persistDeliveredMessage(
     identityProvenance: {
       source: "ravi.channels.runner",
       sessionName,
-      originSessionKey: originSessionKey ?? null,
-      agentId: agentId ?? null,
+      originSessionKey: persistedOriginSessionKey ?? null,
+      agentId: persistedAgentId ?? null,
+      canonicalMessageId: existingCanonicalMessage?.id ?? null,
       accountId: target.accountId,
       instanceId,
       channel: target.channel,
       providerMessageId: platformMessageId,
       deliveryMessageId: delivered.messageId ?? null,
       idempotencyKey: job.request.idempotencyKey,
+      responsePhase: job.request.origin.responsePhase ?? null,
     },
   });
+
+  if (existingCanonicalMessage) {
+    return {
+      canonicalMessageId: existingCanonicalMessage.id,
+      platformMessageId,
+      ...(delivered.providerTimestamp !== undefined ? { providerTimestamp: delivered.providerTimestamp } : {}),
+    };
+  }
+
+  if (job.request.origin.responsePhase === "commentary") {
+    return {
+      platformMessageId,
+      ...(delivered.providerTimestamp !== undefined ? { providerTimestamp: delivered.providerTimestamp } : {}),
+    };
+  }
 
   if (!canonicalChatId || !agentId) {
     return {
@@ -712,6 +773,42 @@ export function persistDeliveredMessage(
     platformMessageId: stored.providerMessageId,
     ...(stored.providerTimestamp !== undefined ? { providerTimestamp: stored.providerTimestamp } : {}),
   };
+}
+
+function requireMatchingCanonicalMessage(input: {
+  canonicalMessageId: string;
+  targetChannel: string;
+  instanceId: string;
+  canonicalChatId?: string;
+  agentId?: string;
+  originSessionKey?: string;
+  getChatMessage(id: string): ChatMessageRecord | null;
+}): ChatMessageRecord {
+  const message = input.getChatMessage(input.canonicalMessageId);
+  if (!message) {
+    throw new CanonicalOutboundMessageContractError(
+      `Canonical outbound message not found: ${input.canonicalMessageId}`,
+    );
+  }
+  const targetChannel =
+    input.targetChannel
+      .trim()
+      .toLowerCase()
+      .replace(/-baileys$/, "") || "unknown";
+  const mismatch =
+    message.actorType !== "agent" ||
+    !message.agentId ||
+    message.channel !== targetChannel ||
+    message.instanceId !== input.instanceId ||
+    (input.canonicalChatId !== undefined && message.chatId !== input.canonicalChatId) ||
+    (input.agentId !== undefined && message.agentId !== input.agentId) ||
+    (input.originSessionKey !== undefined && message.originSessionKey !== input.originSessionKey);
+  if (mismatch) {
+    throw new CanonicalOutboundMessageContractError(
+      `Canonical outbound message does not match delivery context: ${input.canonicalMessageId}`,
+    );
+  }
+  return message;
 }
 
 export function persistDeliveredChatAction(
@@ -898,6 +995,7 @@ function postSendPhaseFailure(
   error: unknown,
 ): ChannelOutboundProcessingResult {
   const message = errorMessage(error);
+  const retryable = !(phase === "canonical_persist" && error instanceof CanonicalOutboundMessageContractError);
   if (receipt) {
     try {
       receiptStore.recordError(job.request.idempotencyKey, phase, message);
@@ -909,12 +1007,98 @@ function postSendPhaseFailure(
       });
     }
   }
-  log.warn("Native outbound post-send phase failed; delivery will resume", {
+  log.warn(
+    retryable
+      ? "Native outbound post-send phase failed; delivery will resume"
+      : "Native outbound canonical persistence rejected; provider delivery will not be retried",
+    {
+      jobId: job.jobId,
+      phase,
+      error: message,
+    },
+  );
+  return {
+    disposition: retryable ? "nak" : "ack",
+    status: "delivered",
+    retryable,
+    error: message,
+    phase,
+  };
+}
+
+async function finalizePermanentCanonicalPersistenceError(input: {
+  job: ChannelOutboundJob;
+  receipt: ChannelOutboundReceipt;
+  receiptStore: ChannelOutboundReceiptStore;
+  error: CanonicalOutboundMessageContractError;
+  emitEvent: typeof nats.emit;
+  flushTelemetry: typeof flushNatsConnection;
+  recordTrace: typeof recordDeliveryTrace;
+  startedAt: number;
+}): Promise<ChannelOutboundProcessingResult> {
+  const { job, receipt, receiptStore, error, emitEvent, flushTelemetry, recordTrace, startedAt } = input;
+  const message = errorMessage(error);
+  try {
+    receiptStore.recordError(job.request.idempotencyKey, "canonical_persist", message);
+  } catch (recordError) {
+    log.warn("Failed to record permanent canonical persistence error", {
+      jobId: job.jobId,
+      error: errorMessage(recordError),
+    });
+  }
+
+  try {
+    await emitDelivery(emitEvent, recordTrace, job, {
+      ...deliveredPayload(job, receipt, startedAt),
+      reason: "canonical_persist_rejected",
+      phase: "canonical_persist",
+      canonicalPersistence: "rejected",
+      retryable: false,
+      error: message,
+    });
+    await flushTelemetry();
+  } catch (telemetryError) {
+    return retryPermanentCanonicalBookkeeping(job, "telemetry_emit", telemetryError);
+  }
+
+  try {
+    receiptStore.markTerminalError(job.request.idempotencyKey, "canonical_persist", message);
+  } catch (terminalError) {
+    return retryPermanentCanonicalBookkeeping(job, "receipt_complete", terminalError);
+  }
+
+  log.warn("Native outbound canonical persistence rejected after provider delivery", {
+    jobId: job.jobId,
+    phase: "canonical_persist",
+    error: message,
+  });
+  return {
+    disposition: "ack",
+    status: "delivered",
+    retryable: false,
+    error: message,
+    phase: "canonical_persist",
+  };
+}
+
+function retryPermanentCanonicalBookkeeping(
+  job: ChannelOutboundJob,
+  phase: "telemetry_emit" | "receipt_complete",
+  error: unknown,
+): ChannelOutboundProcessingResult {
+  const message = errorMessage(error);
+  log.warn("Permanent canonical rejection bookkeeping failed; provider delivery will not be retried", {
     jobId: job.jobId,
     phase,
     error: message,
   });
-  return { disposition: "nak", status: "delivered", retryable: true, error: message, phase };
+  return {
+    disposition: "nak",
+    status: "delivered",
+    retryable: true,
+    error: message,
+    phase,
+  };
 }
 
 async function emitDelivery(

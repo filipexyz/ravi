@@ -7,7 +7,6 @@ capabilities:
   - backend
   - ingress
   - runtime-events
-  - local-actions
 tags:
   - native-channel
   - idempotency
@@ -107,24 +106,49 @@ MUST both recover after expiry or restart.
   increasing sequence.
 - Commentary, tool activity, deltas, terminal assistant content, failure, and
   interruption MUST remain distinct typed events.
+- A registered transport runtime-event sink MUST receive the validated
+  external target with each event so it can project commentary into the
+  original conversation without deriving provider identity from local IDs.
+- Host response policy MUST run before assistant content is projected.
+  Interrupted, sentinel, silent-token, heartbeat-only, and no-response
+  assistant content MUST NOT reach a transport output.
+- Raw text deltas that precede whole-message response policy MUST remain
+  internal. They MAY advance a Turn to `running`, but transport sinks MUST
+  receive assistant content only after the complete message is classified.
+- Only assistant content explicitly classified as commentary MAY be
+  externalized before terminal output. Unknown phases MUST remain durable
+  without being treated as commentary.
+- Commentary MAY be handed off immediately by a provider, but MUST remain
+  separate from terminal output, MUST enter the durable outbound delivery
+  path before the sink reports success, and MUST use the event ID as its
+  delivery idempotency key.
+- Commentary provider delivery MUST attach transport metadata to the durable
+  runtime event context and MUST NOT create a canonical Chat Message. Runtime
+  event readback remains authoritative for commentary.
 - A terminal assistant result MUST persist before terminal completion is
   reported.
+- Terminal transport delivery MUST correlate to that already-persisted
+  canonical assistant Message. Provider delivery identity and timestamps MUST
+  attach through provider metadata without mutating or inserting a second
+  canonical Message.
+- The durable terminal job MUST capture the accepted binding's canonical Chat
+  identity. Delivery MUST NOT re-derive it from a session binding that may
+  have moved after the Turn was accepted.
+- Missing or mismatched canonical terminal state MUST fail closed before
+  provider handoff. If the provider send has already succeeded, the receipt
+  MUST terminate with the structural error. Before acknowledgement, the
+  consumer MUST publish a delivery record that distinguishes provider-sent
+  from canonical-rejected. A transient failure while publishing that record
+  MAY retry the bookkeeping, but MUST NOT initiate another provider send.
+- Suppressed non-commentary outcomes MAY remain in the local conversation
+  history for continuity and audit without becoming transport output.
+- An intentionally suppressed completed Turn terminates with
+  `turn.state_changed{state:"completed"}` and no terminal assistant event.
+  Readback consumers MUST treat the terminal state as authoritative and MUST
+  NOT wait exclusively for `terminalEvent`.
 - Output sinks MUST be selected by provider and connection and MUST remain
   bounded and explicitly registered.
 - Runtime status and delivery status MUST remain separate.
-
-## Local Agent Actions
-
-- A native driver MAY register bounded, typed local Agent actions through the
-  host ABI.
-- Registration and discovery MUST be scoped to provider, Channel instance,
-  source account, active Agent, Session, and current source context.
-- Duplicate ambiguous tool names MUST fail closed.
-- Invocation MUST require the runtime's normal local tool permission
-  immediately before the handler runs.
-- Descriptors and results MUST be bounded and provider-neutral. Product Roles,
-  memberships, hosted policy, and hosted product entities MUST NOT enter this
-  contract.
 
 ## Provider Boundary
 
@@ -132,8 +156,7 @@ The OSS backend MAY know:
 
 - provider/connection/conversation provenance;
 - canonical Ravi Chat, Message, Session, Turn, Agent, and actor context;
-- neutral content blocks, safe errors, runtime events, local actions, and
-  output targets.
+- neutral content blocks, safe errors, runtime events, and output targets.
 
 It MUST NOT know hosted Organizations, Members, Bots, product Channels, Roles,
 commercial policy, private endpoint schemas, or private authorization rules.
@@ -155,7 +178,14 @@ commercial policy, private endpoint schemas, or private authorization rules.
 - Slack preserves thread, actor, file, route, subscription, and delivery
   behavior after convergence.
 - Runtime readback and output correlation resolve from the accepted binding.
-- Local actions remain provider/account/source scoped and locally authorized.
+- Terminal delivery preserves one canonical assistant Message while recording
+  the provider delivery identity needed for later channel actions.
+- Sanitized, provider-classified commentary reaches the original provider
+  conversation through the durable outbound ledger, survives transient
+  transport failure, is not duplicated across retries, and never becomes
+  part of terminal assistant output.
+- Interrupted, sentinel, silent-token, heartbeat-only, no-response, and
+  unknown-phase assistant content does not enter commentary delivery.
 
 ## Known Failure Modes
 
