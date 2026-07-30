@@ -2220,8 +2220,9 @@ const finishIfReady = () => {
 rl.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.id && !message.method) {
-    if (message.id === "tool_req") {
+    if (message.id === 77) {
       if (message.jsonrpc !== "2.0") throw new Error("tool response must include jsonrpc 2.0");
+      if (typeof message.id !== "number") throw new Error("numeric tool request ids must remain numeric");
       if (!Array.isArray(message.result?.contentItems)) throw new Error("tool response must use contentItems");
       if (message.result?.content_items) throw new Error("tool response must not use content_items");
     }
@@ -2253,7 +2254,7 @@ rl.on("line", (line) => {
     });
     send({
       jsonrpc: "2.0",
-      id: "tool_req",
+      id: 77,
       method: "item/tool/call",
       params: {
         callId: "dyn_tool_1",
