@@ -427,6 +427,18 @@ export async function processChannelOutboundJob(
           : persistChatAction(job, delivered);
       receipt = receiptStore.markPersisted(job.request.idempotencyKey, persisted);
     } catch (error) {
+      if (error instanceof CanonicalOutboundMessageContractError) {
+        return finalizePermanentCanonicalPersistenceError({
+          job,
+          receipt,
+          receiptStore,
+          error,
+          emitEvent,
+          flushTelemetry,
+          recordTrace,
+          startedAt: t0,
+        });
+      }
       return postSendPhaseFailure(job, receipt, receiptStore, "canonical_persist", error);
     }
   }
@@ -1009,6 +1021,81 @@ function postSendPhaseFailure(
     disposition: retryable ? "nak" : "ack",
     status: "delivered",
     retryable,
+    error: message,
+    phase,
+  };
+}
+
+async function finalizePermanentCanonicalPersistenceError(input: {
+  job: ChannelOutboundJob;
+  receipt: ChannelOutboundReceipt;
+  receiptStore: ChannelOutboundReceiptStore;
+  error: CanonicalOutboundMessageContractError;
+  emitEvent: typeof nats.emit;
+  flushTelemetry: typeof flushNatsConnection;
+  recordTrace: typeof recordDeliveryTrace;
+  startedAt: number;
+}): Promise<ChannelOutboundProcessingResult> {
+  const { job, receipt, receiptStore, error, emitEvent, flushTelemetry, recordTrace, startedAt } = input;
+  const message = errorMessage(error);
+  try {
+    receiptStore.recordError(job.request.idempotencyKey, "canonical_persist", message);
+  } catch (recordError) {
+    log.warn("Failed to record permanent canonical persistence error", {
+      jobId: job.jobId,
+      error: errorMessage(recordError),
+    });
+  }
+
+  try {
+    await emitDelivery(emitEvent, recordTrace, job, {
+      ...deliveredPayload(job, receipt, startedAt),
+      reason: "canonical_persist_rejected",
+      phase: "canonical_persist",
+      canonicalPersistence: "rejected",
+      retryable: false,
+      error: message,
+    });
+    await flushTelemetry();
+  } catch (telemetryError) {
+    return retryPermanentCanonicalBookkeeping(job, "telemetry_emit", telemetryError);
+  }
+
+  try {
+    receiptStore.markTerminalError(job.request.idempotencyKey, "canonical_persist", message);
+  } catch (terminalError) {
+    return retryPermanentCanonicalBookkeeping(job, "receipt_complete", terminalError);
+  }
+
+  log.warn("Native outbound canonical persistence rejected after provider delivery", {
+    jobId: job.jobId,
+    phase: "canonical_persist",
+    error: message,
+  });
+  return {
+    disposition: "ack",
+    status: "delivered",
+    retryable: false,
+    error: message,
+    phase: "canonical_persist",
+  };
+}
+
+function retryPermanentCanonicalBookkeeping(
+  job: ChannelOutboundJob,
+  phase: "telemetry_emit" | "receipt_complete",
+  error: unknown,
+): ChannelOutboundProcessingResult {
+  const message = errorMessage(error);
+  log.warn("Permanent canonical rejection bookkeeping failed; provider delivery will not be retried", {
+    jobId: job.jobId,
+    phase,
+    error: message,
+  });
+  return {
+    disposition: "nak",
+    status: "delivered",
+    retryable: true,
     error: message,
     phase,
   };

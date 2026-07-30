@@ -29,5 +29,7 @@
     confirm delivery still validates against the accepted Turn binding.
 14. Remove or mismatch the terminal canonical Message before handoff and
     confirm pre-send failure is closed; simulate the same mismatch after a
-    successful provider send and confirm the job is acknowledged without a
-    second provider call.
+    successful provider send and confirm the provider-sent,
+    canonical-rejected delivery record is published, its receipt terminates
+    with the structural error, and bookkeeping retry never makes a second
+    provider call.

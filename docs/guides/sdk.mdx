@@ -211,8 +211,9 @@ assistant response and attaches provider identity to the assistant Message
 already persisted for the accepted Turn. The durable job carries that Turn's
 canonical Chat identity, so a later Session rebind cannot move the delivery.
 Missing or mismatched terminal state fails closed before handoff; a structural
-mismatch discovered after a successful provider send is acknowledged without
-calling the provider again.
+mismatch discovered after a successful provider send emits a provider-sent,
+canonical-rejected delivery record and terminalizes the durable receipt before
+acknowledgement. A transient bookkeeping retry never calls the provider again.
 The optional sink target preserves compatibility with one-argument sinks; the
 host registry supplies it whenever an event is dispatched. Readback remains
 available after reconnects, including the canonical assistant message id and

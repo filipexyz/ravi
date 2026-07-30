@@ -136,8 +136,10 @@ MUST both recover after expiry or restart.
   have moved after the Turn was accepted.
 - Missing or mismatched canonical terminal state MUST fail closed before
   provider handoff. If the provider send has already succeeded, the receipt
-  MUST retain the structural error and the consumer MUST acknowledge it
-  without initiating another provider send.
+  MUST terminate with the structural error. Before acknowledgement, the
+  consumer MUST publish a delivery record that distinguishes provider-sent
+  from canonical-rejected. A transient failure while publishing that record
+  MAY retry the bookkeeping, but MUST NOT initiate another provider send.
 - Suppressed non-commentary outcomes MAY remain in the local conversation
   history for continuity and audit without becoming transport output.
 - An intentionally suppressed completed Turn terminates with

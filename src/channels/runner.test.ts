@@ -308,6 +308,48 @@ describe("channel runner native delivery registry", () => {
       },
     );
     expect(publishOutbound).toHaveBeenCalledTimes(2);
+    await outputSink!.emit({
+      protocol: "ravi.channel.backend",
+      schemaVersion: 1,
+      outputId: "output-safe-error",
+      correlationId: "correlation-safe-error",
+      binding: {
+        channelInstanceId: "slack-a",
+        agentId: "agent-a",
+        chatId: "chat-a",
+        messageId: "message-a",
+        sessionId: "session-a",
+        turnId: "turn-safe-error",
+      },
+      target: {
+        channelKind: "slack",
+        connectionId: "slack-a",
+        conversationId: "C123~1713000000.000100",
+      },
+      kind: "safe_error",
+      error: {
+        code: "INTERNAL",
+        category: "internal",
+        retryable: false,
+      },
+      emittedAt: "2026-07-29T12:00:03.000Z",
+    });
+    expect(publishOutbound).toHaveBeenNthCalledWith(
+      3,
+      expect.objectContaining({
+        jobId: "channel-output:output-safe-error",
+        request: expect.objectContaining({
+          origin: expect.objectContaining({
+            emitId: "output-safe-error",
+            responsePhase: "safe_error",
+          }),
+          content: {
+            type: "text",
+            text: "Unable to complete the request (INTERNAL).",
+          },
+        }),
+      }),
+    );
     resolveCanonicalMessageId.mockImplementationOnce((() => undefined) as never);
     await expect(
       outputSink!.emit({
@@ -330,10 +372,10 @@ describe("channel runner native delivery registry", () => {
         },
         kind: "assistant_message",
         content: [{ type: "text", text: "must not publish" }],
-        emittedAt: "2026-07-29T12:00:03.000Z",
+        emittedAt: "2026-07-29T12:00:04.000Z",
       }),
     ).rejects.toThrow("runtime_surface_mismatch");
-    expect(publishOutbound).toHaveBeenCalledTimes(2);
+    expect(publishOutbound).toHaveBeenCalledTimes(3);
     expect(delivery.deliverText).not.toHaveBeenCalled();
     await runtime.start();
     expect(start).toHaveBeenCalledTimes(1);

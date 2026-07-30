@@ -108,7 +108,7 @@ export function createSlackNativeChannelDriver(
                   canonicalChatId: envelope.binding.chatId,
                 },
                 text: renderSlackBackendOutput(envelope),
-                responsePhase: "final_answer",
+                responsePhase: envelope.kind === "assistant_message" ? "final_answer" : "safe_error",
                 ...(canonicalMessageId ? { canonicalMessageId } : {}),
                 ...(options.now ? { now: options.now() } : {}),
               }),

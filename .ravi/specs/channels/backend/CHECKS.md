@@ -27,6 +27,10 @@
 - Terminal delivery MUST use the accepted binding's canonical Chat identity,
   fail closed before handoff when canonical state is absent, and MUST NOT
   retry a provider send after a permanent post-send canonical mismatch.
+- A permanent post-send canonical mismatch MUST publish a provider-sent,
+  canonical-rejected delivery record and terminalize its durable receipt
+  before the job is acknowledged. Retrying that bookkeeping MUST NOT call the
+  provider again.
 - Interrupted, sentinel, suppressed, and unknown-phase assistant content MUST
   NOT enter commentary delivery.
 - Public types MUST contain no hosted product entities or private policy.

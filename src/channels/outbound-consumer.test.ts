@@ -843,16 +843,20 @@ describe("channel outbound consumer", () => {
       job.request.origin.canonicalMessageId = "cm_missing";
       job.request.target.canonicalChatId = "chat_123";
       const delivery = makeDelivery();
+      const emitEvent = mock(async () => {});
+      const recordTrace = mock(() => null);
 
       const first = await processChannelOutboundJob(job, {
         deliveries: [delivery],
-        emitEvent: async () => {},
-        recordDeliveryTrace: () => null,
+        emitEvent,
+        flushNats: async () => {},
+        recordDeliveryTrace: recordTrace,
       });
       const repeated = await processChannelOutboundJob(job, {
         deliveries: [delivery],
-        emitEvent: async () => {},
-        recordDeliveryTrace: () => null,
+        emitEvent,
+        flushNats: async () => {},
+        recordDeliveryTrace: recordTrace,
       });
 
       expect(first).toMatchObject({
@@ -862,15 +866,79 @@ describe("channel outbound consumer", () => {
         phase: "canonical_persist",
         error: "Canonical outbound message not found: cm_missing",
       });
-      expect(repeated).toMatchObject({
+      expect(repeated).toEqual({ disposition: "ack", status: "delivered", retryable: false });
+      expect(delivery.deliverText).toHaveBeenCalledTimes(1);
+      expect(recordTrace).toHaveBeenCalledTimes(1);
+      expect(emitEvent).toHaveBeenCalledTimes(1);
+      expect(emitEvent).toHaveBeenCalledWith(
+        "ravi.session.ravi-channels.delivery",
+        expect.objectContaining({
+          status: "delivered",
+          reason: "canonical_persist_rejected",
+          phase: "canonical_persist",
+          canonicalPersistence: "rejected",
+          retryable: false,
+          providerMessageId: "1711111111.000100",
+          idempotencyKey: job.request.idempotencyKey,
+        }),
+      );
+      expect(getChannelOutboundReceipt(job.request.idempotencyKey)).toMatchObject({
+        state: "complete",
+        lastErrorPhase: "canonical_persist",
+        lastErrorMessage: "Canonical outbound message not found: cm_missing",
+      });
+      expect(getChannelOutboundReceipt(job.request.idempotencyKey)?.persistedAt).toBeUndefined();
+    });
+
+    it("retries only the operator record when permanent canonical rejection telemetry is unavailable", async () => {
+      const job = makeJob();
+      job.request.origin.canonicalMessageId = "cm_missing";
+      job.request.target.canonicalChatId = "chat_123";
+      const delivery = makeDelivery();
+      const emitEvent = mock(async () => {});
+      const recordTrace = mock(() => null);
+      let flushAttempts = 0;
+      const flushNats = mock(async () => {
+        flushAttempts++;
+        if (flushAttempts === 1) throw new Error("NATS flush unavailable");
+      });
+
+      const failed = await processChannelOutboundJob(job, {
+        deliveries: [delivery],
+        emitEvent,
+        flushNats,
+        recordDeliveryTrace: recordTrace,
+      });
+      expect(failed).toMatchObject({
+        disposition: "nak",
+        status: "delivered",
+        retryable: true,
+        phase: "telemetry_emit",
+        error: "NATS flush unavailable",
+      });
+      expect(getChannelOutboundReceipt(job.request.idempotencyKey)).toMatchObject({
+        state: "sent",
+        lastErrorPhase: "canonical_persist",
+        lastErrorMessage: "Canonical outbound message not found: cm_missing",
+      });
+
+      const retried = await processChannelOutboundJob(job, {
+        deliveries: [delivery],
+        emitEvent,
+        flushNats,
+        recordDeliveryTrace: recordTrace,
+      });
+      expect(retried).toMatchObject({
         disposition: "ack",
         status: "delivered",
         retryable: false,
         phase: "canonical_persist",
       });
       expect(delivery.deliverText).toHaveBeenCalledTimes(1);
+      expect(emitEvent).toHaveBeenCalledTimes(2);
+      expect(recordTrace).toHaveBeenCalledTimes(2);
       expect(getChannelOutboundReceipt(job.request.idempotencyKey)).toMatchObject({
-        state: "sent",
+        state: "complete",
         lastErrorPhase: "canonical_persist",
         lastErrorMessage: "Canonical outbound message not found: cm_missing",
       });
