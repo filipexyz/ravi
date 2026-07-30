@@ -1,5 +1,5 @@
-import { describe, expect, it, mock } from "bun:test";
-import { CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS } from "./outbound-publish-outbox.js";
+import { describe, expect, it, mock, spyOn } from "bun:test";
+import { CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS, type ChannelOutboundPublishResult } from "./outbound-publish-outbox.js";
 import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
 import {
   CHANNEL_OUTBOUND_RECEIPT_PRUNE_INTERVAL_MS,
@@ -79,7 +79,31 @@ describe("channel runner native delivery registry", () => {
       supports: () => true,
       sendPresence: mock(async () => ({ provider: "slack", status: "active" as const })),
     };
-    const publishOutbound = mock(async (_job: ChannelOutboundJob) => {});
+    let publishAttempt = 0;
+    const publishOutbound = mock(async (job: ChannelOutboundJob): Promise<ChannelOutboundPublishResult | undefined> => {
+      publishAttempt++;
+      if (publishAttempt !== 1) return undefined;
+      return {
+        ok: false,
+        record: {
+          idempotencyKey: job.request.idempotencyKey,
+          requestFingerprint: "test-fingerprint",
+          jobId: job.jobId,
+          sessionName: job.request.origin.sessionName,
+          channelId: job.request.channelId,
+          status: "pending",
+          job,
+          attemptCount: 1,
+          nextAttemptAt: 1_782_920_030_000,
+          lastErrorMessage: "JetStream unavailable",
+          lastErrorAt: 1_782_920_000_000,
+          createdAt: 1_782_920_000_000,
+          updatedAt: 1_782_920_000_000,
+        },
+        error: new Error("JetStream unavailable"),
+        nextAttemptAt: 1_782_920_030_000,
+      };
+    });
     const driver = createSlackNativeChannelDriver(
       {},
       {
@@ -134,28 +158,38 @@ describe("channel runner native delivery registry", () => {
     expect(runtime.presence).toBe(presence);
     expect(outputSink).toBeDefined();
     expect(runtimeEventSink).toBeDefined();
-    await outputSink!.emit({
-      protocol: "ravi.channel.backend",
-      schemaVersion: 1,
-      outputId: "output-a",
-      correlationId: "correlation-a",
-      binding: {
-        channelInstanceId: "slack-a",
-        agentId: "agent-a",
-        chatId: "chat-a",
-        messageId: "message-a",
-        sessionId: "session-a",
-        turnId: "turn-a",
-      },
-      target: {
-        channelKind: "slack",
-        connectionId: "slack-a",
-        conversationId: "C123~1713000000.000100",
-      },
-      kind: "assistant_message",
-      content: [{ type: "text", text: "done" }],
-      emittedAt: "2026-07-29T12:00:00.000Z",
-    });
+    const stderrSpy = spyOn(process.stderr, "write").mockImplementation((() => true) as never);
+    let deferredPublishWarning = "";
+    try {
+      await outputSink!.emit({
+        protocol: "ravi.channel.backend",
+        schemaVersion: 1,
+        outputId: "output-a",
+        correlationId: "correlation-a",
+        binding: {
+          channelInstanceId: "slack-a",
+          agentId: "agent-a",
+          chatId: "chat-a",
+          messageId: "message-a",
+          sessionId: "session-a",
+          turnId: "turn-a",
+        },
+        target: {
+          channelKind: "slack",
+          connectionId: "slack-a",
+          conversationId: "C123~1713000000.000100",
+        },
+        kind: "assistant_message",
+        content: [{ type: "text", text: "done" }],
+        emittedAt: "2026-07-29T12:00:00.000Z",
+      });
+      deferredPublishWarning = stderrSpy.mock.calls.map(([line]) => String(line)).join("");
+    } finally {
+      stderrSpy.mockRestore();
+    }
+    expect(deferredPublishWarning).toContain("Slack outbound publish deferred; durable retry remains pending");
+    expect(deferredPublishWarning).toContain("jobId=channel-output:output-a");
+    expect(deferredPublishWarning).toContain("nextAttemptAt=1782920030000");
     expect(publishOutbound).toHaveBeenCalledWith(
       expect.objectContaining({
         jobId: "channel-output:output-a",

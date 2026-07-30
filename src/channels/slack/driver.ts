@@ -1,6 +1,7 @@
 import type { ChannelConfig } from "../../router/router-db.js";
+import { logger } from "../../utils/logger.js";
 import type { ChannelOutputEnvelope } from "../backend.js";
-import { publishChannelOutboundJobDurably } from "../outbound-publish-outbox.js";
+import { publishChannelOutboundJobDurably, type ChannelOutboundPublishResult } from "../outbound-publish-outbox.js";
 import { buildChannelTextOutboundJob, type ChannelOutboundJob } from "../outbound-stream.js";
 import {
   NATIVE_CHANNEL_DRIVER_PROTOCOL,
@@ -23,9 +24,11 @@ export interface SlackNativeChannelDriverOptions {
     env: NodeJS.ProcessEnv,
     options: { channel: ChannelConfig },
   ) => Promise<SlackNativeRuntime | null>;
-  readonly publishOutbound?: (job: ChannelOutboundJob) => Promise<void>;
+  readonly publishOutbound?: (job: ChannelOutboundJob) => Promise<ChannelOutboundPublishResult | undefined>;
   readonly now?: () => number;
 }
+
+const log = logger.child("channels:slack:driver");
 
 export function createSlackNativeChannelDriver(
   env: NodeJS.ProcessEnv = process.env,
@@ -64,10 +67,17 @@ export function createSlackNativeChannelDriver(
         capabilities: [...descriptor.capabilities],
       });
       const publishOutbound =
-        options.publishOutbound ??
-        (async (job: ChannelOutboundJob) => {
-          await publishChannelOutboundJobDurably(job);
+        options.publishOutbound ?? ((job: ChannelOutboundJob) => publishChannelOutboundJobDurably(job));
+      const publishOutboundObserved = async (job: ChannelOutboundJob): Promise<void> => {
+        const result = await publishOutbound(job);
+        if (!result || result.ok) return;
+        log.warn("Slack outbound publish deferred; durable retry remains pending", {
+          jobId: result.record.jobId,
+          attemptCount: result.record.attemptCount,
+          nextAttemptAt: result.nextAttemptAt,
+          error: result.error,
         });
+      };
       const unregisterOutputSink = context.host.registerOutputSink(
         {
           channelKind: descriptor.provider,
@@ -76,7 +86,7 @@ export function createSlackNativeChannelDriver(
         {
           async emit(envelope) {
             const target = decodeSlackBackendConversationId(envelope.target.conversationId);
-            await publishOutbound(
+            await publishOutboundObserved(
               buildChannelTextOutboundJob({
                 requestId: `channel-output:${envelope.outputId}`,
                 sessionName: envelope.binding.sessionId,
@@ -109,7 +119,7 @@ export function createSlackNativeChannelDriver(
               throw new NativeChannelDriverContractError("runtime_surface_mismatch");
             }
             const target = decodeSlackBackendConversationId(externalTarget.conversationId);
-            await publishOutbound(
+            await publishOutboundObserved(
               buildChannelTextOutboundJob({
                 requestId: `channel-runtime:${event.eventId}`,
                 sessionName: event.correlation.binding.sessionId,
