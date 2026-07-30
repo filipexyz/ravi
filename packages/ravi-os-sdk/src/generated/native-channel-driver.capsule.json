@@ -21,8 +21,8 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/installation-credential.json"
     },
     {
-      "sha256": "062b8df900ed52f13b9fe68329a11a76c711ceae33e71dcaffdf75981b4eefb0",
-      "sizeBytes": 299,
+      "sha256": "e757ac3d0abb6fe0ae15e33644832a588a9f019d054ed2f6fef3a4db0bf4bf77",
+      "sizeBytes": 340,
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/local-agent-action-descriptor.json"
     },
     {
@@ -46,8 +46,8 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/runtime-descriptor.json"
     },
     {
-      "sha256": "104e326cdb967bd518d9dcc2592594fb18918b077fbcc6140a9fae3a57f5241b",
-      "sizeBytes": 19586,
+      "sha256": "a70a2fbd36af62bdaee46cec9d0aac4276507fa120a39698e4847271fe136f76",
+      "sizeBytes": 19969,
       "targetPath": "packages/ravi-os-sdk/src/generated/native-channel-driver.schema.json"
     }
   ],
@@ -76,7 +76,7 @@
     "packages/ravi-os-sdk/src/generated/native-channel-driver.schema.json"
   ],
   "formatVersion": 1,
-  "outputDigest": "15151358749e25b525f5bb4bfae815c5204379c1fc31c6d1de4db4528cbb4dac",
+  "outputDigest": "1173f81fdbe6bf30fd9db61862f07f89722ee8063628389635b2f3641cf7fd2b",
   "rationale": "Channel runners need a versioned provider-neutral boundary to load explicitly configured local channel drivers, bind matching installation credentials, reconcile locally managed agents, register source-scoped local actions without exporting runtime authorization, and include runtimes in lifecycle and health.",
   "schemaAllowlist": [
     {
@@ -173,11 +173,16 @@
       "schema": "NativeLocalAgentActionToolName"
     },
     {
+      "fields": [],
+      "schema": "NativeLocalAgentActionAuthorizationMode"
+    },
+    {
       "fields": [
         "toolName",
         "description",
         "inputSchema",
-        "sourceAccountId"
+        "sourceAccountId",
+        "authorizationMode"
       ],
       "schema": "NativeLocalAgentActionDescriptor"
     },
@@ -227,7 +232,7 @@
       "schema": "RemoteInstallationCredential"
     }
   ],
-  "sourceDigest": "838e646ed2c4ab9d5d631231355cf7275f779ce99612154a4cd37aa9a827f212",
+  "sourceDigest": "aefbbeba765dd9293320b992b9d171ab7ec278596b6db4b82f17e0aefb820913",
   "targetRepository": "filipexyz/ravi",
   "validations": [
     {

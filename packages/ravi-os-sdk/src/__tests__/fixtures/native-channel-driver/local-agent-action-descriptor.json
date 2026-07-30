@@ -1,4 +1,5 @@
 {
+  "authorizationMode": "driver_handler",
   "description": "Create a provider-owned collaboration space.",
   "inputSchema": {
     "properties": {

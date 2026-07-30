@@ -65,6 +65,105 @@ describe("runtime native local agent actions", () => {
     expect(services.listDynamicTools().some(({ name }) => name === "example_create_space")).toBe(false);
   });
 
+  it("delegates explicit driver-handler action authorization without ambient turn capabilities", async () => {
+    let invoked = 0;
+    nativeLocalAgentActions.register({
+      provider: "example",
+      channelInstanceId: "example-local",
+      descriptor: {
+        toolName: "example_create_space",
+        description: "Create a provider-owned collaboration space.",
+        inputSchema: {
+          type: "object",
+          properties: { name: { type: "string" } },
+        },
+        sourceAccountId: "account-1",
+        authorizationMode: "driver_handler",
+      },
+      handler: async (request) => {
+        invoked += 1;
+        return {
+          protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+          schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+          requestId: request.requestId,
+          disposition: "completed",
+          text: "Created.",
+          completedAt: "2026-07-26T12:00:01.000Z",
+        };
+      },
+    });
+    const runtimeContext = context(false);
+    const services = createRuntimeHostServices({
+      context: runtimeContext,
+      agentId: "agent-1",
+      sessionName: "session-1",
+      toolContext: { context: runtimeContext },
+    });
+
+    expect(services.listDynamicTools().map(({ name }) => name)).toContain("example_create_space");
+    expect(
+      await services.executeDynamicTool({
+        toolName: "example_create_space",
+        callId: "request-handler-authorized",
+        arguments: { name: "roadmap" },
+      }),
+    ).toEqual({
+      success: true,
+      contentItems: [{ type: "inputText", text: "Created." }],
+    });
+    expect(invoked).toBe(1);
+  });
+
+  it("keeps the driver handler denial final", async () => {
+    nativeLocalAgentActions.register({
+      provider: "example",
+      channelInstanceId: "example-local",
+      descriptor: {
+        toolName: "example_create_space",
+        description: "Create a provider-owned collaboration space.",
+        inputSchema: { type: "object", properties: {} },
+        sourceAccountId: "account-1",
+        authorizationMode: "driver_handler",
+      },
+      handler: async (request) => ({
+        protocol: NATIVE_CHANNEL_DRIVER_PROTOCOL,
+        schemaVersion: NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
+        requestId: request.requestId,
+        disposition: "rejected",
+        error: {
+          code: "LOCAL_PERMISSION_DENIED",
+          category: "authorization",
+          retryable: false,
+        },
+        completedAt: "2026-07-26T12:00:01.000Z",
+      }),
+    });
+    const runtimeContext = context(false);
+    const services = createRuntimeHostServices({
+      context: runtimeContext,
+      agentId: "agent-1",
+      sessionName: "session-1",
+      toolContext: { context: runtimeContext },
+    });
+
+    expect(
+      await services.executeDynamicTool({
+        toolName: "example_create_space",
+        callId: "request-handler-denied",
+        arguments: {},
+      }),
+    ).toEqual({
+      success: false,
+      reason: "LOCAL_PERMISSION_DENIED",
+      contentItems: [
+        {
+          type: "inputText",
+          text: "Action rejected: LOCAL_PERMISSION_DENIED",
+        },
+      ],
+    });
+  });
+
   it("does not advertise a driver action that collides with any built-in command", () => {
     nativeLocalAgentActions.register({
       provider: "example",

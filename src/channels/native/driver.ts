@@ -94,6 +94,8 @@ export const NativeLocalAgentActionToolNameSchema = z
   .string()
   .regex(/^[a-z][a-z0-9_]{0,127}$/, "local agent action tool name must be lowercase snake case");
 
+export const NativeLocalAgentActionAuthorizationModeSchema = z.enum(["runtime_context", "driver_handler"]);
+
 const NativeLocalAgentActionArgumentsSchema = z
   .record(z.string(), z.unknown())
   .refine(
@@ -115,6 +117,7 @@ export const NativeLocalAgentActionDescriptorSchema = z
         "local agent action input schema is too large",
       ),
     sourceAccountId: ChannelBackendOpaqueIdSchema.optional(),
+    authorizationMode: NativeLocalAgentActionAuthorizationModeSchema.optional(),
   })
   .strict();
 
