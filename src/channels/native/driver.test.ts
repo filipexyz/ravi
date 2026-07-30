@@ -91,7 +91,6 @@ function ingressResult(request = ingressRequest()): ChannelIngressResult {
 
 function hostLease(overrides: Partial<NativeChannelDriverHost> = {}): NativeChannelDriverHostLease {
   const host: NativeChannelDriverHost = {
-    readInstallationCredential: mock(async () => null),
     ingress: mock(async (request) => ingressResult(request)),
     interrupt: mock(async (request) => ({
       protocol: "ravi.channel.runtime-events" as const,
@@ -145,7 +144,6 @@ function fullDriver(
       driverId: "example.native",
       provider: "example",
       capabilities: ["inbound", "text_delivery", "chat_actions", "presence"],
-      requiredHostCapabilities: ["installation_credentials"],
     },
     createRuntime(context) {
       return {
@@ -504,39 +502,6 @@ describe("native channel driver contract", () => {
     expect(JSON.stringify(manager.health())).not.toContain("sensitive-runtime-detail");
   });
 
-  it("fails closed before runtime creation when a required host capability is absent", async () => {
-    const registry = new NativeChannelDriverRegistry();
-    const driver = fullDriver();
-    const createRuntime = mock(driver.createRuntime.bind(driver));
-    registry.register({ ...driver, createRuntime });
-    const lease = hostLease();
-    const incompleteHost = {
-      ...lease.host,
-      readInstallationCredential: undefined,
-    } as unknown as NativeChannelDriverHost;
-    const manager = new NativeChannelDriverManager({
-      channels: { "example-channel-a": channel() },
-      registry,
-      createHostLease: () => ({
-        host: incompleteHost,
-        dispose: lease.dispose,
-      }),
-    });
-
-    await manager.start();
-
-    expect(createRuntime).not.toHaveBeenCalled();
-    expect(manager.health()).toEqual([
-      {
-        id: "example:example-channel-a",
-        channelId: "example",
-        status: "failed",
-        reason: "host_capability_missing",
-      },
-    ]);
-    expect(lease.dispose).toHaveBeenCalledTimes(1);
-  });
-
   it("keeps module loader failures stable and free of thrown details", async () => {
     const registry = new NativeChannelDriverRegistry();
     const result = await loadNativeChannelDriverModules(
@@ -660,47 +625,6 @@ describe("native channel driver contract", () => {
 
     lease.dispose();
     await expect(channelOutputSinks.emit(envelope)).rejects.toThrow("unavailable");
-  });
-
-  it("binds installation credential access to the configured provider and connection", async () => {
-    const resolveInstallationCredential = mock(async () => ({
-      provider: "example",
-      credentialId: "credential-1",
-      material: { privateKey: "opaque-private-material" },
-    }));
-    const lease = createNativeChannelDriverHostLease({
-      channel: {
-        ...channel(),
-        credentialConnection: "https://remote.example",
-      },
-      provider: "example",
-      resolveInstallationCredential,
-    });
-
-    await expect(lease.host.readInstallationCredential()).resolves.toEqual({
-      provider: "example",
-      credentialId: "credential-1",
-      material: { privateKey: "opaque-private-material" },
-    });
-    expect(resolveInstallationCredential).toHaveBeenCalledWith({
-      provider: "example",
-      connection: "https://remote.example",
-    });
-
-    const wrongProvider = createNativeChannelDriverHostLease({
-      channel: channel(),
-      provider: "example",
-      resolveInstallationCredential: async () => ({
-        provider: "other",
-        credentialId: "credential-2",
-        material: {},
-      }),
-    });
-    await expect(wrongProvider.host.readInstallationCredential()).rejects.toThrow("scope_mismatch");
-
-    lease.dispose();
-    await expect(lease.host.readInstallationCredential()).rejects.toThrow("host_disposed");
-    wrongProvider.dispose();
   });
 
   it("rejects duplicate driver ownership without replacing the registered driver", () => {

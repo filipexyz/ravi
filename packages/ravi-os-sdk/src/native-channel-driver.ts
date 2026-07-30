@@ -15,7 +15,6 @@ import type {
   ChannelRuntimeReadbackRequest,
   ChannelRuntimeReadbackResult,
 } from "./channel-runtime-events.js";
-import type { RemoteInstallationCredential } from "./remote-login-provider.js";
 
 export const NATIVE_CHANNEL_DRIVER_PROTOCOL = "ravi.channel.native-driver" as const;
 export const NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION = 1 as const;
@@ -56,14 +55,6 @@ export const NativeInboundChannelActionNamesSchema = z
   .max(32)
   .refine((actions) => new Set(actions).size === actions.length);
 
-export const NativeChannelDriverHostCapabilitySchema = z.enum(["installation_credentials"]);
-
-export const NativeChannelDriverHostCapabilitiesSchema = z
-  .array(NativeChannelDriverHostCapabilitySchema)
-  .min(1)
-  .max(1)
-  .refine((capabilities) => new Set(capabilities).size === capabilities.length);
-
 export const NativeChannelDriverModuleSpecifierSchema = z
   .string()
   .regex(
@@ -89,7 +80,6 @@ export const NativeChannelDriverDescriptorSchema = z
     provider: ChannelBackendWireKindSchema,
     capabilities: NativeChannelDriverCapabilitiesSchema,
     inboundActions: NativeInboundChannelActionNamesSchema.optional(),
-    requiredHostCapabilities: NativeChannelDriverHostCapabilitiesSchema.optional(),
   })
   .superRefine(validateInboundActionDeclaration);
 
@@ -205,7 +195,6 @@ export const NativeChannelRuntimeHealthSchema = z.object({
 });
 
 export type NativeChannelDriverCapability = z.infer<typeof NativeChannelDriverCapabilitySchema>;
-export type NativeChannelDriverHostCapability = z.infer<typeof NativeChannelDriverHostCapabilitySchema>;
 export type NativeChannelDriverModuleConfig = z.infer<typeof NativeChannelDriverModuleConfigSchema>;
 export type NativeChannelDriverDescriptor = z.infer<typeof NativeChannelDriverDescriptorSchema>;
 export type NativeChannelRuntimeDescriptor = z.infer<typeof NativeChannelRuntimeDescriptorSchema>;
@@ -334,7 +323,6 @@ export interface NativeChannelPresenceDelivery {
 }
 
 export interface NativeChannelDriverHost {
-  readInstallationCredential(): Promise<RemoteInstallationCredential | null>;
   ingress(request: ChannelIngressRequest): Promise<ChannelIngressResult>;
   interrupt(request: ChannelInterruptRequest): Promise<ChannelInterruptResult>;
   readback(request: ChannelRuntimeReadbackRequest): Promise<ChannelRuntimeReadbackResult>;

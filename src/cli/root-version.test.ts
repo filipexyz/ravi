@@ -72,7 +72,6 @@ describe("CLI root version", () => {
     expect(result.stdout).toContain("--console <url>");
     expect(result.stdout).toContain("--json");
     expect(result.stdout).toContain("--no-open");
-    expect(result.stdout).toContain("Return the public pending challenge");
 
     const whoami = spawnSync("bun", ["src/cli/index.ts", "whoami", "--help"], {
       cwd: process.cwd(),

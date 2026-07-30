@@ -83,16 +83,6 @@ export function readRemoteInstallationCredential(
   return state.connections[endpoint] ?? null;
 }
 
-export function listRemoteInstallationCredentials(
-  env: NodeJS.ProcessEnv = process.env,
-): StoredRemoteInstallationCredential[] {
-  const state = readRemoteInstallationCredentialState(env);
-  if (!state) return [];
-  return Object.values(state.connections)
-    .sort((left, right) => left.endpointUrl.localeCompare(right.endpointUrl))
-    .map((stored) => structuredClone(stored));
-}
-
 export function writeRemoteInstallationCredential(
   endpointUrl: string,
   clientInstallationId: string,

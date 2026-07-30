@@ -16,11 +16,6 @@
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/inbound-action-result.json"
     },
     {
-      "sha256": "f69ab6d8aceb58dfaa3775b71c14892f3d64252046506c7cd016a82d8813b8e5",
-      "sizeBytes": 236,
-      "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/installation-credential.json"
-    },
-    {
       "sha256": "d499e48cc64516a307e70a817b38e87a648be5cb4f95aa7e2bb066c261ef3f3a",
       "sizeBytes": 198,
       "targetPath": "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/module-config.json"
@@ -51,7 +46,6 @@
     "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/driver-descriptor.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/inbound-action-request.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/inbound-action-result.json",
-    "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/installation-credential.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/module-config.json",
     "packages/ravi-os-sdk/src/__tests__/fixtures/native-channel-driver/runtime-descriptor.json",
     "packages/ravi-os-sdk/src/generated/native-channel-driver.capsule.json",
@@ -59,7 +53,7 @@
   ],
   "formatVersion": 1,
   "outputDigest": "10eef000c762efe4545d1a89b61b49768fcebb6fef22781da5872e543095e03e",
-  "rationale": "Channel runners need a versioned provider-neutral boundary to load explicitly configured local channel drivers, bind matching installation credentials without exposing human sessions, and include runtimes in lifecycle and health.",
+  "rationale": "Channel runners need a versioned provider-neutral boundary to load explicitly configured local channel drivers and include runtimes in lifecycle and health.",
   "schemaAllowlist": [
     {
       "fields": [],
@@ -71,15 +65,7 @@
     },
     {
       "fields": [],
-      "schema": "NativeChannelDriverHostCapability"
-    },
-    {
-      "fields": [],
       "schema": "NativeInboundChannelActionNames"
-    },
-    {
-      "fields": [],
-      "schema": "NativeChannelDriverHostCapabilities"
     },
     {
       "fields": [
@@ -98,8 +84,7 @@
         "driverId",
         "provider",
         "capabilities",
-        "inboundActions",
-        "requiredHostCapabilities"
+        "inboundActions"
       ],
       "schema": "NativeChannelDriverDescriptor"
     },
@@ -149,16 +134,6 @@
         "completedAt"
       ],
       "schema": "NativeInboundChannelActionResult"
-    },
-    {
-      "fields": [
-        "provider",
-        "credentialId",
-        "material",
-        "publicMetadata",
-        "expiresAt"
-      ],
-      "schema": "RemoteInstallationCredential"
     }
   ],
   "sourceDigest": "4b604dae68aaaeba81fd68ceb6c2864a0bdafc5bb61f0c70d2aeaff696794733",

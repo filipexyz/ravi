@@ -1,7 +1,6 @@
 import { closeAllRaviDbs } from "../db/close-all.js";
 import { closeNats, connectNats, getNats } from "../nats.js";
 import { configStore } from "../config-store.js";
-import { listRemoteInstallationCredentials } from "../cloud-auth/installation-storage.js";
 import { logger } from "../utils/logger.js";
 import {
   startNativeInboundChannelActionResponder,
@@ -23,7 +22,6 @@ import {
   type NativeInboundChannelActionHandler,
   type NativeChannelDriverRuntime,
 } from "./native/driver.js";
-import { mergeInstallationCredentialChannels } from "./native/installation-channels.js";
 import type { NativeChatActionDelivery, NativePresenceDelivery, NativeTextDelivery } from "./native/types.js";
 import { ChannelOutboundConsumer } from "./outbound-consumer.js";
 import {
@@ -269,20 +267,8 @@ export class ChannelRunner {
       log.warn("Native channel driver configuration was rejected", { reason });
     }
 
-    let channels = configStore.getConfig().channels ?? {};
-    try {
-      channels = mergeInstallationCredentialChannels({
-        configured: channels,
-        credentials: listRemoteInstallationCredentials(env),
-        registry,
-      });
-    } catch {
-      this.markAdapter("native-driver:installation-credentials", "native", "failed", "missing_credentials");
-      log.warn("Remote installation credentials were unavailable to native channels");
-    }
-
     this.nativeChannelManager = new NativeChannelDriverManager({
-      channels,
+      channels: configStore.getConfig().channels ?? {},
       registry,
     });
     await this.nativeChannelManager.start();

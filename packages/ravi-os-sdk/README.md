@@ -140,14 +140,6 @@ returns a bounded opaque renewable credential. Ravi stores that credential
 separately from the human CLI session, redacts its material from command
 output, and preserves it when `ravi logout` removes the human session.
 
-When an explicitly installed native channel driver uses the same provider,
-the channel runner starts one hidden runtime for each non-expired installation
-credential. The driver declares
-`requiredHostCapabilities: ["installation_credentials"]` and reads only its
-provider- and connection-bound credential through
-`context.host.readInstallationCredential()`. It cannot enumerate credentials
-or receive the human login session.
-
 Drivers can reserve provider-owned slash actions with the `inbound_actions`
 capability and an exact `inboundActions` list repeated in the module, driver,
 and runtime descriptors. The runtime implements

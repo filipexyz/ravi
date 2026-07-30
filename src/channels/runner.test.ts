@@ -1,5 +1,4 @@
 import { describe, expect, it, mock } from "bun:test";
-import type { StoredRemoteInstallationCredential } from "../cloud-auth/installation-storage.js";
 import { CHANNEL_OUTBOUND_PUBLISH_RETENTION_MS } from "./outbound-publish-outbox.js";
 import { CHANNEL_OUTBOUND_RECEIPT_RETENTION_MS } from "./outbound-receipts.js";
 import {
@@ -20,7 +19,6 @@ import type {
   NativeInboundChannelActionResponderConnection,
 } from "./inbound-actions.js";
 import type { NativeInboundChannelActionHandler } from "./native/driver.js";
-import { installationChannelName, mergeInstallationCredentialChannels } from "./native/installation-channels.js";
 import type { ChannelRuntimeEventSink } from "./runtime-events.js";
 import { createSlackNativeChannelDriver } from "./slack/driver.js";
 
@@ -177,50 +175,6 @@ describe("channel runner native delivery registry", () => {
     expect(unregisterOutputSink).toHaveBeenCalledTimes(1);
     expect(unregisterRuntimeEventSink).toHaveBeenCalledTimes(1);
   });
-
-  it("materializes one credential-backed native runtime without copying credential material", () => {
-    const endpointUrl = "https://remote.example";
-    const stored: StoredRemoteInstallationCredential = {
-      endpointUrl,
-      credential: {
-        provider: "example",
-        credentialId: "credential-example",
-        material: { privateValue: "must-not-enter-channel-config" },
-      },
-      createdAt: "2026-07-25T12:00:00.000Z",
-      updatedAt: "2026-07-25T12:00:00.000Z",
-    };
-
-    const channels = mergeInstallationCredentialChannels({
-      configured: {},
-      credentials: [stored],
-      registry: {
-        get(provider) {
-          return provider === "example"
-            ? {
-                descriptor: {
-                  requiredHostCapabilities: ["installation_credentials"],
-                },
-              }
-            : undefined;
-        },
-      },
-      now: Date.parse("2026-07-25T13:00:00.000Z"),
-    });
-
-    expect(channels).toEqual({
-      [installationChannelName("example", endpointUrl)]: {
-        name: installationChannelName("example", endpointUrl),
-        provider: "example",
-        enabled: true,
-        credentialConnection: endpointUrl,
-        createdAt: 0,
-        updatedAt: 0,
-      },
-    });
-    expect(JSON.stringify(channels)).not.toContain("must-not-enter-channel-config");
-  });
-
   it("starts one inbound action responder only when a native runtime exposes handlers", () => {
     const connection = {} as NativeInboundChannelActionResponderConnection;
     const handler = {

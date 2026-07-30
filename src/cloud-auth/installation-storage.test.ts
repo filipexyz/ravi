@@ -5,7 +5,6 @@ import { join } from "node:path";
 import {
   ensureRemoteClientInstallationId,
   getRemoteInstallationCredentialsPath,
-  listRemoteInstallationCredentials,
   readRemoteInstallationCredential,
   readRemoteInstallationCredentialState,
   toSafeRemoteInstallationCredential,
@@ -77,10 +76,6 @@ describe("remote installation credential storage", () => {
       endpointUrl: "https://two.example",
       credential: { credentialId: "credential_2" },
     });
-    expect(listRemoteInstallationCredentials().map((stored) => stored.endpointUrl)).toEqual([
-      "https://one.example",
-      "https://two.example",
-    ]);
   });
 
   it("stores secret material with user-only permissions but excludes it from safe metadata", () => {

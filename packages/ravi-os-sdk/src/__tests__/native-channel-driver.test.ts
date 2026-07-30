@@ -5,7 +5,6 @@ import {
   MAX_NATIVE_INBOUND_ACTION_IDENTITY_BYTES,
   MAX_NATIVE_INBOUND_ACTION_RESPONSE_BYTES,
   NativeChannelDriverDescriptorSchema,
-  NativeChannelDriverHostCapabilitiesSchema,
   NativeChannelDriverModuleConfigSchema,
   NativeChannelDriverModuleSpecifierSchema,
   NativeInboundChannelActionRequestSchema,
@@ -26,7 +25,6 @@ describe("native channel driver SDK contract", () => {
     const moduleConfig = await fixture("module-config.json");
     const driverDescriptor = await fixture("driver-descriptor.json");
     const runtimeDescriptor = await fixture("runtime-descriptor.json");
-    const installationCredential = await fixture("installation-credential.json");
     const inboundActionRequest = await fixture("inbound-action-request.json");
     const inboundActionResult = await fixture("inbound-action-result.json");
 
@@ -39,10 +37,6 @@ describe("native channel driver SDK contract", () => {
     expect(NativeInboundChannelActionResultSchema.parse(inboundActionResult)).toEqual(
       inboundActionResult,
     );
-    expect(installationCredential).toMatchObject({ provider: "example" });
-    expect(NativeChannelDriverHostCapabilitiesSchema.parse(["installation_credentials"])).toEqual([
-      "installation_credentials",
-    ]);
   });
 
   it("requires an explicit action declaration and exactly one handled response", async () => {
@@ -133,7 +127,6 @@ describe("native channel driver SDK contract", () => {
         driverId: "example.native",
         provider: "example",
         capabilities: ["inbound"],
-        requiredHostCapabilities: ["installation_credentials"],
       },
       createRuntime(context) {
         return {

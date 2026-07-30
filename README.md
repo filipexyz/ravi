@@ -155,11 +155,6 @@ An explicit endpoint publishes a versioned login contract at
 Endpoint-specific post-login integration is opt-in and loads only a local
 provider module explicitly configured by the operator.
 
-An explicitly installed native channel driver whose provider matches the
-stored installation credential may reconnect without a human session. Ravi
-passes that credential through a provider- and connection-scoped host
-capability; drivers do not read credential files directly.
-
 Native channel drivers may also declare a bounded set of inbound actions in
 their module, driver, and runtime descriptors. Declared slash actions are
 intercepted before model processing and dispatched to the channel runner over
