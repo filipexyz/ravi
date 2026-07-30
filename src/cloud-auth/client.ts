@@ -18,13 +18,6 @@ type FetchLike = (url: string, init?: RequestInit) => Promise<Response>;
 
 export interface ConsoleApiClientOptions {
   consoleUrl?: string;
-  authConfigEndpoint?: string;
-  sessionEndpoints?: {
-    exchange: string;
-    refresh: string;
-    logout: string;
-    me: string;
-  };
   fetch?: FetchLike;
   timeoutMs?: number;
 }
@@ -32,18 +25,9 @@ export interface ConsoleApiClientOptions {
 export class ConsoleApiClient {
   readonly consoleUrl: string;
   private readonly fetchImpl: FetchLike;
-  private readonly authConfigEndpoint: string;
-  private readonly sessionEndpoints: NonNullable<ConsoleApiClientOptions["sessionEndpoints"]>;
 
   constructor(options: ConsoleApiClientOptions = {}) {
     this.consoleUrl = normalizeConsoleUrl(options.consoleUrl ?? DEFAULT_CONSOLE_URL);
-    this.authConfigEndpoint = options.authConfigEndpoint ?? "/api/cli/auth/config";
-    this.sessionEndpoints = options.sessionEndpoints ?? {
-      exchange: "/api/cli/auth/exchange",
-      refresh: "/api/cli/auth/refresh",
-      logout: "/api/cli/auth/logout",
-      me: "/api/cli/me",
-    };
     this.fetchImpl =
       options.fetch ??
       ((url, init) => {
@@ -52,7 +36,7 @@ export class ConsoleApiClient {
   }
 
   async getAuthConfig(): Promise<ConsoleAuthConfig> {
-    return this.requestJson<ConsoleAuthConfig>("GET", this.authConfigEndpoint, undefined, undefined, {
+    return this.requestJson<ConsoleAuthConfig>("GET", "/api/cli/auth/config", undefined, undefined, {
       "x-ravi-cli-auth-flow": "console_device",
     });
   }
@@ -82,22 +66,22 @@ export class ConsoleApiClient {
   }
 
   async exchange(input: CredentialExchangeInput): Promise<CloudCredentials> {
-    const response = await this.requestJson<unknown>("POST", this.sessionEndpoints.exchange, input);
+    const response = await this.requestJson<unknown>("POST", "/api/cli/auth/exchange", input);
     return credentialsFromConsoleResponse(response, this.consoleUrl, input.installationId);
   }
 
   async refresh(input: CredentialRefreshInput, previous?: CloudCredentials | null): Promise<CloudCredentials> {
-    const response = await this.requestJson<unknown>("POST", this.sessionEndpoints.refresh, input);
+    const response = await this.requestJson<unknown>("POST", "/api/cli/auth/refresh", input);
     return credentialsFromConsoleResponse(response, this.consoleUrl, input.installationId, previous);
   }
 
   async logout(input: LogoutInput, accessToken?: string): Promise<{ success: true }> {
-    await this.requestJson<unknown>("POST", this.sessionEndpoints.logout, input, accessToken);
+    await this.requestJson<unknown>("POST", "/api/cli/auth/logout", input, accessToken);
     return { success: true };
   }
 
   async me(accessToken: string): Promise<ConsoleMeResponse> {
-    return this.requestJson<ConsoleMeResponse>("GET", this.sessionEndpoints.me, undefined, accessToken);
+    return this.requestJson<ConsoleMeResponse>("GET", "/api/cli/me", undefined, accessToken);
   }
 
   async createPageUploadSession(
@@ -142,7 +126,7 @@ export class ConsoleApiClient {
 
     let response: Response;
     try {
-      response = await this.fetchImpl(this.requestUrl(path), {
+      response = await this.fetchImpl(`${this.consoleUrl}${path}`, {
         method,
         headers,
         ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
@@ -158,11 +142,6 @@ export class ConsoleApiClient {
       throw mapConsoleError(response.status, payload);
     }
     return (payload ?? {}) as T;
-  }
-
-  private requestUrl(path: string): string {
-    if (/^https?:\/\//i.test(path)) return path;
-    return `${this.consoleUrl}${path}`;
   }
 
   private async requestFormJson<T>(method: string, url: string, body: URLSearchParams): Promise<T> {

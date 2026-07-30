@@ -92,7 +92,6 @@ function normalizeStoredCredentials(value: unknown): CloudCredentials {
   return {
     version: 1,
     consoleUrl,
-    ...(input.authMode === "remote" || input.authMode === "console" ? { authMode: input.authMode } : {}),
     installationId,
     accessToken,
     refreshToken,

@@ -1,8 +1,0 @@
-{
-  "body": {
-    "clientInstallationId": "client-installation-a",
-    "publicProof": "opaque-public-proof-a"
-  },
-  "method": "POST",
-  "path": "/v1/installations/reconcile"
-}

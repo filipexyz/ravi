@@ -120,25 +120,10 @@ Deep imports are available when you want smaller bundles:
 import { RaviClient } from "@ravi-os/sdk/client";
 import type { NativeChannelDriver } from "@ravi-os/sdk/native-channel-driver";
 import { LocalAgentReconciler } from "@ravi-os/sdk/local-agent-reconciliation";
-import type { RemoteLoginProvider } from "@ravi-os/sdk/remote-login-provider";
 import { createHttpTransport } from "@ravi-os/sdk/transport/http";
 ```
 
-### Extend Remote Login Locally
-
-`ravi login --endpoint https://auth.example.com` discovers the endpoint's
-versioned authentication contract. An endpoint may name a post-login provider,
-but Ravi loads it only when the operator explicitly maps that provider to a
-local package or `file:///` module:
-
-```bash
-export RAVI_REMOTE_LOGIN_PROVIDERS='[{"protocol":"ravi.auth.post-login","schemaVersion":1,"provider":"example","moduleSpecifier":"@example/ravi-login-provider"}]'
-```
-
-The module exports `remoteLoginProvider`, implements `RemoteLoginProvider`, and
-returns a bounded opaque renewable credential. Ravi stores that credential
-separately from the human CLI session, redacts its material from command
-output, and preserves it when `ravi logout` removes the human session.
+### Handle Native Inbound Actions
 
 Drivers can reserve provider-owned slash actions with the `inbound_actions`
 capability and an exact `inboundActions` list repeated in the module, driver,

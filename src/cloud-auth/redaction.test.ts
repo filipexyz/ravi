@@ -17,11 +17,6 @@ describe("cloud auth redaction", () => {
         verificationUri: "https://console.example/device",
         clientSecret: "client-secret",
       },
-      installationCredential: {
-        material: {
-          privateKeyPem: "private-key-secret",
-        },
-      },
     };
 
     const redacted = redactCloudAuthPayload(payload);
@@ -30,13 +25,11 @@ describe("cloud auth redaction", () => {
     expect(encoded).not.toContain("access-secret");
     expect(encoded).not.toContain("refresh-secret");
     expect(encoded).not.toContain("client-secret");
-    expect(encoded).not.toContain("private-key-secret");
     expect(redacted.session.accessToken).toBe("[REDACTED]");
     expect(redacted.session.refreshToken).toBe("[REDACTED]");
     expect(redacted.session.accessTokenExpiresAt).toBe("2026-05-10T00:00:00.000Z");
     expect(redacted.session.refreshTokenExpiresAt).toBe("2026-06-10T00:00:00.000Z");
     expect(redacted.session.installation.id).toBe("ins_123");
     expect(redacted.auth.authorizationUrl).toBe("https://console.example/login?code=ABC");
-    expect(redacted.installationCredential.material as unknown).toBe("[REDACTED]");
   });
 });

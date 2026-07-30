@@ -145,15 +145,9 @@ Cloud-linked artifact publishing is exposed through a generic Console-compatible
 
 ```bash
 ravi login
-ravi login --endpoint https://auth.example.com
 ravi whoami
 ravi artifacts publish <artifact-id-or-path> --project <project> --site <site>
 ```
-
-An explicit endpoint publishes a versioned login contract at
-`/.well-known/ravi-auth`. HTTPS is required outside loopback development.
-Endpoint-specific post-login integration is opt-in and loads only a local
-provider module explicitly configured by the operator.
 
 Native channel drivers may also declare a bounded set of inbound actions in
 their module, driver, and runtime descriptors. Declared slash actions are
