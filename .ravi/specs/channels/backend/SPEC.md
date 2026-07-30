@@ -7,7 +7,6 @@ capabilities:
   - backend
   - ingress
   - runtime-events
-  - local-actions
 tags:
   - native-channel
   - idempotency
@@ -107,24 +106,24 @@ MUST both recover after expiry or restart.
   increasing sequence.
 - Commentary, tool activity, deltas, terminal assistant content, failure, and
   interruption MUST remain distinct typed events.
+- A registered transport runtime-event sink MUST receive the validated
+  external target with each event so it can project commentary into the
+  original conversation without deriving provider identity from local IDs.
+- Host response policy MUST run before assistant content is projected.
+  Interrupted, sentinel, silent-token, heartbeat-only, and no-response
+  assistant content MUST NOT reach a transport output.
+- Only assistant content explicitly classified as commentary MAY be
+  externalized before terminal output. Unknown phases MUST remain durable
+  without being treated as commentary.
+- Commentary MAY be handed off immediately by a provider, but MUST remain
+  separate from terminal output, MUST enter the durable outbound delivery
+  path before the sink reports success, and MUST use the event ID as its
+  delivery idempotency key.
 - A terminal assistant result MUST persist before terminal completion is
   reported.
 - Output sinks MUST be selected by provider and connection and MUST remain
   bounded and explicitly registered.
 - Runtime status and delivery status MUST remain separate.
-
-## Local Agent Actions
-
-- A native driver MAY register bounded, typed local Agent actions through the
-  host ABI.
-- Registration and discovery MUST be scoped to provider, Channel instance,
-  source account, active Agent, Session, and current source context.
-- Duplicate ambiguous tool names MUST fail closed.
-- Invocation MUST require the runtime's normal local tool permission
-  immediately before the handler runs.
-- Descriptors and results MUST be bounded and provider-neutral. Product Roles,
-  memberships, hosted policy, and hosted product entities MUST NOT enter this
-  contract.
 
 ## Provider Boundary
 
@@ -132,8 +131,7 @@ The OSS backend MAY know:
 
 - provider/connection/conversation provenance;
 - canonical Ravi Chat, Message, Session, Turn, Agent, and actor context;
-- neutral content blocks, safe errors, runtime events, local actions, and
-  output targets.
+- neutral content blocks, safe errors, runtime events, and output targets.
 
 It MUST NOT know hosted Organizations, Members, Bots, product Channels, Roles,
 commercial policy, private endpoint schemas, or private authorization rules.
@@ -155,7 +153,12 @@ commercial policy, private endpoint schemas, or private authorization rules.
 - Slack preserves thread, actor, file, route, subscription, and delivery
   behavior after convergence.
 - Runtime readback and output correlation resolve from the accepted binding.
-- Local actions remain provider/account/source scoped and locally authorized.
+- Sanitized, provider-classified commentary reaches the original provider
+  conversation through the durable outbound ledger, survives transient
+  transport failure, is not duplicated across retries, and never becomes
+  part of terminal assistant output.
+- Interrupted, sentinel, silent-token, heartbeat-only, no-response, and
+  unknown-phase assistant content does not enter commentary delivery.
 
 ## Known Failure Modes
 

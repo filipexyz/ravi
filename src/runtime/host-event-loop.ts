@@ -1368,7 +1368,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       });
 
       if (event.type === "text.delta") {
-        await projectRuntimeEventToChannel(event);
+        if (streaming.agentMode !== "sentinel") {
+          await projectRuntimeEventToChannel(event);
+        }
         updateRuntimeLiveState(sessionName, {
           activity: "streaming",
           summary: truncateLiveSummary(event.text) || "streaming",
@@ -1384,8 +1386,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       await chunkEmitTail;
 
-      if (event.type !== "turn.failed") {
-        await projectRuntimeEventToChannel(event, event.type === "turn.complete" ? responseText : undefined);
+      if (event.type !== "turn.failed" && event.type !== "assistant.message") {
+        await projectRuntimeEventToChannel(
+          event,
+          event.type === "turn.complete" && streaming.agentMode !== "sentinel" ? responseText : undefined,
+        );
       }
 
       if (event.type === "provider.raw" && event.rawEvent) {
@@ -1612,9 +1617,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               provider: runtimeSession.provider,
             });
           } else {
-            if (!isCommentaryResponse(event.metadata)) {
-              responseText = appendAssistantResponse(responseText, messageText);
-            }
             ensureCurrentTurnUserObservation();
             pushObservationEvent("message.assistant", {
               preview: truncateObservationPreview(messageText),
@@ -1670,6 +1672,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 provider: runtimeSession.provider,
               });
             } else {
+              if (!isCommentaryResponse(event.metadata)) {
+                responseText = appendAssistantResponse(responseText, messageText);
+              }
+              if (streaming.agentMode !== "sentinel") {
+                await projectRuntimeEventToChannel({
+                  ...event,
+                  text: messageText,
+                });
+              }
               updateRuntimeLiveState(sessionName, {
                 activity: "streaming",
                 summary: truncateLiveSummary(messageText) || "response",

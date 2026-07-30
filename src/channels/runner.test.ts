@@ -21,6 +21,7 @@ import type {
 import type { NativeInboundChannelActionHandler } from "./native/driver.js";
 import type { ChannelRuntimeEventSink } from "./runtime-events.js";
 import { createSlackNativeChannelDriver } from "./slack/driver.js";
+import type { ChannelOutboundJob } from "./outbound-stream.js";
 
 describe("channel runner native delivery registry", () => {
   it("registers optional text, chat action, and presence adapters together", () => {
@@ -78,6 +79,7 @@ describe("channel runner native delivery registry", () => {
       supports: () => true,
       sendPresence: mock(async () => ({ provider: "slack", status: "active" as const })),
     };
+    const publishOutbound = mock(async (_job: ChannelOutboundJob) => {});
     const driver = createSlackNativeChannelDriver(
       {},
       {
@@ -91,6 +93,8 @@ describe("channel runner native delivery registry", () => {
           presence,
           socketMode: { start, stop, status } as never,
         })),
+        publishOutbound,
+        now: () => 1_782_920_000_000,
       },
     );
     let outputSink: ChannelOutputSink | undefined;
@@ -152,17 +156,114 @@ describe("channel runner native delivery registry", () => {
       content: [{ type: "text", text: "done" }],
       emittedAt: "2026-07-29T12:00:00.000Z",
     });
-    expect(delivery.deliverText).toHaveBeenCalledWith(
+    expect(publishOutbound).toHaveBeenCalledWith(
       expect.objectContaining({
-        sessionName: "session-a",
-        idempotencyKey: "output-a",
-        text: "done",
-        target: expect.objectContaining({
-          chatId: "C123",
-          threadId: "1713000000.000100",
+        jobId: "channel-output:output-a",
+        createdAt: 1_782_920_000_000,
+        request: expect.objectContaining({
+          idempotencyKey: "output-a",
+          origin: expect.objectContaining({
+            sessionName: "session-a",
+            emitId: "output-a",
+            responsePhase: "final_answer",
+          }),
+          content: {
+            type: "text",
+            text: "done",
+          },
+          target: expect.objectContaining({
+            chatId: "C123",
+            threadId: "1713000000.000100",
+          }),
         }),
       }),
     );
+    await runtimeEventSink!.emit(
+      {
+        protocol: "ravi.channel.runtime-events",
+        schemaVersion: 1,
+        eventId: "event-commentary-a",
+        kind: "turn.assistant_message",
+        occurredAt: "2026-07-29T12:00:01.000Z",
+        sequence: 2,
+        correlation: {
+          correlationId: "correlation-a",
+          ingressRequestId: "ingress-a",
+          binding: {
+            channelInstanceId: "slack-a",
+            agentId: "agent-a",
+            chatId: "chat-a",
+            messageId: "message-a",
+            sessionId: "session-a",
+            turnId: "turn-a",
+          },
+        },
+        payload: {
+          phase: "commentary",
+          content: [{ type: "text", text: "Checking the current state." }],
+        },
+      },
+      {
+        channelKind: "slack",
+        connectionId: "slack-a",
+        conversationId: "C123~1713000000.000100",
+      },
+    );
+    expect(publishOutbound).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        jobId: "channel-runtime:event-commentary-a",
+        request: expect.objectContaining({
+          idempotencyKey: "event-commentary-a",
+          origin: expect.objectContaining({
+            sessionName: "session-a",
+            emitId: "event-commentary-a",
+            responsePhase: "commentary",
+          }),
+          content: {
+            type: "text",
+            text: "Checking the current state.",
+          },
+          target: expect.objectContaining({
+            chatId: "C123",
+            threadId: "1713000000.000100",
+          }),
+        }),
+      }),
+    );
+    await runtimeEventSink!.emit(
+      {
+        protocol: "ravi.channel.runtime-events",
+        schemaVersion: 1,
+        eventId: "event-final-a",
+        kind: "turn.assistant_message",
+        occurredAt: "2026-07-29T12:00:02.000Z",
+        sequence: 3,
+        correlation: {
+          correlationId: "correlation-a",
+          ingressRequestId: "ingress-a",
+          binding: {
+            channelInstanceId: "slack-a",
+            agentId: "agent-a",
+            chatId: "chat-a",
+            messageId: "message-a",
+            sessionId: "session-a",
+            turnId: "turn-a",
+          },
+        },
+        payload: {
+          phase: "final_answer",
+          content: [{ type: "text", text: "done" }],
+        },
+      },
+      {
+        channelKind: "slack",
+        connectionId: "slack-a",
+        conversationId: "C123~1713000000.000100",
+      },
+    );
+    expect(publishOutbound).toHaveBeenCalledTimes(2);
+    expect(delivery.deliverText).not.toHaveBeenCalled();
     await runtime.start();
     expect(start).toHaveBeenCalledTimes(1);
     expect(runtime.health()).toMatchObject({

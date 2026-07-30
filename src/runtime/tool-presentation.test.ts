@@ -24,7 +24,7 @@ describe("runtime tool presentation", () => {
     const presentation = buildRuntimeToolPresentation("sessions_read", {
       name: "sessions_read",
       args: {
-        nameOrKey: "ravi-message",
+        nameOrKey: "example-session",
         count: 20,
         workspace: true,
       },
@@ -40,7 +40,7 @@ describe("runtime tool presentation", () => {
       expect.arrayContaining([
         {
           name: "nameOrKey",
-          value: "ravi-message",
+          value: "example-session",
         },
         {
           name: "count",
@@ -52,7 +52,7 @@ describe("runtime tool presentation", () => {
         },
       ]),
     );
-    expect(presentation.summary).toContain("nameOrKey=ravi-message");
+    expect(presentation.summary).toContain("nameOrKey=example-session");
     expect(presentation.summary).toContain("count=20");
   });
 

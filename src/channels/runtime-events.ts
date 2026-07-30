@@ -28,6 +28,7 @@ import {
   ChannelContentSchema,
   ChannelOutputEnvelopeSchema,
   ChannelSafeErrorSchema,
+  ExternalChannelTargetSchema,
   LocalChannelMessageBindingSchema,
   channelOutputSinks,
   type ChannelContent,
@@ -327,7 +328,7 @@ export type ChannelRuntimeReadbackRequest = z.infer<typeof ChannelRuntimeReadbac
 export type ChannelRuntimeReadbackResult = z.infer<typeof ChannelRuntimeReadbackResultSchema>;
 
 export interface ChannelRuntimeEventSink {
-  emit(event: KnownChannelRuntimeEvent): Promise<void>;
+  emit(event: KnownChannelRuntimeEvent, target: ExternalChannelTarget): Promise<void>;
 }
 
 export class ChannelRuntimeEventSinkRegistry {
@@ -350,23 +351,23 @@ export class ChannelRuntimeEventSinkRegistry {
   }
 
   async emit(target: ExternalChannelTarget, input: KnownChannelRuntimeEvent): Promise<void> {
-    const channelKind = ChannelBackendWireKindSchema.parse(target.channelKind);
-    const connectionId = ChannelBackendOpaqueIdSchema.parse(target.connectionId);
+    const parsedTarget = ExternalChannelTargetSchema.parse(target);
     const event = KnownChannelRuntimeEventSchema.parse(input);
-    const sink = this.sinks.get(sinkKey(channelKind, connectionId));
+    const sink = this.sinks.get(sinkKey(parsedTarget.channelKind, parsedTarget.connectionId));
     if (!sink) {
-      throw new Error(`Channel runtime event sink is unavailable for ${channelKind}/${connectionId}`);
+      throw new Error(
+        `Channel runtime event sink is unavailable for ${parsedTarget.channelKind}/${parsedTarget.connectionId}`,
+      );
     }
-    await sink.emit(event);
+    await sink.emit(event, parsedTarget);
   }
 
   async tryEmit(target: ExternalChannelTarget, input: KnownChannelRuntimeEvent): Promise<boolean> {
-    const channelKind = ChannelBackendWireKindSchema.parse(target.channelKind);
-    const connectionId = ChannelBackendOpaqueIdSchema.parse(target.connectionId);
+    const parsedTarget = ExternalChannelTargetSchema.parse(target);
     const event = KnownChannelRuntimeEventSchema.parse(input);
-    const sink = this.sinks.get(sinkKey(channelKind, connectionId));
+    const sink = this.sinks.get(sinkKey(parsedTarget.channelKind, parsedTarget.connectionId));
     if (!sink) return false;
-    await sink.emit(event);
+    await sink.emit(event, parsedTarget);
     return true;
   }
 }

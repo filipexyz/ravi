@@ -26,10 +26,12 @@ describe("channel backend cross-process egress", () => {
     const runtimeEventSinks = new ChannelRuntimeEventSinkRegistry();
     const outputSinks = new ChannelOutputSinkRegistry();
     const runtimeEvents: KnownChannelRuntimeEvent[] = [];
+    const runtimeTargets: ExternalChannelTarget[] = [];
     const outputs: ChannelOutputEnvelope[] = [];
     const unregisterRuntime = runtimeEventSinks.register(target, {
-      async emit(event) {
+      async emit(event, externalTarget) {
         runtimeEvents.push(event);
+        runtimeTargets.push(externalTarget);
       },
     });
     const unregisterOutput = outputSinks.register(target, {
@@ -56,6 +58,7 @@ describe("channel backend cross-process egress", () => {
     }
 
     expect(runtimeEvents).toEqual([runtimeEvent]);
+    expect(runtimeTargets).toEqual([target]);
     expect(outputs).toEqual([outputEnvelope]);
   });
 

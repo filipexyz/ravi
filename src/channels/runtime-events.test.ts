@@ -576,6 +576,162 @@ describe("channel runtime event projection", () => {
     expect(streaming.currentChannelBackend).toBeUndefined();
   });
 
+  it("projects only sanitized commentary after host response policy", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+      async emit(event) {
+        events.push(event);
+      },
+    });
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+
+    try {
+      await runAcceptedHostRuntime(metadata, [
+        {
+          type: "assistant.message",
+          text: "@@SILENT@@",
+          metadata: { item: { id: "silent-a", phase: "commentary" } },
+        },
+        {
+          type: "assistant.message",
+          text: "No response requested.",
+          metadata: { item: { id: "silent-b", phase: "commentary" } },
+        },
+        {
+          type: "assistant.message",
+          text: "Routine finished HEARTBEAT_OK",
+          metadata: { item: { id: "silent-c", phase: "commentary" } },
+        },
+        {
+          type: "assistant.message",
+          text: "@@SILENT@@ Checking the current state.",
+          metadata: { item: { id: "commentary-a", phase: "commentary" } },
+        },
+        {
+          type: "turn.complete",
+          usage: { inputTokens: 2, outputTokens: 1 },
+        },
+      ]);
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(events.filter((event) => event.kind === "turn.assistant_message")).toEqual([
+      expect.objectContaining({
+        payload: {
+          phase: "commentary",
+          content: [{ type: "text", text: "Checking the current state." }],
+        },
+      }),
+    ]);
+    expect(outputs).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      kind: "turn.state_changed",
+      payload: { state: "completed" },
+    });
+  });
+
+  it("does not project assistant content from an interrupted channel turn", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+      async emit(event) {
+        events.push(event);
+      },
+    });
+
+    try {
+      await runAcceptedHostRuntime(
+        metadata,
+        [
+          {
+            type: "assistant.message",
+            text: "Discard this interrupted commentary.",
+            metadata: { item: { id: "commentary-a", phase: "commentary" } },
+          },
+          { type: "turn.interrupted" },
+        ],
+        (streaming) => {
+          streaming.interrupted = true;
+        },
+      );
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(events.some((event) => event.kind === "turn.assistant_message")).toBe(false);
+    expect(events.at(-1)).toMatchObject({
+      kind: "turn.terminal_output",
+      payload: { state: "interrupted" },
+    });
+  });
+
+  it("keeps sentinel assistant content off the channel output path", async () => {
+    const metadata = await acceptedMetadata();
+    const events: KnownChannelRuntimeEvent[] = [];
+    const outputs: ChannelOutputEnvelope[] = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async () => {});
+    unregisterRuntimeEvents = channelRuntimeEventSinks.register(metadata.target, {
+      async emit(event) {
+        events.push(event);
+      },
+    });
+    unregisterOutput = channelOutputSinks.register(metadata.target, {
+      async emit(output) {
+        outputs.push(output);
+      },
+    });
+
+    try {
+      await runAcceptedHostRuntime(
+        metadata,
+        [
+          {
+            type: "text.delta",
+            text: "Hidden",
+            metadata: { item: { id: "commentary-a", phase: "commentary" } },
+          },
+          {
+            type: "assistant.message",
+            text: "Hidden commentary.",
+            metadata: { item: { id: "commentary-a", phase: "commentary" } },
+          },
+          {
+            type: "assistant.message",
+            text: "Hidden final answer.",
+            metadata: { item: { id: "final-a", phase: "final_answer" } },
+          },
+          {
+            type: "turn.complete",
+            usage: { inputTokens: 2, outputTokens: 1 },
+          },
+        ],
+        (streaming) => {
+          streaming.agentMode = "sentinel";
+        },
+      );
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(
+      events.some((event) => event.kind === "turn.assistant_delta" || event.kind === "turn.assistant_message"),
+    ).toBe(false);
+    expect(outputs).toHaveLength(0);
+    expect(events.at(-1)).toMatchObject({
+      kind: "turn.state_changed",
+      payload: { state: "completed" },
+    });
+  });
+
   it("closes an unrecoverable host loop without leaving channel readback running forever", async () => {
     const metadata = await acceptedMetadata();
     const events: KnownChannelRuntimeEvent[] = [];
@@ -820,8 +976,39 @@ function streamingSession(
     onTurnComplete: null,
     currentToolSafety: null,
     pendingAbort: false,
-    agentMode: "sentinel",
+    agentMode: "active",
   };
+}
+
+async function runAcceptedHostRuntime(
+  metadata: ChannelBackendPromptMetadata,
+  events: RuntimeEvent[],
+  configure?: (streaming: RuntimeHostStreamingSession) => void,
+): Promise<RuntimeHostStreamingSession> {
+  const runtimeSession = runtimeHandle(events);
+  const session = resolveSession(metadata.binding.sessionId);
+  const agent = dbGetAgent(metadata.binding.agentId);
+  if (!session || !agent) throw new Error("accepted fixture did not create local runtime identities");
+  const streaming = streamingSession(metadata, runtimeSession);
+  configure?.(streaming);
+
+  await runRuntimeEventLoop({
+    runId: `channel-runtime-${metadata.binding.turnId}`,
+    sessionName: session.name!,
+    session,
+    agent,
+    streaming,
+    runtimeSession,
+    runtimeCapabilities,
+    model: "channel-runtime-model",
+    instanceId: "test-instance",
+    defaultRuntimeProviderId: "test-provider",
+    streamingSessions: new Map([[session.name!, streaming]]),
+    stashedMessages: new Map(),
+    safeEmit: async () => {},
+    drainPendingStarts: () => {},
+  });
+  return streaming;
 }
 
 const runtimeCapabilities: RuntimeCapabilities = {

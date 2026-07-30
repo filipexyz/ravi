@@ -119,7 +119,6 @@ Deep imports are available when you want smaller bundles:
 ```ts
 import { RaviClient } from "@ravi-os/sdk/client";
 import type { NativeChannelDriver } from "@ravi-os/sdk/native-channel-driver";
-import { LocalAgentReconciler } from "@ravi-os/sdk/local-agent-reconciliation";
 import { createHttpTransport } from "@ravi-os/sdk/transport/http";
 ```
 
@@ -133,57 +132,6 @@ host sends only a bounded authenticated channel identity, the declared action
 name, and a `hasArguments` boolean; command arguments are never exposed to the
 driver. Declared actions are fail-closed and never fall through to model
 processing when the runtime cannot answer.
-
-### Reconcile Locally Managed Agents
-
-Node-side integrations can reconcile an external desired identity into a
-locally governed Ravi agent without accepting a workspace path over the wire.
-The operator supplies an explicit local template, including its workspace
-root, runtime allowlists, permission mappings, adoption policy, and whether
-managed instructions are allowed:
-
-```ts
-import {
-  LocalAgentReconciler,
-  createRaviClientLocalAgentRuntimeAdapter,
-} from "@ravi-os/sdk/local-agent-reconciliation";
-
-const reconciler = new LocalAgentReconciler({
-  runtime: createRaviClientLocalAgentRuntimeAdapter(ravi),
-  templates: [{
-    templateId: "support",
-    workspaceRoot: "/srv/ravi/managed-agents",
-    manageInstructions: true,
-    capabilityMap: {
-      "read.messages": ["view:chat:*"],
-      "write.replies": ["send:chat:*"],
-    },
-    runtime: {
-      provider: "codex",
-      allowedProviders: ["codex"],
-    },
-  }],
-});
-
-const observed = await reconciler.reconcile({
-  protocol: "ravi.agent.local-reconciliation",
-  schemaVersion: 1,
-  requestId: "request-1",
-  idempotencyKey: "installation-1-v3",
-  sourceId: "custom-channel",
-  agentKey: "external-agent-1",
-  templateId: "support",
-  revision: "a".repeat(64),
-  instructions: "Handle support conversations.",
-  requestedCapabilities: ["read.messages", "write.replies"],
-});
-```
-
-The desired-state request contains no `cwd`. Unknown templates,
-non-allowlisted runtime preferences, unsupported capabilities, ownership
-conflicts, symlink escapes, and idempotency conflicts fail closed. The
-reconciler writes only inside the selected template root and never grants a
-capability that the local template did not map.
 
 ## Inherit The Calling Ravi Runtime
 

@@ -15,5 +15,9 @@
 8. Run a fixture native driver through host-scoped wire ingress.
 9. Project commentary, tool activity, terminal output, failure, and
    interruption and verify ordered readback.
-10. Register two local actions with colliding scope/name and confirm discovery
-   fails closed; invoke an authorized unique action in its exact source.
+10. Project commentary through a transport sink and confirm it receives the
+    original external target, enters the durable outbound ledger by event ID,
+    retries without duplication, and remains separate from terminal output.
+11. Project interrupted, sentinel, silent-token, heartbeat-only, no-response,
+    and unknown-phase assistant content; confirm none enters commentary
+    delivery.

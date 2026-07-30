@@ -1,5 +1,7 @@
 import type { ChannelConfig } from "../../router/router-db.js";
 import type { ChannelOutputEnvelope } from "../backend.js";
+import { publishChannelOutboundJobDurably } from "../outbound-publish-outbox.js";
+import { buildChannelTextOutboundJob, type ChannelOutboundJob } from "../outbound-stream.js";
 import {
   NATIVE_CHANNEL_DRIVER_PROTOCOL,
   NATIVE_CHANNEL_DRIVER_SCHEMA_VERSION,
@@ -21,6 +23,8 @@ export interface SlackNativeChannelDriverOptions {
     env: NodeJS.ProcessEnv,
     options: { channel: ChannelConfig },
   ) => Promise<SlackNativeRuntime | null>;
+  readonly publishOutbound?: (job: ChannelOutboundJob) => Promise<void>;
+  readonly now?: () => number;
 }
 
 export function createSlackNativeChannelDriver(
@@ -59,6 +63,11 @@ export function createSlackNativeChannelDriver(
         channelInstanceId: channel.name,
         capabilities: [...descriptor.capabilities],
       });
+      const publishOutbound =
+        options.publishOutbound ??
+        (async (job: ChannelOutboundJob) => {
+          await publishChannelOutboundJobDurably(job);
+        });
       const unregisterOutputSink = context.host.registerOutputSink(
         {
           channelKind: descriptor.provider,
@@ -67,19 +76,24 @@ export function createSlackNativeChannelDriver(
         {
           async emit(envelope) {
             const target = decodeSlackBackendConversationId(envelope.target.conversationId);
-            await native.delivery.deliverText({
-              sessionName: envelope.binding.sessionId,
-              emitId: envelope.outputId,
-              idempotencyKey: envelope.outputId,
-              target: {
-                channel: descriptor.provider,
-                accountId: native.accountId,
-                instanceId: native.instanceId,
-                chatId: target.channelId,
-                ...(target.threadTs ? { threadId: target.threadTs } : {}),
-              },
-              text: renderSlackBackendOutput(envelope),
-            });
+            await publishOutbound(
+              buildChannelTextOutboundJob({
+                requestId: `channel-output:${envelope.outputId}`,
+                sessionName: envelope.binding.sessionId,
+                emitId: envelope.outputId,
+                idempotencyKey: envelope.outputId,
+                target: {
+                  channel: descriptor.provider,
+                  accountId: native.accountId,
+                  instanceId: native.instanceId,
+                  chatId: target.channelId,
+                  ...(target.threadTs ? { threadId: target.threadTs } : {}),
+                },
+                text: renderSlackBackendOutput(envelope),
+                responsePhase: "final_answer",
+                ...(options.now ? { now: options.now() } : {}),
+              }),
+            );
           },
         },
       );
@@ -89,9 +103,27 @@ export function createSlackNativeChannelDriver(
           connectionId: native.accountId,
         },
         {
-          async emit() {
-            // Runtime events are durable in the backend even when Slack has no
-            // equivalent compact projection for an intermediate state.
+          async emit(event, externalTarget) {
+            if (event.kind !== "turn.assistant_message" || event.payload.phase !== "commentary") return;
+            const target = decodeSlackBackendConversationId(externalTarget.conversationId);
+            await publishOutbound(
+              buildChannelTextOutboundJob({
+                requestId: `channel-runtime:${event.eventId}`,
+                sessionName: event.correlation.binding.sessionId,
+                emitId: event.eventId,
+                idempotencyKey: event.eventId,
+                target: {
+                  channel: descriptor.provider,
+                  accountId: native.accountId,
+                  instanceId: native.instanceId,
+                  chatId: target.channelId,
+                  ...(target.threadTs ? { threadId: target.threadTs } : {}),
+                },
+                text: renderSlackContent(event.payload.content),
+                responsePhase: "commentary",
+                ...(options.now ? { now: options.now() } : {}),
+              }),
+            );
           },
         },
       );
@@ -122,7 +154,11 @@ function renderSlackBackendOutput(envelope: ChannelOutputEnvelope): string {
   if (envelope.kind === "safe_error") {
     return `Unable to complete the request (${envelope.error?.code ?? "INTERNAL"}).`;
   }
-  return (envelope.content ?? [])
+  return renderSlackContent(envelope.content ?? []);
+}
+
+function renderSlackContent(content: NonNullable<ChannelOutputEnvelope["content"]>): string {
+  return content
     .map((block) =>
       block.type === "text"
         ? block.text

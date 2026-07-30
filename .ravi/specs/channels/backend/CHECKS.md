@@ -14,6 +14,11 @@
 - Provider inbox retention MUST prune only processed records outside the
   deduplication window.
 - Runtime events and output MUST resolve from the accepted binding.
-- Local actions MUST be bounded, unique, source-scoped, and locally
-  authorized.
+- Runtime event sinks MUST receive the validated external target.
+- Host response policy MUST run before assistant content reaches a transport
+  sink.
+- Commentary MUST be delivered independently from terminal output through the
+  durable outbound ledger with the event ID as its idempotency key.
+- Interrupted, sentinel, suppressed, and unknown-phase assistant content MUST
+  NOT enter commentary delivery.
 - Public types MUST contain no hosted product entities or private policy.

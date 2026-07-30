@@ -4,6 +4,7 @@ import {
   CHANNEL_OUTBOUND_STREAM,
   buildChannelChatActionJob,
   buildChannelOutboundJobFromResponse,
+  buildChannelTextOutboundJob,
   ensureChannelOutboundConsumer,
   ensureChannelOutboundInfrastructure,
   ensureChannelOutboundStream,
@@ -94,6 +95,48 @@ describe("channel outbound jobs", () => {
         target: { channel: "slack", accountId: "a", chatId: "c" },
       }),
     ).toEqual({ ok: false, reason: "silent_response" });
+  });
+
+  it("builds explicitly idempotent text jobs for channel backend projections", () => {
+    const job = buildChannelTextOutboundJob({
+      requestId: "channel-runtime:event-commentary-a",
+      sessionName: "ravi-channels",
+      emitId: "event-commentary-a",
+      idempotencyKey: "event-commentary-a",
+      responsePhase: "commentary",
+      now: 1_782_920_000_000,
+      target: {
+        channel: "slack",
+        accountId: "workspace:T1",
+        instanceId: "slack-main",
+        chatId: "C123",
+        threadId: "1711111111.000100",
+      },
+      text: "\nChecking the current state.\n",
+    });
+
+    expect(job).toMatchObject({
+      jobId: "channel-runtime:event-commentary-a",
+      status: "queued",
+      createdAt: 1_782_920_000_000,
+      request: {
+        requestId: "channel-runtime:event-commentary-a",
+        channelId: "slack",
+        accountId: "workspace:T1",
+        targetChatId: "C123",
+        targetThreadId: "1711111111.000100",
+        origin: {
+          sessionName: "ravi-channels",
+          emitId: "event-commentary-a",
+          responsePhase: "commentary",
+        },
+        content: {
+          type: "text",
+          text: "\nChecking the current state.\n",
+        },
+        idempotencyKey: "event-commentary-a",
+      },
+    });
   });
 
   it("builds deterministic durable jobs for native chat actions", () => {
