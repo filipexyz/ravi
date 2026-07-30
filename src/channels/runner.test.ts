@@ -217,6 +217,7 @@ describe("channel runner native delivery registry", () => {
           target: expect.objectContaining({
             chatId: "C123",
             threadId: "1713000000.000100",
+            canonicalChatId: "chat-a",
           }),
         }),
       }),
@@ -270,6 +271,7 @@ describe("channel runner native delivery registry", () => {
           target: expect.objectContaining({
             chatId: "C123",
             threadId: "1713000000.000100",
+            canonicalChatId: "chat-a",
           }),
         }),
       }),
@@ -305,6 +307,32 @@ describe("channel runner native delivery registry", () => {
         conversationId: "C123~1713000000.000100",
       },
     );
+    expect(publishOutbound).toHaveBeenCalledTimes(2);
+    resolveCanonicalMessageId.mockImplementationOnce((() => undefined) as never);
+    await expect(
+      outputSink!.emit({
+        protocol: "ravi.channel.backend",
+        schemaVersion: 1,
+        outputId: "output-missing-canonical",
+        correlationId: "correlation-missing-canonical",
+        binding: {
+          channelInstanceId: "slack-a",
+          agentId: "agent-a",
+          chatId: "chat-a",
+          messageId: "message-a",
+          sessionId: "session-a",
+          turnId: "turn-missing-canonical",
+        },
+        target: {
+          channelKind: "slack",
+          connectionId: "slack-a",
+          conversationId: "C123~1713000000.000100",
+        },
+        kind: "assistant_message",
+        content: [{ type: "text", text: "must not publish" }],
+        emittedAt: "2026-07-29T12:00:03.000Z",
+      }),
+    ).rejects.toThrow("runtime_surface_mismatch");
     expect(publishOutbound).toHaveBeenCalledTimes(2);
     expect(delivery.deliverText).not.toHaveBeenCalled();
     await runtime.start();

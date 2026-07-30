@@ -605,6 +605,13 @@ export interface PersistDeliveredMessageDependencies {
   upsertChatMessage(input: Parameters<typeof dbUpsertChatMessage>[0]): UpsertChatMessageResult;
 }
 
+class CanonicalOutboundMessageContractError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "CanonicalOutboundMessageContractError";
+  }
+}
+
 const DEFAULT_PERSISTENCE_DEPENDENCIES: PersistDeliveredMessageDependencies = {
   resolveContext: ({ job, instanceId }) => {
     const session = getSessionByName(job.request.origin.sessionName);
@@ -692,12 +699,20 @@ export function persistDeliveredMessage(
       providerMessageId: platformMessageId,
       deliveryMessageId: delivered.messageId ?? null,
       idempotencyKey: job.request.idempotencyKey,
+      responsePhase: job.request.origin.responsePhase ?? null,
     },
   });
 
   if (existingCanonicalMessage) {
     return {
       canonicalMessageId: existingCanonicalMessage.id,
+      platformMessageId,
+      ...(delivered.providerTimestamp !== undefined ? { providerTimestamp: delivered.providerTimestamp } : {}),
+    };
+  }
+
+  if (job.request.origin.responsePhase === "commentary") {
+    return {
       platformMessageId,
       ...(delivered.providerTimestamp !== undefined ? { providerTimestamp: delivered.providerTimestamp } : {}),
     };
@@ -759,7 +774,9 @@ function requireMatchingCanonicalMessage(input: {
 }): ChatMessageRecord {
   const message = input.getChatMessage(input.canonicalMessageId);
   if (!message) {
-    throw new Error(`Canonical outbound message not found: ${input.canonicalMessageId}`);
+    throw new CanonicalOutboundMessageContractError(
+      `Canonical outbound message not found: ${input.canonicalMessageId}`,
+    );
   }
   const targetChannel =
     input.targetChannel
@@ -775,7 +792,9 @@ function requireMatchingCanonicalMessage(input: {
     (input.agentId !== undefined && message.agentId !== input.agentId) ||
     (input.originSessionKey !== undefined && message.originSessionKey !== input.originSessionKey);
   if (mismatch) {
-    throw new Error(`Canonical outbound message does not match delivery context: ${input.canonicalMessageId}`);
+    throw new CanonicalOutboundMessageContractError(
+      `Canonical outbound message does not match delivery context: ${input.canonicalMessageId}`,
+    );
   }
   return message;
 }
@@ -964,6 +983,7 @@ function postSendPhaseFailure(
   error: unknown,
 ): ChannelOutboundProcessingResult {
   const message = errorMessage(error);
+  const retryable = !(phase === "canonical_persist" && error instanceof CanonicalOutboundMessageContractError);
   if (receipt) {
     try {
       receiptStore.recordError(job.request.idempotencyKey, phase, message);
@@ -975,12 +995,23 @@ function postSendPhaseFailure(
       });
     }
   }
-  log.warn("Native outbound post-send phase failed; delivery will resume", {
-    jobId: job.jobId,
-    phase,
+  log.warn(
+    retryable
+      ? "Native outbound post-send phase failed; delivery will resume"
+      : "Native outbound canonical persistence rejected; provider delivery will not be retried",
+    {
+      jobId: job.jobId,
+      phase,
+      error: message,
+    },
+  );
+  return {
+    disposition: retryable ? "nak" : "ack",
+    status: "delivered",
+    retryable,
     error: message,
-  });
-  return { disposition: "nak", status: "delivered", retryable: true, error: message, phase };
+    phase,
+  };
 }
 
 async function emitDelivery(

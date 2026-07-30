@@ -17,10 +17,17 @@
    interruption and verify ordered readback.
 10. Project commentary through a transport sink and confirm it receives the
     original external target, enters the durable outbound ledger by event ID,
-    retries without duplication, and remains separate from terminal output.
+    retries without duplication, remains separate from terminal output, and
+    does not create a canonical Chat Message.
 11. Project interrupted, sentinel, silent-token, heartbeat-only, no-response,
     and unknown-phase assistant content; confirm none enters commentary
     delivery.
 12. Deliver one terminal assistant output and confirm the provider delivery
     identity attaches to the existing canonical Message without increasing
     the canonical Message count.
+13. Move the Session to another Chat after the terminal job is enqueued and
+    confirm delivery still validates against the accepted Turn binding.
+14. Remove or mismatch the terminal canonical Message before handoff and
+    confirm pre-send failure is closed; simulate the same mismatch after a
+    successful provider send and confirm the job is acknowledged without a
+    second provider call.

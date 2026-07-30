@@ -122,11 +122,22 @@ MUST both recover after expiry or restart.
   separate from terminal output, MUST enter the durable outbound delivery
   path before the sink reports success, and MUST use the event ID as its
   delivery idempotency key.
+- Commentary provider delivery MUST attach transport metadata to the durable
+  runtime event context and MUST NOT create a canonical Chat Message. Runtime
+  event readback remains authoritative for commentary.
 - A terminal assistant result MUST persist before terminal completion is
   reported.
 - Terminal transport delivery MUST correlate to that already-persisted
   canonical assistant Message. Provider delivery identity and timestamps MUST
-  attach to it without inserting a second canonical Message.
+  attach through provider metadata without mutating or inserting a second
+  canonical Message.
+- The durable terminal job MUST capture the accepted binding's canonical Chat
+  identity. Delivery MUST NOT re-derive it from a session binding that may
+  have moved after the Turn was accepted.
+- Missing or mismatched canonical terminal state MUST fail closed before
+  provider handoff. If the provider send has already succeeded, the receipt
+  MUST retain the structural error and the consumer MUST acknowledge it
+  without initiating another provider send.
 - Suppressed non-commentary outcomes MAY remain in the local conversation
   history for continuity and audit without becoming transport output.
 - An intentionally suppressed completed Turn terminates with

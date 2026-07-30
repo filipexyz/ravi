@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { getOrCreateSession } from "../router/sessions.js";
-import { dbBindSessionToChat, dbUpsertChat } from "../router/router-db.js";
+import { dbBindSessionToChat, dbUpsertChat, dbUpsertChatMessage } from "../router/router-db.js";
 import { createSlackThreadLifecycle, getSlackThreadLifecycle } from "./slack/thread-lifecycle-store.js";
 import type { NativeChatActionDelivery, NativeTextDelivery } from "./native/types.js";
 import {
@@ -837,6 +837,101 @@ describe("channel outbound consumer", () => {
       expect(getChannelOutboundReceipt(makeJob().request.idempotencyKey)?.platformMessageId).toBeUndefined();
       expect(getChannelOutboundReceipt(makeJob().request.idempotencyKey)?.canonicalMessageId).toBeUndefined();
     });
+
+    it("acks an unmatchable canonical delivery after send without calling the provider again", async () => {
+      const job = makeJob();
+      job.request.origin.canonicalMessageId = "cm_missing";
+      job.request.target.canonicalChatId = "chat_123";
+      const delivery = makeDelivery();
+
+      const first = await processChannelOutboundJob(job, {
+        deliveries: [delivery],
+        emitEvent: async () => {},
+        recordDeliveryTrace: () => null,
+      });
+      const repeated = await processChannelOutboundJob(job, {
+        deliveries: [delivery],
+        emitEvent: async () => {},
+        recordDeliveryTrace: () => null,
+      });
+
+      expect(first).toMatchObject({
+        disposition: "ack",
+        status: "delivered",
+        retryable: false,
+        phase: "canonical_persist",
+        error: "Canonical outbound message not found: cm_missing",
+      });
+      expect(repeated).toMatchObject({
+        disposition: "ack",
+        status: "delivered",
+        retryable: false,
+        phase: "canonical_persist",
+      });
+      expect(delivery.deliverText).toHaveBeenCalledTimes(1);
+      expect(getChannelOutboundReceipt(job.request.idempotencyKey)).toMatchObject({
+        state: "sent",
+        lastErrorPhase: "canonical_persist",
+        lastErrorMessage: "Canonical outbound message not found: cm_missing",
+      });
+    });
+
+    it("keeps terminal delivery bound to the accepted canonical chat after the session moves", async () => {
+      getOrCreateSession("ravi-channels", "main", "/tmp/main", { name: "ravi-channels" });
+      const acceptedChat = dbUpsertChat({
+        channel: "slack",
+        instanceId: "slack-main",
+        platformChatId: "C123",
+        chatType: "channel",
+      });
+      dbBindSessionToChat({
+        sessionKey: "ravi-channels",
+        chatId: acceptedChat.id,
+        agentId: "main",
+      });
+      const assistant = dbUpsertChatMessage({
+        chatId: acceptedChat.id,
+        channel: "slack",
+        instanceId: "slack-main",
+        providerMessageId: "channel-runtime-assistant",
+        rawChatId: "C123",
+        actorType: "agent",
+        agentId: "main",
+        originSessionKey: "ravi-channels",
+        messageType: "text",
+        content: { blocks: [{ type: "text", text: "hello Slack" }] },
+        rawProvenance: { source: "channel.runtime" },
+      });
+      const movedChat = dbUpsertChat({
+        channel: "slack",
+        instanceId: "slack-main",
+        platformChatId: "C456",
+        chatType: "channel",
+      });
+      dbBindSessionToChat({
+        sessionKey: "ravi-channels",
+        chatId: movedChat.id,
+        agentId: "main",
+      });
+      const job = makeJob();
+      job.request.origin.responsePhase = "final_answer";
+      job.request.origin.canonicalMessageId = assistant.canonicalMessageId;
+      job.request.target.canonicalChatId = acceptedChat.id;
+      const delivery = makeDelivery();
+
+      const result = await processChannelOutboundJob(job, {
+        deliveries: [delivery],
+        emitEvent: async () => {},
+        recordDeliveryTrace: () => null,
+      });
+
+      expect(result).toEqual({ disposition: "ack", status: "delivered", retryable: false });
+      expect(delivery.deliverText).toHaveBeenCalledTimes(1);
+      expect(getChannelOutboundReceipt(job.request.idempotencyKey)).toMatchObject({
+        state: "complete",
+        canonicalMessageId: assistant.canonicalMessageId,
+      });
+    });
   });
 
   it("persists the real provider id when the delivery id is composite", () => {
@@ -916,6 +1011,54 @@ describe("channel outbound consumer", () => {
     );
 
     expect(saveMessageMeta).toHaveBeenCalledTimes(1);
+    expect(upsertChatMessage).not.toHaveBeenCalled();
+    expect(persisted).toEqual({
+      platformMessageId: "1711111111.000100",
+      providerTimestamp: 1_711_111_111_000,
+    });
+  });
+
+  it("keeps commentary in runtime readback while recording only its provider delivery metadata", () => {
+    const job = makeJob();
+    job.request.origin.responsePhase = "commentary";
+    job.request.target.canonicalChatId = "chat_123";
+    const saveMessageMeta = mock(() => undefined);
+    const upsertChatMessage = mock(() => {
+      throw new Error("commentary must not become a canonical chat message");
+    });
+
+    const persisted = persistDeliveredMessage(
+      job,
+      {
+        provider: "slack",
+        platformMessageId: "1711111111.000100",
+        providerTimestamp: 1_711_111_111_000,
+      },
+      "working",
+      {
+        resolveContext: () => ({
+          agentId: "main",
+          canonicalChatId: "chat_123",
+          originSessionKey: "agent:main:slack:slack-main:C123",
+          agentIdentity: null,
+        }),
+        getChatMessage: mock(() => null),
+        saveMessageMeta: saveMessageMeta as never,
+        upsertChatMessage: upsertChatMessage as never,
+      },
+    );
+
+    expect(saveMessageMeta).toHaveBeenCalledWith(
+      "1711111111.000100",
+      "C123",
+      expect.objectContaining({
+        canonicalChatId: "chat_123",
+        identityProvenance: expect.objectContaining({
+          responsePhase: "commentary",
+          canonicalMessageId: null,
+        }),
+      }),
+    );
     expect(upsertChatMessage).not.toHaveBeenCalled();
     expect(persisted).toEqual({
       platformMessageId: "1711111111.000100",
