@@ -78,6 +78,8 @@ import {
   resolveTaskRuntimeOptions,
 } from "./runtime-options.js";
 import { dbGetTaskWorkflowSurface, syncWorkflowNodeRunForTask, type TaskWorkflowSurface } from "../workflows/index.js";
+import { resolveAgentModelSelection } from "../runtime/model-preset-resolver.js";
+import { validateProviderModelCompatibility } from "../runtime/model-validation.js";
 import type {
   ResolvedTaskProfile,
   TaskArchiveInput,
@@ -1334,6 +1336,62 @@ function assertTaskStartAllowed(task: TaskRecord, action: "dispatch" | "arm a la
   }
 }
 
+/**
+ * Fail fast when the effective provider×model pair is clearly incompatible
+ * (e.g. provider=claude with model=codex) instead of materializing a session
+ * that dies within seconds and leaves the task stuck at 0%.
+ * Conservative: unknown providers/models are never blocked.
+ */
+function assertTaskDispatchProviderModelCompatibility(
+  task: TaskRecord,
+  profile: ResolvedTaskProfile,
+  input: DispatchTaskInput,
+  agentId: string,
+  sessionModelOverride?: string | null,
+  sessionProviderOverride?: string | null,
+): void {
+  const agent = getAgent(agentId);
+  if (!agent) {
+    return;
+  }
+
+  const selection = resolveAgentModelSelection(agent);
+  const runtime = resolveTaskRuntimeOptions({
+    task,
+    profile,
+    assignment: input.runtimeOverride ? { runtimeOverride: input.runtimeOverride } : undefined,
+    sessionModelOverride: sessionModelOverride ?? undefined,
+    agentModel: selection.modelSource === "agent_default" ? selection.effectiveModel : undefined,
+    agentModelPreset:
+      selection.modelSource === "agent_preset" &&
+      selection.effectiveModel &&
+      selection.modelPresetId &&
+      selection.modelPresetVersion !== null
+        ? {
+            model: selection.effectiveModel,
+            presetId: selection.modelPresetId,
+            version: selection.modelPresetVersion,
+          }
+        : null,
+    configModel: loadConfig().model,
+  });
+
+  const model = runtime.options.model;
+  if (!model) {
+    return;
+  }
+
+  const effectiveProvider = sessionProviderOverride ?? selection.effectiveProvider;
+  const providerSource = sessionProviderOverride ? "session provider override" : "agent default";
+  const result = validateProviderModelCompatibility(effectiveProvider, model);
+  if (!result.ok) {
+    throw new Error(
+      `Task ${task.id} dispatch blocked for agent '${agentId}' ` +
+        `(model source: ${runtime.sources.model ?? "unknown"}, provider source: ${providerSource}). ${result.error}`,
+    );
+  }
+}
+
 function prepareTaskDispatchContext(
   task: TaskRecord,
   input: DispatchTaskInput,
@@ -1368,6 +1426,14 @@ function prepareTaskDispatchContext(
       `Session ${input.sessionName} already belongs to agent ${existingSession.agentId}, not ${resolvedAgent.id}.`,
     );
   }
+  assertTaskDispatchProviderModelCompatibility(
+    bootstrappedTask,
+    profile,
+    input,
+    resolvedAgent.id,
+    existingSession?.modelOverride,
+    existingSession?.runtimeProviderOverride,
+  );
 
   let sessionName = existingSession?.name ?? input.sessionName;
   if (options.materializeSession) {

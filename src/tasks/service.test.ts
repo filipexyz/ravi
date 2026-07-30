@@ -1338,6 +1338,180 @@ describe("task substrate contract", () => {
     expect(getTaskDetails(created.task.id).events.map((event) => event.type)).toEqual(["task.created"]);
   });
 
+  it("rejects dispatch before creating a session when the agent model is incompatible with its provider", async () => {
+    const agentId = "claude-with-codex-model";
+    createdAgentIds.push(agentId);
+    dbCreateAgent({ id: agentId, cwd: "/tmp/ravi-provider-model-agent", provider: "claude", model: "codex" });
+
+    const created = createTask({
+      title: "Incompatible provider/model dispatch",
+      instructions: "Fail fast instead of dispatching a session that dies immediately",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const sessionName = `${created.task.id}-work`;
+    await expect(
+      dispatchTask(created.task.id, {
+        agentId,
+        sessionName,
+        assignedBy: "test",
+      }),
+    ).rejects.toThrow(/model 'codex'.*provider 'claude'/i);
+
+    expect(resolveSession(sessionName)).toBeNull();
+    expect(dbGetTask(created.task.id)?.status).toBe("open");
+    expect(getTaskDetails(created.task.id).activeAssignment).toBeNull();
+  });
+
+  it("rejects dispatch when the session provider override conflicts with the effective model", async () => {
+    const agentId = "codex-agent-session-claude-override";
+    const sessionName = "codex-agent-claude-override-work";
+    createdAgentIds.push(agentId);
+    createdSessionNames.push(sessionName);
+    dbCreateAgent({ id: agentId, cwd: "/tmp/ravi-provider-model-agent", provider: "codex", model: "codex" });
+    getOrCreateSession(`agent:${agentId}:provider-override`, agentId, "/tmp/ravi-provider-model-agent", {
+      name: sessionName,
+      runtimeProviderOverride: "claude",
+    });
+
+    const created = createTask({
+      title: "Session provider override conflicts with model",
+      instructions: "The session override sets the real runtime provider, so codex model must be rejected",
+      createdBy: "test",
+    });
+    createdTaskIds.push(created.task.id);
+
+    await expect(
+      dispatchTask(created.task.id, {
+        agentId,
+        sessionName,
+        assignedBy: "test",
+      }),
+    ).rejects.toThrow(/session provider override.*model 'codex'.*provider 'claude'/i);
+
+    expect(dbGetTask(created.task.id)?.status).toBe("open");
+    expect(getTaskDetails(created.task.id).activeAssignment).toBeNull();
+  });
+
+  it("dispatches when the session provider override makes the provider/model pair valid", async () => {
+    const agentId = "claude-agent-session-codex-override";
+    const sessionName = "claude-agent-codex-override-work";
+    createdAgentIds.push(agentId);
+    createdSessionNames.push(sessionName);
+    dbCreateAgent({ id: agentId, cwd: "/tmp/ravi-provider-model-agent", provider: "claude", model: "codex" });
+    getOrCreateSession(`agent:${agentId}:provider-override`, agentId, "/tmp/ravi-provider-model-agent", {
+      name: sessionName,
+      runtimeProviderOverride: "codex",
+    });
+
+    const created = createTask({
+      title: "Session provider override fixes the pair",
+      instructions: "The session override provider codex makes the codex model valid",
+      createdBy: "test",
+      profileId: "task-doc-none",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const dispatched = await dispatchTask(created.task.id, {
+      agentId,
+      sessionName,
+      assignedBy: "test",
+    });
+    expect(dispatched.task.status).toBe("dispatched");
+  });
+
+  it("rejects a launch plan when the agent model is incompatible with its provider", async () => {
+    const agentId = "claude-launch-plan-agent";
+    createdAgentIds.push(agentId);
+    dbCreateAgent({ id: agentId, cwd: "/tmp/ravi-provider-model-agent", provider: "claude", model: "gpt-5.4" });
+
+    const upstream = createTask({
+      title: "Upstream dependency",
+      instructions: "Blocks the downstream task until done",
+      createdBy: "test",
+    });
+    createdTaskIds.push(upstream.task.id);
+    const downstream = createTask({
+      title: "Downstream launch plan",
+      instructions: "Should fail fast when the launch plan targets an invalid provider/model pair",
+      createdBy: "test",
+    });
+    createdTaskIds.push(downstream.task.id);
+    dbAddTaskDependency(downstream.task.id, upstream.task.id);
+
+    await expect(
+      queueOrDispatchTask(downstream.task.id, {
+        agentId,
+        sessionName: `${downstream.task.id}-work`,
+        assignedBy: "test",
+      }),
+    ).rejects.toThrow(/provider 'claude'/);
+    expect(getTaskLaunchPlan(downstream.task.id)).toBeNull();
+  });
+
+  it("dispatches normally when the provider/model pair is valid", async () => {
+    const agentId = "claude-valid-model-agent";
+    const sessionName = "claude-valid-model-work";
+    createdAgentIds.push(agentId);
+    createdSessionNames.push(sessionName);
+    dbCreateAgent({ id: agentId, cwd: "/tmp/ravi-provider-model-agent", provider: "claude", model: "sonnet" });
+
+    const created = createTask({
+      title: "Valid provider/model dispatch",
+      instructions: "Dispatch succeeds for a compatible pair",
+      createdBy: "test",
+      profileId: "task-doc-none",
+    });
+    createdTaskIds.push(created.task.id);
+
+    const dispatched = await dispatchTask(created.task.id, {
+      agentId,
+      sessionName,
+      assignedBy: "test",
+    });
+    expect(dispatched.task.status).toBe("dispatched");
+  });
+
+  it("does not block dispatch for unknown providers or unrecognized models", async () => {
+    const unknownProviderAgent = "custom-provider-agent";
+    const unknownModelAgent = "codex-experimental-model-agent";
+    createdAgentIds.push(unknownProviderAgent, unknownModelAgent);
+    dbCreateAgent({
+      id: unknownProviderAgent,
+      cwd: "/tmp/ravi-provider-model-agent",
+      provider: "custom-runtime",
+      model: "codex",
+    });
+    dbCreateAgent({
+      id: unknownModelAgent,
+      cwd: "/tmp/ravi-provider-model-agent",
+      provider: "codex",
+      model: "some-experimental-model",
+    });
+
+    for (const [agentId, sessionName] of [
+      [unknownProviderAgent, "custom-provider-work"],
+      [unknownModelAgent, "codex-experimental-work"],
+    ] as const) {
+      createdSessionNames.push(sessionName);
+      const created = createTask({
+        title: `Fail-open dispatch ${agentId}`,
+        instructions: "Unknown providers/models must not block dispatch",
+        createdBy: "test",
+        profileId: "task-doc-none",
+      });
+      createdTaskIds.push(created.task.id);
+
+      const dispatched = await dispatchTask(created.task.id, {
+        agentId,
+        sessionName,
+        assignedBy: "test",
+      });
+      expect(dispatched.task.status).toBe("dispatched");
+    }
+  });
+
   it("builds a resume prompt that preserves task progress across daemon restart", () => {
     const created = dbCreateTask({
       title: "Resume smoke",
