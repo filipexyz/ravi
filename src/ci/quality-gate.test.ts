@@ -286,6 +286,17 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/router/"]);
   });
 
+  it("accepts crash recovery store coverage across router persistence and runtime changes", () => {
+    const result = runCoverageGate([
+      "src/router/router-db.ts",
+      "src/runtime/crash-recovery-store.ts",
+      "src/runtime/crash-recovery-store.test.ts",
+    ]);
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/router/", "src/runtime/"]);
+  });
+
   it("accepts channel backend coverage across channel, router, and runtime changes", () => {
     const result = runCoverageGate([
       "src/channels/backend.ts",

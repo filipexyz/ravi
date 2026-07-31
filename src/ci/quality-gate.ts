@@ -43,6 +43,8 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/router/chat-schema.test.ts",
     "src/router/sessions.test.ts",
     "src/router/resolver.test.ts",
+    // Crash-recovery storage covers both the router schema and its typed runtime DAO.
+    "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/session-goals.test.ts",
     // Skill-grant store (dbUpsert/List/DeleteSkillGrant*) is exercised here.
     "src/cli/commands/skills.test.ts",
@@ -54,6 +56,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/index.test.ts",
     "src/runtime/model-catalog.test.ts",
     "src/runtime/context-registry.test.ts",
+    "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/observation-plane.test.ts",
     "src/runtime/runtime-request-context.test.ts",
     "src/runtime/session-goals.test.ts",
