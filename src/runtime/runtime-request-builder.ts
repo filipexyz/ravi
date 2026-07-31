@@ -1,4 +1,5 @@
 import { homedir } from "node:os";
+import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
 import { dbGetChat, dbGetSessionChatBinding } from "../router/router-db.js";
 import { configStore } from "../config-store.js";
@@ -6,14 +7,17 @@ import {
   buildRuntimeTracePromptSectionMetadata,
   createSessionTraceTurnId,
   recordAdapterRequestTrace,
+  recordTerminalTurnTrace,
   summarizeRuntimeCapabilities,
 } from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createRuntimeMessageGenerator } from "./delivery-queue.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
+  resolveRuntimeToolEffectFence,
   type RuntimeHostStreamingSession,
   type RuntimeMessageTarget,
   type RuntimeUserMessage,
@@ -39,7 +43,24 @@ import {
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
-import type { RuntimeCapabilities, RuntimeProviderId, RuntimeStartRequest, SessionRuntimeProvider } from "./types.js";
+import type {
+  RuntimeApprovalResult,
+  RuntimeCapabilities,
+  RuntimeHostServices,
+  RuntimeProviderId,
+  RuntimeStartRequest,
+  SessionRuntimeProvider,
+} from "./types.js";
+
+const CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON =
+  "Runtime action approval denied because durable turn ownership changed before authorization completed.";
+
+class RuntimeCrashRecoveryApprovalOwnershipChangedError extends Error {
+  constructor() {
+    super(CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON);
+    this.name = "RuntimeCrashRecoveryApprovalOwnershipChangedError";
+  }
+}
 
 export interface RuntimeStartRequestBuildOptions {
   runId: string;
@@ -62,12 +83,139 @@ export interface RuntimeStartRequestBuildOptions {
   streamingSession: RuntimeHostStreamingSession;
   stashedMessages: Map<string, RuntimeUserMessage[]>;
   defaultRuntimeProviderId: RuntimeProviderId;
+  crashRecovery: RuntimeCrashRecoveryCoordinator;
 }
 
 export interface RuntimeStartRequestBuildResult {
   runtimeRequest: RuntimeStartRequest;
   toolContext: Record<string, unknown>;
   runtimeCredentialAttempt?: RuntimeCredentialAttemptBinding;
+}
+
+export function installCrashRecoveryApprovalFences(options: {
+  hostServices: RuntimeHostServices;
+  streamingSession: Pick<RuntimeHostStreamingSession, "currentCrashRecoveryAttemptId" | "currentTurnToolStarted">;
+  crashRecovery: Pick<RuntimeCrashRecoveryCoordinator, "markTurnAttemptSafety">;
+}): void {
+  const { hostServices, streamingSession, crashRecovery } = options;
+  const authorizeCapability = hostServices.authorizeCapability.bind(hostServices);
+  const authorizeCommandExecution = hostServices.authorizeCommandExecution.bind(hostServices);
+  const authorizeToolUse = hostServices.authorizeToolUse.bind(hostServices);
+  const requestUserInput = hostServices.requestUserInput.bind(hostServices);
+
+  const denyOwnershipChanged = (): RuntimeApprovalResult => ({
+    approved: false,
+    reason: CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON,
+  });
+
+  const denyCapabilityOwnershipChanged = () => ({
+    allowed: false,
+    inherited: false,
+    reason: CRASH_RECOVERY_APPROVAL_OWNERSHIP_CHANGED_REASON,
+  });
+
+  const createBeforeExternalApprovalFence = (attemptId: string) => () => {
+    if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
+      throw new RuntimeCrashRecoveryApprovalOwnershipChangedError();
+    }
+    crashRecovery.markTurnAttemptSafety({ attemptId, materializedOutput: true });
+    if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
+      throw new RuntimeCrashRecoveryApprovalOwnershipChangedError();
+    }
+  };
+
+  const authorizeWithFence = async (
+    authorize: (beforeExternalApproval: () => void) => Promise<RuntimeApprovalResult>,
+  ): Promise<RuntimeApprovalResult> => {
+    const attemptId = streamingSession.currentCrashRecoveryAttemptId;
+    if (!attemptId) {
+      return denyOwnershipChanged();
+    }
+    let result: RuntimeApprovalResult;
+    try {
+      result = await authorize(createBeforeExternalApprovalFence(attemptId));
+    } catch (error) {
+      if (error instanceof RuntimeCrashRecoveryApprovalOwnershipChangedError) {
+        return denyOwnershipChanged();
+      }
+      throw error;
+    }
+
+    if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
+      return denyOwnershipChanged();
+    }
+    if (!result.approved) return result;
+
+    // This is the last host-owned boundary before an approved command or tool
+    // can produce an external effect. The marker must be durable before allow.
+    crashRecovery.markTurnAttemptSafety({ attemptId, startedTool: true });
+    if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
+      return denyOwnershipChanged();
+    }
+    // Approval is itself the final host boundary before a side effect. Keep the
+    // volatile retry guard aligned with the durable safety marker even when an
+    // adapter never emits a later tool.started event.
+    streamingSession.currentTurnToolStarted = true;
+    return result;
+  };
+
+  const authorizeCapabilityWithFence: RuntimeHostServices["authorizeCapability"] = async (request) => {
+    const attemptId = streamingSession.currentCrashRecoveryAttemptId;
+    if (!attemptId) {
+      return denyCapabilityOwnershipChanged();
+    }
+
+    let result: Awaited<ReturnType<RuntimeHostServices["authorizeCapability"]>>;
+    try {
+      result = await authorizeCapability({
+        ...request,
+        beforeExternalApproval: createBeforeExternalApprovalFence(attemptId),
+      });
+    } catch (error) {
+      if (error instanceof RuntimeCrashRecoveryApprovalOwnershipChangedError) {
+        return denyCapabilityOwnershipChanged();
+      }
+      throw error;
+    }
+    if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
+      return denyCapabilityOwnershipChanged();
+    }
+    return result;
+  };
+
+  const requestUserInputWithFence: RuntimeHostServices["requestUserInput"] = async (request) => {
+    const attemptId = streamingSession.currentCrashRecoveryAttemptId;
+    if (!attemptId) {
+      return denyOwnershipChanged();
+    }
+
+    let result: RuntimeApprovalResult;
+    try {
+      result = await requestUserInput({
+        ...request,
+        beforeExternalApproval: createBeforeExternalApprovalFence(attemptId),
+      });
+    } catch (error) {
+      if (error instanceof RuntimeCrashRecoveryApprovalOwnershipChangedError) {
+        return denyOwnershipChanged();
+      }
+      throw error;
+    }
+    if (streamingSession.currentCrashRecoveryAttemptId !== attemptId) {
+      return denyOwnershipChanged();
+    }
+    return result;
+  };
+
+  // Provider bootstrap closures (notably Codex approveRuntimeRequest) capture
+  // this object by reference. Mutating the same object keeps adapters unaware
+  // of the ledger while fencing capability, tool, command, and user-input boundaries.
+  hostServices.authorizeCapability = authorizeCapabilityWithFence;
+  hostServices.authorizeCommandExecution = (request) =>
+    authorizeWithFence((beforeExternalApproval) => authorizeCommandExecution({ ...request, beforeExternalApproval }));
+  hostServices.authorizeToolUse = (request) =>
+    authorizeWithFence((beforeExternalApproval) => authorizeToolUse({ ...request, beforeExternalApproval }));
+  hostServices.requestUserInput = requestUserInputWithFence;
 }
 
 export function resolveRuntimePromptSource(
@@ -169,7 +317,10 @@ export async function buildRuntimeStartRequest(
     streamingSession,
     stashedMessages,
     defaultRuntimeProviderId,
+    crashRecovery,
   } = options;
+  const toolEffectFence = resolveRuntimeToolEffectFence(runtimeProviderId, runtimeCapabilities.tools.permissionMode);
+  streamingSession.toolEffectFence = toolEffectFence;
 
   const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
     dbSessionKey,
@@ -196,6 +347,7 @@ export async function buildRuntimeStartRequest(
     context: runtimeContext,
     session,
   });
+  installCrashRecoveryApprovalFences({ hostServices, streamingSession, crashRecovery });
   const credentialResolution = await resolveRuntimeCredentialAttemptBinding({
     runtimeProvider: runtimeProviderId,
     upstreamProvider: resolveRuntimeCredentialUpstreamProvider(runtimeProviderId, model),
@@ -256,6 +408,8 @@ export async function buildRuntimeStartRequest(
     sessionCwd,
     resolvedSource,
     approvalSource,
+    streamingSession,
+    crashRecovery,
   });
   const { text: systemPromptAppend, sections: systemPromptSections } = await buildRuntimeSystemPrompt({
     agent,
@@ -277,6 +431,7 @@ export async function buildRuntimeStartRequest(
   const traceTurnStart = (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
     const firstMessage = input.deliverableMessages[0];
     const turnId = createSessionTraceTurnId();
+    const currentModel = streamingSession.currentModel;
     const runtimeCredential = credentialResolution.attemptBinding;
     if (runtimeCredential && !runtimeCredential.attemptId) {
       runtimeCredential.attemptId = reserveRuntimeCredentialAttempt({
@@ -287,20 +442,20 @@ export async function buildRuntimeStartRequest(
         turnId,
         runtimeProvider: runtimeCredential.runtimeProvider,
         upstreamProvider: runtimeCredential.upstreamProvider,
-        model,
+        model: currentModel,
         metadata: { reason: "turn" },
       });
     }
     bindRuntimeCredentialAttemptTurn(runtimeCredential?.attemptId, turnId);
     markRuntimeCredentialAttemptStarted(runtimeCredential?.attemptId);
-    return recordAdapterRequestTrace({
+    const traceTurn = recordAdapterRequestTrace({
       sessionKey: dbSessionKey,
       sessionName,
       agentId: agent.id,
       runId,
       turnId,
       provider: runtimeProviderId,
-      model,
+      model: currentModel,
       effort: runtimeResolution.options.effort ?? null,
       thinking: runtimeResolution.options.thinking ?? null,
       modelSource: runtimeResolution.sources.model,
@@ -335,6 +490,79 @@ export async function buildRuntimeStartRequest(
       runtimeCredential: runtimeCredential ? serializeRuntimeCredentialAttemptBinding(runtimeCredential) : null,
       turnProvenance: streamingSession.currentTurnProvenance ?? null,
     });
+    if (!traceTurn) {
+      throw new Error(`Failed to persist the adapter request for runtime turn ${turnId}`);
+    }
+
+    const turnProvenance =
+      streamingSession.currentTurnProvenance ??
+      classifyTurnProvenance({ source: streamingSession.currentSource ?? resolvedSource });
+    const pendingIds = input.deliverableMessages
+      .map((message) => message.pendingId)
+      .filter((id): id is string => Boolean(id));
+    let attempt: ReturnType<RuntimeCrashRecoveryCoordinator["startTurnAttempt"]>;
+    try {
+      attempt = crashRecovery.startTurnAttempt(
+        {
+          turnId: traceTurn.turnId,
+          runId,
+          sessionKey: dbSessionKey,
+          sessionName,
+          agentId: agent.id,
+          provider: runtimeProviderId,
+          model: currentModel,
+          startedAt: traceTurn.startedAt,
+          requestBlobSha256: traceTurn.requestBlobSha256,
+          userPromptSha256: traceTurn.userPromptSha256,
+          systemPromptSha256: traceTurn.systemPromptSha256,
+          originKind: turnProvenance.origin,
+          source: streamingSession.currentSource ?? resolvedSource ?? null,
+          turnProvenance,
+          taskBarrierTaskId: firstMessage?.taskBarrierTaskId ?? null,
+          deliveryBarrier: firstMessage?.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER,
+          pendingIds,
+          metadata: {
+            deliveryBarrierSource: firstMessage?.deliveryBarrierSource ?? null,
+            queuedMessageCount: input.deliverableMessages.length,
+            toolEffectFence,
+          },
+        },
+        {
+          onOwnershipLost: () => {
+            // The coordinator already cleared ownership. Detach the stale
+            // session binding before abort handlers inspect or terminalize it.
+            streamingSession.currentCrashRecoveryAttemptId = undefined;
+            streamingSession.internalAbortReason = "crash_recovery_ownership_lost";
+            if (!streamingSession.abortController.signal.aborted) {
+              streamingSession.abortController.abort();
+            }
+          },
+        },
+      );
+    } catch (error) {
+      const completedAt = Math.max(Date.now(), traceTurn.startedAt);
+      recordTerminalTurnTrace({
+        sessionKey: dbSessionKey,
+        sessionName,
+        agentId: agent.id,
+        runId,
+        turnId: traceTurn.turnId,
+        provider: runtimeProviderId,
+        model: currentModel,
+        status: "failed",
+        eventType: "turn.failed",
+        abortReason: "durable_attempt_persistence_failed",
+        error: error instanceof Error ? error.message : String(error),
+        startedAt: traceTurn.startedAt,
+        completedAt,
+        payloadJson: {
+          phase: "runtime.durable_attempt_preparation",
+          providerDelivered: false,
+        },
+      });
+      throw error;
+    }
+    return { ...traceTurn, crashRecoveryAttemptId: attempt.attemptId };
   };
   const messageGenerator = createRuntimeMessageGenerator({
     sessionName,

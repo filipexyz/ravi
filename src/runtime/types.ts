@@ -128,11 +128,15 @@ export interface RuntimeApprovalEvent {
 
 export type RuntimeApprovalHandler = (request: RuntimeApprovalRequest) => Promise<RuntimeApprovalResult>;
 
+/** Host-only fence invoked immediately before an approval/user-input request becomes externally visible. */
+export type RuntimeBeforeExternalApproval = () => void;
+
 export interface RuntimeCapabilityAuthorizationRequest {
   permission: string;
   objectType: string;
   objectId: string;
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: RuntimeBeforeExternalApproval;
 }
 
 export interface RuntimeCapabilityAuthorizationResult {
@@ -145,17 +149,20 @@ export interface RuntimeCommandAuthorizationRequest {
   command: string;
   input?: Record<string, unknown>;
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: RuntimeBeforeExternalApproval;
 }
 
 export interface RuntimeToolUseAuthorizationRequest {
   toolName: string;
   input?: Record<string, unknown>;
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: RuntimeBeforeExternalApproval;
 }
 
 export interface RuntimeUserInputRequest {
   questions: RuntimeApprovalQuestion[];
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: RuntimeBeforeExternalApproval;
 }
 
 export interface RuntimeDynamicToolSpec {

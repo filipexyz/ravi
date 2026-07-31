@@ -99,6 +99,8 @@ export interface ObservationPromptMetadata {
 export interface DaemonRestartResumePromptMetadata {
   restartEpoch: string;
   sessionKey?: string;
+  /** Wake the runtime with persisted pending successors only; never append a generic continuation. */
+  pendingOnly?: true;
 }
 
 export interface ChannelBackendPromptMetadata {

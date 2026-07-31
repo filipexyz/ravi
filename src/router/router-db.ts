@@ -6594,6 +6594,16 @@ export function dbListEligibleDaemonRestartSessionSnapshots(input: {
   return rows.map(rowToDaemonRestartSessionSnapshot);
 }
 
+export function dbGetDaemonRestartSessionSnapshot(
+  restartEpoch: string,
+  sessionKey: string,
+): DaemonRestartSessionSnapshotRecord | null {
+  const row = getDb()
+    .prepare("SELECT * FROM daemon_restart_session_snapshots WHERE restart_epoch = ? AND session_key = ?")
+    .get(restartEpoch, sessionKey) as DaemonRestartSessionSnapshotRow | undefined;
+  return row ? rowToDaemonRestartSessionSnapshot(row) : null;
+}
+
 export function dbGetDaemonRestartPendingMessages(restartEpoch: string, sessionKey: string): unknown[] {
   const row = getDb()
     .prepare(

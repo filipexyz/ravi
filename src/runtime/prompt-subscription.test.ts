@@ -5,12 +5,26 @@ const ensureInfrastructureMock = mock(async () => {});
 const emitCalls: Array<{ topic: string; payload: Record<string, unknown> }> = [];
 
 let running = false;
+let consumedMessages: FakePromptMessage[] = [];
+
+interface FakePromptMessage {
+  data: Uint8Array;
+  subject: string;
+  ack: ReturnType<typeof mock>;
+  nak: ReturnType<typeof mock>;
+}
 
 const fakeConsumer = {
   consume: mock(async (options: Record<string, unknown>) => {
     consumeCalls.push(options);
-    running = false;
-    return (async function* () {})();
+    const messages = [...consumedMessages];
+    return (async function* () {
+      try {
+        yield* messages;
+      } finally {
+        running = false;
+      }
+    })();
   }),
 };
 
@@ -49,6 +63,7 @@ afterAll(() => {
 
 beforeEach(() => {
   running = true;
+  consumedMessages = [];
   consumeCalls.length = 0;
   emitCalls.length = 0;
   ensureInfrastructureMock.mockClear();
@@ -60,6 +75,7 @@ describe("RuntimePromptSubscription", () => {
   it("aborts the pull loop when SESSION_PROMPTS resources disappear", async () => {
     const subscription = new RuntimePromptSubscription({
       isRunning: () => running,
+      canAcceptPrompt: () => true,
       getStreamingSessionCount: () => 0,
       ensurePromptInfrastructure: ensureInfrastructureMock,
       markConsumerReady: mock(() => {}),
@@ -77,7 +93,64 @@ describe("RuntimePromptSubscription", () => {
       abort_on_missing_resource: true,
     });
   });
+
+  it("ACKs and dispatches a prompt only after the intake fence accepts it", async () => {
+    const message = makePromptMessage("ravi.session.dev.prompt", { prompt: "continue" });
+    consumedMessages = [message];
+    const canAcceptPrompt = mock(() => true);
+    const handlePrompt = mock(async () => {});
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt,
+      getStreamingSessionCount: () => 0,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      markConsumerReady: mock(() => {}),
+      handlePrompt,
+    });
+
+    subscription.subscribe();
+    await waitUntil(() => !subscription.active);
+
+    expect(canAcceptPrompt).toHaveBeenCalledWith("dev");
+    expect(message.ack).toHaveBeenCalledTimes(1);
+    expect(message.nak).not.toHaveBeenCalled();
+    expect(handlePrompt).toHaveBeenCalledWith("dev", { prompt: "continue" });
+    expect(subscription.promptsReceived).toBe(1);
+  });
+
+  it("NAKs and stops the pull before ACK or dispatch when intake is fenced", async () => {
+    const message = makePromptMessage("ravi.session.dev.prompt", { prompt: "must remain durable" });
+    consumedMessages = [message];
+    const canAcceptPrompt = mock(() => false);
+    const handlePrompt = mock(async () => {});
+    const subscription = new RuntimePromptSubscription({
+      isRunning: () => running,
+      canAcceptPrompt,
+      getStreamingSessionCount: () => 0,
+      ensurePromptInfrastructure: ensureInfrastructureMock,
+      markConsumerReady: mock(() => {}),
+      handlePrompt,
+    });
+
+    subscription.subscribe();
+    await waitUntil(() => !subscription.active);
+
+    expect(canAcceptPrompt).toHaveBeenCalledWith("dev");
+    expect(message.nak).toHaveBeenCalledTimes(1);
+    expect(message.ack).not.toHaveBeenCalled();
+    expect(handlePrompt).not.toHaveBeenCalled();
+    expect(subscription.promptsReceived).toBe(0);
+  });
 });
+
+function makePromptMessage(subject: string, prompt: Record<string, unknown>): FakePromptMessage {
+  return {
+    subject,
+    data: new TextEncoder().encode(JSON.stringify(prompt)),
+    ack: mock(() => {}),
+    nak: mock(() => {}),
+  };
+}
 
 async function waitUntil(predicate: () => boolean, timeoutMs = 1000): Promise<void> {
   const startedAt = Date.now();

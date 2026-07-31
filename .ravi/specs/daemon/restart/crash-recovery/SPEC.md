@@ -16,11 +16,16 @@ tags:
   - runtime
   - ledger
 applies_to:
+  - src/bot.ts
   - src/router/router-db.ts
   - src/runtime/crash-recovery-store.ts
   - src/runtime/crash-recovery.ts
+  - src/runtime/prompt-subscription.ts
+  - src/runtime/runtime-request-builder.ts
+  - src/runtime/delivery-queue.ts
   - src/runtime/session-dispatcher.ts
   - src/runtime/host-event-loop.ts
+  - src/runtime/control-host.ts
   - src/daemon.ts
 owners:
   - dev
@@ -66,9 +71,31 @@ The attempt MUST record:
 - durable request/prompt/checkpoint references sufficient for later classification;
 - source, turn provenance, delivery barrier, task barrier, and pending ids;
 - monotonic `started_tool` and `materialized_output` safety markers;
+- durable `toolEffectFence` metadata distinguishing synchronous host write-ahead from asynchronous provider-event observation;
 - terminal state and recovery claim/result references.
 
 Every attempt MUST carry a durable request blob reference or provider checkpoint, and attempt/queue leases MUST NOT outlive the owning boot lease. An attempt owned by a live boot or with an unexpired lease MUST NOT be classified as an orphan. Terminal attempts MUST NOT return to `running`.
+
+The runtime host MUST create its boot epoch before accepting subscriptions. It MUST heartbeat the boot independently of provider events and renew the boot before its active attempts. Loss or expiry of a boot/attempt fence MUST stop new provider deliveries and abort every active owned attempt in memory. Every lease-authorized persistent mutation MUST re-read the current clock after the write and validate the lease that authorized the write; a renewal MUST NOT validate a stalled write against the newly extended lease.
+
+For each provider delivery, the host MUST persist the sanitized adapter request and create the attempt after resolving source/provenance but before the common prompt generator yields to any provider. Failure of either write MUST prevent delivery and retain the pending prompt. Provider adapters MUST remain unaware of the ledger.
+
+Safety evidence is write-ahead and monotonic:
+
+- adapters with a synchronous host tool boundary MUST set `started_tool` before returning allow, and observed tool start/completion/result events MUST set it before projection. Claude MUST finish every matching `PreToolUse` chain with a catch-all durable fence, including tools auto-allowed by `bypassPermissions`, and MUST deny execution if that fence cannot be persisted or revalidated;
+- a provider without a synchronous durable pre-tool acknowledgement MUST persist `toolEffectFence=provider_event_only` before handoff; absence of a later tool event MUST NOT make that physical turn replayable. Codex and Pi use this conservative mode until their adapters provide an acknowledged write-ahead hook;
+- externally streamable text or an accepted assistant message MUST set `materialized_output` before persistence, projection, or emission;
+- an external approval or user-input poll MUST set `materialized_output` immediately before each real poll publication, while a local/inherited decision that emits no poll MUST NOT create false output evidence;
+- provider-native raw events that contain assistant text or tool activity MUST follow the corresponding normalized safety fence, and raw assistant content rejected as interrupted, silent, heartbeat, or no-response MUST NOT be externalized;
+- repeated markers SHOULD be coalesced in memory after their first durable write.
+
+Attempt terminalization MUST be independent of the historical trace's terminal guard. The first terminal path wins, persists before waking the generator or starting a replacement runtime, retains the monotonic safety evidence after the active binding is removed, and uses the same status/timestamp as the canonical terminal trace. Graceful host shutdown MUST abort any remaining attempts before marking the boot `graceful_stopped` and closing the database.
+
+Existing bounded retry and graceful-restart paths MUST consume that durable safety evidence. A physical turn with `started_tool`, `materialized_output`, or `toolEffectFence=provider_event_only` MUST NOT be stashed or continued by a generic restart prompt. A physical turn already terminal at snapshot time is consumed regardless of its markers. A restart MAY continue a replay-safe current turn, MAY resume only independently queued durable successors, or MUST suppress continuation entirely; these cases are represented explicitly as `continue`, `pending_only`, and `skip` rather than inferred from prose. A caller restart reason/epoch without its expected session snapshot MUST resolve to `skip`; snapshot absence is not evidence that no physical turn existed.
+
+The legacy `RaviBot.start()` task-recovery heuristic MUST NOT publish a fresh `Continue task ...` prompt from task status/recency alone. It remains disabled until the classifier/sweeper can bind the logical task resume to durable attempt safety and a recovery decision; a fresh task row is not replay authorization.
+
+Prompt-bearing native controls (`turn.steer` and `turn.follow_up`) and implicit native steer MUST remain disabled until an append-only durable attempt-input journal can bind every added input to the owning attempt. `turn.interrupt` does not add input and MAY remain available.
 
 ### Prompt queue
 
@@ -120,6 +147,21 @@ The first implementation child is intentionally limited to:
 
 It MUST NOT start a recovery sweep, instrument daemon/provider lifecycle, persist the live dispatcher queue, classify candidates, resume work, add CLI apply surfaces, or claim crash/reboot E2E coverage. Those are later children.
 
+## Second Delivery Cut: Boot And Attempt Instrumentation
+
+The second implementation child is limited to:
+
+- one host-owned coordinator for the current boot epoch and active attempt leases;
+- boot creation/heartbeat/graceful close wired to the `RaviBot` lifecycle;
+- fail-closed attempt creation at the common provider handoff;
+- monotonic tool/output safety markers and canonical terminalization;
+- fail-closed safety integration for existing bounded retries and graceful restart snapshots;
+- disabling non-durable steer/follow-up input paths;
+- disabling the unclassified startup task-resume producer until the recovery classifier owns that decision;
+- focused lifecycle, handoff, event-loop, dispatcher, and control-host tests.
+
+It MUST NOT abandon prior boots, persist the live dispatcher queue, classify or claim candidates, run startup/reconnect sweeps, resume/requeue work, expose recovery CLI, or claim crash-harness E2E coverage.
+
 ## Acceptance Criteria
 
 - Schema creation is idempotent on an existing Ravi database.
@@ -138,12 +180,24 @@ It MUST NOT start a recovery sweep, instrument daemon/provider lifecycle, persis
 - Persisted prompt fingerprints are revalidated against row contents, including valid JSON tampering.
 - Regressive timestamps, divergent terminal retries, cross-session delivery, unknown safety enums, and incomplete source projections fail closed.
 - Candidate audit exposes decision, reason, proposed action, claim, action status, and result without deleting history.
-- No startup, dispatcher, provider, or channel behavior changes in this cut.
+- A boot epoch exists before runtime subscriptions accept work and becomes graceful only after owned attempts are terminal.
+- Every provider-consumed prompt has a running durable attempt with the same request hashes, source/provenance, barriers, and pending ids captured before handoff.
+- Lease/marker/terminal store failure makes the coordinator reject new deliveries and abort active ownership.
+- Expired cached ownership cannot create, mark, terminalize, or gracefully close work before the next timer tick.
+- Once ownership is lost, the prompt consumer NAKs before ACK and stops accepting new runtime input.
+- Unterminated input is not replayed after durable tool/output safety evidence exists.
+- Provider-event-only adapters never replay the current physical turn from absence of an asynchronous tool marker; only independent successors remain eligible.
+- External approval/user-input polls and provider raw events cannot cross their external boundary before durable output/tool evidence.
+- Graceful restart snapshots never revive a provider-terminal or unsafe physical turn; independently queued successors remain recoverable without appending a generic continuation, and a missing caller snapshot fails closed.
+- Provider approval, physical attempt terminalization, and historical trace terminalization use the same fail-closed binding and first-terminal fence.
+- Native prompt controls cannot bypass the immutable attempt request.
 
 ## Validation
 
 - `ravi specs sync --json`
 - `ravi specs get daemon/restart/crash-recovery --mode full --json`
 - `bun test src/runtime/crash-recovery-store.test.ts`
+- `bun test src/runtime/crash-recovery.test.ts src/runtime/prompt-subscription.test.ts src/runtime/delivery-queue.test.ts src/runtime/control-host.test.ts`
+- `bun test src/approval/service.test.ts src/runtime/control-host.test.ts src/runtime/session-trace.test.ts src/runtime/session-dispatcher.test.ts src/runtime/daemon-restart-resume.test.ts src/bot.runtime-guards.test.ts`
 - `bun run typecheck`
 - `bun run build`

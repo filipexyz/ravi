@@ -16,6 +16,7 @@ import type { PendingRuntimeSessionStart } from "./session-launcher.js";
 import { deleteSession, getOrCreateSession, getSessionByName, setSessionEphemeral } from "../router/sessions.js";
 import {
   dbGetDaemonRestartPendingMessages,
+  dbGetDaemonRestartSessionSnapshot,
   dbListEligibleDaemonRestartSessionSnapshots,
   dbMarkDaemonRestartResumeDelivered,
   dbRecordDaemonRestartSessionSnapshot,
@@ -23,10 +24,19 @@ import {
 } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { querySessionTrace } from "../session-trace/query.js";
+import { getSessionTurn } from "../session-trace/session-trace-db.js";
 import { dbCompleteTask, dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { buildDaemonRestartResumePrompt, resolveCrashRecoveryRestartResumeMode } from "./daemon-restart-resume.js";
 
-function createDispatcher(maxConcurrentSessions = 10, interactiveReservedSessions = 0) {
+const crashRecoveryStub = { acceptingDeliveries: true } as unknown as RuntimeCrashRecoveryCoordinator;
+
+function createDispatcher(
+  maxConcurrentSessions = 10,
+  interactiveReservedSessions = 0,
+  crashRecovery: RuntimeCrashRecoveryCoordinator = crashRecoveryStub,
+) {
   return new RuntimeSessionDispatcher({
     instanceId: "test",
     maxConcurrentSessions,
@@ -34,6 +44,7 @@ function createDispatcher(maxConcurrentSessions = 10, interactiveReservedSession
     safeEmit: async () => {},
     notifyRuntimeRecoveryExhausted: async () => {},
     getConfigModel: () => "test-model",
+    crashRecovery,
   });
 }
 
@@ -371,6 +382,7 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
         alerts.push(input);
       },
       getConfigModel: () => "test-model",
+      crashRecovery: crashRecoveryStub,
     });
     dispatcher.stashedMessages.set("recovery-loop", [
       createQueuedRuntimeUserMessage({
@@ -444,8 +456,8 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
     } as RuntimeHostStreamingSession;
   }
 
-  it("uses native steer for active Pi after-tool prompts when the provider exposes control", () => {
-    expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_tool")).toBe(true);
+  it("keeps active Pi prompts on the durable host handoff path", () => {
+    expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_tool")).toBe(false);
     expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_response")).toBe(false);
   });
 
@@ -496,7 +508,7 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
     ).toBe(false);
   });
 
-  it("allows Pi native steer during the pre-turn queue gap instead of falling back to host concatenation", () => {
+  it("keeps Pi pre-turn input queued until a durable attempt can own it", () => {
     expect(
       canUseNativeRuntimeSteer(
         createStreamingSession({
@@ -508,7 +520,7 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
         }),
         "after_tool",
       ),
-    ).toBe(true);
+    ).toBe(false);
 
     expect(
       canUseNativeRuntimeSteer(
@@ -585,9 +597,73 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       onTurnComplete: null,
       currentToolSafety: null,
       pendingAbort: false,
+      toolEffectFence: "provider_event_only",
       ...overrides,
     };
   }
+
+  it("continues closing every provider when one shutdown terminal fence fails", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-shutdown-cleanup-");
+    try {
+      getOrCreateSession("agent:dev:test:shutdown-first", "dev", stateDir, { name: "shutdown-first" });
+      getOrCreateSession("agent:dev:test:shutdown-second", "dev", stateDir, { name: "shutdown-second" });
+      const interrupted: string[] = [];
+      const terminalizeTurnAttempt = mock((input: { attemptId: string; status: "aborted"; completedAt: number }) => {
+        if (input.attemptId === "attempt-first") {
+          throw new Error("lost first terminal fence");
+        }
+        return {
+          ...input,
+          startedTool: false,
+          materializedOutput: false,
+        };
+      });
+      const crashRecovery = {
+        acceptingDeliveries: true,
+        ownershipFailure: null,
+        getActiveTurnAttempt: (attemptId: string) => ({
+          attemptId,
+          startedTool: false,
+          materializedOutput: false,
+        }),
+        terminalizeTurnAttempt,
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(2, 0, crashRecovery);
+      const first = createActiveSession({
+        currentCrashRecoveryAttemptId: "attempt-first",
+        queryHandle: {
+          provider: "codex",
+          events: (async function* () {})(),
+          interrupt: async () => {
+            interrupted.push("first");
+          },
+        },
+      });
+      const second = createActiveSession({
+        currentCrashRecoveryAttemptId: "attempt-second",
+        queryHandle: {
+          provider: "codex",
+          events: (async function* () {})(),
+          interrupt: async () => {
+            interrupted.push("second");
+          },
+        },
+      });
+      dispatcher.streamingSessions.set("shutdown-first", first);
+      dispatcher.streamingSessions.set("shutdown-second", second);
+
+      expect(() => dispatcher.shutdownAll()).toThrow("lost first terminal fence");
+
+      await Promise.resolve();
+      expect(first.done).toBe(true);
+      expect(second.done).toBe(true);
+      expect(interrupted.sort()).toEqual(["first", "second"]);
+      expect(dispatcher.streamingSessions.size).toBe(0);
+      expect(terminalizeTurnAttempt).toHaveBeenCalledTimes(2);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
 
   it("keeps new cold starts behind already queued runtime session starts", () => {
     const dispatcher = createDispatcher(2);
@@ -680,6 +756,417 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
       const pending = dbGetDaemonRestartPendingMessages("epoch-active", "agent:dev:test:restart-active");
       expect((pending[0] as RuntimeUserMessage | undefined)?.message.content).toBe("queued user work");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("excludes an unsafe physical turn from daemon restart snapshots while preserving successors", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-safe-restart-snapshot-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:dev:test:restart-unsafe";
+      const sessionName = "restart-unsafe";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-unsafe", reason: "test", createdAt: now });
+      const crashRecovery = {
+        acceptingDeliveries: true,
+        getActiveTurnAttempt: (attemptId: string) => ({
+          attemptId,
+          startedTool: false,
+          materializedOutput: true,
+        }),
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
+      const active = createQueuedRuntimeUserMessage({ prompt: "already materialized" });
+      const successor = createQueuedRuntimeUserMessage({ prompt: "independent successor" });
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: true,
+          currentTraceTurnId: "turn-unsafe-snapshot",
+          currentCrashRecoveryAttemptId: "attempt-unsafe-snapshot",
+          currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+          pendingMessages: [active, successor],
+        }),
+      );
+
+      expect(
+        dispatcher.recordDaemonRestartSnapshot({
+          restartEpoch: "epoch-unsafe",
+          reason: "test",
+          stoppedAt: now,
+        }),
+      ).toBe(1);
+
+      const pending = dbGetDaemonRestartPendingMessages("epoch-unsafe", sessionKey) as RuntimeUserMessage[];
+      expect(pending.map((message) => message.message.content)).toEqual(["independent successor"]);
+      const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
+        restartEpoch: "epoch-unsafe",
+        now: now + 1,
+      })[0];
+      const mode = resolveCrashRecoveryRestartResumeMode(snapshot?.metadata);
+      expect(mode).toBe("pending_only");
+      const payload = buildDaemonRestartResumePrompt({
+        restartEpoch: "epoch-unsafe",
+        reason: "test",
+        sessionKey,
+        mode,
+      });
+      expect(payload?._daemonRestartResume?.pendingOnly).toBe(true);
+      const prepared = (
+        dispatcher as unknown as {
+          prepareDaemonRestartResumePrompt(
+            requestedSessionName: string,
+            prompt: RuntimeLaunchPrompt,
+            sessionEntry: null,
+          ): { prompt: RuntimeLaunchPrompt; messages: RuntimeUserMessage[] } | null;
+        }
+      ).prepareDaemonRestartResumePrompt(sessionName, payload!, null);
+      expect(prepared?.prompt.prompt).toBe("independent successor");
+      expect(prepared?.prompt.prompt).not.toContain("Continue de onde parou");
+      expect(prepared?.messages.map((message) => message.pendingId)).toEqual([successor.pendingId]);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("treats an unfenced provider-native turn as unsafe before any asynchronous tool marker", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-provider-native-snapshot-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:dev:test:restart-provider-native";
+      const sessionName = "restart-provider-native";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-provider-native", reason: "test", createdAt: now });
+      const crashRecovery = {
+        acceptingDeliveries: true,
+        getActiveTurnAttempt: (attemptId: string) => ({
+          attemptId,
+          startedTool: false,
+          materializedOutput: false,
+        }),
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
+      const active = createQueuedRuntimeUserMessage({ prompt: "provider-native effect may have started" });
+      const successor = createQueuedRuntimeUserMessage({ prompt: "safe independent successor" });
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: true,
+          currentTraceTurnId: "turn-provider-native-snapshot",
+          currentCrashRecoveryAttemptId: "attempt-provider-native-snapshot",
+          currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+          pendingMessages: [active, successor],
+          toolEffectFence: "provider_event_only",
+        }),
+      );
+
+      expect(
+        dispatcher.recordDaemonRestartSnapshot({
+          restartEpoch: "epoch-provider-native",
+          reason: "test",
+          stoppedAt: now,
+        }),
+      ).toBe(1);
+
+      const pending = dbGetDaemonRestartPendingMessages("epoch-provider-native", sessionKey) as RuntimeUserMessage[];
+      expect(pending.map((message) => message.message.content)).toEqual(["safe independent successor"]);
+      const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
+        restartEpoch: "epoch-provider-native",
+        now: now + 1,
+      })[0];
+      expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("pending_only");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("suppresses daemon restart continuation for an unsafe turn without successors", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-skip-restart-snapshot-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:dev:test:restart-unsafe-only";
+      const sessionName = "restart-unsafe-only";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-unsafe-only", reason: "test", createdAt: now });
+      const crashRecovery = {
+        acceptingDeliveries: true,
+        getActiveTurnAttempt: (attemptId: string) => ({
+          attemptId,
+          startedTool: true,
+          materializedOutput: false,
+        }),
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
+      const active = createQueuedRuntimeUserMessage({ prompt: "unsafe only" });
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: true,
+          currentTraceTurnId: "turn-unsafe-only",
+          currentCrashRecoveryAttemptId: "attempt-unsafe-only",
+          currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+          pendingMessages: [active],
+        }),
+      );
+
+      expect(
+        dispatcher.recordDaemonRestartSnapshot({
+          restartEpoch: "epoch-unsafe-only",
+          reason: "test",
+          stoppedAt: now,
+        }),
+      ).toBe(1);
+
+      const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
+        restartEpoch: "epoch-unsafe-only",
+        now: now + 1,
+      })[0];
+      expect(snapshot?.pendingMessageCount).toBe(0);
+      const mode = resolveCrashRecoveryRestartResumeMode(snapshot?.metadata);
+      expect(mode).toBe("skip");
+      expect(
+        buildDaemonRestartResumePrompt({
+          restartEpoch: "epoch-unsafe-only",
+          reason: "test",
+          sessionKey,
+          mode,
+        }),
+      ).toBeNull();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("treats a provider-terminal turn as consumed in daemon restart snapshots", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-terminal-restart-snapshot-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:dev:test:restart-terminal";
+      const sessionName = "restart-terminal";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-terminal", reason: "test", createdAt: now });
+      const dispatcher = createDispatcher();
+      const consumed = createQueuedRuntimeUserMessage({ prompt: "already completed" });
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: false,
+          currentTraceTurnId: "turn-terminal-snapshot",
+          currentTraceTurnTerminalRecorded: true,
+          currentCrashRecoveryTerminal: {
+            status: "complete",
+            completedAt: now - 1,
+            startedTool: false,
+            materializedOutput: false,
+          },
+          currentTurnPendingIds: consumed.pendingId ? [consumed.pendingId] : [],
+          pendingMessages: [consumed],
+        }),
+      );
+
+      expect(
+        dispatcher.recordDaemonRestartSnapshot({
+          restartEpoch: "epoch-terminal",
+          reason: "test",
+          stoppedAt: now,
+        }),
+      ).toBe(1);
+
+      expect(dbGetDaemonRestartPendingMessages("epoch-terminal", sessionKey)).toHaveLength(0);
+      const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
+        restartEpoch: "epoch-terminal",
+        now: now + 1,
+      })[0];
+      expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("skip");
+      expect(snapshot?.metadata?.crashRecoveryTerminalStatus).toBe("complete");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("preserves post-drain successors while a completed terminal latch is still retained", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-terminal-post-drain-snapshot-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:dev:test:restart-terminal-post-drain";
+      const sessionName = "restart-terminal-post-drain";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-terminal-post-drain", reason: "test", createdAt: now });
+      const dispatcher = createDispatcher();
+      const successor = createQueuedRuntimeUserMessage({ prompt: "successor after completed drain" });
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: false,
+          currentTraceTurnId: "turn-terminal-post-drain",
+          currentTraceTurnTerminalRecorded: true,
+          currentCrashRecoveryTerminal: {
+            status: "complete",
+            completedAt: now - 1,
+            startedTool: false,
+            materializedOutput: false,
+          },
+          currentTurnPendingIds: undefined,
+          pendingMessages: [successor],
+        }),
+      );
+
+      expect(
+        dispatcher.recordDaemonRestartSnapshot({
+          restartEpoch: "epoch-terminal-post-drain",
+          reason: "test",
+          stoppedAt: now,
+        }),
+      ).toBe(1);
+
+      const pending = dbGetDaemonRestartPendingMessages(
+        "epoch-terminal-post-drain",
+        sessionKey,
+      ) as RuntimeUserMessage[];
+      expect(pending.map((message) => message.message.content)).toEqual(["successor after completed drain"]);
+      expect(pending.map((message) => message.pendingId)).toEqual([successor.pendingId]);
+      const snapshot = dbListEligibleDaemonRestartSessionSnapshots({
+        restartEpoch: "epoch-terminal-post-drain",
+        now: now + 1,
+      })[0];
+      expect(resolveCrashRecoveryRestartResumeMode(snapshot?.metadata)).toBe("pending_only");
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("hydrates pending-only restart successors into an existing runtime without a duplicate stash", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-existing-pending-only-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:main:test:restart-existing";
+      const sessionName = "restart-existing";
+      getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-existing", reason: "test", createdAt: now });
+      const firstSuccessor = createQueuedRuntimeUserMessage({
+        prompt: "first durable successor for existing runtime",
+        deliveryBarrier: "after_response",
+        source: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "group:first",
+          actorType: "contact",
+          contactId: "contact-first",
+        },
+      });
+      const secondSuccessor = createQueuedRuntimeUserMessage({
+        prompt: "second durable successor for existing runtime",
+        deliveryBarrier: "after_task",
+        taskBarrierTaskId: "task-successor",
+        source: {
+          channel: "slack",
+          accountId: "ravi-slack",
+          chatId: "channel:second",
+          actorType: "contact",
+          contactId: "contact-second",
+        },
+      });
+      dbRecordDaemonRestartSessionSnapshot({
+        restartEpoch: "epoch-existing",
+        sessionKey,
+        sessionName,
+        activity: "queued",
+        nonIdle: true,
+        lastActivityAt: now,
+        stoppedAt: now,
+        pendingMessages: [firstSuccessor, secondSuccessor],
+        metadata: { crashRecoveryRestartResumeMode: "pending_only" },
+      });
+      const dispatcher = createDispatcher();
+      let woke = false;
+      const existing = createActiveSession({
+        agentId: "main",
+        turnActive: false,
+        currentEffort: "xhigh",
+        currentTaskBarrierTaskId: "task-successor",
+        pushMessage: () => {
+          woke = true;
+        },
+      });
+      dispatcher.streamingSessions.set(sessionName, existing);
+      const payload = buildDaemonRestartResumePrompt({
+        restartEpoch: "epoch-existing",
+        reason: "test",
+        sessionKey,
+        mode: "pending_only",
+      });
+      if (!payload) throw new Error("pending-only payload unexpectedly missing");
+
+      await dispatcher.handlePromptImmediate(sessionName, payload);
+
+      expect(existing.pendingMessages.map((message) => message.message.content)).toEqual([
+        "first durable successor for existing runtime",
+        "second durable successor for existing runtime",
+      ]);
+      expect(existing.pendingMessages.map((message) => message.pendingId)).toEqual([
+        firstSuccessor.pendingId,
+        secondSuccessor.pendingId,
+      ]);
+      expect(existing.pendingMessages.map((message) => message.deliveryBarrier)).toEqual([
+        "after_response",
+        "after_task",
+      ]);
+      expect(existing.pendingMessages.map((message) => message.launchPrompt?.source?.contactId)).toEqual([
+        "contact-first",
+        "contact-second",
+      ]);
+      expect(existing.pendingMessages[1]?.taskBarrierTaskId).toBe("task-successor");
+      expect(dispatcher.stashedMessages.has(sessionName)).toBe(false);
+      expect(existing.pendingMessages.some((message) => message.launchPrompt?._daemonRestartResume)).toBe(false);
+      expect(woke).toBe(true);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("hydrates pending-only restart successors once while a cold start is already in flight", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-starting-pending-only-");
+    try {
+      const now = Date.now();
+      const sessionKey = "agent:main:test:restart-starting";
+      const sessionName = "restart-starting";
+      getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName });
+      dbUpsertDaemonRestartEpoch({ restartEpoch: "epoch-starting", reason: "test", createdAt: now });
+      const successor = createQueuedRuntimeUserMessage({
+        prompt: "durable successor for starting runtime",
+        deliveryBarrier: "after_response",
+      });
+      dbRecordDaemonRestartSessionSnapshot({
+        restartEpoch: "epoch-starting",
+        sessionKey,
+        sessionName,
+        activity: "starting",
+        nonIdle: true,
+        lastActivityAt: now,
+        stoppedAt: now,
+        pendingMessages: [successor],
+        metadata: { crashRecoveryRestartResumeMode: "pending_only" },
+      });
+      const dispatcher = createDispatcher();
+      dispatcher.startingSessions.add(sessionName);
+      const payload = buildDaemonRestartResumePrompt({
+        restartEpoch: "epoch-starting",
+        reason: "test",
+        sessionKey,
+        mode: "pending_only",
+      });
+      if (!payload) throw new Error("pending-only payload unexpectedly missing");
+
+      await dispatcher.handlePromptImmediate(sessionName, payload);
+
+      const stashed = dispatcher.stashedMessages.get(sessionName);
+      expect(stashed).toHaveLength(1);
+      expect(stashed?.[0]?.message.content).toBe("durable successor for starting runtime");
+      expect(stashed?.[0]?.pendingId).toBe(successor.pendingId);
+      expect(stashed?.[0]?.launchPrompt?._daemonRestartResume).toBeUndefined();
+      expect(stashed?.[0]?.message.content).not.toContain("Continue de onde parou");
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
@@ -1030,6 +1517,10 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
           windowMs: 60 * 60 * 1000,
         }).map((snapshot) => snapshot.sessionName),
       ).toEqual(["restart-fresh"]);
+      expect(dbGetDaemonRestartSessionSnapshot("epoch-window", "agent:dev:test:restart-stale")).toMatchObject({
+        sessionName: "restart-stale",
+        nonIdle: true,
+      });
 
       expect(
         dbMarkDaemonRestartResumeDelivered({
@@ -1201,6 +1692,138 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
+  it("terminalizes an active attempt even when the trace terminal guard is already set", () => {
+    const order: string[] = [];
+    const terminalizeTurnAttempt = mock((input: { status: "aborted"; completedAt: number }) => {
+      order.push("attempt-terminal");
+      return { status: input.status, completedAt: input.completedAt };
+    });
+    const crashRecovery = {
+      acceptingDeliveries: true,
+      terminalizeTurnAttempt,
+    } as unknown as RuntimeCrashRecoveryCoordinator;
+    const dispatcher = createDispatcher(1, 0, crashRecovery);
+    const session = createActiveSession({
+      turnActive: true,
+      currentTraceTurnId: "turn-already-terminal",
+      currentTraceTurnTerminalRecorded: true,
+      currentCrashRecoveryAttemptId: "attempt-still-running",
+      queryHandle: {
+        provider: "codex",
+        events: (async function* () {})(),
+        interrupt: async () => {
+          order.push("provider-interrupt");
+        },
+      },
+    });
+    dispatcher.streamingSessions.set("attempt-guard", session);
+
+    expect(dispatcher.abortSession("attempt-guard", { reason: "test_abort" })).toBe(true);
+    expect(terminalizeTurnAttempt).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attemptId: "attempt-still-running",
+        status: "aborted",
+      }),
+    );
+    expect(session.currentCrashRecoveryAttemptId).toBeUndefined();
+    expect(session.currentCrashRecoveryTerminal).toMatchObject({
+      status: "aborted",
+      completedAt: expect.any(Number),
+    });
+    expect(order[0]).toBe("attempt-terminal");
+  });
+
+  it("does not fabricate a terminal latch or trace after crash recovery ownership is lost", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-ownership-loss-");
+    try {
+      const sessionKey = "agent:dev:test:ownership-loss";
+      const sessionName = "ownership-loss";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      const terminalizeTurnAttempt = mock(() => {
+        throw new Error("terminalization must not run without an owned attempt binding");
+      });
+      const crashRecovery = {
+        acceptingDeliveries: false,
+        ownershipFailure: new Error("attempt lease expired"),
+        terminalizeTurnAttempt,
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
+      const session = createActiveSession({
+        turnActive: true,
+        traceRunId: "run-ownership-loss",
+        currentTraceTurnId: "turn-ownership-loss",
+        currentTraceTurnStartedAt: Date.now() - 1_000,
+        currentTraceTurnTerminalRecorded: false,
+        currentCrashRecoveryAttemptId: undefined,
+        currentCrashRecoveryTerminal: undefined,
+      });
+      dispatcher.streamingSessions.set(sessionName, session);
+
+      expect(dispatcher.abortSession(sessionName, { reason: "ownership_lost" })).toBe(true);
+
+      expect(terminalizeTurnAttempt).not.toHaveBeenCalled();
+      expect(session.currentCrashRecoveryTerminal).toBeUndefined();
+      expect(session.currentTraceTurnTerminalRecorded).toBe(false);
+      expect(getSessionTurn("turn-ownership-loss")).toBeNull();
+      expect(
+        querySessionTrace({ sessionKey, sessionName }).events.filter((event) => event.eventType.startsWith("turn.")),
+      ).toHaveLength(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("reuses a provider terminal fence when an abort races before the canonical trace write", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-terminal-race-");
+    try {
+      const sessionKey = "agent:dev:test:terminal-race";
+      const sessionName = "terminal-race";
+      const completedAt = Date.now() - 50;
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      const terminalizeTurnAttempt = mock(() => {
+        throw new Error("dispatcher must not terminalize an attempt after the provider won");
+      });
+      const crashRecovery = {
+        acceptingDeliveries: true,
+        ownershipFailure: null,
+        getActiveTurnAttempt: (attemptId: string) => ({
+          attemptId,
+          startedTool: false,
+          materializedOutput: false,
+        }),
+        terminalizeTurnAttempt,
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
+      const session = createActiveSession({
+        traceRunId: "run-terminal-race",
+        currentTraceTurnId: "turn-terminal-race",
+        currentTraceTurnStartedAt: completedAt - 1_000,
+        currentTraceTurnTerminalRecorded: false,
+        currentCrashRecoveryTerminal: {
+          status: "complete",
+          completedAt,
+          startedTool: false,
+          materializedOutput: false,
+        },
+      });
+      dispatcher.streamingSessions.set(sessionName, session);
+
+      expect(dispatcher.abortSession(sessionName, { reason: "late_abort" })).toBe(true);
+
+      expect(terminalizeTurnAttempt).not.toHaveBeenCalled();
+      expect(getSessionTurn("turn-terminal-race")).toMatchObject({
+        status: "complete",
+        completedAt,
+        abortReason: null,
+      });
+      const trace = querySessionTrace({ sessionKey, sessionName });
+      expect(trace.events.filter((event) => event.eventType === "turn.complete")).toHaveLength(1);
+      expect(trace.events.filter((event) => event.eventType === "turn.interrupted")).toHaveLength(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("drains queued runtime starts when an external model change restarts a live session", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-model-change-");
     try {
@@ -1227,13 +1850,80 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("restarts an in-flight thread prompt after an external model change", async () => {
+  it("restarts only independent successors when a model change races a completed turn drain", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-complete-model-change-");
+    try {
+      const sessionKey = "agent:dev:test:complete-model-change";
+      const sessionName = "complete-model-change";
+      getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
+      const dispatcher = createDispatcher(1);
+      const restartedPrompts: RuntimeLaunchPrompt[] = [];
+      let interrupted = false;
+      dispatcher.startStreamingSession = mock(async (restartedName, prompt) => {
+        expect(restartedName).toBe(sessionName);
+        restartedPrompts.push(prompt);
+      });
+      const completed = createQueuedRuntimeUserMessage({ prompt: "already completed" });
+      const successor = createQueuedRuntimeUserMessage({ prompt: "independent successor" });
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          turnActive: true,
+          pendingMessages: [completed, successor],
+          currentTurnPendingIds: completed.pendingId ? [completed.pendingId] : [],
+          currentCrashRecoveryTerminal: {
+            status: "complete",
+            completedAt: Date.now(),
+            startedTool: false,
+            materializedOutput: false,
+          },
+          toolEffectFence: "host_write_ahead",
+          queryHandle: {
+            provider: "codex",
+            events: (async function* () {})(),
+            interrupt: async () => {
+              interrupted = true;
+            },
+          },
+        }),
+      );
+
+      const result = await dispatcher.applySessionModelChange(sessionName, "next-model", {
+        restartStashedMessages: true,
+      });
+
+      expect(result).toBe("restart-next-turn");
+      expect(interrupted).toBe(true);
+      expect(restartedPrompts.map((prompt) => prompt.prompt)).toEqual(["independent successor"]);
+      expect(dispatcher.stashedMessages.get(sessionName)?.map((message) => message.pendingId)).toEqual([
+        successor.pendingId,
+      ]);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("does not replay an unfenced Codex thread prompt after an external model change", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-thread-model-change-");
     try {
       const sessionKey = "agent:dev:slack:test:group:C123:thread:1784907646.950319";
       const sessionName = "dev-t-1784907646950319";
       getOrCreateSession(sessionKey, "dev", stateDir, { name: sessionName });
-      const dispatcher = createDispatcher(1);
+      const terminalizeTurnAttempt = mock((input: { status: "interrupted"; completedAt: number }) => ({
+        status: input.status,
+        completedAt: input.completedAt,
+      }));
+      const crashRecovery = {
+        acceptingDeliveries: true,
+        ownershipFailure: null,
+        getActiveTurnAttempt: (attemptId: string) => ({
+          attemptId,
+          startedTool: false,
+          materializedOutput: false,
+        }),
+        terminalizeTurnAttempt,
+      } as unknown as RuntimeCrashRecoveryCoordinator;
+      const dispatcher = createDispatcher(1, 0, crashRecovery);
       const restartedPrompts: RuntimeLaunchPrompt[] = [];
       let interrupted = false;
       dispatcher.startStreamingSession = mock(async (restartedName, prompt) => {
@@ -1254,6 +1944,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
           currentTraceTurnId: "turn-thread-model-change",
           currentTraceTurnStartedAt: Date.now() - 1_000,
           currentTraceTurnTerminalRecorded: false,
+          currentCrashRecoveryAttemptId: "attempt-thread-model-change",
           pendingMessages: [
             createQueuedRuntimeUserMessage({
               prompt: "continue this thread",
@@ -1283,19 +1974,14 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
 
       expect(result).toBe("restart-next-turn");
       expect(interrupted).toBe(true);
-      expect(restartedPrompts).toHaveLength(1);
-      expect(restartedPrompts[0]).toMatchObject({
-        prompt: "continue this thread",
-        _agentId: "dev",
-        _resumeStashedMessages: true,
-        source: {
-          channel: "slack",
-          accountId: "test",
-          chatId: "C123",
-          threadId: "1784907646.950319",
-          sourceMessageId: "1784907662.660409",
-        },
-      });
+      expect(terminalizeTurnAttempt).toHaveBeenCalledWith(
+        expect.objectContaining({
+          attemptId: "attempt-thread-model-change",
+          status: "interrupted",
+        }),
+      );
+      expect(restartedPrompts).toEqual([]);
+      expect(dispatcher.stashedMessages.get(sessionName)).toBeUndefined();
 
       const trace = querySessionTrace({ sessionKey, sessionName });
       const modelRestartEvents = trace.events.filter((event) =>
@@ -1304,11 +1990,9 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(modelRestartEvents.map((event) => event.eventType)).toEqual([
         "dispatch.restart_requested",
         "turn.interrupted",
-        "dispatch.restart_requested",
       ]);
       expect(modelRestartEvents.every((event) => event.sessionKey === sessionKey)).toBe(true);
       expect(modelRestartEvents.map((event) => (event.payloadJson as { reason?: string } | null)?.reason)).toEqual([
-        "model_change_restart",
         "model_change_restart",
         "model_change_restart",
       ]);

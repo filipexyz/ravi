@@ -13,6 +13,8 @@ import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-tra
 import { dbHasActiveAssignedTaskForSession, dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import type { RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import {
   createQueuedRuntimeUserMessage,
   getRuntimePromptDeliveryBarrier,
@@ -23,7 +25,14 @@ import {
 } from "./delivery-queue.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import {
-  getReplayablePendingRuntimeMessages,
+  CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY,
+  resolveCrashRecoveryRestartResumeMode,
+} from "./daemon-restart-resume.js";
+import {
+  getCrashRecoveryReplayablePendingRuntimeMessages,
+  getPendingRuntimeTurnSuccessors,
+  getRuntimeTurnReplaySafety,
+  runtimeTurnAttemptTerminalEventType,
   shutdownRuntimeStreamingSession,
   stashPendingRuntimeMessages,
   type RuntimeHostStreamingSession,
@@ -57,7 +66,6 @@ const RUNTIME_EVENT_LOOP_CLOSED_REASON = "runtime_event_loop_closed";
 const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
 const RUNTIME_RESTART_EXHAUSTED_ERROR =
   "Runtime provider stream closed repeatedly. Automatic recovery was stopped; send a new message to retry.";
-const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
 const IDLE_GAP_RECOVERY_MS = Math.max(1_000, Number(process.env.RAVI_RUNTIME_IDLE_GAP_RECOVERY_MS) || 5_000);
 
 interface DebounceState {
@@ -92,6 +100,7 @@ export interface RuntimeSessionDispatcherOptions {
   safeEmit: RuntimeSafeEmit;
   notifyRuntimeRecoveryExhausted(input: RuntimeRecoveryExhaustedAlertInput): Promise<void>;
   getConfigModel(): string;
+  crashRecovery: RuntimeCrashRecoveryCoordinator;
 }
 
 export interface RuntimeAbortProvenance {
@@ -126,6 +135,7 @@ export class RuntimeSessionDispatcher {
   }
 
   canAcceptRuntimePrompt(sessionName?: string): boolean {
+    if (!this.options.crashRecovery.acceptingDeliveries) return false;
     if (sessionName) {
       const streaming = this.streamingSessions.get(sessionName);
       if (streaming && !streaming.done) return true;
@@ -195,8 +205,28 @@ export class RuntimeSessionDispatcher {
         });
         continue;
       }
-      const pendingMessages = getReplayablePendingRuntimeMessages(session).map(cloneRuntimeUserMessage);
-      const nonIdle = isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
+      const terminalTurnConsumed = session.currentCrashRecoveryTerminal !== undefined;
+      const pendingMessages = (
+        terminalTurnConsumed
+          ? (session.currentTurnPendingIds?.length ?? 0) > 0
+            ? getPendingRuntimeTurnSuccessors(session)
+            : session.pendingMessages
+          : getCrashRecoveryReplayablePendingRuntimeMessages(session, this.options.crashRecovery)
+      ).map(cloneRuntimeUserMessage);
+      const durableReplaySafety = getRuntimeTurnReplaySafety(session, this.options.crashRecovery);
+      // A provider-terminal physical turn has already been consumed even when
+      // it produced no external output or tool side effect. Explicit retry
+      // paths may still use the global replay helper for interrupted/failed
+      // turns, but a daemon restart must never resurrect any terminal turn.
+      const replaySafety = terminalTurnConsumed
+        ? { ...durableReplaySafety, replayable: false as const }
+        : durableReplaySafety;
+      const restartResumeMode = replaySafety.replayable
+        ? "continue"
+        : pendingMessages.length > 0
+          ? "pending_only"
+          : "skip";
+      const nonIdle = !replaySafety.replayable || isDaemonRestartNonIdleSession(session) || pendingMessages.length > 0;
       const snapshot = getAccumulator(sessionName, {
         agentId: session.agentId,
         runtimeProvider: session.queryHandle.provider,
@@ -216,6 +246,9 @@ export class RuntimeSessionDispatcher {
           currentTaskBarrierTaskId: session.currentTaskBarrierTaskId ?? null,
           currentTurnPendingIds: session.currentTurnPendingIds ?? [],
           currentTurnSuperseded: Boolean(session.currentTurnSuperseded),
+          [CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY]: restartResumeMode,
+          crashRecoveryReplaySafety: replaySafety,
+          crashRecoveryTerminalStatus: session.currentCrashRecoveryTerminal?.status ?? null,
         },
       });
       appendRestartPendingMessages(snapshot, pendingMessages);
@@ -256,6 +289,9 @@ export class RuntimeSessionDispatcher {
     let recorded = 0;
     for (const snapshot of snapshots.values()) {
       if (!snapshot.nonIdle) continue;
+      if (resolveCrashRecoveryRestartResumeMode(snapshot.metadata) === "skip" && snapshot.pendingMessages.length > 0) {
+        snapshot.metadata[CRASH_RECOVERY_RESTART_RESUME_MODE_METADATA_KEY] = "pending_only";
+      }
       dbRecordDaemonRestartSessionSnapshot({
         restartEpoch: options.restartEpoch,
         sessionKey: snapshot.sessionKey,
@@ -331,12 +367,33 @@ export class RuntimeSessionDispatcher {
       count: this.streamingSessions.size,
       sessions: [...this.streamingSessions.keys()],
     });
+    let firstError: unknown;
     for (const [sessionName, session] of this.streamingSessions) {
       log.info("Aborting streaming session", { sessionName });
-      recordStreamingAbortTrace(sessionName, session, "shutdown_all");
-      shutdownRuntimeStreamingSession(session, "shutdown_all");
+      try {
+        recordStreamingAbortTrace(this.options.crashRecovery, sessionName, session, "shutdown_all");
+      } catch (error) {
+        firstError ??= error;
+        log.error("Failed to terminalize streaming session during shutdown", {
+          sessionName,
+          error,
+        });
+      } finally {
+        try {
+          shutdownRuntimeStreamingSession(session, "shutdown_all");
+        } catch (error) {
+          firstError ??= error;
+          log.error("Failed to close streaming session during shutdown", {
+            sessionName,
+            error,
+          });
+        }
+      }
     }
     this.streamingSessions.clear();
+    if (firstError) {
+      throw firstError;
+    }
   }
 
   abortSession(
@@ -403,11 +460,11 @@ export class RuntimeSessionDispatcher {
 
     if (session.pendingMessages.length > 0) {
       log.info("Stashing aborted messages", { sessionName, count: session.pendingMessages.length });
-      stashPendingRuntimeMessages(sessionName, session, this.stashedMessages);
+      stashPendingRuntimeMessages(sessionName, session, this.stashedMessages, this.options.crashRecovery);
     }
 
     log.info("Aborting streaming session", { sessionName, done: session.done, provenance });
-    recordStreamingAbortTrace(sessionName, session, abortReason, sessionKey, provenance);
+    recordStreamingAbortTrace(this.options.crashRecovery, sessionName, session, abortReason, sessionKey, provenance);
     if (sessionKey) {
       revokeAgentRuntimeContextsForSession(sessionKey, {
         reason: abortReason,
@@ -492,7 +549,7 @@ export class RuntimeSessionDispatcher {
 
     const hasStashedMessages = streaming.pendingMessages.length > 0;
     if (hasStashedMessages) {
-      stashPendingRuntimeMessages(sessionName, streaming, this.stashedMessages);
+      stashPendingRuntimeMessages(sessionName, streaming, this.stashedMessages, this.options.crashRecovery);
     }
     streaming.currentModel = model;
     recordRuntimeTraceEvent({
@@ -514,7 +571,13 @@ export class RuntimeSessionDispatcher {
         ...presetTrace,
       },
     });
-    recordStreamingTurnInterruptedTrace(sessionName, streaming, "model_change_restart", sessionKey);
+    recordStreamingTurnInterruptedTrace(
+      this.options.crashRecovery,
+      sessionName,
+      streaming,
+      "model_change_restart",
+      sessionKey,
+    );
     shutdownRuntimeStreamingSession(streaming, "model_change_restart");
     const shouldRestartStashedMessages = options.restartStashedMessages === true && hasStashedMessages;
     this.releaseRuntimeSessionSlot(sessionName, {
@@ -662,8 +725,30 @@ export class RuntimeSessionDispatcher {
     const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
     const existing = this.streamingSessions.get(sessionName);
-    if (!existing && prompt._daemonRestartResume) {
-      prompt = this.prepareDaemonRestartResumePrompt(sessionName, prompt, sessionEntry);
+    let daemonRestartMessages: RuntimeUserMessage[] | undefined;
+    if (prompt._daemonRestartResume) {
+      const needsColdStartStash =
+        (!existing || existing.done) &&
+        !this.pendingStartSessions.has(sessionName) &&
+        !this.startingSessions.has(sessionName);
+      const preparedRestart = this.prepareDaemonRestartResumePrompt(sessionName, prompt, sessionEntry);
+      if (!preparedRestart) {
+        log.warn("Skipping pending-only daemon restart resume because no durable pending messages remain", {
+          sessionName,
+          restartEpoch: prompt._daemonRestartResume.restartEpoch,
+        });
+        return;
+      }
+      prompt = preparedRestart.prompt;
+      daemonRestartMessages = preparedRestart.messages;
+      if (needsColdStartStash) {
+        this.stashedMessages.set(sessionName, daemonRestartMessages.map(cloneRuntimeUserMessage));
+      } else if (existing && !existing.done) {
+        // Keep every persisted atom on the live queue before any model/provider
+        // restart decision. If the runtime must be replaced, the normal stash
+        // path carries these exact atoms into the replacement session.
+        appendUniqueRuntimeMessages(existing.pendingMessages, daemonRestartMessages);
+      }
     }
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
@@ -698,7 +783,7 @@ export class RuntimeSessionDispatcher {
         });
 
         if (existing.pendingMessages.length > 0) {
-          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages);
+          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, this.options.crashRecovery);
         }
 
         recordRuntimeTraceEvent({
@@ -721,7 +806,13 @@ export class RuntimeSessionDispatcher {
             requestedProvider,
           },
         });
-        recordStreamingTurnInterruptedTrace(sessionName, existing, restartReason, sessionEntry?.sessionKey);
+        recordStreamingTurnInterruptedTrace(
+          this.options.crashRecovery,
+          sessionName,
+          existing,
+          restartReason,
+          sessionEntry?.sessionKey,
+        );
         shutdownRuntimeStreamingSession(existing, restartReason);
         this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
         retainReleasedSlot = true;
@@ -744,7 +835,7 @@ export class RuntimeSessionDispatcher {
             currentThinking: existing.currentThinking ?? null,
             requestedThinking: requestedRuntime.options.thinking ?? null,
           });
-          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages);
+          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, this.options.crashRecovery);
           recordRuntimeTraceEvent({
             sessionKey: sessionEntry?.sessionKey ?? sessionName,
             sessionName,
@@ -768,6 +859,7 @@ export class RuntimeSessionDispatcher {
             },
           });
           recordStreamingTurnInterruptedTrace(
+            this.options.crashRecovery,
             sessionName,
             existing,
             "runtime_task_settings_change",
@@ -798,14 +890,22 @@ export class RuntimeSessionDispatcher {
           updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
         }
         const messageSource = prompt.source ?? existing.currentSource;
-        saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
-          agentId: sessionEntry?.agentId ?? existing.agentId,
-          channel: messageSource?.channel ?? prompt.context?.channelId,
-          accountId: messageSource?.accountId ?? prompt.context?.accountId,
-          chatId: messageSource?.chatId ?? prompt.context?.chatId,
-          sourceMessageId: messageSource?.sourceMessageId ?? prompt.context?.messageId,
-          commands: prompt.commands,
-        });
+        if (!prompt._resumeStashedMessages) {
+          saveMessage(
+            sessionName,
+            "user",
+            prompt.prompt,
+            sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId,
+            {
+              agentId: sessionEntry?.agentId ?? existing.agentId,
+              channel: messageSource?.channel ?? prompt.context?.channelId,
+              accountId: messageSource?.accountId ?? prompt.context?.accountId,
+              chatId: messageSource?.chatId ?? prompt.context?.chatId,
+              sourceMessageId: messageSource?.sourceMessageId ?? prompt.context?.messageId,
+              commands: prompt.commands,
+            },
+          );
+        }
 
         const barrier = getRuntimePromptDeliveryBarrier(prompt);
         const nativeSteer = await this.tryNativeRuntimeSteer(
@@ -831,10 +931,10 @@ export class RuntimeSessionDispatcher {
           return;
         }
 
-        const userMsg: RuntimeUserMessage = {
-          ...createQueuedRuntimeUserMessage(prompt),
-        };
-        existing.pendingMessages.push(userMsg);
+        appendUniqueRuntimeMessages(
+          existing.pendingMessages,
+          daemonRestartMessages ?? [createQueuedRuntimeUserMessage(prompt)],
+        );
         updateRuntimeLiveState(sessionName, {
           activity: "thinking",
           summary: existing.turnActive ? `queued ${existing.pendingMessages.length}` : "prompt queued",
@@ -1035,15 +1135,19 @@ export class RuntimeSessionDispatcher {
       if (sessionEntry) {
         updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
       }
-      saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
-        agentId: sessionEntry?.agentId ?? agent.id,
-        channel: prompt.source?.channel ?? prompt.context?.channelId,
-        accountId: prompt.source?.accountId ?? prompt.context?.accountId,
-        chatId: prompt.source?.chatId ?? prompt.context?.chatId,
-        sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
-        commands: prompt.commands,
-      });
-      const queued = stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
+      if (!prompt._resumeStashedMessages) {
+        saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
+          agentId: sessionEntry?.agentId ?? agent.id,
+          channel: prompt.source?.channel ?? prompt.context?.channelId,
+          accountId: prompt.source?.accountId ?? prompt.context?.accountId,
+          chatId: prompt.source?.chatId ?? prompt.context?.chatId,
+          sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+          commands: prompt.commands,
+        });
+      }
+      const queued = daemonRestartMessages
+        ? appendUniqueRuntimeMessagesToStash(sessionName, daemonRestartMessages, this.stashedMessages)
+        : stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
       const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
       const lane = classifyRuntimeSessionStartLane(sessionName, prompt);
       recordRuntimeTraceEvent({
@@ -1095,15 +1199,19 @@ export class RuntimeSessionDispatcher {
       if (sessionEntry) {
         updateRuntimeSessionMetadata(sessionEntry.sessionKey, prompt);
       }
-      saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
-        agentId: sessionEntry?.agentId ?? agent.id,
-        channel: prompt.source?.channel ?? prompt.context?.channelId,
-        accountId: prompt.source?.accountId ?? prompt.context?.accountId,
-        chatId: prompt.source?.chatId ?? prompt.context?.chatId,
-        sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
-        commands: prompt.commands,
-      });
-      const queued = stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
+      if (!prompt._resumeStashedMessages) {
+        saveMessage(sessionName, "user", prompt.prompt, sessionEntry?.providerSessionId ?? sessionEntry?.sdkSessionId, {
+          agentId: sessionEntry?.agentId ?? agent.id,
+          channel: prompt.source?.channel ?? prompt.context?.channelId,
+          accountId: prompt.source?.accountId ?? prompt.context?.accountId,
+          chatId: prompt.source?.chatId ?? prompt.context?.chatId,
+          sourceMessageId: prompt.source?.sourceMessageId ?? prompt.context?.messageId,
+          commands: prompt.commands,
+        });
+      }
+      const queued = daemonRestartMessages
+        ? appendUniqueRuntimeMessagesToStash(sessionName, daemonRestartMessages, this.stashedMessages)
+        : stashPromptForStartingSession(sessionName, prompt, this.stashedMessages);
       recordRuntimeTraceEvent({
         sessionKey: sessionEntry?.sessionKey ?? sessionName,
         sessionName,
@@ -1191,28 +1299,29 @@ export class RuntimeSessionDispatcher {
     sessionName: string,
     prompt: RuntimeLaunchPrompt,
     sessionEntry: SessionEntry | null,
-  ): RuntimeLaunchPrompt {
+  ): { prompt: RuntimeLaunchPrompt; messages: RuntimeUserMessage[] } | null {
     const restartResume = prompt._daemonRestartResume;
     if (!restartResume) {
-      return prompt;
+      const message = createQueuedRuntimeUserMessage(prompt);
+      return { prompt, messages: [message] };
     }
 
     const sessionKey = restartResume.sessionKey ?? sessionEntry?.sessionKey ?? sessionName;
     const pendingMessages = normalizePersistedRuntimeMessages(
       dbGetDaemonRestartPendingMessages(restartResume.restartEpoch, sessionKey),
     );
-    if (pendingMessages.length === 0) {
-      return prompt;
+    if (pendingMessages.length === 0 && restartResume.pendingOnly) {
+      return null;
     }
 
-    const resumeMessage = createQueuedRuntimeUserMessage(prompt);
-    const combined = [...pendingMessages, resumeMessage];
+    const combined = restartResume.pendingOnly
+      ? pendingMessages
+      : [...pendingMessages, createQueuedRuntimeUserMessage(prompt)];
     const restartPrompt = buildStashedRestartPrompt(combined);
     if (!restartPrompt) {
-      return prompt;
+      return null;
     }
 
-    this.stashedMessages.set(sessionName, combined);
     log.info("Prepared daemon restart resume with persisted pending messages", {
       sessionName,
       sessionKey,
@@ -1220,8 +1329,11 @@ export class RuntimeSessionDispatcher {
       pendingMessages: pendingMessages.length,
     });
     return {
-      ...restartPrompt,
-      _daemonRestartResume: restartResume,
+      prompt: {
+        ...restartPrompt,
+        _daemonRestartResume: restartResume,
+      },
+      messages: combined.map(cloneRuntimeUserMessage),
     };
   }
 
@@ -1251,6 +1363,7 @@ export class RuntimeSessionDispatcher {
         drainPendingStarts: () => this.drainPendingStarts(),
         restartStashedSession: ({ sessionName: stashedSessionName, reason }) =>
           this.restartStashedSession(stashedSessionName, reason),
+        crashRecovery: this.options.crashRecovery,
       });
     } finally {
       this.inFlightStartPrompts.delete(sessionName);
@@ -1658,8 +1771,15 @@ export class RuntimeSessionDispatcher {
       },
     });
 
-    stashPendingRuntimeMessages(sessionName, current, this.stashedMessages);
-    recordStreamingTurnInterruptedTrace(sessionName, current, "idle_gap_stuck", sessionKey, "aborted");
+    stashPendingRuntimeMessages(sessionName, current, this.stashedMessages, this.options.crashRecovery);
+    recordStreamingTurnInterruptedTrace(
+      this.options.crashRecovery,
+      sessionName,
+      current,
+      "idle_gap_stuck",
+      sessionKey,
+      "aborted",
+    );
     shutdownRuntimeStreamingSession(current, "idle_gap_stuck");
     this.releaseRuntimeSessionSlot(sessionName, { drainPendingStarts: false });
     await this.restartStashedSession(sessionName, "idle_gap_stuck");
@@ -1753,28 +1873,12 @@ export class RuntimeSessionDispatcher {
 }
 
 export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, barrier: DeliveryBarrier): boolean {
-  const supportsNativeSteer =
-    session.queryHandle.concurrentInputStrategy === "native_steer" && Boolean(session.queryHandle.control);
-  const nativeSteerPreTurnQueue =
-    supportsNativeSteer &&
-    session.queryHandle.provider !== "codex" &&
-    !session.turnActive &&
-    !session.pushMessage &&
-    session.pendingMessages.length > 0 &&
-    !session.currentTurnPendingIds?.length;
-  const activeTurnIsFresh =
-    !session.turnActive || Date.now() - session.lastActivity <= NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS;
-
-  return (
-    barrier === "after_tool" &&
-    supportsNativeSteer &&
-    (session.turnActive || nativeSteerPreTurnQueue) &&
-    activeTurnIsFresh &&
-    !session.done &&
-    !session.starting &&
-    !session.compacting &&
-    !session.toolRunning
-  );
+  // Prompt-bearing native controls mutate physical provider input without
+  // extending the immutable attempt request. Keep input on the host queue until
+  // the durable append-only input journal can fence native steer safely.
+  void session;
+  void barrier;
+  return false;
 }
 
 function buildDebouncedRuntimePrompts(messages: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt[] {
@@ -1852,6 +1956,34 @@ export function stashPromptForStartingSession(
 ): RuntimeUserMessage[] {
   const queued = stashedMessages.get(sessionName) ?? [];
   queued.push(createQueuedRuntimeUserMessage(prompt));
+  stashedMessages.set(sessionName, queued);
+  return queued;
+}
+
+function appendUniqueRuntimeMessages(
+  queued: RuntimeUserMessage[],
+  messages: RuntimeUserMessage[],
+): RuntimeUserMessage[] {
+  const seenPendingIds = new Set(queued.map((message) => message.pendingId).filter(Boolean));
+  for (const message of messages) {
+    if (message.pendingId && seenPendingIds.has(message.pendingId)) {
+      continue;
+    }
+    queued.push(cloneRuntimeUserMessage(message));
+    if (message.pendingId) {
+      seenPendingIds.add(message.pendingId);
+    }
+  }
+  return queued;
+}
+
+function appendUniqueRuntimeMessagesToStash(
+  sessionName: string,
+  messages: RuntimeUserMessage[],
+  stashedMessages: Map<string, RuntimeUserMessage[]>,
+): RuntimeUserMessage[] {
+  const queued = stashedMessages.get(sessionName) ?? [];
+  appendUniqueRuntimeMessages(queued, messages);
   stashedMessages.set(sessionName, queued);
   return queued;
 }
@@ -2057,6 +2189,7 @@ function isRuntimeUserMessage(value: unknown): value is RuntimeUserMessage {
 }
 
 function recordStreamingAbortTrace(
+  crashRecovery: RuntimeCrashRecoveryCoordinator,
   sessionName: string,
   session: RuntimeHostStreamingSession,
   reason: string,
@@ -2083,19 +2216,79 @@ function recordStreamingAbortTrace(
       tool: session.currentToolName ?? null,
     },
   });
-  recordStreamingTurnInterruptedTrace(sessionName, session, reason, sessionKey, "aborted");
+  recordStreamingTurnInterruptedTrace(crashRecovery, sessionName, session, reason, sessionKey, "aborted");
 }
 
 function recordStreamingTurnInterruptedTrace(
+  crashRecovery: RuntimeCrashRecoveryCoordinator,
   sessionName: string,
   session: RuntimeHostStreamingSession,
   reason: string,
   sessionKey = sessionName,
   status: "interrupted" | "aborted" = "interrupted",
 ): void {
+  const requestedCompletedAt = Date.now();
+  const existingTerminal = session.currentCrashRecoveryTerminal;
+  if (!existingTerminal && !session.currentTraceTurnId && !session.currentCrashRecoveryAttemptId) {
+    return;
+  }
+  let terminal = existingTerminal;
+  if (!terminal) {
+    if (!session.currentCrashRecoveryAttemptId) {
+      if (crashRecovery.ownershipFailure) {
+        log.error("Skipping dispatcher terminal state after crash recovery ownership loss", {
+          sessionName,
+          reason,
+          error: crashRecovery.ownershipFailure,
+        });
+        return;
+      }
+      throw new Error("Crash recovery attempt binding missing before dispatcher terminal state");
+    }
+    if (session.currentCrashRecoveryAttemptId) {
+      const attemptId = session.currentCrashRecoveryAttemptId;
+      try {
+        const terminalAttempt = crashRecovery.terminalizeTurnAttempt({
+          attemptId,
+          status,
+          completedAt: requestedCompletedAt,
+          metadata: { terminalReason: reason },
+        });
+        if (terminalAttempt.status !== status || terminalAttempt.completedAt !== requestedCompletedAt) {
+          throw new Error(`Crash recovery attempt ${attemptId} terminalized with an unexpected first-terminal state`);
+        }
+        session.currentCrashRecoveryAttemptId = undefined;
+        terminal = {
+          status,
+          completedAt: requestedCompletedAt,
+          startedTool: terminalAttempt.startedTool === true || session.currentTurnToolStarted === true,
+          materializedOutput: terminalAttempt.materializedOutput === true,
+        };
+      } catch (error) {
+        if (!crashRecovery.ownershipFailure) {
+          throw error;
+        }
+        log.error("Lost crash recovery ownership while aborting runtime turn", {
+          sessionName,
+          attemptId,
+          reason,
+          error,
+        });
+        session.currentCrashRecoveryAttemptId = undefined;
+        return;
+      }
+    }
+    session.currentCrashRecoveryTerminal = terminal;
+  }
+  if (!terminal) {
+    throw new Error("Crash recovery terminal state missing after durable dispatcher terminalization");
+  }
   if (!session.currentTraceTurnId || session.currentTraceTurnTerminalRecorded) {
     return;
   }
+
+  const terminalStatus: RuntimeTurnAttemptTerminalStatus = terminal.status;
+  const dispatcherWonTerminal = existingTerminal === undefined;
 
   recordTerminalTurnTrace({
     sessionKey,
@@ -2105,12 +2298,15 @@ function recordStreamingTurnInterruptedTrace(
     turnId: session.currentTraceTurnId,
     provider: session.queryHandle.provider,
     model: session.currentModel,
-    status,
-    eventType: "turn.interrupted",
-    abortReason: reason,
+    status: terminalStatus,
+    eventType: runtimeTurnAttemptTerminalEventType(terminalStatus),
+    abortReason: terminalStatus === "complete" || !dispatcherWonTerminal ? null : reason,
     startedAt: session.currentTraceTurnStartedAt,
+    completedAt: terminal.completedAt,
     payloadJson: {
-      reason,
+      reason: dispatcherWonTerminal ? reason : null,
+      requestedAbortReason: reason,
+      firstTerminalStatus: terminalStatus,
       source: session.currentSource ?? null,
     },
   });

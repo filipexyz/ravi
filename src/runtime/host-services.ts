@@ -19,6 +19,7 @@ import { agentCan, canWithCapabilityContext, isDelegatedAuthorityContext } from 
 import type { ContextRecord } from "../router/index.js";
 import type {
   RuntimeApprovalResult,
+  RuntimeCapabilityAuthorizationRequest,
   RuntimeCapabilityAuthorizationResult,
   RuntimeCommandAuthorizationRequest,
   RuntimeDynamicToolCallContentItem,
@@ -206,12 +207,7 @@ export function createRuntimeHostServices(options: RuntimeHostServicesOptions): 
 
 async function authorizeRuntimeCapability(
   context: ContextRecord,
-  request: {
-    permission: string;
-    objectType: string;
-    objectId: string;
-    eventData?: Record<string, unknown>;
-  },
+  request: RuntimeCapabilityAuthorizationRequest,
 ): Promise<RuntimeCapabilityAuthorizationResult> {
   return authorizeRuntimeContext({
     context,
@@ -219,6 +215,7 @@ async function authorizeRuntimeCapability(
     objectType: request.objectType,
     objectId: request.objectId,
     eventData: request.eventData,
+    beforeExternalApproval: request.beforeExternalApproval,
   });
 }
 
@@ -478,6 +475,7 @@ async function authorizeRuntimeCommandExecution(
     objectType: "tool",
     objectId: "Bash",
     eventData,
+    beforeExternalApproval: request.beforeExternalApproval,
   });
   if (!toolAuthorization.allowed) {
     return {
@@ -512,6 +510,7 @@ async function authorizeRuntimeCommandExecution(
           ...eventData,
           runtimeExecutable: executable,
         },
+        beforeExternalApproval: request.beforeExternalApproval,
       });
       if (!executableAuthorization.allowed) {
         return {
@@ -536,6 +535,7 @@ async function authorizeRuntimeCommandExecution(
           ...eventData,
           runtimeSessionTarget: target,
         },
+        beforeExternalApproval: request.beforeExternalApproval,
       });
       if (!sessionAuthorization.allowed) {
         return {
@@ -591,6 +591,7 @@ async function authorizeRuntimeToolUse(
     objectType: "tool",
     objectId: request.toolName,
     eventData: request.eventData,
+    beforeExternalApproval: request.beforeExternalApproval,
   });
 
   if (!result.allowed) {
@@ -657,6 +658,7 @@ async function requestRuntimeUserInput(
     }
     pollName += "\n(responda a mensagem para outro)";
 
+    request.beforeExternalApproval?.();
     const result = await requestPollAnswer(targetSource, pollName, optionLabels, {
       selectableCount: question.multiSelect ? optionLabels.length : 1,
     });
