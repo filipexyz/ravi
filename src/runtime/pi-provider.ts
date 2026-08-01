@@ -20,7 +20,7 @@ import type {
   SessionRuntimeProvider,
 } from "./types.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
-import { emptySkillVisibilitySnapshot } from "./skill-visibility.js";
+import { buildPluginSkillVisibilitySnapshot } from "./skill-visibility.js";
 
 const DEFAULT_PI_COMMAND = "pi";
 const DEFAULT_PI_RESPONSE_TIMEOUT_MS = 30_000;
@@ -193,7 +193,7 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
           guarantee: "adapter",
         },
         skillVisibility: {
-          availability: "none",
+          availability: "provider",
           loadedState: "none",
         },
         supportsSessionResume: true,
@@ -223,7 +223,18 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
               }));
       const canRestartTransport = Boolean(options.transportFactory) || !options.transport;
       const initialTransport = createTransport();
-      const skillVisibility = emptySkillVisibilitySnapshot();
+      const skillVisibility = buildPluginSkillVisibilitySnapshot({
+        provider: "pi",
+        plugins: input.plugins,
+        state: "advertised",
+        confidence: "declared",
+        evidenceKind: "system-prompt",
+        ...(input.allowedSkills && input.allowedSkills.length > 0 ? { allowedSkills: input.allowedSkills } : {}),
+      });
+      const request: RuntimeStartRequest = {
+        ...input,
+        systemPromptAppend: buildPiSkillCatalogSystemPrompt(input.systemPromptAppend, skillVisibility),
+      };
       const state: PiSessionRuntimeState = {
         activeTurn: false,
         interrupted: false,
@@ -243,7 +254,7 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
         provider: "pi",
         skillVisibility,
         concurrentInputStrategy: "native_steer",
-        events: runPiTurns(input, createTransport, state, { canRestartTransport, skillVisibility }),
+        events: runPiTurns(request, createTransport, state, { canRestartTransport, skillVisibility }),
         interrupt: async () => {
           state.interrupted = true;
           const transport = state.transport;
@@ -268,6 +279,52 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
       };
     },
   };
+}
+
+export function buildPiSkillCatalogSystemPrompt(
+  basePrompt: string,
+  skillVisibility: RuntimeSkillVisibilitySnapshot,
+): string {
+  if (skillVisibility.skills.length === 0) {
+    return basePrompt;
+  }
+
+  const catalog = skillVisibility.skills.map((skill) => {
+    const alias = piManagedSkillAlias(skill);
+    return alias === skill.id ? `- ${alias}` : `- ${alias} (skill: ${skill.id})`;
+  });
+
+  return [
+    basePrompt.trim(),
+    "",
+    "## Ravi Skills Available to Pi",
+    "",
+    "The following skills are indexed for this session. When a task matches one, load its complete instructions before acting with:",
+    "",
+    "`ravi skills show <skill-name> --json`",
+    "",
+    ...catalog,
+    "",
+    "Treat this catalog as availability only. A skill is loaded only after its complete instructions are read.",
+  ]
+    .filter((line, index) => line || index > 0)
+    .join("\n");
+}
+
+function piManagedSkillAlias(skill: RuntimeSkillVisibilitySnapshot["skills"][number]): string {
+  const sourceMatch = /^plugin:([^/]+)\/([^/]+)$/.exec(skill.source ?? "");
+  if (!sourceMatch) {
+    return skill.id;
+  }
+  return `${piSkillSlug(sourceMatch[1] ?? "")}-${piSkillSlug(sourceMatch[2] ?? skill.id)}`;
+}
+
+function piSkillSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function createPiRpcSubprocessTransport(options: CreatePiRpcSubprocessTransportOptions = {}): PiRpcTransport {

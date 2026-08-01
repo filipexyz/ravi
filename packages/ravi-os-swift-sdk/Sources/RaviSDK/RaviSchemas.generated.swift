@@ -1734,12 +1734,300 @@ public enum RaviSchemas {
         ]
       },
       "agent": {
-        "additionalProperties": {
-          "$ref": "#/$defs/__schema0"
+        "additionalProperties": false,
+        "properties": {
+          "allowedSessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "contactScope": {
+            "type": "string"
+          },
+          "cwd": {
+            "type": "string"
+          },
+          "debounceMs": {
+            "type": "number"
+          },
+          "defaults": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dmScope": {
+            "enum": [
+              "main",
+              "per-peer",
+              "per-channel-peer",
+              "per-account-channel-peer"
+            ],
+            "type": "string"
+          },
+          "effectiveModel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "effectiveProvider": {
+            "type": "string"
+          },
+          "effort": {
+            "enum": [
+              "none",
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max",
+              "ultra"
+            ],
+            "type": "string"
+          },
+          "groupDebounceMs": {
+            "type": "number"
+          },
+          "heartbeat": {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "activeEnd": {
+                "type": "string"
+              },
+              "activeStart": {
+                "type": "string"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "intervalMs": {
+                "type": "number"
+              },
+              "lastRunAt": {
+                "type": "number"
+              },
+              "model": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "enabled",
+              "intervalMs"
+            ],
+            "type": "object"
+          },
+          "id": {
+            "type": "string"
+          },
+          "isDefault": {
+            "type": "boolean"
+          },
+          "matrixAccount": {
+            "type": "string"
+          },
+          "memoryModel": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "active",
+              "sentinel"
+            ],
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "modelPresetId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelPresetVersion": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "modelSource": {
+            "anyOf": [
+              {
+                "enum": [
+                  "agent_preset",
+                  "agent_default",
+                  "global_default"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "remote": {
+            "type": "string"
+          },
+          "remoteUser": {
+            "type": "string"
+          },
+          "settingSources": {
+            "items": {
+              "enum": [
+                "user",
+                "project"
+              ],
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "specMode": {
+            "type": "boolean"
+          },
+          "systemPromptAppend": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "assetId": {
+                  "type": "string"
+                },
+                "assetType": {
+                  "enum": [
+                    "agent",
+                    "automation",
+                    "app",
+                    "session",
+                    "task",
+                    "project",
+                    "profile",
+                    "contact",
+                    "chat",
+                    "route",
+                    "instance",
+                    "artifact",
+                    "insight",
+                    "workflow_spec",
+                    "workflow_run",
+                    "workflow_node",
+                    "cron_job",
+                    "trigger",
+                    "hook",
+                    "task_automation",
+                    "observer_rule",
+                    "observer_binding",
+                    "observer_profile",
+                    "command",
+                    "skill",
+                    "skill_gate_rule",
+                    "context",
+                    "call_profile",
+                    "call_request",
+                    "call_voice_agent",
+                    "call_tool",
+                    "outbound_queue",
+                    "outbound_entry",
+                    "spec",
+                    "devin_session"
+                  ],
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "createdBy": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "tagId": {
+                  "type": "string"
+                },
+                "tagSlug": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                },
+                "updatedBy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "tagId",
+                "tagSlug",
+                "assetType",
+                "assetId",
+                "source",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
         },
-        "propertyNames": {
-          "type": "string"
-        },
+        "required": [
+          "id",
+          "cwd",
+          "modelPresetId",
+          "isDefault",
+          "effectiveProvider",
+          "effectiveModel",
+          "modelSource",
+          "modelPresetVersion",
+          "tags"
+        ],
         "type": "object"
       },
       "agentId": {
@@ -2934,9 +3222,7 @@ public enum RaviSchemas {
                           "interface": {
                             "enum": [
                               "builtin",
-                              "cli",
-                              "sdk",
-                              "tool"
+                              "cli"
                             ],
                             "type": "string"
                           },
@@ -3115,6 +3401,33 @@ public enum RaviSchemas {
           }
         ]
       },
+      "builder": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "reviewChecklist": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "skill": {
+            "type": "string"
+          },
+          "spec": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "command",
+          "spec",
+          "reviewChecklist"
+        ],
+        "type": "object"
+      },
       "nextCommands": {
         "items": {
           "type": "string"
@@ -3176,6 +3489,7 @@ public enum RaviSchemas {
       "app",
       "skill",
       "skillGate",
+      "builder",
       "prompts",
       "nextCommands"
     ],
@@ -3272,6 +3586,43 @@ public enum RaviSchemas {
     },
     "additionalProperties": false,
     "properties": {
+      "builder": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "reviewChecklist": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "skill": {
+            "type": "string"
+          },
+          "spec": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "command",
+          "spec",
+          "reviewChecklist"
+        ],
+        "type": "object"
+      },
+      "cliPath": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "command": {
         "type": "string"
       },
@@ -3367,12 +3718,14 @@ public enum RaviSchemas {
               "enum": [
                 "planned",
                 "created",
-                "overwritten"
+                "overwritten",
+                "preserved"
               ],
               "type": "string"
             },
             "kind": {
               "enum": [
+                "cli",
                 "manifest",
                 "spec",
                 "skill"
@@ -3550,12 +3903,14 @@ public enum RaviSchemas {
       "command",
       "dryRun",
       "force",
+      "cliPath",
       "manifestPath",
       "specPath",
       "skillPath",
       "skill",
       "files",
       "manifest",
+      "builder",
       "nextCommands",
       "sourceCommand",
       "source",
@@ -3719,9 +4074,7 @@ public enum RaviSchemas {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli",
-                            "sdk",
-                            "tool"
+                            "cli"
                           ],
                           "type": "string"
                         },
@@ -4011,9 +4364,7 @@ public enum RaviSchemas {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli",
-                            "sdk",
-                            "tool"
+                            "cli"
                           ],
                           "type": "string"
                         },
@@ -4393,9 +4744,7 @@ public enum RaviSchemas {
                           "interface": {
                             "enum": [
                               "builtin",
-                              "cli",
-                              "sdk",
-                              "tool"
+                              "cli"
                             ],
                             "type": "string"
                           },
@@ -4574,6 +4923,33 @@ public enum RaviSchemas {
           }
         ]
       },
+      "builder": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "reviewChecklist": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "skill": {
+            "type": "string"
+          },
+          "spec": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "command",
+          "spec",
+          "reviewChecklist"
+        ],
+        "type": "object"
+      },
       "nextCommands": {
         "items": {
           "type": "string"
@@ -4635,6 +5011,7 @@ public enum RaviSchemas {
       "app",
       "skill",
       "skillGate",
+      "builder",
       "prompts",
       "nextCommands"
     ],
@@ -4716,7 +5093,13 @@ public enum RaviSchemas {
           }
         ]
       },
+      "callerContextId": {
+        "type": "string"
+      },
       "channel": {
+        "type": "string"
+      },
+      "childContextId": {
         "type": "string"
       },
       "command": {
@@ -4746,10 +5129,7 @@ public enum RaviSchemas {
           {
             "enum": [
               "builtin",
-              "cli",
-              "sdk",
-              "tool",
-              "stream"
+              "cli"
             ],
             "type": "string"
           },
@@ -4828,9 +5208,7 @@ public enum RaviSchemas {
           "interface": {
             "enum": [
               "builtin",
-              "cli",
-              "sdk",
-              "tool"
+              "cli"
             ],
             "type": "string"
           },
@@ -4907,7 +5285,7 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "command": {
-        "description": "Canonical CLI command (default: ravi <id>)",
+        "description": "Implementation CLI command (default: generated bun cli.ts)",
         "type": "string"
       },
       "description": {
@@ -4919,7 +5297,7 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "force": {
-        "description": "Overwrite existing scaffold files",
+        "description": "Overwrite scaffold contracts while preserving an existing implementation CLI",
         "type": "boolean"
       },
       "id": {
@@ -4987,6 +5365,43 @@ public enum RaviSchemas {
     },
     "additionalProperties": false,
     "properties": {
+      "builder": {
+        "additionalProperties": false,
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "reviewChecklist": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "skill": {
+            "type": "string"
+          },
+          "spec": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "skill",
+          "command",
+          "spec",
+          "reviewChecklist"
+        ],
+        "type": "object"
+      },
+      "cliPath": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
       "command": {
         "type": "string"
       },
@@ -5004,12 +5419,14 @@ public enum RaviSchemas {
               "enum": [
                 "planned",
                 "created",
-                "overwritten"
+                "overwritten",
+                "preserved"
               ],
               "type": "string"
             },
             "kind": {
               "enum": [
+                "cli",
                 "manifest",
                 "spec",
                 "skill"
@@ -5094,12 +5511,14 @@ public enum RaviSchemas {
       "command",
       "dryRun",
       "force",
+      "cliPath",
       "manifestPath",
       "specPath",
       "skillPath",
       "skill",
       "files",
       "manifest",
+      "builder",
       "nextCommands"
     ],
     "type": "object"
@@ -5258,9 +5677,7 @@ public enum RaviSchemas {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli",
-                          "sdk",
-                          "tool"
+                          "cli"
                         ],
                         "type": "string"
                       },
@@ -13824,6 +14241,599 @@ public enum RaviSchemas {
       "requestId",
       "disposition",
       "acceptedAt"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsBackendRuntimeInterruptInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "description": "Concrete local agent id used for authorization",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+        "type": "string"
+      },
+      "request": {
+        "additionalProperties": false,
+        "description": "Channel runtime interrupt request object (JSON when invoked from the CLI)",
+        "properties": {
+          "binding": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "channelInstanceId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "chatId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "messageId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "sessionId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "turnId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "channelInstanceId",
+              "agentId",
+              "chatId",
+              "messageId",
+              "sessionId",
+              "turnId"
+            ],
+            "type": "object"
+          },
+          "idempotencyKey": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+            "type": "string"
+          },
+          "protocol": {
+            "const": "ravi.channel.runtime-events",
+            "type": "string"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+            "type": "string"
+          },
+          "requestedAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "type": "number"
+          }
+        },
+        "required": [
+          "protocol",
+          "schemaVersion",
+          "requestId",
+          "idempotencyKey",
+          "binding",
+          "requestedAt"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "agentId",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsBackendRuntimeInterruptReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "acceptedAt": {
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "type": "string"
+      },
+      "disposition": {
+        "enum": [
+          "requested",
+          "duplicate",
+          "rejected"
+        ],
+        "type": "string"
+      },
+      "error": {
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "validation",
+              "authentication",
+              "authorization",
+              "capacity",
+              "availability",
+              "internal"
+            ],
+            "type": "string"
+          },
+          "code": {
+            "enum": [
+              "INVALID_REQUEST",
+              "IDEMPOTENCY_CONFLICT",
+              "UNAUTHENTICATED",
+              "PERMISSION_DENIED",
+              "LOCAL_PERMISSION_DENIED",
+              "NOT_FOUND",
+              "RATE_LIMITED",
+              "OVERLOADED",
+              "UNAVAILABLE",
+              "INTERNAL"
+            ],
+            "type": "string"
+          },
+          "correlationId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+            "type": "string"
+          },
+          "retryAfterMs": {
+            "exclusiveMinimum": 0,
+            "maximum": 86400000,
+            "type": "integer"
+          },
+          "retryable": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "code",
+          "category",
+          "retryable"
+        ],
+        "type": "object"
+      },
+      "protocol": {
+        "const": "ravi.channel.runtime-events",
+        "type": "string"
+      },
+      "requestId": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+        "type": "string"
+      },
+      "schemaVersion": {
+        "const": 1,
+        "type": "number"
+      }
+    },
+    "required": [
+      "protocol",
+      "schemaVersion",
+      "requestId",
+      "disposition",
+      "acceptedAt"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsBackendRuntimeReadbackInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agentId": {
+        "description": "Concrete local agent id used for authorization",
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+        "type": "string"
+      },
+      "request": {
+        "additionalProperties": false,
+        "description": "Channel runtime readback request object (JSON when invoked from the CLI)",
+        "properties": {
+          "binding": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "channelInstanceId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "chatId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "messageId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "sessionId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "turnId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "channelInstanceId",
+              "agentId",
+              "chatId",
+              "messageId",
+              "sessionId",
+              "turnId"
+            ],
+            "type": "object"
+          },
+          "protocol": {
+            "const": "ravi.channel.runtime-events",
+            "type": "string"
+          },
+          "requestId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "type": "number"
+          }
+        },
+        "required": [
+          "protocol",
+          "schemaVersion",
+          "requestId",
+          "binding"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "agentId",
+      "request"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let ChannelsBackendRuntimeReadbackReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "assistantMessageId": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+        "type": "string"
+      },
+      "binding": {
+        "additionalProperties": false,
+        "properties": {
+          "agentId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+            "type": "string"
+          },
+          "channelInstanceId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+            "type": "string"
+          },
+          "chatId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+            "type": "string"
+          },
+          "messageId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+            "type": "string"
+          },
+          "sessionId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+            "type": "string"
+          },
+          "turnId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "channelInstanceId",
+          "agentId",
+          "chatId",
+          "messageId",
+          "sessionId",
+          "turnId"
+        ],
+        "type": "object"
+      },
+      "lastEventRuntimeGenerationId": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+        "type": "string"
+      },
+      "lastSequence": {
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "observedAt": {
+        "format": "date-time",
+        "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+        "type": "string"
+      },
+      "protocol": {
+        "const": "ravi.channel.runtime-events",
+        "type": "string"
+      },
+      "requestId": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+        "type": "string"
+      },
+      "runtimeGenerationId": {
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+        "type": "string"
+      },
+      "schemaVersion": {
+        "const": 1,
+        "type": "number"
+      },
+      "state": {
+        "enum": [
+          "accepted",
+          "running",
+          "waiting_approval",
+          "completed",
+          "failed",
+          "interrupted"
+        ],
+        "type": "string"
+      },
+      "terminalEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "correlation": {
+            "additionalProperties": false,
+            "properties": {
+              "binding": {
+                "additionalProperties": false,
+                "properties": {
+                  "agentId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                    "type": "string"
+                  },
+                  "channelInstanceId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                    "type": "string"
+                  },
+                  "chatId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                    "type": "string"
+                  },
+                  "messageId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                    "type": "string"
+                  },
+                  "sessionId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                    "type": "string"
+                  },
+                  "turnId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "channelInstanceId",
+                  "agentId",
+                  "chatId",
+                  "messageId",
+                  "sessionId",
+                  "turnId"
+                ],
+                "type": "object"
+              },
+              "causationId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "correlationId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "ingressRequestId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              }
+            },
+            "required": [
+              "correlationId",
+              "ingressRequestId",
+              "binding"
+            ],
+            "type": "object"
+          },
+          "eventId": {
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+            "type": "string"
+          },
+          "kind": {
+            "const": "turn.terminal_output",
+            "type": "string"
+          },
+          "occurredAt": {
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z|([+-](?:[01]\\d|2[0-3]):[0-5]\\d)))$",
+            "type": "string"
+          },
+          "payload": {
+            "additionalProperties": false,
+            "properties": {
+              "assistantMessageId": {
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                "type": "string"
+              },
+              "content": {
+                "items": {
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "text": {
+                          "type": "string"
+                        },
+                        "type": {
+                          "const": "text",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "text"
+                      ],
+                      "type": "object"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "artifactId": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                          "type": "string"
+                        },
+                        "mediaType": {
+                          "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*\\/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$",
+                          "type": "string"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "sizeBytes": {
+                          "maximum": 9007199254740991,
+                          "minimum": 0,
+                          "type": "integer"
+                        },
+                        "type": {
+                          "const": "artifact",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "type",
+                        "artifactId"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                "maxItems": 256,
+                "minItems": 1,
+                "type": "array"
+              },
+              "error": {
+                "additionalProperties": false,
+                "properties": {
+                  "category": {
+                    "enum": [
+                      "validation",
+                      "authentication",
+                      "authorization",
+                      "capacity",
+                      "availability",
+                      "internal"
+                    ],
+                    "type": "string"
+                  },
+                  "code": {
+                    "enum": [
+                      "INVALID_REQUEST",
+                      "IDEMPOTENCY_CONFLICT",
+                      "UNAUTHENTICATED",
+                      "PERMISSION_DENIED",
+                      "LOCAL_PERMISSION_DENIED",
+                      "NOT_FOUND",
+                      "RATE_LIMITED",
+                      "OVERLOADED",
+                      "UNAVAILABLE",
+                      "INTERNAL"
+                    ],
+                    "type": "string"
+                  },
+                  "correlationId": {
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._~-]*$",
+                    "type": "string"
+                  },
+                  "retryAfterMs": {
+                    "exclusiveMinimum": 0,
+                    "maximum": 86400000,
+                    "type": "integer"
+                  },
+                  "retryable": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "code",
+                  "category",
+                  "retryable"
+                ],
+                "type": "object"
+              },
+              "state": {
+                "enum": [
+                  "completed",
+                  "failed",
+                  "interrupted"
+                ],
+                "type": "string"
+              }
+            },
+            "required": [
+              "state"
+            ],
+            "type": "object"
+          },
+          "protocol": {
+            "const": "ravi.channel.runtime-events",
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": 1,
+            "type": "number"
+          },
+          "sequence": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "protocol",
+          "schemaVersion",
+          "eventId",
+          "kind",
+          "occurredAt",
+          "sequence",
+          "correlation",
+          "payload"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "protocol",
+      "schemaVersion",
+      "requestId",
+      "binding",
+      "state",
+      "lastSequence",
+      "observedAt"
     ],
     "type": "object"
   }
@@ -54457,6 +55467,321 @@ public enum RaviSchemas {
   {
     "additionalProperties": {},
     "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsCloseThreadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "return": {
+        "description": "Completion result to deliver once to the parent session",
+        "type": "string"
+      },
+      "session": {
+        "description": "Explicit Slack thread session (defaults to current session)",
+        "type": "string"
+      }
+    },
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsCloseThreadReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actionId": {
+        "const": "thread.close",
+        "type": "string"
+      },
+      "changed": {
+        "type": "boolean"
+      },
+      "childSession": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "sessionKey",
+          "sessionName"
+        ],
+        "type": "object"
+      },
+      "closeSequence": {
+        "maximum": 9007199254740991,
+        "minimum": 0,
+        "type": "integer"
+      },
+      "closed": {
+        "const": true,
+        "type": "boolean"
+      },
+      "parentReturn": {
+        "additionalProperties": false,
+        "properties": {
+          "delivered": {
+            "type": "boolean"
+          },
+          "pending": {
+            "type": "boolean"
+          },
+          "requested": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "requested",
+          "delivered",
+          "pending"
+        ],
+        "type": "object"
+      },
+      "parentSession": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "sessionKey",
+          "sessionName"
+        ],
+        "type": "object"
+      },
+      "requestId": {
+        "type": "string"
+      },
+      "slack": {
+        "additionalProperties": false,
+        "properties": {
+          "channelId": {
+            "type": "string"
+          },
+          "threadTs": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "channelId",
+          "threadTs"
+        ],
+        "type": "object"
+      },
+      "status": {
+        "const": "closed",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "actionId",
+      "closed",
+      "changed",
+      "requestId",
+      "closeSequence",
+      "parentReturn",
+      "parentSession",
+      "childSession",
+      "slack"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsCreateThreadInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "message": {
+        "description": "Initial Slack message and first instruction for the child session",
+        "type": "string"
+      },
+      "model": {
+        "description": "Optional model override for the child session",
+        "type": "string"
+      },
+      "session": {
+        "description": "Explicit initiating session (defaults to current session)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "message"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SessionsCreateThreadReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "actionId": {
+        "const": "thread.create",
+        "type": "string"
+      },
+      "child": {
+        "additionalProperties": false,
+        "properties": {
+          "modelOverride": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "status": {
+            "const": "pending_root_delivery",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "modelOverride"
+        ],
+        "type": "object"
+      },
+      "executionMode": {
+        "const": "durable",
+        "type": "string"
+      },
+      "idempotencyKey": {
+        "type": "string"
+      },
+      "initiatorSession": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "sessionKey",
+          "sessionName"
+        ],
+        "type": "object"
+      },
+      "nextAttemptAt": {
+        "type": "number"
+      },
+      "parentSession": {
+        "additionalProperties": false,
+        "properties": {
+          "sessionKey": {
+            "type": "string"
+          },
+          "sessionName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "sessionKey",
+          "sessionName"
+        ],
+        "type": "object"
+      },
+      "publishPending": {
+        "type": "boolean"
+      },
+      "publishedNow": {
+        "type": "boolean"
+      },
+      "queued": {
+        "const": true,
+        "type": "boolean"
+      },
+      "requestId": {
+        "type": "string"
+      },
+      "slack": {
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "canonicalChatId": {
+            "type": "string"
+          },
+          "channelId": {
+            "type": "string"
+          },
+          "instanceId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "accountId",
+          "instanceId",
+          "channelId",
+          "canonicalChatId"
+        ],
+        "type": "object"
+      },
+      "status": {
+        "const": "queued",
+        "type": "string"
+      }
+    },
+    "required": [
+      "status",
+      "queued",
+      "actionId",
+      "executionMode",
+      "requestId",
+      "idempotencyKey",
+      "publishedNow",
+      "publishPending",
+      "parentSession",
+      "initiatorSession",
+      "slack",
+      "child"
+    ],
     "type": "object"
   }
   """#

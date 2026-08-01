@@ -118,10 +118,16 @@ Important: Pi `turn_end` is an internal LLM/tool-cycle boundary, not always a Ra
 
 ## Skill Visibility
 
-- The Pi RPC MVP does not support Ravi plugins or Codex-style skill catalogs.
+- The Pi RPC MVP has no provider-native plugin or skill-loading API. Ravi
+  nevertheless discovers its plugin skills, filters them by the agent
+  allowlist, and appends a compact skill catalog plus
+  `ravi skills show <skill> --json` loading instructions to the Pi system
+  prompt.
 - Current Pi state and event payloads do not expose a skill list, skill request, skill load, or skill unload event.
 - Pi sessions MUST report an empty `loadedSkills` vector unless Ravi owns an explicit skill injection flow and observes completion.
-- If the visibility payload includes skill records for Pi, their state MUST be `unknown` or non-loaded. The adapter MUST NOT infer loaded skills from appended prompt text.
+- Allowlisted catalog records MUST be reported as `advertised` with declared
+  `system-prompt` evidence. The adapter MUST NOT infer loaded skills from that
+  appended prompt text.
 - A future Pi SDK-backed provider MAY expose richer skill/resource state. That state MUST be mapped into the canonical `runtime/skill-loading` record shape before it appears in `session-visibility`.
 
 ## Usage Mapping

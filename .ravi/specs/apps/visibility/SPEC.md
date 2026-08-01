@@ -34,10 +34,10 @@ normative: true
 App visibility ensures a principal cannot discover or inspect apps it cannot
 use.
 
-Apps are operational capability boundaries. A manifest can reveal tool
-surfaces, executable paths, SDK routes, permission requirements, and installed
-product capabilities. Therefore app discovery is authorized disclosure, not a
-free catalog.
+Apps are operational capability boundaries. A manifest can reveal CLI
+entrypoints, operations, child-context capabilities, permission requirements,
+and installed product capabilities. Therefore app discovery is authorized
+disclosure, not a free catalog.
 
 ## Invariants
 

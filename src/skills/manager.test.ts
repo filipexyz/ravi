@@ -41,7 +41,7 @@ describe("skills manager", () => {
     const root = createTempRoot();
     writeText(
       join(root, "skills", "planner", "SKILL.md"),
-      "---\nname: planner\ndescription: |\n  Planeja execução\n---\n\n# Planner\n",
+      "---\nname: planner\ndescription: >-\n  Planeja execução\n  em etapas\n---\n\n# Planner\n",
     );
     writeText(
       join(root, ".codex", "skills", "reviewer", "SKILL.md"),
@@ -52,7 +52,7 @@ describe("skills manager", () => {
     const skills = discoverSkills(resolved);
 
     expect(skills.map((skill) => skill.name)).toEqual(["planner", "reviewer"]);
-    expect(skills.find((skill) => skill.name === "planner")?.description).toBe("Planeja execução");
+    expect(skills.find((skill) => skill.name === "planner")?.description).toBe("Planeja execução\nem etapas");
   });
 
   it("requires explicit selection when source has multiple skills", () => {

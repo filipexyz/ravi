@@ -48,6 +48,10 @@ export interface RaviAppPermissions {
   provider: RaviAppPermissionProviderDeclaration | null;
 }
 
+export interface RaviAppContext {
+  allow: string[];
+}
+
 export interface RaviAppManifest {
   schema: string;
   id: string;
@@ -55,8 +59,9 @@ export interface RaviAppManifest {
   version: string;
   description: string;
   interfaces: Record<string, unknown>;
+  context: RaviAppContext;
   operations?: unknown;
-  permissions?: Partial<RaviAppPermissions>;
+  permissions: Partial<RaviAppPermissions>;
   storage?: unknown;
   artifacts?: unknown;
   events?: unknown;
@@ -66,7 +71,7 @@ export interface RaviAppManifest {
   [key: string]: unknown;
 }
 
-export type RaviAppOperationInterface = "builtin" | "cli" | "sdk" | "tool" | "stream";
+export type RaviAppOperationInterface = "builtin" | "cli";
 
 export type RaviAppOperationAuthorizationOwner = "actor" | "surface" | "executorAgent";
 
@@ -144,8 +149,8 @@ export interface RaviAppCheckResult {
   warnings: string[];
 }
 
-export type RaviAppScaffoldFileKind = "manifest" | "spec" | "skill";
-export type RaviAppScaffoldFileAction = "planned" | "created" | "overwritten";
+export type RaviAppScaffoldFileKind = "cli" | "manifest" | "spec" | "skill";
+export type RaviAppScaffoldFileAction = "planned" | "created" | "overwritten" | "preserved";
 
 export interface RaviAppScaffoldOptions {
   id: string;
@@ -167,6 +172,13 @@ export interface RaviAppScaffoldFileResult {
   action: RaviAppScaffoldFileAction;
 }
 
+export interface RaviAppBuilderGuidance {
+  skill: string;
+  command: string;
+  spec: string;
+  reviewChecklist: string[];
+}
+
 export interface RaviAppScaffoldResult {
   id: string;
   name: string;
@@ -174,12 +186,14 @@ export interface RaviAppScaffoldResult {
   command: string;
   dryRun: boolean;
   force: boolean;
+  cliPath: string | null;
   manifestPath: string;
   specPath: string | null;
   skillPath: string | null;
   skill: string | null;
   files: RaviAppScaffoldFileResult[];
   manifest: RaviAppManifest;
+  builder: RaviAppBuilderGuidance;
   nextCommands: string[];
 }
 
@@ -253,6 +267,7 @@ export interface RaviAppsGuideResult {
     group: string;
     skill: string;
   };
+  builder: RaviAppBuilderGuidance;
   prompts: RaviAppsGuidePrompt[];
   nextCommands: string[];
 }
@@ -263,6 +278,10 @@ export interface RaviAppRunOptions extends RaviAppDiscoveryOptions {
   args?: string[];
   json?: boolean;
   staticRootCommands?: Set<string>;
+  runtime?: {
+    execPath?: string;
+    entrypoint?: string;
+  };
 }
 
 export interface RaviAppRunResult {
@@ -282,6 +301,8 @@ export interface RaviAppRunResult {
   exitCode?: number | null;
   stdout?: string;
   stderr?: string;
+  callerContextId?: string;
+  childContextId?: string;
   permissionProvider?: RaviAppPermissionProviderAudit;
 }
 

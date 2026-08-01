@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -78,6 +78,52 @@ describe("Pi runtime provider", () => {
         guarantee: "adapter",
       },
     });
+  });
+
+  it("indexes allowed Ravi plugin skills in the Pi system prompt without claiming they were loaded", async () => {
+    const root = mkdtempSync(join(tmpdir(), "ravi-pi-skills-"));
+    const pluginPath = join(root, "ravi-dev");
+    const skillPath = join(pluginPath, "skills", "app-creator");
+    mkdirSync(skillPath, { recursive: true });
+    writeFileSync(
+      join(skillPath, "SKILL.md"),
+      [
+        "---",
+        "name: app-creator",
+        "description: Build Ravi Apps from API or CLI contracts.",
+        "---",
+        "",
+        "# App Creator",
+      ].join("\n"),
+    );
+
+    const transport = new FakePiRpcTransport();
+    transport.pushEvent({ type: "agent_end", messages: [assistantMessage("fim")] });
+    const handle = createPiRuntimeProvider({ transport }).startSession(
+      createStartRequest("crie um app", {
+        plugins: [{ type: "local", path: pluginPath }],
+        allowedSkills: ["ravi-dev-app-creator"],
+      }),
+    );
+
+    expect(handle.skillVisibility).toMatchObject({
+      loadedSkills: [],
+      skills: [
+        {
+          id: "app-creator",
+          provider: "pi",
+          state: "advertised",
+          confidence: "declared",
+          source: "plugin:ravi-dev/app-creator",
+        },
+      ],
+    });
+
+    await collectRuntimeEvents(handle.events);
+
+    expect(transport.starts[0]?.systemPromptAppend).toContain("ravi-dev-app-creator");
+    expect(transport.starts[0]?.systemPromptAppend).toContain("ravi skills show <skill-name> --json");
+    expect(transport.starts[0]?.systemPromptAppend).toContain("availability only");
   });
 
   it("closes the Pi RPC transport idempotently", async () => {

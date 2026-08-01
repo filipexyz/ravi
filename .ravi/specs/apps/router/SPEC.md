@@ -36,9 +36,10 @@ normative: true
 
 Resolve Ravi App CLI routes at runtime from app manifests.
 
-The app router lets a newly discovered app become operable without generating a
-new TypeScript command file, rebuilding the CLI, regenerating the SDK, or adding
-a static Commander registration for every app.
+The App Router lets a newly discovered CLI become operable without generating a
+new TypeScript command file, rebuilding Ravi, or adding static Commander
+registration for every app. It is a launcher and authorization boundary, not a
+second app runtime.
 
 Operator command:
 
@@ -74,7 +75,8 @@ ravi apps run <app-id> [operation] [args...] --json
 - The router MUST resolve operations deterministically.
 - `ravi <app-id>` SHOULD show app help/summary.
 - `ravi <app-id> show` SHOULD show the app manifest summary.
-- `ravi <app-id> check` SHOULD run app manifest/health validation.
+- `ravi <app-id> check` SHOULD validate the manifest and the shape/safety of
+  declared health metadata without executing the app health command.
 - `ravi <app-id> <operation>` MUST map to a declared operation id, declared
   alias, or router-owned builtin.
 - Dot-separated local operation ids MAY be invoked as whitespace-separated CLI
@@ -83,8 +85,20 @@ ravi apps run <app-id> [operation] [args...] --json
 - Router-owned builtin operations MUST use an explicit allowlisted handler.
 - CLI-backed operations MUST NOT recursively invoke the same public dynamic
   alias, such as `ravi <app-id> <operation>`.
-- CLI-backed operations SHOULD be external commands or static internal Ravi
-  commands that do not re-enter the same dynamic route.
+- CLI-backed operations MUST invoke the app's declared CLI implementation or a
+  static internal Ravi command that does not re-enter the same dynamic route.
+- The router MUST parse the declared command into executable plus fixed argv
+  and spawn it without a shell.
+- `{args}` MUST be supported only as a complete argv placeholder. User-supplied
+  arguments MUST be inserted as separate argv elements and MUST NOT be
+  concatenated into a command string.
+- Named placeholders such as `{id}` MUST be rejected. `{args}` is the only
+  dynamic command token.
+- Shell operators, command substitution, redirection, and executable strings
+  that require shell evaluation MUST be rejected during manifest validation.
+- The app process working directory MUST default to the manifest's app root.
+  Any alternate working directory MUST be declarative, normalized, and bounded
+  to an allowed app/package root.
 - The router MUST perform manifest permission preflight before dispatch.
 - The router MUST still rely on the Permission Provider Runtime at execution
   time for mutating, sensitive, externally visible, or identity-dependent
@@ -97,22 +111,37 @@ ravi apps run <app-id> [operation] [args...] --json
   (`help`, `show`, `check`) MUST require `use app:<app-id>` before returning
   manifest details, validation errors, operation ids, or next commands.
 - Mutating operations MUST declare `permission` or `permissions`.
-- When a child process or tool execution is launched inside Ravi runtime, the
-  router SHOULD pass `RAVI_CONTEXT_KEY` when available and MUST NOT expose raw
-  secrets or bearer tokens.
+- When a runtime caller context exists, the router MUST issue a fresh child
+  context before launching the app CLI.
+- The child context MUST use stable `cliName: "app:<app-id>"`, a bounded TTL,
+  lineage to the caller, and explicit capabilities derived from manifest
+  `context.allow`.
+- The router MUST fail before spawning the CLI when the child context cannot be
+  issued with the declared capabilities.
+- The router MUST NOT forward the parent `RAVI_CONTEXT_KEY`.
+- The child process MUST receive the child `RAVI_CONTEXT_KEY` as its only Ravi
+  identity credential. The router MUST NOT synthesize `RAVI_AGENT_ID`,
+  `RAVI_SESSION_KEY`, or `RAVI_SESSION_NAME`.
+- The router MUST construct a bounded child environment from approved process
+  variables and explicit non-secret app metadata. It MUST NOT blindly spread
+  the parent environment.
+- The router MUST scrub raw credentials, bearer tokens, and unrelated secret
+  environment variables. App credentials MUST be resolved through Ravi's
+  credential boundary after authorization, not inherited from the launcher.
 - The router MUST emit audit metadata for app dispatch attempts, including
-  `appId`, `operationId`, `interface`, `mutating`, status, duration, and error
-  class when available.
+  `appId`, `operationId`, `interface`, `mutating`, caller context id, child
+  context id, status, duration, and error class when available. It MUST NOT log
+  either raw context key.
 - `--json` MUST produce machine-readable output for router success and failure
-  states.
-- Discovery and help/show/list operations MUST NOT execute app binaries, run
-  health checks, import arbitrary code, or mutate storage.
-- Stream operations MUST NOT be faked as single-shot CLI output. The router
-  SHOULD return the stream/control channel contract or hand off to a dedicated
-  streaming surface.
+  states when requested. It is an output format, not an App transport.
+- Discovery and help/show/check/list operations MUST NOT execute app binaries,
+  run health commands, import arbitrary code, or mutate storage.
+- Interactive or streaming app behavior MUST remain a CLI operation and use a
+  TTY/stream-capable launcher. It MUST NOT become a distinct operation executor.
+- UI, SDK, runtime tool, and automation callers MUST enter through the generic
+  App Router and resolve the same operation as the CLI alias.
 - Dynamic app routes MUST NOT be added to the static SDK decorator registry by
-  default. SDK clients MAY use the explicit app router API, but prompts and
-  agent-facing CLI guidance SHOULD prefer `ravi <app-id> <operation>`.
+  default. SDK clients MAY use the generic App Router API.
 
 ## Command Contract
 
@@ -129,7 +158,12 @@ Argument handling:
   tokens (`test a`) when the declared operation id matches.
 - Remaining args are operation-specific and MUST be passed only after the
   operation executor has been resolved and authorized.
+- Each remaining arg MUST remain one argv element. Quoting or shell-like text
+  in user input MUST be treated as data, not evaluated.
 - Global CLI flags such as `--json` MUST retain their normal behavior.
+- App process completion MUST preserve exit status, stdout, and stderr
+  semantics. Capturing output for a caller MUST NOT invent a second result
+  protocol.
 
 ## Resolution Order
 
@@ -145,26 +179,43 @@ use `ravi apps run <app-id> ...` only for that collision/debug case.
 
 ## Operation Executor Contract
 
-Operations MAY dispatch to one of these interfaces:
+Operations MAY dispatch to one of these executor types:
 
 - `builtin`: router-owned allowlisted handler.
-- `cli`: child process command that supports the declared machine contract.
-- `sdk`: SDK/gateway namespace and method.
-- `tool`: explicit runtime tool name and input mapping.
-- `stream`: stream/control channel declaration.
+- `cli`: the app's declared CLI implementation.
 
 Builtin operations MUST declare `handler`, such as `apps.manifest.show`,
 `apps.manifest.check`, `apps.help`, or another router-owned allowlisted
 handler.
 
-CLI operations MUST declare `command`. The command MUST NOT begin with the same
-dynamic alias being resolved, such as `ravi <app-id>` for the current app id.
+CLI operations MUST declare `command`. The command MUST NOT resolve through the
+same dynamic alias being handled, such as `ravi <app-id>` for the current app
+id. The same text MAY be used when `<app-id>` is a registered static command
+and static command precedence guarantees no dynamic-router re-entry. The
+command MUST resolve to the implementation declared by
+`interfaces.cli.command`, unless the manifest explicitly references another
+static internal Ravi command as the implementation.
 
-SDK operations MUST declare `namespace` and `method`.
+`{args}` MAY appear once as a full token in a CLI operation command. It expands
+to zero or more argv values. It MUST NOT be embedded inside another token.
+Command strings are declarative command lines, not shell programs.
 
-Tool operations MUST declare `name`.
+`sdk`, `tool`, and `stream` MUST NOT be operation executor values. Those
+surfaces are adapters that call this router.
 
-Stream operations MUST declare `channel`.
+## App-To-Ravi Contract
+
+The router does not host an App RPC protocol.
+
+1. Ravi launches the app CLI with a child context.
+2. The app resolves itself with `ravi context whoami`.
+3. The app checks or requests authority with `ravi context check` or
+   `ravi context authorize`.
+4. The app invokes the public `ravi ...` command it needs.
+5. The app returns normal CLI output and exit status.
+
+An app MAY use `--json` on a Ravi command when it needs structured output. That
+is ordinary CLI composition, not a distinct App protocol.
 
 ## Boundaries
 
@@ -178,6 +229,8 @@ Stream operations MUST declare `channel`.
 - The app router is not a replacement for first-party static CLI commands.
   Stable core commands may remain build-time registered when they need SDK
   codegen, decorators, or custom parser behavior.
+- The app router does not execute SDK, tool, UI, or stream implementations.
+  Those surfaces call the router.
 - The root-level alias is the user and agent-facing launcher. `ravi apps run`
   is the lower-level router entrypoint for diagnostics and collision fallback.
 
@@ -198,6 +251,9 @@ Stream operations MUST declare `channel`.
   without `use app:<app-id>`.
 - In agent/runtime context, a mutating operation MUST fail without
   `execute app:<app-id>` even when `use app:<app-id>` is present.
+- In agent/runtime context, a valid operation MUST launch with a new child
+  context no broader than manifest `context.allow`.
+- A child-context issuance failure MUST produce no app process.
 
 ## Known Failure Modes
 
@@ -209,6 +265,14 @@ Stream operations MUST declare `channel`.
   routing.
 - Treating manifest permissions as grants bypasses the Permission Provider
   Runtime and context-key authorization.
+- Forwarding the parent context key gives the app undeclared caller authority.
+- Implementing SDK/tool/stream as separate executors creates surface-dependent
+  behavior and authorization drift.
+- Treating JSON output as an App protocol duplicates the CLI process contract.
+- Executing manifest commands through a shell lets app arguments become command
+  injection.
+- Blindly inheriting the parent environment leaks credentials and unrelated
+  runtime authority.
 - Running health checks during discovery creates side effects and slow startup.
 - Hiding app route failures behind generic Commander help makes agents unable
   to diagnose missing manifests or invalid operations.

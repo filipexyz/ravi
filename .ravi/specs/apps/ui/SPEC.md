@@ -68,7 +68,7 @@ permissions preflight, and event wiring.
 - App operations MUST be declared under top-level `operations`.
 - Operation ids MUST be fully qualified dot ids such as `apps.list` or
   `music.playlist.create`.
-- Operations MUST declare `interface` as `cli`, `sdk`, `tool`, or `stream`.
+- Operations MUST declare `interface` as `cli` or router-owned `builtin`.
 - CLI operations MUST declare a command that supports machine-readable output.
   For Ravi-owned CLI apps this SHOULD be `--json`.
 - Operations SHOULD declare whether they are `mutating`. Mutating operations
@@ -78,6 +78,10 @@ permissions preflight, and event wiring.
 - `refreshOn` event topics MUST be valid dot-separated Ravi event topics.
 - Manifest UI declarations do not grant permissions. Runtime execution MUST
   still authorize operations through Ravi permissions/context keys.
+- Web OS MUST invoke actions and queries through the generic App Router. It
+  MUST NOT execute an app CLI directly or define a UI-specific executor.
+- A routed UI operation MUST use the same caller authorization and
+  child-context launch path as `ravi <app-id> <operation>`.
 - Discovery MUST NOT execute operations, import UI code, run health checks, or
   mutate storage.
 
@@ -180,9 +184,10 @@ Web OS boot
   -> render launcher/sidebar from manifests
   -> open /apps/:appId/:route
   -> load interfaces.ui descriptor
-  -> execute query operation for snapshot
+  -> execute query operation through App Router
+  -> App Router authorizes caller and launches app CLI with child context
   -> render with Ravi design-system primitives
-  -> user action invokes declared operation
+  -> user action invokes the same declared operation through App Router
   -> app emits event
   -> UI refreshes, patches, or invalidates affected view
 ```
@@ -191,7 +196,9 @@ Web OS boot
 
 - App UI descriptors are not microfrontends.
 - App UI descriptors are not permission grants.
-- App UI descriptors are not a replacement for CLI, SDK, or event contracts.
+- App UI descriptors are not a replacement for the app CLI or event contracts.
+- Web OS is an adapter over App Router operations, not an alternate app
+  implementation.
 - App-specific frontend bundles MAY exist only behind a future sandboxed UI
   extension spec. They are not part of `ravi.app/v1`.
 - Ravi Web OS MUST remain the owner of the unified design system.
@@ -211,6 +218,7 @@ Web OS boot
 
 - Letting each app ship its own React/CSS surface fragments the OS.
 - Buttons that are not backed by operations create fake UI.
+- UI actions that bypass the App Router create a second authorization path.
 - Eventful apps without `refreshOn` make the UI stale.
 - UI code that scrapes stdout couples rendering to human prose.
 - Declarative permissions without runtime authorization create false safety.
