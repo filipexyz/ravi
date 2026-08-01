@@ -2,7 +2,23 @@
 
 ## Checks
 
-- Manifest validation MUST pass with exactly one `youtube` app and zero errors or warnings.
+- Manifest validation MUST pass with exactly one `youtube` app and zero errors
+  or warnings after it declares
+  `context.allow: ["execute:group:yt"]`.
+- The public `ravi youtube` route and explicit `ravi apps run youtube` fallback
+  MUST resolve the same declared operation and launch the same `ravi yt`
+  implementation command.
+- No CLI operation command may begin with the dynamic prefix `ravi youtube`.
+- UI, generic SDK, runtime tool, and automation adapters MUST call the App
+  Router rather than execute a separate YouTube implementation.
+- In runtime context, read operations MUST require `use app:youtube`; mutating
+  operations MUST require `execute app:youtube`.
+- Runtime dispatch MUST issue a fresh `app:youtube` child context whose
+  capabilities are no broader than `execute:group:yt`. Child issuance failure
+  MUST start no CLI process.
+- The launched CLI MUST receive only the child `RAVI_CONTEXT_KEY` as Ravi
+  identity and MUST NOT receive the parent key or synthetic agent/session
+  identity variables.
 - The focused client, app, and CLI suites MUST pass without network access or a real credential.
 - `yt health --json` MUST pass metadata-only with `authenticated=false` and `externalCheckPerformed=false`.
 - `yt info --json` with isolated empty state MUST fail before any Google request with an actionable missing-credential error.
@@ -15,6 +31,8 @@ Run from the repository/worktree root:
 bun run gen:commands
 bun test src/apps/youtube src/cli/commands/youtube.test.ts
 bun src/cli/index.ts apps check youtube --json
+bun src/cli/index.ts youtube health --json
+bun src/cli/index.ts apps run youtube health --json
 bun src/cli/index.ts yt --help
 bun src/cli/index.ts yt health --json
 bun run sdk:generate

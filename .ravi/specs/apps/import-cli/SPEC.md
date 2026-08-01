@@ -53,10 +53,13 @@ which permissions apply, and which events/UI/storage matter.
 - CLI import MAY use help parsing only as a low-confidence fallback, and MUST
   label help-derived fields as needing review.
 - Imported manifests MUST use `schema: "ravi.app/v1"`.
-- Imported operations MUST reference `interface: "cli"` unless the source CLI
-  explicitly declares SDK, tool, or stream surfaces.
-- Imported CLI operations MUST NOT point back to the app router dynamic alias
-  such as `ravi <app-id> ...`.
+- Imported domain operations MUST reference `interface: "cli"`.
+- SDK, tool, stream, UI, and automation metadata from the source MAY be
+  preserved as review notes, but MUST NOT become alternate operation executors.
+- Imported CLI operations MUST NOT resolve back through the app router dynamic
+  alias such as `ravi <app-id> ...`. The same text MAY be preserved only when
+  `<app-id>` is a registered static command and static resolution prevents
+  App Router re-entry.
 - Imported CLI operations SHOULD include `--json` when the source command
   supports machine output.
 - Commands without machine-readable output MUST be imported as warnings or
@@ -65,6 +68,12 @@ which permissions apply, and which events/UI/storage matter.
   require explicit review before they are treated as app operations.
 - Generated permission metadata MUST be conservative. The importer MAY suggest
   permission names, but MUST NOT treat suggestions as grants.
+- Generated `context.allow` MUST default to an empty array unless the source
+  explicitly self-describes the exact Ravi capabilities it needs or an
+  operation directly invokes a public `ravi <group>` command. In the latter
+  case the importer SHOULD infer only `execute:group:<group>`.
+- Any imported `context.allow` entry MUST be marked review-required and MUST
+  NOT request implicit inheritance.
 - Generated storage, events, UI, and skill text MUST be considered draft unless
   the source CLI self-describes those surfaces with schemas.
 - Imported command lists SHOULD be collapsed into domain operations. The
@@ -74,6 +83,9 @@ which permissions apply, and which events/UI/storage matter.
   from explicit metadata, what came from registry/decorators, and what came from
   heuristics.
 - Import output SHOULD include confidence, warnings, and review-required fields.
+- Import output MUST explicitly identify itself as a draft generator result and
+  MUST link `ravi-dev-app-creator`, `apps/builder`, and the complete structured
+  builder review checklist.
 - `ravi apps check <app-id> --json` MUST remain the validation gate after any
   import writes files.
 
@@ -99,6 +111,8 @@ The payload SHOULD include:
 - health/check commands that are safe and non-mutating;
 - suggested app operations and debug-only commands;
 - suggested permissions, storage, events, and skill hints when known.
+- exact Ravi capabilities the CLI needs to call through public `ravi ...`
+  commands, when known.
 
 The self-description command MUST be safe, deterministic, and side-effect free.
 It MUST NOT require domain credentials beyond what is needed to describe the
@@ -138,6 +152,8 @@ Generated manifest drafts SHOULD include:
 - operation candidates for daily app operations;
 - debug-only candidate commands as review notes, not necessarily operations;
 - conservative permission suggestions;
+- conservative child `context.allow` suggestions, empty by default except for
+  mechanically evident public `ravi <group>` dependencies;
 - placeholder storage/events/UI sections only when useful and clearly marked
   for review.
 
@@ -169,6 +185,11 @@ Dry-run output SHOULD include:
   "confidence": "high",
   "plannedFiles": [],
   "manifest": {},
+  "builder": {
+    "skill": "ravi-dev-app-creator",
+    "spec": "apps/builder",
+    "reviewChecklist": []
+  },
   "warnings": [],
   "reviewRequired": []
 }
@@ -181,8 +202,8 @@ Dry-run output SHOULD include:
 - CLI import is not permission grant. Suggested permissions remain
   requirements until configured permission providers grant them.
 - CLI import is not SDK codegen. Static SDK methods still come from the Ravi
-  decorated command registry; dynamic app operations are routed through
-  `apps.run` unless a separate static SDK surface is added.
+  decorated command registry; generic SDK/tool/UI clients route dynamic app
+  operations through the App Router.
 - CLI import is not UI implementation. It may draft semantic UI descriptors,
   but Web OS owns rendering.
 - CLI import does not replace domain modeling. It accelerates the first draft.
@@ -207,6 +228,8 @@ Dry-run output SHOULD include:
 - Parsing human help and pretending the result is a schema.
 - Generating operations without `--json` and forcing agents to scrape prose.
 - Inferring permissions as grants.
+- Inferring broad child-context capabilities or using `--inherit`.
+- Importing SDK/tool/stream surfaces as separate app implementations.
 - Running domain commands during import and causing side effects.
 - Creating recursive operations that dispatch back through the same dynamic app
   alias.

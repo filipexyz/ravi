@@ -39,6 +39,9 @@ function validManifest(overrides: Record<string, unknown> = {}): Record<string, 
         json: true,
       },
     },
+    context: {
+      allow: [],
+    },
     permissions: {
       required: [],
       optional: [],
@@ -261,7 +264,7 @@ describe("Ravi app manifest service", () => {
           },
           "apps.check": {
             interface: "cli",
-            command: "ravi apps check {id} --json",
+            command: "ravi apps check {args} --json",
             mutating: false,
           },
         },
@@ -274,9 +277,111 @@ describe("Ravi app manifest service", () => {
     expect(app.errors).toEqual([]);
   });
 
+  it("rejects unsafe executors, malformed context ceilings, and undeclared permissions", () => {
+    const root = makeRepo();
+    writeManifest(
+      root,
+      "unsafe-app",
+      validManifest({
+        id: "unsafe-app",
+        name: "Unsafe App",
+        interfaces: {
+          cli: {
+            command: "bun cli.ts",
+            json: true,
+          },
+          sdk: {
+            namespace: "unsafeApp",
+          },
+        },
+        context: {
+          allow: ["execute:group:context", "execute:group:context", "execute:group:*", "malformed"],
+        },
+        operations: {
+          "unsafe-app.sdk": {
+            interface: "sdk",
+            mutating: false,
+          },
+          "unsafe-app.shell": {
+            interface: "cli",
+            command: "bun cli.ts list | cat --json",
+            mutating: false,
+          },
+          "unsafe-app.read": {
+            interface: "cli",
+            command: "bun cli.ts list --json",
+            mutating: false,
+            permission: "unsafe-app:read",
+          },
+          "unsafe-app.write": {
+            interface: "cli",
+            command: "bun cli.ts write --json",
+            mutating: true,
+            permission: "unsafe-app:write",
+          },
+        },
+      }),
+    );
+
+    const app = getAppManifest("unsafe-app");
+    const errors = app.errors.join("\n");
+    expect(app.valid).toBe(false);
+    expect(errors).toContain("context.allow[1] duplicates another delegated capability");
+    expect(errors).toContain("context.allow[2] must be explicit and must not contain wildcards");
+    expect(errors).toContain('Invalid context capability "malformed"');
+    expect(errors).toContain("operations.unsafe-app.sdk.interface must be one of builtin|cli");
+    expect(errors).toContain('operations.unsafe-app.shell.command: CLI command must not contain shell operator "|"');
+    expect(errors).toContain(
+      'operations.unsafe-app.read permission "unsafe-app:read" must be declared in permissions.required|optional',
+    );
+    expect(errors).toContain(
+      'operations.unsafe-app.write permission "unsafe-app:write" must be declared in permissions.mutating',
+    );
+
+    writeManifest(
+      root,
+      "missing-context",
+      validManifest({
+        id: "missing-context",
+        name: "Missing Context",
+        context: undefined,
+      }),
+    );
+    const missingContextApp = getAppManifest("missing-context");
+    expect(missingContextApp.valid).toBe(false);
+    expect(missingContextApp.errors).toContain("context is required and must declare context.allow.");
+  });
+
+  it("rejects named argv placeholders", () => {
+    const root = makeRepo();
+    writeManifest(
+      root,
+      "legacy-placeholder",
+      validManifest({
+        id: "legacy-placeholder",
+        name: "Legacy Placeholder",
+        operations: {
+          "legacy-placeholder.get": {
+            interface: "cli",
+            command: "bun cli.ts get {id} --json",
+            mutating: false,
+          },
+        },
+      }),
+    );
+
+    const app = getAppManifest("legacy-placeholder");
+    expect(app.valid).toBe(false);
+    expect(app.errors.join("\n")).toContain(
+      'Unsupported CLI command placeholder in token "{id}"; only a complete {args} token is allowed',
+    );
+  });
+
   it("accepts app permission provider metadata without executing the provider", () => {
     const root = makeRepo();
     const marker = join(root, "provider-ran");
+    const providerScript = join(root, "permission-provider.mjs");
+    writeFileSync(providerScript, `await Bun.write(${JSON.stringify(marker)}, "ran");\n`);
     writeManifest(
       root,
       "apps",
@@ -284,7 +389,7 @@ describe("Ravi app manifest service", () => {
         operations: {
           "apps.permissions.decide": {
             interface: "cli",
-            command: `touch ${marker} && echo '{"decision":"allow"}' --json`,
+            command: `bun ${providerScript} {args}`,
             mutating: false,
             inputSchema: "schemas/permission-request.v1.json",
             outputSchema: "schemas/permission-decision.v1.json",
@@ -532,6 +637,10 @@ describe("Ravi app manifest service", () => {
         id: "ui-artifacts-valid",
         name: "UI Artifacts Valid",
         interfaces: {
+          cli: {
+            command: "ui-artifacts-valid",
+            json: true,
+          },
           ui: {
             views: [
               {
@@ -558,6 +667,10 @@ describe("Ravi app manifest service", () => {
         id: "ui-artifacts-invalid",
         name: "UI Artifacts Invalid",
         interfaces: {
+          cli: {
+            command: "ui-artifacts-invalid",
+            json: true,
+          },
           ui: {
             views: [
               {

@@ -831,11 +831,37 @@ public struct ChannelsBackendNamespace: Sendable {
     self.transport = transport
   }
 
+  public var runtime: ChannelsBackendRuntimeNamespace {
+    ChannelsBackendRuntimeNamespace(transport: transport)
+  }
+
   public func ingress(_ agentId: String, _ request: RaviJSON) async throws -> ChannelsBackendIngressReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["agentId"] = try RaviJSON.fromEncodable(agentId)
     requestBody["request"] = try RaviJSON.fromEncodable(request)
     return try await transport.call(groupSegments: ["channels","backend"], command: "ingress", body: requestBody, as: ChannelsBackendIngressReturn.self)
+  }
+}
+
+public struct ChannelsBackendRuntimeNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func interrupt(_ agentId: String, _ request: RaviJSON) async throws -> ChannelsBackendRuntimeInterruptReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["agentId"] = try RaviJSON.fromEncodable(agentId)
+    requestBody["request"] = try RaviJSON.fromEncodable(request)
+    return try await transport.call(groupSegments: ["channels","backend","runtime"], command: "interrupt", body: requestBody, as: ChannelsBackendRuntimeInterruptReturn.self)
+  }
+
+  public func readback(_ agentId: String, _ request: RaviJSON) async throws -> ChannelsBackendRuntimeReadbackReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["agentId"] = try RaviJSON.fromEncodable(agentId)
+    requestBody["request"] = try RaviJSON.fromEncodable(request)
+    return try await transport.call(groupSegments: ["channels","backend","runtime"], command: "readback", body: requestBody, as: ChannelsBackendRuntimeReadbackReturn.self)
   }
 }
 
@@ -4145,6 +4171,19 @@ public struct SessionsNamespace: Sendable {
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sessions"], command: "attach", body: requestBody, as: SessionsAttachReturn.self)
+  }
+
+  public func closeThread(_ options: SessionsCloseThreadOptions = .init()) async throws -> SessionsCloseThreadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "close-thread", body: requestBody, as: SessionsCloseThreadReturn.self)
+  }
+
+  public func createThread(_ message: String, _ options: SessionsCreateThreadOptions = .init()) async throws -> SessionsCreateThreadReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["message"] = try RaviJSON.fromEncodable(message)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["sessions"], command: "create-thread", body: requestBody, as: SessionsCreateThreadReturn.self)
   }
 
   public func delete(_ nameOrKey: String) async throws -> SessionsDeleteReturn {

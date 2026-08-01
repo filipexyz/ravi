@@ -44,18 +44,25 @@ required executor fields:
 
 - `builtin.handler`
 - `cli.command`
-- `sdk.namespace` and `sdk.method`
-- `tool.name`
-- `stream.channel`
 
-CLI operations must not point back to the same dynamic alias:
+Domain operations must use `cli`. UI, SDK, tool, and automation callers invoke
+the same operation through the App Router and do not define alternate
+executors.
+
+CLI operations must not resolve back through the same dynamic alias:
 
 ```text
 ravi <app-id> <operation>
 ```
 
 Use a router builtin for help/show/check placeholders or point the command at a
-real static/external executor.
+real static/external executor. A command may be textually `ravi <app-id> ...`
+only when `<app-id>` is a registered static command and static resolution
+cannot re-enter the App Router.
+
+Confirm the command is tokenized into executable plus argv and spawned without
+a shell. Pass an argument such as `$(whoami)` or `; false` and verify it reaches
+the CLI literally and executes nothing.
 
 For dot-separated operation ids, test the CLI-token form too:
 
@@ -77,6 +84,23 @@ For runtime execution, verify the caller context has the declared capability.
 Manifest permissions are only preflight metadata; the executor still needs real
 authorization.
 
+Then verify child delegation:
+
+```bash
+ravi context list --json
+ravi context info <child-context-id> --json
+```
+
+Confirm:
+
+- `issuedFor` identifies `app:<app-id>`;
+- capabilities do not exceed `manifest.context.allow`;
+- lineage points to the caller context;
+- the app did not receive the parent key;
+- unrelated parent credentials and secret environment variables are absent;
+- the process working directory is bounded to the declared app/package root;
+- failure to issue the child stopped dispatch.
+
 ## Diagnose JSON Contract
 
 Run both surfaces when root alias is expected:
@@ -88,3 +112,6 @@ ravi apps run <app-id> check --json
 
 Both should return structured JSON on success and failure. If the app has a
 static command collision, only the fallback `ravi apps run` form is expected.
+
+Repeat without `--json` and confirm the same routing and authorization path is
+used with human-readable output.

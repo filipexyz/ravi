@@ -32,7 +32,11 @@
 
 5. Implement a provider operation that accepts
    `ravi.app.permission.request/v1` and returns
-   `ravi.app.permission.decision/v1`.
+   `ravi.app.permission.decision/v1`. For CLI providers, read one JSON request
+   from stdin and write one JSON decision to stdout.
+
+   The provider must not receive `RAVI_CONTEXT_KEY` and must not call the
+   protected app operation. This JSON ABI belongs only to authorization.
 
 6. Add tests before routing production operations through the provider:
 
@@ -46,6 +50,9 @@
 
 7. Add explain UX. A denied operation should tell the operator whether a
    required provider-runtime boundary denied or the app-domain provider denied.
+
+8. Verify an allowed operation returns to the App Router, which issues a fresh
+   child context and launches the domain CLI.
 
 ## Diagnose A Denial
 

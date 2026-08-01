@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { basename } from "node:path";
 import { getRegistry, type CommandRegistryEntry } from "../cli/registry-snapshot.js";
+import { buildRaviAppProcessEnv, resolveRaviAppCommand, tokenizeRaviAppCommand } from "./command.js";
 import { normalizeAppId, RAVI_APP_MANIFEST_SCHEMA } from "./service.js";
 import { scaffoldApp } from "./scaffold.js";
 import type {
@@ -98,18 +99,22 @@ export function importCliApp(options: RaviAppImportCliOptions): RaviAppImportCli
   });
   const appSlug = id.replace(/\//g, "-");
   const operationPrefix = id.replace(/\//g, ".");
-  const appCommand = `ravi ${id.split("/").join(" ")}`;
   const name = options.name?.trim() || metadata.name || titleFromAppId(id);
   const description = options.description?.trim() || metadata.description || `Operate ${sourceCommand} as a Ravi App.`;
   const skill = options.includeSkill === false ? null : `ravi-system-${appSlug}`;
+  const contextAllow = inferRaviGroupCapabilities([
+    metadata.command,
+    ...metadata.candidates.map((candidate) => candidate.command),
+  ]);
   const manifest = buildImportedManifest({
     id,
     appSlug,
     operationPrefix,
     name,
     description,
-    command: appCommand,
+    command: metadata.command,
     candidates: metadata.candidates,
+    contextAllow,
     skill,
     includeUi: options.includeUi !== false,
   });
@@ -119,7 +124,7 @@ export function importCliApp(options: RaviAppImportCliOptions): RaviAppImportCli
     id,
     name,
     description,
-    command: appCommand,
+    command: metadata.command,
     manifest,
   });
 
@@ -131,7 +136,14 @@ export function importCliApp(options: RaviAppImportCliOptions): RaviAppImportCli
     operationCandidates: metadata.candidates,
     debugCandidates: metadata.debugCandidates,
     warnings: metadata.warnings,
-    reviewRequired: metadata.reviewRequired,
+    reviewRequired: [
+      "Treat this import as a draft generator, not proof that the app is ready or that every CLI command should be public.",
+      ...metadata.reviewRequired,
+      ...contextAllow.map(
+        (capability) =>
+          `Review inferred child capability ${capability}; keep it only while imported operations call that Ravi group.`,
+      ),
+    ],
   };
 }
 
@@ -155,7 +167,7 @@ function resolveCliMetadata(input: {
 }
 
 function metadataFromRegistry(command: string): ImportedCliMetadata {
-  const tokens = splitShellWords(command);
+  const tokens = tokenizeRaviAppCommand(command);
   if (!isRaviExecutable(tokens[0])) {
     throw new Error(`Registry import only supports Ravi CLI commands, got: ${command}`);
   }
@@ -197,11 +209,12 @@ function metadataFromSelfDescription(
   command: string,
   input: { cwd?: string; env?: NodeJS.ProcessEnv },
 ): ImportedCliMetadata {
-  const probe = `${command} manifest --json`;
-  const run = spawnSync(probe, {
+  const invocation = resolveRaviAppCommand(command, ["manifest", "--json"]);
+  const probe = invocation.displayCommand;
+  const run = spawnSync(invocation.executable, invocation.argv, {
     cwd: input.cwd ?? process.cwd(),
-    env: { ...process.env, ...(input.env ?? {}) },
-    shell: true,
+    env: buildRaviAppProcessEnv(input.env ?? process.env),
+    shell: false,
     encoding: "utf8",
     timeout: 5_000,
     maxBuffer: 1024 * 1024,
@@ -312,7 +325,9 @@ function candidateFromSelfDescription(
   if (mutating) reviewRequired.push("Confirm mutation risk and permission before enabling as an app operation.");
   if (destructive) reviewRequired.push("Confirm destructive behavior and require strong permission.");
   if (streaming || interactive)
-    reviewRequired.push("Streaming or interactive operations need a stream/tool surface, not CLI single-shot.");
+    reviewRequired.push(
+      "Keep this as a CLI operation and add explicit TTY/streaming launch behavior before exposing it.",
+    );
   return {
     id: name,
     name,
@@ -336,6 +351,7 @@ function buildImportedManifest(input: {
   description: string;
   command: string;
   candidates: RaviAppImportCliOperationCandidate[];
+  contextAllow: string[];
   skill: string | null;
   includeUi: boolean;
 }): RaviAppManifest {
@@ -380,7 +396,6 @@ function buildImportedManifest(input: {
     cli: {
       command: input.command,
       json: input.candidates.some((candidate) => candidate.json),
-      health: `${input.command} check --json`,
     },
   };
   if (input.includeUi) {
@@ -423,6 +438,9 @@ function buildImportedManifest(input: {
     version: "0.1.0",
     description: input.description,
     interfaces,
+    context: {
+      allow: input.contextAllow,
+    },
     operations,
     permissions: {
       required: [],
@@ -453,40 +471,29 @@ function buildImportedManifest(input: {
   };
 }
 
+function inferRaviGroupCapabilities(commands: string[]): string[] {
+  const capabilities = new Set<string>();
+  for (const command of commands) {
+    let tokens: string[];
+    try {
+      tokens = tokenizeRaviAppCommand(command);
+    } catch {
+      continue;
+    }
+    if (!isRaviExecutable(tokens[0])) continue;
+    const group = tokens[1];
+    if (!group || group.startsWith("-") || !/^[a-z][a-z0-9-]*$/.test(group)) continue;
+    capabilities.add(`execute:group:${group}`);
+  }
+  return Array.from(capabilities).sort();
+}
+
 function tryResolve<T>(fn: () => T): T | null {
   try {
     return fn();
   } catch {
     return null;
   }
-}
-
-function splitShellWords(input: string): string[] {
-  const out: string[] = [];
-  let current = "";
-  let quote: "'" | '"' | null = null;
-  for (let i = 0; i < input.length; i++) {
-    const char = input[i]!;
-    if (quote) {
-      if (char === quote) quote = null;
-      else current += char;
-      continue;
-    }
-    if (char === "'" || char === '"') {
-      quote = char;
-      continue;
-    }
-    if (/\s/.test(char)) {
-      if (current) {
-        out.push(current);
-        current = "";
-      }
-      continue;
-    }
-    current += char;
-  }
-  if (current) out.push(current);
-  return out;
 }
 
 function isRaviExecutable(token?: string): boolean {

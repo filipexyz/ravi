@@ -16,10 +16,15 @@
   - Fail on duplicate ids and report both paths.
 
 - Interface check
-  - Fail if no interface is declared.
+  - Fail if `interfaces.cli` is missing.
+  - Fail if `interfaces.cli.command` is missing or resolves through the
+    dynamic `ravi <app-id>` route.
+  - Accept `ravi <app-id>` only when `<app-id>` is a registered static command
+    and static resolution cannot re-enter the App Router.
   - Warn if a CLI interface is machine consumed but does not declare JSON
     support.
-  - Warn if an SDK interface has no namespace.
+  - Warn when new manifests declare SDK/tool/stream compatibility metadata
+    without a migration reason.
   - Fail if `interfaces.ui` has malformed routes, views, queries, actions, or
     forbidden raw UI code/style keys.
   - Fail if UI routes omit design-system icons.
@@ -28,21 +33,37 @@
 - Operation check
   - Fail if `operations` exists and is not an object.
   - Fail if operation ids are not fully qualified dot ids.
-  - Fail if operation `interface` is not `cli`, `sdk`, `tool`, or `stream`.
-  - Fail if an operation references an undeclared interface block.
-  - Fail if CLI operations omit `command`, SDK operations omit
-    `namespace`/`method`, tool operations omit `name`, or stream operations omit
-    `channel`.
+  - Fail if operation `interface` is not `builtin` or `cli`.
+  - Fail if builtin operations omit an allowlisted `handler`.
+  - Fail if CLI operations omit `command` or target a different undeclared CLI.
+  - Fail if a CLI operation resolves back through its own dynamic app alias.
+    Accept identical text only when it resolves to a registered static command.
+  - Fail if a command contains shell operators, substitutions, redirection, or
+    otherwise requires shell evaluation.
+  - Fail if `{args}` is repeated or embedded inside another token.
+  - Confirm shell-like user input is passed as literal argv with `shell: false`.
   - Fail if UI query/action operation references are undeclared.
   - Warn if operations omit `mutating`.
-  - Warn if mutating operations omit `permission` or `permissions`.
+  - Fail if mutating, sensitive, or identity-dependent operations omit
+    `permission` or `permissions`.
 
 - Permission check
-  - Fail if mutating/sensitive interfaces have no declared required or mutating
-    permission.
+  - Fail if `required`, `optional`, or `mutating` is missing or is not an array.
+  - Fail if an operation-level permission is absent from the appropriate
+    manifest permission array.
   - Fail if any permission declaration appears to contain a token, key, or raw
     credential.
   - Confirm manifest permissions are treated as requirements, not grants.
+
+- Child-context check
+  - Warn and default to an empty capability set when an installed v1 manifest
+    omits `context`; fail if `context.allow` is present but not an array.
+  - Require new and regenerated manifests to declare `context.allow`.
+  - Fail if an entry is not an explicit
+    `permission:objectType:objectId` capability.
+  - Fail if context metadata requests implicit inheritance.
+  - Fail if context metadata contains a raw key, token, credential, or secret.
+  - Confirm `context.allow` is treated as a requested ceiling, not a grant.
 
 - Storage check
   - Fail if `storage` exists and is not an object.
@@ -74,6 +95,8 @@
   - For CLI-backed health checks, prefer commands ending in `--json`.
 
 - App/CLI consistency check
-  - CLI-backed manifests should satisfy `apps/cli`.
-  - First-party SDK-facing CLI apps should keep registry, gateway, and SDK
-    codegen checks passing.
+  - Every manifest should satisfy `apps/cli`.
+  - UI, SDK, tool, and automation adapters should resolve the same App Router
+    operation.
+  - Running with and without `--json` should use the same authorization and
+    child-context path.

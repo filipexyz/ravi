@@ -321,7 +321,7 @@ public struct AgentsPermissionsOptions: Codable, Sendable {
 public struct AgentsPermissionsReturn: Codable, Sendable {
   public var action: String
   public var after: RaviJSON?
-  public var agent: [String: RaviJSON]?
+  public var agent: RaviJSON?
   public var agentId: String
   public var before: RaviJSON?
   public var changed: Bool
@@ -330,7 +330,7 @@ public struct AgentsPermissionsReturn: Codable, Sendable {
   public var profile: String?
   public var runtimePermissions: RaviJSON?
 
-  public init(action: String, after: RaviJSON? = nil, agent: [String: RaviJSON]? = nil, agentId: String, before: RaviJSON? = nil, changed: Bool, command: String? = nil, defaults: RaviJSON? = nil, profile: String? = nil, runtimePermissions: RaviJSON? = nil) {
+  public init(action: String, after: RaviJSON? = nil, agent: RaviJSON? = nil, agentId: String, before: RaviJSON? = nil, changed: Bool, command: String? = nil, defaults: RaviJSON? = nil, profile: String? = nil, runtimePermissions: RaviJSON? = nil) {
     self.action = action
     self.after = after
     self.agent = agent
@@ -597,14 +597,16 @@ public struct AppsDeleteReturn: Codable, Sendable {
 public struct AppsGuideReturn: Codable, Sendable {
   public var app: RaviJSON
   public var appId: RaviJSON
+  public var builder: RaviJSON
   public var nextCommands: [String]
   public var prompts: [RaviJSON]
   public var skill: String
   public var skillGate: RaviJSON
 
-  public init(app: RaviJSON, appId: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
+  public init(app: RaviJSON, appId: RaviJSON, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
     self.app = app
     self.appId = appId
+    self.builder = builder
     self.nextCommands = nextCommands
     self.prompts = prompts
     self.skill = skill
@@ -614,6 +616,7 @@ public struct AppsGuideReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case app = "app"
     case appId = "appId"
+    case builder = "builder"
     case nextCommands = "nextCommands"
     case prompts = "prompts"
     case skill = "skill"
@@ -688,6 +691,8 @@ public struct AppsImportCliOptions: Codable, Sendable {
 }
 
 public struct AppsImportCliReturn: Codable, Sendable {
+  public var builder: RaviJSON
+  public var cliPath: RaviJSON
   public var command: String
   public var confidence: String
   public var debugCandidates: [RaviJSON]
@@ -709,7 +714,9 @@ public struct AppsImportCliReturn: Codable, Sendable {
   public var specPath: RaviJSON
   public var warnings: [String]
 
-  public init(command: String, confidence: String, debugCandidates: [RaviJSON], description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], operationCandidates: [RaviJSON], reviewRequired: [String], skill: RaviJSON, skillPath: RaviJSON, source: String, sourceCommand: String, specPath: RaviJSON, warnings: [String]) {
+  public init(builder: RaviJSON, cliPath: RaviJSON, command: String, confidence: String, debugCandidates: [RaviJSON], description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], operationCandidates: [RaviJSON], reviewRequired: [String], skill: RaviJSON, skillPath: RaviJSON, source: String, sourceCommand: String, specPath: RaviJSON, warnings: [String]) {
+    self.builder = builder
+    self.cliPath = cliPath
     self.command = command
     self.confidence = confidence
     self.debugCandidates = debugCandidates
@@ -733,6 +740,8 @@ public struct AppsImportCliReturn: Codable, Sendable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case builder = "builder"
+    case cliPath = "cliPath"
     case command = "command"
     case confidence = "confidence"
     case debugCandidates = "debugCandidates"
@@ -810,14 +819,16 @@ public struct AppsListReturn: Codable, Sendable {
 public struct AppsPromptsReturn: Codable, Sendable {
   public var app: RaviJSON
   public var appId: RaviJSON
+  public var builder: RaviJSON
   public var nextCommands: [String]
   public var prompts: [RaviJSON]
   public var skill: String
   public var skillGate: RaviJSON
 
-  public init(app: RaviJSON, appId: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
+  public init(app: RaviJSON, appId: RaviJSON, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
     self.app = app
     self.appId = appId
+    self.builder = builder
     self.nextCommands = nextCommands
     self.prompts = prompts
     self.skill = skill
@@ -827,6 +838,7 @@ public struct AppsPromptsReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case app = "app"
     case appId = "appId"
+    case builder = "builder"
     case nextCommands = "nextCommands"
     case prompts = "prompts"
     case skill = "skill"
@@ -836,7 +848,9 @@ public struct AppsPromptsReturn: Codable, Sendable {
 
 public struct AppsRunReturn: Codable, Sendable {
   public var appId: RaviJSON
+  public var callerContextId: String?
   public var channel: String?
+  public var childContextId: String?
   public var command: String?
   public var durationMs: Double
   public var error: String?
@@ -853,9 +867,11 @@ public struct AppsRunReturn: Codable, Sendable {
   public var stderr: String?
   public var stdout: String?
 
-  public init(appId: RaviJSON, channel: String? = nil, command: String? = nil, durationMs: Double, error: String? = nil, exitCode: RaviJSON? = nil, handler: String? = nil, interface: RaviJSON, mutating: Bool, ok: Bool, operation: RaviJSON, operationId: RaviJSON, permissionProvider: RaviJSON? = nil, result: RaviJSON? = nil, status: String, stderr: String? = nil, stdout: String? = nil) {
+  public init(appId: RaviJSON, callerContextId: String? = nil, channel: String? = nil, childContextId: String? = nil, command: String? = nil, durationMs: Double, error: String? = nil, exitCode: RaviJSON? = nil, handler: String? = nil, interface: RaviJSON, mutating: Bool, ok: Bool, operation: RaviJSON, operationId: RaviJSON, permissionProvider: RaviJSON? = nil, result: RaviJSON? = nil, status: String, stderr: String? = nil, stdout: String? = nil) {
     self.appId = appId
+    self.callerContextId = callerContextId
     self.channel = channel
+    self.childContextId = childContextId
     self.command = command
     self.durationMs = durationMs
     self.error = error
@@ -875,7 +891,9 @@ public struct AppsRunReturn: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case appId = "appId"
+    case callerContextId = "callerContextId"
     case channel = "channel"
+    case childContextId = "childContextId"
     case command = "command"
     case durationMs = "durationMs"
     case error = "error"
@@ -955,6 +973,8 @@ public struct AppsScaffoldOptions: Codable, Sendable {
 }
 
 public struct AppsScaffoldReturn: Codable, Sendable {
+  public var builder: RaviJSON
+  public var cliPath: RaviJSON
   public var command: String
   public var description: String
   public var dryRun: Bool
@@ -969,7 +989,9 @@ public struct AppsScaffoldReturn: Codable, Sendable {
   public var skillPath: RaviJSON
   public var specPath: RaviJSON
 
-  public init(command: String, description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], skill: RaviJSON, skillPath: RaviJSON, specPath: RaviJSON) {
+  public init(builder: RaviJSON, cliPath: RaviJSON, command: String, description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], skill: RaviJSON, skillPath: RaviJSON, specPath: RaviJSON) {
+    self.builder = builder
+    self.cliPath = cliPath
     self.command = command
     self.description = description
     self.dryRun = dryRun
@@ -986,6 +1008,8 @@ public struct AppsScaffoldReturn: Codable, Sendable {
   }
 
   enum CodingKeys: String, CodingKey {
+    case builder = "builder"
+    case cliPath = "cliPath"
     case command = "command"
     case description = "description"
     case dryRun = "dryRun"
@@ -3171,6 +3195,75 @@ public struct ChannelsBackendIngressReturn: Codable, Sendable {
     case protocol_ = "protocol"
     case requestId = "requestId"
     case schemaVersion = "schemaVersion"
+  }
+}
+
+public struct ChannelsBackendRuntimeInterruptReturn: Codable, Sendable {
+  public var acceptedAt: String
+  public var disposition: String
+  public var error: RaviJSON?
+  public var protocol_: String
+  public var requestId: String
+  public var schemaVersion: Int
+
+  public init(acceptedAt: String, disposition: String, error: RaviJSON? = nil, protocol_: String, requestId: String, schemaVersion: Int) {
+    self.acceptedAt = acceptedAt
+    self.disposition = disposition
+    self.error = error
+    self.protocol_ = protocol_
+    self.requestId = requestId
+    self.schemaVersion = schemaVersion
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case acceptedAt = "acceptedAt"
+    case disposition = "disposition"
+    case error = "error"
+    case protocol_ = "protocol"
+    case requestId = "requestId"
+    case schemaVersion = "schemaVersion"
+  }
+}
+
+public struct ChannelsBackendRuntimeReadbackReturn: Codable, Sendable {
+  public var assistantMessageId: String?
+  public var binding: RaviJSON
+  public var lastEventRuntimeGenerationId: String?
+  public var lastSequence: Int
+  public var observedAt: String
+  public var protocol_: String
+  public var requestId: String
+  public var runtimeGenerationId: String?
+  public var schemaVersion: Int
+  public var state: String
+  public var terminalEvent: RaviJSON?
+
+  public init(assistantMessageId: String? = nil, binding: RaviJSON, lastEventRuntimeGenerationId: String? = nil, lastSequence: Int, observedAt: String, protocol_: String, requestId: String, runtimeGenerationId: String? = nil, schemaVersion: Int, state: String, terminalEvent: RaviJSON? = nil) {
+    self.assistantMessageId = assistantMessageId
+    self.binding = binding
+    self.lastEventRuntimeGenerationId = lastEventRuntimeGenerationId
+    self.lastSequence = lastSequence
+    self.observedAt = observedAt
+    self.protocol_ = protocol_
+    self.requestId = requestId
+    self.runtimeGenerationId = runtimeGenerationId
+    self.schemaVersion = schemaVersion
+    self.state = state
+    self.terminalEvent = terminalEvent
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case assistantMessageId = "assistantMessageId"
+    case binding = "binding"
+    case lastEventRuntimeGenerationId = "lastEventRuntimeGenerationId"
+    case lastSequence = "lastSequence"
+    case observedAt = "observedAt"
+    case protocol_ = "protocol"
+    case requestId = "requestId"
+    case runtimeGenerationId = "runtimeGenerationId"
+    case schemaVersion = "schemaVersion"
+    case state = "state"
+    case terminalEvent = "terminalEvent"
   }
 }
 
@@ -17365,6 +17458,141 @@ public struct SessionsAttachOptions: Codable, Sendable {
 }
 
 public typealias SessionsAttachReturn = [String: RaviJSON]
+
+public struct SessionsCloseThreadOptions: Codable, Sendable {
+  public var return_: String?
+  public var session: String?
+
+  public init(return_: String? = nil, session: String? = nil) {
+    self.return_ = return_
+    self.session = session
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case return_ = "return"
+    case session = "session"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.return_ {
+      body["return"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsCloseThreadReturn: Codable, Sendable {
+  public var actionId: String
+  public var changed: Bool
+  public var childSession: RaviJSON
+  public var closeSequence: Int
+  public var closed: Bool
+  public var parentReturn: RaviJSON
+  public var parentSession: RaviJSON
+  public var requestId: String
+  public var slack: RaviJSON
+  public var status: String
+
+  public init(actionId: String, changed: Bool, childSession: RaviJSON, closeSequence: Int, closed: Bool, parentReturn: RaviJSON, parentSession: RaviJSON, requestId: String, slack: RaviJSON, status: String) {
+    self.actionId = actionId
+    self.changed = changed
+    self.childSession = childSession
+    self.closeSequence = closeSequence
+    self.closed = closed
+    self.parentReturn = parentReturn
+    self.parentSession = parentSession
+    self.requestId = requestId
+    self.slack = slack
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actionId = "actionId"
+    case changed = "changed"
+    case childSession = "childSession"
+    case closeSequence = "closeSequence"
+    case closed = "closed"
+    case parentReturn = "parentReturn"
+    case parentSession = "parentSession"
+    case requestId = "requestId"
+    case slack = "slack"
+    case status = "status"
+  }
+}
+
+public struct SessionsCreateThreadOptions: Codable, Sendable {
+  public var model: String?
+  public var session: String?
+
+  public init(model: String? = nil, session: String? = nil) {
+    self.model = model
+    self.session = session
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case model = "model"
+    case session = "session"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.model {
+      body["model"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.session {
+      body["session"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct SessionsCreateThreadReturn: Codable, Sendable {
+  public var actionId: String
+  public var child: RaviJSON
+  public var executionMode: String
+  public var idempotencyKey: String
+  public var initiatorSession: RaviJSON
+  public var nextAttemptAt: Double?
+  public var parentSession: RaviJSON
+  public var publishPending: Bool
+  public var publishedNow: Bool
+  public var queued: Bool
+  public var requestId: String
+  public var slack: RaviJSON
+  public var status: String
+
+  public init(actionId: String, child: RaviJSON, executionMode: String, idempotencyKey: String, initiatorSession: RaviJSON, nextAttemptAt: Double? = nil, parentSession: RaviJSON, publishPending: Bool, publishedNow: Bool, queued: Bool, requestId: String, slack: RaviJSON, status: String) {
+    self.actionId = actionId
+    self.child = child
+    self.executionMode = executionMode
+    self.idempotencyKey = idempotencyKey
+    self.initiatorSession = initiatorSession
+    self.nextAttemptAt = nextAttemptAt
+    self.parentSession = parentSession
+    self.publishPending = publishPending
+    self.publishedNow = publishedNow
+    self.queued = queued
+    self.requestId = requestId
+    self.slack = slack
+    self.status = status
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actionId = "actionId"
+    case child = "child"
+    case executionMode = "executionMode"
+    case idempotencyKey = "idempotencyKey"
+    case initiatorSession = "initiatorSession"
+    case nextAttemptAt = "nextAttemptAt"
+    case parentSession = "parentSession"
+    case publishPending = "publishPending"
+    case publishedNow = "publishedNow"
+    case queued = "queued"
+    case requestId = "requestId"
+    case slack = "slack"
+    case status = "status"
+  }
+}
 
 public typealias SessionsDeleteReturn = [String: RaviJSON]
 

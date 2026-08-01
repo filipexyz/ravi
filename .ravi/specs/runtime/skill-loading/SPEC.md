@@ -66,7 +66,7 @@ The capability exists because today there is no canonical place that answers "is
 | --- | --- | --- | --- |
 | Claude Code | Ravi plugins are discovered during runtime bootstrap and passed to the provider when plugin support is enabled. | Provider-native Skill tool or equivalent tool-use event, normalized by the adapter after the event shape is verified. | Passing a plugin to Claude is `advertised` or `available`, not `loaded`. Claude may report `loaded` only from observed provider events or Ravi-owned injection completion. |
 | Codex | `syncCodexSkills` materializes Ravi plugin skills into the Codex skills directory; app-server `skills/list` reports skill metadata; `skills/changed` invalidates that metadata. | No stable dedicated loaded-skill notification is currently exposed. Thread start/resume `instructionSources` may prove instruction files loaded; it can be treated as `loaded` only if the path is matched to a canonical skill file. A successful `ravi skills show <skill>` tool call is Ravi-owned read evidence and may mark that skill `loaded`. `UserInput` items with `type=skill` are `requested` unless followed by load evidence. | Codex MUST report `synced`/`advertised` for Ravi-managed skills today. It MUST NOT mark a skill `loaded` just because it was synchronized or listed in the system prompt. |
-| Pi | No Ravi plugin or skill catalog support in the current RPC MVP. | No skill-loaded event or state exists in the current Pi RPC surface. | Pi MUST report `unknown` or an empty `loadedSkills` vector until the RPC or SDK provider exposes explicit skill state/events. |
+| Pi | Ravi discovers plugin skills, filters them by the agent allowlist, records them as `advertised`, and appends their names plus `ravi skills show <skill> --json` loading instructions to the Pi system prompt. | No provider-native skill-loaded event or state exists in the current Pi RPC surface. A successful Ravi-owned skill read remains the only explicit load evidence available to the host. | Pi MAY report allowlisted catalog entries as `advertised` with declared `system-prompt` evidence, but MUST keep `loadedSkills` empty until Ravi observes explicit load evidence. |
 
 ## Rules
 
@@ -103,4 +103,5 @@ The capability exists because today there is no canonical place that answers "is
 - A compact event resets the vector to empty in the next visibility query and emits a structured event documenting the reset.
 - Vector content is identical regardless of which adapter the session is running under, given the same loaded skills.
 - A synchronized Codex skill appears as `synced` or `advertised`, not `loaded`, until an observed loaded-skill signal is captured.
-- A Pi session returns an empty `loadedSkills` vector and does not imply skill support until Pi exposes explicit skill state.
+- A Pi session advertises only allowlisted catalog entries and returns an empty
+  `loadedSkills` vector until Ravi observes explicit skill-load evidence.

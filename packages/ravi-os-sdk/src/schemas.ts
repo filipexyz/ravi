@@ -3194,9 +3194,7 @@ export const AppsGuideReturnSchema = {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli",
-                            "sdk",
-                            "tool"
+                            "cli"
                           ],
                           "type": "string"
                         },
@@ -3375,6 +3373,33 @@ export const AppsGuideReturnSchema = {
         }
       ]
     },
+    "builder": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "reviewChecklist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "skill": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "command",
+        "spec",
+        "reviewChecklist"
+      ],
+      "type": "object"
+    },
     "nextCommands": {
       "items": {
         "type": "string"
@@ -3436,6 +3461,7 @@ export const AppsGuideReturnSchema = {
     "app",
     "skill",
     "skillGate",
+    "builder",
     "prompts",
     "nextCommands"
   ],
@@ -3530,6 +3556,43 @@ export const AppsImportCliReturnSchema = {
   },
   "additionalProperties": false,
   "properties": {
+    "builder": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "reviewChecklist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "skill": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "command",
+        "spec",
+        "reviewChecklist"
+      ],
+      "type": "object"
+    },
+    "cliPath": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "command": {
       "type": "string"
     },
@@ -3625,12 +3688,14 @@ export const AppsImportCliReturnSchema = {
             "enum": [
               "planned",
               "created",
-              "overwritten"
+              "overwritten",
+              "preserved"
             ],
             "type": "string"
           },
           "kind": {
             "enum": [
+              "cli",
               "manifest",
               "spec",
               "skill"
@@ -3808,12 +3873,14 @@ export const AppsImportCliReturnSchema = {
     "command",
     "dryRun",
     "force",
+    "cliPath",
     "manifestPath",
     "specPath",
     "skillPath",
     "skill",
     "files",
     "manifest",
+    "builder",
     "nextCommands",
     "sourceCommand",
     "source",
@@ -3975,9 +4042,7 @@ export const AppsListReturnSchema = {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli",
-                          "sdk",
-                          "tool"
+                          "cli"
                         ],
                         "type": "string"
                       },
@@ -4267,9 +4332,7 @@ export const AppsListReturnSchema = {
                       "interface": {
                         "enum": [
                           "builtin",
-                          "cli",
-                          "sdk",
-                          "tool"
+                          "cli"
                         ],
                         "type": "string"
                       },
@@ -4647,9 +4710,7 @@ export const AppsPromptsReturnSchema = {
                         "interface": {
                           "enum": [
                             "builtin",
-                            "cli",
-                            "sdk",
-                            "tool"
+                            "cli"
                           ],
                           "type": "string"
                         },
@@ -4828,6 +4889,33 @@ export const AppsPromptsReturnSchema = {
         }
       ]
     },
+    "builder": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "reviewChecklist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "skill": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "command",
+        "spec",
+        "reviewChecklist"
+      ],
+      "type": "object"
+    },
     "nextCommands": {
       "items": {
         "type": "string"
@@ -4889,6 +4977,7 @@ export const AppsPromptsReturnSchema = {
     "app",
     "skill",
     "skillGate",
+    "builder",
     "prompts",
     "nextCommands"
   ],
@@ -4968,7 +5057,13 @@ export const AppsRunReturnSchema = {
         }
       ]
     },
+    "callerContextId": {
+      "type": "string"
+    },
     "channel": {
+      "type": "string"
+    },
+    "childContextId": {
       "type": "string"
     },
     "command": {
@@ -4998,10 +5093,7 @@ export const AppsRunReturnSchema = {
         {
           "enum": [
             "builtin",
-            "cli",
-            "sdk",
-            "tool",
-            "stream"
+            "cli"
           ],
           "type": "string"
         },
@@ -5080,9 +5172,7 @@ export const AppsRunReturnSchema = {
         "interface": {
           "enum": [
             "builtin",
-            "cli",
-            "sdk",
-            "tool"
+            "cli"
           ],
           "type": "string"
         },
@@ -5158,7 +5248,7 @@ export const AppsScaffoldInputSchema = {
   "additionalProperties": false,
   "properties": {
     "command": {
-      "description": "Canonical CLI command (default: ravi <id>)",
+      "description": "Implementation CLI command (default: generated bun cli.ts)",
       "type": "string"
     },
     "description": {
@@ -5170,7 +5260,7 @@ export const AppsScaffoldInputSchema = {
       "type": "boolean"
     },
     "force": {
-      "description": "Overwrite existing scaffold files",
+      "description": "Overwrite scaffold contracts while preserving an existing implementation CLI",
       "type": "boolean"
     },
     "id": {
@@ -5237,6 +5327,43 @@ export const AppsScaffoldReturnSchema = {
   },
   "additionalProperties": false,
   "properties": {
+    "builder": {
+      "additionalProperties": false,
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "reviewChecklist": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "skill": {
+          "type": "string"
+        },
+        "spec": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "skill",
+        "command",
+        "spec",
+        "reviewChecklist"
+      ],
+      "type": "object"
+    },
+    "cliPath": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "command": {
       "type": "string"
     },
@@ -5254,12 +5381,14 @@ export const AppsScaffoldReturnSchema = {
             "enum": [
               "planned",
               "created",
-              "overwritten"
+              "overwritten",
+              "preserved"
             ],
             "type": "string"
           },
           "kind": {
             "enum": [
+              "cli",
               "manifest",
               "spec",
               "skill"
@@ -5344,12 +5473,14 @@ export const AppsScaffoldReturnSchema = {
     "command",
     "dryRun",
     "force",
+    "cliPath",
     "manifestPath",
     "specPath",
     "skillPath",
     "skill",
     "files",
     "manifest",
+    "builder",
     "nextCommands"
   ],
   "type": "object"
@@ -5506,9 +5637,7 @@ export const AppsShowReturnSchema = {
                     "interface": {
                       "enum": [
                         "builtin",
-                        "cli",
-                        "sdk",
-                        "tool"
+                        "cli"
                       ],
                       "type": "string"
                     },
