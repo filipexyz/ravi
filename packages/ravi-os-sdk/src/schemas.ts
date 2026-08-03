@@ -47680,6 +47680,344 @@ export const PagesListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
+/** JSON Schema for the input body of `pages.password.remove`. */
+export const PagesPasswordRemoveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "description": "[project] <site>; project defaults to Ravi Console scope",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides saved Console scope",
+      "type": "string"
+    },
+    "route": {
+      "description": "Stable Pages route to update (default: /)",
+      "type": "string"
+    },
+    "visibility": {
+      "description": "Required replacement visibility: private|protected_link|public",
+      "type": "string"
+    }
+  },
+  "required": [
+    "args"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pages.password.remove`. */
+export const PagesPasswordRemoveReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "remove",
+        "set",
+        "status"
+      ],
+      "type": "string"
+    },
+    "configured": {
+      "type": "boolean"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "release": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "route": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "scope": {
+      "const": "route",
+      "type": "string"
+    },
+    "site": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "siteRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "action",
+    "configured",
+    "consoleUrl",
+    "path",
+    "policy",
+    "projectRef",
+    "release",
+    "route",
+    "scope",
+    "site",
+    "siteRef",
+    "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `pages.password.status`. */
+export const PagesPasswordStatusInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "args": {
+      "description": "[project] <site>; project defaults to Ravi Console scope",
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "console": {
+      "description": "Console base URL",
+      "type": "string"
+    },
+    "project": {
+      "description": "Console project id or slug; overrides saved Console scope",
+      "type": "string"
+    },
+    "route": {
+      "description": "Stable Pages route to inspect (default: /)",
+      "type": "string"
+    }
+  },
+  "required": [
+    "args"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `pages.password.status`. */
+export const PagesPasswordStatusReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "enum": [
+        "remove",
+        "set",
+        "status"
+      ],
+      "type": "string"
+    },
+    "configured": {
+      "type": "boolean"
+    },
+    "consoleUrl": {
+      "type": "string"
+    },
+    "path": {
+      "type": "string"
+    },
+    "policy": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "projectRef": {
+      "type": "string"
+    },
+    "release": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "route": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "scope": {
+      "const": "route",
+      "type": "string"
+    },
+    "site": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "siteRef": {
+      "type": "string"
+    },
+    "success": {
+      "const": true,
+      "type": "boolean"
+    },
+    "url": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "success",
+    "action",
+    "configured",
+    "consoleUrl",
+    "path",
+    "policy",
+    "projectRef",
+    "release",
+    "route",
+    "scope",
+    "site",
+    "siteRef",
+    "url"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
 /** JSON Schema for the input body of `pages.publish`. */
 export const PagesPublishInputSchema = {
   "additionalProperties": false,

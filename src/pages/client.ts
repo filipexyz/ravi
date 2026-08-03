@@ -37,6 +37,18 @@ export interface PageDomainBindOptions extends PagesClientOptions {
   site: string;
 }
 
+export type PagePasswordReplacementVisibility = "public" | "private" | "protected_link";
+
+export type PagePasswordManageOptions = PagesClientOptions & {
+  project: string;
+  site: string;
+  path: string;
+} & (
+    | { action: "set"; password: string }
+    | { action: "status" }
+    | { action: "remove"; visibility: PagePasswordReplacementVisibility }
+  );
+
 export interface PagesClientDeps {
   client?: ConsoleApiClient;
   readCredentials?: typeof readCloudCredentials;
@@ -100,6 +112,40 @@ export interface PageDomainBindResult {
   siteRef: string;
   total: number;
 }
+
+export type PagePasswordPolicyPayload = {
+  configured: boolean;
+  id: string;
+  rotatedAt: string;
+  scope: "route";
+  status: "active" | "disabled";
+  version: number;
+};
+
+export type PagePasswordManagePayload = {
+  action: "remove" | "set" | "status";
+  configured: boolean;
+  path: string;
+  policy: PagePasswordPolicyPayload | null;
+  projectRef: string;
+  release: { id: string; number: number };
+  route: {
+    bindingId: string;
+    effectiveVisibility: "password" | PagePasswordReplacementVisibility;
+    id: string;
+    path: string;
+    visibility: "password" | PagePasswordReplacementVisibility;
+  };
+  scope: "route";
+  site: { defaultHostname: string; id: string; projectId: string };
+  siteRef: string;
+  url: string;
+};
+
+export type PagePasswordManageResult = PagePasswordManagePayload & {
+  consoleUrl: string;
+  success: true;
+};
 
 export class RaviPagesClient {
   constructor(private readonly client: ConsoleApiClient) {}
@@ -192,6 +238,26 @@ export class RaviPagesClient {
       site: normalizeSitePayload(record?.site),
       total: typeof record?.total === "number" ? record.total : bindings.length,
     };
+  }
+
+  async manageRoutePassword(
+    accessToken: string,
+    options: PagePasswordManageOptions,
+  ): Promise<PagePasswordManagePayload> {
+    const body = {
+      action: options.action,
+      path: requireText(options.path, "path"),
+      siteRef: requireText(options.site, "site"),
+      ...(options.action === "set" ? { password: options.password } : {}),
+      ...(options.action === "remove" ? { visibility: options.visibility } : {}),
+    };
+    const payload = await this.request<unknown>(
+      "POST",
+      `/api/cli/projects/${encodeURIComponent(requireText(options.project, "project"))}/pages/password`,
+      body,
+      accessToken,
+    );
+    return normalizePagePasswordPayload(payload);
   }
 
   private async request<T>(method: string, path: string, body: unknown, accessToken: string): Promise<T> {
@@ -306,11 +372,37 @@ export async function bindPageDomains(
   };
 }
 
+export async function managePagePassword(
+  options: PagePasswordManageOptions,
+  deps: PagesClientDeps = {},
+): Promise<PagePasswordManageResult> {
+  const auth = await createAuthenticatedPagesContext(options, deps);
+  const result = await new RaviPagesClient(auth.client).manageRoutePassword(auth.accessToken, options);
+  return {
+    ...result,
+    consoleUrl: auth.consoleUrl,
+    success: true,
+  };
+}
+
 export function normalizePageVisibility(value: string | undefined): PageVisibility | undefined {
   if (!value?.trim()) return undefined;
   const normalized = value.trim().toLowerCase().replace(/-/g, "_");
   if (normalized === "public" || normalized === "private" || normalized === "protected_link") return normalized;
   throw new CloudAuthError("PAYLOAD_INVALID", "--visibility must be one of: public, private, protected_link.");
+}
+
+export function normalizePagePasswordReplacementVisibility(
+  value: string | undefined,
+): PagePasswordReplacementVisibility {
+  const visibility = normalizePageVisibility(value);
+  if (!visibility) {
+    throw new CloudAuthError(
+      "PAYLOAD_INVALID",
+      "Missing --visibility. Choose the access mode that replaces password protection.",
+    );
+  }
+  return visibility;
 }
 
 function requirePageVisibility(value: PageVisibility | undefined): PageVisibility {
@@ -362,6 +454,53 @@ function normalizeSitePayload(payload: unknown): PageSitePayload {
   return nested ?? record ?? {};
 }
 
+function normalizePagePasswordPayload(payload: unknown): PagePasswordManagePayload {
+  const record = requireObject(payload, "Pages password response");
+  const action = enumValue(record.action, ["remove", "set", "status"] as const, "action");
+  const policyRecord =
+    record.policy === null || record.policy === undefined ? null : requireObject(record.policy, "policy");
+  const policy = policyRecord
+    ? {
+        configured: booleanValue(policyRecord.configured, "policy.configured"),
+        id: requiredStringValue(policyRecord.id, "policy.id"),
+        rotatedAt: requiredStringValue(policyRecord.rotatedAt, "policy.rotatedAt"),
+        scope: enumValue(policyRecord.scope, ["route"] as const, "policy.scope"),
+        status: enumValue(policyRecord.status, ["active", "disabled"] as const, "policy.status"),
+        version: nonNegativeInteger(policyRecord.version, "policy.version"),
+      }
+    : null;
+  const release = requireObject(record.release, "release");
+  const route = requireObject(record.route, "route");
+  const site = requireObject(record.site, "site");
+  const visibilities = ["password", "public", "private", "protected_link"] as const;
+  return {
+    action,
+    configured: booleanValue(record.configured, "configured"),
+    path: requiredStringValue(record.path, "path"),
+    policy,
+    projectRef: requiredStringValue(record.projectRef, "projectRef"),
+    release: {
+      id: requiredStringValue(release.id, "release.id"),
+      number: nonNegativeInteger(release.number, "release.number"),
+    },
+    route: {
+      bindingId: requiredStringValue(route.bindingId, "route.bindingId"),
+      effectiveVisibility: enumValue(route.effectiveVisibility, visibilities, "route.effectiveVisibility"),
+      id: requiredStringValue(route.id, "route.id"),
+      path: requiredStringValue(route.path, "route.path"),
+      visibility: enumValue(route.visibility, visibilities, "route.visibility"),
+    },
+    scope: enumValue(record.scope, ["route"] as const, "scope"),
+    site: {
+      defaultHostname: requiredStringValue(site.defaultHostname, "site.defaultHostname"),
+      id: requiredStringValue(site.id, "site.id"),
+      projectId: requiredStringValue(site.projectId, "site.projectId"),
+    },
+    siteRef: requiredStringValue(record.siteRef, "siteRef"),
+    url: requiredStringValue(record.url, "url"),
+  };
+}
+
 function normalizeHostnames(values: string[]): string[] {
   const hostnames = [...new Set(values.map((value) => value.trim()).filter(Boolean))];
   if (hostnames.length === 0) throw new CloudAuthError("PAYLOAD_INVALID", "Missing hostname.");
@@ -389,6 +528,37 @@ function requireText(value: string | undefined, label: string): string {
 
 function objectValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function requireObject(value: unknown, label: string): Record<string, unknown> {
+  const record = objectValue(value);
+  if (!record) throw invalidConsoleResponse(label);
+  return record;
+}
+
+function requiredStringValue(value: unknown, label: string): string {
+  const text = stringValue(value);
+  if (!text) throw invalidConsoleResponse(label);
+  return text;
+}
+
+function booleanValue(value: unknown, label: string): boolean {
+  if (typeof value !== "boolean") throw invalidConsoleResponse(label);
+  return value;
+}
+
+function nonNegativeInteger(value: unknown, label: string): number {
+  if (!Number.isInteger(value) || Number(value) < 0) throw invalidConsoleResponse(label);
+  return Number(value);
+}
+
+function enumValue<const T extends readonly string[]>(value: unknown, values: T, label: string): T[number] {
+  if (typeof value === "string" && values.includes(value)) return value as T[number];
+  throw invalidConsoleResponse(label);
+}
+
+function invalidConsoleResponse(label: string): CloudAuthError {
+  return new CloudAuthError("SERVER_UNAVAILABLE", `Console returned an invalid ${label}.`);
 }
 
 function stringValue(value: unknown): string | null {
