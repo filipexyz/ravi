@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
@@ -16,9 +16,12 @@ import {
   createPageSite,
   listPageSites,
   listPublishedPages,
+  managePagePassword,
+  normalizePagePasswordReplacementVisibility,
   normalizePageVisibility,
   updatePageSite,
   type PageDomainBindResult,
+  type PagePasswordManageResult,
   type PagesClientDeps,
   type PageSiteCreateResult,
   type PageSiteListResult,
@@ -29,6 +32,7 @@ import {
 } from "../../pages/client.js";
 import { hasContext } from "../context.js";
 import { jsonObjectSchema, jsonValueSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
+import { readConfirmedSecret, type ConfirmedSecretInputOptions } from "../secret-input.js";
 import { artifactPublishReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 
 export interface PagesCommandDeps extends PagesClientDeps, Pick<ArtifactPublishDeps, "fetch"> {
@@ -37,6 +41,10 @@ export interface PagesCommandDeps extends PagesClientDeps, Pick<ArtifactPublishD
   listProjects?: ConsoleScopeResolverDeps["listProjects"];
   env?: ConsoleScopeResolverDeps["env"];
   cwd?: ConsoleScopeResolverDeps["cwd"];
+}
+
+export interface PagesPasswordCommandDeps extends PagesCommandDeps {
+  readPassword?: (options: ConfirmedSecretInputOptions) => Promise<string>;
 }
 
 @Group({
@@ -325,6 +333,152 @@ export class PagesCommands {
   }
 }
 
+const PAGES_PASSWORD_SET_HELP = `
+Examples:
+  ravi pages password set demo
+  ravi pages password set project demo --route /report
+  ravi pages password set demo --stdin < /secure/path/page-password
+
+Security:
+  Interactive input is hidden and confirmed. Automation must use redirected
+  stdin. Password flags, positional passwords, and environment input are not
+  supported. Output never contains the password.
+`;
+
+const PAGES_PASSWORD_REMOVE_HELP = `
+Examples:
+  ravi pages password remove demo --visibility private
+  ravi pages password remove project demo --route /report --visibility protected_link
+
+The replacement visibility is required so removing a password can never make a
+page public accidentally.
+`;
+
+@Group({
+  name: "pages.password",
+  description: "Manage route password protection without exposing password material",
+  scope: "open",
+})
+export class PagesPasswordCommands {
+  constructor(private readonly deps: PagesPasswordCommandDeps = {}) {}
+
+  @Command({
+    name: "set",
+    description: "Set or rotate a route password and enable password access in one operation",
+    helpAfter: PAGES_PASSWORD_SET_HELP,
+  })
+  @CliOnly()
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "password", risk: "high" })
+  async set(
+    @Arg("args", { variadic: true, description: "[project] <site>; project defaults to Ravi Console scope" })
+    args: string[],
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--route <path>", description: "Stable Pages route to protect (default: /)" })
+    route?: string,
+    @Option({ flags: "--stdin", description: "Read the password from redirected stdin instead of prompting" })
+    fromStdin?: boolean,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print a secret-free JSON result" }) asJson?: boolean,
+  ) {
+    return runPagesCommand(asJson, async () => {
+      const parsed = parseSiteArgs(args, projectOption, "password set");
+      const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
+      const password = await (this.deps.readPassword ?? readConfirmedSecret)({
+        confirmPrompt: "Confirm page password: ",
+        fromStdin: Boolean(fromStdin),
+        prompt: "Page password: ",
+      });
+      const result = await managePagePassword(
+        {
+          action: "set",
+          console: consoleUrl,
+          password,
+          path: route ?? "/",
+          project: resolved.projectRef,
+          site: parsed.site,
+        },
+        this.deps,
+      );
+      const payload = { ...result, projectScope: resolved.scope };
+      printPayload(payload, asJson, () => printPasswordResult(result));
+      return payload;
+    });
+  }
+
+  @Command({ name: "status", description: "Show safe route password status without revealing the password" })
+  @CommandAccess({ kind: "read", resource: "pages", action: "password", risk: "low" })
+  async status(
+    @Arg("args", { variadic: true, description: "[project] <site>; project defaults to Ravi Console scope" })
+    args: string[],
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--route <path>", description: "Stable Pages route to inspect (default: /)" })
+    route?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print a secret-free JSON result" }) asJson?: boolean,
+  ) {
+    return runPagesCommand(asJson, async () => {
+      const parsed = parseSiteArgs(args, projectOption, "password status");
+      const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
+      const result = await managePagePassword(
+        {
+          action: "status",
+          console: consoleUrl,
+          path: route ?? "/",
+          project: resolved.projectRef,
+          site: parsed.site,
+        },
+        this.deps,
+      );
+      const payload = { ...result, projectScope: resolved.scope };
+      printPayload(payload, asJson, () => printPasswordResult(result));
+      return payload;
+    });
+  }
+
+  @Command({
+    name: "remove",
+    description: "Remove a route password after activating an explicit replacement visibility",
+    helpAfter: PAGES_PASSWORD_REMOVE_HELP,
+  })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "password", risk: "high" })
+  async remove(
+    @Arg("args", { variadic: true, description: "[project] <site>; project defaults to Ravi Console scope" })
+    args: string[],
+    @Option({ flags: "--project <ref>", description: "Console project id or slug; overrides saved Console scope" })
+    projectOption?: string,
+    @Option({ flags: "--route <path>", description: "Stable Pages route to update (default: /)" })
+    route?: string,
+    @Option({
+      flags: "--visibility <visibility>",
+      description: "Required replacement visibility: private|protected_link|public",
+    })
+    visibility?: string,
+    @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
+    @Option({ flags: "--json", description: "Print a secret-free JSON result" }) asJson?: boolean,
+  ) {
+    return runPagesCommand(asJson, async () => {
+      const parsed = parseSiteArgs(args, projectOption, "password remove");
+      const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
+      const result = await managePagePassword(
+        {
+          action: "remove",
+          console: consoleUrl,
+          path: route ?? "/",
+          project: resolved.projectRef,
+          site: parsed.site,
+          visibility: normalizePagePasswordReplacementVisibility(visibility),
+        },
+        this.deps,
+      );
+      const payload = { ...result, projectScope: resolved.scope };
+      printPayload(payload, asJson, () => printPasswordResult(result));
+      return payload;
+    });
+  }
+}
+
 function defaultPagesDeps(): PagesCommandDeps {
   return {};
 }
@@ -518,6 +672,22 @@ const pageDomainBindReturnSchema = z.object({
   total: z.number(),
 });
 
+const pagePasswordReturnSchema = z.object({
+  success: z.literal(true),
+  action: z.enum(["remove", "set", "status"]),
+  configured: z.boolean(),
+  consoleUrl: z.string(),
+  path: z.string(),
+  policy: jsonObjectSchema.nullable(),
+  projectRef: z.string(),
+  release: jsonObjectSchema,
+  route: jsonObjectSchema,
+  scope: z.literal("route"),
+  site: jsonObjectSchema,
+  siteRef: z.string(),
+  url: z.string(),
+});
+
 declareCommandReturns(PagesCommands, {
   list: pagesListReturnSchema,
   published: publishedPagesListReturnSchema,
@@ -526,6 +696,12 @@ declareCommandReturns(PagesCommands, {
   update: pageSiteUpdateReturnSchema,
   visibility: pageSiteUpdateReturnSchema,
   domains: pageDomainBindReturnSchema,
+});
+
+declareCommandReturns(PagesPasswordCommands, {
+  set: pagePasswordReturnSchema,
+  status: pagePasswordReturnSchema,
+  remove: pagePasswordReturnSchema,
 });
 
 async function runPagesCommand<T>(asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
@@ -673,6 +849,22 @@ function printDomainBindings(result: PageDomainBindResult): void {
     const mode = stringValue(objectValue(binding.readiness)?.mode);
     console.log(`  - ${hostname}${status ? `  status=${status}` : ""}${mode ? `  mode=${mode}` : ""}`);
   }
+}
+
+function printPasswordResult(result: PagePasswordManageResult): void {
+  const state =
+    result.action === "remove"
+      ? "removed"
+      : result.action === "set"
+        ? "enabled"
+        : result.configured
+          ? "configured"
+          : "not configured";
+  console.log(`✓ Pages password protection ${state}`);
+  console.log(`  URL        ${result.url}`);
+  console.log(`  Route      ${result.path}`);
+  console.log(`  Visibility ${result.route.effectiveVisibility}`);
+  if (result.policy) console.log(`  Policy     ${result.policy.status} · version ${result.policy.version}`);
 }
 
 function siteLabel(site: PageSitePayload): string {

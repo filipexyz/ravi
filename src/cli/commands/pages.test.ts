@@ -6,7 +6,9 @@ import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { closeConsoleScopeStore, upsertConsoleScopeDefault } from "../../console-scope/store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
-import { PagesCommands } from "./pages.js";
+import { runWithContext } from "../context.js";
+import { getCliOnlyMetadata, getOptionsMetadata } from "../decorators.js";
+import { PagesCommands, PagesPasswordCommands } from "./pages.js";
 
 const tempDirs: string[] = [];
 let stateDir: string | null = null;
@@ -23,6 +25,102 @@ afterEach(async () => {
 });
 
 describe("pages CLI commands", () => {
+  it("sets a route password through hidden input and emits only an allowlisted result", async () => {
+    const secret = "correct horse battery staple";
+    const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
+    const client = makeClient(async (method, path, body, accessToken) => {
+      calls.push({ method, path, body, accessToken });
+      return passwordResponse({
+        action: "set",
+        configured: true,
+        policy: {
+          configured: true,
+          id: "policy_1",
+          passwordHash: "must-be-discarded",
+          rotatedAt: "2026-08-03T12:00:00.000Z",
+          scope: "route",
+          status: "active",
+          version: 2,
+        },
+        unexpectedPassword: secret,
+      });
+    });
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async (options) => {
+        expect(options).toMatchObject({ fromStdin: false, prompt: "Page password: " });
+        return secret;
+      },
+    });
+
+    const { output } = await captureConsole(() =>
+      command.set(["proj", "demo"], undefined, "/report", false, undefined, true),
+    );
+    const payload = JSON.parse(output);
+
+    expect(calls).toEqual([
+      {
+        accessToken: "access-secret",
+        body: { action: "set", password: secret, path: "/report", siteRef: "demo" },
+        method: "POST",
+        path: "/api/cli/projects/proj/pages/password",
+      },
+    ]);
+    expect(payload).toMatchObject({
+      action: "set",
+      configured: true,
+      path: "/report",
+      policy: { id: "policy_1", status: "active", version: 2 },
+      success: true,
+      url: "https://demo.ravi.page/report",
+    });
+    expect(output).not.toContain(secret);
+    expect(output).not.toContain("passwordHash");
+    expect(output).not.toContain("unexpectedPassword");
+  });
+
+  it("reads password status without invoking secret input", async () => {
+    const client = makeClient(async () => passwordResponse({ action: "status", configured: false, policy: null }));
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async () => {
+        throw new Error("unexpected password prompt");
+      },
+    });
+
+    const { output } = await captureConsole(() =>
+      command.status(["proj", "demo"], undefined, undefined, undefined, true),
+    );
+
+    expect(JSON.parse(output)).toMatchObject({ action: "status", configured: false, policy: null });
+  });
+
+  it("requires an explicit replacement visibility when removing password access", async () => {
+    const command = new PagesPasswordCommands({
+      client: makeClient(async () => passwordResponse()),
+      readCredentials: makeReadCredentials(),
+    });
+
+    const { result } = await captureConsole(() =>
+      runWithContext({}, () =>
+        command
+          .remove(["proj", "demo"], undefined, undefined, undefined, undefined, true)
+          .then(() => null)
+          .catch((error) => error),
+      ),
+    );
+    expect(result).toMatchObject({ code: "PAYLOAD_INVALID" });
+  });
+
+  it("does not expose a password argument or option in command metadata", () => {
+    const options = getOptionsMetadata(new PagesPasswordCommands(), "set");
+    expect(options.map((option) => option.flags)).not.toContain("--password <value>");
+    expect(options.map((option) => option.flags)).toContain("--stdin");
+    expect(getCliOnlyMetadata(PagesPasswordCommands)).toContain("set");
+  });
+
   it("lists project Pages sites through the Console CLI API", async () => {
     const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
     const client = makeClient(async (method, path, body, accessToken) => {
@@ -530,6 +628,36 @@ describe("pages CLI commands", () => {
     });
   });
 });
+
+function passwordResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    action: "set",
+    configured: true,
+    path: "/report",
+    policy: {
+      configured: true,
+      id: "policy_1",
+      rotatedAt: "2026-08-03T12:00:00.000Z",
+      scope: "route",
+      status: "active",
+      version: 1,
+    },
+    projectRef: "proj",
+    release: { id: "release_2", number: 2 },
+    route: {
+      bindingId: "binding_2",
+      effectiveVisibility: "password",
+      id: "route_1",
+      path: "/report",
+      visibility: "password",
+    },
+    scope: "route",
+    site: { defaultHostname: "demo.ravi.page", id: "site_1", projectId: "project_1" },
+    siteRef: "demo",
+    url: "https://demo.ravi.page/report",
+    ...overrides,
+  };
+}
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {
   const originalLog = console.log;

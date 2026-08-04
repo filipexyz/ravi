@@ -9311,6 +9311,57 @@ export type PagesListReturn = {
   total: number;
 };
 
+/** Input shape for `pages.password.remove`. */
+export type PagesPasswordRemoveInput = {
+  args: string[];
+  console?: string;
+  project?: string;
+  route?: string;
+  visibility?: string;
+};
+
+/** Return shape for `pages.password.remove`. */
+export type PagesPasswordRemoveReturn = {
+  action: "remove" | "set" | "status";
+  configured: boolean;
+  consoleUrl: string;
+  path: string;
+  policy: (Record<string, unknown>) | null;
+  projectRef: string;
+  release: Record<string, unknown>;
+  route: Record<string, unknown>;
+  scope: "route";
+  site: Record<string, unknown>;
+  siteRef: string;
+  success: true;
+  url: string;
+};
+
+/** Input shape for `pages.password.status`. */
+export type PagesPasswordStatusInput = {
+  args: string[];
+  console?: string;
+  project?: string;
+  route?: string;
+};
+
+/** Return shape for `pages.password.status`. */
+export type PagesPasswordStatusReturn = {
+  action: "remove" | "set" | "status";
+  configured: boolean;
+  consoleUrl: string;
+  path: string;
+  policy: (Record<string, unknown>) | null;
+  projectRef: string;
+  release: Record<string, unknown>;
+  route: Record<string, unknown>;
+  scope: "route";
+  site: Record<string, unknown>;
+  siteRef: string;
+  success: true;
+  url: string;
+};
+
 /** Input shape for `pages.publish`. */
 export type PagesPublishInput = {
   args: string[];
