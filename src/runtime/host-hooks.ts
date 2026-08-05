@@ -9,9 +9,37 @@ import { nats } from "../nats.js";
 import type { AgentConfig } from "../router/index.js";
 import { getSpecState, isSpecModeActive } from "../spec/server.js";
 import { logger } from "../utils/logger.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeCapabilities, RuntimeHookMatcher } from "./types.js";
 
 const log = logger.child("runtime:host-hooks");
+const CRASH_RECOVERY_HOOK_OWNERSHIP_CHANGED_REASON =
+  "Runtime host hook denied because durable turn ownership changed before authorization completed.";
+
+class RuntimeCrashRecoveryHookOwnershipChangedError extends Error {
+  constructor() {
+    super(CRASH_RECOVERY_HOOK_OWNERSHIP_CHANGED_REASON);
+    this.name = "RuntimeCrashRecoveryHookOwnershipChangedError";
+  }
+}
+
+export interface RuntimeHostHookApprovalServices {
+  requestCascadingApproval: typeof requestCascadingApproval;
+  requestPollAnswer: typeof requestPollAnswer;
+  emitApprovalEvent(topic: string, payload: Record<string, unknown>): Promise<unknown>;
+}
+
+interface RuntimeHostHookAttemptSafety {
+  streamingSession: Pick<RuntimeHostStreamingSession, "currentCrashRecoveryAttemptId" | "currentTurnToolStarted">;
+  crashRecovery: Pick<RuntimeCrashRecoveryCoordinator, "markTurnAttemptSafety">;
+}
+
+interface RuntimeHostHookAttemptFence {
+  beforeExternalApproval(): void;
+  ownsAttempt(): boolean;
+  finalizeAllowedTool(): boolean;
+}
 
 export interface RuntimeHostHooksOptions {
   runtimeCapabilities: RuntimeCapabilities;
@@ -20,6 +48,9 @@ export interface RuntimeHostHooksOptions {
   sessionCwd: string;
   resolvedSource?: ApprovalTarget;
   approvalSource?: ApprovalTarget;
+  streamingSession: RuntimeHostHookAttemptSafety["streamingSession"];
+  crashRecovery: RuntimeHostHookAttemptSafety["crashRecovery"];
+  approvalServices?: RuntimeHostHookApprovalServices;
 }
 
 export function createRuntimeHostHooks({
@@ -29,11 +60,19 @@ export function createRuntimeHostHooks({
   sessionCwd,
   resolvedSource,
   approvalSource,
+  streamingSession,
+  crashRecovery,
+  approvalServices = {
+    requestCascadingApproval,
+    requestPollAnswer,
+    emitApprovalEvent: (topic, payload) => nats.emit(topic, payload),
+  },
 }: RuntimeHostHooksOptions): Record<string, RuntimeHookMatcher[]> {
   if (!runtimeCapabilities.supportsHostSessionHooks) {
     return {};
   }
 
+  const attemptSafety = { streamingSession, crashRecovery };
   const hookOpts = { getAgentId: () => agent.id };
   const hooks: Record<string, RuntimeHookMatcher[]> = {
     PreToolUse: [
@@ -45,12 +84,18 @@ export function createRuntimeHostHooks({
     PermissionRequest: [
       {
         hooks: [
-          async () => ({
-            hookSpecificOutput: {
-              hookEventName: "PermissionRequest" as const,
-              decision: { behavior: "allow" as const },
-            },
-          }),
+          async () => {
+            const fence = createRuntimeHostHookAttemptFence(attemptSafety);
+            if (!fence || !fence.finalizeAllowedTool()) {
+              return denyPermissionRequestForOwnershipChange();
+            }
+            return {
+              hookSpecificOutput: {
+                hookEventName: "PermissionRequest" as const,
+                decision: { behavior: "allow" as const },
+              },
+            };
+          },
         ],
       },
     ],
@@ -78,16 +123,49 @@ export function createRuntimeHostHooks({
     { hooks: [createSpecBlockHook(sessionName)] },
     {
       matcher: "mcp__spec__exit_spec_mode",
-      hooks: [createExitSpecHook({ sessionName, agent, resolvedSource, approvalSource })],
+      hooks: [
+        createExitSpecHook({
+          sessionName,
+          agent,
+          resolvedSource,
+          approvalSource,
+          attemptSafety,
+          approvalServices,
+        }),
+      ],
     },
     {
       matcher: "ExitPlanMode",
-      hooks: [createExitPlanHook({ sessionName, sessionCwd, agent, resolvedSource, approvalSource })],
+      hooks: [
+        createExitPlanHook({
+          sessionName,
+          sessionCwd,
+          agent,
+          resolvedSource,
+          approvalSource,
+          attemptSafety,
+          approvalServices,
+        }),
+      ],
     },
     {
       matcher: "AskUserQuestion",
-      hooks: [createAskUserQuestionHook({ sessionName, agent, resolvedSource, approvalSource })],
+      hooks: [
+        createAskUserQuestionHook({
+          sessionName,
+          agent,
+          resolvedSource,
+          approvalSource,
+          attemptSafety,
+          approvalServices,
+        }),
+      ],
     },
+    // This catch-all is the final synchronous boundary before Claude may
+    // execute any tool, including tools auto-allowed by bypassPermissions.
+    // Earlier policy hooks may deny/rewrite; an allowed call cannot leave the
+    // hook chain without durable started_tool evidence.
+    { hooks: [createCrashRecoveryPreToolUseFence(attemptSafety)] },
   ];
 
   log.info("Hooks registered", {
@@ -96,6 +174,77 @@ export function createRuntimeHostHooks({
   });
 
   return hooks;
+}
+
+function createRuntimeHostHookAttemptFence(
+  safety: RuntimeHostHookAttemptSafety,
+): RuntimeHostHookAttemptFence | undefined {
+  const attemptId = safety.streamingSession.currentCrashRecoveryAttemptId;
+  if (!attemptId) return undefined;
+
+  const ownsAttempt = () => safety.streamingSession.currentCrashRecoveryAttemptId === attemptId;
+  const assertOwnership = () => {
+    if (!ownsAttempt()) {
+      throw new RuntimeCrashRecoveryHookOwnershipChangedError();
+    }
+  };
+
+  return {
+    ownsAttempt,
+    beforeExternalApproval: () => {
+      assertOwnership();
+      safety.crashRecovery.markTurnAttemptSafety({ attemptId, materializedOutput: true });
+      assertOwnership();
+    },
+    finalizeAllowedTool: () => {
+      if (!ownsAttempt()) return false;
+      safety.crashRecovery.markTurnAttemptSafety({ attemptId, startedTool: true });
+      if (!ownsAttempt()) return false;
+      safety.streamingSession.currentTurnToolStarted = true;
+      return true;
+    },
+  };
+}
+
+function denyPreToolUseForOwnershipChange() {
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PreToolUse" as const,
+      permissionDecision: "deny" as const,
+      permissionDecisionReason: CRASH_RECOVERY_HOOK_OWNERSHIP_CHANGED_REASON,
+    },
+  };
+}
+
+function denyPermissionRequestForOwnershipChange() {
+  return {
+    hookSpecificOutput: {
+      hookEventName: "PermissionRequest" as const,
+      decision: {
+        behavior: "deny" as const,
+        message: CRASH_RECOVERY_HOOK_OWNERSHIP_CHANGED_REASON,
+      },
+    },
+  };
+}
+
+function createCrashRecoveryPreToolUseFence(safety: RuntimeHostHookAttemptSafety) {
+  return async () => {
+    try {
+      const fence = createRuntimeHostHookAttemptFence(safety);
+      if (!fence || !fence.finalizeAllowedTool()) {
+        return denyPreToolUseForOwnershipChange();
+      }
+      return {};
+    } catch (error) {
+      log.error("Failed to persist crash recovery PreToolUse fence", { error });
+      return denyPreToolUseForOwnershipChange();
+    }
+  };
+}
+
+function isRuntimeCrashRecoveryHookOwnershipChanged(error: unknown): boolean {
+  return error instanceof RuntimeCrashRecoveryHookOwnershipChangedError;
 }
 
 function createSpecBlockHook(sessionName: string) {
@@ -128,8 +277,13 @@ function createExitPlanHook(options: {
   agent: AgentConfig;
   resolvedSource?: ApprovalTarget;
   approvalSource?: ApprovalTarget;
+  attemptSafety: RuntimeHostHookAttemptSafety;
+  approvalServices: RuntimeHostHookApprovalServices;
 }) {
   return async (input: any) => {
+    const fence = createRuntimeHostHookAttemptFence(options.attemptSafety);
+    if (!fence) return denyPreToolUseForOwnershipChange();
+
     let planText = "";
     const toolInput = input.tool_input as Record<string, unknown> | undefined;
 
@@ -169,16 +323,30 @@ function createExitPlanHook(options: {
     }
     if (!planText) planText = "(plano vazio)";
 
-    const result = await requestCascadingApproval({
-      resolvedSource: options.resolvedSource,
-      approvalSource: options.approvalSource,
-      type: "plan",
-      sessionName: options.sessionName,
-      agentId: options.agent.id,
-      text: planText,
-    });
+    let result: Awaited<ReturnType<typeof requestCascadingApproval>>;
+    try {
+      result = await options.approvalServices.requestCascadingApproval({
+        resolvedSource: options.resolvedSource,
+        approvalSource: options.approvalSource,
+        type: "plan",
+        sessionName: options.sessionName,
+        agentId: options.agent.id,
+        text: planText,
+        beforeExternalApproval: fence.beforeExternalApproval,
+      });
+    } catch (error) {
+      if (isRuntimeCrashRecoveryHookOwnershipChanged(error)) {
+        return denyPreToolUseForOwnershipChange();
+      }
+      throw error;
+    }
 
-    if (result.approved) return {};
+    if (!fence.ownsAttempt()) return denyPreToolUseForOwnershipChange();
+
+    if (result.approved) {
+      if (!fence.finalizeAllowedTool()) return denyPreToolUseForOwnershipChange();
+      return {};
+    }
 
     const reason = result.reason ? `Plano rejeitado: ${result.reason}` : "Plano rejeitado pelo usuário.";
     return {
@@ -196,11 +364,17 @@ function createAskUserQuestionHook(options: {
   agent: AgentConfig;
   resolvedSource?: ApprovalTarget;
   approvalSource?: ApprovalTarget;
+  attemptSafety: RuntimeHostHookAttemptSafety;
+  approvalServices: RuntimeHostHookApprovalServices;
 }) {
   return async (input: any) => {
+    const fence = createRuntimeHostHookAttemptFence(options.attemptSafety);
+    if (!fence) return denyPreToolUseForOwnershipChange();
+
     const targetSource = options.resolvedSource ?? options.approvalSource;
     if (!targetSource) {
       log.info("AskUserQuestion auto-approved (no source available)", { sessionName: options.sessionName });
+      if (!fence.finalizeAllowedTool()) return denyPreToolUseForOwnershipChange();
       return {};
     }
 
@@ -215,7 +389,10 @@ function createAskUserQuestionHook(options: {
         }>
       | undefined;
 
-    if (!questions || questions.length === 0) return {};
+    if (!questions || questions.length === 0) {
+      if (!fence.finalizeAllowedTool()) return denyPreToolUseForOwnershipChange();
+      return {};
+    }
 
     log.info("AskUserQuestion hook: sending polls", {
       sessionName: options.sessionName,
@@ -223,8 +400,8 @@ function createAskUserQuestionHook(options: {
       isDelegated,
     });
 
-    nats
-      .emit("ravi.approval.request", {
+    options.approvalServices
+      .emitApprovalEvent("ravi.approval.request", {
         type: "question",
         sessionName: options.sessionName,
         agentId: options.agent.id,
@@ -247,15 +424,25 @@ function createAskUserQuestionHook(options: {
       }
       pollName += "\n(responda a mensagem para outro)";
 
-      const result = await requestPollAnswer(targetSource, pollName, optionLabels, {
-        selectableCount: q.multiSelect ? optionLabels.length : 1,
-      });
+      let result: Awaited<ReturnType<typeof requestPollAnswer>>;
+      try {
+        fence.beforeExternalApproval();
+        result = await options.approvalServices.requestPollAnswer(targetSource, pollName, optionLabels, {
+          selectableCount: q.multiSelect ? optionLabels.length : 1,
+        });
+      } catch (error) {
+        if (isRuntimeCrashRecoveryHookOwnershipChanged(error)) {
+          return denyPreToolUseForOwnershipChange();
+        }
+        throw error;
+      }
+      if (!fence.ownsAttempt()) return denyPreToolUseForOwnershipChange();
 
       answers[q.question] = "selectedLabels" in result ? result.selectedLabels.join(", ") : result.freeText;
     }
 
-    nats
-      .emit("ravi.approval.response", {
+    options.approvalServices
+      .emitApprovalEvent("ravi.approval.response", {
         type: "question",
         sessionName: options.sessionName,
         agentId: options.agent.id,
@@ -266,6 +453,7 @@ function createAskUserQuestionHook(options: {
       .catch(() => {});
 
     log.info("AskUserQuestion answers collected", { sessionName: options.sessionName, answers, isDelegated });
+    if (!fence.finalizeAllowedTool()) return denyPreToolUseForOwnershipChange();
     return {
       hookSpecificOutput: {
         hookEventName: "PreToolUse" as const,
@@ -280,21 +468,41 @@ function createExitSpecHook(options: {
   agent: AgentConfig;
   resolvedSource?: ApprovalTarget;
   approvalSource?: ApprovalTarget;
+  attemptSafety: RuntimeHostHookAttemptSafety;
+  approvalServices: RuntimeHostHookApprovalServices;
 }) {
   return async (input: any) => {
-    const spec = (input.tool_input as Record<string, unknown> | undefined)?.spec as string | undefined;
-    if (!spec) return {};
+    const fence = createRuntimeHostHookAttemptFence(options.attemptSafety);
+    if (!fence) return denyPreToolUseForOwnershipChange();
 
-    const result = await requestCascadingApproval({
-      resolvedSource: options.resolvedSource,
-      approvalSource: options.approvalSource,
-      type: "spec",
-      sessionName: options.sessionName,
-      agentId: options.agent.id,
-      text: spec,
-    });
+    const spec = (input.tool_input as Record<string, unknown> | undefined)?.spec as string | undefined;
+    if (!spec) {
+      if (!fence.finalizeAllowedTool()) return denyPreToolUseForOwnershipChange();
+      return {};
+    }
+
+    let result: Awaited<ReturnType<typeof requestCascadingApproval>>;
+    try {
+      result = await options.approvalServices.requestCascadingApproval({
+        resolvedSource: options.resolvedSource,
+        approvalSource: options.approvalSource,
+        type: "spec",
+        sessionName: options.sessionName,
+        agentId: options.agent.id,
+        text: spec,
+        beforeExternalApproval: fence.beforeExternalApproval,
+      });
+    } catch (error) {
+      if (isRuntimeCrashRecoveryHookOwnershipChanged(error)) {
+        return denyPreToolUseForOwnershipChange();
+      }
+      throw error;
+    }
+
+    if (!fence.ownsAttempt()) return denyPreToolUseForOwnershipChange();
 
     if (result.approved) {
+      if (!fence.finalizeAllowedTool()) return denyPreToolUseForOwnershipChange();
       const state = getSpecState(options.sessionName);
       if (state) state.active = false;
       return {};

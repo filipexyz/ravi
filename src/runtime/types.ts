@@ -22,6 +22,7 @@ export type RuntimeUsageSemantics = "terminal-event" | "streaming" | "unavailabl
 export type RuntimeToolPermissionMode = "ravi-host" | "provider-native" | "unrestricted";
 export type RuntimeSystemPromptMode = "append" | "override" | "provider-composed";
 export type RuntimeTerminalEventGuarantee = "provider" | "adapter";
+export type RuntimeAmbiguousTurnRecoveryStrategy = "reconcile_by_client_message_id";
 export type RuntimeSkillVisibilityState =
   | "available"
   | "synced"
@@ -69,6 +70,8 @@ export interface RuntimePromptMessage {
   clientMessageId?: string;
   /** True when the host is recovering this delivery from an ambiguous provider outcome. */
   replay?: boolean;
+  /** Whether reconciliation may retry after the provider reports a failed or interrupted terminal turn. */
+  terminalReplayAllowed?: boolean;
 }
 
 export interface RuntimeToolUse {
@@ -132,11 +135,15 @@ export interface RuntimeApprovalEvent {
 
 export type RuntimeApprovalHandler = (request: RuntimeApprovalRequest) => Promise<RuntimeApprovalResult>;
 
+/** Host-only fence invoked immediately before an approval/user-input request becomes externally visible. */
+export type RuntimeBeforeExternalApproval = () => void;
+
 export interface RuntimeCapabilityAuthorizationRequest {
   permission: string;
   objectType: string;
   objectId: string;
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: RuntimeBeforeExternalApproval;
 }
 
 export interface RuntimeCapabilityAuthorizationResult {
@@ -149,17 +156,20 @@ export interface RuntimeCommandAuthorizationRequest {
   command: string;
   input?: Record<string, unknown>;
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: RuntimeBeforeExternalApproval;
 }
 
 export interface RuntimeToolUseAuthorizationRequest {
   toolName: string;
   input?: Record<string, unknown>;
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: RuntimeBeforeExternalApproval;
 }
 
 export interface RuntimeUserInputRequest {
   questions: RuntimeApprovalQuestion[];
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: RuntimeBeforeExternalApproval;
 }
 
 export interface RuntimeDynamicToolSpec {
@@ -523,6 +533,8 @@ export interface RuntimeSessionHandle {
   provider: RuntimeProviderId;
   events: AsyncIterable<RuntimeEvent>;
   skillVisibility?: RuntimeSkillVisibilitySnapshot;
+  /** Provider-owned strategy for resolving a handoff whose terminal outcome is unknown. */
+  ambiguousTurnRecoveryStrategy?: RuntimeAmbiguousTurnRecoveryStrategy;
   /**
    * Strategy for concurrent interactive prompts after a live handle exists.
    * The default is Ravi queue + interrupt; native steering must opt in explicitly.

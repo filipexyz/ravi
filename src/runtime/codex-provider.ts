@@ -121,6 +121,7 @@ interface CodexCliTurnRequest {
   prompt: string;
   clientMessageId?: string;
   replay?: boolean;
+  terminalReplayAllowed?: boolean;
   resume?: string;
   forkFrom?: string;
   systemPromptAppend: string;
@@ -289,6 +290,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
 
       return {
         provider: "codex",
+        ambiguousTurnRecoveryStrategy: "reconcile_by_client_message_id",
         concurrentInputStrategy: "interrupt",
         skillVisibility,
         events: normalizeCodexEvents(
@@ -581,6 +583,7 @@ async function* normalizeCodexEvents(
         prompt: promptText,
         clientMessageId: promptMessage.clientMessageId,
         replay: promptMessage.replay,
+        terminalReplayAllowed: promptMessage.terminalReplayAllowed,
         resume: previousSessionId,
         forkFrom: forkFromSessionId,
         systemPromptAppend,
@@ -1931,6 +1934,22 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             if (replayedTurn.status === "interrupted" || replayedTurn.status === "failed") {
               if (!replayedThreadId) {
                 throw new Error("Codex replay recovery requires the resumed thread id");
+              }
+              if (input.terminalReplayAllowed === false) {
+                bufferedThreadNotifications.splice(0, bufferedThreadNotifications.length);
+                bufferingThreadNotifications = false;
+                emitTurnStarted(turn, replayedTurn.raw, replayedThreadId);
+                turn.queue.push({
+                  type: "turn.interrupted",
+                  source: "codex.app-server",
+                  thread_id: replayedThreadId,
+                  turn_id: replayedTurn.id,
+                  turn: normalizeAppServerTurn(replayedTurn.raw),
+                  recovery_disposition: "terminal_replay_suppressed",
+                  provider_terminal_status: replayedTurn.status,
+                });
+                settleTurn(turn);
+                return;
               }
               bufferedThreadNotifications.splice(0, bufferedThreadNotifications.length);
               bufferingThreadNotifications = true;

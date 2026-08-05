@@ -18,6 +18,7 @@ import { configStore } from "./config-store.js";
 import { logger } from "./utils/logger.js";
 import {
   dbGetSetting,
+  dbGetDaemonRestartSessionSnapshot,
   dbHasDaemonRestartResumeDelivery,
   dbListEligibleDaemonRestartSessionSnapshots,
   dbMarkDaemonRestartResumeDelivered,
@@ -41,6 +42,10 @@ import { ensureSessionPromptsStream, publishSessionPrompt } from "./omni/session
 import { ensureRaviEventsStream } from "./events/audit-stream.js";
 import { startWebhookHttpServerFromEnv, type WebhookHttpServerHandle } from "./webhooks/http-server.js";
 import type { MessageTarget } from "./runtime/message-types.js";
+import {
+  buildDaemonRestartResumePrompt,
+  resolveCrashRecoveryRestartResumeDecision,
+} from "./runtime/daemon-restart-resume.js";
 import { dbHasActiveAssignedTaskForSession } from "./tasks/task-db.js";
 import { startWorkObjectNatsService, type WorkObjectNatsServiceHandle } from "./work-objects/index.js";
 import { createChannelBackendEgressRequester } from "./channels/backend-egress.js";
@@ -496,13 +501,24 @@ async function notifyRestartReason() {
   });
 
   const callerSessionName = restartInfo.sessionName ?? resolveFallbackRestartSessionName();
-  const callerSnapshot = callerSessionName ? findRestartSnapshotForSession(snapshots, callerSessionName) : undefined;
+  const eligibleCallerSnapshot = callerSessionName
+    ? findRestartSnapshotForSession(snapshots, callerSessionName)
+    : undefined;
+  const callerSessionKey = callerSessionName ? resolveRestartSessionKey(callerSessionName) : undefined;
+  const callerSnapshot =
+    eligibleCallerSnapshot ??
+    (callerSessionKey ? dbGetDaemonRestartSessionSnapshot(restartInfo.restartEpoch, callerSessionKey) : null) ??
+    undefined;
   if (callerSessionName) {
-    await publishRestartResumeEvent(callerSessionName, restartInfo, { kind: "caller", snapshot: callerSnapshot });
+    await publishRestartResumeEvent(callerSessionName, restartInfo, {
+      kind: "caller",
+      snapshot: callerSnapshot,
+      snapshotEligible: !callerSnapshot || Boolean(eligibleCallerSnapshot),
+    });
   }
 
   for (const snapshot of snapshots) {
-    if (callerSnapshot?.sessionKey === snapshot.sessionKey) {
+    if (eligibleCallerSnapshot?.sessionKey === snapshot.sessionKey) {
       continue;
     }
     await publishRestartResumeEvent(snapshot.sessionName, restartInfo, { kind: "active", snapshot });
@@ -531,7 +547,11 @@ function findRestartSnapshotForSession(
 async function publishRestartResumeEvent(
   sessionName: string,
   restartInfo: RestartReasonInfo,
-  options: { kind: "caller" | "active"; snapshot?: DaemonRestartSessionSnapshotRecord } = { kind: "active" },
+  options: {
+    kind: "caller" | "active";
+    snapshot?: DaemonRestartSessionSnapshotRecord;
+    snapshotEligible?: boolean;
+  } = { kind: "active" },
 ): Promise<boolean> {
   const sessionKey = options.snapshot?.sessionKey ?? resolveRestartSessionKey(sessionName);
   if (dbHasDaemonRestartResumeDelivery(restartInfo.restartEpoch, sessionKey)) {
@@ -540,6 +560,28 @@ async function publishRestartResumeEvent(
       sessionKey,
       sessionName,
       kind: options.kind,
+    });
+    return false;
+  }
+
+  const crashRecoveryResumeDecision = resolveCrashRecoveryRestartResumeDecision({
+    metadata: options.snapshot?.metadata,
+    snapshotPresent: Boolean(options.snapshot),
+    snapshotEligible: options.snapshotEligible ?? true,
+  });
+  const crashRecoveryResumeMode = crashRecoveryResumeDecision.mode;
+  if (!crashRecoveryResumeDecision.publish) {
+    log.info("Skipping restart resume for a crash-recovery-fenced snapshot", {
+      restartEpoch: restartInfo.restartEpoch,
+      sessionName,
+      sessionKey,
+      kind: options.kind,
+      reason: crashRecoveryResumeDecision.reason,
+    });
+    dbMarkDaemonRestartResumeDelivered({
+      restartEpoch: restartInfo.restartEpoch,
+      sessionKey,
+      sessionName,
     });
     return false;
   }
@@ -560,15 +602,15 @@ async function publishRestartResumeEvent(
     return false;
   }
 
-  const payload: Record<string, unknown> = {
-    prompt: `[System] Daemon reiniciou (${restartInfo.reason}). Continue de onde parou.`,
-    deliveryBarrier: "after_response",
-    deliveryBarrierSource: "default",
-    _daemonRestartResume: {
-      restartEpoch: restartInfo.restartEpoch,
-      sessionKey,
-    },
-  };
+  const payload = buildDaemonRestartResumePrompt({
+    restartEpoch: restartInfo.restartEpoch,
+    reason: restartInfo.reason,
+    sessionKey,
+    mode: crashRecoveryResumeMode,
+  });
+  if (!payload) {
+    return false;
+  }
   const restartSource = resolveRestartResumeSource(options.snapshot);
   if (restartSource) {
     payload.source = restartSource;

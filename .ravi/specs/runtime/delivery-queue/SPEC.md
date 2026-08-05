@@ -194,7 +194,7 @@ Each queued, released, batched, bypassed, or interrupted prompt SHOULD include:
 - Provider adapters MUST NOT implement their own delivery queue. Queueing and interruption are runtime responsibilities.
 - A queued prompt atom MUST survive provider interruption and daemon restart according to `runtime/session-continuity`.
 - A prompt-driven interruption MUST release the interrupting atom next instead of replaying the superseded turn first.
-- An unexpected provider interruption MUST retain the active turn for recovery replay.
+- An unexpected provider interruption MUST retain the active turn for provider reconciliation only when the live provider handle advertises that strategy. Otherwise the active turn MAY be replayed as a fresh delivery only when durable safety evidence authorizes it and MUST be excluded when unsafe.
 - Ambiguous recovery MUST reuse the active turn's logical delivery id and MUST NOT fold later fresh prompt atoms into that replay.
 - A provider turn interrupted by a later prompt MUST still produce exactly one terminal event according to `runtime`.
 - Assistant messages MUST be persisted only for non-interrupted terminal turns.
@@ -211,7 +211,7 @@ Each queued, released, batched, bypassed, or interrupted prompt SHOULD include:
 - Operational execute/heartbeat/trigger prompts do not interrupt active task work by default.
 - Human channel messages can still interrupt after safe tool barriers.
 - A human channel message that interrupts an active turn is the next provider input; the superseded turn is not replayed ahead of it.
-- A provider interruption without a newer prompt still replays the active prompt atom.
+- A provider interruption without a newer prompt reconciles the active prompt atom when the provider advertises support; otherwise it retries the atom only when generic replay remains durably safe.
 - Ambiguous recovery reuses one logical delivery id; intentional restarts create a new delivery id and preserve normal batching.
 - Equal-lane queued events are delivered FIFO.
 - Trace explains whether a prompt was queued, released, batched, blocked, bypassed, or used to interrupt.

@@ -23,6 +23,8 @@ import {
   markRuntimeCredentialAttemptStarted,
   reserveRuntimeCredentialAttempt,
 } from "./credential-store.js";
+import { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { getRuntimeTurnAttempt } from "./crash-recovery-store.js";
 import { RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON } from "./context-window-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget, RuntimeUserMessage } from "./host-session.js";
@@ -46,6 +48,7 @@ import type {
 } from "./types.js";
 
 let stateDir: string | null = null;
+let crashRecovery: RuntimeCrashRecoveryCoordinator;
 
 const SESSION_KEY = "agent:main:main";
 const SESSION_NAME = "trace-runtime";
@@ -137,11 +140,15 @@ function makeStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = 
     pendingAbort: false,
     agentMode: "sentinel",
     traceRunId: "run-1",
+    toolEffectFence: "host_write_ahead",
     ...overrides,
   };
 }
 
-function makeRuntimeSession(events: RuntimeEvent[]): RuntimeSessionHandle {
+function makeRuntimeSession(
+  events: RuntimeEvent[],
+  options: Pick<RuntimeSessionHandle, "ambiguousTurnRecoveryStrategy"> = {},
+): RuntimeSessionHandle {
   return {
     provider: PROVIDER,
     events: (async function* () {
@@ -150,10 +157,14 @@ function makeRuntimeSession(events: RuntimeEvent[]): RuntimeSessionHandle {
       }
     })(),
     interrupt: async () => {},
+    ...options,
   };
 }
 
-function makeNeverEndingRuntimeSession(lifecycle?: string[]): RuntimeSessionHandle {
+function makeNeverEndingRuntimeSession(
+  lifecycle?: string[],
+  options: Pick<RuntimeSessionHandle, "ambiguousTurnRecoveryStrategy"> = {},
+): RuntimeSessionHandle {
   let resolveClose!: () => void;
   const closed = new Promise<void>((resolve) => {
     resolveClose = resolve;
@@ -177,6 +188,7 @@ function makeNeverEndingRuntimeSession(lifecycle?: string[]): RuntimeSessionHand
       lifecycle?.push("close");
       resolveClose();
     },
+    ...options,
   };
 }
 
@@ -315,6 +327,26 @@ function seedAdapterTrace(streaming: RuntimeHostStreamingSession, turnId = "turn
   streaming.currentTraceSystemPromptSha256 = trace.systemPromptSha256;
   streaming.currentTraceRequestBlobSha256 = trace.requestBlobSha256;
   streaming.currentTraceTurnTerminalRecorded = false;
+  const provenance = classifyTurnProvenance({ source: streaming.currentSource });
+  const attempt = crashRecovery.startTurnAttempt({
+    turnId: trace.turnId,
+    runId: streaming.traceRunId ?? "run-1",
+    sessionKey: SESSION_KEY,
+    sessionName: SESSION_NAME,
+    agentId: AGENT_ID,
+    provider: PROVIDER,
+    model: streaming.currentModel,
+    startedAt: trace.startedAt,
+    requestBlobSha256: trace.requestBlobSha256,
+    userPromptSha256: trace.userPromptSha256,
+    systemPromptSha256: trace.systemPromptSha256,
+    originKind: provenance.origin,
+    source: streaming.currentSource ?? null,
+    turnProvenance: provenance,
+    deliveryBarrier: "after_tool",
+    pendingIds: streaming.currentTurnPendingIds ?? [],
+  });
+  streaming.currentCrashRecoveryAttemptId = attempt.attemptId;
   bindRuntimeCredentialAttemptTurn(streaming.currentRuntimeCredential?.attemptId, turnId);
   markRuntimeCredentialAttemptStarted(streaming.currentRuntimeCredential?.attemptId);
 }
@@ -339,6 +371,7 @@ async function runTraceLoop(
     stashedMessages: new Map(),
     safeEmit: async () => {},
     drainPendingStarts: () => {},
+    crashRecovery,
     ...overrides,
   });
 }
@@ -347,11 +380,16 @@ describe("runtime session trace instrumentation", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-trace-test-");
     getOrCreateSession(SESSION_KEY, AGENT_ID, stateDir ?? "/tmp");
+    crashRecovery = new RuntimeCrashRecoveryCoordinator({ instanceId: "trace-test" });
+    crashRecovery.start();
     resetUserFacingRuntimeLimitSuppressionsForTest();
   });
 
   afterEach(async () => {
     resetUserFacingRuntimeLimitSuppressionsForTest();
+    if (crashRecovery.acceptingDeliveries) {
+      crashRecovery.stopGracefully("test_cleanup");
+    }
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
   });
@@ -405,6 +443,7 @@ describe("runtime session trace instrumentation", () => {
       streamingSession: streaming,
       stashedMessages: new Map(),
       defaultRuntimeProviderId: "claude",
+      crashRecovery,
     });
 
     expect(runtimeRequest.env).toMatchObject({
@@ -419,6 +458,22 @@ describe("runtime session trace instrumentation", () => {
 
     const yielded = await runtimeRequest.prompt.next();
     expect(yielded.value?.message.content).toBe("hello trace");
+    const attemptId = streaming.currentCrashRecoveryAttemptId;
+    expect(attemptId).toBeTruthy();
+    expect(getRuntimeTurnAttempt(attemptId!)).toMatchObject({
+      status: "running",
+      sessionKey: SESSION_KEY,
+      sessionName: SESSION_NAME,
+      agentId: AGENT_ID,
+      provider: PROVIDER,
+      model: MODEL,
+      originKind: "task",
+      deliveryBarrier: "after_tool",
+      taskBarrierTaskId: "task-1",
+      pendingIds: [streaming.currentTurnPendingIds?.[0]],
+      startedTool: false,
+      materializedOutput: false,
+    });
     streaming.done = true;
     streaming.onTurnComplete?.();
     await runtimeRequest.prompt.return?.(undefined);
@@ -562,6 +617,7 @@ describe("runtime session trace instrumentation", () => {
         streamingSession: streaming,
         stashedMessages: new Map(),
         defaultRuntimeProviderId: "claude",
+        crashRecovery,
       }),
     ).rejects.toThrow("No managed runtime credential could be resolved");
   });
@@ -637,6 +693,7 @@ describe("runtime session trace instrumentation", () => {
         streamingSession: streaming,
         stashedMessages: new Map(),
         defaultRuntimeProviderId: "claude",
+        crashRecovery,
       });
 
       expect(resolveRuntimeCredentialUpstreamProvider("codex", "gpt-5")).toBe("openai");
@@ -675,6 +732,7 @@ describe("runtime session trace instrumentation", () => {
   it("records tool events and terminal turn.complete state from the runtime event loop", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming);
+    const crashRecoveryAttemptId = streaming.currentCrashRecoveryAttemptId!;
 
     await runTraceLoop(
       streaming,
@@ -719,6 +777,12 @@ describe("runtime session trace instrumentation", () => {
     expect(turn?.providerSessionIdAfter).toBe("provider-after");
     expect(turn?.inputTokens).toBe(10);
     expect(turn?.outputTokens).toBe(4);
+    expect(getRuntimeTurnAttempt(crashRecoveryAttemptId)).toMatchObject({
+      status: "complete",
+      completedAt: turn?.completedAt,
+      startedTool: true,
+      materializedOutput: false,
+    });
     expect(getRuntimeLiveStateForSession(makeSession())?.loadedSkills).toEqual(["trace-skill"]);
     expect(
       (getSession(SESSION_KEY)?.runtimeSessionParams?.skillVisibility as RuntimeSkillVisibilitySnapshot).loadedSkills,
@@ -730,6 +794,11 @@ describe("runtime session trace instrumentation", () => {
       contactId: "contact_1",
     });
     expect(streaming.currentTraceTurnId).toBeUndefined();
+    expect(streaming.currentCrashRecoveryTerminal).toMatchObject({
+      status: "complete",
+      startedTool: true,
+      materializedOutput: false,
+    });
   });
 
   it("marks the active credential attempt succeeded on a successful terminal turn", async () => {
@@ -911,6 +980,7 @@ describe("runtime session trace instrumentation", () => {
       currentTurnProvenance: classifyTurnProvenance({ source }),
     });
     seedAdapterTrace(streaming);
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
 
     const responses: string[] = [];
     const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
@@ -929,6 +999,10 @@ describe("runtime session trace instrumentation", () => {
     expect(responses.some((text) => text.includes("Compactando"))).toBe(true);
     expect(responses.some((text) => text.includes("compactada"))).toBe(true);
     expect(collectRuntimeStatusCompacting()).toEqual([true, false]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "complete",
+      materializedOutput: true,
+    });
   });
 
   for (const scenario of [
@@ -1157,6 +1231,322 @@ describe("runtime session trace instrumentation", () => {
     ]);
   });
 
+  it("releases a mixed assistant/tool raw envelope only after both durable safety markers", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-raw-write-ahead");
+    const rawAssistant = {
+      type: "assistant",
+      message: {
+        content: [
+          { type: "tool_use", id: "tool-1", name: "Bash", input: { cmd: "true" } },
+          { type: "text", text: "accepted answer" },
+        ],
+      },
+    };
+    const rawTerminal = { type: "result", subtype: "success" };
+    const order: string[] = [];
+    const originalMark = crashRecovery.markTurnAttemptSafety.bind(crashRecovery);
+    const markerSpy = spyOn(crashRecovery, "markTurnAttemptSafety").mockImplementation((input) => {
+      order.push(input.materializedOutput ? "marker:output" : "marker:started");
+      return originalMark(input);
+    });
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "provider.raw", rawEvent: rawAssistant },
+          {
+            type: "tool.started",
+            toolUse: { id: "tool-1", name: "Bash", input: { cmd: "true" } },
+            rawEvent: rawAssistant,
+          },
+          { type: "assistant.message", text: "accepted answer", rawEvent: rawAssistant },
+          { type: "provider.raw", rawEvent: rawTerminal },
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-after",
+            usage: { inputTokens: 1, outputTokens: 1 },
+            rawEvent: rawTerminal,
+          },
+        ]),
+        {
+          runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "claude" },
+          safeEmit: async (topic, data) => {
+            if (topic.endsWith(".claude") && data.type === "assistant") order.push("emit:raw-assistant");
+            emitted.push({ topic, data });
+          },
+        },
+      );
+    } finally {
+      markerSpy.mockRestore();
+    }
+
+    expect(order).toEqual(["marker:started", "marker:output", "emit:raw-assistant"]);
+    expect(
+      emitted.find((entry) => entry.topic.endsWith(".runtime") && entry.data.type === "assistant.message")?.data,
+    ).not.toHaveProperty("rawEvent");
+  });
+
+  it("drops a mixed Claude raw envelope when its assistant text is silent", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-raw-mixed-silent");
+    const rawAssistant = {
+      type: "assistant",
+      secretText: "@@SILENT@@",
+      message: { content: [{ type: "tool_use", id: "tool-silent", name: "Bash" }] },
+    };
+    const rawTerminal = { type: "result", subtype: "success", secretText: "must-not-escape" };
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "provider.raw", rawEvent: rawAssistant },
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-silent", name: "Bash" },
+          rawEvent: rawAssistant,
+        },
+        { type: "assistant.message", text: "@@SILENT@@", rawEvent: rawAssistant },
+        { type: "provider.raw", rawEvent: rawTerminal },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 0 },
+          rawEvent: rawTerminal,
+        },
+      ]),
+      {
+        runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "claude" },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.some((entry) => entry.data.secretText !== undefined)).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "provider.raw")).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "silent")).toBe(true);
+  });
+
+  it("does not let Pi item lifecycle events release assistant raw content before response policy", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-pi-fallback-raw-silent");
+    const rawMessageStart = {
+      type: "message_start",
+      secretText: "pi-fallback-start-must-not-escape",
+      message: { role: "assistant", content: [{ type: "text", text: "@@SILENT@@" }] },
+    };
+    const rawMessageEnd = {
+      type: "message_end",
+      secretText: "pi-fallback-end-must-not-escape",
+      message: { role: "assistant", content: [{ type: "text", text: "@@SILENT@@" }] },
+    };
+    const rawTerminal = { type: "agent_end" };
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "provider.raw", rawEvent: rawMessageStart },
+        { type: "item.started", item: { id: "pi-message", type: "assistant" }, rawEvent: rawMessageStart },
+        { type: "provider.raw", rawEvent: rawMessageEnd },
+        { type: "item.completed", item: { id: "pi-message", type: "assistant" }, rawEvent: rawMessageEnd },
+        { type: "assistant.message", text: "@@SILENT@@", rawEvent: rawMessageEnd },
+        { type: "provider.raw", rawEvent: rawTerminal },
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after",
+          usage: { inputTokens: 1, outputTokens: 0 },
+          rawEvent: rawTerminal,
+        },
+      ]),
+      {
+        runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "pi" },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.some((entry) => entry.data.secretText !== undefined)).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "silent")).toBe(true);
+  });
+
+  it("drops Pi tool-only assistant raw content until a real tool fence exists", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-pi-tool-only-raw");
+    const rawMessageEnd = {
+      type: "message_end",
+      secretText: "pi-tool-call-before-fence",
+      message: {
+        role: "assistant",
+        content: [{ type: "toolCall", name: "Bash", arguments: { cmd: "true" } }],
+      },
+    };
+    const rawToolStart = { type: "tool_execution_start", toolName: "Bash", toolCallId: "tool-1" };
+    const rawToolEnd = { type: "tool_execution_end", toolName: "Bash", toolCallId: "tool-1" };
+    const rawTerminal = { type: "agent_end" };
+    const order: string[] = [];
+    const originalMark = crashRecovery.markTurnAttemptSafety.bind(crashRecovery);
+    const markerSpy = spyOn(crashRecovery, "markTurnAttemptSafety").mockImplementation((input) => {
+      if (input.startedTool) order.push("marker:started");
+      return originalMark(input);
+    });
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "provider.raw", rawEvent: rawMessageEnd },
+          { type: "item.completed", item: { id: "pi-tool-message", type: "assistant" }, rawEvent: rawMessageEnd },
+          { type: "provider.raw", rawEvent: rawToolStart },
+          {
+            type: "tool.started",
+            toolUse: { id: "tool-1", name: "Bash", input: { cmd: "true" } },
+            rawEvent: rawToolStart,
+          },
+          { type: "provider.raw", rawEvent: rawToolEnd },
+          {
+            type: "tool.completed",
+            toolUseId: "tool-1",
+            toolName: "Bash",
+            content: "ok",
+            rawEvent: rawToolEnd,
+          },
+          { type: "provider.raw", rawEvent: rawTerminal },
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-after",
+            usage: { inputTokens: 1, outputTokens: 0 },
+            rawEvent: rawTerminal,
+          },
+        ]),
+        {
+          runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "pi" },
+          safeEmit: async (topic, data) => {
+            if (topic.endsWith(".pi") && data.type === "tool_execution_start") order.push("emit:tool-start");
+            emitted.push({ topic, data });
+          },
+        },
+      );
+    } finally {
+      markerSpy.mockRestore();
+    }
+
+    expect(emitted.some((entry) => entry.data.secretText === "pi-tool-call-before-fence")).toBe(false);
+    expect(order.indexOf("marker:started")).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf("emit:tool-start")).toBeGreaterThan(order.indexOf("marker:started"));
+  });
+
+  it("does not release a previously fenced raw envelope after ownership is lost", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-raw-ownership-race");
+    const rawToolStart = { type: "tool_execution_start", secretText: "must-stay-owned" };
+    const rawNext = { type: "tool_execution_end" };
+    const ownershipFailure = new Error("attempt ownership lost");
+    let lost = false;
+    const failedCoordinator = {
+      get acceptingDeliveries() {
+        return !lost;
+      },
+      get ownershipFailure() {
+        return lost ? ownershipFailure : null;
+      },
+      getActiveTurnAttempt: (attemptId: string) => crashRecovery.getActiveTurnAttempt(attemptId),
+      markTurnAttemptSafety: (input: Parameters<RuntimeCrashRecoveryCoordinator["markTurnAttemptSafety"]>[0]) => {
+        const marked = crashRecovery.markTurnAttemptSafety(input);
+        lost = true;
+        streaming.currentCrashRecoveryAttemptId = undefined;
+        streaming.internalAbortReason = "crash_recovery_ownership_lost";
+        return marked;
+      },
+    } as unknown as RuntimeCrashRecoveryCoordinator;
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "provider.raw", rawEvent: rawToolStart },
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-ownership", name: "Bash", input: { cmd: "true" } },
+          rawEvent: rawToolStart,
+        },
+        { type: "provider.raw", rawEvent: rawNext },
+      ]),
+      {
+        crashRecovery: failedCoordinator,
+        runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "pi" },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.some((entry) => entry.data.secretText === "must-stay-owned")).toBe(false);
+  });
+
+  it("drops provider raw envelopes that never correlate to a canonical boundary", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-raw-orphan");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "provider.raw", rawEvent: { type: "unknown", secretText: "orphan-one" } },
+        { type: "provider.raw", rawEvent: { type: "unknown", secretText: "orphan-two" } },
+      ]),
+      {
+        runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "claude" },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted.some((entry) => entry.data.secretText !== undefined)).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "provider.raw")).toBe(false);
+  });
+
+  it("keeps suppressed recoverable failures raw-free on the canonical runtime topic", async () => {
+    const streaming = makeStreamingSession({ interrupted: true });
+    seedAdapterTrace(streaming, "turn-suppressed-failure-raw");
+    const rawFailure = { type: "error", message: "operation was aborted", secretText: "partial assistant" };
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "provider.raw", rawEvent: rawFailure },
+        {
+          type: "turn.failed",
+          error: "operation was aborted",
+          recoverable: true,
+          rawEvent: rawFailure,
+        },
+      ]),
+      {
+        runtimeCapabilities: { ...capabilities, legacyEventTopicSuffix: "claude" },
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    const interrupted = emitted.find(
+      (entry) => entry.topic.endsWith(".runtime") && entry.data.type === "turn.interrupted",
+    );
+    expect(interrupted?.data).not.toHaveProperty("rawEvent");
+    expect(emitted.some((entry) => entry.data.secretText !== undefined)).toBe(false);
+  });
+
   it("persists final assistant output without concatenating commentary", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-final-with-commentary");
@@ -1211,6 +1601,58 @@ describe("runtime session trace instrumentation", () => {
     expect(getSessionTurn("turn-interrupted")?.status).toBe("interrupted");
   });
 
+  it("drops an interrupted physical turn after durable tool activity while preserving its successor", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "unsafe tool turn", source, _agentId: AGENT_ID });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "safe successor", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-interrupted-after-tool");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-interrupted", name: "Bash", input: { cmd: "touch unsafe" } },
+        },
+        { type: "turn.interrupted" },
+      ]),
+    );
+
+    expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual(["safe successor"]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "interrupted",
+      startedTool: true,
+      materializedOutput: false,
+    });
+  });
+
+  it("drops an interrupted physical turn after durable output while preserving its successor", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "partially answered turn", source, _agentId: AGENT_ID });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "safe successor", source, _agentId: AGENT_ID });
+    const streaming = makeStreamingSession({
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: active.pendingId ? [active.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-interrupted-after-output");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([{ type: "text.delta", text: "partial result" }, { type: "turn.interrupted" }]),
+    );
+
+    expect(streaming.pendingMessages.map((message) => message.message.content)).toEqual(["safe successor"]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "interrupted",
+      startedTool: false,
+      materializedOutput: true,
+    });
+  });
+
   it("replays a pending user turn when the provider stream closes without a terminal event before tools", async () => {
     const queued = createQueuedRuntimeUserMessage({
       prompt: "received from slack",
@@ -1247,6 +1689,358 @@ describe("runtime session trace instrumentation", () => {
       autoRecovered: true,
     });
     expect(getSessionTurn("turn-stream-closed-before-tool")?.status).toBe("aborted");
+  });
+
+  it("reconciles an unsafe ambiguous turn only when the provider advertises support", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "reconcile provider-owned turn",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    queued.clientMessageId = "ravi:provider-reconciliation";
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      toolEffectFence: "provider_event_only",
+    });
+    seedAdapterTrace(streaming, "turn-provider-reconciliation");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([], {
+        ambiguousTurnRecoveryStrategy: "reconcile_by_client_message_id",
+      }),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)).toEqual([
+      expect.objectContaining({
+        clientMessageId: "ravi:provider-reconciliation",
+        replay: true,
+        terminalReplayAllowed: false,
+      }),
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
+  });
+
+  it("does not hand an unsafe ambiguous turn to a provider without reconciliation support", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not blindly replay provider-owned turn",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      toolEffectFence: "provider_event_only",
+    });
+    seedAdapterTrace(streaming, "turn-provider-without-reconciliation");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+  });
+
+  it("does not replay a turn after streamed output was durably materialized", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not duplicate partial output",
+      deliveryBarrier: "after_response",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentTurnToolStarted: false,
+      toolRunning: false,
+    });
+    seedAdapterTrace(streaming, "turn-stream-closed-after-output");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([{ type: "text.delta", text: "partial answer" }]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "aborted",
+      materializedOutput: true,
+    });
+  });
+
+  it("fails before projecting provider output when the durable attempt binding is missing", async () => {
+    const streaming = makeStreamingSession();
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await expect(
+      runTraceLoop(streaming, makeRuntimeSession([{ type: "text.delta", text: "must not escape" }]), {
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      }),
+    ).rejects.toThrow("Crash recovery attempt binding missing before provider side effect");
+
+    expect(emitted).toEqual([]);
+  });
+
+  it("does not persist or project an accepted assistant message before its output marker", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-assistant-marker-failure");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const markerSpy = spyOn(crashRecovery, "markTurnAttemptSafety").mockImplementation(() => {
+      throw new Error("output marker unavailable");
+    });
+
+    try {
+      await expect(
+        runTraceLoop(streaming, makeRuntimeSession([{ type: "assistant.message", text: "must not materialize" }]), {
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
+        }),
+      ).rejects.toThrow("output marker unavailable");
+    } finally {
+      markerSpy.mockRestore();
+    }
+
+    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "assistant.message")).toBe(false);
+    expect(emitted.some((entry) => entry.data.type === "assistant.message")).toBe(false);
+  });
+
+  it("fails closed when a provider terminal arrives without its durable attempt binding", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-terminal-without-binding");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    streaming.currentCrashRecoveryAttemptId = undefined;
+
+    await expect(
+      runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-terminal-without-binding",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        ]),
+      ),
+    ).rejects.toThrow("Crash recovery attempt binding missing before terminal provider state");
+
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({ status: "running", completedAt: null });
+    expect(getSessionTurn("turn-terminal-without-binding")).toMatchObject({ status: "running", completedAt: null });
+  });
+
+  it("always closes provider resources after crash recovery ownership is lost", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-ownership-lost");
+    let iteratorReturnCalls = 0;
+    let handleCloseCalls = 0;
+    let emitted = false;
+    let delivered = false;
+    const iterator: AsyncIterator<RuntimeEvent> & AsyncIterable<RuntimeEvent> = {
+      next: async () => {
+        if (delivered) return { done: true, value: undefined as never };
+        delivered = true;
+        return { done: false, value: { type: "text.delta", text: "must stay fenced" } };
+      },
+      return: async () => {
+        iteratorReturnCalls++;
+        return { done: true, value: undefined as never };
+      },
+      [Symbol.asyncIterator]() {
+        return this;
+      },
+    };
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: iterator,
+      interrupt: async () => {},
+      close: async () => {
+        handleCloseCalls++;
+      },
+    };
+    const ownershipFailure = new Error("lost marker fence");
+    const failedCoordinator = {
+      acceptingDeliveries: false,
+      ownershipFailure,
+      markTurnAttemptSafety: () => {
+        streaming.currentCrashRecoveryAttemptId = undefined;
+        streaming.internalAbortReason = "crash_recovery_ownership_lost";
+        streaming.abortController.abort();
+        throw ownershipFailure;
+      },
+    } as unknown as RuntimeCrashRecoveryCoordinator;
+    const streamingSessions = new Map([[SESSION_NAME, streaming]]);
+
+    await expect(
+      runTraceLoop(streaming, runtimeSession, {
+        crashRecovery: failedCoordinator,
+        streamingSessions,
+        safeEmit: async () => {
+          emitted = true;
+        },
+      }),
+    ).rejects.toThrow("lost marker fence");
+
+    expect(emitted).toBe(false);
+    expect(streaming.abortController.signal.aborted).toBe(true);
+    expect(handleCloseCalls).toBe(1);
+    expect(iteratorReturnCalls).toBe(1);
+    expect(streamingSessions.has(SESSION_NAME)).toBe(false);
+  });
+
+  it("does not fabricate a terminal latch or trace after ownership is already lost", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-terminal-after-ownership-loss");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    streaming.currentCrashRecoveryAttemptId = undefined;
+    const failedCoordinator = {
+      acceptingDeliveries: false,
+      ownershipFailure: new Error("lost durable ownership"),
+    } as unknown as RuntimeCrashRecoveryCoordinator;
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "turn.complete",
+          providerSessionId: "provider-after-loss",
+          usage: { inputTokens: 1, outputTokens: 1 },
+        },
+      ]),
+      {
+        crashRecovery: failedCoordinator,
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
+    );
+
+    expect(emitted).toEqual([]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({ status: "running", completedAt: null });
+    expect(getSessionTurn("turn-terminal-after-ownership-loss")).toMatchObject({
+      status: "running",
+      completedAt: null,
+    });
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toEqual(["adapter.request"]);
+  });
+
+  it("does not replay a turn after durable tool authorization without a provider tool event", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not duplicate authorized tool",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentTurnToolStarted: false,
+      toolRunning: false,
+    });
+    seedAdapterTrace(streaming, "turn-stream-closed-after-tool-allow");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    crashRecovery.markTurnAttemptSafety({ attemptId, startedTool: true });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "aborted",
+      startedTool: true,
+    });
+  });
+
+  it("stashes and bounded-restarts pending input after durable turn preparation fails", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "retry durable handoff",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      durableTurnPreparationFailed: true,
+    });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "retry durable handoff",
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
+    expect(streaming.durableTurnPreparationFailed).toBe(false);
+  });
+
+  it("preserves durable turn input without locally retrying after crash recovery ownership is lost", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not retry without ownership",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      durableTurnPreparationFailed: true,
+    });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const rejectedCoordinator = {
+      acceptingDeliveries: false,
+      ownershipFailure: new Error("lost ownership"),
+    } as unknown as RuntimeCrashRecoveryCoordinator;
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      crashRecovery: rejectedCoordinator,
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
+      "do not retry without ownership",
+    ]);
+    expect(restartRequests).toEqual([]);
   });
 
   it("restarts only the successor when a superseded provider turn closes without a terminal event", async () => {
@@ -1303,6 +2097,7 @@ describe("runtime session trace instrumentation", () => {
         alerts.push(input);
       },
       getConfigModel: () => MODEL,
+      crashRecovery,
     });
     dispatcher.stashedMessages.set(SESSION_KEY, [
       createQueuedRuntimeUserMessage({
@@ -1543,6 +2338,7 @@ describe("runtime session trace instrumentation", () => {
       pendingMessages: [queued],
       currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
       lastActivity: Date.now() - 2_000,
+      toolEffectFence: "provider_event_only",
     });
     seedAdapterTrace(streaming, "turn-provider-inactive");
     const stashedMessages = new Map<string, RuntimeUserMessage[]>();
@@ -1551,15 +2347,21 @@ describe("runtime session trace instrumentation", () => {
     const providerLifecycle: string[] = [];
 
     try {
-      await runTraceLoop(streaming, makeNeverEndingRuntimeSession(providerLifecycle), {
-        stashedMessages,
-        restartStashedSession: async (input) => {
-          restartRequests.push(input);
+      await runTraceLoop(
+        streaming,
+        makeNeverEndingRuntimeSession(providerLifecycle, {
+          ambiguousTurnRecoveryStrategy: "reconcile_by_client_message_id",
+        }),
+        {
+          stashedMessages,
+          restartStashedSession: async (input) => {
+            restartRequests.push(input);
+          },
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
         },
-        safeEmit: async (topic, data) => {
-          emitted.push({ topic, data });
-        },
-      });
+      );
     } finally {
       if (previousTimeout === undefined) {
         delete process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS;
@@ -1574,6 +2376,7 @@ describe("runtime session trace instrumentation", () => {
     expect(stashedMessages.get(SESSION_NAME)?.[0]).toMatchObject({
       clientMessageId: "ravi:inactive-turn",
       replay: true,
+      terminalReplayAllowed: false,
     });
     expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(true);
 
@@ -1586,6 +2389,51 @@ describe("runtime session trace instrumentation", () => {
       autoRecovered: true,
     });
     expect(getSessionTurn("turn-provider-inactive")?.status).toBe("timeout");
+  });
+
+  it("does not restart an inactive provider turn after durable output", async () => {
+    const previousTimeout = process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS;
+    process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS = "1000";
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not replay timed out output",
+      deliveryBarrier: "after_response",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      lastActivity: Date.now() - 2_000,
+    });
+    seedAdapterTrace(streaming, "turn-provider-inactive-after-output");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    crashRecovery.markTurnAttemptSafety({ attemptId, materializedOutput: true });
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    try {
+      await runTraceLoop(streaming, makeNeverEndingRuntimeSession(), {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      });
+    } finally {
+      if (previousTimeout === undefined) {
+        delete process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS;
+      } else {
+        process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS = previousTimeout;
+      }
+    }
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "timeout",
+      materializedOutput: true,
+    });
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    expect(terminal?.payloadJson).toMatchObject({ autoRecovered: false });
   });
 
   it("stashes the current turn and restarts after retryable credential failure before tools", async () => {
@@ -1601,6 +2449,7 @@ describe("runtime session trace instrumentation", () => {
       currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_retry_before_tool"),
     });
     seedAdapterTrace(streaming, "turn-credential-retry");
+    const crashRecoveryAttemptId = streaming.currentCrashRecoveryAttemptId!;
     const stashedMessages = new Map<string, RuntimeUserMessage[]>();
     const restartRequests: Array<{ sessionName: string; reason: string }> = [];
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
@@ -1635,7 +2484,15 @@ describe("runtime session trace instrumentation", () => {
     );
 
     expect(emitted.map((event) => event.data.type)).not.toContain("turn.failed");
-    expect(listSessionEvents(SESSION_KEY).some((event) => event.eventType === "turn.failed")).toBe(false);
+    const terminal = listSessionEvents(SESSION_KEY).find((event) => event.eventType === "turn.failed");
+    expect(terminal).toMatchObject({
+      status: "failed",
+      payloadJson: expect.objectContaining({
+        abort_reason: "runtime_credential_rate_limited",
+        autoRecovered: true,
+        credentialRetry: true,
+      }),
+    });
     expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual([
       "retry this credential turn",
     ]);
@@ -1648,11 +2505,17 @@ describe("runtime session trace instrumentation", () => {
     const health = getRuntimeCredentialHealth("rcred_retry_before_tool");
     expect(health?.lastRequestId).toBe("req_credential_retry");
     expect(health?.cooldownUntil ?? 0).toBeGreaterThanOrEqual(before + 1_500);
-    const attempt = getDb()
+    const credentialAttempt = getDb()
       .prepare("SELECT status, completed_at FROM runtime_credential_attempts WHERE credential_id = ?")
       .get("rcred_retry_before_tool") as { status: string; completed_at: number | null } | undefined;
-    expect(attempt?.status).toBe("failed");
-    expect(typeof attempt?.completed_at).toBe("number");
+    expect(credentialAttempt?.status).toBe("failed");
+    expect(typeof credentialAttempt?.completed_at).toBe("number");
+    const recoveryAttempt = getRuntimeTurnAttempt(crashRecoveryAttemptId);
+    expect(recoveryAttempt?.status).toBe("failed");
+    expect(getSessionTurn("turn-credential-retry")).toMatchObject({
+      status: "failed",
+      completedAt: recoveryAttempt?.completedAt,
+    });
   });
 
   it("resets provider state and restarts with a recovery prompt after context window exhaustion", async () => {
@@ -1799,6 +2662,55 @@ describe("runtime session trace instrumentation", () => {
       .get("rcred_retry_after_tool") as { status: string; completed_at: number | null } | undefined;
     expect(attempt?.status).toBe("failed");
     expect(typeof attempt?.completed_at).toBe("number");
+  });
+
+  it("does not auto-replay retryable credential failures after durable output", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not replay after partial output",
+      deliveryBarrier: "after_response",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_retry_after_output"),
+    });
+    seedAdapterTrace(streaming, "turn-credential-no-replay-after-output");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        { type: "text.delta", text: "already visible" },
+        {
+          type: "turn.failed",
+          error: "rate limited",
+          recoverable: true,
+          rawEvent: {
+            type: "error",
+            status: 429,
+            headers: { "retry-after": "2", "x-request-id": "req_after_output" },
+          },
+        },
+      ]),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "failed",
+      startedTool: false,
+      materializedOutput: true,
+    });
   });
 
   it("stashes and restarts after a recoverable interrupt failure", async () => {

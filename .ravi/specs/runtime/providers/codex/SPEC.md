@@ -75,7 +75,8 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - The provider MUST initialize or resume one native thread before starting a turn.
 - The provider MUST pass the stable logical delivery id as `clientUserMessageId` on `turn/start`.
 - The provider MUST capture the native turn id from the `turn/start` response even when `turn/started` is delayed or absent.
-- Before replaying an ambiguously delivered turn on resume, the provider MUST reconcile `clientUserMessageId`: hydrate a completed match, reattach to an in-progress match, or fork immediately before an interrupted/failed match and replay once on the fork.
+- The live Codex session handle MUST advertise `ambiguousTurnRecoveryStrategy=reconcile_by_client_message_id`.
+- Before replaying an ambiguously delivered turn on resume, the provider MUST reconcile `clientUserMessageId`: hydrate a completed match, reattach to an in-progress match, or inspect an interrupted/failed match. It MAY fork immediately before that terminal turn and replay once only when the host supplied terminal replay authority; otherwise it MUST terminate reconciliation without a second `turn/start`.
 - The provider MUST NOT issue a second `turn/start` for an ambiguous delivery before reconciliation finishes. A legacy exact-prompt fallback MAY match only the newest native turn that lacks a client id.
 - The provider MUST NOT start overlapping turns on one app-server transport.
 - The provider MUST NOT send Ravi dynamic tool definitions to Codex.

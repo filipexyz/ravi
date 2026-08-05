@@ -5,6 +5,11 @@ import { resolveRuntimeStreamingSession } from "./session-pool.js";
 
 const log = logger.child("bot");
 
+const NON_DURABLE_PROMPT_CONTROL_OPERATIONS = new Set<RuntimeControlRequest["operation"]>([
+  "turn.steer",
+  "turn.follow_up",
+]);
+
 export interface RuntimeControlNatsRequest {
   sessionName?: string;
   sessionKey?: string;
@@ -34,6 +39,30 @@ export async function replyRuntimeControlError(
   await safeEmit(replyTopic, { error });
 }
 
+async function emitRuntimeControlResult(
+  sessionName: string,
+  session: RuntimeHostStreamingSession,
+  replyTopic: string | undefined,
+  result: RuntimeControlResult,
+  safeEmit: RuntimeSafeEmit,
+): Promise<void> {
+  if (replyTopic) {
+    await safeEmit(replyTopic, { result });
+  }
+
+  await safeEmit(`ravi.session.${sessionName}.runtime`, {
+    type: "runtime.control",
+    provider: session.queryHandle.provider,
+    operation: result.operation,
+    ok: result.ok,
+    error: result.error,
+    state: result.state,
+    timestamp: Date.now(),
+  }).catch((error) => {
+    log.warn("Failed to emit runtime control event", { sessionName, error });
+  });
+}
+
 export async function handleRuntimeControlRequest(
   data: RuntimeControlNatsRequest,
   options: {
@@ -57,6 +86,20 @@ export async function handleRuntimeControlRequest(
     return;
   }
 
+  if (NON_DURABLE_PROMPT_CONTROL_OPERATIONS.has(request.operation)) {
+    const result: RuntimeControlResult = {
+      ok: false,
+      operation: request.operation,
+      state: {
+        provider: resolved.session.queryHandle.provider,
+        activeTurn: resolved.session.turnActive,
+      },
+      error: `Runtime control '${request.operation}' is disabled: durable prompt input journaling is not available yet.`,
+    };
+    await emitRuntimeControlResult(resolved.name, resolved.session, replyTopic, result, options.safeEmit);
+    return;
+  }
+
   if (!resolved.session.queryHandle.control) {
     const result: RuntimeControlResult = {
       ok: false,
@@ -75,21 +118,5 @@ export async function handleRuntimeControlRequest(
   }
 
   const result = await resolved.session.queryHandle.control(request);
-  if (replyTopic) {
-    await options.safeEmit(replyTopic, { result });
-  }
-
-  await options
-    .safeEmit(`ravi.session.${resolved.name}.runtime`, {
-      type: "runtime.control",
-      provider: resolved.session.queryHandle.provider,
-      operation: request.operation,
-      ok: result.ok,
-      error: result.error,
-      state: result.state,
-      timestamp: Date.now(),
-    })
-    .catch((error) => {
-      log.warn("Failed to emit runtime control event", { sessionName: resolved.name, error });
-    });
+  await emitRuntimeControlResult(resolved.name, resolved.session, replyTopic, result, options.safeEmit);
 }

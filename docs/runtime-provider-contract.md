@@ -78,8 +78,11 @@ Message edits require current-session rebase: replace the edited prompt atom, pr
 Each logical prompt delivery carries a stable `clientMessageId` across host recovery. If a provider can accept a
 turn without delivering its terminal events, its adapter must reconcile that identity against resumed provider
 state before replaying the prompt. It must reattach to an active turn, hydrate an already completed turn, or
-exclude a failed/interrupted turn before submitting the prompt again. Restarting without this reconciliation can
-duplicate side effects; disabling resume loses valid conversation continuity.
+exclude a failed/interrupted turn before submitting the prompt again. A failed/interrupted terminal may be retried
+only when the host grants terminal replay authority from durable safety evidence. A provider that supports this contract
+must advertise `ambiguousTurnRecoveryStrategy: "reconcile_by_client_message_id"` on its live session handle. The host
+must not send an unsafe ambiguous turn to a provider that does not advertise that strategy. Restarting without this
+reconciliation can duplicate side effects; disabling resume loses valid conversation continuity.
 
 ## Start Request
 

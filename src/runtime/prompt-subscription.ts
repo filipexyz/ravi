@@ -15,6 +15,7 @@ const log = logger.child("runtime:prompt-subscription");
 
 export interface RuntimePromptSubscriptionOptions {
   isRunning(): boolean;
+  canAcceptPrompt(sessionName: string): boolean;
   getStreamingSessionCount(): number;
   getRuntimeSessionPoolSnapshot?(): RuntimeSessionPoolSnapshot;
   ensurePromptInfrastructure?(options?: EnsureSessionPromptInfrastructureOptions): Promise<void>;
@@ -82,6 +83,7 @@ export class RuntimePromptSubscription {
 
     const sc = StringCodec();
 
+    let intakeFenced = false;
     try {
       const nc = getNats();
       const js = nc.jetstream();
@@ -121,10 +123,29 @@ export class RuntimePromptSubscription {
               continue;
             }
 
+            const sessionName = msg.subject.split(".")[2];
+            let canAcceptPrompt = false;
+            try {
+              canAcceptPrompt = this.options.canAcceptPrompt(sessionName);
+            } catch (error) {
+              log.error("Failed to evaluate runtime prompt intake fence", {
+                sessionName,
+                error,
+              });
+            }
+            if (!canAcceptPrompt) {
+              intakeFenced = true;
+              log.warn("Runtime prompt intake fenced before acknowledgement", {
+                sessionName,
+                subject: msg.subject,
+              });
+              msg.nak();
+              break;
+            }
+
             msg.ack();
             this.promptsReceived++;
 
-            const sessionName = msg.subject.split(".")[2];
             nats
               .emit(`ravi.session.${sessionName}.runtime`, {
                 type: "prompt.received",
@@ -153,7 +174,7 @@ export class RuntimePromptSubscription {
             });
           }
 
-          if (!this.options.isRunning()) {
+          if (!this.options.isRunning() || intakeFenced) {
             break;
           }
 
@@ -185,7 +206,7 @@ export class RuntimePromptSubscription {
         running: this.options.isRunning(),
         promptsReceived: this.promptsReceived,
       });
-      if (this.options.isRunning()) {
+      if (this.options.isRunning() && !intakeFenced) {
         setTimeout(() => this.subscribe(), 1000);
       }
     }

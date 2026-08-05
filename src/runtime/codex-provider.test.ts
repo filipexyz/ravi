@@ -14,6 +14,7 @@ type TransportRequest = {
   prompt: string;
   clientMessageId?: string;
   replay?: boolean;
+  terminalReplayAllowed?: boolean;
   resume?: string;
   forkFrom?: string;
   systemPromptAppend: string;
@@ -72,6 +73,7 @@ function makeReplayPromptGenerator(
   content: string,
   clientMessageId: string,
   replay = true,
+  terminalReplayAllowed?: boolean,
 ): RuntimeStartRequest["prompt"] {
   return (async function* () {
     yield {
@@ -81,6 +83,7 @@ function makeReplayPromptGenerator(
       parent_tool_use_id: null,
       clientMessageId,
       replay,
+      terminalReplayAllowed,
     };
   })();
 }
@@ -624,6 +627,72 @@ rl.on("line", (line) => {
     expect(findEventsByType(events, "turn.complete")).toEqual([
       expect.objectContaining({ providerSessionId: "thread_recovered" }),
     ]);
+  });
+
+  it("reconciles an unsafe interrupted turn without forking or resubmitting it", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-suppressed-terminal-replay-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/resume") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({
+      id: message.id,
+      result: {
+        thread: {
+          id: "thread_source",
+          turns: [{
+            id: "turn_interrupted",
+            status: "interrupted",
+            items: [{ id: "user_interrupted", type: "userMessage", clientId: "ravi:delivery-unsafe", content: [{ type: "text", text: "do not retry" }] }],
+          }],
+        },
+        model: "gpt-5",
+        modelProvider: "openai",
+      },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        resume: "thread_source",
+        prompt: makeReplayPromptGenerator("do not retry", "ravi:delivery-unsafe", true, false),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/resume"]);
+    expect(findEventsByType(events, "turn.interrupted")).toHaveLength(1);
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
   });
 
   it("recovers a resumed multi-agent sub-agent thread into a fresh top-level thread", async () => {
@@ -1208,6 +1277,7 @@ process.on("SIGTERM", () => {
     const completions = findEventsByType(events, "turn.complete");
 
     expect(session.concurrentInputStrategy).toBe("interrupt");
+    expect(session.ambiguousTurnRecoveryStrategy).toBe("reconcile_by_client_message_id");
     expect(calls).toHaveLength(1);
     expect(calls[0]?.model).toBeUndefined();
     expect(calls[0]?.resume).toBe("thread_prev");

@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
+import type { ApprovalServiceDependencies } from "./approval/service.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
 
 setDefaultTimeout(20_000);
@@ -136,9 +137,10 @@ function resetRuntimeDoubles(): void {
   runtimeStartCalls = [];
   runtimePrepareImpl = async () => undefined;
   discoveredPlugins = [];
-  runtimeStartImpl = (providerId) => ({
+  runtimeStartImpl = (providerId, request) => ({
     provider: providerId,
     events: (async function* () {
+      await request.prompt.next();
       yield {
         type: "turn.complete",
         providerSessionId: `${providerId}-session`,
@@ -147,6 +149,27 @@ function resetRuntimeDoubles(): void {
     })(),
     interrupt: async () => {},
   });
+}
+
+function holdRuntimeTurnOpen(): () => void {
+  let releaseRuntime!: () => void;
+  const runtimeLifetime = new Promise<void>((resolve) => {
+    releaseRuntime = resolve;
+  });
+  runtimeStartImpl = (providerId, request) => ({
+    provider: providerId,
+    events: (async function* () {
+      await request.prompt.next();
+      await runtimeLifetime;
+      yield {
+        type: "turn.complete",
+        providerSessionId: `${providerId}-session`,
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    })(),
+    interrupt: async () => releaseRuntime(),
+  });
+  return releaseRuntime;
 }
 
 function createMockCodexStartRequest(hostServices: RuntimeHostServices): Partial<RuntimeStartRequest> {
@@ -690,6 +713,7 @@ mock.module("./runtime/provider-registry.js", () => ({
   },
 }));
 
+const { setApprovalServiceDependenciesForTest } = await import("./approval/service.js");
 const { RaviBot } = await import("./bot.js");
 
 beforeAll(async () => {
@@ -702,6 +726,7 @@ afterEach(async () => {
   for (const bot of createdBots.splice(0)) {
     await bot.stop();
   }
+  setApprovalServiceDependenciesForTest();
   saveMessageImpl = (...args: Parameters<typeof actualDbModule.saveMessage>) => actualDbModule.saveMessage(...args);
   agentCanImpl = (...args: Parameters<typeof actualAgentCan>) => actualAgentCan(...args);
   canWithCapabilitiesImpl = (...args: Parameters<typeof actualCanWithCapabilities>) =>
@@ -720,7 +745,7 @@ afterAll(async () => {
   mock.restore();
 });
 
-function createBot() {
+function createBot(options: { startCrashRecovery?: boolean } = {}) {
   const bot = new RaviBot({
     config: {
       model: "test-model",
@@ -728,6 +753,9 @@ function createBot() {
       apiKey: "fake",
     } as any,
   });
+  if (options.startCrashRecovery !== false) {
+    (bot as any).crashRecovery.start();
+  }
   createdBots.push(bot);
   return bot;
 }
@@ -831,9 +859,10 @@ describe("RaviBot runtime guards", () => {
     const turnGate = new Promise<void>((resolve) => {
       releaseTurn = resolve;
     });
-    runtimeStartImpl = (providerId) => ({
+    runtimeStartImpl = (providerId, request) => ({
       provider: providerId,
       events: (async function* () {
+        await request.prompt.next();
         await turnGate;
         yield {
           type: "turn.complete",
@@ -906,9 +935,10 @@ describe("RaviBot runtime guards", () => {
     const sessionKey = "agent:main:runtime-failure";
     attachOutputForSession(sessionKey);
     const longError = `TypeError: oD is not a function\n${"at minified.bundle.js:1:1\n".repeat(100)}`;
-    runtimeStartImpl = (providerId) => ({
+    runtimeStartImpl = (providerId, request) => ({
       provider: providerId,
       events: (async function* () {
+        await request.prompt.next();
         yield {
           type: "turn.failed",
           error: longError,
@@ -1002,6 +1032,23 @@ describe("RaviBot runtime guards", () => {
       { permission: "use", objectType: "tool", objectId: "Write", source: "test" },
       { permission: "use", objectType: "tool", objectId: "Bash", source: "test" },
     ];
+    let releaseRuntime!: () => void;
+    const runtimeLifetime = new Promise<void>((resolve) => {
+      releaseRuntime = resolve;
+    });
+    runtimeStartImpl = (providerId, request) => ({
+      provider: providerId,
+      events: (async function* () {
+        await request.prompt.next();
+        await runtimeLifetime;
+        yield {
+          type: "turn.complete",
+          providerSessionId: `${providerId}-session`,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      })(),
+      interrupt: async () => releaseRuntime(),
+    });
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate("agent:main:codex-approval-bridge", { prompt: "hello" });
@@ -1040,10 +1087,12 @@ describe("RaviBot runtime guards", () => {
       inherited: true,
       permissions: { "use:tool:Bash": true },
     });
+    releaseRuntime();
   });
 
   it("denies runtime user input when no outbound target exists", async () => {
     activeProvider = "codex";
+    const releaseRuntime = holdRuntimeTurnOpen();
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate("agent:main:codex-user-input-no-source", { prompt: "hello" });
@@ -1064,10 +1113,12 @@ describe("RaviBot runtime guards", () => {
       approved: false,
       reason: "Runtime user input requires a target source.",
     });
+    releaseRuntime();
   });
 
   it("denies runtime user input questions without selectable options", async () => {
     activeProvider = "codex";
+    const releaseRuntime = holdRuntimeTurnOpen();
 
     const bot = createBot();
     await (bot as any).handlePromptImmediate("agent:main:codex-user-input-no-options", makePrompt("hello"));
@@ -1088,6 +1139,74 @@ describe("RaviBot runtime guards", () => {
       approved: false,
       reason: "Runtime user input question requires selectable options: freeform",
     });
+    releaseRuntime();
+  });
+
+  it("does not emit a second user-input poll after durable attempt ownership is lost", async () => {
+    activeProvider = "codex";
+    const releaseRuntime = holdRuntimeTurnOpen();
+    const sessionKey = "agent:main:codex-user-input-multi-question-race";
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
+    await waitFor(() => Boolean((bot as any).streamingSessions.get(sessionKey)?.currentCrashRecoveryAttemptId));
+
+    const streamingSession = (bot as any).streamingSessions.get(sessionKey);
+    const attemptId = streamingSession.currentCrashRecoveryAttemptId as string;
+    const pollRequests: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    setApprovalServiceDependenciesForTest({
+      requestReply: (async <T>(topic: string, data: Record<string, unknown>) => {
+        pollRequests.push({ topic, data });
+        return { messageId: `poll-${pollRequests.length}` } as T;
+      }) satisfies ApprovalServiceDependencies["requestReply"],
+      nats: {
+        emit: async () => {},
+        subscribe: (() => {
+          const stream = (async function* () {
+            yield {
+              topic: "ravi.inbound.pollVote",
+              data: {
+                pollMessageId: "poll-1",
+                votes: [{ name: "A", voters: ["actor-1"] }],
+              },
+            };
+          })();
+          const closeStream = stream.return.bind(stream);
+          stream.return = async (value) => {
+            streamingSession.currentCrashRecoveryAttemptId = undefined;
+            return closeStream(value);
+          };
+          return stream;
+        }) satisfies ApprovalServiceDependencies["nats"]["subscribe"],
+      },
+    });
+
+    try {
+      const approveRuntimeRequest = runtimeStartCalls[0]?.approveRuntimeRequest;
+      await expect(
+        approveRuntimeRequest?.({
+          kind: "user_input",
+          method: "item/tool/requestUserInput",
+          input: {
+            questions: [
+              { id: "first", question: "First?", options: [{ label: "A" }] },
+              { id: "second", question: "Second?", options: [{ label: "B" }] },
+            ],
+          },
+        }),
+      ).resolves.toMatchObject({
+        approved: false,
+        reason: "Runtime action approval denied because durable turn ownership changed before authorization completed.",
+      });
+      expect(pollRequests).toHaveLength(1);
+      expect(pollRequests[0]).toMatchObject({
+        topic: "ravi.outbound.deliver",
+        data: { poll: { name: expect.stringContaining("First?"), values: ["A"] } },
+      });
+    } finally {
+      streamingSession.currentCrashRecoveryAttemptId = attemptId;
+      setApprovalServiceDependenciesForTest();
+      releaseRuntime();
+    }
   });
 
   it("keeps Codex runtime requests free of native Ravi dynamic tools even with tool capabilities", async () => {
@@ -1391,7 +1510,7 @@ describe("RaviBot runtime guards", () => {
     expect(interruptedProviders).toContain("codex");
     expect(seenPrompts).toEqual([
       { provider: "codex", prompt: "first via codex" },
-      { provider: "claude", prompt: "first via codex\n\nsecond via claude" },
+      { provider: "claude", prompt: "second via claude" },
     ]);
 
     await bot.stop();
@@ -1432,16 +1551,24 @@ describe("RaviBot runtime guards", () => {
     await bot.stop();
   });
 
-  it("does not emit legacy .claude events for Codex sessions", async () => {
+  it("does not emit legacy .claude or unfenced structural raw events for Codex sessions", async () => {
     activeProvider = "codex";
     const sessionKey = "agent:main:codex-no-legacy-feed";
 
-    runtimeStartImpl = (providerId) => ({
+    runtimeStartImpl = (providerId, request) => ({
       provider: providerId,
       events: (async function* () {
+        await request.prompt.next();
+        const rawThreadStarted = { type: "thread.started", thread_id: "thread-codex" };
         yield {
           type: "provider.raw",
-          rawEvent: { type: "thread.started", thread_id: "thread-codex" },
+          rawEvent: rawThreadStarted,
+          metadata: { provider: "codex", nativeEvent: "thread.started", thread: { id: "thread-codex" } },
+        };
+        yield {
+          type: "thread.started",
+          thread: { id: "thread-codex" },
+          rawEvent: rawThreadStarted,
           metadata: { provider: "codex", nativeEvent: "thread.started", thread: { id: "thread-codex" } },
         };
         yield {
@@ -1459,10 +1586,17 @@ describe("RaviBot runtime guards", () => {
           type: "assistant.message",
           text: "hello from codex",
         };
+        const rawTurnComplete = { type: "turn.completed", thread_id: "thread-codex" };
+        yield {
+          type: "provider.raw",
+          rawEvent: rawTurnComplete,
+          metadata: { provider: "codex", nativeEvent: "turn.completed", thread: { id: "thread-codex" } },
+        };
         yield {
           type: "turn.complete",
           providerSessionId: `${providerId}-session`,
           usage: { inputTokens: 1, outputTokens: 1 },
+          rawEvent: rawTurnComplete,
         };
       })(),
       interrupt: async () => {},
@@ -1478,7 +1612,7 @@ describe("RaviBot runtime guards", () => {
       emittedEvents.some(
         (entry) => entry.topic === `ravi.session.${sessionKey}.runtime` && entry.data?.type === "provider.raw",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       emittedEvents.some(
         (entry) =>
@@ -1486,7 +1620,7 @@ describe("RaviBot runtime guards", () => {
           entry.data?.type === "provider.raw" &&
           (entry.data.metadata as any)?.thread?.id === "thread-codex",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       emittedEvents.some(
         (entry) =>
@@ -1504,9 +1638,10 @@ describe("RaviBot runtime guards", () => {
       pricedModels.push(model);
       return { inputCost: 1, outputCost: 2, cacheCost: 0, totalCost: 3, pricingStatus: "priced" };
     };
-    runtimeStartImpl = (providerId) => ({
+    runtimeStartImpl = (providerId, request) => ({
       provider: providerId,
       events: (async function* () {
+        await request.prompt.next();
         yield {
           type: "turn.complete",
           providerSessionId: `${providerId}-session`,
@@ -1874,6 +2009,230 @@ describe("RaviBot streaming session lifecycle", () => {
       capabilities.some(
         (cap) => cap.permission === permission && cap.objectType === objectType && cap.objectId === objectId,
       );
+  });
+
+  it("owns a boot epoch before subscriptions accept work and closes it gracefully", async () => {
+    const bot = createBot({ startCrashRecovery: false });
+
+    await bot.start();
+
+    expect((bot as any).crashRecovery.boot).toMatchObject({
+      instanceId: bot.instanceId,
+      status: "active",
+    });
+    expect(bot.canAcceptRuntimePrompt()).toBe(true);
+
+    await bot.stop();
+    expect((bot as any).crashRecovery.boot).toMatchObject({ status: "graceful_stopped" });
+    createdBots.splice(createdBots.indexOf(bot), 1);
+  });
+
+  it("fences an expired boot during stop instead of leaving its heartbeat alive", async () => {
+    const bot = createBot({ startCrashRecovery: false });
+    await bot.start();
+    const crashRecovery = (bot as any).crashRecovery;
+    const sessionName = "agent:main:expired-boot-stop";
+    const abortController = new AbortController();
+    const interrupt = mock(async () => {});
+    const streaming = {
+      agentId: "main",
+      traceRunId: "run-expired-boot-stop",
+      queryHandle: { provider: "claude", interrupt },
+      abortController,
+      pushMessage: null,
+      pendingWake: false,
+      pendingMessages: [],
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      interrupted: false,
+      turnActive: true,
+      onTurnComplete: null,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    };
+    const attempt = crashRecovery.startTurnAttempt({
+      attemptId: "attempt-expired-boot-stop",
+      turnId: "turn-expired-boot-stop",
+      runId: streaming.traceRunId,
+      sessionKey: sessionName,
+      sessionName,
+      agentId: "main",
+      provider: "claude",
+      model: "test-model",
+      requestBlobSha256: "sha-expired-boot-stop",
+      originKind: "human",
+      deliveryBarrier: "after_response",
+    });
+    (streaming as any).currentCrashRecoveryAttemptId = attempt.attemptId;
+    (bot as any).streamingSessions.set(sessionName, streaming);
+    const leaseExpiresAt = crashRecovery.boot.leaseExpiresAt;
+    crashRecovery.now = () => leaseExpiresAt;
+
+    let stopError: unknown;
+    try {
+      await bot.stop();
+    } catch (error) {
+      stopError = error;
+    }
+
+    expect(stopError).toMatchObject({ name: "RuntimeCrashRecoveryOwnershipLostError" });
+    expect(crashRecovery.ownershipFailure).toBe(stopError);
+    expect(crashRecovery.heartbeatTimer).toBeNull();
+    expect(crashRecovery.boot).toMatchObject({ status: "active" });
+    expect(bot.canAcceptRuntimePrompt()).toBe(false);
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    expect(abortController.signal.aborted).toBe(true);
+    expect((bot as any).streamingSessions.size).toBe(0);
+    createdBots.splice(createdBots.indexOf(bot), 1);
+  });
+
+  it("fences intake and closes runtime sessions when crash recovery ownership is lost", async () => {
+    const bot = createBot({ startCrashRecovery: false });
+    await bot.start();
+    const abortController = new AbortController();
+    const interrupt = mock(async () => {});
+    const sessionName = "agent:main:ownership-lost";
+    (bot as any).streamingSessions.set(sessionName, {
+      agentId: "main",
+      traceRunId: "run-ownership-lost",
+      queryHandle: { provider: "claude", interrupt },
+      abortController,
+      pushMessage: null,
+      pendingWake: false,
+      pendingMessages: [],
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      interrupted: false,
+      turnActive: false,
+      onTurnComplete: null,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    });
+
+    expect((bot as any).promptSubscription.healthTimer).not.toBeNull();
+    (bot as any).crashRecovery.enterFailClosed("test ownership loss");
+
+    expect(bot.canAcceptRuntimePrompt()).toBe(false);
+    expect((bot as any).promptSubscription.healthTimer).toBeNull();
+    expect((bot as any).streamingSessions.size).toBe(0);
+    expect(abortController.signal.aborted).toBe(true);
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    expect((bot as any).crashRecovery.boot).toMatchObject({ status: "active" });
+
+    await bot.stop();
+    createdBots.splice(createdBots.indexOf(bot), 1);
+  });
+
+  it("closes every provider when one shutdown trace fails", async () => {
+    const bot = createBot();
+    const firstAbortController = new AbortController();
+    const secondAbortController = new AbortController();
+    const firstInterrupt = mock(async () => {});
+    const secondInterrupt = mock(async () => {});
+    const runtimeSession = (
+      abortController: AbortController,
+      interrupt: ReturnType<typeof mock>,
+      traceTurnId?: string,
+    ) => ({
+      agentId: "main",
+      traceRunId: "run-shutdown-cleanup",
+      currentTraceTurnId: traceTurnId,
+      queryHandle: { provider: "claude", interrupt },
+      abortController,
+      pushMessage: null,
+      pendingWake: false,
+      pendingMessages: [],
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      interrupted: false,
+      turnActive: Boolean(traceTurnId),
+      onTurnComplete: null,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    });
+    (bot as any).streamingSessions.set(
+      "agent:main:shutdown-trace-failure",
+      runtimeSession(firstAbortController, firstInterrupt, "turn-without-attempt-binding"),
+    );
+    (bot as any).streamingSessions.set(
+      "agent:main:shutdown-after-failure",
+      runtimeSession(secondAbortController, secondInterrupt),
+    );
+
+    let stopError: unknown;
+    try {
+      await bot.stop();
+    } catch (error) {
+      stopError = error;
+    }
+
+    expect(stopError).toMatchObject({
+      message: "Crash recovery attempt binding missing before dispatcher terminal state",
+    });
+    expect(firstInterrupt).toHaveBeenCalledTimes(1);
+    expect(secondInterrupt).toHaveBeenCalledTimes(1);
+    expect(firstAbortController.signal.aborted).toBe(true);
+    expect(secondAbortController.signal.aborted).toBe(true);
+    expect((bot as any).streamingSessions.size).toBe(0);
+    expect((bot as any).crashRecovery.boot).toMatchObject({ status: "graceful_stopped" });
+    createdBots.splice(createdBots.indexOf(bot), 1);
+  });
+
+  it("finishes shutdown cleanup before propagating a restart snapshot failure", async () => {
+    const bot = createBot();
+    const abortController = new AbortController();
+    const interrupt = mock(async () => {});
+    const snapshotError = new Error("restart snapshot write failed");
+    (bot as any).streamingSessions.set("agent:main:restart-snapshot-failure", {
+      agentId: "main",
+      traceRunId: "run-restart-snapshot-failure",
+      queryHandle: { provider: "claude", interrupt },
+      abortController,
+      pushMessage: null,
+      pendingWake: false,
+      pendingMessages: [],
+      toolRunning: false,
+      lastActivity: Date.now(),
+      done: false,
+      starting: false,
+      interrupted: false,
+      turnActive: false,
+      onTurnComplete: null,
+      compacting: false,
+      currentToolSafety: null,
+      pendingAbort: false,
+    });
+    (bot as any).sessionDispatcher.recordDaemonRestartSnapshot = () => {
+      throw snapshotError;
+    };
+
+    let stopError: unknown;
+    try {
+      await bot.stop({
+        restart: {
+          restartEpoch: "epoch-snapshot-failure",
+          reason: "test restart snapshot failure",
+        },
+      });
+    } catch (error) {
+      stopError = error;
+    }
+
+    expect(stopError).toBe(snapshotError);
+    expect(interrupt).toHaveBeenCalledTimes(1);
+    expect(abortController.signal.aborted).toBe(true);
+    expect((bot as any).streamingSessions.size).toBe(0);
+    expect((bot as any).crashRecovery.boot).toMatchObject({ status: "graceful_stopped" });
+    createdBots.splice(createdBots.indexOf(bot), 1);
   });
 
   it("creates a new streaming session for first message", async () => {

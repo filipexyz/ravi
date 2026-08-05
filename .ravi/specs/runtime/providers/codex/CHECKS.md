@@ -16,7 +16,7 @@
 - `turn/start` sends the stable delivery id as `clientUserMessageId` and captures the native turn from the JSON-RPC response.
 - Resuming an ambiguous completed turn hydrates its existing items and terminal state without a second `turn/start`.
 - Resuming an ambiguous in-progress turn reattaches and consumes notifications without a second `turn/start`.
-- Resuming an ambiguous interrupted/failed turn forks immediately before that native turn and replays once on the fork.
+- Resuming an ambiguous interrupted/failed turn forks and replays once only with host terminal replay authority; an unsafe recovery emits a terminal interruption without `thread/fork` or `turn/start`.
 
 ## Regression Cases
 

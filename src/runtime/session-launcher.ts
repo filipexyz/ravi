@@ -11,12 +11,14 @@ import { createSessionTraceRunId, recordRuntimeTraceEvent } from "../session-tra
 import { logger } from "../utils/logger.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID, assertRuntimeCompatibility } from "./provider-registry.js";
 import { completeRuntimeCredentialAttempt, markRuntimeCredentialAttemptStarted } from "./credential-store.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { runRuntimeEventLoop, type RuntimeSafeEmit } from "./host-event-loop.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
   createPendingRuntimeHandle,
+  resolveRuntimeToolEffectFence,
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
@@ -48,6 +50,7 @@ export interface StartRuntimeSessionOptions {
   safeEmit: RuntimeSafeEmit;
   drainPendingStarts(): void;
   restartStashedSession?(input: { sessionName: string; reason: string }): void | Promise<void>;
+  crashRecovery: RuntimeCrashRecoveryCoordinator;
 }
 
 export function updateRuntimeSessionMetadata(sessionKey: string, prompt: RuntimeLaunchPrompt): void {
@@ -74,6 +77,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     safeEmit,
     drainPendingStarts,
     restartStashedSession,
+    crashRecovery,
   } = options;
   const runId = createSessionTraceRunId();
   const resumeStashedMessages = prompt._resumeStashedMessages === true;
@@ -189,6 +193,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     pendingAbort: false,
     agentMode: agent.mode,
     traceRunId: runId,
+    toolEffectFence: resolveRuntimeToolEffectFence(runtimeProviderId, runtimeCapabilities.tools.permissionMode),
   };
   streamingSessions.set(sessionName, streamingSession);
   updateRuntimeLiveState(sessionName, {
@@ -275,6 +280,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
       streamingSession,
       stashedMessages,
       defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
+      crashRecovery,
     });
     runtimeCredentialAttempt = builtRuntimeRequest.runtimeCredentialAttempt;
     const { runtimeRequest, toolContext } = builtRuntimeRequest;
@@ -324,6 +330,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         safeEmit,
         drainPendingStarts,
         restartStashedSession,
+        crashRecovery,
       }),
     ).catch((err) => {
       const isAbort = err instanceof Error && /abort/i.test(err.message);

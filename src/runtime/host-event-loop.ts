@@ -36,9 +36,14 @@ import {
   recordRuntimeCredentialSuccess,
 } from "./credential-store.js";
 import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import {
   LEGACY_RUNTIME_PROVIDER_ID,
+  getCrashRecoveryReplayablePendingRuntimeMessages,
+  getRuntimeTurnReplaySafety,
+  runtimeTurnAttemptTerminalEventType,
   shutdownRuntimeStreamingSession,
   stashCurrentTurnRuntimeMessages,
   stashPendingRuntimeMessages,
@@ -335,6 +340,12 @@ function buildProviderRawRuntimeEvent(
   };
 }
 
+function stripRuntimeRawEvent<T extends RuntimeEvent>(event: T): T {
+  const safeEvent: Record<string, unknown> = { ...event };
+  delete safeEvent.rawEvent;
+  return safeEvent as T;
+}
+
 function formatRuntimeFailureDetails(event: { error: string; rawEvent?: Record<string, unknown> }): string | undefined {
   const parts: string[] = [];
   const rawEvent = event.rawEvent;
@@ -542,6 +553,7 @@ export interface RunRuntimeEventLoopOptions {
   streaming: RuntimeHostStreamingSession;
   runtimeSession: RuntimeSessionHandle;
   runtimeCapabilities: RuntimeCapabilities;
+  crashRecovery?: RuntimeCrashRecoveryCoordinator;
   model: string;
   instanceId: string;
   defaultRuntimeProviderId: RuntimeProviderId;
@@ -562,6 +574,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming,
     runtimeSession,
     runtimeCapabilities,
+    crashRecovery,
     model,
     instanceId,
     streamingSessions,
@@ -584,12 +597,66 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       source,
     });
   };
+  const terminalizeCurrentCrashRecoveryAttempt = (
+    status: RuntimeTurnAttemptTerminalStatus,
+    requestedCompletedAt?: number,
+  ) => {
+    if (streaming.currentCrashRecoveryTerminal) {
+      return streaming.currentCrashRecoveryTerminal;
+    }
+
+    const completedAt = requestedCompletedAt ?? Date.now();
+    const crashRecoveryAttemptId = streaming.currentCrashRecoveryAttemptId;
+    const activeAttempt =
+      crashRecoveryAttemptId && crashRecovery ? crashRecovery.getActiveTurnAttempt?.(crashRecoveryAttemptId) : null;
+    let terminalAttempt = activeAttempt;
+    if (!crashRecoveryAttemptId && crashRecovery?.ownershipFailure) {
+      // Ownership loss means this process cannot prove a first-terminal ledger
+      // write. Do not fabricate an in-memory terminal latch that could later be
+      // projected or recorded as though durability had succeeded.
+      return undefined;
+    }
+    if (!crashRecoveryAttemptId && streaming.currentTraceTurnId && crashRecovery && !crashRecovery.ownershipFailure) {
+      throw new Error("Crash recovery attempt binding missing before terminal provider state");
+    }
+    if (crashRecoveryAttemptId) {
+      if (!crashRecovery) {
+        throw new Error(`Crash recovery coordinator missing for active attempt ${crashRecoveryAttemptId}`);
+      }
+      terminalAttempt = crashRecovery.terminalizeTurnAttempt({
+        attemptId: crashRecoveryAttemptId,
+        status,
+        completedAt,
+      });
+      if (terminalAttempt.status !== status || terminalAttempt.completedAt !== completedAt) {
+        throw new Error(
+          `Crash recovery attempt ${crashRecoveryAttemptId} terminalized with an unexpected first-terminal state`,
+        );
+      }
+      // Release the in-memory binding only after the terminal ledger write is durable.
+      streaming.currentCrashRecoveryAttemptId = undefined;
+    }
+    const terminal = {
+      status,
+      completedAt,
+      startedTool: terminalAttempt?.startedTool === true || streaming.currentTurnToolStarted === true,
+      materializedOutput: terminalAttempt?.materializedOutput === true,
+      inputMutated:
+        (terminalAttempt ? hasRuntimeTurnAttemptInputMutation(terminalAttempt) : false) ||
+        streaming.currentTurnInputMutated === true,
+    };
+    streaming.currentCrashRecoveryTerminal = terminal;
+    return terminal;
+  };
   const recordTerminalTraceOnce = (
     input: Omit<
       Parameters<typeof recordTerminalTurnTrace>[0],
       "sessionKey" | "sessionName" | "agentId" | "runId" | "turnId" | "provider" | "model" | "startedAt"
     >,
   ) => {
+    const terminal = terminalizeCurrentCrashRecoveryAttempt(input.status, input.completedAt);
+    if (!terminal) return;
+
     if (!streaming.currentTraceTurnId || streaming.currentTraceTurnTerminalRecorded) {
       return;
     }
@@ -603,16 +670,36 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       model,
       startedAt: streaming.currentTraceTurnStartedAt,
       ...input,
+      status: terminal.status,
+      eventType: runtimeTurnAttemptTerminalEventType(terminal.status),
+      abortReason: terminal.status === "complete" ? null : input.abortReason,
+      completedAt: terminal.completedAt,
     });
     streaming.currentTraceTurnTerminalRecorded = true;
   };
   const clearTraceTurnState = () => {
+    if (streaming.currentCrashRecoveryAttemptId) {
+      throw new Error(
+        `Cannot clear trace state while crash recovery attempt ${streaming.currentCrashRecoveryAttemptId} is running`,
+      );
+    }
     streaming.currentTraceTurnId = undefined;
     streaming.currentTraceTurnStartedAt = undefined;
     streaming.currentTraceUserPromptSha256 = undefined;
     streaming.currentTraceSystemPromptSha256 = undefined;
     streaming.currentTraceRequestBlobSha256 = undefined;
     streaming.currentTraceTurnTerminalRecorded = false;
+  };
+  const markCurrentTurnAttemptSafety = (input: { startedTool?: true; materializedOutput?: true }) => {
+    const attemptId = streaming.currentCrashRecoveryAttemptId;
+    if (!crashRecovery) {
+      if (!attemptId) return;
+      throw new Error(`Crash recovery coordinator missing for active attempt ${attemptId}`);
+    }
+    if (!attemptId) {
+      throw new Error("Crash recovery attempt binding missing before provider side effect");
+    }
+    crashRecovery.markTurnAttemptSafety({ attemptId, ...input });
   };
 
   let providerRawEventCount = 0;
@@ -883,6 +970,55 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     await safeEmit(`ravi.session.${sessionName}.runtime`, augmented);
   };
 
+  interface PendingProviderRawEvent {
+    event: Extract<RuntimeEvent, { type: "provider.raw" }>;
+    safetyFenced: boolean;
+  }
+
+  const pendingProviderRawEvents: PendingProviderRawEvent[] = [];
+  let suppressProviderRawForCurrentTurn = false;
+  const canReleaseProviderRawEvent = () =>
+    crashRecovery?.acceptingDeliveries === true && !crashRecovery.ownershipFailure;
+  const removePendingProviderRawEvent = (pending: PendingProviderRawEvent) => {
+    const index = pendingProviderRawEvents.indexOf(pending);
+    if (index >= 0) pendingProviderRawEvents.splice(index, 1);
+  };
+  const releasePendingProviderRawEvent = async (pending: PendingProviderRawEvent | undefined) => {
+    if (!pending) return;
+    removePendingProviderRawEvent(pending);
+    if (suppressProviderRawForCurrentTurn || !pending.safetyFenced || !canReleaseProviderRawEvent()) return;
+
+    await emitLegacyProviderEvent(pending.event.rawEvent);
+    await emitRuntimeEvent(
+      buildProviderRawRuntimeEvent(runtimeSession.provider, pending.event.rawEvent, pending.event.metadata),
+    );
+  };
+  const settlePreviousProviderRawEvents = async () => {
+    const previous = pendingProviderRawEvents.splice(0);
+    for (const pending of previous) {
+      // Structural lifecycle events such as item.started/item.completed/status
+      // do not prove that assistant content or tool arguments crossed a durable
+      // replay-safety fence. Drop their raw envelopes fail-closed.
+      if (!pending.safetyFenced || suppressProviderRawForCurrentTurn || !canReleaseProviderRawEvent()) continue;
+      await emitLegacyProviderEvent(pending.event.rawEvent);
+      await emitRuntimeEvent(
+        buildProviderRawRuntimeEvent(runtimeSession.provider, pending.event.rawEvent, pending.event.metadata),
+      );
+    }
+  };
+  const correlatePendingProviderRawEvent = (event: RuntimeEvent): PendingProviderRawEvent | undefined => {
+    if (!("rawEvent" in event) || !event.rawEvent) return undefined;
+    for (let index = pendingProviderRawEvents.length - 1; index >= 0; index--) {
+      const pending = pendingProviderRawEvents[index];
+      if (pending?.event.rawEvent !== event.rawEvent) continue;
+      return pending;
+    }
+    return undefined;
+  };
+  const fencePendingProviderRawEvent = (pending: PendingProviderRawEvent | undefined) => {
+    if (pending) pending.safetyFenced = true;
+  };
+
   const projectRuntimeEventToChannel = async (event: RuntimeEvent, projectedResponseText?: string) => {
     const metadata = streaming.currentChannelBackend;
     if (!metadata) return;
@@ -907,7 +1043,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     try {
       await projectChannelRuntimeEvent({
         metadata,
-        event,
+        event: stripRuntimeRawEvent(event),
         ...(projectedResponseText !== undefined ? { responseText: projectedResponseText } : {}),
         ...toolProjection,
       });
@@ -921,9 +1057,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
   };
 
-  const recordProviderTurnInactivityTimeout = (idleMs: number) => {
+  const recordProviderTurnInactivityTimeout = (idleMs: number, autoRecovered: boolean) => {
     const currentTurnId = streaming.currentTraceTurnId;
-    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded) {
+    if ((!currentTurnId || streaming.currentTraceTurnTerminalRecorded) && !streaming.currentCrashRecoveryAttemptId) {
       return;
     }
 
@@ -967,7 +1103,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         reason: PROVIDER_TURN_INACTIVITY_REASON,
         timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
         idleMs,
-        autoRecovered: true,
+        autoRecovered,
       },
     });
     flushObservationEvents("turn.failed", {
@@ -975,13 +1111,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       reason: PROVIDER_TURN_INACTIVITY_REASON,
       timeoutMs: PROVIDER_TURN_INACTIVITY_TIMEOUT_MS,
       idleMs,
-      autoRecovered: true,
+      autoRecovered,
     });
   };
 
   const recordUnterminatedTurnExit = () => {
     const currentTurnId = streaming.currentTraceTurnId;
-    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded) {
+    if (crashRecovery?.ownershipFailure && !streaming.currentCrashRecoveryAttemptId) {
+      return;
+    }
+    if ((!currentTurnId || streaming.currentTraceTurnTerminalRecorded) && !streaming.currentCrashRecoveryAttemptId) {
       return;
     }
 
@@ -992,8 +1131,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       reason === PROVIDER_INACTIVE_AFTER_TOOL_REASON ||
       reason === PROVIDER_TURN_INACTIVITY_REASON ||
       reason === "stuck_tool";
-    const status = timedOut ? "timeout" : "aborted";
-    const eventType = timedOut ? "turn.failed" : "turn.interrupted";
+    const status = streaming.currentCrashRecoveryTerminal?.status ?? (timedOut ? "timeout" : "aborted");
+    const eventType = runtimeTurnAttemptTerminalEventType(status);
 
     log.warn("Runtime event loop ended with unterminated active turn", {
       runId,
@@ -1029,19 +1168,50 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     recordTerminalTraceOnce({
       status,
       eventType,
-      abortReason: reason,
+      abortReason: status === "complete" ? null : reason,
       error: timedOut ? `Runtime ended without a terminal provider event after ${reason}.` : null,
+      completedAt: streaming.currentCrashRecoveryTerminal?.completedAt,
       payloadJson: {
         reason,
         phase: "runtime.event_loop.finally",
         autoRecovered: Boolean(restartStashedReason),
+        providerTerminalRecorded: Boolean(streaming.currentCrashRecoveryTerminal),
       },
     });
   };
 
   const prepareUnterminatedTurnRecovery = () => {
+    if (streaming.durableTurnPreparationFailed) {
+      if (!restartStashedReason) {
+        // The prompt was never yielded to the provider. Preserve it even when
+        // the failed attempt write made the coordinator reject new work;
+        // shutdown snapshots still need the exact original envelope.
+        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+      }
+      if (restartStashedReason || !crashRecovery?.acceptingDeliveries) {
+        return;
+      }
+      const stashedCount = stashedMessages.get(sessionName)?.length ?? 0;
+      if (stashedCount === 0) {
+        return;
+      }
+      restartStashedReason = "runtime_event_loop_closed";
+      log.warn("Retrying runtime after durable turn preparation failed", {
+        runId,
+        sessionName,
+        reason: restartStashedReason,
+        stashedMessages: stashedCount,
+      });
+      return;
+    }
+
     const currentTurnId = streaming.currentTraceTurnId;
-    if (!currentTurnId || streaming.currentTraceTurnTerminalRecorded || restartStashedReason) {
+    if (
+      !currentTurnId ||
+      streaming.currentTraceTurnTerminalRecorded ||
+      streaming.currentCrashRecoveryTerminal ||
+      restartStashedReason
+    ) {
       return;
     }
 
@@ -1052,12 +1222,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (reason !== "runtime_event_loop_closed") {
       return;
     }
-    if (streaming.pendingMessages.length === 0 || streaming.toolRunning || streaming.currentTurnToolStarted) {
+    if (streaming.pendingMessages.length === 0 || streaming.toolRunning) {
       return;
     }
 
+    const attemptId = streaming.currentCrashRecoveryAttemptId;
+    if (!attemptId || !crashRecovery?.acceptingDeliveries) {
+      return;
+    }
+    const activeAttempt = crashRecovery.getActiveTurnAttempt(attemptId);
+    if (!activeAttempt) {
+      return;
+    }
+    const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+    const reconcileCurrentTurn = runtimeSession.ambiguousTurnRecoveryStrategy === "reconcile_by_client_message_id";
     const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
-      reconcileCurrentTurn: true,
+      crashRecovery,
+      reconcileCurrentTurn,
     });
     if (stashedCount === 0) {
       return;
@@ -1070,11 +1251,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       turnId: currentTurnId,
       reason,
       stashedMessages: stashedCount,
+      recoveryStrategy: reconcileCurrentTurn ? "provider_reconciliation" : "safe_replay",
+      terminalReplayAllowed: safety.replayable,
     });
   };
 
   const projectUnterminatedChannelTurn = async () => {
-    if (!streaming.currentChannelBackend || restartStashedReason) {
+    if (
+      !streaming.currentChannelBackend ||
+      streaming.currentCrashRecoveryTerminal ||
+      restartStashedReason ||
+      (crashRecovery?.ownershipFailure && !streaming.currentCrashRecoveryAttemptId)
+    ) {
       return;
     }
     const reason =
@@ -1320,11 +1508,33 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         if (idleMs < PROVIDER_TURN_INACTIVITY_TIMEOUT_MS) return;
 
         timedOut = true;
-        recordProviderTurnInactivityTimeout(idleMs);
-        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, {
-          reconcileCurrentTurn: true,
+        const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+        const reconcileCurrentTurn = runtimeSession.ambiguousTurnRecoveryStrategy === "reconcile_by_client_message_id";
+        const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, {
+          crashRecovery,
+          reconcileCurrentTurn,
         });
-        restartStashedReason = PROVIDER_TURN_INACTIVITY_REASON;
+        recordProviderTurnInactivityTimeout(idleMs, stashedCount > 0);
+        if (stashedCount > 0) {
+          restartStashedReason = PROVIDER_TURN_INACTIVITY_REASON;
+          if (reconcileCurrentTurn && !safety.replayable) {
+            log.warn("Provider inactivity recovery will reconcile without terminal replay authority", {
+              runId,
+              sessionName,
+              startedTool: safety.startedTool,
+              materializedOutput: safety.materializedOutput,
+              durableBinding: safety.durableBinding,
+            });
+          }
+        } else {
+          log.warn("Skipping provider inactivity replay because the current turn is not replay-safe", {
+            runId,
+            sessionName,
+            startedTool: safety.startedTool,
+            materializedOutput: safety.materializedOutput,
+            durableBinding: safety.durableBinding,
+          });
+        }
         streaming.interrupted = true;
         streaming.turnActive = false;
         streaming.internalAbortReason = PROVIDER_TURN_INACTIVITY_REASON;
@@ -1387,7 +1597,84 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         sessionName,
       });
 
+      // Provider adapters commonly surface the native envelope before its
+      // canonical assistant/tool event. Hold that raw envelope until the
+      // canonical event has crossed its durable write-ahead fence.
+      if (event.type === "provider.raw") {
+        await settlePreviousProviderRawEvents();
+        pendingProviderRawEvents.push({ event, safetyFenced: false });
+        continue;
+      }
+      const correlatedProviderRawEvent = correlatePendingProviderRawEvent(event);
+
+      // Safety markers are write-ahead fences for crash classification. A
+      // completed/delivered tool event defensively proves that a tool started
+      // even if the provider omitted or Ravi missed the corresponding start.
+      if (event.type === "tool.started" || event.type === "tool.completed" || event.type === "tool.result_delivered") {
+        markCurrentTurnAttemptSafety({ startedTool: true });
+        fencePendingProviderRawEvent(correlatedProviderRawEvent);
+      }
+
+      const receivedFailureClassification =
+        event.type === "turn.failed"
+          ? (() => {
+              const interruptedRecoverable = streaming.interrupted && isRecoverableInterruptionFailure(event);
+              const internalAbortReason = streaming.internalAbortReason;
+              const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
+              return {
+                internalAbortReason,
+                suppressedRecoverable: interruptedRecoverable || internalRecoverable,
+              };
+            })()
+          : undefined;
+
+      // Provider terminal events fence the physical delivery before any
+      // projection, stream flush, persistence, or other asynchronous work.
+      // The richer trace write below reuses this exact completion timestamp.
+      const receivedTerminalStatus: RuntimeTurnAttemptTerminalStatus | undefined =
+        event.type === "turn.complete"
+          ? "complete"
+          : event.type === "turn.interrupted"
+            ? "interrupted"
+            : event.type === "turn.failed"
+              ? receivedFailureClassification?.suppressedRecoverable
+                ? "interrupted"
+                : "failed"
+              : undefined;
+      if (receivedTerminalStatus) {
+        const terminal = terminalizeCurrentCrashRecoveryAttempt(receivedTerminalStatus);
+        if (!terminal) {
+          log.warn("Ignoring provider terminal event after crash recovery ownership loss", {
+            runId,
+            sessionName,
+            providerEvent: event.type,
+            providerStatus: receivedTerminalStatus,
+          });
+          break;
+        }
+        if (terminal.status !== receivedTerminalStatus) {
+          log.info("Ignoring provider terminal event after another terminal path won", {
+            runId,
+            sessionName,
+            providerEvent: event.type,
+            providerStatus: receivedTerminalStatus,
+            winningStatus: terminal.status,
+            completedAt: terminal.completedAt,
+          });
+          break;
+        }
+        if (receivedTerminalStatus !== "complete") {
+          // Interrupted/failed native envelopes may contain partial assistant
+          // content that was never accepted by response policy.
+          suppressProviderRawForCurrentTurn = true;
+        }
+      }
+
       if (event.type === "text.delta") {
+        // The chunk can be queued for external emission below, so persist the
+        // replay-safety fence before any projection or async work.
+        markCurrentTurnAttemptSafety({ materializedOutput: true });
+        fencePendingProviderRawEvent(correlatedProviderRawEvent);
         if (streaming.agentMode !== "sentinel" && !streaming.interrupted) {
           // Raw deltas arrive before whole-message response policy can classify
           // silent, heartbeat, no-response, or prompt-too-long content. They
@@ -1421,16 +1708,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         );
       }
 
-      if (event.type === "provider.raw" && event.rawEvent) {
-        await emitLegacyProviderEvent(event.rawEvent);
+      if (event.type !== "turn.failed" && event.type !== "assistant.message") {
+        await emitRuntimeEvent({ ...stripRuntimeRawEvent(event), provider: runtimeSession.provider });
       }
 
-      if (event.type !== "turn.failed") {
-        await emitRuntimeEvent(
-          event.type === "provider.raw"
-            ? buildProviderRawRuntimeEvent(runtimeSession.provider, event.rawEvent, event.metadata)
-            : { ...event, provider: runtimeSession.provider },
-        );
+      if (event.type === "turn.complete" || event.type === "turn.interrupted") {
+        await releasePendingProviderRawEvent(correlatedProviderRawEvent);
+        suppressProviderRawForCurrentTurn = false;
       }
 
       // Track compaction status - block interrupts while compacting
@@ -1519,8 +1803,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           compactionAnnouncement.externalAnnouncementsAllowed
         ) {
           if (streaming.compacting && !wasCompacting) {
+            markCurrentTurnAttemptSafety({ materializedOutput: true });
             emitResponse("🧠 Compactando memória... um momento.").catch(() => {});
           } else if (!streaming.compacting && wasCompacting) {
+            markCurrentTurnAttemptSafety({ materializedOutput: true });
             emitResponse("🧠 Memória compactada. Pronto pra continuar.").catch(() => {});
           }
         }
@@ -1632,12 +1918,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
           if (streaming.interrupted) {
             // Turn was interrupted - discard response
+            suppressProviderRawForCurrentTurn = true;
             log.info("Discarding interrupted response", {
               sessionName,
               textLen: messageText.length,
             });
           } else if (!messageText) {
             // After stripping SILENT_TOKEN, nothing left
+            suppressProviderRawForCurrentTurn = true;
             log.info("Silent response (stripped)", { sessionName });
             await emitLegacyProviderEvent({ type: "silent" });
             await emitRuntimeEvent({
@@ -1645,34 +1933,48 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               provider: runtimeSession.provider,
             });
           } else {
-            ensureCurrentTurnUserObservation();
-            pushObservationEvent("message.assistant", {
-              preview: truncateObservationPreview(messageText),
-              payload: {
-                chars: messageText.length,
-                metadata: event.metadata ?? null,
-              },
-            });
-            recordTraceEvent({
-              turnId: streaming.currentTraceTurnId,
-              provider: runtimeSession.provider,
-              model,
-              eventType: "assistant.message",
-              eventGroup: "response",
-              status: "received",
-              payloadJson: {
-                chars: messageText.length,
-                metadata: event.metadata,
-              },
-              preview: messageText,
-            });
-
-            if (!isCommentaryResponse(event.metadata)) {
-              responseText = appendAssistantResponse(responseText, messageText);
-            }
-
             const trimmed = messageText.trim().toLowerCase();
-            if (trimmed === "prompt is too long") {
+            const promptTooLong = trimmed === "prompt is too long";
+            const heartbeatResponse = messageText.trim().endsWith(HEARTBEAT_OK);
+            const noResponseRequested =
+              trimmed === "no response requested." ||
+              trimmed === "no response requested" ||
+              trimmed === "no response needed." ||
+              trimmed === "no response needed";
+            const commentaryResponse = isCommentaryResponse(event.metadata);
+            const recordAssistantState = (observe: boolean) => {
+              if (observe) {
+                ensureCurrentTurnUserObservation();
+                pushObservationEvent("message.assistant", {
+                  preview: truncateObservationPreview(messageText),
+                  payload: {
+                    chars: messageText.length,
+                    metadata: event.metadata ?? null,
+                  },
+                });
+              }
+              recordTraceEvent({
+                turnId: streaming.currentTraceTurnId,
+                provider: runtimeSession.provider,
+                model,
+                eventType: "assistant.message",
+                eventGroup: "response",
+                status: "received",
+                payloadJson: {
+                  chars: messageText.length,
+                  metadata: event.metadata,
+                },
+                preview: messageText,
+              });
+              if (!commentaryResponse) {
+                responseText = appendAssistantResponse(responseText, messageText);
+              }
+            };
+            if (promptTooLong) {
+              suppressProviderRawForCurrentTurn = true;
+              // Retain the provider outcome in local history/trace, but do not
+              // publish a realtime observation or advance the output fence.
+              recordAssistantState(false);
               log.warn("Prompt too long - will auto-reset session", {
                 sessionName,
               });
@@ -1682,19 +1984,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 type: "silent",
                 provider: runtimeSession.provider,
               });
-            } else if (messageText.trim().endsWith(HEARTBEAT_OK)) {
+            } else if (heartbeatResponse) {
+              suppressProviderRawForCurrentTurn = true;
+              recordAssistantState(false);
               log.info("Heartbeat OK", { sessionName });
               await emitLegacyProviderEvent({ type: "silent" });
               await emitRuntimeEvent({
                 type: "silent",
                 provider: runtimeSession.provider,
               });
-            } else if (
-              trimmed === "no response requested." ||
-              trimmed === "no response requested" ||
-              trimmed === "no response needed." ||
-              trimmed === "no response needed"
-            ) {
+            } else if (noResponseRequested) {
+              suppressProviderRawForCurrentTurn = true;
+              recordAssistantState(false);
               log.info("Silent response (no response requested)", {
                 sessionName,
               });
@@ -1704,7 +2005,19 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 provider: runtimeSession.provider,
               });
             } else {
-              if (!isCommentaryResponse(event.metadata)) {
+              // This content will be persisted/projected/emitted. Fence replay
+              // before any of those effects; silent and discarded responses do
+              // not advance the materialized-output marker.
+              markCurrentTurnAttemptSafety({ materializedOutput: true });
+              fencePendingProviderRawEvent(correlatedProviderRawEvent);
+              recordAssistantState(true);
+              await emitRuntimeEvent({
+                type: "assistant.message",
+                provider: runtimeSession.provider,
+                text: messageText,
+                ...(event.metadata ? { metadata: event.metadata } : {}),
+              });
+              if (!commentaryResponse) {
                 channelResponseText = appendAssistantResponse(channelResponseText, messageText);
               } else if (streaming.agentMode !== "sentinel") {
                 await projectRuntimeEventToChannel({
@@ -1868,10 +2181,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               sessionName,
               count: streaming.pendingMessages.length,
             });
-            stashedMessages.set(
-              sessionName,
-              streaming.pendingMessages.map((message) => ({ ...message })),
-            );
+            stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
           }
           log.info("Executing deferred abort after unsafe tool completed", {
             sessionName,
@@ -2086,6 +2396,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.lastToolFailure = undefined;
         streaming.pendingAbort = false;
         streaming.currentTurnToolStarted = false;
+        streaming.currentTurnInputMutated = false;
         streaming.turnActive = false;
         streaming.currentChannelBackend = undefined;
         clearTraceTurnState();
@@ -2131,8 +2442,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
         streaming.currentTurnToolStarted = false;
+        streaming.currentTurnInputMutated = false;
         streaming.currentChannelBackend = undefined;
         streaming.turnActive = false;
+        const interruptedReplaySafety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+        if (!interruptedReplaySafety.replayable) {
+          const queuedBefore = streaming.pendingMessages.length;
+          streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
+          log.info("Discarding unsafe interrupted turn while preserving queued successors", {
+            runId,
+            sessionName,
+            discarded: queuedBefore - streaming.pendingMessages.length,
+            remaining: streaming.pendingMessages.length,
+            startedTool: interruptedReplaySafety.startedTool,
+            materializedOutput: interruptedReplaySafety.materializedOutput,
+            durableBinding: interruptedReplaySafety.durableBinding,
+          });
+        }
         clearTraceTurnState();
         markRuntimeLiveIdle(sessionName, "turn interrupted");
         signalTurnComplete();
@@ -2140,12 +2466,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
 
       if (event.type === "turn.failed") {
-        const interruptedRecoverable = streaming.interrupted && isRecoverableInterruptionFailure(event);
-        const internalAbortReason = streaming.internalAbortReason;
-        const internalRecoverable = Boolean(internalAbortReason) && isRecoverableInterruptionFailure(event);
-        const suppressedRecoverable = interruptedRecoverable || internalRecoverable;
+        const internalAbortReason = receivedFailureClassification?.internalAbortReason;
+        const suppressedRecoverable = receivedFailureClassification?.suppressedRecoverable ?? false;
         const rawEventSummary = summarizeRuntimeFailureRawEvent(event.rawEvent);
-        const currentTurnHadToolStarted = streaming.currentTurnToolStarted === true;
+        const currentTurnReplaySafety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+        const currentTurnHadToolStarted = currentTurnReplaySafety.startedTool;
+        const currentTurnHadMaterializedOutput = currentTurnReplaySafety.materializedOutput;
         const credentialFailureSignal = !suppressedRecoverable
           ? recordRuntimeCredentialTurnFailure({
               streaming,
@@ -2178,9 +2504,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             type: "turn.interrupted",
             provider: runtimeSession.provider,
             reason: internalAbortReason ?? "recoverable_interrupt_failure",
-            rawEvent: event.rawEvent,
             metadata: event.metadata,
           });
+          await releasePendingProviderRawEvent(correlatedProviderRawEvent);
+          suppressProviderRawForCurrentTurn = false;
           recordTerminalTraceOnce({
             status: "interrupted",
             eventType: "turn.interrupted",
@@ -2227,8 +2554,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // dispatch queue keeps growing. Closing here forces a fresh SDK spawn
           // immediately; preserve queued/current messages so the next session
           // can drain them instead of losing the interrupted turn.
-          stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
-          restartStashedReason = restartReason;
+          const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+          if (stashedCount > 0) {
+            restartStashedReason = restartReason;
+          } else {
+            log.info("Skipping recoverable interrupt replay because the current turn is not replay-safe", {
+              runId,
+              sessionName,
+              startedTool: currentTurnHadToolStarted,
+              materializedOutput: currentTurnHadMaterializedOutput,
+              durableBinding: currentTurnReplaySafety.durableBinding,
+            });
+          }
           signalTurnComplete();
           clearTraceTurnState();
           streaming.done = true;
@@ -2238,50 +2575,66 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         if (credentialFailureSignal?.retryableByCredential) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
-          if (currentTurnHadToolStarted) {
-            log.info("Skipping runtime credential retry after tool activity", {
-              runId,
-              sessionName,
-              credentialId: streaming.currentRuntimeCredential?.credentialId,
-              kind: credentialFailureSignal.kind,
+          const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
+            crashRecovery,
+          });
+          if (stashedCount > 0 && streaming.currentRuntimeCredential?.credentialId) {
+            // This physical delivery is terminal even when the failure is
+            // hidden from user-facing channels and retried on a fresh runtime.
+            // Close the canonical trace with the attempt's first-terminal
+            // status/timestamp before starting the replacement delivery.
+            recordTerminalTraceOnce({
+              status: "failed",
+              eventType: "turn.failed",
+              abortReason: restartReason,
+              error: truncateLogDetail(event.error),
+              payloadJson: {
+                recoverable: true,
+                autoRecovered: true,
+                credentialRetry: true,
+                credentialFailureKind: credentialFailureSignal.kind,
+                failureDetails: formatRuntimeFailureDetails(event) ?? null,
+                rawEvent: rawEventSummary ?? null,
+                metadata: event.metadata ?? null,
+              },
             });
-          } else {
-            const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages);
-            if (stashedCount > 0 && streaming.currentRuntimeCredential?.credentialId) {
-              try {
-                await refreshRuntimeCredential(streaming.currentRuntimeCredential.credentialId, {
-                  reason: "retryable_failure",
-                });
-              } catch (error) {
-                log.warn("Runtime credential refresh after failure failed", {
-                  runId,
-                  sessionName,
-                  credentialId: streaming.currentRuntimeCredential.credentialId,
-                  error,
-                });
-              }
-              restartStashedReason = restartReason;
-              log.info("Closing runtime after retryable credential failure", {
+            try {
+              await refreshRuntimeCredential(streaming.currentRuntimeCredential.credentialId, {
+                reason: "retryable_failure",
+              });
+            } catch (error) {
+              log.warn("Runtime credential refresh after failure failed", {
                 runId,
                 sessionName,
                 credentialId: streaming.currentRuntimeCredential.credentialId,
-                kind: credentialFailureSignal.kind,
-                pendingMessages: streaming.pendingMessages.length,
-                stashedMessages: stashedCount,
+                error,
               });
-              streaming.currentTurnToolStarted = false;
-              signalTurnComplete();
-              clearTraceTurnState();
-              streaming.done = true;
-              break;
             }
-            log.warn("Skipping runtime credential retry because current turn messages are unavailable", {
+            restartStashedReason = restartReason;
+            log.info("Closing runtime after retryable credential failure", {
               runId,
               sessionName,
-              credentialId: streaming.currentRuntimeCredential?.credentialId,
+              credentialId: streaming.currentRuntimeCredential.credentialId,
               kind: credentialFailureSignal.kind,
+              pendingMessages: streaming.pendingMessages.length,
+              stashedMessages: stashedCount,
             });
+            streaming.currentTurnToolStarted = false;
+            streaming.currentTurnInputMutated = false;
+            signalTurnComplete();
+            clearTraceTurnState();
+            streaming.done = true;
+            break;
           }
+          log.warn("Skipping runtime credential retry because no replay-safe turn messages are available", {
+            runId,
+            sessionName,
+            credentialId: streaming.currentRuntimeCredential?.credentialId,
+            kind: credentialFailureSignal.kind,
+            startedTool: currentTurnHadToolStarted,
+            materializedOutput: currentTurnHadMaterializedOutput,
+            durableBinding: currentTurnReplaySafety.durableBinding,
+          });
         }
 
         const contextWindowFailure = classifyRuntimeContextWindowFailure({
@@ -2289,7 +2642,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           error: event.error,
           rawEvent: event.rawEvent,
         });
-        if (contextWindowFailure) {
+        if (contextWindowFailure && currentTurnReplaySafety.replayable) {
           await projectRuntimeEventToChannel(event);
           const history = getRecentHistory(sessionName, 48);
           const recovery = buildRuntimeContextRecoveryPrompt({
@@ -2376,6 +2729,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             source: streaming.currentSource,
           });
           streaming.currentTurnToolStarted = false;
+          streaming.currentTurnInputMutated = false;
           streaming.internalAbortReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
           streaming.interrupted = true;
           clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
@@ -2385,13 +2739,24 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           streaming.currentChannelBackend = undefined;
           break;
         }
+        if (contextWindowFailure) {
+          log.warn("Skipping context-window auto-recovery because the current turn is not replay-safe", {
+            runId,
+            sessionName,
+            startedTool: currentTurnHadToolStarted,
+            materializedOutput: currentTurnHadMaterializedOutput,
+            durableBinding: currentTurnReplaySafety.durableBinding,
+          });
+        }
 
         const channelBackendFailure = streaming.currentChannelBackend !== undefined;
         await projectRuntimeEventToChannel(event);
         await emitRuntimeEvent({
-          ...event,
+          ...stripRuntimeRawEvent(event),
           provider: runtimeSession.provider,
         });
+        await releasePendingProviderRawEvent(correlatedProviderRawEvent);
+        suppressProviderRawForCurrentTurn = false;
         recordTerminalTraceOnce({
           status: "failed",
           eventType: "turn.failed",
@@ -2415,6 +2780,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearTraceTurnState();
 
         streaming.currentTurnToolStarted = false;
+        streaming.currentTurnInputMutated = false;
         streaming.currentChannelBackend = undefined;
         clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
 
@@ -2453,13 +2819,43 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
     }
   } finally {
+    // Never let an exceptional/ownership-loss path externalize a raw envelope
+    // that did not reach its canonical write-ahead boundary.
+    pendingProviderRawEvents.length = 0;
     log.info("Streaming session ended", { runId, sessionName });
 
-    prepareUnterminatedTurnRecovery();
-    await projectUnterminatedChannelTurn();
-    recordUnterminatedTurnExit();
+    try {
+      prepareUnterminatedTurnRecovery();
+      recordUnterminatedTurnExit();
+      await projectUnterminatedChannelTurn();
+    } catch (error) {
+      // A lost crash-recovery fence has already made the coordinator reject
+      // new work. It must not prevent provider/process cleanup below.
+      log.error("Failed to finalize runtime turn before session cleanup", {
+        runId,
+        sessionName,
+        error,
+      });
+    }
     streaming.currentChannelBackend = undefined;
-    clearTraceTurnState();
+    if (streaming.currentCrashRecoveryAttemptId && crashRecovery?.ownershipFailure) {
+      log.warn("Detaching crash recovery attempt after ownership loss", {
+        runId,
+        sessionName,
+        attemptId: streaming.currentCrashRecoveryAttemptId,
+      });
+      streaming.currentCrashRecoveryAttemptId = undefined;
+    }
+    try {
+      clearTraceTurnState();
+    } catch (error) {
+      log.error("Failed to clear runtime trace state during cleanup", {
+        runId,
+        sessionName,
+        error,
+      });
+    }
+    streaming.durableTurnPreparationFailed = false;
     clearProviderInactivityWatch();
     clearIdleSessionEvictionTimer();
     if (toolStuckTimer !== undefined) {
@@ -2491,18 +2887,29 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (stillOwnsRuntimeSlot) {
       streamingSessions.delete(sessionName);
     }
-    completeRuntimeCredentialAttempt(streaming.currentRuntimeCredential?.attemptId, {
-      status: "abandoned",
-      metadata: { phase: "runtime.event_loop.finally" },
-    });
+    try {
+      completeRuntimeCredentialAttempt(streaming.currentRuntimeCredential?.attemptId, {
+        status: "abandoned",
+        metadata: { phase: "runtime.event_loop.finally" },
+      });
+    } catch (error) {
+      log.warn("Failed to abandon runtime credential attempt during cleanup", {
+        runId,
+        sessionName,
+        error,
+      });
+    }
     if (stillOwnsRuntimeSlot) {
-      if (restartStashedReason && restartStashedSession) {
-        await restartStashedSession({
-          sessionName,
-          reason: restartStashedReason,
-        });
+      try {
+        if (restartStashedReason && restartStashedSession) {
+          await restartStashedSession({
+            sessionName,
+            reason: restartStashedReason,
+          });
+        }
+      } finally {
+        drainPendingStarts();
       }
-      drainPendingStarts();
     }
   }
 }

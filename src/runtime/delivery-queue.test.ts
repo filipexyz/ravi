@@ -6,11 +6,13 @@ import {
   shouldInterruptRuntimeForIncoming,
 } from "./delivery-queue.js";
 import {
+  resolveRuntimeToolEffectFence,
   shutdownRuntimeStreamingSession,
   stashCurrentTurnRuntimeMessages,
   stashPendingRuntimeMessages,
 } from "./host-session.js";
 import type { RuntimeHostStreamingSession, RuntimeUserMessage } from "./host-session.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeSessionHandle } from "./types.js";
 
@@ -46,12 +48,19 @@ function makeStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = 
 }
 
 describe("runtime delivery queue", () => {
+  it("distinguishes host write-ahead from Codex and Pi asynchronous tool observation", () => {
+    expect(resolveRuntimeToolEffectFence("claude", "ravi-host")).toBe("host_write_ahead");
+    expect(resolveRuntimeToolEffectFence("codex", "ravi-host")).toBe("provider_event_only");
+    expect(resolveRuntimeToolEffectFence("pi", "provider-native")).toBe("provider_event_only");
+  });
+
   it("refreshes lastActivity when a new turn starts on a reused session", async () => {
     const staleActivityAt = Date.now() - 15 * 60 * 1000;
     const queuedMessage = createQueuedRuntimeUserMessage({ prompt: "continua" });
     const session = makeStreamingSession({
       pendingMessages: [queuedMessage],
       lastActivity: staleActivityAt,
+      durableTurnPreparationFailed: true,
     });
     const generator = createRuntimeMessageGenerator({
       sessionName: "dev",
@@ -67,6 +76,7 @@ describe("runtime delivery queue", () => {
       message: { role: "user", content: "continua" },
     });
     expect(session.turnActive).toBe(true);
+    expect(session.durableTurnPreparationFailed).toBe(false);
     expect(session.lastActivity).toBeGreaterThan(staleActivityAt);
 
     session.done = true;
@@ -90,6 +100,67 @@ describe("runtime delivery queue", () => {
     await generator.next();
 
     expect(session.idleSessionEvictionTimer).toBeUndefined();
+
+    session.done = true;
+    session.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
+  it("fails closed before provider delivery when durable turn preparation fails", async () => {
+    const queuedMessage = createQueuedRuntimeUserMessage({ prompt: "must stay durable" });
+    const session = makeStreamingSession({
+      pendingMessages: [queuedMessage],
+      currentCrashRecoveryAttemptId: "stale-attempt",
+    });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+      traceTurnStart: () => {
+        throw new Error("ledger unavailable");
+      },
+    });
+
+    await expect(generator.next()).rejects.toThrow("ledger unavailable");
+    expect(session.pendingMessages).toEqual([queuedMessage]);
+    expect(session.turnActive).toBe(false);
+    expect(session.currentTurnPendingIds).toBeUndefined();
+    expect(session.currentTraceTurnId).toBeUndefined();
+    expect(session.currentCrashRecoveryAttemptId).toBeUndefined();
+    expect(session.durableTurnPreparationFailed).toBe(true);
+    expect(session.onTurnComplete).toBeNull();
+  });
+
+  it("retains a terminal latch until the next physical handoff begins", async () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "already complete" });
+    const successor = createQueuedRuntimeUserMessage({ prompt: "next turn" });
+    const session = makeStreamingSession({ pendingMessages: [active] });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+    });
+
+    expect((await generator.next()).value).toMatchObject({
+      message: { content: "already complete" },
+    });
+    session.pendingMessages.push(successor);
+    session.currentCrashRecoveryTerminal = {
+      status: "complete",
+      completedAt: Date.now(),
+      startedTool: false,
+      materializedOutput: false,
+    };
+
+    const nextTurn = generator.next();
+    session.onTurnComplete?.();
+
+    // Snapshot code may run synchronously in this exact terminal->drain gap.
+    expect(session.currentCrashRecoveryTerminal?.status).toBe("complete");
+    expect((await nextTurn).value).toMatchObject({
+      message: { content: "next turn" },
+    });
+    expect(session.currentCrashRecoveryTerminal).toBeUndefined();
 
     session.done = true;
     session.onTurnComplete?.();
@@ -293,6 +364,7 @@ describe("runtime delivery queue", () => {
     stashPendingRuntimeMessages("dev", session, stash, { reconcileCurrentTurn: true });
 
     expect(stash.get("dev")?.map((message) => message.replay)).toEqual([true, undefined]);
+    expect(stash.get("dev")?.[0]?.terminalReplayAllowed).toBe(true);
   });
 
   it("stashes only the successor when an interrupted turn was intentionally superseded", () => {
@@ -310,6 +382,66 @@ describe("runtime delivery queue", () => {
     expect(pendingStash.get("dev")).toEqual([steering]);
     expect(stashCurrentTurnRuntimeMessages("dev", session, currentTurnStash)).toBe(1);
     expect(currentTurnStash.get("dev")).toEqual([steering]);
+  });
+
+  it("does not replay a provider-native current turn before its asynchronous tool event can arrive", () => {
+    const active = createQueuedRuntimeUserMessage(channelPrompt("may already have run a tool", "turn-a"));
+    const successor = createQueuedRuntimeUserMessage(channelPrompt("independent successor", "turn-b"));
+    const session = makeStreamingSession({
+      pendingMessages: [active, successor],
+      currentTraceTurnId: "turn-provider-native",
+      currentCrashRecoveryAttemptId: "attempt-provider-native",
+      currentTurnPendingIds: [active.pendingId!],
+      toolEffectFence: "provider_event_only",
+    });
+    const crashRecovery = {
+      acceptingDeliveries: true,
+      getActiveTurnAttempt: () => ({ startedTool: false, materializedOutput: false }),
+    } as unknown as RuntimeCrashRecoveryCoordinator;
+    const stash = new Map<string, RuntimeUserMessage[]>();
+
+    expect(stashPendingRuntimeMessages("dev", session, stash, { crashRecovery })).toBe(1);
+    expect(stash.get("dev")).toEqual([successor]);
+
+    const reconciliationStash = new Map<string, RuntimeUserMessage[]>();
+    expect(
+      stashPendingRuntimeMessages("dev", session, reconciliationStash, {
+        crashRecovery,
+        reconcileCurrentTurn: true,
+      }),
+    ).toBe(2);
+    expect(reconciliationStash.get("dev")?.[0]).toMatchObject({
+      replay: true,
+      terminalReplayAllowed: false,
+    });
+    expect(reconciliationStash.get("dev")?.[1]?.replay).toBeUndefined();
+  });
+
+  it("never replays a completed physical turn while preserving its independent successors", () => {
+    const active = createQueuedRuntimeUserMessage(channelPrompt("already complete", "turn-a"));
+    const successor = createQueuedRuntimeUserMessage(channelPrompt("independent successor", "turn-b"));
+    const session = makeStreamingSession({
+      pendingMessages: [active, successor],
+      currentTurnPendingIds: [active.pendingId!],
+      currentCrashRecoveryTerminal: {
+        status: "complete",
+        completedAt: Date.now(),
+        startedTool: false,
+        materializedOutput: false,
+      },
+      toolEffectFence: "host_write_ahead",
+    });
+    const beforeDrain = new Map<string, RuntimeUserMessage[]>();
+
+    expect(stashPendingRuntimeMessages("dev", session, beforeDrain)).toBe(1);
+    expect(beforeDrain.get("dev")).toEqual([successor]);
+
+    session.pendingMessages = [successor];
+    session.currentTurnPendingIds = undefined;
+    const afterDrain = new Map<string, RuntimeUserMessage[]>();
+
+    expect(stashPendingRuntimeMessages("dev", session, afterDrain)).toBe(1);
+    expect(afterDrain.get("dev")).toEqual([successor]);
   });
 
   it("delivers at most one channel backend message in a local runtime turn", () => {

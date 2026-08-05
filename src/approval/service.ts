@@ -46,6 +46,7 @@ export interface CascadingApprovalOptions {
   timeoutMs?: number;
   autoApproveWithoutSource?: boolean;
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: () => void;
 }
 
 export interface ContextAuthorizationOptions {
@@ -55,6 +56,7 @@ export interface ContextAuthorizationOptions {
   objectId: string;
   timeoutMs?: number;
   eventData?: Record<string, unknown>;
+  beforeExternalApproval?: () => void;
 }
 
 export interface ContextAuthorizationResult {
@@ -149,6 +151,7 @@ export async function requestCascadingApproval(
   }
 
   const isDelegated = !opts.resolvedSource && !!opts.approvalSource;
+  opts.beforeExternalApproval?.();
   log.info(`${opts.type} approval requested`, { sessionName: opts.sessionName, isDelegated });
 
   approvalServiceDependencies.nats
@@ -201,6 +204,7 @@ export async function authorizeRuntimeContext(opts: ContextAuthorizationOptions)
     text,
     timeoutMs: opts.timeoutMs,
     autoApproveWithoutSource: false,
+    beforeExternalApproval: opts.beforeExternalApproval,
     eventData: {
       ...(opts.eventData ?? {}),
       contextId: context.contextId,

@@ -4,6 +4,10 @@ import { close as closeDb } from "./db.js";
 import { closeRouterDb } from "./router/index.js";
 import { configStore } from "./config-store.js";
 import type { RuntimeControlNatsRequest } from "./runtime/control-host.js";
+import {
+  RuntimeCrashRecoveryCoordinator,
+  type RuntimeCrashRecoveryOwnershipLostError,
+} from "./runtime/crash-recovery.js";
 import type { RuntimeHostStreamingSession } from "./runtime/host-session.js";
 import type { PromptMessage } from "./runtime/message-types.js";
 import { RuntimeHostSubscriptions } from "./runtime/host-subscriptions.js";
@@ -39,7 +43,9 @@ export interface RaviBotStopOptions {
 export class RaviBot {
   private config: Config;
   private running = false;
+  private stopping = false;
   private readonly sessionDispatcher: RuntimeSessionDispatcher;
+  private readonly crashRecovery: RuntimeCrashRecoveryCoordinator;
   private readonly hostSubscriptions: RuntimeHostSubscriptions;
   private readonly promptSubscription: RuntimePromptSubscription;
   /** Unique instance ID to trace responses back to this daemon instance */
@@ -57,6 +63,11 @@ export class RaviBot {
     logger.setLevel(options.config.logLevel);
     const maxConcurrentSessions = resolveRuntimeSessionPoolMax();
     const interactiveReservedSessions = resolveRuntimeInteractiveReservedSlots(undefined, maxConcurrentSessions);
+    this.crashRecovery = new RuntimeCrashRecoveryCoordinator({
+      instanceId: this.instanceId,
+      bootMetadata: { component: "runtime-host" },
+      onOwnershipLost: (error) => this.handleCrashRecoveryOwnershipLost(error),
+    });
     this.sessionDispatcher = new RuntimeSessionDispatcher({
       instanceId: this.instanceId,
       maxConcurrentSessions,
@@ -66,6 +77,7 @@ export class RaviBot {
         await notifyRuntimeRecoveryExhausted(input);
       },
       getConfigModel: () => this.config.model,
+      crashRecovery: this.crashRecovery,
     });
     this.hostSubscriptions = new RuntimeHostSubscriptions({
       isRunning: () => this.running,
@@ -74,6 +86,7 @@ export class RaviBot {
     });
     this.promptSubscription = new RuntimePromptSubscription({
       isRunning: () => this.running,
+      canAcceptPrompt: () => this.crashRecovery.acceptingDeliveries,
       getStreamingSessionCount: () => this.streamingSessions.size,
       getRuntimeSessionPoolSnapshot: () => this.sessionDispatcher.getRuntimeSessionPoolSnapshot(),
       markConsumerReady: () => this.markConsumerReady(),
@@ -95,34 +108,44 @@ export class RaviBot {
     this.resolveConsumerReady();
   }
 
+  private handleCrashRecoveryOwnershipLost(error: RuntimeCrashRecoveryOwnershipLostError): void {
+    log.error("Runtime crash recovery ownership lost; fencing prompt intake", {
+      instanceId: this.instanceId,
+      error,
+    });
+    this.running = false;
+    this.promptSubscription.stopHealthCheck();
+    if (this.stopping) {
+      // stop() already owns a full dispatcher sweep. Re-entering shutdownAll
+      // from a terminal ledger failure would interrupt the same provider twice
+      // and could clear the map underneath the outer sweep.
+      return;
+    }
+    try {
+      // Per-attempt ownership callbacks run before this host callback and
+      // detach their ledger bindings. Dispatcher shutdown can therefore close
+      // providers without attempting a stale terminal write.
+      this.sessionDispatcher.shutdownAll();
+    } catch (shutdownError) {
+      log.error("Failed to close runtime sessions after crash recovery ownership loss", {
+        instanceId: this.instanceId,
+        error: shutdownError,
+      });
+    }
+  }
+
   async start(): Promise<void> {
     log.info("Starting Ravi bot...", { pid: process.pid, instanceId: this.instanceId });
+    this.crashRecovery.start();
     this.running = true;
     this.promptSubscription.subscribe();
     this.hostSubscriptions.startAll();
     this.promptSubscription.startHealthCheck();
-    void this.recoverActiveTasksAfterRestart();
     log.info("Ravi bot started", {
       pid: process.pid,
       instanceId: this.instanceId,
       agents: Object.keys(configStore.getConfig().agents),
     });
-  }
-
-  private async recoverActiveTasksAfterRestart(): Promise<void> {
-    try {
-      const { recoverActiveTasksAfterRestart } = await import("./tasks/service.js");
-      const recovery = await recoverActiveTasksAfterRestart();
-      if (recovery.recoveredTaskIds.length === 0 && recovery.skipped.length === 0) {
-        return;
-      }
-      log.info("Recovered active tasks after restart", {
-        recovered: recovery.recoveredTaskIds,
-        skipped: recovery.skipped,
-      });
-    } catch (error) {
-      log.error("Failed to recover active tasks after restart", { error });
-    }
   }
 
   async stop(options: RaviBotStopOptions = {}): Promise<void> {
@@ -131,19 +154,59 @@ export class RaviBot {
 
     this.promptSubscription.stopHealthCheck();
 
+    const ownershipFailureBeforeStop = this.crashRecovery.ownershipFailure;
+    this.stopping = true;
+    let shutdownError: unknown;
     if (options.restart) {
-      this.sessionDispatcher.recordDaemonRestartSnapshot({
-        restartEpoch: options.restart.restartEpoch,
-        reason: options.restart.reason,
-        stoppedAt: Date.now(),
-      });
+      try {
+        this.sessionDispatcher.recordDaemonRestartSnapshot({
+          restartEpoch: options.restart.restartEpoch,
+          reason: options.restart.reason,
+          stoppedAt: Date.now(),
+        });
+      } catch (error) {
+        shutdownError = error;
+        log.error("Failed to persist daemon restart recovery snapshot", { error });
+      }
     }
 
-    this.sessionDispatcher.shutdownAll();
-
-    closeDb();
-    closeRouterDb();
+    try {
+      this.sessionDispatcher.shutdownAll();
+    } catch (error) {
+      shutdownError ??= error;
+      log.error("Failed to shut down all runtime sessions", { error });
+    }
+    try {
+      if (this.crashRecovery.boot?.status === "active" && !this.crashRecovery.ownershipFailure) {
+        this.crashRecovery.stopGracefully(options.restart ? `daemon_restart:${options.restart.reason}` : "daemon_stop");
+      }
+      const ownershipFailureDuringStop = this.crashRecovery.ownershipFailure;
+      if (!ownershipFailureBeforeStop && ownershipFailureDuringStop) {
+        // Dispatcher terminalization deliberately continues provider cleanup
+        // after a fence loss. Preserve that ownership failure for stop()'s
+        // caller instead of silently treating the shutdown as graceful.
+        shutdownError ??= ownershipFailureDuringStop;
+      }
+    } catch (error) {
+      shutdownError ??= error;
+      log.error("Failed to persist graceful runtime boot shutdown", { error });
+    } finally {
+      this.stopping = false;
+      try {
+        closeDb();
+      } catch (error) {
+        shutdownError ??= error;
+        log.error("Failed to close primary database during shutdown", { error });
+      }
+      try {
+        closeRouterDb();
+      } catch (error) {
+        shutdownError ??= error;
+        log.error("Failed to close router database during shutdown", { error });
+      }
+    }
     log.info("Ravi bot stopped");
+    if (shutdownError) throw shutdownError;
   }
 
   /** Abort a streaming session by name. If an unsafe tool is running, defers until the tool completes. */

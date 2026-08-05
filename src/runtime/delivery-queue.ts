@@ -202,7 +202,11 @@ export interface RuntimeMessageGeneratorOptions {
   traceTurnStart?: (input: {
     combinedPrompt: string;
     deliverableMessages: RuntimeUserMessage[];
-  }) => Promise<RuntimeTraceTurnStartResult | null | undefined> | RuntimeTraceTurnStartResult | null | undefined;
+  }) =>
+    | Promise<(RuntimeTraceTurnStartResult & { crashRecoveryAttemptId?: string }) | null | undefined>
+    | (RuntimeTraceTurnStartResult & { crashRecoveryAttemptId?: string })
+    | null
+    | undefined;
 }
 
 export async function* createRuntimeMessageGenerator({
@@ -242,10 +246,15 @@ export async function* createRuntimeMessageGenerator({
     const yieldedIds = new Set(
       deliverable.map((message) => message.pendingId).filter((pendingId): pendingId is string => Boolean(pendingId)),
     );
+    // Retain the previous physical turn's terminal latch across its queue drain
+    // and the following idle gap. A restart snapshot must keep treating that
+    // delivery as consumed until this next handoff actually begins.
+    session.currentCrashRecoveryTerminal = undefined;
     const replay = deliverable.every((message) => message.replay === true && Boolean(message.clientMessageId));
     const clientMessageId = replay
       ? (deliverable[0]?.clientMessageId ?? `ravi:${randomUUID()}`)
       : `ravi:${randomUUID()}`;
+    const terminalReplayAllowed = deliverable.every((message) => message.terminalReplayAllowed !== false);
     for (const message of deliverable) {
       message.clientMessageId = clientMessageId;
     }
@@ -263,6 +272,8 @@ export async function* createRuntimeMessageGenerator({
     });
     session.turnActive = true;
     session.currentTurnToolStarted = false;
+    session.currentTurnInputMutated = false;
+    session.durableTurnPreparationFailed = false;
     if (session.idleSessionEvictionTimer) {
       clearTimeout(session.idleSessionEvictionTimer);
       session.idleSessionEvictionTimer = undefined;
@@ -274,13 +285,13 @@ export async function* createRuntimeMessageGenerator({
     session.lastActivity = Date.now();
     session.currentTraceTurnTerminalRecorded = false;
 
-    beforeTurnStart?.({
-      combinedPrompt: combined,
-      deliverableMessages: deliverable.map((message) => ({ ...message })),
-    });
+    try {
+      beforeTurnStart?.({
+        combinedPrompt: combined,
+        deliverableMessages: deliverable.map((message) => ({ ...message })),
+      });
 
-    if (traceTurnStart) {
-      try {
+      if (traceTurnStart) {
         const traceTurn = await traceTurnStart({
           combinedPrompt: combined,
           deliverableMessages: deliverable.map((message) => ({ ...message })),
@@ -291,10 +302,26 @@ export async function* createRuntimeMessageGenerator({
           session.currentTraceUserPromptSha256 = traceTurn.userPromptSha256;
           session.currentTraceSystemPromptSha256 = traceTurn.systemPromptSha256;
           session.currentTraceRequestBlobSha256 = traceTurn.requestBlobSha256;
+          session.currentCrashRecoveryAttemptId = traceTurn.crashRecoveryAttemptId;
         }
-      } catch (error) {
-        log.warn("Generator: failed to trace turn start", { sessionName, error });
       }
+    } catch (error) {
+      session.durableTurnPreparationFailed = true;
+      session.turnActive = false;
+      session.currentTurnPendingIds = undefined;
+      session.currentTurnSuperseded = false;
+      session.currentTurnToolStarted = false;
+      session.currentTurnInputMutated = false;
+      session.currentTraceTurnId = undefined;
+      session.currentTraceTurnStartedAt = undefined;
+      session.currentTraceUserPromptSha256 = undefined;
+      session.currentTraceSystemPromptSha256 = undefined;
+      session.currentTraceRequestBlobSha256 = undefined;
+      session.currentTraceTurnTerminalRecorded = false;
+      session.currentCrashRecoveryAttemptId = undefined;
+      session.onTurnComplete = null;
+      log.error("Generator: failed to prepare durable turn", { sessionName, error });
+      throw error;
     }
 
     yield {
@@ -304,6 +331,7 @@ export async function* createRuntimeMessageGenerator({
       parent_tool_use_id: null,
       clientMessageId,
       replay,
+      terminalReplayAllowed,
     };
 
     await turnCompleted;

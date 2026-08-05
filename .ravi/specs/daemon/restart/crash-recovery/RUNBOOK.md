@@ -13,7 +13,15 @@ normative: false
 
 ## Current Phase
 
-The contract-and-ledger child is storage-only. It does not run a startup sweep and does not resume sessions. Until the later inspect/apply CLI exists, do not mutate live recovery rows manually to force a replay.
+The contract/ledger and boot-attempt instrumentation are implemented. A running daemon now owns a boot lease and records each provider delivery with safety/terminal evidence. It still does not run a startup sweep or resume sessions. Until the later inspect/apply CLI exists, do not mutate recovery rows manually to force a replay.
+
+If the coordinator loses a boot, attempt, marker, or terminal fence, the host fails closed: active attempts are aborted, runtime sessions are closed, and the prompt consumer NAKs before ACK instead of accepting more work. The poisoned boot is not marked graceful. Treat this as a runtime/storage incident; do not bypass the coordinator or the write-ahead input-mutation fence to continue work.
+
+A failure before provider handoff keeps the unconsumed prompt in the host stash and may use only the existing bounded event-loop restart path. If the coordinator itself no longer owns a live lease, no automatic retry is allowed, but the exact envelope remains available to the shutdown snapshot instead of being discarded during event-loop cleanup.
+
+The existing graceful daemon-restart snapshot now consumes the same safety fence. It may continue a replay-safe current turn, resume only independently queued durable successors, or suppress the session (`continue`, `pending_only`, `skip`). `pending_only` never appends the generic “continue de onde parou” instruction, a provider-terminal turn is always considered consumed, and a caller restart epoch with no snapshot is `skip`. This is a guard on graceful restart compatibility, not the later abrupt-crash sweeper.
+
+The former `RaviBot.start()` heuristic that resumed every fresh active task is disabled in this phase. Do not re-enable it from task recency/status: the later classifier must first prove attempt safety and record the recovery decision. A task can remain `in_progress` while its physical provider turn is unsafe to replay.
 
 ## When A Crash Leaves Running Turns
 
@@ -29,6 +37,7 @@ For development and hermetic tests, verify these relationships:
 
 - `runtime_boot_epochs.boot_epoch` owns attempt and queue leases.
 - `runtime_turn_attempts.attempt_id` identifies a delivery attempt; `turn_id` is not unique.
+- `runtime_turn_attempts.started_tool` and `materialized_output` are write-ahead evidence only where the host owns the boundary. Claude's final catch-all `PreToolUse` denies execution when its marker cannot persist, including under `bypassPermissions`. Attempt metadata `toolEffectFence=provider_event_only` means asynchronous provider events cannot prove the absence of an earlier effect; Codex/Pi current turns are therefore suppressed while independent successors may remain eligible.
 - `runtime_prompt_queue.queue_sequence` establishes durable FIFO order inside `session_key + lane_key`.
 - `runtime_recovery_candidates` records each run's evaluation.
 - `runtime_recovery_claims.candidate_key` is globally unique across apply runs.
@@ -56,8 +65,10 @@ Inspect and dry-run must never create a claim.
 ravi specs sync --json
 ravi specs get daemon/restart/crash-recovery --mode full --json
 bun test src/runtime/crash-recovery-store.test.ts
+bun test src/runtime/crash-recovery.test.ts src/runtime/prompt-subscription.test.ts src/runtime/delivery-queue.test.ts src/runtime/control-host.test.ts
+bun test src/approval/service.test.ts src/runtime/control-host.test.ts src/runtime/session-trace.test.ts src/runtime/session-dispatcher.test.ts src/runtime/daemon-restart-resume.test.ts src/bot.runtime-guards.test.ts
 bun run typecheck
 bun run build
 ```
 
-The later feature phases add dispatcher, session trace, CLI, and crash-harness validation. Do not report those as covered by the ledger-only child.
+The later feature phases add live queue persistence, classifier/claims execution, sweeps, CLI, and crash-harness validation. Do not report those as covered by the instrumentation child.

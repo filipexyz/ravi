@@ -378,11 +378,17 @@ describe("crash recovery ledger", () => {
     });
     expect(output.startedTool).toBe(true);
     expect(output.materializedOutput).toBe(true);
+    const inputMutated = markRuntimeTurnAttemptSafety({
+      attemptId: "attempt-1",
+      inputMutated: true,
+      markedAt: 280,
+    });
+    expect(inputMutated.metadata).toEqual({ fixture: true, inputMutated: true });
     expect(() =>
       heartbeatRuntimeTurnAttempt({
         attemptId: "attempt-1",
         bootEpoch: "boot-a",
-        heartbeatAt: 265,
+        heartbeatAt: 275,
         leaseExpiresAt: 1_600,
       }),
     ).toThrow(CrashRecoveryLedgerConflictError);
