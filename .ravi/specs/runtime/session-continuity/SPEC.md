@@ -47,6 +47,7 @@ Ravi owns the canonical continuity model. Provider-native session ids, thread id
 - **Replay**: provider-agnostic reconstruction from Ravi prompt atoms and durable assistant outputs when no native provider fork can represent the requested fork point.
 - **Rebase**: replacing the current session state with a forked/replayed state, used for message edits.
 - **Branch**: creating a separate child session without replacing the parent session state.
+- **Ambiguous delivery outcome**: Ravi handed off a logical turn but did not receive enough provider events to prove whether the provider rejected, started, or completed it.
 
 ## Current Baseline
 
@@ -71,6 +72,7 @@ This baseline is not enough for message edits or arbitrary prompt-history forks.
 - Provider-native fork MUST NOT be exposed as canonical Ravi fork until it can be mapped to Ravi fork points, persistence, traces, and parent/child session state.
 - `supportsSessionFork` MUST mean "this provider can materialize a Ravi fork plan for at least one declared fork point type", not merely "the provider has a native command named fork".
 - A provider that supports resume MUST validate cwd/provider compatibility before using stored provider state.
+- Ravi MUST NOT clear compatible provider state solely because a terminal callback is missing. When an adapter can reconcile an ambiguous delivery, Ravi MUST preserve session continuity and the stable logical delivery id through recovery.
 - A provider that supports fork MUST define how parent provider state maps into the child or rebased session.
 - Reset MUST clear provider state only. It MUST NOT delete the durable prompt atom ledger or chat history needed for replay.
 - Rebase after message edit MUST preserve later user messages unless the user explicitly asks to discard them.
@@ -133,6 +135,8 @@ Provider adapters MUST declare structured fork behavior before canonical fork is
 - whether the provider accepts transcript replay as structured conversation history or only as a plain text prompt.
 - which provider state fields are persisted after materialization.
 
+An adapter that reconciles ambiguous delivery on resume MUST define its stable client id mapping, native turn lookup, completed/in-progress behavior, failed-turn recovery boundary, and legacy fallback behavior.
+
 The legacy `forkSession?: boolean` on `RuntimeStartRequest` SHOULD be replaced or wrapped by a structured `RuntimeForkRequest`.
 
 ## Acceptance Criteria
@@ -143,3 +147,4 @@ The legacy `forkSession?: boolean` on `RuntimeStartRequest` SHOULD be replaced o
 - Codex native `thread.fork` MUST remain runtime control only until a canonical fork materializer maps it to prompt atoms and session state.
 - Pi native fork/clone MUST remain disabled for canonical Ravi fork until its file/session semantics are mapped and tested.
 - Session trace MUST explain whether the materialization was resume, native fork, native rollback, replay, hybrid, or reset replay.
+- Inactivity recovery on a compatible provider session MUST reconcile the ambiguous delivery without discarding prior provider context or starting a duplicate turn.

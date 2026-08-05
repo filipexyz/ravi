@@ -13,6 +13,10 @@
 - Interrupted turn emits `turn.interrupted`.
 - Native failure emits recoverable `turn.failed`.
 - Native process exit without terminal event emits recoverable `turn.failed`.
+- `turn/start` sends the stable delivery id as `clientUserMessageId` and captures the native turn from the JSON-RPC response.
+- Resuming an ambiguous completed turn hydrates its existing items and terminal state without a second `turn/start`.
+- Resuming an ambiguous in-progress turn reattaches and consumes notifications without a second `turn/start`.
+- Resuming an ambiguous interrupted/failed turn forks immediately before that native turn and replays once on the fork.
 
 ## Regression Cases
 
@@ -24,3 +28,4 @@
 - Stored session cwd differs from current cwd.
 - Model is omitted because default model should be native default.
 - Native thread id exists but provider session params are missing.
+- A resume response followed immediately by terminal notifications is buffered and reconciled without losing events.

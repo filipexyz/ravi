@@ -17,6 +17,9 @@
 - `turn.interrupted` clears response text and keeps pending prompt queue.
 - `turn.failed` emits user-facing error unless suppressed by internal interrupt recovery.
 - Internal `turn.failed` diagnostics retain the raw error while channel responses, live-state summaries, waited CLI errors, and observation prompts omit local paths, runtime exception details, and credential-shaped values.
+- Provider inactivity requests interruption before the runtime transport closes.
+- Ambiguous inactivity recovery preserves the logical delivery id and marks only the active turn for reconciliation.
+- A second consecutive inactivity for the same session is suppressed, traced, and sent to the operator alert path instead of the user channel.
 
 ## Compaction Announcements
 
@@ -39,6 +42,7 @@
 - Subsequent prompts for a pending-start session are stashed with a pending-start reason, not `cold_start_inflight`.
 - Runtime pool backpressure trace events use the canonical session key when the session exists.
 - Background/task starts respect reserved interactive capacity; interactive starts may use that reserved capacity.
+- Ambiguous recovery keeps its delivery id and does not batch later fresh prompt atoms into the replay.
 
 ## Provider Logs
 

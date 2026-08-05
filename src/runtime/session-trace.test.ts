@@ -153,7 +153,7 @@ function makeRuntimeSession(events: RuntimeEvent[]): RuntimeSessionHandle {
   };
 }
 
-function makeNeverEndingRuntimeSession(): RuntimeSessionHandle {
+function makeNeverEndingRuntimeSession(lifecycle?: string[]): RuntimeSessionHandle {
   let resolveClose!: () => void;
   const closed = new Promise<void>((resolve) => {
     resolveClose = resolve;
@@ -170,8 +170,11 @@ function makeNeverEndingRuntimeSession(): RuntimeSessionHandle {
         };
       },
     },
-    interrupt: async () => {},
+    interrupt: async () => {
+      lifecycle?.push("interrupt");
+    },
     close: async () => {
+      lifecycle?.push("close");
       resolveClose();
     },
   };
@@ -1535,6 +1538,7 @@ describe("runtime session trace instrumentation", () => {
       source,
       _agentId: AGENT_ID,
     });
+    queued.clientMessageId = "ravi:inactive-turn";
     const streaming = makeStreamingSession({
       pendingMessages: [queued],
       currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
@@ -1544,9 +1548,10 @@ describe("runtime session trace instrumentation", () => {
     const stashedMessages = new Map<string, RuntimeUserMessage[]>();
     const restartRequests: Array<{ sessionName: string; reason: string }> = [];
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const providerLifecycle: string[] = [];
 
     try {
-      await runTraceLoop(streaming, makeNeverEndingRuntimeSession(), {
+      await runTraceLoop(streaming, makeNeverEndingRuntimeSession(providerLifecycle), {
         stashedMessages,
         restartStashedSession: async (input) => {
           restartRequests.push(input);
@@ -1564,7 +1569,12 @@ describe("runtime session trace instrumentation", () => {
     }
 
     expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "provider_turn_inactive" }]);
+    expect(providerLifecycle).toEqual(["interrupt", "close"]);
     expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual(["stuck audit alert"]);
+    expect(stashedMessages.get(SESSION_NAME)?.[0]).toMatchObject({
+      clientMessageId: "ravi:inactive-turn",
+      replay: true,
+    });
     expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(true);
 
     const events = listSessionEvents(SESSION_KEY);

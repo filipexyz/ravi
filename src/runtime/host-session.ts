@@ -151,15 +151,17 @@ export function stashPendingRuntimeMessages(
   sessionName: string,
   session: RuntimeHostStreamingSession,
   stashedMessages: Map<string, RuntimeUserMessage[]>,
+  options: { reconcileCurrentTurn?: boolean } = {},
 ): void {
   const replayableMessages = getReplayablePendingRuntimeMessages(session);
   if (replayableMessages.length === 0) {
     return;
   }
+  const reconciliationIds = options.reconcileCurrentTurn ? new Set(session.currentTurnPendingIds ?? []) : undefined;
 
   stashedMessages.set(
     sessionName,
-    replayableMessages.map((message) => ({ ...message })),
+    replayableMessages.map((message) => cloneRuntimeMessageForStash(message, reconciliationIds)),
   );
 }
 
@@ -167,6 +169,7 @@ export function stashCurrentTurnRuntimeMessages(
   sessionName: string,
   session: RuntimeHostStreamingSession,
   stashedMessages: Map<string, RuntimeUserMessage[]>,
+  options: { reconcileCurrentTurn?: boolean } = {},
 ): number {
   const currentTurnPendingIds = new Set(session.currentTurnPendingIds ?? []);
   if (currentTurnPendingIds.size === 0) {
@@ -177,7 +180,9 @@ export function stashCurrentTurnRuntimeMessages(
     session.currentTurnSuperseded
       ? getReplayablePendingRuntimeMessages(session)
       : session.pendingMessages.filter((message) => message.pendingId && currentTurnPendingIds.has(message.pendingId))
-  ).map((message) => ({ ...message }));
+  ).map((message) =>
+    cloneRuntimeMessageForStash(message, options.reconcileCurrentTurn ? currentTurnPendingIds : undefined),
+  );
 
   if (messages.length === 0) {
     return 0;
@@ -185,6 +190,17 @@ export function stashCurrentTurnRuntimeMessages(
 
   stashedMessages.set(sessionName, messages);
   return messages.length;
+}
+
+function cloneRuntimeMessageForStash(
+  message: RuntimeUserMessage,
+  reconciliationIds?: ReadonlySet<string>,
+): RuntimeUserMessage {
+  const reconcile = Boolean(message.pendingId && reconciliationIds?.has(message.pendingId));
+  return {
+    ...message,
+    ...(reconcile ? { replay: true } : {}),
+  };
 }
 
 export function getReplayablePendingRuntimeMessages(session: RuntimeHostStreamingSession): RuntimeUserMessage[] {

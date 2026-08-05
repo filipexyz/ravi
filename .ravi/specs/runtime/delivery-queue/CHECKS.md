@@ -34,6 +34,8 @@
 - Bypassing a blocked prompt atom is traceable.
 - Batched prompt atoms keep their internal order.
 - Daemon restart resume preserves queued prompt atoms.
+- Ambiguously interrupted atoms retain their logical delivery id.
+- Later fresh atoms remain separate from an ambiguous recovery replay.
 
 ## Observability
 
@@ -52,4 +54,5 @@
 - Human channel input arrives during active text generation and can interrupt after safe barriers.
 - Human channel input that interrupts a turn is delivered next without replaying the superseded turn first.
 - Unexpected provider interruption without a newer prompt retains the active prompt for recovery replay.
+- Intentional provider/model restart is not marked as ambiguous and retains normal batching behavior.
 - Edited-message rebase prompt can interrupt as a documented exception.

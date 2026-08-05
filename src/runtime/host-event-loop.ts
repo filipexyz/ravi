@@ -1056,7 +1056,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       return;
     }
 
-    const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages);
+    const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
+      reconcileCurrentTurn: true,
+    });
     if (stashedCount === 0) {
       return;
     }
@@ -1241,6 +1243,21 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
 
     const closeResources = async () => {
+      if (streaming.internalAbortReason === PROVIDER_TURN_INACTIVITY_REASON) {
+        try {
+          // Inactivity is a turn-level failure. Give the provider a chance to
+          // terminate that turn before releasing its transport so a resumed
+          // session does not inherit an ambiguous in-flight operation.
+          await runtimeSession.interrupt();
+        } catch (error) {
+          log.warn("Failed to interrupt inactive provider turn before close", {
+            runId,
+            sessionName,
+            provider: runtimeSession.provider,
+            error,
+          });
+        }
+      }
       await Promise.all([
         (async () => {
           try {
@@ -1304,7 +1321,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         timedOut = true;
         recordProviderTurnInactivityTimeout(idleMs);
-        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages);
+        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, {
+          reconcileCurrentTurn: true,
+        });
         restartStashedReason = PROVIDER_TURN_INACTIVITY_REASON;
         streaming.interrupted = true;
         streaming.turnActive = false;

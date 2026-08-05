@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { DEFAULT_DELIVERY_BARRIER, type DeliveryBarrier } from "../delivery-barriers.js";
 import type { RuntimeTraceTurnStartResult } from "../session-trace/runtime-trace.js";
 import { dbHasActiveTaskForSession } from "../tasks/task-db.js";
@@ -117,7 +118,20 @@ export function getDeliverableRuntimeMessages(
   if (firstIsolatedTurnIndex > 0) {
     return deliverable.slice(0, firstIsolatedTurnIndex);
   }
-  return deliverable;
+
+  // An ambiguously stashed turn keeps its original delivery identity. Messages
+  // that arrived later must wait for that turn to reconcile instead of being
+  // folded into a different prompt and accidentally acknowledged with it.
+  const firstIsReplay = deliverable[0]?.replay === true;
+  if (!firstIsReplay) {
+    const firstReplayIndex = deliverable.findIndex((message) => message.replay === true);
+    return firstReplayIndex < 0 ? deliverable : deliverable.slice(0, firstReplayIndex);
+  }
+  const firstReplayId = deliverable[0]?.clientMessageId;
+  const nextAttemptIndex = deliverable.findIndex(
+    (message) => message.replay !== true || (firstReplayId !== undefined && message.clientMessageId !== firstReplayId),
+  );
+  return nextAttemptIndex < 0 ? deliverable : deliverable.slice(0, nextAttemptIndex);
 }
 
 export function hasDeliverableRuntimeMessages(sessionName: string, session: RuntimeHostStreamingSession): boolean {
@@ -228,6 +242,13 @@ export async function* createRuntimeMessageGenerator({
     const yieldedIds = new Set(
       deliverable.map((message) => message.pendingId).filter((pendingId): pendingId is string => Boolean(pendingId)),
     );
+    const replay = deliverable.every((message) => message.replay === true && Boolean(message.clientMessageId));
+    const clientMessageId = replay
+      ? (deliverable[0]?.clientMessageId ?? `ravi:${randomUUID()}`)
+      : `ravi:${randomUUID()}`;
+    for (const message of deliverable) {
+      message.clientMessageId = clientMessageId;
+    }
     session.currentTurnPendingIds = [...yieldedIds];
     session.currentTurnSuperseded = false;
     const combined = deliverable.map((m) => m.message.content).join("\n\n");
@@ -281,6 +302,8 @@ export async function* createRuntimeMessageGenerator({
       message: { role: "user" as const, content: combined },
       session_id: "",
       parent_tool_use_id: null,
+      clientMessageId,
+      replay,
     };
 
     await turnCompleted;
