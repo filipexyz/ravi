@@ -75,6 +75,12 @@ Canonical fork/rebase is defined in `.ravi/specs/runtime/session-continuity/fork
 
 Message edits require current-session rebase: replace the edited prompt atom, preserve later atoms, and materialize a provider state that reflects the rebuilt conversation.
 
+Each logical prompt delivery carries a stable `clientMessageId` across host recovery. If a provider can accept a
+turn without delivering its terminal events, its adapter must reconcile that identity against resumed provider
+state before replaying the prompt. It must reattach to an active turn, hydrate an already completed turn, or
+exclude a failed/interrupted turn before submitting the prompt again. Restarting without this reconciliation can
+duplicate side effects; disabling resume loses valid conversation continuity.
+
 ## Start Request
 
 `RuntimeStartRequest` is the only start contract:

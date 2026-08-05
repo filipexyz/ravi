@@ -422,6 +422,58 @@ describe("RuntimeSessionDispatcher runtime recovery", () => {
       },
     });
   });
+
+  it("allows one automatic restart for an inactive provider turn", async () => {
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const alerts: RuntimeRecoveryExhaustedAlertInput[] = [];
+    const dispatcher = new RuntimeSessionDispatcher({
+      instanceId: "test",
+      maxConcurrentSessions: 10,
+      interactiveReservedSessions: 0,
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data });
+      },
+      notifyRuntimeRecoveryExhausted: async (input) => {
+        alerts.push(input);
+      },
+      getConfigModel: () => "test-model",
+    });
+    dispatcher.stashedMessages.set("inactive-turn", [
+      createQueuedRuntimeUserMessage({ prompt: "retry once", _agentId: "main" }),
+    ]);
+
+    let starts = 0;
+    dispatcher.startStreamingSession = mock(async () => {
+      starts++;
+    });
+    const recovery = dispatcher as unknown as {
+      restartStashedSession(sessionName: string, reason: string): Promise<void>;
+    };
+
+    await recovery.restartStashedSession("inactive-turn", "provider_turn_inactive");
+    await recovery.restartStashedSession("inactive-turn", "provider_turn_inactive");
+
+    expect(starts).toBe(1);
+    expect(dispatcher.stashedMessages.has("inactive-turn")).toBe(true);
+    expect(alerts).toEqual([
+      expect.objectContaining({
+        sessionName: "inactive-turn",
+        reason: "provider_turn_inactive",
+        restartAttempts: 1,
+        stashedQueueSize: 1,
+      }),
+    ]);
+    expect(emitted).toEqual([
+      expect.objectContaining({
+        topic: "ravi.session.inactive-turn.runtime",
+        data: expect.objectContaining({
+          type: "dispatch.restart_suppressed",
+          reason: "provider_turn_inactive",
+          restartAttempts: 1,
+        }),
+      }),
+    ]);
+  });
 });
 
 describe("RuntimeSessionDispatcher native runtime steer", () => {

@@ -54,7 +54,13 @@ import {
 
 const log = logger.child("runtime:session-dispatcher");
 const RUNTIME_EVENT_LOOP_CLOSED_REASON = "runtime_event_loop_closed";
+const PROVIDER_TURN_INACTIVE_REASON = "provider_turn_inactive";
 const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
+const MAX_PROVIDER_TURN_INACTIVE_RESTARTS = 1;
+const RUNTIME_RECOVERY_RESTART_LIMITS: Readonly<Partial<Record<string, number>>> = {
+  [RUNTIME_EVENT_LOOP_CLOSED_REASON]: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+  [PROVIDER_TURN_INACTIVE_REASON]: MAX_PROVIDER_TURN_INACTIVE_RESTARTS,
+};
 const RUNTIME_RESTART_EXHAUSTED_ERROR =
   "Runtime provider stream closed repeatedly. Automatic recovery was stopped; send a new message to retry.";
 const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
@@ -113,7 +119,7 @@ export class RuntimeSessionDispatcher {
   readonly inFlightStartPrompts = new Map<string, RuntimeLaunchPrompt>();
   readonly pendingStartSessions = new Set<string>();
   readonly startingSessions = new Set<string>();
-  private readonly runtimeEventLoopRestartAttempts = new Map<string, number>();
+  private readonly runtimeRecoveryRestartAttempts = new Map<string, Readonly<Partial<Record<string, number>>>>();
 
   constructor(private readonly options: RuntimeSessionDispatcherOptions) {}
 
@@ -321,7 +327,7 @@ export class RuntimeSessionDispatcher {
       log.info("Clearing session start reservations", { count: this.startReservations.size });
       this.startReservations.clear();
     }
-    this.runtimeEventLoopRestartAttempts.clear();
+    this.runtimeRecoveryRestartAttempts.clear();
 
     if (this.streamingSessions.size === 0) {
       return;
@@ -657,7 +663,7 @@ export class RuntimeSessionDispatcher {
 
   async handlePromptImmediate(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
     if (!prompt._resumeStashedMessages) {
-      this.runtimeEventLoopRestartAttempts.delete(sessionName);
+      this.runtimeRecoveryRestartAttempts.delete(sessionName);
     }
     const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
@@ -1446,11 +1452,10 @@ export class RuntimeSessionDispatcher {
     }
 
     const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
-    const restartAttempt =
-      reason === RUNTIME_EVENT_LOOP_CLOSED_REASON
-        ? (this.runtimeEventLoopRestartAttempts.get(sessionName) ?? 0) + 1
-        : undefined;
-    if (restartAttempt !== undefined && restartAttempt > MAX_RUNTIME_EVENT_LOOP_RESTARTS) {
+    const maxRestartAttempts = RUNTIME_RECOVERY_RESTART_LIMITS[reason];
+    const previousRestarts = this.runtimeRecoveryRestartAttempts.get(sessionName);
+    const restartAttempt = maxRestartAttempts === undefined ? undefined : (previousRestarts?.[reason] ?? 0) + 1;
+    if (restartAttempt !== undefined && maxRestartAttempts !== undefined && restartAttempt > maxRestartAttempts) {
       recordRuntimeTraceEvent({
         sessionKey: traceIdentity.sessionKey,
         sessionName,
@@ -1464,7 +1469,7 @@ export class RuntimeSessionDispatcher {
         error: RUNTIME_RESTART_EXHAUSTED_ERROR,
         payloadJson: {
           reason,
-          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          restartAttempts: maxRestartAttempts,
           stashedQueueSize: stashed.length,
           resumeStashedMessages: true,
           userResponseSuppressed: true,
@@ -1481,7 +1486,7 @@ export class RuntimeSessionDispatcher {
         .safeEmit(`ravi.session.${sessionName}.runtime`, {
           type: "dispatch.restart_suppressed",
           reason,
-          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          restartAttempts: maxRestartAttempts,
           stashedQueueSize: stashed.length,
           resumeStashedMessages: true,
           userResponseSuppressed: true,
@@ -1502,7 +1507,7 @@ export class RuntimeSessionDispatcher {
         agentId: traceIdentity.agentId ?? prompt._agentId,
         provider: prompt._runtimeProviderId,
         reason,
-        restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+        restartAttempts: maxRestartAttempts,
         stashedQueueSize: stashed.length,
       });
       await this.options
@@ -1512,7 +1517,7 @@ export class RuntimeSessionDispatcher {
           ...((traceIdentity.agentId ?? prompt._agentId) ? { agentId: traceIdentity.agentId ?? prompt._agentId } : {}),
           ...(prompt._runtimeProviderId ? { provider: prompt._runtimeProviderId } : {}),
           reason,
-          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          restartAttempts: maxRestartAttempts,
           stashedQueueSize: stashed.length,
           ...((prompt.context?.messageId ?? prompt.source?.sourceMessageId)
             ? { sourceMessageId: prompt.context?.messageId ?? prompt.source?.sourceMessageId }
@@ -1528,7 +1533,10 @@ export class RuntimeSessionDispatcher {
       return;
     }
     if (restartAttempt !== undefined) {
-      this.runtimeEventLoopRestartAttempts.set(sessionName, restartAttempt);
+      this.runtimeRecoveryRestartAttempts.set(sessionName, {
+        ...previousRestarts,
+        [reason]: restartAttempt,
+      });
     }
 
     recordRuntimeTraceEvent({
@@ -1546,7 +1554,7 @@ export class RuntimeSessionDispatcher {
         ...(restartAttempt !== undefined
           ? {
               restartAttempt,
-              maxRestartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+              maxRestartAttempts,
             }
           : {}),
         stashedQueueSize: stashed.length,

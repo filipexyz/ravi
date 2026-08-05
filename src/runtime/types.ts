@@ -65,6 +65,10 @@ export interface RuntimePromptMessage {
   };
   session_id: string;
   parent_tool_use_id: string | null;
+  /** Stable identity for one logical delivery attempt across runtime restarts. */
+  clientMessageId?: string;
+  /** True when the host is recovering this delivery from an ambiguous provider outcome. */
+  replay?: boolean;
 }
 
 export interface RuntimeToolUse {

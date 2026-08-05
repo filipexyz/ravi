@@ -35,7 +35,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Execution mode: subprocess app-server JSON-RPC transport.
 - Fallback transport: JSON CLI exec exists in code but the app-server path is the active rich integration.
 - Session state: thread/session id plus cwd in `RuntimeSessionState.params`.
-- Resume: supported only when stored cwd matches current cwd.
+- Resume: supported only when stored cwd matches current cwd. Ambiguous delivery recovery resumes the same thread and reconciles the logical delivery id before any replay.
 - Fork: not supported by provider capabilities, even though native control can fork threads operationally. Canonical fork requires the `runtime/session-continuity/forks` materializer to map Codex threads/turns back to Ravi prompt atoms.
 - Partial text: supported through `agent_message.delta`.
 - Dynamic tools: disabled. Ravi CLI registry commands MUST NOT be advertised as Codex native dynamic tools.
@@ -49,6 +49,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 ## Event Mapping
 
 - `thread/started` -> `thread.started`
+- `turn/start` response -> `turn.started` binding when the response carries the native turn before a notification
 - `turn/started` -> `turn.started`
 - `item/started` -> `item.started` and optionally `tool.started`
 - `item/completed` -> `item.completed`, `assistant.message`, and optionally `tool.completed`
@@ -72,6 +73,10 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 ## Invariants
 
 - The provider MUST initialize or resume one native thread before starting a turn.
+- The provider MUST pass the stable logical delivery id as `clientUserMessageId` on `turn/start`.
+- The provider MUST capture the native turn id from the `turn/start` response even when `turn/started` is delayed or absent.
+- Before replaying an ambiguously delivered turn on resume, the provider MUST reconcile `clientUserMessageId`: hydrate a completed match, reattach to an in-progress match, or fork immediately before an interrupted/failed match and replay once on the fork.
+- The provider MUST NOT issue a second `turn/start` for an ambiguous delivery before reconciliation finishes. A legacy exact-prompt fallback MAY match only the newest native turn that lacks a client id.
 - The provider MUST NOT start overlapping turns on one app-server transport.
 - The provider MUST NOT send Ravi dynamic tool definitions to Codex.
 - The provider MUST NOT route Codex app-server dynamic tool calls through `hostServices.executeDynamicTool`.
@@ -92,6 +97,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - The provider MUST include metadata with thread, turn, and item ids whenever the native event carries them.
 - The provider MUST sync Codex skills during `prepareSession` and include the skill catalog in provider instructions.
 - Codex `thread.fork` MUST remain a provider-native runtime control until a canonical fork materializer proves parent/child thread mapping, optional child rollback, prompt atom replay, and provider state persistence.
+- A provider-local fork used only to recover one failed ambiguous turn MUST NOT advertise canonical `supportsSessionFork`.
 
 ## Validation
 
@@ -106,6 +112,7 @@ The Codex provider adapts the Codex app-server transport into Ravi's canonical r
 - Dynamic tool call response shape changes can make the native runtime keep waiting after the tool completes; `contentItems` is the app-server contract.
 - Reaction-only or silent turns can finish natively but remain active in Ravi if `turn.complete` is not normalized.
 - Native raw events may continue while the logical turn is stuck; missing `turn/completed` is an adapter/runtime bug, not normal completion.
+- A dropped callback after `turn/start` creates an ambiguous delivery outcome. Resume reconciliation and the host circuit breaker MUST prevent duplicate starts and unbounded recovery loops.
 - Synthetic and native dynamic tool item events can both appear from unexpected app-server requests; the adapter MUST dedupe canonical tool lifecycle by tool call id and keep the request non-operational.
 - The app-server transport rejects overlapping turns; dispatcher must queue/interrupt instead of yielding concurrent prompts.
 - Synthetic tool starts are needed when a completed item arrives without a previous start.
