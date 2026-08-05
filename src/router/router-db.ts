@@ -2113,6 +2113,247 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_session_turns_run
       ON session_turns(run_id, started_at);
 
+    CREATE TABLE IF NOT EXISTS runtime_boot_epochs (
+      boot_epoch TEXT PRIMARY KEY,
+      instance_id TEXT NOT NULL,
+      pid INTEGER NOT NULL CHECK(pid > 0),
+      status TEXT NOT NULL CHECK(status IN ('active','graceful_stopped','abandoned')),
+      started_at INTEGER NOT NULL,
+      last_heartbeat_at INTEGER NOT NULL,
+      lease_expires_at INTEGER NOT NULL,
+      graceful_stopped_at INTEGER,
+      abandoned_at INTEGER,
+      stop_reason TEXT,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      CHECK(
+        (status = 'active' AND graceful_stopped_at IS NULL AND abandoned_at IS NULL)
+        OR (status = 'graceful_stopped' AND graceful_stopped_at IS NOT NULL AND abandoned_at IS NULL)
+        OR (status = 'abandoned' AND abandoned_at IS NOT NULL AND graceful_stopped_at IS NULL)
+      ),
+      CHECK(last_heartbeat_at >= started_at),
+      CHECK(lease_expires_at > last_heartbeat_at),
+      CHECK(graceful_stopped_at IS NULL OR graceful_stopped_at >= last_heartbeat_at),
+      CHECK(abandoned_at IS NULL OR abandoned_at >= lease_expires_at),
+      CHECK(updated_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_boot_epochs_status
+      ON runtime_boot_epochs(instance_id, status, lease_expires_at, started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS runtime_recovery_runs (
+      recovery_run_id TEXT PRIMARY KEY,
+      mode TEXT NOT NULL CHECK(mode IN ('inspect','dry-run','apply')),
+      boot_epoch TEXT,
+      status TEXT NOT NULL CHECK(status IN ('running','complete','failed')),
+      started_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      summary_json TEXT,
+      error TEXT,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(boot_epoch) REFERENCES runtime_boot_epochs(boot_epoch) ON DELETE RESTRICT,
+      CHECK(
+        (status = 'running' AND completed_at IS NULL)
+        OR (status != 'running' AND completed_at IS NOT NULL)
+      ),
+      CHECK(completed_at IS NULL OR completed_at >= started_at),
+      CHECK(updated_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_recovery_runs_started
+      ON runtime_recovery_runs(started_at DESC);
+
+    CREATE TABLE IF NOT EXISTS runtime_turn_attempts (
+      attempt_id TEXT PRIMARY KEY,
+      turn_id TEXT NOT NULL,
+      recovered_from_attempt_id TEXT,
+      run_id TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      session_name TEXT,
+      agent_id TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      model TEXT NOT NULL,
+      boot_epoch TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('running','complete','failed','interrupted','timeout','aborted')),
+      started_at INTEGER NOT NULL,
+      lease_expires_at INTEGER NOT NULL,
+      last_heartbeat_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      request_blob_sha256 TEXT,
+      user_prompt_sha256 TEXT,
+      system_prompt_sha256 TEXT,
+      checkpoint_json TEXT,
+      origin_kind TEXT NOT NULL CHECK(origin_kind IN ('human','cron','trigger','session-followup','heartbeat','observer','task','routine','daemon-restart','automation','agent','system','background','unknown')),
+      source_json TEXT,
+      turn_provenance_json TEXT,
+      task_barrier_task_id TEXT,
+      delivery_barrier TEXT NOT NULL CHECK(delivery_barrier IN ('immediate_interrupt','after_tool','after_response','after_task')),
+      pending_ids_json TEXT,
+      started_tool INTEGER NOT NULL DEFAULT 0 CHECK(started_tool IN (0,1)),
+      materialized_output INTEGER NOT NULL DEFAULT 0 CHECK(materialized_output IN (0,1)),
+      recovery_claim_id TEXT,
+      recovery_status TEXT,
+      recovery_reason TEXT,
+      recovery_run_id TEXT,
+      recovered_at INTEGER,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(boot_epoch) REFERENCES runtime_boot_epochs(boot_epoch) ON DELETE RESTRICT,
+      FOREIGN KEY(recovered_from_attempt_id) REFERENCES runtime_turn_attempts(attempt_id) ON DELETE RESTRICT,
+      FOREIGN KEY(recovery_run_id) REFERENCES runtime_recovery_runs(recovery_run_id) ON DELETE RESTRICT,
+      FOREIGN KEY(recovery_claim_id) REFERENCES runtime_recovery_claims(claim_id) ON DELETE RESTRICT,
+      CHECK(
+        (status = 'running' AND completed_at IS NULL)
+        OR (status != 'running' AND completed_at IS NOT NULL)
+      ),
+      CHECK(last_heartbeat_at >= started_at),
+      CHECK(lease_expires_at > last_heartbeat_at),
+      CHECK(completed_at IS NULL OR completed_at >= last_heartbeat_at),
+      CHECK(request_blob_sha256 IS NOT NULL OR checkpoint_json IS NOT NULL),
+      CHECK(updated_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_turn_attempts_recovery
+      ON runtime_turn_attempts(status, boot_epoch, lease_expires_at, recovery_status);
+    CREATE INDEX IF NOT EXISTS idx_runtime_turn_attempts_session
+      ON runtime_turn_attempts(session_key, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_runtime_turn_attempts_turn
+      ON runtime_turn_attempts(turn_id, started_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_runtime_turn_attempts_claim
+      ON runtime_turn_attempts(recovery_claim_id)
+      WHERE recovery_claim_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS runtime_prompt_queue (
+      queue_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+      queue_item_id TEXT NOT NULL UNIQUE,
+      dedupe_key TEXT NOT NULL UNIQUE,
+      immutable_fingerprint TEXT NOT NULL,
+      session_key TEXT NOT NULL,
+      session_name TEXT,
+      agent_id TEXT,
+      lane_key TEXT NOT NULL CHECK(lane_key IN ('immediate_interrupt','after_tool','after_response','after_task')),
+      boot_epoch TEXT,
+      status TEXT NOT NULL CHECK(status IN ('queued','leased','starting','delivered','complete','cancelled','superseded','failed','requeued','deferred')),
+      origin_kind TEXT NOT NULL CHECK(origin_kind IN ('human','cron','trigger','session-followup','heartbeat','observer','task','routine','daemon-restart','automation','agent','system','background','unknown')),
+      delivery_barrier TEXT NOT NULL CHECK(delivery_barrier IN ('immediate_interrupt','after_tool','after_response','after_task')),
+      task_barrier_task_id TEXT,
+      pending_id TEXT,
+      prompt_json TEXT NOT NULL,
+      runtime_message_json TEXT NOT NULL,
+      queued_at INTEGER NOT NULL,
+      lease_owner TEXT,
+      lease_expires_at INTEGER,
+      delivered_attempt_id TEXT,
+      delivered_turn_id TEXT,
+      completed_at INTEGER,
+      recovery_claim_id TEXT,
+      recovery_status TEXT,
+      recovery_reason TEXT,
+      recovery_run_id TEXT,
+      recovered_at INTEGER,
+      metadata_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(boot_epoch) REFERENCES runtime_boot_epochs(boot_epoch) ON DELETE RESTRICT,
+      FOREIGN KEY(delivered_attempt_id) REFERENCES runtime_turn_attempts(attempt_id) ON DELETE RESTRICT,
+      FOREIGN KEY(recovery_run_id) REFERENCES runtime_recovery_runs(recovery_run_id) ON DELETE RESTRICT,
+      FOREIGN KEY(recovery_claim_id) REFERENCES runtime_recovery_claims(claim_id) ON DELETE RESTRICT,
+      CHECK((status IN ('complete','cancelled','superseded','failed') AND completed_at IS NOT NULL) OR (status NOT IN ('complete','cancelled','superseded','failed') AND completed_at IS NULL)),
+      CHECK(lease_expires_at IS NULL OR lease_owner IS NOT NULL),
+      CHECK(status NOT IN ('leased','starting') OR (boot_epoch IS NOT NULL AND lease_owner IS NOT NULL AND lease_expires_at IS NOT NULL)),
+      CHECK(status != 'delivered' OR (delivered_attempt_id IS NOT NULL AND delivered_turn_id IS NOT NULL)),
+      CHECK(completed_at IS NULL OR completed_at >= queued_at),
+      CHECK(updated_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_prompt_queue_status
+      ON runtime_prompt_queue(status, boot_epoch, queue_sequence);
+    CREATE INDEX IF NOT EXISTS idx_runtime_prompt_queue_session_lane
+      ON runtime_prompt_queue(session_key, lane_key, queue_sequence);
+    CREATE INDEX IF NOT EXISTS idx_runtime_prompt_queue_pending
+      ON runtime_prompt_queue(session_key, pending_id);
+    CREATE INDEX IF NOT EXISTS idx_runtime_prompt_queue_lease
+      ON runtime_prompt_queue(status, lease_expires_at)
+      WHERE lease_expires_at IS NOT NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_runtime_prompt_queue_claim
+      ON runtime_prompt_queue(recovery_claim_id)
+      WHERE recovery_claim_id IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS runtime_recovery_candidates (
+      recovery_run_id TEXT NOT NULL,
+      candidate_key TEXT NOT NULL,
+      candidate_type TEXT NOT NULL CHECK(candidate_type IN ('turn_attempt','prompt_queue','legacy_session_turn')),
+      session_key TEXT NOT NULL,
+      session_name TEXT,
+      attempt_id TEXT,
+      turn_id TEXT,
+      queue_item_id TEXT,
+      decision TEXT NOT NULL CHECK(decision IN ('resume','requeue','reconcile_interrupted','defer_next_schedule','ignore_stale','manual_review')),
+      reason_code TEXT NOT NULL,
+      action TEXT NOT NULL,
+      action_status TEXT NOT NULL CHECK(action_status IN ('pending','not_applied','claimed','applied','failed')),
+      claim_id TEXT,
+      details_json TEXT,
+      result_json TEXT,
+      action_completed_at INTEGER,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (recovery_run_id, candidate_key),
+      FOREIGN KEY(recovery_run_id) REFERENCES runtime_recovery_runs(recovery_run_id) ON DELETE RESTRICT,
+      FOREIGN KEY(attempt_id) REFERENCES runtime_turn_attempts(attempt_id) ON DELETE RESTRICT,
+      FOREIGN KEY(queue_item_id) REFERENCES runtime_prompt_queue(queue_item_id) ON DELETE RESTRICT,
+      FOREIGN KEY(claim_id) REFERENCES runtime_recovery_claims(claim_id) ON DELETE RESTRICT,
+      CHECK(
+        (candidate_type = 'turn_attempt' AND attempt_id IS NOT NULL AND queue_item_id IS NULL)
+        OR (candidate_type = 'prompt_queue' AND queue_item_id IS NOT NULL AND attempt_id IS NULL)
+        OR (candidate_type = 'legacy_session_turn' AND attempt_id IS NULL AND queue_item_id IS NULL AND turn_id IS NOT NULL)
+      ),
+      CHECK(
+        (action_status = 'pending' AND claim_id IS NULL AND action_completed_at IS NULL)
+        OR (action_status = 'claimed' AND claim_id IS NOT NULL AND action_completed_at IS NULL)
+        OR (action_status IN ('applied','failed') AND claim_id IS NOT NULL AND action_completed_at IS NOT NULL)
+        OR (action_status = 'not_applied' AND action_completed_at IS NOT NULL)
+      ),
+      CHECK(action_completed_at IS NULL OR action_completed_at >= created_at),
+      CHECK(updated_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_recovery_candidates_session
+      ON runtime_recovery_candidates(session_key, created_at);
+
+    CREATE TABLE IF NOT EXISTS runtime_recovery_claims (
+      candidate_key TEXT PRIMARY KEY,
+      claim_id TEXT NOT NULL UNIQUE,
+      candidate_type TEXT NOT NULL CHECK(candidate_type IN ('turn_attempt','prompt_queue')),
+      session_key TEXT NOT NULL,
+      attempt_id TEXT,
+      queue_item_id TEXT,
+      recovery_run_id TEXT NOT NULL,
+      claimed_by_boot_epoch TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('claimed','applied','failed')),
+      claimed_at INTEGER NOT NULL,
+      completed_at INTEGER,
+      result_json TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      FOREIGN KEY(recovery_run_id, candidate_key) REFERENCES runtime_recovery_candidates(recovery_run_id, candidate_key) ON DELETE RESTRICT,
+      FOREIGN KEY(recovery_run_id) REFERENCES runtime_recovery_runs(recovery_run_id) ON DELETE RESTRICT,
+      FOREIGN KEY(claimed_by_boot_epoch) REFERENCES runtime_boot_epochs(boot_epoch) ON DELETE RESTRICT,
+      FOREIGN KEY(attempt_id) REFERENCES runtime_turn_attempts(attempt_id) ON DELETE RESTRICT,
+      FOREIGN KEY(queue_item_id) REFERENCES runtime_prompt_queue(queue_item_id) ON DELETE RESTRICT,
+      CHECK(
+        (candidate_type = 'turn_attempt' AND attempt_id IS NOT NULL AND queue_item_id IS NULL)
+        OR (candidate_type = 'prompt_queue' AND queue_item_id IS NOT NULL AND attempt_id IS NULL)
+      ),
+      CHECK(
+        (status = 'claimed' AND completed_at IS NULL)
+        OR (status != 'claimed' AND completed_at IS NOT NULL)
+      ),
+      CHECK(completed_at IS NULL OR completed_at >= claimed_at),
+      CHECK(updated_at >= created_at)
+    );
+    CREATE INDEX IF NOT EXISTS idx_runtime_recovery_claims_run
+      ON runtime_recovery_claims(recovery_run_id, claimed_at);
+
     CREATE TABLE IF NOT EXISTS daemon_restart_epochs (
       restart_epoch TEXT PRIMARY KEY,
       reason TEXT NOT NULL,
