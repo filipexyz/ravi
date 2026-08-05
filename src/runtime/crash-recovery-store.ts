@@ -69,6 +69,8 @@ export type RuntimeRecoveryDecision = (typeof RUNTIME_RECOVERY_DECISIONS)[number
 export type RuntimeRecoveryActionStatus = "pending" | "not_applied" | "claimed" | "applied" | "failed";
 export type RuntimeRecoveryClaimStatus = "claimed" | "applied" | "failed";
 
+export const RUNTIME_TURN_ATTEMPT_INPUT_MUTATED_METADATA_KEY = "inputMutated";
+
 type JsonRecord = Record<string, unknown>;
 
 export interface RuntimeBootEpochRecord {
@@ -1390,9 +1392,10 @@ export function markRuntimeTurnAttemptSafety(input: {
   attemptId: string;
   startedTool?: true;
   materializedOutput?: true;
+  inputMutated?: true;
   markedAt?: number;
 }): RuntimeTurnAttemptRecord {
-  if (!input.startedTool && !input.materializedOutput) {
+  if (!input.startedTool && !input.materializedOutput && !input.inputMutated) {
     throw new Error("At least one monotonic safety marker must be set");
   }
   const attemptId = requiredText(input.attemptId, "attemptId");
@@ -1413,15 +1416,23 @@ export function markRuntimeTurnAttemptSafety(input: {
       if (markedAt < current.updated_at) {
         throw new CrashRecoveryLedgerConflictError(`Cannot move attempt ${attemptId} safety timestamp backwards`);
       }
+      const currentMetadata = parseOptionalRecord(current.metadata_json, "runtime_turn_attempts.metadata_json");
+      const metadataJson = input.inputMutated
+        ? stringifyOptionalJson({
+            ...(currentMetadata ?? {}),
+            [RUNTIME_TURN_ATTEMPT_INPUT_MUTATED_METADATA_KEY]: true,
+          })
+        : current.metadata_json;
       const result = database
         .prepare(
           `UPDATE runtime_turn_attempts
            SET started_tool = MAX(started_tool, ?),
                materialized_output = MAX(materialized_output, ?),
+               metadata_json = ?,
                updated_at = MAX(updated_at, ?)
            WHERE attempt_id = ? AND status = 'running' AND recovery_claim_id IS NULL`,
         )
-        .run(input.startedTool ? 1 : 0, input.materializedOutput ? 1 : 0, markedAt, attemptId);
+        .run(input.startedTool ? 1 : 0, input.materializedOutput ? 1 : 0, metadataJson, markedAt, attemptId);
       if (result.changes !== 1) {
         throw new CrashRecoveryLedgerConflictError(`Attempt ${attemptId} lost its safety marker fence`);
       }
@@ -1431,6 +1442,10 @@ export function markRuntimeTurnAttemptSafety(input: {
     },
     { label: "runtime-crash-recovery-attempt-safety" },
   );
+}
+
+export function hasRuntimeTurnAttemptInputMutation(attempt: Pick<RuntimeTurnAttemptRecord, "metadata">): boolean {
+  return attempt.metadata?.[RUNTIME_TURN_ATTEMPT_INPUT_MUTATED_METADATA_KEY] === true;
 }
 
 export function terminalizeRuntimeTurnAttempt(input: {

@@ -78,7 +78,8 @@ normative: false
 - Provider and dispatcher terminal races share one first-terminal status and timestamp across the attempt and historical trace.
 - Normal completion, failure, interruption, timeout, host abort, restart, and unterminated stream exit leave no running attempt owned by a graceful boot.
 - Graceful shutdown terminalizes remaining attempts before terminalizing the boot and before database close.
-- Implicit native steer and host `turn.steer|turn.follow_up` are rejected until durable input journaling exists; `turn.interrupt` remains available.
+- Active implicit native steer persists `metadata.inputMutated=true` before provider control and becomes non-replayable; steer without a live attempt and unfenced host `turn.steer|turn.follow_up` remain rejected.
+- Unsafe ambiguous turns are offered for reconciliation only to a live provider handle that advertises client-message-id reconciliation; providers without that strategy never receive the current unsafe turn.
 
 ## Scope Guard
 

@@ -243,7 +243,7 @@ describe("runtime provider contract", () => {
         guarantee: "adapter",
       },
       skillVisibility: {
-        availability: "none",
+        availability: "provider",
         loadedState: "none",
       },
       supportsSessionResume: true,

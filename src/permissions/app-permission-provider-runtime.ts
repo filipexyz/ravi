@@ -1,5 +1,7 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { dirname } from "node:path";
+import { resolveRaviAppCommand } from "../apps/command.js";
 import { getContext } from "../cli/context.js";
 import {
   RAVI_APP_BUILTIN_OPERATION_HANDLERS,
@@ -119,15 +121,10 @@ export async function evaluateAppPermissionProvider(
       );
     }
 
-    const renderedCommand = renderCliCommand(command, {
-      appId: app.manifest?.id ?? app.id,
-      operationId: provider.operation,
-      args: [],
-    });
-    const run = await spawnShellCommand(renderedCommand, {
-      cwd: options.cwd,
+    const invocation = resolveRaviAppCommand(command);
+    const run = await spawnExecutable(invocation.executable, invocation.argv, {
+      cwd: dirname(app.path),
       env: buildPermissionProviderEnv(options.env),
-      mergeProcessEnv: false,
       capture: true,
       stdin: `${JSON.stringify(request)}\n`,
       timeoutMs: provider.timeoutMs ?? RAVI_APP_PERMISSION_PROVIDER_MAX_TIMEOUT_MS,
@@ -700,27 +697,12 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function renderCliCommand(template: string, input: { appId: string; operationId: string; args: string[] }): string {
-  let usedArgsPlaceholder = false;
-  const rendered = template.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (match, name: string) => {
-    if (name === "id" || name === "appId") return quoteShellArg(input.appId);
-    if (name === "operation" || name === "operationId") return quoteShellArg(input.operationId);
-    if (name === "args") {
-      usedArgsPlaceholder = true;
-      return input.args.map(quoteShellArg).join(" ");
-    }
-    return match;
-  });
-  if (usedArgsPlaceholder || input.args.length === 0) return rendered;
-  return `${rendered} ${input.args.map(quoteShellArg).join(" ")}`;
-}
-
-function spawnShellCommand(
-  command: string,
+function spawnExecutable(
+  executable: string,
+  argv: string[],
   options: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
-    mergeProcessEnv?: boolean;
     capture: boolean;
     stdin?: string;
     timeoutMs?: number;
@@ -734,10 +716,10 @@ function spawnShellCommand(
   truncated: boolean;
 }> {
   return new Promise((resolve) => {
-    const child = spawn(command, {
+    const child = spawn(executable, argv, {
       cwd: options.cwd ?? process.cwd(),
-      env: options.mergeProcessEnv === false ? options.env : { ...process.env, ...(options.env ?? {}) },
-      shell: true,
+      env: options.env,
+      shell: false,
       stdio: options.capture ? ["pipe", "pipe", "pipe"] : "inherit",
     });
     let stdout = "";
@@ -776,6 +758,11 @@ function spawnShellCommand(
       child.stdin?.on("error", () => {});
       child.stdin?.end(options.stdin ?? "");
     }
+    child.on("error", (error) => {
+      const next = appendOutputChunk(stderr, error.message, maxOutputBytes);
+      stderr = next.value;
+      truncated ||= next.truncated;
+    });
     child.on("close", (exitCode) => {
       if (timeout) clearTimeout(timeout);
       resolve({ exitCode, stdout, stderr, timedOut, truncated });
@@ -808,11 +795,6 @@ function parseJsonOutput(stdout: string): unknown {
 function localOperationName(appId: string, operationId: string): string {
   const prefix = `${appId.replace(/\//g, ".")}.`;
   return operationId.startsWith(prefix) ? operationId.slice(prefix.length) : operationId;
-}
-
-function quoteShellArg(value: string): string {
-  if (/^[A-Za-z0-9_./:=@-]+$/.test(value)) return value;
-  return `'${value.replace(/'/g, "'\\''")}'`;
 }
 
 function toSummary(record: RaviAppManifestRecord): Record<string, unknown> {

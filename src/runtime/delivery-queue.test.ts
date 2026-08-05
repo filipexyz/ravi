@@ -283,7 +283,7 @@ describe("runtime delivery queue", () => {
     await generator.return(undefined);
   });
 
-  it("replays the active prompt after an unexpected provider interruption", async () => {
+  it("replays an active prompt marked for provider reconciliation", async () => {
     const active = createQueuedRuntimeUserMessage(channelPrompt("keep this work", "turn-a"));
     const session = makeStreamingSession({
       pendingMessages: [active],
@@ -294,7 +294,12 @@ describe("runtime delivery queue", () => {
       stashedMessages: new Map(),
     });
 
-    await generator.next();
+    const first = await generator.next();
+    expect(first.value).toMatchObject({
+      clientMessageId: expect.stringContaining("ravi:"),
+      replay: false,
+    });
+    active.replay = true;
     session.interrupted = true;
     session.turnActive = false;
     session.onTurnComplete?.();
@@ -302,12 +307,64 @@ describe("runtime delivery queue", () => {
     const replay = await generator.next();
     expect(replay.value).toMatchObject({
       message: { content: "keep this work" },
+      clientMessageId: first.value?.clientMessageId,
+      replay: true,
     });
     expect(session.pendingMessages).toEqual([active]);
 
     session.done = true;
     session.onTurnComplete?.();
     await generator.return(undefined);
+  });
+
+  it("keeps later messages out of a stashed delivery attempt", () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "original" });
+    active.clientMessageId = "ravi:original";
+    active.replay = true;
+    const later = createQueuedRuntimeUserMessage({ prompt: "later" });
+    const session = makeStreamingSession({
+      pendingMessages: [active, later],
+    });
+
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([active]);
+  });
+
+  it("keeps a prior delivery attempt out of a fresh unassigned batch", () => {
+    const fresh = createQueuedRuntimeUserMessage({ prompt: "fresh" });
+    const priorAttempt = createQueuedRuntimeUserMessage({ prompt: "prior attempt" });
+    priorAttempt.clientMessageId = "ravi:prior";
+    priorAttempt.replay = true;
+    const session = makeStreamingSession({
+      pendingMessages: [fresh, priorAttempt],
+    });
+
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([fresh]);
+  });
+
+  it("keeps intentional restarts mergeable even when the old turn had a delivery id", () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "original" });
+    active.clientMessageId = "ravi:original";
+    const later = createQueuedRuntimeUserMessage({ prompt: "later" });
+    const session = makeStreamingSession({
+      pendingMessages: [active, later],
+    });
+
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([active, later]);
+  });
+
+  it("marks only the active delivery as ambiguous when stashing inactivity recovery", () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "active" });
+    const later = createQueuedRuntimeUserMessage({ prompt: "later" });
+    const session = makeStreamingSession({
+      pendingMessages: [active, later],
+      currentTurnPendingIds: [active.pendingId!],
+    });
+    const stash = new Map<string, RuntimeUserMessage[]>();
+
+    stashPendingRuntimeMessages("dev", session, stash, { reconcileCurrentTurn: true });
+
+    expect(stash.get("dev")?.map((message) => message.replay)).toEqual([true, undefined]);
+    expect(stash.get("dev")?.[0]?.terminalReplayAllowed).toBe(true);
   });
 
   it("stashes only the successor when an interrupted turn was intentionally superseded", () => {
@@ -343,8 +400,21 @@ describe("runtime delivery queue", () => {
     } as unknown as RuntimeCrashRecoveryCoordinator;
     const stash = new Map<string, RuntimeUserMessage[]>();
 
-    expect(stashPendingRuntimeMessages("dev", session, stash, crashRecovery)).toBe(1);
+    expect(stashPendingRuntimeMessages("dev", session, stash, { crashRecovery })).toBe(1);
     expect(stash.get("dev")).toEqual([successor]);
+
+    const reconciliationStash = new Map<string, RuntimeUserMessage[]>();
+    expect(
+      stashPendingRuntimeMessages("dev", session, reconciliationStash, {
+        crashRecovery,
+        reconcileCurrentTurn: true,
+      }),
+    ).toBe(2);
+    expect(reconciliationStash.get("dev")?.[0]).toMatchObject({
+      replay: true,
+      terminalReplayAllowed: false,
+    });
+    expect(reconciliationStash.get("dev")?.[1]?.replay).toBeUndefined();
   });
 
   it("never replays a completed physical turn while preserving its independent successors", () => {

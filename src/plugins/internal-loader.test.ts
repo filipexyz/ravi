@@ -22,8 +22,13 @@ describe("internal plugin packaging", () => {
     };
     const system = artifact.plugins.find((plugin) => plugin.name === "ravi-system");
     const paths = system?.files.map((file) => file.path) ?? [];
+    const developer = artifact.plugins.find((plugin) => plugin.name === "ravi-dev");
+    const developerPaths = developer?.files.map((file) => file.path) ?? [];
 
     expect(paths).toContain("apps/apps/ravi.app.json");
     expect(paths).toContain("apps/youtube/ravi.app.json");
+    expect(developerPaths).toContain("skills/app-creator/SKILL.md");
+    expect(developerPaths).toContain("skills/app-creator/references/review-checklist.md");
+    expect(developerPaths).toContain("skills/app-creator/references/acceptance-cases.md");
   });
 });

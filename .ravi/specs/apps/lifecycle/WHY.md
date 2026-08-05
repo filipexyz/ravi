@@ -15,8 +15,12 @@ that gateway consumers cannot reliably distinguish from transport failures.
 
 ## Decisions
 
-- Delete only touches files the scaffold itself would create. Implementation
-  files, runtime storage, and credentials are preserved.
+- Delete only touches generated contract artifacts explicitly listed by the
+  lifecycle contract. Implementation files, runtime storage, and credentials
+  are preserved.
+- The thin generated `cli.ts` is a starting implementation intended for
+  immediate editing, so delete preserves it rather than guessing whether its
+  contents are still boilerplate.
 - Delete supports dry-run so agents and operators can preview side effects.
 - Typed errors use a shared class with `code`, `message`, `status`, and
   `evidence` so all surfaces (CLI, JSON, gateway) can render them consistently.

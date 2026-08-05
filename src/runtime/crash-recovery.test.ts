@@ -154,6 +154,7 @@ class FakeCrashRecoveryStore implements RuntimeCrashRecoveryCoordinatorStore {
       leaseExpiresAt: this.markSafetyLeaseExpiresAt ?? attempt.leaseExpiresAt,
       startedTool: attempt.startedTool || input.startedTool === true,
       materializedOutput: attempt.materializedOutput || input.materializedOutput === true,
+      metadata: input.inputMutated ? { ...(attempt.metadata ?? {}), inputMutated: true } : attempt.metadata,
       updatedAt: input.markedAt!,
     };
     this.attempts.set(input.attemptId, marked);
@@ -567,10 +568,12 @@ describe("RuntimeCrashRecoveryCoordinator", () => {
       attemptId: "attempt-markers",
       startedTool: true,
       materializedOutput: true,
+      inputMutated: true,
       markedAt: 2_400,
     });
     expect(marked.startedTool).toBe(true);
     expect(marked.materializedOutput).toBe(true);
+    expect(marked.metadata).toEqual({ inputMutated: true });
     expect(inputOf<"markTurnAttemptSafety">(store.calls[2]!)).toMatchObject({ markedAt: 2_400 });
 
     setNow(2_600);
@@ -579,6 +582,7 @@ describe("RuntimeCrashRecoveryCoordinator", () => {
         attemptId: "attempt-markers",
         startedTool: true,
         materializedOutput: true,
+        inputMutated: true,
       }),
     ).toBe(marked);
     expect(store.calls.filter((call) => call.operation === "markSafety")).toHaveLength(1);

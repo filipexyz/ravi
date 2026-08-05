@@ -6,7 +6,7 @@ import type {
   RuntimeBootEpochRecord,
   RuntimeTurnAttemptRecord,
 } from "./crash-recovery-store.js";
-import { sqliteCrashRecoveryStore } from "./crash-recovery-store.js";
+import { RUNTIME_TURN_ATTEMPT_INPUT_MUTATED_METADATA_KEY, sqliteCrashRecoveryStore } from "./crash-recovery-store.js";
 
 export const DEFAULT_CRASH_RECOVERY_LEASE_MS = 30_000;
 export const DEFAULT_CRASH_RECOVERY_HEARTBEAT_INTERVAL_MS = 10_000;
@@ -364,12 +364,19 @@ export class RuntimeCrashRecoveryCoordinator {
   markTurnAttemptSafety(input: RuntimeCrashRecoverySafetyInput): RuntimeTurnAttemptRecord {
     const { observedAt } = this.observeLiveBoot(`mark turn attempt safety for ${input.attemptId}`);
     const activeAttempt = this.requireLiveActiveAttempt(input.attemptId, observedAt);
-    if (!input.startedTool && !input.materializedOutput) {
+    if (!input.startedTool && !input.materializedOutput && !input.inputMutated) {
       throw new Error("At least one monotonic safety marker must be set");
     }
+    const expectedMetadata = input.inputMutated
+      ? {
+          ...(activeAttempt.record.metadata ?? {}),
+          [RUNTIME_TURN_ATTEMPT_INPUT_MUTATED_METADATA_KEY]: true,
+        }
+      : activeAttempt.record.metadata;
     if (
       (!input.startedTool || activeAttempt.record.startedTool) &&
-      (!input.materializedOutput || activeAttempt.record.materializedOutput)
+      (!input.materializedOutput || activeAttempt.record.materializedOutput) &&
+      (!input.inputMutated || activeAttempt.record.metadata?.[RUNTIME_TURN_ATTEMPT_INPUT_MUTATED_METADATA_KEY] === true)
     ) {
       return activeAttempt.record;
     }
@@ -391,7 +398,7 @@ export class RuntimeCrashRecoveryCoordinator {
       attempt.leaseExpiresAt !== activeAttempt.record.leaseExpiresAt ||
       attempt.startedTool !== (activeAttempt.record.startedTool || input.startedTool === true) ||
       attempt.materializedOutput !== (activeAttempt.record.materializedOutput || input.materializedOutput === true) ||
-      !hasSameJsonValue(attempt.metadata, activeAttempt.record.metadata) ||
+      !hasSameJsonValue(attempt.metadata, expectedMetadata) ||
       attempt.updatedAt !== markedAt
     ) {
       throw this.enterFailClosed(`Crash recovery store returned an invalid marked attempt ${input.attemptId}`);

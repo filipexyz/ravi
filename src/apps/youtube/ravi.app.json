@@ -56,6 +56,9 @@
       ]
     }
   },
+  "context": {
+    "allow": ["execute:group:yt"]
+  },
   "operations": {
     "youtube.check": {
       "interface": "builtin",

@@ -14,7 +14,7 @@ import { dbHasActiveAssignedTaskForSession, dbHasActiveTaskForSession } from "..
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
-import type { RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
+import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import {
   createQueuedRuntimeUserMessage,
   getRuntimePromptDeliveryBarrier,
@@ -63,9 +63,16 @@ import {
 
 const log = logger.child("runtime:session-dispatcher");
 const RUNTIME_EVENT_LOOP_CLOSED_REASON = "runtime_event_loop_closed";
+const PROVIDER_TURN_INACTIVE_REASON = "provider_turn_inactive";
 const MAX_RUNTIME_EVENT_LOOP_RESTARTS = 2;
+const MAX_PROVIDER_TURN_INACTIVE_RESTARTS = 1;
+const RUNTIME_RECOVERY_RESTART_LIMITS: Readonly<Partial<Record<string, number>>> = {
+  [RUNTIME_EVENT_LOOP_CLOSED_REASON]: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+  [PROVIDER_TURN_INACTIVE_REASON]: MAX_PROVIDER_TURN_INACTIVE_RESTARTS,
+};
 const RUNTIME_RESTART_EXHAUSTED_ERROR =
   "Runtime provider stream closed repeatedly. Automatic recovery was stopped; send a new message to retry.";
+const NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS = 30_000;
 const IDLE_GAP_RECOVERY_MS = Math.max(1_000, Number(process.env.RAVI_RUNTIME_IDLE_GAP_RECOVERY_MS) || 5_000);
 
 interface DebounceState {
@@ -122,7 +129,7 @@ export class RuntimeSessionDispatcher {
   readonly inFlightStartPrompts = new Map<string, RuntimeLaunchPrompt>();
   readonly pendingStartSessions = new Set<string>();
   readonly startingSessions = new Set<string>();
-  private readonly runtimeEventLoopRestartAttempts = new Map<string, number>();
+  private readonly runtimeRecoveryRestartAttempts = new Map<string, Readonly<Partial<Record<string, number>>>>();
 
   constructor(private readonly options: RuntimeSessionDispatcherOptions) {}
 
@@ -357,7 +364,7 @@ export class RuntimeSessionDispatcher {
       log.info("Clearing session start reservations", { count: this.startReservations.size });
       this.startReservations.clear();
     }
-    this.runtimeEventLoopRestartAttempts.clear();
+    this.runtimeRecoveryRestartAttempts.clear();
 
     if (this.streamingSessions.size === 0) {
       return;
@@ -460,7 +467,9 @@ export class RuntimeSessionDispatcher {
 
     if (session.pendingMessages.length > 0) {
       log.info("Stashing aborted messages", { sessionName, count: session.pendingMessages.length });
-      stashPendingRuntimeMessages(sessionName, session, this.stashedMessages, this.options.crashRecovery);
+      stashPendingRuntimeMessages(sessionName, session, this.stashedMessages, {
+        crashRecovery: this.options.crashRecovery,
+      });
     }
 
     log.info("Aborting streaming session", { sessionName, done: session.done, provenance });
@@ -549,7 +558,9 @@ export class RuntimeSessionDispatcher {
 
     const hasStashedMessages = streaming.pendingMessages.length > 0;
     if (hasStashedMessages) {
-      stashPendingRuntimeMessages(sessionName, streaming, this.stashedMessages, this.options.crashRecovery);
+      stashPendingRuntimeMessages(sessionName, streaming, this.stashedMessages, {
+        crashRecovery: this.options.crashRecovery,
+      });
     }
     streaming.currentModel = model;
     recordRuntimeTraceEvent({
@@ -720,7 +731,7 @@ export class RuntimeSessionDispatcher {
 
   async handlePromptImmediate(sessionName: string, prompt: RuntimeLaunchPrompt): Promise<void> {
     if (!prompt._resumeStashedMessages) {
-      this.runtimeEventLoopRestartAttempts.delete(sessionName);
+      this.runtimeRecoveryRestartAttempts.delete(sessionName);
     }
     const routerConfig = configStore.getConfig();
     const sessionEntry = getSessionByName(sessionName);
@@ -783,7 +794,9 @@ export class RuntimeSessionDispatcher {
         });
 
         if (existing.pendingMessages.length > 0) {
-          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, this.options.crashRecovery);
+          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, {
+            crashRecovery: this.options.crashRecovery,
+          });
         }
 
         recordRuntimeTraceEvent({
@@ -835,7 +848,9 @@ export class RuntimeSessionDispatcher {
             currentThinking: existing.currentThinking ?? null,
             requestedThinking: requestedRuntime.options.thinking ?? null,
           });
-          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, this.options.crashRecovery);
+          stashPendingRuntimeMessages(sessionName, existing, this.stashedMessages, {
+            crashRecovery: this.options.crashRecovery,
+          });
           recordRuntimeTraceEvent({
             sessionKey: sessionEntry?.sessionKey ?? sessionName,
             sessionName,
@@ -1559,11 +1574,10 @@ export class RuntimeSessionDispatcher {
     }
 
     const traceIdentity = this.resolvePendingStartTraceIdentity(sessionName, prompt);
-    const restartAttempt =
-      reason === RUNTIME_EVENT_LOOP_CLOSED_REASON
-        ? (this.runtimeEventLoopRestartAttempts.get(sessionName) ?? 0) + 1
-        : undefined;
-    if (restartAttempt !== undefined && restartAttempt > MAX_RUNTIME_EVENT_LOOP_RESTARTS) {
+    const maxRestartAttempts = RUNTIME_RECOVERY_RESTART_LIMITS[reason];
+    const previousRestarts = this.runtimeRecoveryRestartAttempts.get(sessionName);
+    const restartAttempt = maxRestartAttempts === undefined ? undefined : (previousRestarts?.[reason] ?? 0) + 1;
+    if (restartAttempt !== undefined && maxRestartAttempts !== undefined && restartAttempt > maxRestartAttempts) {
       recordRuntimeTraceEvent({
         sessionKey: traceIdentity.sessionKey,
         sessionName,
@@ -1577,7 +1591,7 @@ export class RuntimeSessionDispatcher {
         error: RUNTIME_RESTART_EXHAUSTED_ERROR,
         payloadJson: {
           reason,
-          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          restartAttempts: maxRestartAttempts,
           stashedQueueSize: stashed.length,
           resumeStashedMessages: true,
           userResponseSuppressed: true,
@@ -1594,7 +1608,7 @@ export class RuntimeSessionDispatcher {
         .safeEmit(`ravi.session.${sessionName}.runtime`, {
           type: "dispatch.restart_suppressed",
           reason,
-          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          restartAttempts: maxRestartAttempts,
           stashedQueueSize: stashed.length,
           resumeStashedMessages: true,
           userResponseSuppressed: true,
@@ -1615,7 +1629,7 @@ export class RuntimeSessionDispatcher {
         agentId: traceIdentity.agentId ?? prompt._agentId,
         provider: prompt._runtimeProviderId,
         reason,
-        restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+        restartAttempts: maxRestartAttempts,
         stashedQueueSize: stashed.length,
       });
       await this.options
@@ -1625,7 +1639,7 @@ export class RuntimeSessionDispatcher {
           ...((traceIdentity.agentId ?? prompt._agentId) ? { agentId: traceIdentity.agentId ?? prompt._agentId } : {}),
           ...(prompt._runtimeProviderId ? { provider: prompt._runtimeProviderId } : {}),
           reason,
-          restartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+          restartAttempts: maxRestartAttempts,
           stashedQueueSize: stashed.length,
           ...((prompt.context?.messageId ?? prompt.source?.sourceMessageId)
             ? { sourceMessageId: prompt.context?.messageId ?? prompt.source?.sourceMessageId }
@@ -1641,7 +1655,10 @@ export class RuntimeSessionDispatcher {
       return;
     }
     if (restartAttempt !== undefined) {
-      this.runtimeEventLoopRestartAttempts.set(sessionName, restartAttempt);
+      this.runtimeRecoveryRestartAttempts.set(sessionName, {
+        ...previousRestarts,
+        [reason]: restartAttempt,
+      });
     }
 
     recordRuntimeTraceEvent({
@@ -1659,7 +1676,7 @@ export class RuntimeSessionDispatcher {
         ...(restartAttempt !== undefined
           ? {
               restartAttempt,
-              maxRestartAttempts: MAX_RUNTIME_EVENT_LOOP_RESTARTS,
+              maxRestartAttempts,
             }
           : {}),
         stashedQueueSize: stashed.length,
@@ -1771,7 +1788,9 @@ export class RuntimeSessionDispatcher {
       },
     });
 
-    stashPendingRuntimeMessages(sessionName, current, this.stashedMessages, this.options.crashRecovery);
+    stashPendingRuntimeMessages(sessionName, current, this.stashedMessages, {
+      crashRecovery: this.options.crashRecovery,
+    });
     recordStreamingTurnInterruptedTrace(
       this.options.crashRecovery,
       sessionName,
@@ -1793,6 +1812,10 @@ export class RuntimeSessionDispatcher {
     sessionKey = sessionName,
   ): Promise<"accepted" | "fallback"> {
     if (!canUseNativeRuntimeSteer(existing, barrier)) {
+      return "fallback";
+    }
+
+    if (!fenceRuntimeNativeSteerInput(existing, this.options.crashRecovery)) {
       return "fallback";
     }
 
@@ -1872,13 +1895,36 @@ export class RuntimeSessionDispatcher {
   }
 }
 
+export function fenceRuntimeNativeSteerInput(
+  session: Pick<RuntimeHostStreamingSession, "currentCrashRecoveryAttemptId" | "currentTurnInputMutated">,
+  crashRecovery: Pick<RuntimeCrashRecoveryCoordinator, "markTurnAttemptSafety">,
+): boolean {
+  const attemptId = session.currentCrashRecoveryAttemptId;
+  if (!attemptId) return false;
+
+  crashRecovery.markTurnAttemptSafety({ attemptId, inputMutated: true });
+  if (session.currentCrashRecoveryAttemptId !== attemptId) return false;
+
+  session.currentTurnInputMutated = true;
+  return true;
+}
+
 export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, barrier: DeliveryBarrier): boolean {
-  // Prompt-bearing native controls mutate physical provider input without
-  // extending the immutable attempt request. Keep input on the host queue until
-  // the durable append-only input journal can fence native steer safely.
-  void session;
-  void barrier;
-  return false;
+  const supportsNativeSteer =
+    session.queryHandle.concurrentInputStrategy === "native_steer" && Boolean(session.queryHandle.control);
+  const activeTurnIsFresh = Date.now() - session.lastActivity <= NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS;
+
+  return (
+    barrier === "after_tool" &&
+    supportsNativeSteer &&
+    session.turnActive &&
+    Boolean(session.currentCrashRecoveryAttemptId) &&
+    activeTurnIsFresh &&
+    !session.done &&
+    !session.starting &&
+    !session.compacting &&
+    !session.toolRunning
+  );
 }
 
 function buildDebouncedRuntimePrompts(messages: RuntimeLaunchPrompt[]): RuntimeLaunchPrompt[] {
@@ -2263,6 +2309,7 @@ function recordStreamingTurnInterruptedTrace(
           completedAt: requestedCompletedAt,
           startedTool: terminalAttempt.startedTool === true || session.currentTurnToolStarted === true,
           materializedOutput: terminalAttempt.materializedOutput === true,
+          inputMutated: hasRuntimeTurnAttemptInputMutation(terminalAttempt) || session.currentTurnInputMutated === true,
         };
       } catch (error) {
         if (!crashRecovery.ownershipFailure) {

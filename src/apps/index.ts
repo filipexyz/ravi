@@ -1,4 +1,6 @@
 export * from "./types.js";
+export * from "./builder.js";
+export * from "./contract-eval.js";
 export * from "./service.js";
 export * from "./scaffold.js";
 export * from "./import-cli.js";

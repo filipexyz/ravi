@@ -48,6 +48,9 @@ That gives us a smaller core and a more pluggable app ecosystem.
   provider.
 - The implementation supports a provider-runtime facade before arbitrary
   external provider commands. Provider-owned config is not Ravi core.
+- The typed JSON envelope is limited to the authorization hook because a
+  provider must make a deterministic bounded decision. It does not define how
+  Apps talk to Ravi.
 
 ## Rejected Alternatives
 
@@ -65,6 +68,8 @@ That gives us a smaller core and a more pluggable app ecosystem.
   side-effect-free and fast.
 - **Let app provider allow bypass all other providers.** Rejected because it
   creates privilege escalation. Provider composition must be explicit.
+- **Reuse the provider JSON ABI as the general App protocol.** Rejected because
+  normal Apps are CLI processes and use child-context CLI composition.
 
 ## Migration Direction
 

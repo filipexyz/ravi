@@ -32,13 +32,13 @@ normative: true
 
 ## Intent
 
-Define when a CLI should be treated as a Ravi App and how it connects to the
-Ravi OS application ecosystem.
+Define the executable contract for every Ravi App and how the app CLI connects
+to Ravi OS.
 
-A CLI App is not just an executable. It is a domain application whose primary
-interface is a CLI and whose behavior is safe for agents to operate through
-stable commands, machine-readable output, context-key authorization, and a
-teaching skill.
+A Ravi App is a domain CLI with stable commands, explicit machine output when
+needed, context-key authorization, and a teaching skill. The app can also run
+standalone when its domain permits, but Ravi-launched execution always uses a
+delegated child context.
 
 ## Invariants
 
@@ -59,25 +59,38 @@ teaching skill.
 - Commands MUST return or print enough structured information for an agent to
   decide the next step without scraping prose.
 - Errors MUST explain what failed, why it failed, and how to correct it.
-- A CLI App that runs inside Ravi runtime MUST receive `RAVI_CONTEXT_KEY` and
+- A CLI command's transport contract is argv, optional documented stdin,
+  stdout, stderr, and exit status.
+- Ravi MUST launch declared App CLI commands as executable plus argv with no
+  shell evaluation. User-provided arguments MUST remain separate literal argv
+  elements.
+- `--json` MUST mean machine-readable command output only. It MUST NOT define a
+  separate App host protocol, callback protocol, or JSON-RPC transport.
+- A CLI App launched by Ravi MUST receive a fresh child `RAVI_CONTEXT_KEY` and
   resolve identity through `ravi context whoami`, `ravi context check`, or
   `ravi context authorize`.
+- A CLI App MUST use ordinary public `ravi ...` commands when it needs Ravi
+  services. It MUST NOT depend on private runtime imports or reconstruct a Ravi
+  client protocol.
 - A CLI App MUST NOT print raw context keys, secrets, or bearer tokens.
 - A CLI App MUST declare least-privilege capabilities for sensitive actions.
-  It MUST NOT rely on broad inherited permission unless the launcher explicitly
-  needs `--inherit` and documents why.
+  The launcher MUST derive the child ceiling from manifest `context.allow`.
+- `--inherit` MUST NOT be the default launch mode. Any exception MUST be
+  explicit, reviewed, and documented outside the app manifest.
 - Stateful CLI Apps SHOULD use domain-specific SQLite storage when persistence
   adds reuse, lineage, audit, cache value, or durable asset tracking.
 - If a CLI App persists artifacts, it SHOULD store normalized input, output,
   metadata, hash, version, dependencies, source, and timestamps where useful.
 - The skill for a CLI App MUST be a teaching layer. It MUST NOT hide missing
   CLI behavior by asking the agent to improvise around weak commands.
-- First-party Ravi CLI Apps that live in `src/cli/commands` SHOULD use the
-  decorator registry so the same command surface can feed the CLI, SDK gateway,
-  OpenAPI, and generated clients.
+- A first-party App CLI MAY be implemented as a registered static Ravi command
+  under `src/cli/commands` and use the decorator registry for its command
+  contract. App-facing UI, SDK, tool, and automation callers MUST still enter
+  through the generic App Router; decorator metadata MUST NOT become a second
+  App operation executor.
 - CLI Apps with streaming or interactive operations MUST NOT expose those
-  operations through the single-shot SDK dispatcher. Use `@CliOnly()` or a
-  dedicated stream/control channel.
+  operations through a single-shot caller. They remain CLI operations and
+  SHOULD use `@CliOnly()` or a TTY/stream-capable launcher.
 - CLIs that are intended to be imported into Ravi Apps SHOULD expose a safe
   self-description command such as `manifest --json`, `app-manifest --json`, or
   `ravi manifest --json`.
@@ -111,7 +124,8 @@ CLI App commands SHOULD expose:
 - bounded defaults for reads;
 - clear next-step hints in human output.
 
-For first-party Ravi commands, decorators SHOULD carry the machine contract:
+For a first-party App CLI implemented as a static Ravi command, decorators
+SHOULD carry the CLI machine contract:
 
 - `@Group` for stable domain namespace;
 - `@Command` for operation name and description;
@@ -121,19 +135,47 @@ For first-party Ravi commands, decorators SHOULD carry the machine contract:
 - `@Returns.binary()` only for raw response bodies;
 - `@CliOnly()` for process, interactive, or streaming operations.
 
+Generated SDK/OpenAPI metadata for the underlying static command is a
+compatibility surface of Ravi CLI. It MUST NOT replace App Router authorization
+or be referenced as an independent App executor in `ravi.app.json`.
+
 ## Runtime Context
 
 For app launchers that call a CLI from inside Ravi:
 
-1. The parent SHOULD issue a child context with `ravi context issue`.
-2. The child process SHOULD receive only `RAVI_CONTEXT_KEY`.
-3. The app SHOULD resolve identity with `ravi context whoami`.
-4. The app SHOULD check or request specific capability with `ravi context check`
-   or `ravi context authorize`.
-5. Audit lineage SHOULD preserve `parentContextId`, `issuedFor`, source, and
-   the concrete command/action performed.
+1. The router MUST authorize the caller against `app:<app-id>`.
+2. The router MUST issue a fresh child context with stable
+   `cliName: "app:<app-id>"`, explicit capabilities from `context.allow`, and a
+   bounded TTL.
+3. The router MUST fail before process spawn if any required child capability
+   cannot be issued.
+4. The launcher MUST build an allowlisted child environment, removing the
+   parent `RAVI_CONTEXT_KEY`, legacy Ravi identity variables, and unrelated
+   credentials or secrets before setting the child `RAVI_CONTEXT_KEY`.
+5. The child process MUST receive the child key as its only Ravi identity
+   credential. Normal non-secret process environment such as `PATH` MAY remain.
+   The process MUST run from the bounded app/package root and without a shell.
+6. The app MUST resolve identity with `ravi context whoami`.
+7. The app MUST use `ravi context check` or `ravi context authorize` before a
+   Ravi action whose capability is not already known.
+8. The app performs the action through the ordinary Ravi CLI, for example
+   `ravi artifacts create`, `ravi sessions read`, or another public command.
+9. Audit lineage MUST preserve the child context id, `parentContextId`,
+   `issuedFor`, issuance mode, source app/operation, and result without storing
+   the raw key.
 
 Legacy env vars may exist for compatibility, but they are not the app contract.
+The router MUST NOT synthesize them for App execution.
+
+## Surface Adapters
+
+- The generic App Router MAY be called from CLI, UI, SDK, runtime tool, or
+  automation surfaces.
+- All adapters MUST resolve the same app operation and launch the same app CLI.
+- An adapter MAY request JSON output for its own consumption. That does not
+  change the App-to-Ravi integration model.
+- App manifests MUST NOT require separate SDK, tool, or stream executors for
+  the same operation.
 
 ## Validation
 
@@ -159,6 +201,13 @@ Legacy env vars may exist for compatibility, but they are not the app contract.
 - Missing `@Returns` turns SDK output into `unknown` and weakens app clients.
 - External CLIs that use session env vars instead of `RAVI_CONTEXT_KEY` lose
   least privilege and lineage.
+- Launchers that reuse the parent context key turn the app into a privilege
+  escalation surface.
+- Launchers that use a shell or inherit the full parent environment expose
+  command injection and credential leakage.
+- Separate SDK/tool implementations drift from the CLI and multiply auth paths.
+- Treating JSON output as a transport protocol adds a contract that process
+  execution already provides.
 - CLIs without self-description force `apps/import-cli` into low-confidence
   help parsing.
 - A skill that tells agents to "figure it out" instead of exposing a reliable

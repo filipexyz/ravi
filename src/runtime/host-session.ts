@@ -2,7 +2,7 @@ import type { DeliveryBarrier, DeliveryBarrierSource } from "../delivery-barrier
 import type { SessionEntry } from "../router/index.js";
 import type { TurnProvenance } from "./turn-provenance.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
-import type { RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
+import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type {
   ChannelBackendPromptMetadata,
@@ -154,6 +154,8 @@ export interface RuntimeHostStreamingSession {
   currentTurnSuperseded?: boolean;
   /** Whether the current provider turn has started at least one tool. Used to block unsafe replay. */
   currentTurnToolStarted?: boolean;
+  /** Whether prompt-bearing provider control mutated the physical turn after its immutable handoff. */
+  currentTurnInputMutated?: boolean;
   /** Whether tool effects are fenced durably before execution or only observed asynchronously. */
   toolEffectFence?: RuntimeToolEffectFence;
   /** Current Session Trace turn ID while a provider turn is active. */
@@ -171,6 +173,7 @@ export interface RuntimeHostStreamingSession {
     completedAt: number;
     startedTool: boolean;
     materializedOutput: boolean;
+    inputMutated?: boolean;
   };
   /** Durable handoff failed before the prompt reached the provider. */
   durableTurnPreparationFailed?: boolean;
@@ -192,20 +195,30 @@ export function createPendingRuntimeHandle(provider: RuntimeProviderId): Runtime
   };
 }
 
+export interface RuntimeMessageStashOptions {
+  crashRecovery?: RuntimeCrashRecoveryCoordinator;
+  /** Reconcile an ambiguously delivered turn before deciding whether it may be retried. */
+  reconcileCurrentTurn?: boolean;
+}
+
 export function stashPendingRuntimeMessages(
   sessionName: string,
   session: RuntimeHostStreamingSession,
   stashedMessages: Map<string, RuntimeUserMessage[]>,
-  crashRecovery?: RuntimeCrashRecoveryCoordinator,
+  options: RuntimeMessageStashOptions = {},
 ): number {
-  const replayableMessages = getCrashRecoveryReplayablePendingRuntimeMessages(session, crashRecovery);
+  const safety = getRuntimeTurnReplaySafety(session, options.crashRecovery);
+  const replayableMessages = options.reconcileCurrentTurn
+    ? getReplayablePendingRuntimeMessages(session)
+    : getCrashRecoveryReplayablePendingRuntimeMessages(session, options.crashRecovery);
   if (replayableMessages.length === 0) {
     return 0;
   }
+  const reconciliationIds = options.reconcileCurrentTurn ? new Set(session.currentTurnPendingIds ?? []) : undefined;
 
   stashedMessages.set(
     sessionName,
-    replayableMessages.map((message) => ({ ...message })),
+    replayableMessages.map((message) => cloneRuntimeMessageForStash(message, reconciliationIds, safety.replayable)),
   );
   return replayableMessages.length;
 }
@@ -214,21 +227,33 @@ export function stashCurrentTurnRuntimeMessages(
   sessionName: string,
   session: RuntimeHostStreamingSession,
   stashedMessages: Map<string, RuntimeUserMessage[]>,
-  crashRecovery?: RuntimeCrashRecoveryCoordinator,
+  options: RuntimeMessageStashOptions = {},
 ): number {
   const currentTurnPendingIds = new Set(session.currentTurnPendingIds ?? []);
   if (currentTurnPendingIds.size === 0) {
     return 0;
   }
 
-  const safety = getRuntimeTurnReplaySafety(session, crashRecovery);
+  const safety = getRuntimeTurnReplaySafety(session, options.crashRecovery);
   const messages = (
-    safety.replayable
+    options.reconcileCurrentTurn
       ? session.currentTurnSuperseded
         ? getReplayablePendingRuntimeMessages(session)
         : session.pendingMessages.filter((message) => message.pendingId && currentTurnPendingIds.has(message.pendingId))
-      : getPendingRuntimeTurnSuccessors(session)
-  ).map((message) => ({ ...message }));
+      : safety.replayable
+        ? session.currentTurnSuperseded
+          ? getReplayablePendingRuntimeMessages(session)
+          : session.pendingMessages.filter(
+              (message) => message.pendingId && currentTurnPendingIds.has(message.pendingId),
+            )
+        : getPendingRuntimeTurnSuccessors(session)
+  ).map((message) =>
+    cloneRuntimeMessageForStash(
+      message,
+      options.reconcileCurrentTurn ? currentTurnPendingIds : undefined,
+      safety.replayable,
+    ),
+  );
 
   if (messages.length === 0) {
     return 0;
@@ -236,6 +261,18 @@ export function stashCurrentTurnRuntimeMessages(
 
   stashedMessages.set(sessionName, messages);
   return messages.length;
+}
+
+function cloneRuntimeMessageForStash(
+  message: RuntimeUserMessage,
+  reconciliationIds?: ReadonlySet<string>,
+  terminalReplayAllowed = true,
+): RuntimeUserMessage {
+  const reconcile = Boolean(message.pendingId && reconciliationIds?.has(message.pendingId));
+  return {
+    ...message,
+    ...(reconcile ? { replay: true, terminalReplayAllowed } : {}),
+  };
 }
 
 export function getReplayablePendingRuntimeMessages(session: RuntimeHostStreamingSession): RuntimeUserMessage[] {
@@ -257,6 +294,7 @@ export interface RuntimeTurnReplaySafety {
   replayable: boolean;
   startedTool: boolean;
   materializedOutput: boolean;
+  inputMutated: boolean;
   durableBinding: "none" | "active" | "terminal" | "missing";
 }
 
@@ -278,6 +316,7 @@ export function getRuntimeTurnReplaySafety(
       replayable: true,
       startedTool: false,
       materializedOutput: false,
+      inputMutated: false,
       durableBinding: "none",
     };
   }
@@ -288,19 +327,23 @@ export function getRuntimeTurnReplaySafety(
       replayable: false,
       startedTool: terminal?.startedTool === true || session.currentTurnToolStarted === true,
       materializedOutput: terminal?.materializedOutput === true,
+      inputMutated: terminal?.inputMutated === true || session.currentTurnInputMutated === true,
       durableBinding: "missing",
     };
   }
   if (terminal) {
     const startedTool = terminal.startedTool || session.currentTurnToolStarted === true;
+    const inputMutated = terminal.inputMutated === true || session.currentTurnInputMutated === true;
     return {
       replayable:
         terminal.status !== "complete" &&
         session.toolEffectFence === "host_write_ahead" &&
         !startedTool &&
-        !terminal.materializedOutput,
+        !terminal.materializedOutput &&
+        !inputMutated,
       startedTool,
       materializedOutput: terminal.materializedOutput,
+      inputMutated,
       durableBinding: "terminal",
     };
   }
@@ -313,14 +356,18 @@ export function getRuntimeTurnReplaySafety(
         replayable: false,
         startedTool: session.currentTurnToolStarted === true,
         materializedOutput: false,
+        inputMutated: session.currentTurnInputMutated === true,
         durableBinding: "missing",
       };
     }
     const startedTool = attempt.startedTool || session.currentTurnToolStarted === true;
+    const inputMutated = hasRuntimeTurnAttemptInputMutation(attempt) || session.currentTurnInputMutated === true;
     return {
-      replayable: session.toolEffectFence === "host_write_ahead" && !startedTool && !attempt.materializedOutput,
+      replayable:
+        session.toolEffectFence === "host_write_ahead" && !startedTool && !attempt.materializedOutput && !inputMutated,
       startedTool,
       materializedOutput: attempt.materializedOutput,
+      inputMutated,
       durableBinding: "active",
     };
   }
@@ -334,6 +381,7 @@ export function getRuntimeTurnReplaySafety(
       replayable: false,
       startedTool: session.currentTurnToolStarted === true,
       materializedOutput: false,
+      inputMutated: session.currentTurnInputMutated === true,
       durableBinding: "missing",
     };
   }
@@ -343,6 +391,7 @@ export function getRuntimeTurnReplaySafety(
       replayable: false,
       startedTool: true,
       materializedOutput: false,
+      inputMutated: session.currentTurnInputMutated === true,
       durableBinding: "missing",
     };
   }
@@ -351,6 +400,7 @@ export function getRuntimeTurnReplaySafety(
     replayable: true,
     startedTool: false,
     materializedOutput: false,
+    inputMutated: false,
     durableBinding: "none",
   };
 }

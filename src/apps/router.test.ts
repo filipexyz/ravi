@@ -1,11 +1,13 @@
 import { afterEach, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { runWithContext } from "../cli/context.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
+import { createRuntimeContext, getContextLineage } from "../runtime/context-registry.js";
 import { cleanupIsolatedRaviState } from "../test/ravi-state.js";
-import { maybeRunAppAliasRoute, resolveAppAliasInvocation, resolveRaviCliCommand, runAppOperation } from "./router.js";
+import { maybeRunAppAliasRoute, resolveAppAliasInvocation, runAppOperation } from "./router.js";
 
 const tempRoots: string[] = [];
 const tempStateDirs: string[] = [];
@@ -56,6 +58,9 @@ function manifest(id: string): Record<string, unknown> {
         health: `ravi ${id.split("/").join(" ")} check --json`,
       },
     },
+    context: {
+      allow: [],
+    },
     operations: {
       [`${prefix}.list`]: {
         interface: "builtin",
@@ -82,7 +87,7 @@ function manifest(id: string): Record<string, unknown> {
     permissions: {
       required: [],
       optional: [],
-      mutating: [],
+      mutating: [`${id}:write`],
     },
     health: {
       checks: [{ type: "builtin", handler: "apps.manifest.check" }],
@@ -161,6 +166,80 @@ console.log(JSON.stringify({
     "utf8",
   );
   return path;
+}
+
+function writeContextProbeApp(root: string): { appDir: string; scriptPath: string } {
+  const appDir = join(root, "src", "apps", "probe-app");
+  const scriptPath = join(appDir, "app-cli.mjs");
+  const cliEntrypoint = resolve(originalCwd, "src", "cli", "index.ts");
+  mkdirSync(appDir, { recursive: true });
+  writeFileSync(
+    scriptPath,
+    `
+const whoami = Bun.spawnSync({
+  cmd: [process.execPath, ${JSON.stringify(cliEntrypoint)}, "context", "whoami", "--json"],
+  cwd: process.cwd(),
+  env: process.env,
+  stdout: "pipe",
+  stderr: "pipe"
+});
+const stdout = new TextDecoder().decode(whoami.stdout).trim();
+const stderr = new TextDecoder().decode(whoami.stderr).trim();
+if (whoami.exitCode !== 0) {
+  console.error(stderr || "context whoami failed");
+  process.exit(whoami.exitCode || 1);
+}
+console.log(JSON.stringify({
+  argv: process.argv.slice(2),
+  cwd: process.cwd(),
+  env: {
+    childContextPresent: Boolean(process.env.RAVI_CONTEXT_KEY),
+    RAVI_SESSION_KEY: process.env.RAVI_SESSION_KEY ?? null,
+    RAVI_SESSION_NAME: process.env.RAVI_SESSION_NAME ?? null,
+    RAVI_AGENT_ID: process.env.RAVI_AGENT_ID ?? null,
+    APP_SECRET: process.env.APP_SECRET ?? null,
+    RAVI_APP_ID: process.env.RAVI_APP_ID ?? null,
+    RAVI_APP_OPERATION_ID: process.env.RAVI_APP_OPERATION_ID ?? null,
+    RAVI_APP_ROOT: process.env.RAVI_APP_ROOT ?? null
+  },
+  whoami: JSON.parse(stdout)
+}));
+`,
+    "utf8",
+  );
+  writeManifest(root, "probe-app", {
+    schema: "ravi.app/v1",
+    id: "probe-app",
+    name: "Context Probe App",
+    version: "0.1.0",
+    description: "Prove bounded Ravi App child-context execution.",
+    interfaces: {
+      cli: {
+        command: "bun app-cli.mjs",
+        json: true,
+      },
+    },
+    context: {
+      allow: ["execute:group:context"],
+    },
+    operations: {
+      "probe-app.inspect": {
+        interface: "cli",
+        command: "bun app-cli.mjs inspect {args}",
+        json: true,
+        mutating: false,
+      },
+    },
+    permissions: {
+      required: [],
+      optional: [],
+      mutating: [],
+    },
+    health: {
+      checks: [{ type: "builtin", handler: "apps.manifest.check" }],
+    },
+  });
+  return { appDir, scriptPath };
 }
 
 function providerManifest(root: string, id: string, options: { timeoutMs?: number } = {}): Record<string, unknown> {
@@ -370,25 +449,134 @@ describe("Ravi app router", () => {
     expect(realpathSync((result.result as { cwd: string }).cwd)).toBe(realpathSync(appDir));
   });
 
-  it("runs Ravi CLI app operations through the current installation", () => {
-    expect(
-      resolveRaviCliCommand("ravi yt health --json", {
-        execPath: "/opt/bun/bin/bun",
-        entrypoint: "/opt/ravi current/dist/bundle/index.js",
+  it("runs an external CLI through the public alias with a least-privilege child context", () => {
+    const root = makeRepo();
+    const { appDir } = writeContextProbeApp(root);
+    const cliEntrypoint = resolve(originalCwd, "src", "cli", "index.ts");
+    const markerPath = join(root, "shell-injection-marker");
+    const injectionArg = `$(touch ${markerPath})`;
+    const parent = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      capabilities: [
+        { permission: "use", objectType: "app", objectId: "probe-app" },
+        { permission: "execute", objectType: "group", objectId: "context" },
+      ],
+    });
+
+    const run = spawnSync(
+      process.execPath,
+      [cliEntrypoint, "probe-app", "inspect", injectionArg, ";", "literal value", "--json"],
+      {
+        cwd: root,
+        env: {
+          ...process.env,
+          RAVI_CONTEXT_KEY: parent.contextKey,
+          RAVI_SESSION_KEY: "legacy-session",
+          RAVI_SESSION_NAME: "legacy-name",
+          RAVI_AGENT_ID: "legacy-agent",
+          APP_SECRET: "must-not-leak",
+          RAVI_LOG_LEVEL: "error",
+          RAVI_CLI_LOG_LEVEL: "error",
+          RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+        },
+        encoding: "utf8",
+        timeout: 30_000,
+      },
+    );
+
+    expect(run.status).toBe(0);
+    expect(run.stderr).not.toContain("must-not-leak");
+    const payload = JSON.parse(run.stdout) as {
+      ok: boolean;
+      callerContextId: string;
+      childContextId: string;
+      result: {
+        argv: string[];
+        cwd: string;
+        env: Record<string, unknown>;
+        whoami: {
+          contextId: string;
+          kind: string;
+          capabilities: ContextCapability[];
+          metadata: Record<string, unknown>;
+          lineage: Record<string, unknown>;
+        };
+      };
+    };
+
+    expect(payload).toMatchObject({
+      ok: true,
+      callerContextId: parent.contextId,
+      result: {
+        argv: ["inspect", injectionArg, ";", "literal value"],
+        env: {
+          childContextPresent: true,
+          RAVI_SESSION_KEY: null,
+          RAVI_SESSION_NAME: null,
+          RAVI_AGENT_ID: null,
+          APP_SECRET: null,
+          RAVI_APP_ID: "probe-app",
+          RAVI_APP_OPERATION_ID: "probe-app.inspect",
+          RAVI_APP_ROOT: realpathSync(appDir),
+        },
+        whoami: {
+          kind: "app-runtime",
+          capabilities: [{ permission: "execute", objectType: "group", objectId: "context" }],
+          metadata: {
+            appId: "probe-app",
+            operationId: "probe-app.inspect",
+            source: "app-router",
+            parentContextId: parent.contextId,
+            issuedFor: "app:probe-app",
+            issuanceMode: "explicit",
+          },
+          lineage: {
+            parentContextId: parent.contextId,
+            issuedFor: "app:probe-app",
+            issuanceMode: "explicit",
+          },
+        },
+      },
+    });
+    expect(payload.childContextId).not.toBe(parent.contextId);
+    expect(payload.result.whoami.contextId).toBe(payload.childContextId);
+    expect(realpathSync(payload.result.cwd)).toBe(realpathSync(appDir));
+    expect(existsSync(markerPath)).toBe(false);
+    expect(run.stdout).not.toContain(parent.contextKey);
+
+    const lineage = getContextLineage(parent.contextId);
+    expect(lineage?.descendants.map((context) => context.contextId)).toContain(payload.childContextId);
+  }, 30_000);
+
+  it("fails before spawning when context.allow exceeds the caller context", async () => {
+    const root = makeRepo();
+    const { scriptPath } = writeContextProbeApp(root);
+    const markerPath = join(root, "should-not-spawn");
+    writeFileSync(
+      scriptPath,
+      `await Bun.write(${JSON.stringify(markerPath)}, "spawned"); console.log(JSON.stringify({ ok: true }));\n`,
+      "utf8",
+    );
+    const parent = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      capabilities: [{ permission: "use", objectType: "app", objectId: "probe-app" }],
+    });
+
+    const result = await runWithContext({ agentId: "main", context: parent }, () =>
+      runAppOperation({
+        appId: "probe-app",
+        operation: "inspect",
+        args: ["literal"],
+        json: true,
       }),
-    ).toBe("/opt/bun/bin/bun '/opt/ravi current/dist/bundle/index.js' yt health --json");
-    expect(
-      resolveRaviCliCommand("bun local-app.mjs --json", {
-        execPath: "/opt/bun/bin/bun",
-        entrypoint: "/opt/ravi/dist/bundle/index.js",
-      }),
-    ).toBe("bun local-app.mjs --json");
-    expect(
-      resolveRaviCliCommand("ravi yt info --json", {
-        execPath: "/opt/bun/bin/bun",
-        entrypoint: "dist/bundle/index.js",
-      }),
-    ).toBe(`/opt/bun/bin/bun ${join(process.cwd(), "dist/bundle/index.js")} yt info --json`);
+    );
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("Capability not granted by parent context: execute:group:context");
+    expect(result.childContextId).toBeUndefined();
+    expect(existsSync(markerPath)).toBe(false);
   });
 
   it("resolves dotted operation ids from whitespace-separated CLI tokens", async () => {

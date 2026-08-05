@@ -119,6 +119,9 @@ interface CodexCliTurnRequest {
   model?: string;
   effort?: string;
   prompt: string;
+  clientMessageId?: string;
+  replay?: boolean;
+  terminalReplayAllowed?: boolean;
   resume?: string;
   forkFrom?: string;
   systemPromptAppend: string;
@@ -173,6 +176,8 @@ interface ToolCompletedEvent {
 type PendingRequest = {
   resolve(value: Record<string, unknown>): void;
   reject(error: unknown): void;
+  timeout?: ReturnType<typeof setTimeout>;
+  onResponse?(value: Record<string, unknown>): void;
 };
 
 interface AppServerApprovalTurn {
@@ -285,6 +290,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
 
       return {
         provider: "codex",
+        ambiguousTurnRecoveryStrategy: "reconcile_by_client_message_id",
         concurrentInputStrategy: "interrupt",
         skillVisibility,
         events: normalizeCodexEvents(
@@ -575,6 +581,9 @@ async function* normalizeCodexEvents(
         model: resolveCodexModelArg(input.model, defaultModel),
         effort,
         prompt: promptText,
+        clientMessageId: promptMessage.clientMessageId,
+        replay: promptMessage.replay,
+        terminalReplayAllowed: promptMessage.terminalReplayAllowed,
         resume: previousSessionId,
         forkFrom: forkFromSessionId,
         systemPromptAppend,
@@ -897,6 +906,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     handleRuntimeToolCall?: RuntimeDynamicToolCallHandler;
     settled: boolean;
     interruptRequested: boolean;
+    interruptPromise?: Promise<void>;
+    turnStartedEmitted: boolean;
   };
 
   let child: ReturnType<typeof spawn> | null = null;
@@ -915,6 +926,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
   let activeSpawnEnvSignature: string | null = null;
   let intentionalChildRestart = false;
   let closePromise: Promise<void> | null = null;
+  let resumedThreadResponse: Record<string, unknown> | null = null;
+  let bufferingThreadNotifications = false;
+  const bufferedThreadNotifications: CodexJsonRpcMessage[] = [];
 
   // The app-server broadcasts notifications for the top-level turn and every
   // multi-agent child over the same connection. Child events must never mutate
@@ -978,6 +992,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
 
   const rejectPendingRequests = (error: Error) => {
     for (const pending of pendingRequests.values()) {
+      if (pending.timeout) {
+        clearTimeout(pending.timeout);
+      }
       pending.reject(error);
     }
     pendingRequests.clear();
@@ -1060,6 +1077,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     closed = false;
     nextRequestId = 1;
     pendingRequests = new Map();
+    bufferedThreadNotifications.splice(0, bufferedThreadNotifications.length);
     clearForcedKillTimer();
 
     log.info("codex spawn", { pid: newTransport.child.pid, transport: newTransport.kind });
@@ -1089,12 +1107,33 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     await transport.send(JSON.stringify(message));
   }
 
-  function sendRequest(method: string, params: Record<string, unknown>): Promise<Record<string, unknown>> {
+  function sendRequest(
+    method: string,
+    params: Record<string, unknown>,
+    options: { timeoutMs?: number; onResponse?(value: Record<string, unknown>): void } = {},
+  ): Promise<Record<string, unknown>> {
     const id = String(nextRequestId++);
     return new Promise<Record<string, unknown>>((resolve, reject) => {
-      pendingRequests.set(id, { resolve, reject });
+      const pending: PendingRequest = { resolve, reject, onResponse: options.onResponse };
+      if (options.timeoutMs !== undefined) {
+        pending.timeout = setTimeout(() => {
+          if (pendingRequests.get(id) !== pending) {
+            return;
+          }
+          pendingRequests.delete(id);
+          reject(new Error(`Codex app-server request timed out: ${method}`));
+        }, options.timeoutMs);
+        pending.timeout.unref?.();
+      }
+      pendingRequests.set(id, pending);
       void writeJsonRpc({ jsonrpc: "2.0", id, method, params }).catch((error) => {
-        pendingRequests.delete(id);
+        const current = pendingRequests.get(id);
+        if (current === pending) {
+          pendingRequests.delete(id);
+          if (pending.timeout) {
+            clearTimeout(pending.timeout);
+          }
+        }
         reject(error);
       });
     });
@@ -1192,29 +1231,39 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     if (turn.settled || !turn.turnId) {
       return;
     }
+    if (turn.interruptPromise) {
+      return turn.interruptPromise;
+    }
 
     const threadId = turn.threadId ?? currentThreadId;
     if (!threadId) {
       return;
     }
 
-    try {
-      await sendRequest("turn/interrupt", {
-        threadId,
-        turnId: turn.turnId,
-      });
-    } catch {
-      if (!child || closed) {
-        return;
-      }
-      signalCodexTransportProcess(child, "SIGINT");
-      forcedKillTimer = setTimeout(() => {
-        if (!closed && child) {
-          signalCodexTransportProcess(child, "SIGKILL");
+    turn.interruptPromise = (async () => {
+      try {
+        await sendRequest(
+          "turn/interrupt",
+          {
+            threadId,
+            turnId: turn.turnId,
+          },
+          { timeoutMs: INTERRUPT_GRACE_MS },
+        );
+      } catch {
+        if (!child || closed) {
+          return;
         }
-      }, INTERRUPT_GRACE_MS);
-      forcedKillTimer.unref?.();
-    }
+        signalCodexTransportProcess(child, "SIGINT");
+        forcedKillTimer = setTimeout(() => {
+          if (!closed && child) {
+            signalCodexTransportProcess(child, "SIGKILL");
+          }
+        }, INTERRUPT_GRACE_MS);
+        forcedKillTimer.unref?.();
+      }
+    })();
+    return turn.interruptPromise;
   };
 
   const buildRuntimeControlState = (): RuntimeControlState => ({
@@ -1395,7 +1444,26 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
   };
 
-  function routeAppServerMessage(message: CodexJsonRpcMessage): void {
+  const emitTurnStarted = (turn: AppServerTurnState, rawTurn: Record<string, unknown>, threadId?: string): void => {
+    turn.threadId = firstString(threadId, turn.threadId, currentThreadId);
+    turn.turnId = firstString(rawTurn.id, turn.turnId);
+    if (turn.turnStartedEmitted || !turn.turnId) {
+      return;
+    }
+    turn.turnStartedEmitted = true;
+    turn.queue.push({
+      type: "turn.started",
+      source: "codex.app-server",
+      thread_id: turn.threadId,
+      turn_id: turn.turnId,
+      turn: normalizeAppServerTurn(rawTurn),
+    });
+    if (turn.interruptRequested) {
+      void requestTurnInterrupt(turn);
+    }
+  };
+
+  function routeAppServerMessage(message: CodexJsonRpcMessage, skipNotificationBuffer = false): void {
     if (typeof message.id === "string" || typeof message.id === "number") {
       if (typeof message.method === "string") {
         // JSON-RPC request ids are type-sensitive in the Codex app-server
@@ -1413,10 +1481,19 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       const pending = pendingRequests.get(requestId);
       if (pending) {
         pendingRequests.delete(requestId);
+        if (pending.timeout) {
+          clearTimeout(pending.timeout);
+        }
         if (message.error) {
           pending.reject(new Error(extractJsonRpcError(message.error) ?? "Codex app-server request failed"));
         } else {
-          pending.resolve(asRecord(message.result) ?? {});
+          const result = asRecord(message.result) ?? {};
+          try {
+            pending.onResponse?.(result);
+            pending.resolve(result);
+          } catch (error) {
+            pending.reject(error);
+          }
         }
       }
       return;
@@ -1425,6 +1502,10 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     const method = typeof message.method === "string" ? message.method : undefined;
     const params = asRecord(message.params) ?? {};
     if (!method) {
+      return;
+    }
+    if (!skipNotificationBuffer && (bootstrapPromise || bufferingThreadNotifications)) {
+      bufferedThreadNotifications.push(message);
       return;
     }
 
@@ -1466,18 +1547,9 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
       }
       case "turn/started": {
         if (turn && notificationMatchesActiveTurn(turn, params)) {
-          const startedTurn = normalizeAppServerTurn(params.turn);
-          turn.threadId = firstString(params.threadId, turn.threadId, currentThreadId);
-          turn.turnId = firstString(startedTurn?.id, turn.turnId);
-          turn.queue.push({
-            type: "turn.started",
-            source: "codex.app-server",
-            thread_id: turn.threadId,
-            turn_id: turn.turnId,
-            turn: startedTurn,
-          });
-          if (turn.interruptRequested) {
-            void requestTurnInterrupt(turn);
+          const startedTurn = asRecord(params.turn);
+          if (startedTurn) {
+            emitTurnStarted(turn, startedTurn, firstString(params.threadId));
           }
         }
         break;
@@ -1616,10 +1688,18 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     }
   }
 
+  const flushBufferedThreadNotifications = (): void => {
+    const notifications = bufferedThreadNotifications.splice(0, bufferedThreadNotifications.length);
+    for (const notification of notifications) {
+      routeAppServerMessage(notification, true);
+    }
+  };
+
   async function bootstrapThread(
     input: CodexCliTurnRequest,
     resumeThreadId: string | null,
     forkThreadId: string | null = null,
+    forkBeforeTurnId: string | null = null,
   ): Promise<void> {
     const effort = toCodexRuntimeEffort(input.effort);
     if (!resumeThreadId && !forkThreadId) {
@@ -1630,6 +1710,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
     const threadResponse = forkThreadId
       ? await sendRequest("thread/fork", {
           threadId: forkThreadId,
+          beforeTurnId: forkBeforeTurnId,
           path: null,
           model: null,
           modelProvider: null,
@@ -1675,6 +1756,8 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
             experimentalRawEvents: false,
             persistExtendedHistory: false,
           });
+
+    resumedThreadResponse = resumeThreadId && !forkThreadId ? threadResponse : null;
 
     const nextThreadId = firstString(asRecord(threadResponse.thread)?.id);
     if (forkThreadId && !nextThreadId) {
@@ -1796,36 +1879,137 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         handleRuntimeToolCall: input.handleRuntimeToolCall,
         settled: false,
         interruptRequested: false,
+        turnStartedEmitted: false,
       };
       activeTurn = turn;
 
       void (async () => {
         try {
           await ensureClient(input);
+          const replayedTurn = findCodexReplayedTurn(resumedThreadResponse, input);
+          resumedThreadResponse = null;
+
+          if (replayedTurn) {
+            const replayedThreadId = currentThreadId ?? input.resume;
+            turn.queue.push({
+              type: "turn.reconciled",
+              source: "codex.app-server",
+              thread_id: replayedThreadId,
+              turn_id: replayedTurn.id,
+              status: replayedTurn.status,
+              client_message_id: input.clientMessageId,
+            });
+
+            if (replayedTurn.status === "inProgress") {
+              emitTurnStarted(turn, replayedTurn.raw, replayedThreadId);
+              flushBufferedThreadNotifications();
+              return;
+            }
+
+            if (replayedTurn.status === "completed") {
+              emitTurnStarted(turn, replayedTurn.raw, replayedThreadId);
+              for (const item of Array.isArray(replayedTurn.raw.items) ? replayedTurn.raw.items : []) {
+                routeAppServerMessage({
+                  jsonrpc: "2.0",
+                  method: "item/completed",
+                  params: {
+                    threadId: replayedThreadId,
+                    turnId: replayedTurn.id,
+                    item,
+                  },
+                });
+              }
+              routeAppServerMessage({
+                jsonrpc: "2.0",
+                method: "turn/completed",
+                params: {
+                  threadId: replayedThreadId,
+                  turn: replayedTurn.raw,
+                },
+              });
+              flushBufferedThreadNotifications();
+              return;
+            }
+
+            if (replayedTurn.status === "interrupted" || replayedTurn.status === "failed") {
+              if (!replayedThreadId) {
+                throw new Error("Codex replay recovery requires the resumed thread id");
+              }
+              if (input.terminalReplayAllowed === false) {
+                bufferedThreadNotifications.splice(0, bufferedThreadNotifications.length);
+                bufferingThreadNotifications = false;
+                emitTurnStarted(turn, replayedTurn.raw, replayedThreadId);
+                turn.queue.push({
+                  type: "turn.interrupted",
+                  source: "codex.app-server",
+                  thread_id: replayedThreadId,
+                  turn_id: replayedTurn.id,
+                  turn: normalizeAppServerTurn(replayedTurn.raw),
+                  recovery_disposition: "terminal_replay_suppressed",
+                  provider_terminal_status: replayedTurn.status,
+                });
+                settleTurn(turn);
+                return;
+              }
+              bufferedThreadNotifications.splice(0, bufferedThreadNotifications.length);
+              bufferingThreadNotifications = true;
+              try {
+                await bootstrapThread(input, null, replayedThreadId, replayedTurn.id);
+              } finally {
+                bufferingThreadNotifications = false;
+                bufferedThreadNotifications.splice(0, bufferedThreadNotifications.length);
+              }
+              turn.threadId = currentThreadId;
+              turn.turnId = undefined;
+              turn.turnStartedEmitted = false;
+              turn.queue.push({
+                type: "thread.replay_forked",
+                source: "codex.app-server",
+                source_thread_id: replayedThreadId,
+                excluded_turn_id: replayedTurn.id,
+                thread_id: currentThreadId,
+              });
+            }
+          }
+
+          flushBufferedThreadNotifications();
+
           const requestTurnStart = async () => {
             turn.threadId = currentThreadId ?? input.resume;
             if (!turn.threadId) {
               throw new Error("Codex app-server did not initialize a thread");
             }
-            await sendRequest("turn/start", {
-              threadId: turn.threadId,
-              input: [
-                {
-                  type: "text",
-                  text: input.prompt,
-                  text_elements: [],
+            await sendRequest(
+              "turn/start",
+              {
+                threadId: turn.threadId,
+                clientUserMessageId: input.clientMessageId ?? null,
+                input: [
+                  {
+                    type: "text",
+                    text: input.prompt,
+                    text_elements: [],
+                  },
+                ],
+                cwd: null,
+                approvalPolicy: null,
+                sandboxPolicy: null,
+                model: null,
+                effort: input.effort ?? null,
+                summary: null,
+                personality: null,
+                outputSchema: null,
+                collaborationMode: null,
+              },
+              {
+                onResponse: (response) => {
+                  const responseTurn = asRecord(response.turn);
+                  if (responseTurn) {
+                    emitTurnStarted(turn, responseTurn, turn.threadId);
+                  }
                 },
-              ],
-              cwd: null,
-              approvalPolicy: null,
-              sandboxPolicy: null,
-              model: null,
-              effort: input.effort ?? null,
-              summary: null,
-              personality: null,
-              outputSchema: null,
-              collaborationMode: null,
-            });
+              },
+            );
           };
 
           try {
@@ -2583,6 +2767,77 @@ function normalizeAppServerTurn(value: unknown): RuntimeTurnMetadata | undefined
     ...(id ? { id } : {}),
     ...(status ? { status } : {}),
   };
+}
+
+interface CodexReplayedTurn {
+  id: string;
+  status: string;
+  raw: Record<string, unknown>;
+}
+
+function findCodexReplayedTurn(
+  threadResponse: Record<string, unknown> | null,
+  input: Pick<CodexCliTurnRequest, "clientMessageId" | "prompt" | "replay">,
+): CodexReplayedTurn | null {
+  if (!input.replay || !threadResponse) {
+    return null;
+  }
+
+  const thread = asRecord(threadResponse.thread);
+  const turns = Array.isArray(thread?.turns)
+    ? thread.turns.filter((value): value is Record<string, unknown> => Boolean(asRecord(value)))
+    : [];
+  const toReplayTurn = (turn: Record<string, unknown> | undefined): CodexReplayedTurn | null => {
+    const id = firstString(turn?.id);
+    const status = firstString(turn?.status);
+    return turn && id && status ? { id, status, raw: turn } : null;
+  };
+
+  if (input.clientMessageId) {
+    for (let index = turns.length - 1; index >= 0; index -= 1) {
+      const turn = turns[index];
+      if (turn && readCodexTurnClientMessageId(turn) === input.clientMessageId) {
+        return toReplayTurn(turn);
+      }
+    }
+  }
+
+  // Compatibility for a turn accepted before Ravi started sending a client id.
+  // Limit this to the newest turn and an exact prompt match so a legitimate
+  // repeated user message cannot reconcile against an older completion.
+  const latest = turns.at(-1);
+  if (latest && !readCodexTurnClientMessageId(latest) && readCodexTurnPrompt(latest) === input.prompt.trim()) {
+    return toReplayTurn(latest);
+  }
+
+  return null;
+}
+
+function readCodexTurnClientMessageId(turn: Record<string, unknown>): string | undefined {
+  for (const item of Array.isArray(turn.items) ? turn.items : []) {
+    const record = asRecord(item);
+    if (record?.type === "userMessage" || record?.type === "user_message") {
+      return firstString(record.clientId, record.client_id);
+    }
+  }
+  return undefined;
+}
+
+function readCodexTurnPrompt(turn: Record<string, unknown>): string | undefined {
+  for (const item of Array.isArray(turn.items) ? turn.items : []) {
+    const record = asRecord(item);
+    if (record?.type !== "userMessage" && record?.type !== "user_message") {
+      continue;
+    }
+    const text = (Array.isArray(record.content) ? record.content : [])
+      .map((content) => firstString(asRecord(content)?.text))
+      .filter((value): value is string => Boolean(value))
+      .join("\n");
+    if (text) {
+      return text.trim();
+    }
+  }
+  return undefined;
 }
 
 function normalizeAppServerItem(value: unknown): Record<string, unknown> | null {

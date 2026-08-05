@@ -145,7 +145,10 @@ function makeStreamingSession(overrides: Partial<RuntimeHostStreamingSession> = 
   };
 }
 
-function makeRuntimeSession(events: RuntimeEvent[]): RuntimeSessionHandle {
+function makeRuntimeSession(
+  events: RuntimeEvent[],
+  options: Pick<RuntimeSessionHandle, "ambiguousTurnRecoveryStrategy"> = {},
+): RuntimeSessionHandle {
   return {
     provider: PROVIDER,
     events: (async function* () {
@@ -154,10 +157,14 @@ function makeRuntimeSession(events: RuntimeEvent[]): RuntimeSessionHandle {
       }
     })(),
     interrupt: async () => {},
+    ...options,
   };
 }
 
-function makeNeverEndingRuntimeSession(): RuntimeSessionHandle {
+function makeNeverEndingRuntimeSession(
+  lifecycle?: string[],
+  options: Pick<RuntimeSessionHandle, "ambiguousTurnRecoveryStrategy"> = {},
+): RuntimeSessionHandle {
   let resolveClose!: () => void;
   const closed = new Promise<void>((resolve) => {
     resolveClose = resolve;
@@ -174,10 +181,14 @@ function makeNeverEndingRuntimeSession(): RuntimeSessionHandle {
         };
       },
     },
-    interrupt: async () => {},
+    interrupt: async () => {
+      lifecycle?.push("interrupt");
+    },
     close: async () => {
+      lifecycle?.push("close");
       resolveClose();
     },
+    ...options,
   };
 }
 
@@ -1680,6 +1691,73 @@ describe("runtime session trace instrumentation", () => {
     expect(getSessionTurn("turn-stream-closed-before-tool")?.status).toBe("aborted");
   });
 
+  it("reconciles an unsafe ambiguous turn only when the provider advertises support", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "reconcile provider-owned turn",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    queued.clientMessageId = "ravi:provider-reconciliation";
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      toolEffectFence: "provider_event_only",
+    });
+    seedAdapterTrace(streaming, "turn-provider-reconciliation");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([], {
+        ambiguousTurnRecoveryStrategy: "reconcile_by_client_message_id",
+      }),
+      {
+        stashedMessages,
+        restartStashedSession: async (input) => {
+          restartRequests.push(input);
+        },
+      },
+    );
+
+    expect(stashedMessages.get(SESSION_NAME)).toEqual([
+      expect.objectContaining({
+        clientMessageId: "ravi:provider-reconciliation",
+        replay: true,
+        terminalReplayAllowed: false,
+      }),
+    ]);
+    expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "runtime_event_loop_closed" }]);
+  });
+
+  it("does not hand an unsafe ambiguous turn to a provider without reconciliation support", async () => {
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "do not blindly replay provider-owned turn",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+      toolEffectFence: "provider_event_only",
+    });
+    seedAdapterTrace(streaming, "turn-provider-without-reconciliation");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+
+    await runTraceLoop(streaming, makeRuntimeSession([]), {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(stashedMessages.get(SESSION_NAME)).toBeUndefined();
+    expect(restartRequests).toEqual([]);
+  });
+
   it("does not replay a turn after streamed output was durably materialized", async () => {
     const queued = createQueuedRuntimeUserMessage({
       prompt: "do not duplicate partial output",
@@ -2255,26 +2333,35 @@ describe("runtime session trace instrumentation", () => {
       source,
       _agentId: AGENT_ID,
     });
+    queued.clientMessageId = "ravi:inactive-turn";
     const streaming = makeStreamingSession({
       pendingMessages: [queued],
       currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
       lastActivity: Date.now() - 2_000,
+      toolEffectFence: "provider_event_only",
     });
     seedAdapterTrace(streaming, "turn-provider-inactive");
     const stashedMessages = new Map<string, RuntimeUserMessage[]>();
     const restartRequests: Array<{ sessionName: string; reason: string }> = [];
     const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const providerLifecycle: string[] = [];
 
     try {
-      await runTraceLoop(streaming, makeNeverEndingRuntimeSession(), {
-        stashedMessages,
-        restartStashedSession: async (input) => {
-          restartRequests.push(input);
+      await runTraceLoop(
+        streaming,
+        makeNeverEndingRuntimeSession(providerLifecycle, {
+          ambiguousTurnRecoveryStrategy: "reconcile_by_client_message_id",
+        }),
+        {
+          stashedMessages,
+          restartStashedSession: async (input) => {
+            restartRequests.push(input);
+          },
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
         },
-        safeEmit: async (topic, data) => {
-          emitted.push({ topic, data });
-        },
-      });
+      );
     } finally {
       if (previousTimeout === undefined) {
         delete process.env.RAVI_RUNTIME_TURN_INACTIVITY_MS;
@@ -2284,7 +2371,13 @@ describe("runtime session trace instrumentation", () => {
     }
 
     expect(restartRequests).toEqual([{ sessionName: SESSION_NAME, reason: "provider_turn_inactive" }]);
+    expect(providerLifecycle).toEqual(["interrupt", "close"]);
     expect(stashedMessages.get(SESSION_NAME)?.map((message) => message.message.content)).toEqual(["stuck audit alert"]);
+    expect(stashedMessages.get(SESSION_NAME)?.[0]).toMatchObject({
+      clientMessageId: "ravi:inactive-turn",
+      replay: true,
+      terminalReplayAllowed: false,
+    });
     expect(emitted.some((event) => event.data.type === "provider.inactive")).toBe(true);
 
     const events = listSessionEvents(SESSION_KEY);

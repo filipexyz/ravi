@@ -130,6 +130,38 @@ describe("createClaudeRuntimeProvider", () => {
     expect(settings.PermissionRequest[0].matcher).toBe("*");
   });
 
+  it("advertises the allowlisted canonical app builder through the Claude plugin", () => {
+    const provider = createClaudeRuntimeProvider();
+    const pluginPath = join(import.meta.dir, "..", "plugins", "internal", "ravi-dev");
+    const session = provider.startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "build an app" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        {
+          plugins: [{ type: "local", path: pluginPath }],
+          allowedSkills: ["ravi-dev-app-creator"],
+        },
+      ),
+    );
+
+    expect(session.skillVisibility?.loadedSkills).toEqual([]);
+    expect(session.skillVisibility?.skills).toEqual([
+      expect.objectContaining({
+        id: "app-creator",
+        provider: "claude",
+        state: "advertised",
+        confidence: "declared",
+        source: "plugin:ravi-dev/app-creator",
+      }),
+    ]);
+  });
+
   it("closes the active Claude SDK query idempotently", async () => {
     nextMessages = [{ type: "result", subtype: "success", session_id: "claude-session-close" }];
     queryGate = new Promise<void>((resolve) => {

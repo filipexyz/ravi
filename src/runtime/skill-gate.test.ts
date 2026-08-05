@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createRuntimeContext } from "./context-registry.js";
 import { dbUpsertSkillGateRule, dbUpsertSkillGrant, getOrCreateSession, getSession } from "../router/index.js";
+import { dbUpdateAgent } from "../router/router-db.js";
 import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
@@ -163,6 +164,12 @@ describe("evaluateSkillGate", () => {
 describe("runtime host skill-gate enforcement", () => {
   it("delivers and marks a required skill loaded when a dynamic tool is attempted", async () => {
     writeCodexSkill("ravi-system-image");
+    // System skills are visible through provider-owned group capabilities. The
+    // tool-local context permission below authorizes execution but must not
+    // accidentally become the agent's persisted skill allowlist.
+    dbUpdateAgent("main", {
+      defaults: { runtimePermissions: { capabilities: ["execute:group:image_generate"] } },
+    });
     getOrCreateSession("agent:main:main", "main", stateDir!, {
       name: "skill-gate-test",
       runtimeProvider: "codex",

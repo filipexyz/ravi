@@ -15,7 +15,7 @@ normative: false
 
 The contract/ledger and boot-attempt instrumentation are implemented. A running daemon now owns a boot lease and records each provider delivery with safety/terminal evidence. It still does not run a startup sweep or resume sessions. Until the later inspect/apply CLI exists, do not mutate recovery rows manually to force a replay.
 
-If the coordinator loses a boot, attempt, marker, or terminal fence, the host fails closed: active attempts are aborted, runtime sessions are closed, and the prompt consumer NAKs before ACK instead of accepting more work. The poisoned boot is not marked graceful. Treat this as a runtime/storage incident; do not bypass the coordinator or re-enable native steer to continue work.
+If the coordinator loses a boot, attempt, marker, or terminal fence, the host fails closed: active attempts are aborted, runtime sessions are closed, and the prompt consumer NAKs before ACK instead of accepting more work. The poisoned boot is not marked graceful. Treat this as a runtime/storage incident; do not bypass the coordinator or the write-ahead input-mutation fence to continue work.
 
 A failure before provider handoff keeps the unconsumed prompt in the host stash and may use only the existing bounded event-loop restart path. If the coordinator itself no longer owns a live lease, no automatic retry is allowed, but the exact envelope remains available to the shutdown snapshot instead of being discarded during event-loop cleanup.
 

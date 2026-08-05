@@ -64,6 +64,19 @@ ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibilit
 `ravi pages publish` is the user-facing Pages command. It delegates to the
 artifact upload/publish pipeline internally.
 
+Protect an active route with a password without republishing its bytes:
+
+```bash
+ravi pages password set <project-ref> <site-slug> --route /
+ravi pages password status <project-ref> <site-slug> --route / --json
+ravi pages password remove <project-ref> <site-slug> --route / --visibility private
+```
+
+`password set` prompts invisibly and confirms by default. Non-interactive
+automation must use `--stdin` with redirected input. Never put the password in
+an argument, environment variable, log, or JSON payload outside the command's
+authenticated HTTPS request body.
+
 ## Topics
 
 For full topic reference with payloads, see the **events** skill (`src/plugins/internal/ravi-system/skills/events/SKILL.md`).

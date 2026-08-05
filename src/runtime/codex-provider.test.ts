@@ -12,6 +12,9 @@ type TransportRequest = {
   model?: string;
   effort?: string;
   prompt: string;
+  clientMessageId?: string;
+  replay?: boolean;
+  terminalReplayAllowed?: boolean;
   resume?: string;
   forkFrom?: string;
   systemPromptAppend: string;
@@ -63,6 +66,25 @@ function makePromptGenerator(messages: string[]): RuntimeStartRequest["prompt"] 
         parent_tool_use_id: null,
       };
     }
+  })();
+}
+
+function makeReplayPromptGenerator(
+  content: string,
+  clientMessageId: string,
+  replay = true,
+  terminalReplayAllowed?: boolean,
+): RuntimeStartRequest["prompt"] {
+  return (async function* () {
+    yield {
+      type: "user" as const,
+      message: { role: "user" as const, content },
+      session_id: "",
+      parent_tool_use_id: null,
+      clientMessageId,
+      replay,
+      terminalReplayAllowed,
+    };
   })();
 }
 
@@ -310,6 +332,367 @@ rl.on("line", (line) => {
     expect(threadRequests[0]?.method).toBe("thread/resume");
     expect(threadRequests[0]?.params.threadId).toBe("thread_prev");
     expect(threadRequests[0]?.params.dynamicTools).toBeNull();
+  });
+
+  it("binds the turn from the turn/start response and forwards the stable client message id", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-turn-response-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/start") {
+    send({ id: message.id, result: { thread: { id: "thread_response" }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify(message.params) + "\\n");
+    send({ id: message.id, result: { turn: { id: "turn_response", status: "inProgress", items: [] } } });
+    send({
+      method: "turn/completed",
+      params: { threadId: "thread_response", turn: { id: "turn_response", status: "completed", items: [] } },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        prompt: makeReplayPromptGenerator("run once", "ravi:delivery-1", false),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const request = JSON.parse(readFileSync(requestsPath, "utf8").trim());
+
+    expect(request.clientUserMessageId).toBe("ravi:delivery-1");
+    expect(findEventsByType(events, "turn.started")).toEqual([
+      expect.objectContaining({ turn: expect.objectContaining({ id: "turn_response" }) }),
+    ]);
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "thread_response" }),
+    ]);
+  });
+
+  it("reconciles an already completed replay without submitting the prompt again", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-completed-replay-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/resume") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({
+      id: message.id,
+      result: {
+        thread: {
+          id: "thread_existing",
+          turns: [{
+            id: "turn_existing",
+            status: "completed",
+            items: [
+              { id: "user_existing", type: "userMessage", clientId: "ravi:delivery-2", content: [{ type: "text", text: "recover me" }] },
+              { id: "agent_existing", type: "agentMessage", text: "already completed" },
+            ],
+          }],
+        },
+        model: "gpt-5",
+        modelProvider: "openai",
+      },
+    });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        resume: "thread_existing",
+        prompt: makeReplayPromptGenerator("recover me", "ravi:delivery-2"),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/resume"]);
+    expect(findEventsByType(events, "assistant.message")).toEqual([
+      expect.objectContaining({ text: "already completed" }),
+    ]);
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "thread_existing" }),
+    ]);
+  });
+
+  it("reattaches to an accepted in-progress replay instead of duplicating turn/start", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-active-replay-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/resume") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({
+      id: message.id,
+      result: {
+        thread: {
+          id: "thread_active",
+          turns: [{
+            id: "turn_active",
+            status: "inProgress",
+            items: [{ id: "user_active", type: "userMessage", clientId: "ravi:delivery-active", content: [{ type: "text", text: "still running" }] }],
+          }],
+        },
+        model: "gpt-5",
+        modelProvider: "openai",
+      },
+    });
+    send({ method: "item/completed", params: { threadId: "thread_active", turnId: "turn_active", item: { id: "agent_active", type: "agentMessage", text: "finished after reconnect" } } });
+    send({ method: "turn/completed", params: { threadId: "thread_active", turn: { id: "turn_active", status: "completed", items: [] } } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        resume: "thread_active",
+        prompt: makeReplayPromptGenerator("still running", "ravi:delivery-active"),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/resume"]);
+    expect(findEventsByType(events, "assistant.message")).toEqual([
+      expect.objectContaining({ text: "finished after reconnect" }),
+    ]);
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "thread_active" }),
+    ]);
+  });
+
+  it("forks before an interrupted replay and preserves the prior thread history", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-interrupted-replay-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/resume") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({
+      id: message.id,
+      result: {
+        thread: {
+          id: "thread_source",
+          turns: [{
+            id: "turn_interrupted",
+            status: "interrupted",
+            items: [{ id: "user_interrupted", type: "userMessage", clientId: "ravi:delivery-3", content: [{ type: "text", text: "retry safely" }] }],
+          }],
+        },
+        model: "gpt-5",
+        modelProvider: "openai",
+      },
+    });
+    return;
+  }
+  if (message.id && message.method === "thread/fork") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: { thread: { id: "thread_recovered", turns: [] }, model: "gpt-5", modelProvider: "openai" } });
+    return;
+  }
+  if (message.id && message.method === "turn/start") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({ id: message.id, result: { turn: { id: "turn_recovered", status: "inProgress", items: [] } } });
+    send({ method: "turn/completed", params: { threadId: "thread_recovered", turn: { id: "turn_recovered", status: "completed", items: [] } } });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        resume: "thread_source",
+        prompt: makeReplayPromptGenerator("retry safely", "ravi:delivery-3"),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/resume", "thread/fork", "turn/start"]);
+    expect(requests[1]?.params).toMatchObject({
+      threadId: "thread_source",
+      beforeTurnId: "turn_interrupted",
+    });
+    expect(requests[2]?.params).toMatchObject({
+      threadId: "thread_recovered",
+      clientUserMessageId: "ravi:delivery-3",
+    });
+    expect(findEventsByType(events, "turn.complete")).toEqual([
+      expect.objectContaining({ providerSessionId: "thread_recovered" }),
+    ]);
+  });
+
+  it("reconciles an unsafe interrupted turn without forking or resubmitting it", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "ravi-codex-suppressed-terminal-replay-"));
+    const command = join(cwd, "fake-codex-app-server.mjs");
+    const requestsPath = join(cwd, "requests.jsonl");
+
+    writeFileSync(
+      command,
+      `#!/usr/bin/env node
+import { appendFileSync } from "node:fs";
+import { createInterface } from "node:readline";
+
+const requestsPath = ${JSON.stringify(requestsPath)};
+const rl = createInterface({ input: process.stdin });
+const send = (message) => process.stdout.write(JSON.stringify(message) + "\\n");
+
+rl.on("line", (line) => {
+  const message = JSON.parse(line);
+  if (message.id && message.method === "initialize") {
+    send({ id: message.id, result: {} });
+    return;
+  }
+  if (message.method === "initialized") return;
+  if (message.id && message.method === "thread/resume") {
+    appendFileSync(requestsPath, JSON.stringify({ method: message.method, params: message.params }) + "\\n");
+    send({
+      id: message.id,
+      result: {
+        thread: {
+          id: "thread_source",
+          turns: [{
+            id: "turn_interrupted",
+            status: "interrupted",
+            items: [{ id: "user_interrupted", type: "userMessage", clientId: "ravi:delivery-unsafe", content: [{ type: "text", text: "do not retry" }] }],
+          }],
+        },
+        model: "gpt-5",
+        modelProvider: "openai",
+      },
+    });
+  }
+});
+`,
+    );
+    chmodSync(command, 0o755);
+
+    const provider = createCodexRuntimeProvider({ command, defaultModel: "gpt-5" });
+    const session = provider.startSession(
+      makeStartRequest([], {
+        cwd,
+        resume: "thread_source",
+        prompt: makeReplayPromptGenerator("do not retry", "ravi:delivery-unsafe", true, false),
+      }),
+    );
+
+    const events = await collectEvents(session.events);
+    const requests = readFileSync(requestsPath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    expect(requests.map((request) => request.method)).toEqual(["thread/resume"]);
+    expect(findEventsByType(events, "turn.interrupted")).toHaveLength(1);
+    expect(findEventsByType(events, "turn.failed")).toHaveLength(0);
+    expect(findEventsByType(events, "turn.complete")).toHaveLength(0);
   });
 
   it("recovers a resumed multi-agent sub-agent thread into a fresh top-level thread", async () => {
@@ -894,6 +1277,7 @@ process.on("SIGTERM", () => {
     const completions = findEventsByType(events, "turn.complete");
 
     expect(session.concurrentInputStrategy).toBe("interrupt");
+    expect(session.ambiguousTurnRecoveryStrategy).toBe("reconcile_by_client_message_id");
     expect(calls).toHaveLength(1);
     expect(calls[0]?.model).toBeUndefined();
     expect(calls[0]?.resume).toBe("thread_prev");

@@ -137,6 +137,18 @@ ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibilit
 
 O upload de conteúdo do Pages é `ravi pages publish`.
 
+Para proteger uma rota já publicada sem reenviar o conteúdo:
+
+```bash
+ravi pages password set <project-ref> <site-slug> --route /
+ravi pages password status <project-ref> <site-slug> --route / --json
+ravi pages password remove <project-ref> <site-slug> --route / --visibility private
+```
+
+`password set` usa prompt oculto e confirmação. Em automação, use somente
+`--stdin` com entrada redirecionada; nunca inclua a senha em argumento, variável
+de ambiente, log ou saída JSON.
+
 ## Integração Atual
 
 `ravi image generate` registra automaticamente artifacts `kind=image` usando lifecycle.

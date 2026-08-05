@@ -1,6 +1,12 @@
 import { spawn } from "node:child_process";
-import { dirname, resolve } from "node:path";
+import { dirname } from "node:path";
 import { discoverAppManifests, getAppManifest, RAVI_APP_BUILTIN_OPERATION_HANDLERS } from "./service.js";
+import {
+  buildRaviAppProcessEnv,
+  parseRaviAppCapability,
+  resolveRaviAppCommand,
+  tokenizeRaviAppCommand,
+} from "./command.js";
 import type {
   RaviAppAliasInvocation,
   RaviAppManifestRecord,
@@ -10,7 +16,14 @@ import type {
   RaviAppRunResult,
 } from "./types.js";
 import { emitCliAuditEvent } from "../cli/audit.js";
+import { getContext } from "../cli/context.js";
 import { AppPermissionProviderDeniedError, evaluateAppPermissionProvider } from "../permissions/provider-runtime.js";
+import {
+  getRuntimeContextFromEnv,
+  issueRuntimeContext,
+  type IssueRuntimeContextInput,
+} from "../runtime/context-registry.js";
+import type { ContextRecord } from "../router/router-db.js";
 import { assertCanRunAppOperation, assertCanUseApp, filterVisibleAppManifests } from "./permissions.js";
 
 interface ResolvedOperation {
@@ -28,6 +41,7 @@ const DEFAULT_STATIC_ROOT_COMMANDS = new Set(["apps"]);
 export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviAppRunResult> {
   const startedAt = Date.now();
   const operationName = options.operation?.trim() || null;
+  const callerContext = resolveCallerContext(options.env);
   let result: RaviAppRunResult;
 
   try {
@@ -47,6 +61,8 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       cwd: options.cwd,
       env: options.env,
       staticRootCommands: mergeStaticRootCommands(options.staticRootCommands),
+      runtime: options.runtime,
+      callerContext,
       startedAt,
     });
   } catch (error) {
@@ -60,6 +76,7 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       status: "failed",
       durationMs: Date.now() - startedAt,
       error: error instanceof Error ? error.message : String(error),
+      ...(callerContext ? { callerContextId: callerContext.contextId } : {}),
       ...(error instanceof AppPermissionProviderDeniedError ? { permissionProvider: error.audit } : {}),
     };
   }
@@ -74,6 +91,8 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       operationId: result.operationId,
       interface: result.interface,
       mutating: result.mutating,
+      callerContextId: result.callerContextId,
+      childContextId: result.childContextId,
       permissionProvider: result.permissionProvider
         ? {
             providerId: result.permissionProvider.providerId,
@@ -273,6 +292,8 @@ async function dispatchResolvedOperation(
     cwd?: string;
     env?: NodeJS.ProcessEnv;
     staticRootCommands: Set<string>;
+    runtime?: RaviAppRunOptions["runtime"];
+    callerContext?: ContextRecord;
     startedAt: number;
   },
 ): Promise<RaviAppRunResult> {
@@ -311,6 +332,7 @@ async function dispatchResolvedOperation(
         mutating,
         status: "completed",
         durationMs: Date.now() - options.startedAt,
+        ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
         handler,
         result: runBuiltinHandler(handler, app),
       },
@@ -328,28 +350,7 @@ async function dispatchResolvedOperation(
     return withPermissionProvider(await runCliOperation(app, resolved, options), permissionProvider);
   }
 
-  if (interfaceName === "stream") {
-    return withPermissionProvider(
-      {
-        ok: true,
-        appId,
-        operation: localOperationName(appId, resolved.id),
-        operationId: resolved.id,
-        interface: "stream",
-        mutating,
-        status: "completed",
-        durationMs: Date.now() - options.startedAt,
-        channel: operation.channel,
-        result: {
-          channel: operation.channel,
-          message: "Stream operations must be handled by a dedicated stream/control surface.",
-        },
-      },
-      permissionProvider,
-    );
-  }
-
-  throw new Error(`App operation interface is not supported by the CLI router yet: ${interfaceName}`);
+  throw new Error(`App operation interface is not supported by the router: ${interfaceName}`);
 }
 
 function withPermissionProvider(
@@ -368,25 +369,23 @@ async function runCliOperation(
     json: boolean;
     cwd?: string;
     env?: NodeJS.ProcessEnv;
+    runtime?: RaviAppRunOptions["runtime"];
+    callerContext?: ContextRecord;
     startedAt: number;
   },
 ): Promise<RaviAppRunResult> {
   const appId = app.manifest?.id ?? app.id;
-  const command = renderCliCommand(resolved.operation.command ?? "", {
-    appId,
-    operationId: resolved.id,
-    args: options.args,
-  });
-  const runtimeCommand = resolveRaviCliCommand(command);
+  const invocation = resolveRaviAppCommand(resolved.operation.command ?? "", options.args, options.runtime);
   const appRoot = dirname(app.path);
-  const run = await spawnShellCommand(runtimeCommand, {
+  const childContext = issueAppChildContext(app, resolved.id, options.callerContext);
+  const run = await spawnExecutable(invocation.executable, invocation.argv, {
     cwd: appRoot,
-    env: {
-      ...options.env,
-      RAVI_APP_ID: appId,
-      RAVI_APP_OPERATION_ID: resolved.id,
-      RAVI_APP_ROOT: appRoot,
-    },
+    env: buildRaviAppProcessEnv(options.env ?? process.env, {
+      appId,
+      operationId: resolved.id,
+      appRoot,
+      contextKey: childContext?.contextKey,
+    }),
     capture: options.json,
   });
   const parsed = options.json ? parseJsonOutput(run.stdout) : undefined;
@@ -400,8 +399,10 @@ async function runCliOperation(
     mutating: resolved.operation.mutating === true,
     status: run.exitCode === 0 ? "completed" : "failed",
     durationMs: Date.now() - options.startedAt,
-    command,
+    command: invocation.displayCommand,
     exitCode: run.exitCode,
+    ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
+    ...(childContext ? { childContextId: childContext.contextId } : {}),
     ...(options.json
       ? {
           stdout: run.stdout,
@@ -552,39 +553,12 @@ function stripRouterFlags(argv: string[]): {
   return { json, help, args };
 }
 
-function renderCliCommand(template: string, input: { appId: string; operationId: string; args: string[] }): string {
-  let usedArgsPlaceholder = false;
-  const rendered = template.replace(/\{([a-zA-Z][a-zA-Z0-9_]*)\}/g, (match, name: string) => {
-    if (name === "id" || name === "appId") return quoteShellArg(input.appId);
-    if (name === "operation" || name === "operationId") return quoteShellArg(input.operationId);
-    if (name === "args") {
-      usedArgsPlaceholder = true;
-      return input.args.map(quoteShellArg).join(" ");
-    }
-    return match;
-  });
-  if (usedArgsPlaceholder || input.args.length === 0) return rendered;
-  return `${rendered} ${input.args.map(quoteShellArg).join(" ")}`;
-}
-
-export function resolveRaviCliCommand(
-  command: string,
-  runtime: { execPath?: string; entrypoint?: string } = {},
-): string {
-  if (!/^\s*ravi(?=\s|$)/.test(command)) return command;
-  const execPath = runtime.execPath ?? process.execPath;
-  const entrypoint = runtime.entrypoint ?? process.argv[1];
-  if (!execPath?.trim() || !entrypoint?.trim()) return command;
-  const selfInvocation = `${quoteShellArg(execPath)} ${quoteShellArg(resolve(entrypoint))}`;
-  return command.replace(/^\s*ravi(?=\s|$)/, selfInvocation);
-}
-
-function spawnShellCommand(
-  command: string,
+function spawnExecutable(
+  executable: string,
+  argv: string[],
   options: {
     cwd?: string;
     env?: NodeJS.ProcessEnv;
-    mergeProcessEnv?: boolean;
     capture: boolean;
     stdin?: string;
     timeoutMs?: number;
@@ -597,11 +571,11 @@ function spawnShellCommand(
   timedOut: boolean;
   truncated: boolean;
 }> {
-  return new Promise((resolve) => {
-    const child = spawn(command, {
+  return new Promise((resolveRun) => {
+    const child = spawn(executable, argv, {
       cwd: options.cwd ?? process.cwd(),
-      env: options.mergeProcessEnv === false ? options.env : { ...process.env, ...(options.env ?? {}) },
-      shell: true,
+      env: options.env,
+      shell: false,
       stdio: options.capture ? ["pipe", "pipe", "pipe"] : "inherit",
     });
     let stdout = "";
@@ -640,9 +614,19 @@ function spawnShellCommand(
       child.stdin?.on("error", () => {});
       child.stdin?.end(options.stdin ?? "");
     }
+    let spawnError: Error | null = null;
+    child.on("error", (error) => {
+      spawnError = error;
+    });
     child.on("close", (exitCode) => {
       if (timeout) clearTimeout(timeout);
-      resolve({ exitCode, stdout, stderr, timedOut, truncated });
+      resolveRun({
+        exitCode,
+        stdout,
+        stderr: spawnError ? `${stderr}${stderr ? "\n" : ""}${spawnError.message}` : stderr,
+        timedOut,
+        truncated,
+      });
     });
   });
 }
@@ -679,7 +663,7 @@ function mergeStaticRootCommands(staticRootCommands?: Set<string>): Set<string> 
 }
 
 function isRecursiveCliCommand(appId: string, command: string, staticRootCommands: Set<string>): boolean {
-  const tokens = command.trim().split(/\s+/).filter(Boolean);
+  const tokens = resolveCommandTokens(command);
   if (tokens[0] !== "ravi") return false;
   const first = tokens[1];
   if (!first || staticRootCommands.has(first)) return false;
@@ -689,7 +673,38 @@ function isRecursiveCliCommand(appId: string, command: string, staticRootCommand
   return appSegments.every((segment, index) => tokens[index + 1] === segment);
 }
 
-function quoteShellArg(value: string): string {
-  if (/^[A-Za-z0-9_./:=@-]+$/.test(value)) return value;
-  return `'${value.replace(/'/g, "'\\''")}'`;
+function resolveCallerContext(env?: NodeJS.ProcessEnv): ContextRecord | undefined {
+  return getRuntimeContextFromEnv(env ?? process.env) ?? getContext()?.context;
+}
+
+function issueAppChildContext(
+  app: RaviAppManifestRecord,
+  operationId: string,
+  parent: ContextRecord | undefined,
+): ContextRecord | undefined {
+  if (!parent) return undefined;
+  const appId = app.manifest?.id ?? app.id;
+  const allow = app.manifest?.context?.allow ?? [];
+  const capabilities = allow.map(parseRaviAppCapability);
+  const input: IssueRuntimeContextInput = {
+    parent,
+    cliName: `app:${appId}`,
+    kind: "app-runtime",
+    capabilities,
+    inheritCapabilities: false,
+    metadata: {
+      appId,
+      operationId,
+      source: "app-router",
+    },
+  };
+  return issueRuntimeContext(input);
+}
+
+function resolveCommandTokens(command: string): string[] {
+  try {
+    return tokenizeRaviAppCommand(command);
+  } catch {
+    return [];
+  }
 }

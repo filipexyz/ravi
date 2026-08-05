@@ -67,7 +67,10 @@ A session-visibility query MUST return a structured payload with at least:
 - **Provider does not expose tokens** — `tokens.used` and `tokens.limit` MUST be `null`. Consumers MUST handle this gracefully without assuming the session is unbounded.
 - **Compaction event mid-query** — the response MUST reflect the post-compact state, with `compact.lastCompactedAt` updated and `loadedSkills` reset per `runtime/skill-loading`.
 - **Session not found** — return a structured error, not an empty payload; consumers MUST distinguish "no session" from "session with zero tokens".
-- **Provider does not expose skill loading** — return the normal visibility shape with conservative skill state. For Codex this may include `synced` or `advertised`; for Pi this is currently `unknown` or empty. Do not synthesize `loaded`.
+- **Provider does not expose skill loading** — return the normal visibility
+  shape with conservative skill state. For Codex this may include `synced` or
+  `advertised`; for Pi this may include allowlist-filtered `advertised` catalog
+  entries with declared `system-prompt` evidence. Do not synthesize `loaded`.
 
 ## Acceptance Criteria
 
@@ -76,4 +79,6 @@ A session-visibility query MUST return a structured payload with at least:
 - Compact events update `compact.lastCompactedAt` and reset `loadedSkills` to empty in the next visibility query.
 - Visibility responses are sub-100ms p95 in steady state (no provider round-trip required for cached state).
 - A Codex session with synchronized Ravi skills exposes those skills in `skills` but does not include them in `loadedSkills` until observed load evidence exists.
-- A Pi session exposes the skill fields without pretending to support skill loading.
+- A Pi session exposes only allowlisted skills as `advertised`, keeps
+  `loadedSkills` empty until explicit load evidence exists, and does not
+  pretend prompt catalog text is loaded content.

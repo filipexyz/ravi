@@ -460,10 +460,10 @@ function frontmatterValue(frontmatter: string | null, key: string): string | nul
 function frontmatterDescription(frontmatter: string | null): string | undefined {
   if (!frontmatter) return undefined;
   const simple = frontmatterValue(frontmatter, "description");
-  if (simple && simple !== "|" && simple !== ">") return simple;
+  if (simple && !/^[>|][+-]?$/.test(simple)) return simple;
 
   const lines = frontmatter.split(/\r?\n/);
-  const start = lines.findIndex((line) => /^description:\s*[>|]\s*$/.test(line));
+  const start = lines.findIndex((line) => /^description:\s*[>|][+-]?\s*$/.test(line));
   if (start === -1) return undefined;
 
   const collected: string[] = [];

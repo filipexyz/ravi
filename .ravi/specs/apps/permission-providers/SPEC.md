@@ -45,6 +45,10 @@ An app permission provider answers this question:
 It is an app-domain provider in the same provider runtime used by the rest of
 Ravi. It does not bypass other required providers.
 
+The provider request/decision JSON is a narrow internal authorization ABI. It
+is not the execution protocol for Ravi Apps. Ordinary app operations are CLIs
+launched with child context and call Ravi through public `ravi ...` commands.
+
 ## Invariants
 
 - Ravi core MUST NOT embed any grant graph as the outer guardrail. Ravi core owns only
@@ -84,6 +88,9 @@ Ravi. It does not bypass other required providers.
 - Provider decision payloads MUST NOT include secrets, raw context keys,
   credentials, bearer tokens, or arbitrary private app state.
 - Provider checks MUST be bounded by timeout and output-size limits.
+- A CLI permission provider MUST receive its request on stdin and return one
+  decision object on stdout. It MUST NOT receive `RAVI_CONTEXT_KEY` or call Ravi
+  as the protected app.
 - Provider decisions MAY be cached only when the provider declares a safe cache
   TTL and the cache key includes actor, surface, session authority mode, app id,
   operation id, resource id, action, provider version, and relevant policy
@@ -140,6 +147,9 @@ The normative pipeline is:
    - provider allow + required boundary providers allow => allow;
    - provider not_applicable on a provider-required operation => deny.
 7. Emit audit/explain metadata.
+8. After all required providers allow, return control to the App Router. The
+   router then issues the operation's child context and launches the app CLI.
+   The provider subprocess itself never receives that child key.
 
 ## Manifest Contract
 
@@ -173,9 +183,8 @@ Rules:
 - `permissions.provider.id` MUST be stable within the app.
 - `permissions.provider.version` MUST change when provider semantics change.
 - `interface` MUST be a bounded request/response app operation interface.
-  Current implementation supports `builtin` and `cli`. `sdk` and `tool` are
-  reserved until the runtime has bounded request/response executors for them.
-  Stream interfaces MUST NOT be used for permission provider decisions.
+  It MUST be `builtin` or `cli`. SDK, tool, stream, and UI interfaces MUST NOT
+  be used for permission provider decisions.
 - Provider operations MUST be safe to call for authorization. They MUST NOT
   perform the protected mutation as a side effect.
 - Provider operations MUST return JSON matching the declared decision schema.
@@ -248,7 +257,8 @@ Rules:
   authorization decision. Full user payloads SHOULD NOT be sent by default.
 - Provider subprocesses MUST NOT inherit raw context-key or credential
   environment variables. Normal app operations may receive runtime context env;
-  provider hooks are a stricter policy boundary.
+  provider hooks are a stricter policy boundary. A normal app operation
+  receives a newly issued child key, never the parent key.
 - The operation referenced by `permissions.provider.operation` is reserved for
   the runtime authorization path and MUST NOT be directly runnable as an ordinary
   app operation unless a future diagnostic spec defines that behavior.
@@ -343,6 +353,9 @@ Rules:
 - Providers MUST NOT depend on natural-language prompt annotations for identity.
 - Providers MUST NOT scrape chat history to infer authority when structured
   actor/resource metadata is available.
+- The provider JSON envelope is not reusable as a general App host protocol.
+- Provider CLIs are authorization hooks, not an alternate implementation of
+  the app's domain CLI.
 
 ## Validation
 
@@ -359,6 +372,8 @@ Rules:
 - App router tests SHOULD prove `needs_grant` returns a denial with grant
   suggestion and does not mutate provider-owned policy state.
 - Provider audit tests SHOULD prove context keys and secrets are not serialized.
+- Router tests SHOULD prove the provider subprocess receives no context key,
+  while the allowed domain operation receives a fresh bounded child key.
 
 ## Known Failure Modes
 

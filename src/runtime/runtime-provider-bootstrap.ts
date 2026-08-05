@@ -53,7 +53,11 @@ export async function prepareRuntimeProviderBootstrap(
     ...(discoveredPlugins.length > 0 ? { plugins: discoveredPlugins } : {}),
     hostServices,
   });
-  const runtimePlugins = options.runtimeCapabilities.supportsPlugins ? discoveredPlugins : [];
+  const runtimePlugins =
+    options.runtimeCapabilities.supportsPlugins ||
+    options.runtimeCapabilities.skillVisibility.availability === "provider"
+      ? discoveredPlugins
+      : [];
 
   return {
     hostServices,

@@ -39,7 +39,7 @@ The shared prompt generator is the last boundary before Claude, Codex, or Pi con
 
 ## Why Native Steer Is Temporarily Disabled
 
-Steer and follow-up controls add physical provider input after the immutable attempt request was recorded. Calling them without an append-only input journal would make a crashed attempt look replayable while omitting part of what the provider actually received. Routing normal inbound prompts through the host queue preserves a complete handoff until durable queue/input journaling lands.
+Steer and follow-up controls add physical provider input after the immutable attempt request was recorded. An append-only input journal is the eventual complete representation. Until it lands, active implicit steer preserves responsiveness only by writing an `inputMutated` marker before provider control, which makes the whole physical attempt non-replayable. Unfenced controls stay disabled because they would make a crashed attempt look replayable while omitting part of what the provider actually received.
 
 ## Why Queue Order Is Explicit
 

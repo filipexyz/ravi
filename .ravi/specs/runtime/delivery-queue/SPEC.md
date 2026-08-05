@@ -47,6 +47,8 @@ It exists so external session events, notifications, observer messages, and cros
 - **Task-completion lane**: prompt atoms that wait until the session is no longer inside an active task. This is represented by `after_task`.
 - **Steer lane**: prompt atoms that may enter the active conversation after startup/compaction/tool barriers clear. This is represented by `after_tool` and exposed to operators as `steer`.
 - **Immediate lane**: prompt atoms that may interrupt the active turn as soon as Ravi considers it safe. This is represented by `immediate_interrupt` and is a stronger escape hatch than `steer`.
+- **Logical delivery id**: a stable client-generated id shared by every attempt to deliver the same provider turn.
+- **Ambiguous delivery outcome**: Ravi handed a request to the provider but did not observe enough native state to know whether that turn is absent, running, or terminal.
 
 ## Barrier Values
 
@@ -112,7 +114,10 @@ they are removed only from retry ownership so the superseded turn is not
 replayed ahead of the user's new direction.
 
 An unexpected provider or runtime interruption with no interrupting prompt MUST
-keep the yielded atoms eligible for recovery replay.
+keep the yielded atoms eligible for recovery replay. Those atoms MUST retain one
+logical delivery id and MUST be isolated from later fresh atoms until the
+provider adapter reconciles the ambiguous outcome. An intentional provider or
+model restart is not an ambiguous replay and MAY retain normal batching.
 
 ## Producer Contract
 
@@ -189,7 +194,8 @@ Each queued, released, batched, bypassed, or interrupted prompt SHOULD include:
 - Provider adapters MUST NOT implement their own delivery queue. Queueing and interruption are runtime responsibilities.
 - A queued prompt atom MUST survive provider interruption and daemon restart according to `runtime/session-continuity`.
 - A prompt-driven interruption MUST release the interrupting atom next instead of replaying the superseded turn first.
-- An unexpected provider interruption MUST retain the active turn for recovery replay.
+- An unexpected provider interruption MUST retain the active turn for provider reconciliation only when the live provider handle advertises that strategy. Otherwise the active turn MAY be replayed as a fresh delivery only when durable safety evidence authorizes it and MUST be excluded when unsafe.
+- Ambiguous recovery MUST reuse the active turn's logical delivery id and MUST NOT fold later fresh prompt atoms into that replay.
 - A provider turn interrupted by a later prompt MUST still produce exactly one terminal event according to `runtime`.
 - Assistant messages MUST be persisted only for non-interrupted terminal turns.
 - Queue classification MUST be deterministic for the same payload and explicit options.
@@ -205,7 +211,8 @@ Each queued, released, batched, bypassed, or interrupted prompt SHOULD include:
 - Operational execute/heartbeat/trigger prompts do not interrupt active task work by default.
 - Human channel messages can still interrupt after safe tool barriers.
 - A human channel message that interrupts an active turn is the next provider input; the superseded turn is not replayed ahead of it.
-- A provider interruption without a newer prompt still replays the active prompt atom.
+- A provider interruption without a newer prompt reconciles the active prompt atom when the provider advertises support; otherwise it retries the atom only when generic replay remains durably safe.
+- Ambiguous recovery reuses one logical delivery id; intentional restarts create a new delivery id and preserve normal batching.
 - Equal-lane queued events are delivered FIFO.
 - Trace explains whether a prompt was queued, released, batched, blocked, bypassed, or used to interrupt.
 - Tests cover active text generation, tool-running, unsafe tool-running, active task, idle session, daemon restart, and explicit immediate delivery.

@@ -623,7 +623,7 @@ export type AppsGuideReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli" | "sdk" | "tool";
+        interface: "builtin" | "cli";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -646,6 +646,12 @@ export type AppsGuideReturn = {
     warnings: string[];
   }) | null;
   appId: string | null;
+  builder: {
+    command: string;
+    reviewChecklist: string[];
+    skill: string;
+    spec: string;
+  };
   nextCommands: string[];
   prompts: Array<{
     commands: string[];
@@ -676,6 +682,13 @@ export type AppsImportCliInput = {
 
 /** Return shape for `apps.import-cli`. */
 export type AppsImportCliReturn = {
+  builder: {
+    command: string;
+    reviewChecklist: string[];
+    skill: string;
+    spec: string;
+  };
+  cliPath: string | null;
   command: string;
   confidence: "high" | "medium" | "low";
   debugCandidates: Array<{
@@ -694,8 +707,8 @@ export type AppsImportCliReturn = {
   description: string;
   dryRun: boolean;
   files: Array<{
-    action: "planned" | "created" | "overwritten";
-    kind: "manifest" | "spec" | "skill";
+    action: "planned" | "created" | "overwritten" | "preserved";
+    kind: "cli" | "manifest" | "spec" | "skill";
     path: string;
   }>;
   force: boolean;
@@ -755,7 +768,7 @@ export type AppsListReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli" | "sdk" | "tool";
+        interface: "builtin" | "cli";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -797,7 +810,7 @@ export type AppsListReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli" | "sdk" | "tool";
+        interface: "builtin" | "cli";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -859,7 +872,7 @@ export type AppsPromptsReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli" | "sdk" | "tool";
+        interface: "builtin" | "cli";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -882,6 +895,12 @@ export type AppsPromptsReturn = {
     warnings: string[];
   }) | null;
   appId: string | null;
+  builder: {
+    command: string;
+    reviewChecklist: string[];
+    skill: string;
+    spec: string;
+  };
   nextCommands: string[];
   prompts: Array<{
     commands: string[];
@@ -906,13 +925,15 @@ export type AppsRunInput = {
 /** Return shape for `apps.run`. */
 export type AppsRunReturn = {
   appId: string | null;
+  callerContextId?: string;
   channel?: string;
+  childContextId?: string;
   command?: string;
   durationMs: number;
   error?: string;
   exitCode?: number | null;
   handler?: string;
-  interface: ("builtin" | "cli" | "sdk" | "tool" | "stream") | null;
+  interface: ("builtin" | "cli") | null;
   mutating: boolean;
   ok: boolean;
   operation: string | null;
@@ -927,7 +948,7 @@ export type AppsRunReturn = {
     durationMs: number;
     error?: string;
     grantSuggestion?: unknown;
-    interface: "builtin" | "cli" | "sdk" | "tool";
+    interface: "builtin" | "cli";
     providerId: string;
     providerOperationId: string;
     providerVersion: string;
@@ -956,12 +977,19 @@ export type AppsScaffoldInput = {
 
 /** Return shape for `apps.scaffold`. */
 export type AppsScaffoldReturn = {
+  builder: {
+    command: string;
+    reviewChecklist: string[];
+    skill: string;
+    spec: string;
+  };
+  cliPath: string | null;
   command: string;
   description: string;
   dryRun: boolean;
   files: Array<{
-    action: "planned" | "created" | "overwritten";
-    kind: "manifest" | "spec" | "skill";
+    action: "planned" | "created" | "overwritten" | "preserved";
+    kind: "cli" | "manifest" | "spec" | "skill";
     path: string;
   }>;
   force: boolean;
@@ -1003,7 +1031,7 @@ export type AppsShowReturn = {
         };
         failClosed: true;
         id: string;
-        interface: "builtin" | "cli" | "sdk" | "tool";
+        interface: "builtin" | "cli";
         operation: string;
         requestSchema: {
           kind: "ref" | "inline" | "unknown";
@@ -9281,6 +9309,57 @@ export type PagesListReturn = {
   sites: Array<Record<string, unknown>>;
   success: true;
   total: number;
+};
+
+/** Input shape for `pages.password.remove`. */
+export type PagesPasswordRemoveInput = {
+  args: string[];
+  console?: string;
+  project?: string;
+  route?: string;
+  visibility?: string;
+};
+
+/** Return shape for `pages.password.remove`. */
+export type PagesPasswordRemoveReturn = {
+  action: "remove" | "set" | "status";
+  configured: boolean;
+  consoleUrl: string;
+  path: string;
+  policy: (Record<string, unknown>) | null;
+  projectRef: string;
+  release: Record<string, unknown>;
+  route: Record<string, unknown>;
+  scope: "route";
+  site: Record<string, unknown>;
+  siteRef: string;
+  success: true;
+  url: string;
+};
+
+/** Input shape for `pages.password.status`. */
+export type PagesPasswordStatusInput = {
+  args: string[];
+  console?: string;
+  project?: string;
+  route?: string;
+};
+
+/** Return shape for `pages.password.status`. */
+export type PagesPasswordStatusReturn = {
+  action: "remove" | "set" | "status";
+  configured: boolean;
+  consoleUrl: string;
+  path: string;
+  policy: (Record<string, unknown>) | null;
+  projectRef: string;
+  release: Record<string, unknown>;
+  route: Record<string, unknown>;
+  scope: "route";
+  site: Record<string, unknown>;
+  siteRef: string;
+  success: true;
+  url: string;
 };
 
 /** Input shape for `pages.publish`. */

@@ -22,10 +22,16 @@ ravi apps show <app-id> --json
 ravi apps guide <app-id> --json
 ```
 
-4. Implement the actual CLI/SDK/tool/stream operations declared by the
-   manifest.
+4. Run `ravi <app-id> list --json` to prove the generated CLI route, then
+   implement the actual domain operations declared by the manifest.
 
-5. Re-run checks and SDK/codegen tests when the command surface changes.
+5. Review `context.allow` and add only capabilities the CLI needs to call
+   public Ravi commands.
+
+6. Re-run manifest, router, and child-context checks.
+
+Use `--command "<app-cli>"` only when the implementation CLI already exists.
+In that mode scaffold does not generate `cli.ts`.
 
 ## Debug Scaffold Failure
 

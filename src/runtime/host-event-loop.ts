@@ -37,7 +37,7 @@ import {
 } from "./credential-store.js";
 import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
-import type { RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
+import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import {
   LEGACY_RUNTIME_PROVIDER_ID,
@@ -641,6 +641,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       completedAt,
       startedTool: terminalAttempt?.startedTool === true || streaming.currentTurnToolStarted === true,
       materializedOutput: terminalAttempt?.materializedOutput === true,
+      inputMutated:
+        (terminalAttempt ? hasRuntimeTurnAttemptInputMutation(terminalAttempt) : false) ||
+        streaming.currentTurnInputMutated === true,
     };
     streaming.currentCrashRecoveryTerminal = terminal;
     return terminal;
@@ -1183,7 +1186,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // The prompt was never yielded to the provider. Preserve it even when
         // the failed attempt write made the coordinator reject new work;
         // shutdown snapshots still need the exact original envelope.
-        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, crashRecovery);
+        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
       }
       if (restartStashedReason || !crashRecovery?.acceptingDeliveries) {
         return;
@@ -1219,7 +1222,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     if (reason !== "runtime_event_loop_closed") {
       return;
     }
-    if (streaming.pendingMessages.length === 0 || streaming.toolRunning || streaming.currentTurnToolStarted) {
+    if (streaming.pendingMessages.length === 0 || streaming.toolRunning) {
       return;
     }
 
@@ -1228,20 +1231,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       return;
     }
     const activeAttempt = crashRecovery.getActiveTurnAttempt(attemptId);
-    if (!activeAttempt || activeAttempt.startedTool || activeAttempt.materializedOutput) {
-      log.warn("Skipping automatic runtime replay because durable safety evidence is not replayable", {
-        runId,
-        sessionName,
-        turnId: currentTurnId,
-        attemptId,
-        attemptActive: Boolean(activeAttempt),
-        startedTool: activeAttempt?.startedTool ?? null,
-        materializedOutput: activeAttempt?.materializedOutput ?? null,
-      });
+    if (!activeAttempt) {
       return;
     }
-
-    const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, crashRecovery);
+    const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+    const reconcileCurrentTurn = runtimeSession.ambiguousTurnRecoveryStrategy === "reconcile_by_client_message_id";
+    const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
+      crashRecovery,
+      reconcileCurrentTurn,
+    });
     if (stashedCount === 0) {
       return;
     }
@@ -1253,6 +1251,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       turnId: currentTurnId,
       reason,
       stashedMessages: stashedCount,
+      recoveryStrategy: reconcileCurrentTurn ? "provider_reconciliation" : "safe_replay",
+      terminalReplayAllowed: safety.replayable,
     });
   };
 
@@ -1431,6 +1431,21 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     }
 
     const closeResources = async () => {
+      if (streaming.internalAbortReason === PROVIDER_TURN_INACTIVITY_REASON) {
+        try {
+          // Inactivity is a turn-level failure. Give the provider a chance to
+          // terminate that turn before releasing its transport so a resumed
+          // session does not inherit an ambiguous in-flight operation.
+          await runtimeSession.interrupt();
+        } catch (error) {
+          log.warn("Failed to interrupt inactive provider turn before close", {
+            runId,
+            sessionName,
+            provider: runtimeSession.provider,
+            error,
+          });
+        }
+      }
       await Promise.all([
         (async () => {
           try {
@@ -1493,12 +1508,25 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         if (idleMs < PROVIDER_TURN_INACTIVITY_TIMEOUT_MS) return;
 
         timedOut = true;
-        const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, crashRecovery);
+        const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+        const reconcileCurrentTurn = runtimeSession.ambiguousTurnRecoveryStrategy === "reconcile_by_client_message_id";
+        const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, {
+          crashRecovery,
+          reconcileCurrentTurn,
+        });
         recordProviderTurnInactivityTimeout(idleMs, stashedCount > 0);
         if (stashedCount > 0) {
           restartStashedReason = PROVIDER_TURN_INACTIVITY_REASON;
+          if (reconcileCurrentTurn && !safety.replayable) {
+            log.warn("Provider inactivity recovery will reconcile without terminal replay authority", {
+              runId,
+              sessionName,
+              startedTool: safety.startedTool,
+              materializedOutput: safety.materializedOutput,
+              durableBinding: safety.durableBinding,
+            });
+          }
         } else {
-          const safety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
           log.warn("Skipping provider inactivity replay because the current turn is not replay-safe", {
             runId,
             sessionName,
@@ -2153,7 +2181,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               sessionName,
               count: streaming.pendingMessages.length,
             });
-            stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, crashRecovery);
+            stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
           }
           log.info("Executing deferred abort after unsafe tool completed", {
             sessionName,
@@ -2368,6 +2396,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.lastToolFailure = undefined;
         streaming.pendingAbort = false;
         streaming.currentTurnToolStarted = false;
+        streaming.currentTurnInputMutated = false;
         streaming.turnActive = false;
         streaming.currentChannelBackend = undefined;
         clearTraceTurnState();
@@ -2413,6 +2442,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
         streaming.currentTurnToolStarted = false;
+        streaming.currentTurnInputMutated = false;
         streaming.currentChannelBackend = undefined;
         streaming.turnActive = false;
         const interruptedReplaySafety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
@@ -2524,7 +2554,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           // dispatch queue keeps growing. Closing here forces a fresh SDK spawn
           // immediately; preserve queued/current messages so the next session
           // can drain them instead of losing the interrupted turn.
-          const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, crashRecovery);
+          const stashedCount = stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
           if (stashedCount > 0) {
             restartStashedReason = restartReason;
           } else {
@@ -2545,7 +2575,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         if (credentialFailureSignal?.retryableByCredential) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
-          const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, crashRecovery);
+          const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
+            crashRecovery,
+          });
           if (stashedCount > 0 && streaming.currentRuntimeCredential?.credentialId) {
             // This physical delivery is terminal even when the failure is
             // hidden from user-facing channels and retried on a fresh runtime.
@@ -2588,6 +2620,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               stashedMessages: stashedCount,
             });
             streaming.currentTurnToolStarted = false;
+            streaming.currentTurnInputMutated = false;
             signalTurnComplete();
             clearTraceTurnState();
             streaming.done = true;
@@ -2696,6 +2729,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             source: streaming.currentSource,
           });
           streaming.currentTurnToolStarted = false;
+          streaming.currentTurnInputMutated = false;
           streaming.internalAbortReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
           streaming.interrupted = true;
           clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
@@ -2746,6 +2780,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         clearTraceTurnState();
 
         streaming.currentTurnToolStarted = false;
+        streaming.currentTurnInputMutated = false;
         streaming.currentChannelBackend = undefined;
         clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
 
