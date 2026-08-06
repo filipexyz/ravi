@@ -198,10 +198,10 @@ ravi cron set <id> session isolated
 ravi cron set <id> delete-after true
 
 # Manual run (ignores schedule)
-ravi cron run <id>
+ravi cron run <id> --execute
 
 # Delete
-ravi cron rm <id>
+ravi cron rm <id> --execute
 ```
 
 **Schedule Types:**
@@ -276,7 +276,7 @@ ravi triggers set <id> cooldown 30s          # supports: 5s, 30s, 1m, 5m, 1h
 ravi triggers test <id>
 
 # Delete
-ravi triggers rm <id>
+ravi triggers rm <id> --execute
 ```
 
 **Topic Catalog:**
@@ -576,8 +576,8 @@ ravi cron add <name> [options]       # Add new job
 ravi cron enable <id>                # Enable job
 ravi cron disable <id>               # Disable job
 ravi cron set <id> <key> <value>     # Set property
-ravi cron run <id>                   # Manual trigger
-ravi cron rm <id>                    # Delete job
+ravi cron run <id> --execute         # Manual trigger (dry-run sem --execute)
+ravi cron rm <id> --execute          # Delete job (dry-run sem --execute)
 
 # Event triggers
 ravi triggers list                   # List all triggers
@@ -587,7 +587,7 @@ ravi triggers enable <id>            # Enable trigger
 ravi triggers disable <id>           # Disable trigger
 ravi triggers set <id> <key> <value> # Set property
 ravi triggers test <id>              # Test with fake event
-ravi triggers rm <id>                # Delete trigger
+ravi triggers rm <id> --execute      # Delete trigger (dry-run sem --execute)
 
 # Permissions (REBAC)
 ravi permissions grant <subject> <relation> <object>

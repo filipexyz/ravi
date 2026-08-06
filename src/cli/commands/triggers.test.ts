@@ -5,6 +5,26 @@ const actualRouterDbModule = await import("../../router/router-db.js");
 
 const createdTriggers: Array<Record<string, unknown>> = [];
 const updatedTriggers: Array<{ id: string; patch: Record<string, unknown> }> = [];
+const deletedTriggerIds: string[] = [];
+const emitMock = mock(async () => {});
+
+function buildTriggerRecord(): Record<string, unknown> {
+  return {
+    id: "trg_1",
+    name: "trigger",
+    topic: "ravi.external.topic",
+    message: "hello",
+    agentId: "agent-1",
+    cooldownMs: 5000,
+    enabled: true,
+    session: "isolated",
+    fireCount: 0,
+    createdAt: Date.now(),
+  };
+}
+
+let triggerRecord: Record<string, unknown> | null = buildTriggerRecord();
+let triggerList: Array<Record<string, unknown>> = [];
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -19,6 +39,9 @@ mock.module("../decorators.js", () => ({
 
 mock.module("../context.js", () => ({
   getContext: () => undefined,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -33,7 +56,7 @@ mock.module("../../nats.js", () => ({
   publish: mock(async () => {}),
   subscribe: mock(() => (async function* () {})()),
   nats: {
-    emit: mock(async () => {}),
+    emit: emitMock,
     subscribe: mock(() => (async function* () {})()),
     close: mock(async () => {}),
   },
@@ -101,19 +124,8 @@ mock.module("../../triggers/index.js", () => ({
       updatedAt: 1,
     };
   },
-  dbGetTrigger: () => ({
-    id: "trg_1",
-    name: "trigger",
-    topic: "ravi.external.topic",
-    message: "hello",
-    agentId: "agent-1",
-    cooldownMs: 5000,
-    enabled: true,
-    session: "isolated",
-    fireCount: 0,
-    createdAt: Date.now(),
-  }),
-  dbListTriggers: () => [],
+  dbGetTrigger: () => triggerRecord,
+  dbListTriggers: () => (triggerList.length > 0 ? triggerList : triggerRecord ? [triggerRecord] : []),
   dbUpdateTrigger: (id: string, patch: Record<string, unknown>) => {
     updatedTriggers.push({ id, patch });
     return {
@@ -131,10 +143,14 @@ mock.module("../../triggers/index.js", () => ({
       ...patch,
     };
   },
-  dbDeleteTrigger: () => {},
+  dbDeleteTrigger: (id: string) => {
+    deletedTriggerIds.push(id);
+    triggerRecord = null;
+  },
 }));
 
 const { TriggersCommands } = await import("./triggers.js");
+const { ContractError } = await import("../agent-contract.js");
 
 async function captureJson(run: () => Promise<unknown>): Promise<Record<string, unknown>> {
   const lines: string[] = [];
@@ -172,6 +188,10 @@ describe("TriggersCommands topic guidance", () => {
   beforeEach(() => {
     createdTriggers.length = 0;
     updatedTriggers.length = 0;
+    deletedTriggerIds.length = 0;
+    emitMock.mockClear();
+    triggerRecord = buildTriggerRecord();
+    triggerList = [];
   });
 
   it("allows ravi.session topics on add but prints an internal topic warning", async () => {
@@ -545,5 +565,106 @@ describe("TriggersCommands topic guidance", () => {
       id: "trg_1",
       patch: { replySession: null },
     });
+  });
+});
+
+describe("triggers agent-first contract", () => {
+  beforeEach(() => {
+    createdTriggers.length = 0;
+    updatedTriggers.length = 0;
+    deletedTriggerIds.length = 0;
+    emitMock.mockClear();
+    triggerRecord = buildTriggerRecord();
+    triggerList = [];
+  });
+
+  it("blocks triggers rm without --execute (dry-run, exit 3, no delete)", async () => {
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await new TriggersCommands().rm("trg_1", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("triggers rm");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    const plan = envelope.error.plan as Record<string, unknown>;
+    expect(plan.triggerId).toBe("trg_1");
+    expect(plan.topic).toBe("ravi.external.topic");
+    expect(deletedTriggerIds).toEqual([]);
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("deletes the trigger with --execute", async () => {
+    const payload = await captureJson(() => new TriggersCommands().rm("trg_1", true, true));
+
+    expect(payload).toMatchObject({
+      status: "deleted",
+      target: { type: "trigger", id: "trg_1" },
+      changedCount: 1,
+    });
+    expect(deletedTriggerIds).toEqual(["trg_1"]);
+    expect(emitMock).toHaveBeenCalledWith("ravi.triggers.refresh", {});
+  });
+
+  it("keeps triggers test unbraked (declared): fake-event debug tool fires without --execute", async () => {
+    const payload = await captureJson(() => new TriggersCommands().test("trg_1", true));
+
+    expect(payload).toMatchObject({
+      status: "test_emitted",
+      target: { type: "trigger", id: "trg_1" },
+      changedCount: 0,
+    });
+    expect(emitMock).toHaveBeenCalledWith("ravi.triggers.test", { triggerId: "trg_1" });
+  });
+
+  it("emits TRIGGER_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+    triggerRecord = null;
+    triggerList = [
+      { id: "trg_mail", name: "Mail watcher", topic: "ravi.inbox.mail.received", agentId: "agent-1", enabled: true },
+      { id: "trg_audit", name: "Audit alert", topic: "ravi.audit.denied", agentId: "agent-1", enabled: true },
+    ];
+
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      new TriggersCommands().show("trg_mial", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("triggers show");
+    expect(envelope.error.code).toBe("TRIGGER_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("trg_mail");
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+  });
+
+  it("supports --fields compact mode on triggers list", async () => {
+    const payload = await captureJson(async () =>
+      new TriggersCommands().list(true, undefined, undefined, undefined, "id,name"),
+    );
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(1);
+    expect(Object.keys(items[0]).sort()).toEqual(["id", "name"]);
+    const triggers = payload.triggers as Array<Record<string, unknown>>;
+    expect(Object.keys(triggers[0]).sort()).toEqual(["id", "name"]);
   });
 });

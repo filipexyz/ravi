@@ -33,8 +33,8 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 11 | projects | projects.ts | projects | **MIGRADO** | cli/projects |
 | 12 | artifacts+pages | artifacts.ts, pages.ts | artifacts (pages sem skill — lacuna registrada) | **MIGRADO** | cli/artifacts, cli/pages |
 | 13 | skills+skill-gates | skills.ts, skill-gates.ts | skills, skill-gates | **MIGRADO** | cli/skills, cli/skill-gates |
-| 14 | cron | cron.ts | cron | pendente | — |
-| 15 | triggers | triggers.ts | triggers | pendente | — |
+| 14 | cron | cron.ts | cron | **MIGRADO** | cli/cron |
+| 15 | triggers | triggers.ts | triggers | **MIGRADO** | cli/triggers |
 | 16 | tags+tag-rules | tags.ts, tag-rules.ts | tag-rules | pendente | — |
 | 17 | observers | observers.ts | observers | pendente | — |
 | 18 | workflows | workflows.ts | (sem skill) | pendente | — |
@@ -486,3 +486,22 @@ help texts; AGENTS.md (6 linhas de pages) atualizado pelo integrador.
 freio direcional, senha nunca lida em dry-run) · integração
 artifacts-show 6/6 · typecheck limpo · spec gate PASSED (cli/artifacts +
 cli/pages). **Rotina Y:** show art-fantasma → exit 1 · usage → exit 2.
+
+### 14+15. cron + triggers — MIGRADOS (subagente, verificado e integrado)
+
+**Escopo:** freio (`--execute`) em `cron rm`, `cron run` (dispara o job REAL
+fora do agendamento; plan mostra a mensagem/shellCommand que seria enviado;
+freio ANTES do log legado "Triggering job" para o dry-run em texto não mentir)
+e `triggers rm`. Sem freio (declaradas com racional): add/set/enable/disable
+dos dois e `triggers test` (dispara com dados FAKE `_test:true`, changedCount 0
+— é o ensaio seguro por design; freá-lo removeria o dry-run que já existe).
+Envelope not-found estendido a TODAS as ops que resolvem por id (hashes curtos
+fáceis de errar; custo zero): `CRON_JOB_NOT_FOUND`/`TRIGGER_NOT_FOUND` com
+suggestions filtradas pelo MESMO filtro REBAC do list (access-denied continua
+dobrado em not-found — cloak legado preservado). `--fields` nos dois lists.
+Usage contract nos subtrees. Consumidores: 4 docs + hints de usage internos +
+skills cron/triggers; AGENTS.md (6 linhas) atualizado pelo integrador.
+
+**Rotina X:** `cron-commands.test.ts` 26/26 · `triggers.test.ts` 24/24 ·
+spec gate PASSED (cli/cron + cli/triggers) · typecheck dos arquivos limpo
+(1 erro transitório em hooks.test.ts era WIP de agente paralelo).

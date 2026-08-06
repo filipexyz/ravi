@@ -266,18 +266,21 @@ ravi cron set <id> delete-after true
 
 ### Manual Execution
 
-Run a job immediately, ignoring its schedule:
+Run a job immediately, ignoring its schedule. Without `--execute` this is a dry-run (exit 3) that shows the resolved job and the message that would fire:
 
 ```bash
-ravi cron run <id>
+ravi cron run <id>            # dry-run: shows the plan, fires nothing
+ravi cron run <id> --execute  # actually triggers the job
 ```
 
 This sends a trigger signal to the daemon. The job executes with the same prompt and session as a normal scheduled run. The schedule is not affected.
 
 ### Deleting Jobs
 
+Without `--execute` this is a dry-run (exit 3); nothing is deleted:
+
 ```bash
-ravi cron rm <id>
+ravi cron rm <id> --execute
 ```
 
 ## Practical Examples
@@ -337,7 +340,7 @@ ravi cron add "Check Emails" \
 2. **Check next run time:** The `Next run` field shows when the job is scheduled to fire next
 3. **Daemon running:** `ravi daemon status` -- the daemon must be running to execute jobs
 4. **Check logs:** `ravi daemon logs -f` -- look for `cron:runner` entries
-5. **Manual test:** `ravi cron run <id>` -- triggers immediately to verify the job works
+5. **Manual test:** `ravi cron run <id> --execute` -- triggers immediately to verify the job works (without `--execute` it only shows the dry-run plan)
 
 ### Timing seems off
 

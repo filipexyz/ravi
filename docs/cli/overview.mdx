@@ -251,8 +251,8 @@ ravi cron add <name>                          # Add a new job
 ravi cron enable <id>                         # Enable a job
 ravi cron disable <id>                        # Disable a job
 ravi cron set <id> <key> <value>              # Set property (name, message, cron, every, tz, agent, account, description, session, reply-session, delete-after)
-ravi cron run <id>                            # Manually trigger a job
-ravi cron rm <id>                             # Delete a job
+ravi cron run <id> --execute                  # Manually trigger a job (dry-run without --execute)
+ravi cron rm <id> --execute                   # Delete a job (dry-run without --execute)
 ```
 
 ## Heartbeat
@@ -287,7 +287,7 @@ ravi triggers enable <id>                     # Enable trigger
 ravi triggers disable <id>                    # Disable trigger
 ravi triggers set <id> <key> <value>          # Set property (name, message, topic, agent, account, session, cooldown, filter)
 ravi triggers test <id>                       # Test with fake event data
-ravi triggers rm <id>                         # Delete trigger
+ravi triggers rm <id> --execute               # Delete trigger (dry-run without --execute)
 ```
 
 ## WhatsApp Groups

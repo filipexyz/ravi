@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cronListReturnSchema, cronMutationReturnSchema, cronShowReturnSchema } from "./operational-return-schemas.js";
@@ -147,6 +148,32 @@ function getTargetResolverDeps() {
   };
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+/**
+ * Job ids are public through `cron list`, so CRON_JOB_NOT_FOUND enriches the
+ * envelope with real similar ids/names. Candidates keep the same REBAC
+ * visibility filter as `cron list`, so scope isolation stays intact.
+ */
+function failCronJobNotFound(op: string, id: string, asJson?: boolean): never {
+  const scopeCtx = getScopeContext();
+  const candidates = dbListCronJobs()
+    .filter((job) => canAccessResource(scopeCtx, job.agentId))
+    .flatMap((job) => [job.id, job.name]);
+  contractFail(op, "CRON_JOB_NOT_FOUND", `Job not found: ${id}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the job id (see suggestions; list with: ravi cron list --json)",
+      suggestions: suggestSimilar(id, candidates),
+    },
+  });
+}
+
 function serializeCronJob(job: CronJob) {
   return {
     ...job,
@@ -179,6 +206,8 @@ export class CronCommands {
     allAgents?: boolean,
     @Option({ flags: "--agent <id>", description: "Filter jobs by a specific agent ID" })
     filterAgentId?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     let jobs = dbListCronJobs();
 
@@ -241,12 +270,14 @@ export class CronCommands {
     if (scopeAgentId) filters.agentId = scopeAgentId;
     if (tagFilter) filters.tag = tagFilter;
 
+    // Compact mode (Manual v2 7.9): --fields narrows each serialized item.
+    const serializedJobs = pickFields(pageJobs.map(serializeCronJob), fields);
     const payload = {
       total: page.total,
       pagination,
       filters,
-      items: pageJobs.map(serializeCronJob),
-      jobs: pageJobs.map(serializeCronJob),
+      items: serializedJobs,
+      jobs: serializedJobs,
     };
 
     if (asJson) {
@@ -297,9 +328,9 @@ export class CronCommands {
         console.log(`    ${pagination.nextCommand}`);
       }
       console.log("\nUsage:");
-      console.log("  ravi cron show <id>     # Show job details");
-      console.log("  ravi cron run <id>      # Manually run job");
-      console.log("  ravi cron rm <id>       # Delete job");
+      console.log("  ravi cron show <id>               # Show job details");
+      console.log("  ravi cron run <id> --execute      # Manually run job (dry-run without --execute)");
+      console.log("  ravi cron rm <id> --execute       # Delete job (dry-run without --execute)");
     }
     return payload;
   }
@@ -313,7 +344,7 @@ export class CronCommands {
   ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
-      fail(`Job not found: ${id}`);
+      failCronJobNotFound("cron show", id, asJson);
     }
 
     const payload = { job: serializeCronJob(job) };
@@ -534,7 +565,7 @@ export class CronCommands {
   ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
-      fail(`Job not found: ${id}`);
+      failCronJobNotFound("cron enable", id, asJson);
     }
 
     try {
@@ -574,7 +605,7 @@ export class CronCommands {
   ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
-      fail(`Job not found: ${id}`);
+      failCronJobNotFound("cron disable", id, asJson);
     }
 
     try {
@@ -613,7 +644,7 @@ export class CronCommands {
   ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
-      fail(`Job not found: ${id}`);
+      failCronJobNotFound("cron set", id, asJson);
     }
 
     try {
@@ -815,10 +846,39 @@ export class CronCommands {
   async run(
     @Arg("id", { description: "Job ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually trigger the job now; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
-      fail(`Job not found: ${id}`);
+      failCronJobNotFound("cron run", id, asJson);
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): `cron run` fires the REAL job right now,
+      // outside its schedule — agent execution (or a shell command) with real
+      // side effects. Dry-run by default: show the resolved job and the
+      // message/command that would fire, exit 3 before emitting the trigger.
+      contractDryRun(
+        "cron run",
+        {
+          jobId: id,
+          name: job.name,
+          executionType: job.executionType,
+          schedule: describeSchedule(job.schedule),
+          ...(job.executionType === "shell"
+            ? { shellCommand: job.shellCommand ?? null }
+            : {
+                message: job.message,
+                agentId: job.agentId ?? getDefaultAgentId(),
+                sessionTarget: job.sessionTarget,
+              }),
+        },
+        { asJson },
+      );
     }
 
     if (!asJson) {
@@ -852,10 +912,32 @@ export class CronCommands {
   async rm(
     @Arg("id", { description: "Job ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the job; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const job = dbGetCronJob(id);
     if (!job || !canAccessResource(getScopeContext(), job.agentId)) {
-      fail(`Job not found: ${id}`);
+      failCronJobNotFound("cron rm", id, asJson);
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): deleting a job is destructive (schedule
+      // and config are gone), so dry-run by default and exit 3 before any
+      // state change.
+      contractDryRun(
+        "cron rm",
+        {
+          jobId: id,
+          name: job.name,
+          executionType: job.executionType,
+          schedule: describeSchedule(job.schedule),
+          enabled: job.enabled,
+        },
+        { asJson },
+      );
     }
 
     try {

@@ -12,6 +12,33 @@ description: |
 
 Você gerencia os triggers de eventos do Ravi. Triggers são reações automáticas que disparam quando eventos específicos acontecem no sistema.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução (ex.: `TRIGGER_NOT_FOUND`). O envelope traz `suggestions` com triggers reais parecidos — consulte antes de concluir "não existe".
+- `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
+- `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
+
+Onde o freio existe hoje: `triggers rm` (deletar é destrutivo — a assinatura do tópico e a config somem sem undo) é dry-run por default e exige `--execute`:
+
+```bash
+ravi triggers rm trg_1 --json      # exit 3: plan mostra id, name e topic do trigger que seria deletado
+ravi triggers rm trg_1 --execute   # deleta de verdade
+```
+
+Sem freio (declaradas): `add`, `set`, `enable`, `disable` — todas têm comando inverso — e `triggers test`, que dispara com dados FAKE (`_test: true`): é a ferramenta de debug projetada exatamente para pré-visualizar um trigger com segurança antes do tráfego real, e não grava nada (`changedCount: 0`). Frear o `test` tiraria o ensaio barato que você já tem.
+
+Compact mode: `triggers list --fields id,name,topic,enabled` devolve só esses campos por item — use em varredura para não arrastar o objeto inteiro de cada trigger.
+
+Checklist antes de responder sobre triggers:
+
+- Tratei exit 3 como freio (revisei o `plan`) e não como falha?
+- Consultei `suggestions` do envelope antes de declarar not-found?
+
 ## Comandos Disponíveis
 
 ### Listar triggers
@@ -65,13 +92,19 @@ ravi triggers set <id> <key> <value>
 Keys: name, message, shell, exec, timeout, env-file, on-error, topic, agent, session, cooldown, filter
 
 ### Testar trigger
+
+Dispara com dados FAKE, sem freio — é o ensaio seguro antes do tráfego real:
+
 ```bash
 ravi triggers test <id>
 ```
 
 ### Deletar
+
+Sem `--execute` é dry-run (exit 3); nada é deletado:
+
 ```bash
-ravi triggers rm <id>
+ravi triggers rm <id> --execute
 ```
 
 ## Banco de Tópicos

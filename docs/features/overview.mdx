@@ -78,8 +78,8 @@ ravi cron add "Cleanup" --every 1h --message "Run cleanup" --agent jarvis --isol
 # Auto-delete after first run
 ravi cron add "One-time" --every 5m --message "Do once" --delete-after
 
-# Manual trigger (ignores schedule)
-ravi cron run <id>
+# Manual trigger (ignores schedule; dry-run without --execute)
+ravi cron run <id> --execute
 
 # Manage
 ravi cron list
@@ -87,7 +87,7 @@ ravi cron show <id>
 ravi cron enable <id>
 ravi cron disable <id>
 ravi cron set <id> message "New message"
-ravi cron rm <id>
+ravi cron rm <id> --execute       # dry-run without --execute
 ```
 
 ---
@@ -159,7 +159,7 @@ ravi triggers enable <id>
 ravi triggers disable <id>
 ravi triggers set <id> cooldown 30s
 ravi triggers test <id>           # Fire with synthetic event data
-ravi triggers rm <id>
+ravi triggers rm <id> --execute   # dry-run without --execute
 ```
 
 ---

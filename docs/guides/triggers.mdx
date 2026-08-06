@@ -349,8 +349,10 @@ Check results with `ravi daemon logs -f`.
 
 ### Delete a trigger
 
+Without `--execute` this is a dry-run (exit 3); nothing is deleted:
+
 ```bash
-ravi triggers rm <id>
+ravi triggers rm <id> --execute
 ```
 
 ## Practical Examples
