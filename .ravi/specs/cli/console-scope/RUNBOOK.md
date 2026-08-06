@@ -12,6 +12,19 @@ owners:
 
 # Runbook
 
+## Agent-First Contract Notes (`ravi cloud scope`)
+
+`set`/`clear` write immediately (declared unbraked, reversible pair). When a
+scope command fails, branch on `error.code`, not the exit code: the legacy
+CloudAuthError map exits 3 for `PAYLOAD_INVALID` (for example two scope
+targets at once) without being a write brake. If a scope command ever exits 5
+as `SERVER_UNAVAILABLE` while the underlying error was a `ContractError`, the
+rethrow guard in `runCloudScopeCommand` regressed.
+
+```bash
+bun test src/cli/commands/cloud-scope.test.ts
+```
+
 ## Inspect Current Cloud Auth
 
 ```bash

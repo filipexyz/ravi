@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
+import { ContractError, contractDryRun, pickFields } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
@@ -36,6 +37,8 @@ export class CloudProjectsCommands {
     @Option({ flags: "--limit <n>", description: "Maximum projects to return (default: 50)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of projects to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runCloudProjectsCommand(asJson, async () => {
       const result = await listCloudProjects({ console: consoleUrl }, this.deps);
@@ -48,12 +51,13 @@ export class CloudProjectsCommands {
         total: page.total,
         options: [consoleUrl ? "--console" : null, consoleUrl],
       });
+      const items = pickFields(page.items, fields);
       const payload = {
         ...result,
         total: page.total,
         pagination,
-        projects: page.items,
-        items: page.items,
+        projects: items,
+        items,
       };
       printPayload(payload, asJson, () => printProjectList(payload));
       return payload;
@@ -75,14 +79,38 @@ export class CloudProjectsCommands {
     defaultPageSite?: boolean | string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually create the Console project; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runCloudProjectsCommand(asJson, async () => {
+      // Validation runs BEFORE the brake: an invalid --visibility fails the
+      // same way with or without --execute.
+      const defaultVisibility = normalizeCloudProjectVisibility(visibility);
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): this creates a REAL remote resource in
+        // Ravi Console (project + optional default Pages site), so dry-run by
+        // default and exit 3 before any Console call.
+        contractDryRun(
+          "cloud projects create",
+          {
+            slug,
+            name: name ?? slug,
+            description: description ?? null,
+            defaultVisibility: defaultVisibility ?? "private",
+            defaultPageSite: defaultPageSite ?? false,
+          },
+          { asJson },
+        );
+      }
       const result = await createCloudProject(
         {
           slug,
           name,
           description,
-          defaultVisibility: normalizeCloudProjectVisibility(visibility),
+          defaultVisibility,
           defaultPageSite,
           console: consoleUrl,
         },
@@ -121,6 +149,10 @@ async function runCloudProjectsCommand<T>(asJson: boolean | undefined, run: () =
   try {
     return await run();
   } catch (error) {
+    // Manual v2 contract: contractFail/contractDryRun already emitted their
+    // envelope and carry the exit taxonomy (1/2/3). Never let the legacy
+    // CloudAuthError funnel swallow them.
+    if (error instanceof ContractError) throw error;
     const cloudError = cloudAuthErrorFromUnknown(error);
     if (asJson) {
       printJson(formatCloudAuthError(cloudError));

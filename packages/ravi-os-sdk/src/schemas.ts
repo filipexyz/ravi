@@ -7183,6 +7183,10 @@ export const AudioGenerateInputSchema = {
       "description": "Caption when sending (used with --send)",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually call the paid TTS API; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "format": {
       "description": "Output format: mp3_44100_128 (default), mp3_22050_32, pcm_16000",
       "type": "string"
@@ -7332,6 +7336,10 @@ export const AudioPendingInputSchema = {
     },
     "clientId": {
       "description": "Filter by extension playback client id",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "id": {
@@ -7717,6 +7725,10 @@ export const AudioTtsInputSchema = {
       "description": "Additional ElevenLabs request JSON",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually publish the paid TTS request; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "format": {
       "description": "ElevenLabs output format override",
       "type": "string"
@@ -8036,6 +8048,10 @@ export const AudioVoicesInputSchema = {
       "description": "Voice category filter",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each voice",
+      "type": "string"
+    },
     "limit": {
       "description": "Maximum voices to return",
       "type": "string"
@@ -8289,6 +8305,10 @@ export const BridgesListInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Maximum bridges to return (default: 50)",
       "type": "string"
@@ -8451,12 +8471,16 @@ export const BridgesRevokeInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually revoke the bridge; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Bridge id",
       "type": "string"
     },
     "yes": {
-      "description": "Skip confirmation prompt",
+      "description": "Skip confirmation (pre-existing equivalent of --execute)",
       "type": "boolean"
     }
   },
@@ -14901,6 +14925,10 @@ export const ChannelsCreateReturnSchema = {
 export const ChannelsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -19536,6 +19564,10 @@ export const CloudProjectsCreateInputSchema = {
       "description": "Project description",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually create the Console project; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "name": {
       "description": "Project display name; defaults to the slug",
       "type": "string"
@@ -19638,6 +19670,10 @@ export const CloudProjectsListInputSchema = {
   "properties": {
     "console": {
       "description": "Console base URL",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "limit": {
@@ -20579,6 +20615,10 @@ export const CommandsListInputSchema = {
       "description": "Resolve agent-scoped commands for this agent",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -21429,6 +21469,10 @@ export const CommandsValidateReturnSchema = {
 export const ConnectorsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -21535,12 +21579,16 @@ export const ConnectorsListReturnSchema = {
 export const ConnectorsRevokeInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually revoke the connector; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Connector id",
       "type": "string"
     },
     "yes": {
-      "description": "Skip confirmation prompt",
+      "description": "Skip confirmation (pre-existing equivalent of --execute)",
       "type": "boolean"
     }
   },
@@ -23584,6 +23632,10 @@ export const ContextCredentialsAddReturnSchema = {
 export const ContextCredentialsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -23831,6 +23883,10 @@ export const ContextCredentialsRemoveInputSchema = {
     "contextKey": {
       "description": "Runtime context-key (rctx_*)",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually remove the stored entry; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     }
   },
   "required": [
@@ -25104,6 +25160,10 @@ export const ContextListInputSchema = {
       "description": "Include revoked and expired contexts",
       "type": "boolean"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "kind": {
       "description": "Filter by context kind",
       "type": "string"
@@ -25526,6 +25586,10 @@ export const ContextRevokeInputSchema = {
     "contextId": {
       "description": "Context ID to revoke",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually revoke the context; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "noCascade": {
       "default": false,
@@ -26648,6 +26712,10 @@ export const CostsAgentReturnSchema = {
 export const CostsAgentsInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "hours": {
       "description": "Time window in hours (default: 24)",
       "type": "string"
@@ -26768,6 +26836,10 @@ export const CostsPricingInputSchema = {
     "dryRun": {
       "description": "Preview recompute results without updating cost_events",
       "type": "boolean"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each coverage row",
+      "type": "string"
     },
     "hours": {
       "description": "Time window in hours (default: 24)",
@@ -27180,6 +27252,10 @@ export const CostsSummaryReturnSchema = {
 export const CostsTopSessionsInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "hours": {
       "description": "Time window in hours (default: 24)",
       "type": "string"
@@ -27508,6 +27584,10 @@ export const CredentialsConnectionsListInputSchema = {
     "all": {
       "description": "Include disabled connections",
       "type": "boolean"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
     },
     "limit": {
       "default": "50",
@@ -30930,6 +31010,10 @@ export const CronListInputSchema = {
       "description": "List jobs from all agents (requires authorization)",
       "type": "boolean"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -31033,6 +31117,10 @@ export const CronListReturnSchema = {
 export const CronRmInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually delete the job; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Job ID",
       "type": "string"
@@ -31092,6 +31180,10 @@ export const CronRmReturnSchema = {
 export const CronRunInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually trigger the job now; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Job ID",
       "type": "string"
@@ -31948,6 +32040,10 @@ export const DevinSessionsCreateInputSchema = {
       "description": "Agent mode: normal|fast|lite|ultra",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually create the Devin session; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "knowledge": {
       "description": "Knowledge note IDs",
       "items": {
@@ -32619,6 +32715,10 @@ export const DevinSessionsInsightsReturnSchema = {
 export const DevinSessionsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each session",
+      "type": "string"
+    },
     "limit": {
       "description": "Max sessions to show (default: 20)",
       "type": "string"
@@ -33012,6 +33112,10 @@ export const DevinSessionsSendInputSchema = {
     "asUser": {
       "description": "message_as_user_id",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually send the message to Devin; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "message": {
       "description": "Message text",
@@ -34087,6 +34191,10 @@ export const FeedbackSendInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually submit the feedback to Ravi Console; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "kind": {
       "description": "bug|idea|ux|docs|performance|security|other",
       "type": "string"
@@ -35114,7 +35222,12 @@ export const HeartbeatShowReturnSchema = {
 /** JSON Schema for the input body of `heartbeat.status`. */
 export const HeartbeatStatusInputSchema = {
   "additionalProperties": false,
-  "properties": {},
+  "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    }
+  },
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -35566,6 +35679,10 @@ export const HooksEnableReturnSchema = {
 export const HooksListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -35669,6 +35786,10 @@ export const HooksListReturnSchema = {
 export const HooksRmInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually delete the hook; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Hook ID",
       "type": "string"
@@ -35944,6 +36065,10 @@ export const ImageGenerateInputSchema = {
     "compression": {
       "description": "OpenAI jpeg/webp output compression",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually call the paid image API; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "format": {
       "description": "OpenAI output format: png, jpeg, webp",
@@ -36270,6 +36395,10 @@ export const InboxEnableReturnSchema = {
 export const InboxItemsInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Maximum items to return (default: 25, max: 500)",
       "type": "string"
@@ -36305,6 +36434,10 @@ export const InboxItemsReturnSchema = {
 export const InboxListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "includeArchived": {
       "description": "Include done/archive/dismissed items",
       "type": "boolean"
@@ -36429,6 +36562,10 @@ export const InboxReadReturnSchema = {
 export const InboxReplayInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually republish the stored NATS event; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "ref": {
       "description": "Local row id (number) or remote item id (uuid)",
       "type": "string"
@@ -36665,6 +36802,10 @@ export const InsightsListInputSchema = {
       "description": "low|medium|high",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "importance": {
       "description": "low|normal|high",
       "type": "string"
@@ -36691,7 +36832,7 @@ export const InsightsListInputSchema = {
       "type": "string"
     },
     "rich": {
-      "description": "Return rich projection with stats, decorated lineage (task/session/agent refs), and per-link metadata. Honors --limit only; other filters are ignored.",
+      "description": "Return rich projection with stats, decorated lineage (task/session/agent refs), and per-link metadata. Honors --limit only; other filters and --fields are ignored.",
       "type": "boolean"
     },
     "session": {
@@ -36849,6 +36990,10 @@ export const InsightsListReturnSchema = {
 export const InsightsSearchInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "default": "20",
       "description": "Result limit",
@@ -45358,6 +45503,10 @@ export const MediaSendInputSchema = {
       "description": "Target channel (informational override)",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually send the media; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "filePath": {
       "description": "Path to the file to send",
       "type": "string"
@@ -45623,6 +45772,10 @@ export const MeetingsProfilesInitReturnSchema = {
 export const MeetingsProfilesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -46392,6 +46545,10 @@ export const MetricsShowInputSchema = {
       "description": "Last N days (default: 7)",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each row",
+      "type": "string"
+    },
     "since": {
       "description": "Override start date YYYY-MM-DD",
       "type": "string"
@@ -46487,6 +46644,10 @@ export const ObserversListInputSchema = {
   "properties": {
     "agent": {
       "description": "Filter by observer agent id",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these top-level fields per item",
       "type": "string"
     },
     "limit": {
@@ -46637,6 +46798,10 @@ export const ObserversProfilesInitReturnSchema = {
 export const ObserversProfilesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these top-level fields per item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -47084,6 +47249,10 @@ export const ObserversRulesExplainReturnSchema = {
 export const ObserversRulesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these top-level fields per item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -47183,6 +47352,10 @@ export const ObserversRulesListReturnSchema = {
 export const ObserversRulesRmInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually delete the observer rule; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Observer rule id",
       "type": "string"
@@ -51079,6 +51252,10 @@ export const ProxCallsProfilesConfigureReturnSchema = {
 export const ProxCallsProfilesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -51194,6 +51371,10 @@ export const ProxCallsProfilesShowReturnSchema = {
 export const ProxCallsRequestInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually submit the call request; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "force": {
       "description": "Bypass call rules for an explicit operator-requested live call",
       "type": "boolean"
@@ -51481,6 +51662,10 @@ export const ProxCallsToolsCreateReturnSchema = {
 export const ProxCallsToolsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -51871,6 +52056,10 @@ export const ProxCallsVoiceAgentsCreateReturnSchema = {
 export const ProxCallsVoiceAgentsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -52574,6 +52763,10 @@ export const RulesSourcesInputSchema = {
       "description": "Workspace cwd to inspect (default: current directory)",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each source",
+      "type": "string"
+    },
     "includeUser": {
       "description": "Also include user-level ~/.claude/rules and ~/.agents/rules",
       "type": "boolean"
@@ -52903,6 +53096,10 @@ export const RuntimeCredentialsListInputSchema = {
     "all": {
       "description": "Include disabled credentials",
       "type": "boolean"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
     },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
@@ -53807,6 +54004,10 @@ export const RuntimePresetsListInputSchema = {
       "description": "Only enabled presets",
       "type": "boolean"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -54506,6 +54707,10 @@ export const SelfContextInputSchema = {
   "properties": {
     "depth": {
       "description": "Depth: summary, normal, or full",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these top-level packet sections (e.g. identity,session,actor)",
       "type": "string"
     },
     "limit": {
@@ -58703,6 +58908,10 @@ export const SessionsVisibilityReturnSchema = {
 export const SettingsDeleteInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually delete the setting; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "key": {
       "description": "Setting key",
       "type": "string"
@@ -58912,6 +59121,10 @@ export const SettingsGetReturnSchema = {
 export const SettingsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "legacy": {
       "description": "Show legacy account.* settings shadowed by instances",
       "type": "boolean"
@@ -61656,7 +61869,7 @@ export const SlackBlocksSendInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "file": {
@@ -61782,7 +61995,7 @@ export const SlackBlocksShowcaseInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "threadTs": {
@@ -61899,7 +62112,7 @@ export const SlackBlocksUpdateInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "file": {
@@ -62133,7 +62346,7 @@ export const SlackCanvasAccessDeleteInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "users": {
@@ -62262,7 +62475,7 @@ export const SlackCanvasAccessSetInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "users": {
@@ -62388,7 +62601,7 @@ export const SlackCanvasArtifactPublishInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "skipRefresh": {
@@ -62603,7 +62816,7 @@ export const SlackCanvasChannelCreateInputSchema = {
       "type": "boolean"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "markdown": {
@@ -62732,7 +62945,7 @@ export const SlackCanvasChannelShowcaseInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "title": {
@@ -62853,7 +63066,7 @@ export const SlackCanvasCreateInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "markdown": {
@@ -62987,7 +63200,7 @@ export const SlackCanvasDeleteInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     }
   },
@@ -63108,7 +63321,7 @@ export const SlackCanvasEditInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "markdown": {
@@ -63251,6 +63464,10 @@ export const SlackCanvasSectionsLookupInputSchema = {
     },
     "containsText": {
       "description": "Text that matching sections must contain",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "sectionTypes": {
@@ -63397,7 +63614,7 @@ export const SlackCanvasShowcaseInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "slackChannel": {
@@ -63518,7 +63735,7 @@ export const SlackChannelsCreateInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "name": {
@@ -63640,6 +63857,10 @@ export const SlackChannelsHistoryInputSchema = {
     },
     "cursor": {
       "description": "Slack pagination cursor",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "inclusive": {
@@ -63889,7 +64110,7 @@ export const SlackChannelsInviteInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "users": {
@@ -64008,6 +64229,10 @@ export const SlackChannelsListInputSchema = {
     },
     "cursor": {
       "description": "Slack pagination cursor",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "includeArchived": {
@@ -64156,7 +64381,7 @@ export const SlackChannelsRenameInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "name": {
@@ -64275,6 +64500,10 @@ export const SlackFilesListInputSchema = {
     },
     "cursor": {
       "description": "Slack pagination cursor",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "limit": {
@@ -64422,7 +64651,7 @@ export const SlackInteractionsRespondInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "file": {
@@ -64783,7 +65012,7 @@ export const SlackMessagesReplayInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the replay; default is dry-run",
+      "description": "Perform the replay; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "force": {
@@ -64909,7 +65138,7 @@ export const SlackMessagesSendInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "text": {
@@ -65031,7 +65260,7 @@ export const SlackModalsOpenInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "file": {
@@ -65153,7 +65382,7 @@ export const SlackModalsPushInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "file": {
@@ -65275,7 +65504,7 @@ export const SlackModalsUpdateInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "externalId": {
@@ -65620,7 +65849,7 @@ export const SlackWorkObjectsPresentDetailsInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "file": {
@@ -65746,7 +65975,7 @@ export const SlackWorkObjectsSendInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "file": {
@@ -65876,7 +66105,7 @@ export const SlackWorkObjectsUnfurlInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Perform the mutation; default is dry-run",
+      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "file": {
@@ -66123,6 +66352,10 @@ export const SpecsListInputSchema = {
   "properties": {
     "domain": {
       "description": "Filter by domain",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "kind": {
@@ -66466,6 +66699,10 @@ export const StickersAddReturnSchema = {
 export const StickersListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -66706,6 +66943,10 @@ export const StickersListReturnSchema = {
 export const StickersRemoveInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually remove the sticker; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Sticker id",
       "type": "string"
@@ -66751,6 +66992,10 @@ export const StickersSendInputSchema = {
     "channel": {
       "description": "Explicit target channel",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually send the sticker; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "id": {
       "description": "Sticker id",
@@ -67315,6 +67560,10 @@ export const SyncPullInputSchema = {
       "description": "Filter one sync domain",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually download and apply the batch; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "limit": {
       "description": "Max events in batch",
       "type": "string"
@@ -67404,6 +67653,10 @@ export const SyncPushInputSchema = {
     "domain": {
       "description": "Filter one sync domain",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually upload the batch; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "limit": {
       "description": "Max events in batch",
@@ -67929,6 +68182,10 @@ export const TagRulesExplainReturnSchema = {
 export const TagRulesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each rule",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50)",
       "type": "string"
@@ -68536,6 +68793,10 @@ export const TagsListInputSchema = {
       "description": "Opaque cursor returned by the previous page",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "kind": {
       "description": "Filter by kind: system|user",
       "type": "string"
@@ -68703,6 +68964,10 @@ export const TagsSearchInputSchema = {
     },
     "devinSession": {
       "description": "Filter by Devin session id",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "hook": {
@@ -71104,6 +71369,10 @@ export const ThreadsLinkReturnSchema = {
 export const ThreadsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size",
       "type": "string"
@@ -72095,6 +72364,10 @@ export const ToolsTestReturnSchema = {
 export const TranscribeFileInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually call the paid transcription API; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "lang": {
       "default": "pt",
       "description": "Language code (default: pt)",
@@ -72432,6 +72705,10 @@ export const TriggersEnableReturnSchema = {
 export const TriggersListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -72535,6 +72812,10 @@ export const TriggersListReturnSchema = {
 export const TriggersRmInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually delete the trigger; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Trigger ID",
       "type": "string"
@@ -72779,6 +73060,10 @@ export const TriggersTopicsReturnSchema = {
 export const VideoAnalyzeInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually run an analysis that may call the paid Gemini API; the free subtitles-only path never needs it",
+      "type": "boolean"
+    },
     "forceAnalyze": {
       "description": "Force Gemini analysis even when YouTube subtitles exist",
       "type": "boolean"
@@ -73136,6 +73421,10 @@ export const WatchEventsReturnSchema = {
 export const WatchListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -73243,6 +73532,10 @@ export const WatchListReturnSchema = {
 export const WatchRmInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually remove the watch; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Watch id",
       "type": "string"
@@ -73322,6 +73615,10 @@ export const WatchTriggerInputSchema = {
     "event": {
       "description": "Specific event type for multi-event watches",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually create the trigger; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "id": {
       "description": "Watch id",
@@ -74012,6 +74309,10 @@ export const WorkObjectsActionInputSchema = {
     "actionId": {
       "description": "Action id, e.g. task.comment",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually execute the provider action; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "id": {
       "description": "External reference id",
@@ -75128,6 +75429,10 @@ export const WorkObjectsUpdateReturnSchema = {
 export const WorkflowsRunsArchiveNodeInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually archive the node run; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "nodeKey": {
       "description": "Node key",
       "type": "string"
@@ -75200,6 +75505,10 @@ export const WorkflowsRunsCancelReturnSchema = {
 export const WorkflowsRunsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these top-level fields per item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -75393,6 +75702,10 @@ export const WorkflowsRunsSkipReturnSchema = {
 export const WorkflowsRunsStartInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually start the workflow run; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "runId": {
       "description": "Optional workflow run id",
       "type": "string"
@@ -75564,6 +75877,10 @@ export const WorkflowsSpecsCreateReturnSchema = {
 export const WorkflowsSpecsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these top-level fields per item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -76330,6 +76647,10 @@ export const YtCommentsInputSchema = {
       "description": "Credential connection (default: default)",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each comment",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size, 1-100 (default: 20)",
       "pattern": "^\\d+$",
@@ -76563,6 +76884,10 @@ export const YtPlaylistInputSchema = {
       "description": "Credential connection (default: default)",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each video",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size, 1-50 (default: 25)",
       "pattern": "^\\d+$",
@@ -76677,6 +77002,10 @@ export const YtPlaylistAddInputSchema = {
       "description": "Credential connection (default: default)",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually add the video to the playlist; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "playlistId": {
       "description": "Target YouTube playlist ID",
       "minLength": 1,
@@ -76746,6 +77075,10 @@ export const YtPlaylistCreateInputSchema = {
     "description": {
       "description": "Playlist description",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually create the playlist; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "privacy": {
       "description": "public|private|unlisted (default: private)",
@@ -76832,6 +77165,10 @@ export const YtPlaylistDeleteInputSchema = {
       "description": "Credential connection (default: default)",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually delete the playlist permanently; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "playlistId": {
       "description": "Owned YouTube playlist ID",
       "minLength": 1,
@@ -76871,6 +77208,10 @@ export const YtPlaylistRemoveInputSchema = {
       "description": "Credential connection (default: default)",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually remove the playlist item; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "playlistItemId": {
       "description": "Playlist item ID, not video ID",
       "minLength": 1,
@@ -76908,6 +77249,10 @@ export const YtPlaylistsInputSchema = {
   "properties": {
     "connection": {
       "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each playlist",
       "type": "string"
     },
     "limit": {
@@ -77002,6 +77347,10 @@ export const YtReplyInputSchema = {
       "description": "Credential connection (default: default)",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually publish the reply; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "text": {
       "description": "Exact approved reply text",
       "minLength": 1,
@@ -77040,6 +77389,10 @@ export const YtSearchInputSchema = {
   "properties": {
     "connection": {
       "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each video",
       "type": "string"
     },
     "limit": {
@@ -77232,6 +77585,10 @@ export const YtSubscriptionsInputSchema = {
       "description": "Credential connection (default: default)",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each subscription",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size, 1-50 (default: 25)",
       "pattern": "^\\d+$",
@@ -77317,6 +77674,10 @@ export const YtUnansweredInputSchema = {
   "properties": {
     "connection": {
       "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each comment",
       "type": "string"
     },
     "limit": {
@@ -77573,6 +77934,10 @@ export const YtVideoDeleteInputSchema = {
       "description": "Credential connection (default: default)",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually delete the video permanently; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Owned YouTube video ID",
       "minLength": 1,
@@ -77619,6 +77984,10 @@ export const YtVideoUpdateInputSchema = {
     "description": {
       "description": "Replacement description",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually update the video metadata; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "id": {
       "description": "Owned YouTube video ID",
@@ -77726,6 +78095,10 @@ export const YtVideosInputSchema = {
   "properties": {
     "connection": {
       "description": "Credential connection (default: default)",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each video",
       "type": "string"
     },
     "limit": {

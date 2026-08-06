@@ -12,6 +12,20 @@ owners:
 
 # Checks
 
+## Agent-First CLI Contract (`ravi cloud scope`)
+
+- `cloud scope set` and `cloud scope clear` are declared unbraked and MUST
+  keep immediate-write behavior (no `--execute` requirement): they form a
+  reversible local-default pair over non-secret state.
+- A `ContractError` thrown inside a `cloud scope` command MUST pass through
+  `runCloudScopeCommand` with its exit code intact — never rewrapped as
+  `SERVER_UNAVAILABLE` by the legacy CloudAuthError funnel.
+- Legacy CloudAuthError validation failures MUST keep their pre-existing
+  codes and exits (`PAYLOAD_INVALID` → 3 is NOT a write brake; only
+  `WRITE_REQUIRES_EXECUTE` carries that meaning).
+- `bun test src/cli/commands/cloud-scope.test.ts` SHOULD pass after any change
+  to the scope command surface.
+
 ## Unit Coverage
 
 - Cloud-auth profile store:

@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Command, CommandAccess, Group, Option } from "../decorators.js";
+import { ContractError } from "../agent-contract.js";
 import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../../cloud-auth/storage.js";
@@ -65,6 +66,9 @@ export class CloudScopeCommands {
     });
   }
 
+  // Manual v2: `set` and `clear` are intentionally UNBRAKED — they are a
+  // reversible local-default pair (`set` ⇄ `clear`), write only non-secret
+  // local scope state, and validate the project against Console before saving.
   @Command({ name: "set", description: "Set a default Console project for a session, agent, workspace, or install" })
   @CommandAccess({ kind: "mutate", resource: "cloud.scope", action: "set", risk: "medium" })
   async set(
@@ -217,6 +221,10 @@ async function runCloudScopeCommand<T>(asJson: boolean | undefined, run: () => P
   try {
     return await run();
   } catch (error) {
+    // Manual v2 contract: contractFail/contractDryRun already emitted their
+    // envelope and carry the exit taxonomy (1/2/3). Never let the legacy
+    // CloudAuthError funnel swallow them.
+    if (error instanceof ContractError) throw error;
     const cloudError = cloudAuthErrorFromUnknown(error);
     if (asJson) {
       printJson(formatCloudAuthError(cloudError));

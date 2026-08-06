@@ -14,12 +14,15 @@ applies_to:
   - src/cloud-auth
   - src/cli/commands/cloud-auth.ts
   - src/cli/commands/cloud-projects.ts
+  - src/cli/commands/cloud-scope.ts
   - src/cli/commands/pages.ts
   - src/cli/commands/artifacts.ts
   - src/cli/commands/bridges.ts
   - src/cli/commands/connectors.ts
   - src/cli/commands/sync.ts
   - src/cli/commands/watch.ts
+  - src/cli/agent-contract.ts
+  - src/console-scope/resolver.ts
   - src/runtime/context-registry.ts
   - src/runtime/runtime-request-context.ts
   - src/router/router-db.ts
@@ -420,6 +423,34 @@ List/search commands whose product semantics are not project-scoped MUST NOT
 silently narrow to the default project. They SHOULD expose project filters while
 keeping "all visible resources" behavior unless the command name or help says it
 is project-scoped.
+
+## Agent-First CLI Contract (`ravi cloud scope`)
+
+The implemented `cloud scope` commands (`show`, `explain`, `set`, `clear`)
+follow the Manual v2 agent-first contract defined by `cli/crm`:
+
+- `set` and `clear` are declared UNBRAKED (no `--execute`): they are a
+  reversible local-default pair (`set` ⇄ `clear`), write only non-secret local
+  scope state, and `set` validates the project against Console before saving.
+  The brake for the risky remote consequence lives on the consuming commands
+  (for example the braked `cloud projects create` in `cli/cloud-projects`).
+- A `ContractError` thrown inside a scope command MUST pass through
+  `runCloudScopeCommand` untouched — the legacy CloudAuthError funnel MUST NOT
+  rewrap it into `SERVER_UNAVAILABLE`.
+- Validation failures keep the legacy CloudAuthError funnel and its
+  pre-existing code/exit map. Known ambiguity: `PAYLOAD_INVALID` (for example
+  "Choose only one scope target" or a missing `--project`) exits 3 without
+  being a write brake — consumers MUST branch on `error.code`, and only
+  `WRITE_REQUIRES_EXECUTE` means "re-run with --execute".
+- Unknown project refs on `set` fail as `PROJECT_ACCESS_DENIED` listing the
+  visible project refs (already safe, id/slug-only) — the resolver's message
+  is the suggestion surface for this remote resource.
+- The `cloud` domain root is not yet listed in `AGENT_CONTRACT_DOMAINS`
+  (`src/cli/index.ts`), so commander parser usage errors still print plain
+  text with exit 1 instead of the `USAGE_ERROR` envelope with exit 2.
+
+There is no shipped `cloud-scope` skill — lacuna registrada; the CLI `--help`
+plus this spec are the teaching surface.
 
 ## Errors
 

@@ -16,6 +16,33 @@ Canais são gerenciados por adapters do Ravi. Para Slack, use a skill nativa
 
 Cada conta conectada é uma **instância** — a entidade central de configuração do Ravi.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?}}`.
+
+Escopo migrado em `ravi channels`: só os comandos de CONFIG (`list`, `show`, `create`, `set`). Os comandos de processo (`start`, `stop`, `restart`, `run`, `logs`, `probe`, `status`) são infra de runner/PM2 fora do contrato de agente — dispensados como `daemon`/`service` (ver MIGRACAO-LEDGER.md, seção "Dispensados", e a spec `cli/channels`).
+
+Taxonomia de saída nos comandos migrados:
+
+- `0` sucesso.
+- `1` erro de execução: `CHANNEL_NOT_FOUND` (aqui = config de canal Ravi no DB local, NÃO canal do Slack — o domínio `slack` usa o mesmo code para o recurso remoto dele; desambigue pelo `op`) com `suggestions` de nomes reais, e `CREDENTIAL_CONNECTION_NOT_FOUND` quando `--credential-connection` aponta para conexão inexistente (siga o `suggestedAction` para criá-la; sugestões trazem só ids `provider:connection`, nunca segredo).
+- `2` erro de uso (ainda não instalado no parser deste domínio — flags inválidas saem em texto legado).
+- `3` freio de escrita — não existe em `channels`: `create` e `set` são declaradas SEM freio (config local reversível: `create` ⇄ `set enabled false`, todo `set` tem `set` inverso; campos anuláveis limpam com `-`). Nessas o freio é você: confira o alvo antes de rodar.
+
+Compact mode: `channels list --fields name,provider,enabled` devolve só esses campos por item.
+
+```bash
+ravi channels list --json
+ravi channels show ravi-rbbt-slack --json
+ravi channels create ravi-rbbt-slack --provider slack --credential-connection main --json
+ravi channels set ravi-rbbt-slack enabled false --json
+```
+
+Checklist antes de responder sobre canais nativos:
+
+- Consultei `suggestions` do envelope antes de declarar not-found?
+- Diferenciei config de canal Ravi (`ravi channels ...`) de canal do Slack (`ravi slack ...`)?
+
 ## Slack Nativo
 
 Para qualquer tarefa de Slack, Canvas, threads, topology, replay, delivery ou

@@ -1413,6 +1413,7 @@ export type AudioBlobReturn = Response;
 /** Input shape for `audio.generate`. */
 export type AudioGenerateInput = {
   caption?: string;
+  execute?: boolean;
   format?: string;
   lang?: string;
   model?: string;
@@ -1457,6 +1458,7 @@ export type AudioPendingInput = {
   agent?: string;
   chat?: string;
   clientId?: string;
+  fields?: string;
   id?: string;
   includeFailed?: boolean;
   limit?: string;
@@ -1547,6 +1549,7 @@ export type AudioTtsInput = {
   chat?: string;
   clientId?: string;
   elevenlabs?: string;
+  execute?: boolean;
   format?: string;
   id?: string;
   lang?: string;
@@ -1621,6 +1624,7 @@ export type AudioTtsReturn = {
 /** Input shape for `audio.voices`. */
 export type AudioVoicesInput = {
   category?: string;
+  fields?: string;
   limit?: string;
   search?: string;
   voiceType?: string;
@@ -1676,6 +1680,7 @@ export type BridgesCreateReturn = {
 /** Input shape for `bridges.list`. */
 export type BridgesListInput = {
   console?: string;
+  fields?: string;
   limit?: string;
   offset?: string;
   project?: string;
@@ -1703,6 +1708,7 @@ export type BridgesListReturn = {
 /** Input shape for `bridges.revoke`. */
 export type BridgesRevokeInput = {
   console?: string;
+  execute?: boolean;
   id: string;
   yes?: boolean;
 };
@@ -2661,6 +2667,7 @@ export type ChannelsCreateReturn = {
 
 /** Input shape for `channels.list`. */
 export type ChannelsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   provider?: string;
@@ -3639,6 +3646,7 @@ export type CloudProjectsCreateInput = {
   console?: string;
   defaultPageSite?: string;
   description?: string;
+  execute?: boolean;
   name?: string;
   slug: string;
   visibility?: string;
@@ -3655,6 +3663,7 @@ export type CloudProjectsCreateReturn = {
 /** Input shape for `cloud.projects.list`. */
 export type CloudProjectsListInput = {
   console?: string;
+  fields?: string;
   limit?: string;
   offset?: string;
 };
@@ -3814,6 +3823,7 @@ export type CloudScopeShowReturn = {
 /** Input shape for `commands.list`. */
 export type CommandsListInput = {
   agent?: string;
+  fields?: string;
   limit?: string;
   offset?: string;
   tag?: string;
@@ -3981,6 +3991,7 @@ export type CommandsValidateReturn = {
 
 /** Input shape for `connectors.list`. */
 export type ConnectorsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   project?: string;
@@ -4009,6 +4020,7 @@ export type ConnectorsListReturn = {
 
 /** Input shape for `connectors.revoke`. */
 export type ConnectorsRevokeInput = {
+  execute?: boolean;
   id: string;
   yes?: boolean;
 };
@@ -4508,6 +4520,7 @@ export type ContextCredentialsAddReturn = {
 
 /** Input shape for `context.credentials.list`. */
 export type ContextCredentialsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
 };
@@ -4552,6 +4565,7 @@ export type ContextCredentialsListReturn = {
 /** Input shape for `context.credentials.remove`. */
 export type ContextCredentialsRemoveInput = {
   contextKey: string;
+  execute?: boolean;
 };
 
 /** Return shape for `context.credentials.remove`. */
@@ -4735,6 +4749,7 @@ export type ContextLineageReturn = {
 export type ContextListInput = {
   agent?: string;
   all?: boolean;
+  fields?: string;
   kind?: string;
   limit?: string;
   offset?: string;
@@ -4807,6 +4822,7 @@ export type ContextPruneReturn = {
 /** Input shape for `context.revoke`. */
 export type ContextRevokeInput = {
   contextId: string;
+  execute?: boolean;
   noCascade?: boolean;
   reason?: string;
 };
@@ -4976,6 +4992,7 @@ export type CostsAgentReturn = {
 
 /** Input shape for `costs.agents`. */
 export type CostsAgentsInput = {
+  fields?: string;
   hours?: string;
   limit?: string;
 };
@@ -5007,6 +5024,7 @@ export type CostsAgentsReturn = {
 /** Input shape for `costs.pricing`. */
 export type CostsPricingInput = {
   dryRun?: boolean;
+  fields?: string;
   hours?: string;
   includePriced?: boolean;
   limit?: string;
@@ -5099,6 +5117,7 @@ export type CostsSummaryReturn = {
 
 /** Input shape for `costs.top-sessions`. */
 export type CostsTopSessionsInput = {
+  fields?: string;
   hours?: string;
   limit?: string;
 };
@@ -5175,6 +5194,7 @@ export type CredentialsConnectionsEnableReturn = {
 /** Input shape for `credentials.connections.list`. */
 export type CredentialsConnectionsListInput = {
   all?: boolean;
+  fields?: string;
   limit?: string;
   offset?: string;
   provider?: string;
@@ -6124,6 +6144,7 @@ export type CronEnableReturn = {
 export type CronListInput = {
   agent?: string;
   allAgents?: boolean;
+  fields?: string;
   limit?: string;
   offset?: string;
   tag?: string;
@@ -6149,6 +6170,7 @@ export type CronListReturn = {
 
 /** Input shape for `cron.rm`. */
 export type CronRmInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -6166,6 +6188,7 @@ export type CronRmReturn = {
 
 /** Input shape for `cron.run`. */
 export type CronRunInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -6406,6 +6429,7 @@ export type DevinSessionsCreateInput = {
   childPlaybook?: string;
   devinId?: string;
   devinMode?: string;
+  execute?: boolean;
   knowledge?: string[];
   maxAcu?: string;
   noMaxAcuLimit?: boolean;
@@ -6516,6 +6540,7 @@ export type DevinSessionsInsightsReturn = {
 
 /** Input shape for `devin.sessions.list`. */
 export type DevinSessionsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   remote?: boolean;
@@ -6593,6 +6618,7 @@ export type DevinSessionsMessagesReturn = {
 /** Input shape for `devin.sessions.send`. */
 export type DevinSessionsSendInput = {
   asUser?: string;
+  execute?: boolean;
   message: string;
   session: string;
 };
@@ -6774,6 +6800,7 @@ export type EvalRunReturn = {
 /** Input shape for `feedback.send`. */
 export type FeedbackSendInput = {
   console?: string;
+  execute?: boolean;
   kind?: string;
   message: string[];
   metadataJson?: string;
@@ -6975,7 +7002,9 @@ export type HeartbeatShowReturn = {
 };
 
 /** Input shape for `heartbeat.status`. */
-export type HeartbeatStatusInput = Record<string, never>;
+export type HeartbeatStatusInput = {
+  fields?: string;
+};
 
 /** Return shape for `heartbeat.status`. */
 export type HeartbeatStatusReturn = {
@@ -7095,6 +7124,7 @@ export type HooksEnableReturn = {
 
 /** Input shape for `hooks.list`. */
 export type HooksListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   tag?: string;
@@ -7120,6 +7150,7 @@ export type HooksListReturn = {
 
 /** Input shape for `hooks.rm`. */
 export type HooksRmInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -7198,6 +7229,7 @@ export type ImageGenerateInput = {
   background?: string;
   caption?: string;
   compression?: string;
+  execute?: boolean;
   format?: string;
   mode?: string;
   model?: string;
@@ -7296,6 +7328,7 @@ export type InboxEnableReturn = {
 
 /** Input shape for `inbox.items`. */
 export type InboxItemsInput = {
+  fields?: string;
   limit?: string;
 };
 
@@ -7308,6 +7341,7 @@ export type InboxItemsReturn = {
 
 /** Input shape for `inbox.list`. */
 export type InboxListInput = {
+  fields?: string;
   includeArchived?: boolean;
   limit?: string;
   offset?: string;
@@ -7348,6 +7382,7 @@ export type InboxReadReturn = {
 
 /** Input shape for `inbox.replay`. */
 export type InboxReplayInput = {
+  execute?: boolean;
   ref: string;
 };
 
@@ -7420,6 +7455,7 @@ export type InsightsCreateReturn = {
 export type InsightsListInput = {
   agent?: string;
   confidence?: string;
+  fields?: string;
   importance?: string;
   kind?: string;
   limit?: string;
@@ -7461,6 +7497,7 @@ export type InsightsListReturn = ({
 
 /** Input shape for `insights.search`. */
 export type InsightsSearchInput = {
+  fields?: string;
   limit?: string;
   text: string;
 };
@@ -8749,6 +8786,7 @@ export type MediaSendInput = {
   account?: string;
   caption?: string;
   channel?: string;
+  execute?: boolean;
   filePath: string;
   ptt?: boolean;
   threadId?: string;
@@ -8818,6 +8856,7 @@ export type MeetingsProfilesInitReturn = {
 
 /** Input shape for `meetings.profiles.list`. */
 export type MeetingsProfilesListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
 };
@@ -8999,6 +9038,7 @@ export type MetricsShowInput = {
   agent?: string;
   by?: string;
   days?: string;
+  fields?: string;
   since?: string;
   through?: string;
 };
@@ -9026,6 +9066,7 @@ export type MetricsShowReturn = Array<{
 /** Input shape for `observers.list`. */
 export type ObserversListInput = {
   agent?: string;
+  fields?: string;
   limit?: string;
   offset?: string;
   session?: string;
@@ -9066,6 +9107,7 @@ export type ObserversProfilesInitReturn = {
 
 /** Input shape for `observers.profiles.list`. */
 export type ObserversProfilesListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
 };
@@ -9186,6 +9228,7 @@ export type ObserversRulesExplainReturn = {
 
 /** Input shape for `observers.rules.list`. */
 export type ObserversRulesListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
 };
@@ -9210,6 +9253,7 @@ export type ObserversRulesListReturn = {
 
 /** Input shape for `observers.rules.rm`. */
 export type ObserversRulesRmInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -10102,6 +10146,7 @@ export type ProxCallsProfilesConfigureReturn = {
 
 /** Input shape for `prox.calls.profiles.list`. */
 export type ProxCallsProfilesListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   tag?: string;
@@ -10134,6 +10179,7 @@ export type ProxCallsProfilesShowReturn = Record<string, unknown>;
 
 /** Input shape for `prox.calls.request`. */
 export type ProxCallsRequestInput = {
+  execute?: boolean;
   force?: boolean;
   person?: string;
   phone?: string;
@@ -10217,6 +10263,7 @@ export type ProxCallsToolsCreateReturn = Record<string, unknown>;
 
 /** Input shape for `prox.calls.tools.list`. */
 export type ProxCallsToolsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   profile?: string;
@@ -10339,6 +10386,7 @@ export type ProxCallsVoiceAgentsCreateReturn = Record<string, unknown>;
 
 /** Input shape for `prox.calls.voice-agents.list`. */
 export type ProxCallsVoiceAgentsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   tag?: string;
@@ -10522,6 +10570,7 @@ export type RulesImportReturn = {
 /** Input shape for `rules.sources`. */
 export type RulesSourcesInput = {
   cwd?: string;
+  fields?: string;
   includeUser?: boolean;
   source?: string;
 };
@@ -10623,6 +10672,7 @@ export type RuntimeCredentialsImportReturn = {
 /** Input shape for `runtime.credentials.list`. */
 export type RuntimeCredentialsListInput = {
   all?: boolean;
+  fields?: string;
   limit?: string;
   offset?: string;
   provider?: string;
@@ -10844,6 +10894,7 @@ export type RuntimePresetsImpactReturn = {
 export type RuntimePresetsListInput = {
   disabled?: boolean;
   enabled?: boolean;
+  fields?: string;
   limit?: string;
   offset?: string;
   provider?: string;
@@ -11031,6 +11082,7 @@ export type SelfChatReturn = {
 /** Input shape for `self.context`. */
 export type SelfContextInput = {
   depth?: string;
+  fields?: string;
   limit?: string;
 };
 
@@ -12115,6 +12167,7 @@ export type SessionsVisibilityReturn = Record<string, unknown>;
 
 /** Input shape for `settings.delete`. */
 export type SettingsDeleteInput = {
+  execute?: boolean;
   key: string;
 };
 
@@ -12159,6 +12212,7 @@ export type SettingsGetReturn = {
 
 /** Input shape for `settings.list`. */
 export type SettingsListInput = {
+  fields?: string;
   legacy?: boolean;
   limit?: string;
   offset?: string;
@@ -13004,6 +13058,7 @@ export type SlackCanvasSectionsLookupInput = {
   canvas: string;
   channel?: string;
   containsText?: string;
+  fields?: string;
   sectionTypes?: string;
 };
 
@@ -13070,6 +13125,7 @@ export type SlackChannelsCreateReturn = {
 export type SlackChannelsHistoryInput = {
   channel: string;
   cursor?: string;
+  fields?: string;
   inclusive?: boolean;
   latest?: string;
   limit?: string;
@@ -13132,6 +13188,7 @@ export type SlackChannelsInviteReturn = {
 export type SlackChannelsListInput = {
   channel?: string;
   cursor?: string;
+  fields?: string;
   includeArchived?: boolean;
   limit?: string;
   types?: string;
@@ -13177,6 +13234,7 @@ export type SlackChannelsRenameReturn = {
 export type SlackFilesListInput = {
   channel?: string;
   cursor?: string;
+  fields?: string;
   limit?: string;
   slackChannel?: string;
   user?: string;
@@ -13500,6 +13558,7 @@ export type SpecsGetReturn = {
 /** Input shape for `specs.list`. */
 export type SpecsListInput = {
   domain?: string;
+  fields?: string;
   kind?: string;
   limit?: string;
   offset?: string;
@@ -13585,6 +13644,7 @@ export type StickersAddReturn = {
 
 /** Input shape for `stickers.list`. */
 export type StickersListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
 };
@@ -13632,6 +13692,7 @@ export type StickersListReturn = {
 
 /** Input shape for `stickers.remove`. */
 export type StickersRemoveInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -13646,6 +13707,7 @@ export type StickersRemoveReturn = {
 export type StickersSendInput = {
   account?: string;
   channel?: string;
+  execute?: boolean;
   id: string;
   session?: string;
   to?: string;
@@ -13751,6 +13813,7 @@ export type SyncInspectReturn = ({
 /** Input shape for `sync.pull`. */
 export type SyncPullInput = {
   domain?: string;
+  execute?: boolean;
   limit?: string;
   project?: string;
   projectId?: string;
@@ -13774,6 +13837,7 @@ export type SyncPullReturn = {
 /** Input shape for `sync.push`. */
 export type SyncPushInput = {
   domain?: string;
+  execute?: boolean;
   limit?: string;
   maxBytes?: string;
   project?: string;
@@ -13893,6 +13957,7 @@ export type TagRulesExplainReturn = {
 
 /** Input shape for `tag-rules.list`. */
 export type TagRulesListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
 };
@@ -14061,6 +14126,7 @@ export type TagsDetachReturn = {
 /** Input shape for `tags.list`. */
 export type TagsListInput = {
   cursor?: string;
+  fields?: string;
   kind?: string;
   limit?: string;
   order?: string;
@@ -14102,6 +14168,7 @@ export type TagsSearchInput = {
   cronJob?: string;
   cursor?: string;
   devinSession?: string;
+  fields?: string;
   hook?: string;
   insight?: string;
   instance?: string;
@@ -14749,6 +14816,7 @@ export type ThreadsLinkReturn = {
 
 /** Input shape for `threads.list`. */
 export type ThreadsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   owner?: string;
@@ -14975,6 +15043,7 @@ export type ToolsTestReturn = {
 
 /** Input shape for `transcribe.file`. */
 export type TranscribeFileInput = {
+  execute?: boolean;
   lang?: string;
   path: string;
 };
@@ -15068,6 +15137,7 @@ export type TriggersEnableReturn = {
 
 /** Input shape for `triggers.list`. */
 export type TriggersListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   tag?: string;
@@ -15093,6 +15163,7 @@ export type TriggersListReturn = {
 
 /** Input shape for `triggers.rm`. */
 export type TriggersRmInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -15166,6 +15237,7 @@ export type TriggersTopicsReturn = {
 
 /** Input shape for `video.analyze`. */
 export type VideoAnalyzeInput = {
+  execute?: boolean;
   forceAnalyze?: boolean;
   output?: string;
   prompt?: string;
@@ -15267,6 +15339,7 @@ export type WatchEventsReturn = {
 
 /** Input shape for `watch.list`. */
 export type WatchListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   provider?: string;
@@ -15293,6 +15366,7 @@ export type WatchListReturn = {
 
 /** Input shape for `watch.rm`. */
 export type WatchRmInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -15320,6 +15394,7 @@ export type WatchTriggerInput = {
   agent?: string;
   cooldown?: string;
   event?: string;
+  execute?: boolean;
   id: string;
   message?: string;
   session?: string;
@@ -15536,6 +15611,7 @@ export type WhatsappGroupSettingsReturn = Record<string, unknown>;
 /** Input shape for `work-objects.action`. */
 export type WorkObjectsActionInput = {
   actionId: string;
+  execute?: boolean;
   id: string;
   type: string;
   value?: string;
@@ -15783,6 +15859,7 @@ export type WorkObjectsUpdateReturn = {
 
 /** Input shape for `workflows.runs.archive-node`. */
 export type WorkflowsRunsArchiveNodeInput = {
+  execute?: boolean;
   nodeKey: string;
   runId: string;
 };
@@ -15807,6 +15884,7 @@ export type WorkflowsRunsCancelReturn = {
 
 /** Input shape for `workflows.runs.list`. */
 export type WorkflowsRunsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
 };
@@ -15863,6 +15941,7 @@ export type WorkflowsRunsSkipReturn = {
 
 /** Input shape for `workflows.runs.start`. */
 export type WorkflowsRunsStartInput = {
+  execute?: boolean;
   runId?: string;
   specId: string;
 };
@@ -15914,6 +15993,7 @@ export type WorkflowsSpecsCreateReturn = Record<string, unknown>;
 
 /** Input shape for `workflows.specs.list`. */
 export type WorkflowsSpecsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
 };
@@ -16117,6 +16197,7 @@ export type YtCaptionsReturn = {
 /** Input shape for `yt.comments`. */
 export type YtCommentsInput = {
   connection?: string;
+  fields?: string;
   limit?: string;
   page?: string;
   videoId: string;
@@ -16182,6 +16263,7 @@ export type YtInfoReturn = {
 /** Input shape for `yt.playlist`. */
 export type YtPlaylistInput = {
   connection?: string;
+  fields?: string;
   limit?: string;
   page?: string;
   playlistId: string;
@@ -16212,6 +16294,7 @@ export type YtPlaylistReturn = {
 /** Input shape for `yt.playlist-add`. */
 export type YtPlaylistAddInput = {
   connection?: string;
+  execute?: boolean;
   playlistId: string;
   videoId: string;
 };
@@ -16231,6 +16314,7 @@ export type YtPlaylistAddReturn = {
 export type YtPlaylistCreateInput = {
   connection?: string;
   description?: string;
+  execute?: boolean;
   privacy?: "public" | "private" | "unlisted";
   title: string;
 };
@@ -16253,6 +16337,7 @@ export type YtPlaylistCreateReturn = {
 /** Input shape for `yt.playlist-delete`. */
 export type YtPlaylistDeleteInput = {
   connection?: string;
+  execute?: boolean;
   playlistId: string;
 };
 
@@ -16265,6 +16350,7 @@ export type YtPlaylistDeleteReturn = {
 /** Input shape for `yt.playlist-remove`. */
 export type YtPlaylistRemoveInput = {
   connection?: string;
+  execute?: boolean;
   playlistItemId: string;
 };
 
@@ -16277,6 +16363,7 @@ export type YtPlaylistRemoveReturn = {
 /** Input shape for `yt.playlists`. */
 export type YtPlaylistsInput = {
   connection?: string;
+  fields?: string;
   limit?: string;
   page?: string;
 };
@@ -16302,6 +16389,7 @@ export type YtPlaylistsReturn = {
 export type YtReplyInput = {
   commentId: string;
   connection?: string;
+  execute?: boolean;
   text: string;
 };
 
@@ -16314,6 +16402,7 @@ export type YtReplyReturn = {
 /** Input shape for `yt.search`. */
 export type YtSearchInput = {
   connection?: string;
+  fields?: string;
   limit?: string;
   page?: string;
   query: string;
@@ -16365,6 +16454,7 @@ export type YtStatsReturn = {
 /** Input shape for `yt.subscriptions`. */
 export type YtSubscriptionsInput = {
   connection?: string;
+  fields?: string;
   limit?: string;
   page?: string;
 };
@@ -16389,6 +16479,7 @@ export type YtSubscriptionsReturn = {
 /** Input shape for `yt.unanswered`. */
 export type YtUnansweredInput = {
   connection?: string;
+  fields?: string;
   limit?: string;
   page?: string;
   videoId: string;
@@ -16458,6 +16549,7 @@ export type YtVideoCategoriesReturn = {
 /** Input shape for `yt.video-delete`. */
 export type YtVideoDeleteInput = {
   connection?: string;
+  execute?: boolean;
   id: string;
 };
 
@@ -16472,6 +16564,7 @@ export type YtVideoUpdateInput = {
   category?: string;
   connection?: string;
   description?: string;
+  execute?: boolean;
   id: string;
   privacy?: "public" | "private" | "unlisted";
   tags?: string;
@@ -16500,6 +16593,7 @@ export type YtVideoUpdateReturn = {
 /** Input shape for `yt.videos`. */
 export type YtVideosInput = {
   connection?: string;
+  fields?: string;
   limit?: string;
   page?: string;
 };

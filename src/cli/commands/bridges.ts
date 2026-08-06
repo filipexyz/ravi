@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
+import { ContractError, contractDryRun, pickFields } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
@@ -40,6 +41,8 @@ export class BridgesCommands {
     @Option({ flags: "--limit <n>", description: "Maximum bridges to return (default: 50)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of bridges to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runBridgesCommand(asJson, async () => {
       const result = await listMcpBridges({ projectRef, console: consoleUrl }, this.deps);
@@ -52,12 +55,13 @@ export class BridgesCommands {
         total: page.total,
         options: ["--project", result.projectRef, consoleUrl ? "--console" : null, consoleUrl],
       });
+      const items = pickFields(page.items, fields);
       const payload = {
         ...result,
         total: page.total,
         pagination,
-        bridges: page.items,
-        items: page.items,
+        bridges: items,
+        items,
       };
       printPayload(payload, asJson, () => printBridgeList(payload));
       return payload;
@@ -107,17 +111,22 @@ export class BridgesCommands {
   @CommandAccess({ kind: "mutate", resource: "bridges", action: "revoke", risk: "destructive" })
   async revoke(
     @Arg("id", { description: "Bridge id" }) id: string,
-    @Option({ flags: "--yes", description: "Skip confirmation prompt" }) yes?: boolean,
+    @Option({ flags: "--yes", description: "Skip confirmation (pre-existing equivalent of --execute)" }) yes?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually revoke the bridge; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runBridgesCommand(asJson, async () => {
-      if (!yes) {
-        if (!asJson && !hasContext()) {
-          console.log(`This will revoke MCP bridge ${id} and all OAuth tokens minted for it.`);
-          console.log("Re-run with --yes to confirm.");
-        }
-        throw new CloudAuthError("PAYLOAD_INVALID", "Confirmation required: pass --yes to revoke this bridge.");
+      if (yes !== true && execute !== true) {
+        // Write brake (Manual v2 7.8): revoking is destructive — it kills the
+        // bridge and every OAuth token minted for it — so dry-run by default
+        // and exit 3 before any Console call. The pre-existing `--yes` flag
+        // stays as the documented equivalent of `--execute` (not renamed).
+        contractDryRun("bridges revoke", { bridgeId: id, revokesClientTokens: true }, { asJson });
       }
       const result = await revokeMcpBridge(id, { console: consoleUrl }, this.deps);
       printPayload(result, asJson, () => printRevokedBridge(result));
@@ -162,6 +171,10 @@ async function runBridgesCommand<T>(asJson: boolean | undefined, run: () => Prom
   try {
     return await run();
   } catch (error) {
+    // Manual v2 contract: contractFail/contractDryRun already emitted their
+    // envelope and carry the exit taxonomy (1/2/3). Never let the legacy
+    // CloudAuthError funnel swallow them.
+    if (error instanceof ContractError) throw error;
     const cloudError = cloudAuthErrorFromUnknown(error);
     if (asJson) {
       printJson(formatCloudAuthError(cloudError));

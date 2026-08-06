@@ -1,17 +1,32 @@
-import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createChannelRunnerHealthSnapshot, type ChannelRunnerRuntimeStatus } from "../../channels/health.js";
 import { dbGetChannel } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
-import {
+
+// Manual v2 contract: hasContext() true makes the contract helpers throw
+// ContractError instead of process.exit, which is what tests need.
+const actualContext = await import("../context.js");
+mock.module("../context.js", () => ({
+  ...actualContext,
+  hasContext: () => true,
+  fail: (message: string) => {
+    throw new Error(message);
+  },
+}));
+
+const {
   buildChannelsLiveStatusJson,
   buildRunnerPm2Env,
   ChannelsCommands,
   classifyChannelRunnerHealth,
   validateChannelRunnerRuntimeTarget,
-} from "./channels.js";
+} = await import("./channels.js");
+const { ContractError } = await import("../agent-contract.js");
+
+afterAll(() => mock.restore());
 
 const ORIGINAL_ENV = { ...process.env };
 const tempDirs: string[] = [];
@@ -98,6 +113,86 @@ describe("channels config commands", () => {
     expect(dbGetChannel("ravi-rbbt-slack")?.defaults).toEqual({ subscriptionScope: "chat_and_thread" });
   });
 });
+
+// Manual v2 agent-first contract for the CONFIG commands only (create/set are
+// declared unbraked reversible writes; start/stop/restart/run/logs stay
+// process infrastructure outside this contract).
+describe("channels config contract", () => {
+  it("show on an unknown channel exits 1 with CHANNEL_NOT_FOUND and suggestions from local config names", async () => {
+    const commands = new ChannelsCommands();
+    await silenced(() => commands.create("ravi-rbbt-slack", "slack", undefined, true));
+
+    const error = await expectContractError(() => commands.show("rbbt-slack", true), "CHANNEL_NOT_FOUND", 1);
+
+    expect(error.details.suggestions).toContain("ravi-rbbt-slack");
+    expect(error.details.suggestedAction).toContain("ravi channels list");
+  });
+
+  it("set on an unknown channel exits 1 with CHANNEL_NOT_FOUND and does not write", async () => {
+    const commands = new ChannelsCommands();
+    await expectContractError(() => commands.set("ghost", "enabled", "false", true), "CHANNEL_NOT_FOUND", 1);
+
+    expect(dbGetChannel("ghost")).toBeNull();
+  });
+
+  it("create with an unknown credential connection exits 1 with CREDENTIAL_CONNECTION_NOT_FOUND and does not write", async () => {
+    const commands = new ChannelsCommands();
+    const error = await expectContractError(
+      () => commands.create("ravi-rbbt-slack", "slack", "missing-connection", true),
+      "CREDENTIAL_CONNECTION_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestedAction).toContain("ravi credentials connections add");
+    expect(dbGetChannel("ravi-rbbt-slack")).toBeNull();
+  });
+
+  it("list --fields narrows each channel to the requested fields", async () => {
+    const commands = new ChannelsCommands();
+    await silenced(() => commands.create("ravi-rbbt-slack", "slack", undefined, true));
+    await silenced(() => commands.create("hana-slack", "slack", undefined, true));
+
+    const payload = await silenced(() => commands.list(undefined, true, undefined, undefined, "name,provider"));
+
+    expect(payload.items).toHaveLength(2);
+    for (const item of payload.items as unknown as Array<Record<string, unknown>>) {
+      expect(Object.keys(item).sort()).toEqual(["name", "provider"]);
+    }
+  });
+});
+
+async function silenced<T>(run: () => Promise<T> | T): Promise<T> {
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = () => {};
+  console.error = () => {};
+  try {
+    return await run();
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+}
+
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<InstanceType<typeof ContractError>> {
+  let caught: unknown;
+  await silenced(async () => {
+    try {
+      await run();
+    } catch (error) {
+      caught = error;
+    }
+  });
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as InstanceType<typeof ContractError>;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
 
 function liveRunnerStatus(adapterStatus: ChannelRunnerRuntimeStatus["adapters"][number]["status"] = "connected") {
   return createChannelRunnerHealthSnapshot(

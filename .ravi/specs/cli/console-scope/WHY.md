@@ -30,6 +30,19 @@ diagnostics.
 
 ## Decisions
 
+### Keep `cloud scope set/clear` unbraked under the agent-first contract
+
+The Manual v2 migration braked the risky remote writes of neighboring domains
+(`cloud projects create`, `sync push|pull`, `bridges revoke`). Scope defaults
+deliberately did not get the brake: `set` and `clear` are a same-cost
+reversible pair over non-secret LOCAL state, and `set` already validates the
+project against Console before saving. The danger a wrong default creates is
+realized only when a consuming command writes remotely — and that command is
+where the brake lives. Braking `set` would double-charge the friction without
+adding a second point of no return. What the migration did add here is the
+`ContractError` rethrow guard in the command funnel, so contract-layer errors
+from shared helpers never get flattened into `SERVER_UNAVAILABLE`.
+
 ### Keep login and focus separate
 
 `ravi login` selects an organization because the access token is issued for a

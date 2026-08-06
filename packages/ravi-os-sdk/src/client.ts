@@ -512,6 +512,7 @@ export class RaviClient {
     /** Generate speech from text using ElevenLabs TTS */
     generate: async (text?: string, options?: {
       caption?: string;
+      execute?: boolean;
       format?: string;
       lang?: string;
       model?: string;
@@ -532,6 +533,7 @@ export class RaviClient {
       agent?: string;
       chat?: string;
       clientId?: string;
+      fields?: string;
       id?: string;
       includeFailed?: boolean;
       limit?: string;
@@ -554,6 +556,7 @@ export class RaviClient {
       chat?: string;
       clientId?: string;
       elevenlabs?: string;
+      execute?: boolean;
       format?: string;
       id?: string;
       lang?: string;
@@ -574,6 +577,7 @@ export class RaviClient {
     /** List available ElevenLabs voices for picker UIs */
     voices: async (options?: {
       category?: string;
+      fields?: string;
       limit?: string;
       search?: string;
       voiceType?: string;
@@ -605,6 +609,7 @@ export class RaviClient {
     /** List Ravi MCP bridges for a Console project */
     list: async (options?: {
       console?: string;
+      fields?: string;
       limit?: string;
       offset?: string;
       project?: string;
@@ -618,6 +623,7 @@ export class RaviClient {
     /** Revoke a Ravi MCP bridge and its client tokens */
     revoke: async (id: string, options?: {
       console?: string;
+      execute?: boolean;
       yes?: boolean;
     }): Promise<BridgesRevokeReturn> => {
       return this.transport.call({
@@ -892,6 +898,7 @@ export class RaviClient {
     },
     /** List configured native channels */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       provider?: string;
@@ -1173,6 +1180,7 @@ export class RaviClient {
         console?: string;
         defaultPageSite?: string;
         description?: string;
+        execute?: boolean;
         name?: string;
         visibility?: string;
       }): Promise<CloudProjectsCreateReturn> => {
@@ -1185,6 +1193,7 @@ export class RaviClient {
       /** List Ravi Cloud projects from Console */
       list: async (options?: {
         console?: string;
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<CloudProjectsListReturn> => {
@@ -1253,6 +1262,7 @@ export class RaviClient {
     /** List Ravi commands */
     list: async (options?: {
       agent?: string;
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -1298,6 +1308,7 @@ export class RaviClient {
   readonly connectors = {
     /** List your connectors */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       project?: string;
@@ -1311,6 +1322,7 @@ export class RaviClient {
     },
     /** Revoke a connector and delete its stored credentials */
     revoke: async (id: string, options?: {
+      execute?: boolean;
       yes?: boolean;
     }): Promise<ConnectorsRevokeReturn> => {
       return this.transport.call({
@@ -1689,6 +1701,7 @@ export class RaviClient {
       },
       /** List entries in the local credentials store */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<ContextCredentialsListReturn> => {
@@ -1699,11 +1712,13 @@ export class RaviClient {
         });
       },
       /** Remove a stored context-key from the credentials store */
-      remove: async (contextKey: string): Promise<ContextCredentialsRemoveReturn> => {
+      remove: async (contextKey: string, options?: {
+        execute?: boolean;
+      }): Promise<ContextCredentialsRemoveReturn> => {
         return this.transport.call({
           groupSegments: ["context","credentials"],
           command: "remove",
-          body: { contextKey },
+          body: { contextKey, ...(options ?? {}) },
         });
       },
       /** Mark a stored context-key as the default */
@@ -1747,6 +1762,7 @@ export class RaviClient {
     list: async (options?: {
       agent?: string;
       all?: boolean;
+      fields?: string;
       kind?: string;
       limit?: string;
       offset?: string;
@@ -1772,6 +1788,7 @@ export class RaviClient {
     },
     /** Revoke a runtime context by context ID */
     revoke: async (contextId: string, options?: {
+      execute?: boolean;
       noCascade?: boolean;
       reason?: string;
     }): Promise<ContextRevokeReturn> => {
@@ -1812,6 +1829,7 @@ export class RaviClient {
     },
     /** Show cost breakdown by agent */
     agents: async (options?: {
+      fields?: string;
       hours?: string;
       limit?: string;
     }): Promise<CostsAgentsReturn> => {
@@ -1824,6 +1842,7 @@ export class RaviClient {
     /** Audit pricing coverage for recent cost events */
     pricing: async (options?: {
       dryRun?: boolean;
+      fields?: string;
       hours?: string;
       includePriced?: boolean;
       limit?: string;
@@ -1855,6 +1874,7 @@ export class RaviClient {
     },
     /** Show most expensive sessions */
     topSessions: async (options?: {
+      fields?: string;
       hours?: string;
       limit?: string;
     }): Promise<CostsTopSessionsReturn> => {
@@ -1893,6 +1913,7 @@ export class RaviClient {
       /** List provider credential connections without secret values */
       list: async (options?: {
         all?: boolean;
+        fields?: string;
         limit?: string;
         offset?: string;
         provider?: string;
@@ -2522,6 +2543,7 @@ export class RaviClient {
     list: async (options?: {
       agent?: string;
       allAgents?: boolean;
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -2533,19 +2555,23 @@ export class RaviClient {
       });
     },
     /** Delete a job */
-    rm: async (id: string): Promise<CronRmReturn> => {
+    rm: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<CronRmReturn> => {
       return this.transport.call({
         groupSegments: ["cron"],
         command: "rm",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Manually run a job (ignores schedule) */
-    run: async (id: string): Promise<CronRunReturn> => {
+    run: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<CronRunReturn> => {
       return this.transport.call({
         groupSegments: ["cron"],
         command: "run",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Set job property */
@@ -2693,6 +2719,7 @@ export class RaviClient {
         childPlaybook?: string;
         devinId?: string;
         devinMode?: string;
+        execute?: boolean;
         knowledge?: string[];
         maxAcu?: string;
         noMaxAcuLimit?: boolean;
@@ -2732,6 +2759,7 @@ export class RaviClient {
       },
       /** List local or remote Devin sessions */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
         remote?: boolean;
@@ -2757,6 +2785,7 @@ export class RaviClient {
       /** Send a message to a Devin session */
       send: async (session: string, message: string, options?: {
         asUser?: string;
+        execute?: boolean;
       }): Promise<DevinSessionsSendReturn> => {
         return this.transport.call({
           groupSegments: ["devin","sessions"],
@@ -2812,9 +2841,10 @@ export class RaviClient {
   };
 
   readonly feedback = {
-    /** Submit structured feedback to Ravi Console */
+    /** Submit structured feedback to Ravi Console (dry-run by default; requires --execute) */
     send: async (message: string[], options?: {
       console?: string;
+      execute?: boolean;
       kind?: string;
       metadataJson?: string;
       project?: string;
@@ -2894,11 +2924,13 @@ export class RaviClient {
       });
     },
     /** Show heartbeat status for all agents */
-    status: async (): Promise<HeartbeatStatusReturn> => {
+    status: async (options?: {
+      fields?: string;
+    }): Promise<HeartbeatStatusReturn> => {
       return this.transport.call({
         groupSegments: ["heartbeat"],
         command: "status",
-        body: {},
+        body: { ...(options ?? {}) },
       });
     },
     /** Manually trigger a heartbeat */
@@ -2956,6 +2988,7 @@ export class RaviClient {
     },
     /** List configured hooks */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -2967,11 +3000,13 @@ export class RaviClient {
       });
     },
     /** Delete a hook */
-    rm: async (id: string): Promise<HooksRmReturn> => {
+    rm: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<HooksRmReturn> => {
       return this.transport.call({
         groupSegments: ["hooks"],
         command: "rm",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Show hook details */
@@ -3030,6 +3065,7 @@ export class RaviClient {
       background?: string;
       caption?: string;
       compression?: string;
+      execute?: boolean;
       format?: string;
       mode?: string;
       model?: string;
@@ -3084,6 +3120,7 @@ export class RaviClient {
     },
     /** List recently delivered inbox items in the local mirror */
     items: async (options?: {
+      fields?: string;
       limit?: string;
     }): Promise<InboxItemsReturn> => {
       return this.transport.call({
@@ -3094,6 +3131,7 @@ export class RaviClient {
     },
     /** List local inbox items */
     list: async (options?: {
+      fields?: string;
       includeArchived?: boolean;
       limit?: string;
       offset?: string;
@@ -3125,11 +3163,13 @@ export class RaviClient {
       });
     },
     /** Republish a locally stored inbox item to NATS */
-    replay: async (ref: string): Promise<InboxReplayReturn> => {
+    replay: async (ref: string, options?: {
+      execute?: boolean;
+    }): Promise<InboxReplayReturn> => {
       return this.transport.call({
         groupSegments: ["inbox"],
         command: "replay",
-        body: { ref },
+        body: { ref, ...(options ?? {}) },
       });
     },
     /** Snooze a local inbox item until a timestamp */
@@ -3188,6 +3228,7 @@ export class RaviClient {
     list: async (options?: {
       agent?: string;
       confidence?: string;
+      fields?: string;
       importance?: string;
       kind?: string;
       limit?: string;
@@ -3207,6 +3248,7 @@ export class RaviClient {
     },
     /** Search insights by free text */
     search: async (text: string, options?: {
+      fields?: string;
       limit?: string;
     }): Promise<InsightsSearchReturn> => {
       return this.transport.call({
@@ -3832,6 +3874,7 @@ export class RaviClient {
       account?: string;
       caption?: string;
       channel?: string;
+      execute?: boolean;
       ptt?: boolean;
       threadId?: string;
       to?: string;
@@ -3870,6 +3913,7 @@ export class RaviClient {
       },
       /** List resolved meeting profiles */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<MeetingsProfilesListReturn> => {
@@ -3931,6 +3975,7 @@ export class RaviClient {
       agent?: string;
       by?: string;
       days?: string;
+      fields?: string;
       since?: string;
       through?: string;
     }): Promise<MetricsShowReturn> => {
@@ -3946,6 +3991,7 @@ export class RaviClient {
     /** List session observer bindings */
     list: async (options?: {
       agent?: string;
+      fields?: string;
       limit?: string;
       offset?: string;
       session?: string;
@@ -3970,6 +4016,7 @@ export class RaviClient {
       },
       /** List observer profiles */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<ObserversProfilesListReturn> => {
@@ -4043,6 +4090,7 @@ export class RaviClient {
       },
       /** List observer rules */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<ObserversRulesListReturn> => {
@@ -4053,11 +4101,13 @@ export class RaviClient {
         });
       },
       /** Delete an observer rule */
-      rm: async (id: string): Promise<ObserversRulesRmReturn> => {
+      rm: async (id: string, options?: {
+        execute?: boolean;
+      }): Promise<ObserversRulesRmReturn> => {
         return this.transport.call({
           groupSegments: ["observers","rules"],
           command: "rm",
-          body: { id },
+          body: { id, ...(options ?? {}) },
         });
       },
       /** Create or overwrite an observer rule */
@@ -4600,6 +4650,7 @@ export class RaviClient {
         },
         /** List available call profiles */
         list: async (options?: {
+          fields?: string;
           limit?: string;
           offset?: string;
           tag?: string;
@@ -4621,6 +4672,7 @@ export class RaviClient {
       },
       /** Request a call to a person */
       request: async (options?: {
+        execute?: boolean;
         force?: boolean;
         person?: string;
         phone?: string;
@@ -4695,6 +4747,7 @@ export class RaviClient {
         },
         /** List call tools */
         list: async (options?: {
+          fields?: string;
           limit?: string;
           offset?: string;
           profile?: string;
@@ -4792,6 +4845,7 @@ export class RaviClient {
         },
         /** List voice agents */
         list: async (options?: {
+          fields?: string;
           limit?: string;
           offset?: string;
           tag?: string;
@@ -4879,7 +4933,7 @@ export class RaviClient {
   };
 
   readonly rules = {
-    /** Import provider rules into .ravi/rules/imported */
+    /** Import provider rules into .ravi/rules/imported (dry-run without --write) */
     import: async (source?: string, options?: {
       cwd?: string;
       force?: boolean;
@@ -4895,6 +4949,7 @@ export class RaviClient {
     /** List importable provider rule sources */
     sources: async (source?: string, options?: {
       cwd?: string;
+      fields?: string;
       includeUser?: boolean;
     }): Promise<RulesSourcesReturn> => {
       return this.transport.call({
@@ -4981,6 +5036,7 @@ export class RaviClient {
       /** List runtime provider credentials */
       list: async (options?: {
         all?: boolean;
+        fields?: string;
         limit?: string;
         offset?: string;
         provider?: string;
@@ -5098,6 +5154,7 @@ export class RaviClient {
       list: async (options?: {
         disabled?: boolean;
         enabled?: boolean;
+        fields?: string;
         limit?: string;
         offset?: string;
         provider?: string;
@@ -5217,6 +5274,7 @@ export class RaviClient {
     /** Show the full current self-context packet */
     context: async (options?: {
       depth?: string;
+      fields?: string;
       limit?: string;
     }): Promise<SelfContextReturn> => {
       return this.transport.call({
@@ -5849,12 +5907,14 @@ export class RaviClient {
   };
 
   readonly settings = {
-    /** Delete a setting */
-    delete: async (key: string): Promise<SettingsDeleteReturn> => {
+    /** Delete a setting (dry-run by default; requires --execute) */
+    delete: async (key: string, options?: {
+      execute?: boolean;
+    }): Promise<SettingsDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["settings"],
         command: "delete",
-        body: { key },
+        body: { key, ...(options ?? {}) },
       });
     },
     /** Get a setting value */
@@ -5867,6 +5927,7 @@ export class RaviClient {
     },
     /** List live settings (legacy account.* hidden by default) */
     list: async (options?: {
+      fields?: string;
       legacy?: boolean;
       limit?: string;
       offset?: string;
@@ -6257,6 +6318,7 @@ export class RaviClient {
     canvasSectionsLookup: async (canvas: string, options?: {
       channel?: string;
       containsText?: string;
+      fields?: string;
       sectionTypes?: string;
     }): Promise<SlackCanvasSectionsLookupReturn> => {
       return this.transport.call({
@@ -6293,6 +6355,7 @@ export class RaviClient {
     /** Read Slack conversation history */
     channelsHistory: async (channel: string, options?: {
       cursor?: string;
+      fields?: string;
       inclusive?: boolean;
       latest?: string;
       limit?: string;
@@ -6327,6 +6390,7 @@ export class RaviClient {
     channelsList: async (options?: {
       channel?: string;
       cursor?: string;
+      fields?: string;
       includeArchived?: boolean;
       limit?: string;
       types?: string;
@@ -6351,6 +6415,7 @@ export class RaviClient {
     filesList: async (options?: {
       channel?: string;
       cursor?: string;
+      fields?: string;
       limit?: string;
       slackChannel?: string;
       user?: string;
@@ -6535,6 +6600,7 @@ export class RaviClient {
     /** List specs from .ravi/specs */
     list: async (options?: {
       domain?: string;
+      fields?: string;
       kind?: string;
       limit?: string;
       offset?: string;
@@ -6586,6 +6652,7 @@ export class RaviClient {
     },
     /** List stickers in the typed catalog */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
     }): Promise<StickersListReturn> => {
@@ -6596,17 +6663,20 @@ export class RaviClient {
       });
     },
     /** Remove a sticker catalog entry */
-    remove: async (id: string): Promise<StickersRemoveReturn> => {
+    remove: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<StickersRemoveReturn> => {
       return this.transport.call({
         groupSegments: ["stickers"],
         command: "remove",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Send a sticker to the current WhatsApp chat */
     send: async (id: string, options?: {
       account?: string;
       channel?: string;
+      execute?: boolean;
       session?: string;
       to?: string;
     }): Promise<StickersSendReturn> => {
@@ -6638,6 +6708,7 @@ export class RaviClient {
     /** Download a bounded remote event batch from Console */
     pull: async (options?: {
       domain?: string;
+      execute?: boolean;
       limit?: string;
       project?: string;
       projectId?: string;
@@ -6653,6 +6724,7 @@ export class RaviClient {
     /** Upload a bounded outbox batch to Console */
     push: async (options?: {
       domain?: string;
+      execute?: boolean;
       limit?: string;
       maxBytes?: string;
       project?: string;
@@ -6713,6 +6785,7 @@ export class RaviClient {
     },
     /** List loaded tag rules from .ravi/tag-rules */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
     }): Promise<TagRulesListReturn> => {
@@ -6844,6 +6917,7 @@ export class RaviClient {
     /** List tag definitions */
     list: async (options?: {
       cursor?: string;
+      fields?: string;
       kind?: string;
       limit?: string;
       order?: string;
@@ -6871,6 +6945,7 @@ export class RaviClient {
       cronJob?: string;
       cursor?: string;
       devinSession?: string;
+      fields?: string;
       hook?: string;
       insight?: string;
       instance?: string;
@@ -7313,6 +7388,7 @@ export class RaviClient {
     },
     /** List Ravi threads */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       owner?: string;
@@ -7417,6 +7493,7 @@ export class RaviClient {
   readonly transcribe = {
     /** Transcribe a local audio file */
     file: async (path: string, options?: {
+      execute?: boolean;
       lang?: string;
     }): Promise<TranscribeFileReturn> => {
       return this.transport.call({
@@ -7468,6 +7545,7 @@ export class RaviClient {
     },
     /** List all event triggers */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -7479,11 +7557,13 @@ export class RaviClient {
       });
     },
     /** Delete a trigger */
-    rm: async (id: string): Promise<TriggersRmReturn> => {
+    rm: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<TriggersRmReturn> => {
       return this.transport.call({
         groupSegments: ["triggers"],
         command: "rm",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Set trigger property */
@@ -7523,6 +7603,7 @@ export class RaviClient {
   readonly video = {
     /** Analyze a video (YouTube URL or local file) and save to markdown */
     analyze: async (url: string, options?: {
+      execute?: boolean;
       forceAnalyze?: boolean;
       output?: string;
       prompt?: string;
@@ -7588,6 +7669,7 @@ export class RaviClient {
     },
     /** List watches */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       provider?: string;
@@ -7600,11 +7682,13 @@ export class RaviClient {
       });
     },
     /** Remove a watch */
-    rm: async (id: string): Promise<WatchRmReturn> => {
+    rm: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<WatchRmReturn> => {
       return this.transport.call({
         groupSegments: ["watch"],
         command: "rm",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Show watch details */
@@ -7621,6 +7705,7 @@ export class RaviClient {
       agent?: string;
       cooldown?: string;
       event?: string;
+      execute?: boolean;
       message?: string;
       session?: string;
     }): Promise<WatchTriggerReturn> => {
@@ -7850,6 +7935,7 @@ export class RaviClient {
   readonly workObjects = {
     /** Execute one Work Object action */
     action: async (type: string, id: string, actionId: string, options?: {
+      execute?: boolean;
       value?: string;
     }): Promise<WorkObjectsActionReturn> => {
       return this.transport.call({
@@ -7896,11 +7982,13 @@ export class RaviClient {
   readonly workflows = {
     runs: {
       /** Archive one node run from workflow aggregate state */
-      archiveNode: async (runId: string, nodeKey: string): Promise<WorkflowsRunsArchiveNodeReturn> => {
+      archiveNode: async (runId: string, nodeKey: string, options?: {
+        execute?: boolean;
+      }): Promise<WorkflowsRunsArchiveNodeReturn> => {
         return this.transport.call({
           groupSegments: ["workflows","runs"],
           command: "archive-node",
-          body: { runId, nodeKey },
+          body: { runId, nodeKey, ...(options ?? {}) },
         });
       },
       /** Cancel one workflow node run */
@@ -7913,6 +8001,7 @@ export class RaviClient {
       },
       /** List workflow runs */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<WorkflowsRunsListReturn> => {
@@ -7948,6 +8037,7 @@ export class RaviClient {
       },
       /** Instantiate one workflow run from a spec */
       start: async (specId: string, options?: {
+        execute?: boolean;
         runId?: string;
       }): Promise<WorkflowsRunsStartReturn> => {
         return this.transport.call({
@@ -7994,6 +8084,7 @@ export class RaviClient {
       },
       /** List workflow specs */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<WorkflowsSpecsListReturn> => {
@@ -8120,6 +8211,7 @@ export class RaviClient {
     /** List top-level comment threads for a video */
     comments: async (videoId: string, options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtCommentsReturn> => {
@@ -8152,6 +8244,7 @@ export class RaviClient {
     /** List videos and playlist-item IDs from one playlist */
     playlist: async (playlistId: string, options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtPlaylistReturn> => {
@@ -8164,6 +8257,7 @@ export class RaviClient {
     /** Add one video to a YouTube playlist */
     playlistAdd: async (playlistId: string, videoId: string, options?: {
       connection?: string;
+      execute?: boolean;
     }): Promise<YtPlaylistAddReturn> => {
       return this.transport.call({
         groupSegments: ["yt"],
@@ -8175,6 +8269,7 @@ export class RaviClient {
     playlistCreate: async (title: string, options?: {
       connection?: string;
       description?: string;
+      execute?: boolean;
       privacy?: "public" | "private" | "unlisted";
     }): Promise<YtPlaylistCreateReturn> => {
       return this.transport.call({
@@ -8186,6 +8281,7 @@ export class RaviClient {
     /** Permanently delete a YouTube playlist without deleting its videos */
     playlistDelete: async (playlistId: string, options?: {
       connection?: string;
+      execute?: boolean;
     }): Promise<YtPlaylistDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["yt"],
@@ -8196,6 +8292,7 @@ export class RaviClient {
     /** Remove one playlist item without deleting the video */
     playlistRemove: async (playlistItemId: string, options?: {
       connection?: string;
+      execute?: boolean;
     }): Promise<YtPlaylistRemoveReturn> => {
       return this.transport.call({
         groupSegments: ["yt"],
@@ -8206,6 +8303,7 @@ export class RaviClient {
     /** List playlists owned by the authenticated channel */
     playlists: async (options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtPlaylistsReturn> => {
@@ -8218,6 +8316,7 @@ export class RaviClient {
     /** Publish a reply to a top-level YouTube comment */
     reply: async (commentId: string, text: string, options?: {
       connection?: string;
+      execute?: boolean;
     }): Promise<YtReplyReturn> => {
       return this.transport.call({
         groupSegments: ["yt"],
@@ -8228,6 +8327,7 @@ export class RaviClient {
     /** Search videos in the authenticated channel */
     search: async (query: string, options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtSearchReturn> => {
@@ -8250,6 +8350,7 @@ export class RaviClient {
     /** List channels followed by the authenticated channel */
     subscriptions: async (options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtSubscriptionsReturn> => {
@@ -8262,6 +8363,7 @@ export class RaviClient {
     /** List recent comment threads with zero replies */
     unanswered: async (videoId: string, options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtUnansweredReturn> => {
@@ -8295,6 +8397,7 @@ export class RaviClient {
     /** Permanently delete an owned YouTube video */
     videoDelete: async (id: string, options?: {
       connection?: string;
+      execute?: boolean;
     }): Promise<YtVideoDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["yt"],
@@ -8307,6 +8410,7 @@ export class RaviClient {
       category?: string;
       connection?: string;
       description?: string;
+      execute?: boolean;
       privacy?: "public" | "private" | "unlisted";
       tags?: string;
       title?: string;
@@ -8320,6 +8424,7 @@ export class RaviClient {
     /** List videos from the authenticated channel uploads playlist */
     videos: async (options?: {
       connection?: string;
+      fields?: string;
       limit?: string;
       page?: string;
     }): Promise<YtVideosReturn> => {

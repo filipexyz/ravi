@@ -61,10 +61,10 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 39 | media/image/audio/video/transcribe | media.ts, image.ts, audio.ts, video.ts, transcribe.ts | audio, image, video (media/transcribe sem skill) | **MIGRADO** | cli/media, cli/image, cli/audio, cli/video, cli/transcribe |
 | 40 | costs/metrics/insights | costs.ts, metrics.ts, insights.ts | (sem skill — lacunas registradas) | **MIGRADO** | cli/costs, cli/metrics, cli/insights |
 | 41 | context+runtime | context.ts, runtime-credentials.ts, runtime-presets.ts | context-cli (dev) | **MIGRADO** | cli/context, cli/runtime-credentials, cli/runtime-presets |
-| 42 | credentials/connectors/bridges | credentials.ts, connectors.ts, bridges.ts | (sem skill) | pendente | — |
-| 43 | cloud | cloud-projects.ts, cloud-scope.ts | (sem skill) | pendente | — |
-| 44 | sync | sync.ts | (sem skill) | pendente | — |
-| 45 | channels | channels.ts, channel-backend.ts | channels | pendente | — |
+| 42 | credentials/connectors/bridges | credentials.ts, connectors.ts, bridges.ts | (sem skill — lacunas registradas) | **MIGRADO** | cli/credentials, cli/connectors, cli/bridges |
+| 43 | cloud | cloud-projects.ts, cloud-scope.ts | (sem skill — lacunas registradas) | **MIGRADO** | cli/cloud-projects, cli/console-scope (atualizada) |
+| 44 | sync | sync.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/sync |
+| 45 | channels | channels.ts (create/set/list/show; channel-backend.ts e infra de processo dispensados) | channels | **MIGRADO** | cli/channels |
 
 ### Dispensados (sem superfície de agente)
 
@@ -764,6 +764,38 @@ wa-overlay/auth citam revoke — dívida de reconciliação registrada.
 
 **Rotina X:** context 37/37 · runtime-credentials 7/7 · runtime-presets 11/11
 · spec gate PASSED (3 specs) · skill context-cli (ravi-dev) com Contrato Do CLI.
+
+### 42–45. credentials + connectors + bridges + cloud + sync + channels — MIGRADOS (lote final; subagente, verificado e integrado)
+
+**Freadas:** `credentials connections remove` e `credentials broker exec`
+(inspeção do broker: resolve segredo REAL do backend in-process — boundary de
+chamadas vivas; `--dry-run` legado documentado como equivalente),
+`connectors revoke` e `bridges revoke` (deletam tokens no provider; `--yes`
+pré-existente = equivalente documentado), `cloud projects create` (recurso
+remoto no Console; validação de visibility ANTES do freio), `sync push` e
+`sync pull` (transferência em massa; freio é a PRIMEIRA instrução — antes até
+do bridge/enqueue local). Sem freio (declaradas): connectors connect (OAuth
+interativo — o consentimento é o freio), bridges/credentials add,
+enable/disable, cloud scope set/clear (default local não-secreto), sync retry,
+channels create/set (config reversível). `sync inspect` de id desconhecido
+deixou de retornar found:false exit 0 → `SYNC_RECORD_NOT_FOUND` exit 1.
+`CHANNEL_NOT_FOUND` (config Ravi — colisão conceitual com o code do slack
+documentada; desambiguação por `op`) + validação cross-domain de
+`--credential-connection`. Anti-vazamento: planos nunca carregam secretRef/
+segredo/bridgeToken (asserções negativas). Rethrow de ContractError nos funis
+CloudAuthError. `--fields` nos lists. Usage contract nos 6 subtrees.
+
+**Correção de regressão (integrador):** `channels-json.test.ts` estava
+QUEBRADO desde o commit do whatsapp (mock de ../context.js sem `hasContext` →
+SyntaxError no import; + 6 call sites de group/dm sem o `execute` posicional)
+— era falha NOVA vs baseline, fora do escopo nominal dos lotes. Corrigido:
+mock + 14 call sites; **8/8 pass** (baseline original restaurada).
+
+**Rotina X:** credentials 13/13 (novo) · connectors 5/5 (novo) · bridges 7/7 ·
+cloud-projects 7/7 · cloud-scope 4/4 · sync 6/6 · channels 17/17 ·
+channels-json 8/8 · typecheck limpo · spec gate PASSED (7 specs) ·
+`sdk:generate`/`sdk:check` current (regen final da onda) · build ok · lista
+AGENT_CONTRACT_DOMAINS reordenada alfabeticamente com os 58 roots migrados.
 
 ### INCIDENTE — limite de sessão da conta (2026-08-06 ~05:00)
 

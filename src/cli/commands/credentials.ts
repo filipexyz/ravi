@@ -17,6 +17,7 @@ import {
   type CredentialConnectionStatus,
 } from "../../credentials/index.js";
 import { buildCommand, buildOffsetPagination } from "../../utils/pagination.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { jsonObjectSchema } from "../return-schemas.js";
@@ -122,6 +123,26 @@ function statusValue(value: string | undefined): CredentialConnectionStatus | un
   throw new Error("--status must be active or disabled");
 }
 
+/**
+ * Manual v2 not-found envelope (exit 1). Connections live in the cheap local
+ * credential store, so `provider:connection` pairs and ids feed `suggestions`.
+ * Secret values, secret refs, and backend paths NEVER appear in the envelope.
+ */
+function failCredentialConnectionNotFound(op: string, provider: string, connection: string, asJson?: boolean): never {
+  const candidates = listCredentialConnections({ includeDisabled: true, limit: 100 }).items.flatMap((record) => [
+    `${record.provider}:${record.connection}`,
+    record.id,
+  ]);
+  contractFail(op, "CREDENTIAL_CONNECTION_NOT_FOUND", `Connection not found: ${provider}:${connection}`, {
+    asJson,
+    details: {
+      suggestedAction:
+        "Check provider/connection ids (see suggestions; list with: ravi credentials connections list --json)",
+      suggestions: suggestSimilar(`${provider}:${connection}`, candidates),
+    },
+  });
+}
+
 function printConnection(connection: ReturnType<typeof publicCredentialConnection>): void {
   console.log(`${connection.provider}:${connection.connection}`);
   console.log(`  id: ${connection.id}`);
@@ -148,6 +169,8 @@ export class CredentialConnectionsCommands {
     @Option({ flags: "--limit <n>", description: "Page size", defaultValue: "50" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Offset", defaultValue: "0" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const page = listCredentialConnections({
       provider,
@@ -156,7 +179,7 @@ export class CredentialConnectionsCommands {
       limit: parseIntOption(limit, 50),
       offset: parseIntOption(offset, 0),
     });
-    const items = page.items.map(publicCredentialConnection);
+    const items = pickFields(page.items.map(publicCredentialConnection), fields);
     const payload = {
       total: page.total,
       pagination: buildOffsetPagination({
@@ -206,7 +229,7 @@ export class CredentialConnectionsCommands {
     if (!provider) fail("--provider is required");
     if (!connection) fail("--connection is required");
     const record = getCredentialConnection(provider, connection);
-    if (!record) fail(`Connection not found: ${provider}:${connection}`);
+    if (!record) failCredentialConnectionNotFound("credentials connections show", provider, connection, asJson);
     const payload = { connection: publicCredentialConnection(record) };
     if (asJson) {
       printJson(payload);
@@ -286,11 +309,39 @@ export class CredentialConnectionsCommands {
     @Option({ flags: "--connection <id>", description: "Connection id" }) connection?: string,
     @Option({ flags: "--delete-secret", description: "Also delete the backend secret" }) deleteBackendSecret?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove the connection; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     if (!provider) fail("--provider is required");
     if (!connection) fail("--connection is required");
+    // Validation runs BEFORE the brake: unknown targets exit 1 with the
+    // not-found envelope instead of a useless dry-run plan.
+    const existing = getCredentialConnection(provider, connection);
+    if (!existing) failCredentialConnectionNotFound("credentials connections remove", provider, connection, asJson);
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): removing credential metadata (and
+      // optionally the backend secret) is destructive, so dry-run by default
+      // and exit 3 before any store/backend write. The plan intentionally
+      // carries NO secret value and NO secret ref.
+      contractDryRun(
+        "credentials connections remove",
+        {
+          provider: existing.provider,
+          connection: existing.connection,
+          id: existing.id,
+          label: existing.label ?? null,
+          backend: existing.backend,
+          status: existing.status,
+          deleteBackendSecret: deleteBackendSecret === true,
+        },
+        { asJson },
+      );
+    }
     const removed = removeCredentialConnection(provider, connection);
-    if (!removed) fail(`Connection not found: ${provider}:${connection}`);
+    if (!removed) failCredentialConnectionNotFound("credentials connections remove", provider, connection, asJson);
     const secretDeleted = deleteBackendSecret ? await deleteSecret(removed.secretRef) : false;
     const payload = { removed: publicCredentialConnection(removed), secretDeleted };
     if (asJson) {
@@ -331,8 +382,9 @@ export class CredentialConnectionsCommands {
   ) {
     if (!provider) fail("--provider is required");
     if (!connection) fail("--connection is required");
+    const op = status === "active" ? "credentials connections enable" : "credentials connections disable";
     const record = setCredentialConnectionStatus(provider, connection, status);
-    if (!record) fail(`Connection not found: ${provider}:${connection}`);
+    if (!record) failCredentialConnectionNotFound(op, provider, connection, asJson);
     const payload = { connection: publicCredentialConnection(record) };
     if (asJson) {
       printJson(payload);
@@ -389,12 +441,40 @@ export class CredentialBrokerCommands {
     @Option({ flags: "--provider <id>", description: "Provider id" }) provider?: string,
     @Option({ flags: "--connection <id>", description: "Connection id" }) connection?: string,
     @Option({ flags: "--action <name>", description: "Provider action" }) action?: string,
-    @Option({ flags: "--dry-run", description: "Plan without resolving the backend secret" }) dryRun?: boolean,
+    @Option({ flags: "--dry-run", description: "Legacy planned payload (exit 0) without resolving the backend secret" })
+    dryRun?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually resolve the credential in the broker; default is a dry-run plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     if (!provider) fail("--provider is required");
     if (!connection) fail("--connection is required");
     if (!action) fail("--action is required");
+    // Validation runs BEFORE the brake: unknown connections exit 1 with the
+    // not-found envelope on every path (plan, legacy --dry-run, --execute).
+    const record = getCredentialConnection(provider, connection);
+    if (!record) failCredentialConnectionNotFound("credentials broker exec", provider, connection, asJson);
+    if (dryRun !== true && execute !== true) {
+      // Write brake (Manual v2 7.8): exec is the broker boundary that resolves
+      // a REAL backend credential for a provider action, so dry-run by default
+      // and exit 3 before any secret resolution. The pre-existing `--dry-run`
+      // flag stays as the legacy exit-0 planned payload (documented
+      // equivalent, not renamed). The plan carries policy metadata only —
+      // never a secret value or secret ref.
+      contractDryRun(
+        "credentials broker exec",
+        {
+          provider: record.provider,
+          connection: record.connection,
+          action,
+          policy: explainCredentialPolicy({ provider: record.provider, connection: record.connection, action }),
+        },
+        { asJson },
+      );
+    }
     const payload = await execCredentialBroker({
       provider,
       connection,
