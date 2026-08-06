@@ -201,7 +201,8 @@ ravi settings list                            # List live settings; legacy accou
 ravi settings list --legacy                   # Inspect legacy account.* rows shadowed by instances
 ravi settings get <key>                       # Get a setting value
 ravi settings set <key> <value>               # Set a setting value
-ravi settings delete <key>                    # Delete a setting
+ravi settings delete <key>                    # Dry-run: shows the delete plan (exit 3)
+ravi settings delete <key> --execute          # Actually delete the setting
 ```
 
 **Known settings:** `defaultAgent`, `defaultDmScope`, `defaultTimezone`, `whatsapp.groupPolicy`, `whatsapp.dmPolicy`. Legacy `account.*` rows are shadowed by `instances` and should not be used as live config.

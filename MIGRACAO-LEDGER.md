@@ -45,11 +45,11 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 23 | inbox | inbox.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/inbox (atualizada) |
 | 24 | work-objects | work-objects.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/work-objects |
 | 25 | commands | commands.ts | commands | **MIGRADO** | cli/commands |
-| 26 | settings | settings.ts | settings | pendente | — |
-| 27 | self | self.ts | (sem skill) | pendente | — |
-| 28 | feedback | feedback.ts | (sem skill) | pendente | — |
-| 29 | rules | rules.ts | ravi-rules (dev) | pendente | — |
-| 30 | specs | specs.ts | specs | pendente | — |
+| 26 | settings | settings.ts | settings | **MIGRADO** | cli/settings |
+| 27 | self | self.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/self |
+| 28 | feedback | feedback.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/feedback |
+| 29 | rules | rules.ts | ravi-rules (dev) | **MIGRADO** | cli/rules |
+| 30 | specs | specs.ts | specs | **MIGRADO** | cli/specs |
 | 31 | stickers | stickers.ts | stickers | pendente | — |
 | 32 | react | react.ts | stickers (compartilhada) | pendente | — |
 | 33 | pages | pages.ts | — | **MIGRADO** (junto com artifacts, entrada 12) | cli/pages |
@@ -607,6 +607,23 @@ Contrato Do CLI. `validate` mantém exit 1 pré-existente como veredito.
 commands 5/5 (novo) · typecheck limpo · spec gate PASSED (cli/threads +
 cli/inbox + cli/work-objects + cli/commands + consumidores work-objects).
 Usage contract nos 4 subtrees.
+
+### 26–30. settings + self + feedback + rules + specs — MIGRADOS (lote; subagente terminado pelo limite de sessão na etapa final; integração completada pelo coordenador)
+
+**Escopo:** freio (`--execute`) em `settings delete` (apaga config global sem
+undo; not-found dispara ANTES do freio — deletar key não setada é exit 1, nunca
+3). Demais domínios pelo veredito do agente (confirmado nos testes/specs):
+self (leitura pura), specs (sync idempotente, new cria arquivos locais),
+feedback e rules conforme classificação nas specs respectivas. Envelopes
+not-found com suggestions locais; `--fields` nas listagens. Skills settings/
+specs/ravi-rules com `## Contrato Do CLI`; docs overview/configuration ensinam
+o dry-run do settings delete. Usage contract nos 5 subtrees.
+
+**Rotina X (verificada pelo coordenador após o término do agente):**
+settings 10/10 · self 7/7 · feedback 4/4 · rules 7/7 · specs 8/8 · typecheck
+limpo · spec gate PASSED (5 specs cli/*). **Rotina Y:** settings set →
+delete sem `--execute` → envelope exit 3 · delete de key nunca setada →
+exit 1 (not-found vence o freio, ao vivo).
 
 ### INCIDENTE — limite de sessão da conta (2026-08-06 ~05:00)
 

@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { pickFields } from "../agent-contract.js";
 import {
   declareCommandReturns,
   selfContextReturnSchema,
@@ -238,10 +239,18 @@ export class SelfCommands {
     @Option({ flags: "--depth <depth>", description: "Depth: summary, normal, or full" }) depth?: string,
     @Option({ flags: "--limit <limit>", description: "Maximum recent messages to inspect" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+    @Option({
+      flags: "--fields <a,b,c>",
+      description: "Compact mode: keep only these top-level packet sections (e.g. identity,session,actor)",
+    })
+    fields?: string,
   ) {
     const packet = this.buildPacket({ depth: parseDepth(depth), limit: parseLimit(limit, 10) });
-    this.printPayload(packet, asJson, () => this.printContext(packet));
-    return packet;
+    // Compact mode (Manual v2 7.9): the self packet is the largest read payload
+    // of this domain, so --fields projects its top-level sections.
+    const payload = fields?.trim() ? (pickFields([packet], fields)[0] ?? {}) : packet;
+    this.printPayload(payload, asJson || Boolean(fields?.trim()), () => this.printContext(packet));
+    return payload;
   }
 
   @Command({ name: "chat", description: "Show the current chat binding and participants" })

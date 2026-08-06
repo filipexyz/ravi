@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
+import { CONTRACT_EXIT_USAGE, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   createSpec,
@@ -28,6 +29,45 @@ function printSpecSummary(spec: SpecRecord): void {
   console.log(`- ${spec.id} :: ${spec.kind} :: ${spec.status} :: ${spec.title}`);
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Exit taxonomy: 1 not-found · 2 usage. `sync` and `new` are
+// local, non-destructive writes: declared UNBRAKED (no --execute).
+// ============================================================
+
+const SPEC_CONTEXT_MODES = ["rules", "full", "checks", "why", "runbook"] as const;
+const SPEC_KINDS = ["domain", "capability", "feature"] as const;
+
+/** Real spec ids for NOT_FOUND suggestions; empty when the index is unreadable. */
+function specIdCandidates(): string[] {
+  try {
+    return listSpecs().map((spec) => spec.id);
+  } catch {
+    return [];
+  }
+}
+
+function failSpecNotFound(op: string, id: string, asJson?: boolean): never {
+  contractFail(op, "SPEC_NOT_FOUND", `Spec not found: ${id}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the spec id (see suggestions) or run `ravi specs list`",
+      suggestions: suggestSimilar(id, specIdCandidates()),
+    },
+  });
+}
+
+function failSpecsUsage(op: string, message: string, acceptedValues: readonly string[], asJson?: boolean): never {
+  contractFail(op, "USAGE_ERROR", message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: {
+      suggestedAction: `Re-run '${op}' with one of: ${acceptedValues.join(", ")}`,
+      acceptedValues: [...acceptedValues],
+    },
+  });
+}
+
 @Group({
   name: "specs",
   description: "Versioned Ravi specs memory",
@@ -43,11 +83,21 @@ export class SpecsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching specs to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
+    let normalizedKind: SpecKind | undefined;
+    if (kind?.trim()) {
+      try {
+        normalizedKind = normalizeSpecKind(kind);
+      } catch {
+        failSpecsUsage("specs list", `Invalid --kind: ${kind}. Use domain|capability|feature.`, SPEC_KINDS, asJson);
+      }
+    }
     try {
       const specs = listSpecs({
         ...(domain?.trim() ? { domain: domain.trim() } : {}),
-        ...(kind?.trim() ? { kind: normalizeSpecKind(kind) } : {}),
+        ...(normalizedKind ? { kind: normalizedKind } : {}),
       });
       const page = paginateCliItems(specs, { limit, offset });
       const pagination = buildCliOffsetPagination({
@@ -58,7 +108,8 @@ export class SpecsCommands {
         total: page.total,
         options: ["--domain", domain?.trim() || null, "--kind", kind?.trim() || null],
       });
-      const payload = { total: page.total, pagination, items: page.items, specs: page.items };
+      const projectedItems = pickFields(page.items, fields);
+      const payload = { total: page.total, pagination, items: projectedItems, specs: projectedItems };
       if (asJson) {
         printJson(payload);
         return payload;
@@ -91,8 +142,18 @@ export class SpecsCommands {
     mode?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    let normalizedMode: SpecContextMode;
     try {
-      const normalizedMode: SpecContextMode = normalizeSpecContextMode(mode);
+      normalizedMode = normalizeSpecContextMode(mode);
+    } catch {
+      failSpecsUsage(
+        "specs get",
+        `Invalid --mode: ${mode}. Use rules|full|checks|why|runbook.`,
+        SPEC_CONTEXT_MODES,
+        asJson,
+      );
+    }
+    try {
       const context = getSpecContext(id, { mode: normalizedMode });
       const payload = { context };
       if (asJson) {
@@ -107,7 +168,12 @@ export class SpecsCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      const message = error instanceof Error ? error.message : String(error);
+      // getSpecContext throws on unknown ids; map that to the contract envelope.
+      if (/^Spec not found/i.test(message)) {
+        failSpecNotFound("specs get", id, asJson);
+      }
+      fail(message);
     }
   }
 
@@ -121,10 +187,21 @@ export class SpecsCommands {
     @Option({ flags: "--full", description: "Create WHY.md, RUNBOOK.md, and CHECKS.md companions" }) full?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    // `new` only creates local Markdown files and fails on existing specs, so it
+    // stays UNBRAKED (no --execute) under the Manual v2 write classification.
+    if (!title?.trim()) {
+      failSpecsUsage("specs new", "--title is required.", ["--title <title>"], asJson);
+    }
+    if (!kind?.trim()) {
+      failSpecsUsage("specs new", "--kind is required.", SPEC_KINDS, asJson);
+    }
+    let normalizedKind: SpecKind;
     try {
-      if (!title?.trim()) fail("--title is required.");
-      if (!kind?.trim()) fail("--kind is required.");
-      const normalizedKind: SpecKind = normalizeSpecKind(kind);
+      normalizedKind = normalizeSpecKind(kind);
+    } catch {
+      failSpecsUsage("specs new", `Invalid --kind: ${kind}. Use domain|capability|feature.`, SPEC_KINDS, asJson);
+    }
+    try {
       const result = createSpec({
         id,
         title: title.trim(),
@@ -158,6 +235,9 @@ export class SpecsCommands {
     }
   }
 
+  // Manual v2 write classification: `sync` is an idempotent local reindex
+  // (Markdown stays the source of truth; the SQLite index is rebuildable), so
+  // it stays UNBRAKED (no --execute). CI quality gates call syncSpecs() too.
   @Command({ name: "sync", description: "Rebuild the specs SQLite index from Markdown" })
   @CommandAccess({ kind: "mutate", resource: "specs", action: "sync", risk: "high" })
   @Returns(specsSyncReturnSchema)

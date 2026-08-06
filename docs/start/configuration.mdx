@@ -258,7 +258,8 @@ ravi settings list
 ravi settings list --legacy
 ravi settings get <key>
 ravi settings set <key> <value>
-ravi settings delete <key>
+ravi settings delete <key>            # dry-run: shows the delete plan (exit 3)
+ravi settings delete <key> --execute  # actually delete the setting
 ```
 
 ### Available Settings

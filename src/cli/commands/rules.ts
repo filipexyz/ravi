@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { resolve } from "node:path";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { fail } from "../context.js";
+import { CONTRACT_EXIT_USAGE, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { looseObjectSchema } from "../return-schemas.js";
 import {
   importRaviRules,
@@ -44,12 +44,26 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
-function parseProviderFilter(source?: string): RaviRulesImportProviderFilter {
+const PROVIDER_FILTERS = ["all", "claude", "agents"] as const;
+
+/**
+ * Manual v2 contract: an invalid provider value is a usage error (exit 2), with
+ * the accepted values and the closest real candidates in the envelope.
+ */
+function parseProviderFilter(op: string, source?: string, asJson?: boolean): RaviRulesImportProviderFilter {
   const normalized = (source ?? "all").trim().toLowerCase();
   if (normalized === "all" || normalized === "claude" || normalized === "agents") {
     return normalized;
   }
-  fail("Source must be one of: all, claude, agents");
+  contractFail(op, "USAGE_ERROR", `Invalid source provider: ${source}. Use all, claude, or agents.`, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: {
+      suggestedAction: `Re-run '${op}' with source one of: ${PROVIDER_FILTERS.join(", ")}`,
+      acceptedValues: [...PROVIDER_FILTERS],
+      suggestions: suggestSimilar(normalized, [...PROVIDER_FILTERS]),
+    },
+  });
 }
 
 function resolveWorkspaceCwd(cwd?: string): string {
@@ -92,9 +106,11 @@ export class RulesCommands {
     includeUser?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each source" })
+    fields?: string,
   ): Promise<unknown> {
     const workspaceCwd = resolveWorkspaceCwd(cwd);
-    const provider = parseProviderFilter(source);
+    const provider = parseProviderFilter("rules sources", source, asJson);
     const sources = await listRaviRulesImportSources({
       cwd: workspaceCwd,
       provider,
@@ -104,7 +120,7 @@ export class RulesCommands {
       cwd: workspaceCwd,
       provider,
       includeUser: includeUser === true,
-      sources,
+      sources: pickFields(sources, fields),
       counts: {
         sources: sources.length,
         existingSources: sources.filter((candidate) => candidate.exists).length,
@@ -127,7 +143,12 @@ export class RulesCommands {
     return payload;
   }
 
-  @Command({ name: "import", description: "Import provider rules into .ravi/rules/imported" })
+  // Manual v2 write brake note: `import` keeps its NATIVE, pre-existing brake
+  // instead of gaining `--execute` — without `--write` it is a dry-run (no
+  // files), and with `--write` existing imported files are still skipped unless
+  // `--force` is passed. `--write` (+ `--force` for overwrite) is the declared
+  // contract equivalent of `--execute` for this domain.
+  @Command({ name: "import", description: "Import provider rules into .ravi/rules/imported (dry-run without --write)" })
   @CommandAccess({ kind: "mutate", resource: "rules", action: "import", risk: "high" })
   @Returns(rulesImportReturnSchema)
   async importRules(
@@ -145,7 +166,7 @@ export class RulesCommands {
     asJson?: boolean,
   ): Promise<unknown> {
     const workspaceCwd = resolveWorkspaceCwd(cwd);
-    const provider = parseProviderFilter(source);
+    const provider = parseProviderFilter("rules import", source, asJson);
     const result = await importRaviRules({
       cwd: workspaceCwd,
       provider,

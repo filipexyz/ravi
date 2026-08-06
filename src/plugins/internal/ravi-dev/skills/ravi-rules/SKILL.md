@@ -18,6 +18,30 @@ Before changing this area, read the normative spec:
 bin/ravi specs get runtime/prompt-rules --mode rules --json
 ```
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, acceptedValues?, suggestions?}}` (spec: `cli/rules`).
+
+Taxonomia de saída:
+
+- `0` sucesso — inclusive o dry-run nativo do `import` (o plano vem no payload em `candidates`, com verbos `would-create`\`would-overwrite`).
+- `2` erro de uso: provider inválido em `sources`\`import`. O envelope traz `acceptedValues` (`all`, `claude`, `agents`) e `suggestions` — corrija o positional, não insista.
+- Não existe `RULE_NOT_FOUND`: o domínio não tem lookup por regra individual (declarado na spec).
+
+Freio deste domínio é NATIVO, em dois estágios — `import` NÃO tem `--execute`:
+
+1. Sem `--write`: dry-run, nada é criado (exit 0 com o plano).
+2. Com `--write` mas sem `--force`: cria novos e PULA arquivos já importados (`skippedExisting`).
+3. Só `--write --force` sobrescreve regras importadas existentes — confirme o overwrite antes.
+
+Compact mode: `rules sources` aceita `--fields a,b,c` (ex.: `--fields provider,exists`).
+
+Checklist antes de responder sobre rules:
+
+- Tratei "import não escreveu nada" como freio nativo (faltou `--write`) e não como bug?
+- Confirmei que o overwrite é intencional antes de adicionar `--force`?
+- Usei `acceptedValues` do envelope para corrigir o provider em vez de repetir a chamada?
+
 ## Mental Model
 
 - `AGENTS.md` describes workspace development instructions.
