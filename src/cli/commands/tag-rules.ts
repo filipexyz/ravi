@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { readFileSync, statSync } from "node:fs";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
+import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import {
   declareCommandReturns,
@@ -30,6 +31,46 @@ function resolveContactRef(target: string): string {
   if (!cleaned) fail("Target must be a non-empty value");
   if (cleaned.startsWith("contact:")) return cleaned.slice("contact:".length);
   return cleaned;
+}
+
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+/** Suggestions come ONLY from the rule registry already loaded by the caller. */
+function failTagRuleNotFound(op: string, ruleId: string, candidates: string[], asJson?: boolean): never {
+  contractFail(op, "TAG_RULE_NOT_FOUND", `Rule not found: ${ruleId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the rule id (see suggestions for similar rules, or run 'ravi tag-rules list')",
+      suggestions: suggestSimilar(ruleId, candidates),
+    },
+  });
+}
+
+/**
+ * The rules engine throws `Contact not found: <ref>` on unknown targets.
+ * Contacts enforce contactScope (own/tagged/all) inside their own domain and
+ * tag-rules cannot reproduce that visibility filter (cli/chats precedent), so
+ * the envelope carries NO suggestions and only points back to
+ * `ravi contacts list`. ContractError passes through untouched; every other
+ * error keeps the legacy fail() path.
+ */
+function rethrowTagRuleTargetError(op: string, contactRef: string, err: unknown, asJson?: boolean): never {
+  if (err instanceof ContractError) throw err;
+  const message = err instanceof Error ? err.message : String(err);
+  if (/^contact not found:/i.test(message)) {
+    contractFail(op, "CONTACT_NOT_FOUND", `Contact not found: ${contactRef}`, {
+      asJson,
+      details: {
+        suggestedAction: "Check the target contact id with 'ravi contacts list' (contact visibility is scoped)",
+      },
+    });
+  }
+  fail(message);
 }
 
 interface RuleSummary {
@@ -81,16 +122,19 @@ export class TagRulesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of rules to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each rule" })
+    fields?: string,
   ): unknown {
     const loaded = loadTagRulesFromDirectory();
     const all = loaded.rules.map((entry) => summarizeRule(entry.rule, entry.source));
     const pageLimit = limit ? Math.max(1, Number(limit)) : 50;
     const pageOffset = offset ? Math.max(0, Number(offset)) : 0;
     const summary = all.slice(pageOffset, pageOffset + pageLimit);
+    const projectedRules = pickFields(summary, fields);
     const total = all.length;
     if (asJson) {
       const payload = {
-        rules: summary,
+        rules: projectedRules,
         errors: loaded.errors,
         pagination: { total, limit: pageLimit, offset: pageOffset, returned: summary.length },
       };
@@ -106,7 +150,11 @@ export class TagRulesCommands {
     for (const error of loaded.errors) {
       console.log(`  ! ${error.source}: ${error.error}`);
     }
-    return { rules: summary, errors: loaded.errors, pagination: { total, limit: pageLimit, offset: pageOffset } };
+    return {
+      rules: projectedRules,
+      errors: loaded.errors,
+      pagination: { total, limit: pageLimit, offset: pageOffset },
+    };
   }
 
   @Command({ name: "show", description: "Show a single rule definition" })
@@ -117,7 +165,14 @@ export class TagRulesCommands {
   ): unknown {
     const loaded = loadTagRulesFromDirectory();
     const entry = loaded.rules.find((candidate) => candidate.rule.id === id);
-    if (!entry) fail(`Rule not found: ${id}`);
+    if (!entry) {
+      failTagRuleNotFound(
+        "tag-rules show",
+        id,
+        loaded.rules.map((candidate) => candidate.rule.id),
+        asJson,
+      );
+    }
     if (asJson) {
       printJson({ rule: entry.rule, source: entry.source });
       return { rule: entry.rule, source: entry.source };
@@ -156,11 +211,17 @@ export class TagRulesCommands {
   ): unknown {
     if (!target) fail("Provide --target contact:<id>");
     const contactRef = resolveContactRef(target);
-    const result = runTagRulesForContact({
-      contactRef,
-      cause: { evaluation: "manual", triggerType: "cli-explain" },
-      apply: false,
-    });
+    const result = (() => {
+      try {
+        return runTagRulesForContact({
+          contactRef,
+          cause: { evaluation: "manual", triggerType: "cli-explain" },
+          apply: false,
+        });
+      } catch (error) {
+        rethrowTagRuleTargetError("tag-rules explain", contactRef, error, asJson);
+      }
+    })();
     const payload = {
       target: { type: "contact", id: contactRef },
       rules: result.rules,
@@ -252,17 +313,31 @@ export class TagRulesCommands {
     } else {
       const loaded = loadTagRulesFromDirectory();
       const entry = loaded.rules.find((candidate) => candidate.rule.id === ruleId);
-      if (!entry) fail(`Rule not found in registry: ${ruleId}`);
+      if (!entry) {
+        failTagRuleNotFound(
+          "tag-rules evaluate",
+          ruleId,
+          loaded.rules.map((candidate) => candidate.rule.id),
+          asJson,
+        );
+      }
       rule = entry.rule;
     }
     if (!rule) fail(`Rule could not be resolved: ${ruleId}`);
 
-    const outcomes = evaluateRulesForContact({
-      rules: [rule],
-      contactRef,
-      cause: { evaluation: "manual", triggerType: "cli" },
-      apply: Boolean(applyChanges),
-    });
+    const resolvedRule = rule;
+    const outcomes = (() => {
+      try {
+        return evaluateRulesForContact({
+          rules: [resolvedRule],
+          contactRef,
+          cause: { evaluation: "manual", triggerType: "cli" },
+          apply: Boolean(applyChanges),
+        });
+      } catch (error) {
+        rethrowTagRuleTargetError("tag-rules evaluate", contactRef, error, asJson);
+      }
+    })();
 
     const payload = {
       ruleId: rule.id,

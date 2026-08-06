@@ -35,7 +35,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 13 | skills+skill-gates | skills.ts, skill-gates.ts | skills, skill-gates | **MIGRADO** | cli/skills, cli/skill-gates |
 | 14 | cron | cron.ts | cron | **MIGRADO** | cli/cron |
 | 15 | triggers | triggers.ts | triggers | **MIGRADO** | cli/triggers |
-| 16 | tags+tag-rules | tags.ts, tag-rules.ts | tag-rules | pendente | — |
+| 16 | tags+tag-rules | tags.ts, tag-rules.ts | tag-rules (tags sem skill — lacuna registrada) | **MIGRADO** | cli/tags, cli/tag-rules |
 | 17 | observers | observers.ts | observers | **MIGRADO** | cli/observers |
 | 18 | workflows | workflows.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/workflows |
 | 19 | watch | watch.ts | (sem skill) | pendente | — |
@@ -527,3 +527,24 @@ projetados juntos). `archive-node` mantém `risk:"medium"` no CommandAccess
 **Rotina X:** `observers.test.ts` 12/12 · `workflows.test.ts` 13/13 · spec gate
 PASSED (cli/observers + cli/workflows) · consumidor docs/workflow-substrate-v0
 ensina o freio · skill observers com Contrato Do CLI.
+
+### 16. tags + tag-rules — MIGRADOS (subagente, verificado e integrado)
+
+**Escopo:** **veredito: NENHUM freio novo** nos dois domínios, declarado nas
+specs. tags: escrita 100% reversível/unitária (create aditivo, set re-setável,
+attach/detach espelhos); não existe `tags rm` — a spec fixa a regra prospectiva
+de que op destrutiva futura nasce freada. tag-rules: `tick`/`evaluate` já
+nasceram dry-run-by-default com `--apply` (equivalente documentado, não
+renomeado). Codes: `TAG_NOT_FOUND` (suggestions de slugs/labels; throws da DB
+mapeados; detach desambigua tag×binding), `TAG_RULE_NOT_FOUND`,
+`CONTACT_NOT_FOUND` sem suggestions (precedente chats). Prova de equivalência
+do freio nos testes: `evaluate` SEM `--apply` não escreve (leitura do DB real
+após execução) e COM `--apply` escreve. `--fields` em tags list/search e
+tag-rules list. Usage contract nos subtrees. Pendências registradas:
+kind:"read" mau-declarado em tick/evaluate (não flipado — precedente whatsapp);
+bug pré-existente na skill contacts que ensina `ravi tags define` (comando
+inexistente; real é `tags create`) — registrado na spec cli/tags.
+
+**Rotina X:** `tags.test.ts` 7/7 · `tag-rules.test.ts` (novo, estado real
+isolado) 6/6 · spec gate PASSED (cli/tags + cli/tag-rules) · skill tag-rules
+com Contrato Do CLI.

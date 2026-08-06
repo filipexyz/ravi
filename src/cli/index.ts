@@ -78,6 +78,8 @@ const AGENT_CONTRACT_DOMAINS = [
   "sessions",
   "skill-gates",
   "skills",
+  "tag-rules",
+  "tags",
   "tasks",
   "triggers",
   "whatsapp",
