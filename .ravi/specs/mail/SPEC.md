@@ -102,8 +102,8 @@ ravi mail messages list --mailbox <mailbox>
 ravi mail messages read <message>
 ravi mail messages search <query>
 ravi mail threads read <thread>
-ravi mail send --from <mailbox> --to <address> --subject <subject> --body <body>
-ravi mail reply <message> --body <body>
+ravi mail send --from <mailbox> --to <address> --subject <subject> --body <body> --execute
+ravi mail reply <message> --body <body> --execute
 ravi mail outbox status
 ```
 

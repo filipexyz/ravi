@@ -3,6 +3,7 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline/promises";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
+import { ContractError, contractDryRun } from "../agent-contract.js";
 import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
 import { LinkStepUpRequiredError } from "../../link/client.js";
 import { execCapability, listConnectors } from "../../link/connectors.js";
@@ -139,6 +140,11 @@ export class GmailCommands {
     @Option({ flags: "--connector <id>", description: "Connector id (defaults to first active Google)" })
     connector?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually send the email; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runGmailCommand(asJson, async () => {
       const recipients = parseAddressList(to);
@@ -150,6 +156,25 @@ export class GmailCommands {
       }
       if (!body && !html) {
         throw new Error("Provide --body or --html");
+      }
+
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): external e-mail to real recipients is
+        // irreversible, so dry-run by default and exit 3 before any connector
+        // resolution or provider call.
+        contractDryRun(
+          "gmail send",
+          {
+            connector: connector ?? "(default google connector)",
+            to: recipients,
+            cc: parseAddressList(cc),
+            bcc: parseAddressList(bcc),
+            subject,
+            bodyPreview: gmailBodyPreview(body ?? html),
+            inReplyTo: inReplyTo ?? null,
+          },
+          { asJson },
+        );
       }
 
       const connectorId = connector ?? (await resolveDefaultGoogleConnector());
@@ -295,10 +320,24 @@ function parseAddressList(value: string | undefined): string[] {
     .filter(Boolean);
 }
 
+const GMAIL_BODY_PREVIEW_LENGTH = 120;
+
+/** Body preview shown in the dry-run plan without printing the full body. */
+function gmailBodyPreview(body: string | undefined): string | null {
+  const normalized = body?.replace(/\s+/g, " ").trim();
+  if (!normalized) return null;
+  return normalized.length > GMAIL_BODY_PREVIEW_LENGTH
+    ? `${normalized.slice(0, GMAIL_BODY_PREVIEW_LENGTH)}…`
+    : normalized;
+}
+
 async function runGmailCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<T | undefined> {
   try {
     return await fn();
   } catch (error) {
+    // Manual v2 contract: contractDryRun/contractFail already emitted their
+    // envelope and carry the exit taxonomy; never wrap them as cloud errors.
+    if (error instanceof ContractError) throw error;
     const cloudError = cloudAuthErrorFromUnknown(error);
     if (asJson) {
       console.log(JSON.stringify(formatCloudAuthError(cloudError), null, 2));

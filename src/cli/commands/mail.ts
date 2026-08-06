@@ -51,6 +51,7 @@ import {
   type MailOutboxStatus,
 } from "../../mailbox/index.js";
 import { projectMailMessageToInbox } from "../../inbox/index.js";
+import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { hasContext } from "../context.js";
 import { jsonObjectSchema, jsonValueSchema, stringNumberRecordSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
@@ -75,6 +76,8 @@ export class MailAccountsCommands {
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Offset" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runMailCommand(asJson, async () => {
       const accounts = listMailAccounts({
@@ -83,7 +86,7 @@ export class MailAccountsCommands {
         limit: parseOptionalInteger(limit, "--limit"),
         offset: parseOptionalInteger(offset, "--offset"),
       });
-      const payload = { accounts };
+      const payload = { accounts: pickFields(accounts, fields) };
       printPayload(payload, asJson, () => printItems("Accounts", payload, ["id", "provider", "status", "displayName"]));
       return payload;
     });
@@ -122,7 +125,7 @@ export class MailAccountsCommands {
   ) {
     return runMailCommand(asJson, async () => {
       const account = getMailAccount(accountId);
-      if (!account) throw new CloudAuthError("PAYLOAD_INVALID", `Mail account not found: ${accountId}`);
+      if (!account) failMailAccountNotFound("mail accounts sync", accountId, asJson);
       requireProviderPermission("sync", account.provider);
       const payload =
         account.provider === "ravi-mail"
@@ -153,6 +156,8 @@ export class MailMailboxesCommands {
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Offset" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runMailCommand(asJson, async () => {
       const mailboxes = listMailMailboxes({
@@ -161,7 +166,7 @@ export class MailMailboxesCommands {
         limit: parseOptionalInteger(limit, "--limit"),
         offset: parseOptionalInteger(offset, "--offset"),
       }).filter((mailbox) => canUseMailMailbox(getMailScopeContext(), "read", mailbox));
-      const payload = { mailboxes };
+      const payload = { mailboxes: pickFields(mailboxes, fields) };
       printPayload(payload, asJson, () => printItems("Mailboxes", payload, ["address", "id", "status", "isDefault"]));
       return payload;
     });
@@ -204,7 +209,7 @@ export class MailMailboxesCommands {
   ) {
     return runMailCommand(asJson, async () => {
       const mailbox = getMailMailbox(mailboxRef);
-      if (!mailbox) throw new CloudAuthError("PAYLOAD_INVALID", `Mail mailbox not found: ${mailboxRef}`);
+      if (!mailbox) failMailMailboxNotFound("mail mailboxes show", mailboxRef, asJson);
       requireMailboxPermission("read", mailbox);
       const payload = { mailbox };
       printPayload(payload, asJson, () => printRecord("Mailbox", payload));
@@ -220,7 +225,7 @@ export class MailMailboxesCommands {
   ) {
     return runMailCommand(asJson, async () => {
       const existing = getMailMailbox(mailboxRef);
-      if (!existing) throw new CloudAuthError("PAYLOAD_INVALID", `Mail mailbox not found: ${mailboxRef}`);
+      if (!existing) failMailMailboxNotFound("mail mailboxes disable", mailboxRef, asJson);
       requireMailboxPermission("manage", existing);
       const mailbox = setMailMailboxStatus(mailboxRef, "disabled");
       const payload = { mailbox };
@@ -246,11 +251,13 @@ export class MailMessagesCommands {
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Offset" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runMailCommand(asJson, async () => {
       if (mailbox) {
         const mailboxRecord = getMailMailbox(mailbox);
-        if (!mailboxRecord) throw new CloudAuthError("PAYLOAD_INVALID", `Mail mailbox not found: ${mailbox}`);
+        if (!mailboxRecord) failMailMailboxNotFound("mail messages list", mailbox, asJson);
         requireMailboxPermission("search", mailboxRecord);
       } else if (getMailScopeContext().agentId && !canUseAnyMailbox(getMailScopeContext(), "search")) {
         requireAnyMailboxPermission("search");
@@ -263,7 +270,7 @@ export class MailMessagesCommands {
         limit: parseOptionalInteger(limit, "--limit"),
         offset: parseOptionalInteger(offset, "--offset"),
       }).filter((message) => canUseRowMailbox("search", message.mailboxId));
-      const payload = { messages: safeMailMessages(messages) };
+      const payload = { messages: pickFields(safeMailMessages(messages), fields) };
       printPayload(payload, asJson, () => printItems("Messages", payload, ["id", "subject", "status", "receivedAt"]));
       return payload;
     });
@@ -288,9 +295,9 @@ export class MailMessagesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     return runMailCommand(asJson, async () => {
-      const message = readMailMessage(messageId, { includeAddresses });
+      const message = readMailMessageForContract("mail messages read", messageId, { includeAddresses }, asJson);
       const mailbox = getMailMailbox(message.mailboxId);
-      if (!mailbox) throw new CloudAuthError("PAYLOAD_INVALID", `Mail mailbox not found: ${message.mailboxId}`);
+      if (!mailbox) failMailMailboxNotFound("mail messages read", message.mailboxId, asJson);
       requireMailboxPermission("read", mailbox);
       const payload = { message };
       printPayload(payload, asJson, () => printReadMessage(payload));
@@ -316,7 +323,7 @@ export class MailMessagesCommands {
       requireOption(mailbox, "--mailbox");
       requireOption(from, "--from");
       const mailboxRecord = getMailMailbox(mailbox as string);
-      if (!mailboxRecord) throw new CloudAuthError("PAYLOAD_INVALID", `Mail mailbox not found: ${mailbox}`);
+      if (!mailboxRecord) failMailMailboxNotFound("mail messages import", mailbox as string, asJson);
       requireMailboxPermission("manage", mailboxRecord);
       const recipients = parseRecipients(to ?? mailboxRecord.address);
       const message = importMailMessage({
@@ -374,11 +381,13 @@ export class MailOutboxCommands {
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--offset <n>", description: "Records to skip before returning results" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runMailCommand(asJson, async () => {
       if (mailbox) {
         const mailboxRecord = getMailMailbox(mailbox);
-        if (!mailboxRecord) throw new CloudAuthError("PAYLOAD_INVALID", `Mail mailbox not found: ${mailbox}`);
+        if (!mailboxRecord) failMailMailboxNotFound("mail outbox list", mailbox, asJson);
         requireMailboxPermission("send", mailboxRecord);
       } else if (getMailScopeContext().agentId && !canUseAnyMailbox(getMailScopeContext(), "send")) {
         requireAnyMailboxPermission("send");
@@ -389,7 +398,7 @@ export class MailOutboxCommands {
         limit: parseOptionalInteger(limit, "--limit"),
         offset: parseOptionalInteger(offset, "--offset"),
       }).filter((row) => canUseRowMailbox("send", row.mailboxId));
-      const payload = { outbox: safeOutboxRows(outbox) };
+      const payload = { outbox: pickFields(safeOutboxRows(outbox), fields) };
       printPayload(payload, asJson, () => printItems("Outbox", payload, ["id", "status", "operation", "messageId"]));
       return payload;
     });
@@ -403,9 +412,9 @@ export class MailOutboxCommands {
   ) {
     return runMailCommand(asJson, async () => {
       const outbox = getMailOutbox(outboxId);
-      if (!outbox) throw new CloudAuthError("PAYLOAD_INVALID", `Mail outbox row not found: ${outboxId}`);
+      if (!outbox) failMailOutboxNotFound("mail outbox inspect", outboxId, asJson);
       const mailbox = getMailMailbox(outbox.mailboxId);
-      if (!mailbox) throw new CloudAuthError("PAYLOAD_INVALID", `Mail mailbox not found: ${outbox.mailboxId}`);
+      if (!mailbox) failMailMailboxNotFound("mail outbox inspect", outbox.mailboxId, asJson);
       requireMailboxPermission("send", mailbox);
       const payload = { outbox: redactOutboxPayload(outbox) };
       printPayload(payload, asJson, () => printRecord("Outbox", payload));
@@ -421,9 +430,9 @@ export class MailOutboxCommands {
   ) {
     return runMailCommand(asJson, async () => {
       const existing = getMailOutbox(outboxId);
-      if (!existing) throw new CloudAuthError("PAYLOAD_INVALID", `Mail outbox row not found: ${outboxId}`);
+      if (!existing) failMailOutboxNotFound("mail outbox retry", outboxId, asJson);
       const mailbox = getMailMailbox(existing.mailboxId);
-      if (!mailbox) throw new CloudAuthError("PAYLOAD_INVALID", `Mail mailbox not found: ${existing.mailboxId}`);
+      if (!mailbox) failMailMailboxNotFound("mail outbox retry", existing.mailboxId, asJson);
       requireMailboxPermission("send", mailbox);
       const outbox = retryMailOutbox(outboxId);
       const payload = { outbox: redactOutboxPayload(outbox) };
@@ -445,6 +454,8 @@ export class MailProvidersCommands {
     @Option({ flags: "--limit <n>", description: "Maximum records" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Records to skip before returning results" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runMailCommand(asJson, async () => {
       const accounts = listMailAccounts({ limit: 500 });
@@ -456,7 +467,7 @@ export class MailProvidersCommands {
       }));
       const start = parseOptionalInteger(offset, "--offset") ?? 0;
       const count = parseOptionalInteger(limit, "--limit") ?? providerRows.length;
-      const providers = providerRows.slice(start, start + count);
+      const providers = pickFields(providerRows.slice(start, start + count), fields);
       const payload = { providers };
       printPayload(payload, asJson, () => printItems("Providers", payload, ["provider", "accounts", "default"]));
       return payload;
@@ -480,16 +491,37 @@ export class MailCommands {
     @Option({ flags: "--idempotency-key <key>", description: "Local outbox idempotency key" })
     idempotencyKey?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually queue the send; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runMailCommand(asJson, async () => {
       requireOption(to, "--to");
       requireOption(subject, "--subject");
       requireOption(body, "--body");
-      const mailbox = resolveLocalSendMailbox(from);
+      const mailbox = resolveLocalSendMailboxForContract("mail send", from, asJson);
       requireMailboxPermission("send", mailbox);
+      const recipients = parseRecipients(to as string);
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): the queued mail is delivered to real
+        // external recipients by the outbox worker, so dry-run by default and
+        // exit 3 before any outbox/DB write.
+        contractDryRun(
+          "mail send",
+          {
+            from: mailbox.address,
+            to: recipients,
+            subject: subject as string,
+            bodyPreview: mailBodyPreview(body),
+          },
+          { asJson },
+        );
+      }
       const result = enqueueMailSend({
         from: mailbox.id,
-        to: parseRecipients(to as string),
+        to: recipients,
         subject: subject as string,
         body: body as string,
         idempotencyKey,
@@ -517,16 +549,37 @@ export class MailCommands {
     @Option({ flags: "--idempotency-key <key>", description: "Local outbox idempotency key" })
     idempotencyKey?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually queue the reply; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runMailCommand(asJson, async () => {
       requireOption(body, "--body");
-      const original = readMailMessage(messageId, { includeAddresses: true });
+      const original = readMailMessageForContract("mail reply", messageId, { includeAddresses: true }, asJson);
       const originalMailbox = getMailMailbox(original.mailboxId);
-      if (!originalMailbox)
-        throw new CloudAuthError("PAYLOAD_INVALID", `Mail mailbox not found: ${original.mailboxId}`);
+      if (!originalMailbox) failMailMailboxNotFound("mail reply", original.mailboxId, asJson);
       requireMailboxPermission("read", originalMailbox);
-      const sendMailbox = resolveLocalSendMailbox(from ?? original.mailboxId);
+      const sendMailbox = resolveLocalSendMailboxForContract("mail reply", from ?? original.mailboxId, asJson);
       requireMailboxPermission("send", sendMailbox);
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): the queued reply reaches real external
+        // recipients, so dry-run by default and exit 3 before any outbox write.
+        contractDryRun(
+          "mail reply",
+          {
+            messageId,
+            from: sendMailbox.address,
+            to: to ? parseRecipients(to) : "(original sender)",
+            cc: parseOptionalRecipients(cc) ?? null,
+            bcc: parseOptionalRecipients(bcc) ?? null,
+            subject: subject ?? original.subject ?? null,
+            bodyPreview: mailBodyPreview(body),
+          },
+          { asJson },
+        );
+      }
       const result = enqueueMailReply({
         messageId,
         from: sendMailbox.id,
@@ -563,7 +616,7 @@ export class MailThreadsCommands {
   ) {
     return runMailCommand(asJson, async () => {
       const thread = getMailThread(threadId);
-      if (!thread) throw new CloudAuthError("PAYLOAD_INVALID", `Mail thread not found: ${threadId}`);
+      if (!thread) failMailThreadNotFound("mail threads read", threadId, asJson);
       const messages = listMailMessages({
         threadId,
         includeAddresses,
@@ -815,15 +868,36 @@ export class MailRaviMailCommands {
     idempotencyKey?: string,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually send through Console; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runMailCommand(asJson, async () => {
       requireOption(to, "--to");
       requireOption(subject, "--subject");
       requireOption(body, "--body");
+      const recipients = parseRecipients(to as string);
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): direct external delivery through the
+        // Console provider is irreversible, so dry-run by default and exit 3
+        // before any provider call.
+        contractDryRun(
+          "mail providers ravi-mail send",
+          {
+            from: from ?? null,
+            to: recipients,
+            subject: subject as string,
+            bodyPreview: mailBodyPreview(body),
+          },
+          { asJson },
+        );
+      }
       const result = await sendRemoteMail(
         {
           from,
-          to: parseRecipients(to as string),
+          to: recipients,
           subject: subject as string,
           body: body as string,
           idempotencyKey,
@@ -1065,6 +1139,10 @@ async function runMailCommand<T>(asJson: boolean | undefined, fn: () => Promise<
   try {
     return await fn();
   } catch (error) {
+    // Manual v2 contract: contractFail/contractDryRun already emitted their
+    // envelope (or legacy text) and carry the exit taxonomy (1/2/3). Never let
+    // the legacy CloudAuthError wrapper swallow them.
+    if (error instanceof ContractError) throw error;
     const cloudError =
       error instanceof CloudAuthError
         ? error
@@ -1431,6 +1509,90 @@ async function syncRaviMailAccount(account: MailAccount, deps: MailCommandDeps):
   };
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions + write brake).
+// Text mode keeps the legacy CloudAuthError/fail behavior; `--json` emits the
+// {success:false, op, error:{code, ...}} envelope. Exit taxonomy: 1 not-found/
+// provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+const MAIL_BODY_PREVIEW_LENGTH = 120;
+
+/** Body preview shown in dry-run plans: the agent inspects what would go out without printing the full body. */
+function mailBodyPreview(body: string | undefined): string | null {
+  const normalized = body?.replace(/\s+/g, " ").trim();
+  if (!normalized) return null;
+  return normalized.length > MAIL_BODY_PREVIEW_LENGTH
+    ? `${normalized.slice(0, MAIL_BODY_PREVIEW_LENGTH)}…`
+    : normalized;
+}
+
+function failMailAccountNotFound(op: string, accountId: string, asJson?: boolean): never {
+  // Accounts live in the cheap local DB, so real ids/names feed suggestions.
+  const candidates = listMailAccounts({ limit: 100 }).flatMap((account) => [account.id, account.displayName]);
+  contractFail(op, "ACCOUNT_NOT_FOUND", `Mail account not found: ${accountId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the account id (see suggestions; list with: ravi mail accounts list --json)",
+      suggestions: suggestSimilar(accountId, candidates),
+    },
+  });
+}
+
+function failMailMailboxNotFound(op: string, mailboxRef: string, asJson?: boolean): never {
+  // Mailboxes live in the cheap local DB, so addresses/ids feed suggestions.
+  const candidates = listMailMailboxes({ limit: 100 }).flatMap((mailbox) => [mailbox.address, mailbox.id]);
+  contractFail(op, "MAILBOX_NOT_FOUND", `Mail mailbox not found: ${mailboxRef}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the mailbox id/address (see suggestions; list with: ravi mail mailboxes list --json)",
+      suggestions: suggestSimilar(mailboxRef, candidates),
+    },
+  });
+}
+
+function failMailMessageNotFound(op: string, messageId: string, asJson?: boolean): never {
+  // Local message ids are opaque ULIDs; similarity suggestions would be noise,
+  // so point at the listing command instead.
+  contractFail(op, "MESSAGE_NOT_FOUND", `Mail message not found: ${messageId}`, {
+    asJson,
+    details: { suggestedAction: "Find the local message id with: ravi mail messages list --json" },
+  });
+}
+
+function failMailOutboxNotFound(op: string, outboxId: string, asJson?: boolean): never {
+  // Outbox row ids are opaque; point at the listing command instead of noisy suggestions.
+  contractFail(op, "OUTBOX_NOT_FOUND", `Mail outbox row not found: ${outboxId}`, {
+    asJson,
+    details: { suggestedAction: "Find the outbox row id with: ravi mail outbox list --json" },
+  });
+}
+
+function failMailThreadNotFound(op: string, threadId: string, asJson?: boolean): never {
+  // Thread ids are opaque and have no dedicated list command; messages carry threadId.
+  contractFail(op, "THREAD_NOT_FOUND", `Mail thread not found: ${threadId}`, {
+    asJson,
+    details: { suggestedAction: "Find the threadId on a message with: ravi mail messages list --json" },
+  });
+}
+
+/** readMailMessage throws on unknown ids; map that throw to the contract envelope. */
+function readMailMessageForContract(
+  op: string,
+  messageId: string,
+  options: { includeAddresses?: boolean },
+  asJson?: boolean,
+): MailMessageWithAddresses {
+  try {
+    return readMailMessage(messageId, options);
+  } catch (error) {
+    if (error instanceof ContractError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (/mail message not found/i.test(message)) failMailMessageNotFound(op, messageId, asJson);
+    throw error;
+  }
+}
+
 function requireMailboxPermission(permission: "read" | "search" | "send" | "manage", mailbox: MailMailbox): void {
   const ctx = getMailScopeContext();
   if (canUseMailMailbox(ctx, permission, mailbox)) return;
@@ -1487,19 +1649,19 @@ function canUseRowMailbox(permission: "read" | "search" | "send" | "manage", mai
   return Boolean(mailbox && canUseMailMailbox(getMailScopeContext(), permission, mailbox));
 }
 
-function resolveLocalSendMailbox(ref: string | undefined): MailMailbox {
+function resolveLocalSendMailboxForContract(op: string, ref: string | undefined, asJson?: boolean): MailMailbox {
   if (ref?.trim()) {
     const mailbox = getMailMailbox(ref);
-    if (!mailbox) throw new CloudAuthError("PAYLOAD_INVALID", `Mail mailbox not found: ${ref}`);
+    if (!mailbox) failMailMailboxNotFound(op, ref, asJson);
     return mailbox;
   }
   const mailboxes = listMailMailboxes({ status: "active", limit: 500 });
   const mailbox = mailboxes.find((item) => item.isDefault) ?? mailboxes[0];
   if (!mailbox) {
-    throw new CloudAuthError(
-      "PAYLOAD_INVALID",
-      "No active local mailbox. Create one with `ravi mail mailboxes create`.",
-    );
+    contractFail(op, "MAILBOX_NOT_FOUND", "No active local mailbox.", {
+      asJson,
+      details: { suggestedAction: "Create one with: ravi mail mailboxes create <address> --account <account>" },
+    });
   }
   return mailbox;
 }

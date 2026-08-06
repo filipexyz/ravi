@@ -78,7 +78,12 @@ function releaseRaviStateLock(): void {
 
 function flushPendingStateDirs(): void {
   for (const dir of pendingStateDirs) {
-    rmSync(dir, { recursive: true, force: true });
+    try {
+      rmSync(dir, { recursive: true, force: true });
+    } catch {
+      // Best effort: on Windows bun:sqlite can keep WAL-mode db files locked
+      // beyond close() (oven-sh/bun#25964); the OS temp dir absorbs leftovers.
+    }
   }
   pendingStateDirs.clear();
 }
@@ -117,6 +122,37 @@ export function withoutRaviRuntimeContextEnv(env: NodeJS.ProcessEnv = process.en
   return cleanEnv;
 }
 
+const RAVI_STATE_RM_ATTEMPTS = 20;
+const RAVI_STATE_RM_RETRY_MS = 25;
+
+// Test helpers always run under the bun runtime, but Biome lints with
+// browser/Node globals only — declare the one Bun API we use.
+declare const Bun: { gc(force?: boolean): void };
+
+/**
+ * Windows keeps memory-mapped SQLite WAL/SHM handles alive until the closed
+ * database wrappers are garbage collected, so `rmSync` right after close fails
+ * with EBUSY. Force a collection and retry briefly; if the dir is still locked
+ * it stays queued in `pendingStateDirs` for the process-exit sweep instead of
+ * failing the test in `afterEach`.
+ */
+async function removeStateDir(stateDir: string): Promise<boolean> {
+  for (let attempt = 0; attempt < RAVI_STATE_RM_ATTEMPTS; attempt++) {
+    try {
+      Bun.gc(true);
+      rmSync(stateDir, { recursive: true, force: true });
+      return true;
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== "EBUSY" && code !== "EPERM" && code !== "ENOTEMPTY") {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, RAVI_STATE_RM_RETRY_MS));
+    }
+  }
+  return false;
+}
+
 export async function cleanupIsolatedRaviState(stateDir?: string | null): Promise<void> {
   closeChatDb();
   closeContacts();
@@ -133,8 +169,10 @@ export async function cleanupIsolatedRaviState(stateDir?: string | null): Promis
   previousAuditSuppression = undefined;
   try {
     if (stateDir) {
-      rmSync(stateDir, { recursive: true, force: true });
-      pendingStateDirs.delete(stateDir);
+      const removed = await removeStateDir(stateDir);
+      if (removed) {
+        pendingStateDirs.delete(stateDir);
+      }
     }
   } finally {
     releaseRaviStateLock();

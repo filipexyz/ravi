@@ -45,8 +45,9 @@ owners:
 
 ## Outbox
 
-- `ravi mail send` creates a local message and `mail_outbox` row before remote
-  send.
+- `ravi mail send --execute` creates a local message and `mail_outbox` row
+  before remote send; without `--execute` it is a dry-run (exit 3) and writes
+  nothing.
 - Retrying the same outbox row is idempotent.
 - Provider failure preserves a recoverable row with sanitized error code.
 - Provider success updates local message status and provider provenance.

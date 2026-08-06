@@ -27,7 +27,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 5 | agents | agents.ts | agents | **MIGRADO** | cli/agents |
 | 6 | instances+routes | instances.ts | instances, routes | **MIGRADO** | cli/instances |
 | 7 | whatsapp | group.ts, whatsapp-dm.ts | whatsapp | pendente | — |
-| 8 | mail | mail.ts, gmail.ts | (sem skill) | pendente | — |
+| 8 | mail | mail.ts, gmail.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/mail |
 | 9 | calendar | calendar.ts | (sem skill) | pendente | — |
 | 10 | chats | chats.ts | (sem skill) | pendente | — |
 | 11 | projects | projects.ts | projects | pendente | — |
@@ -287,3 +287,35 @@ restoreCommand · delete `--execute` → `status:"deleted"` · usage exit 2 ·
 `list --fields name`. Incidente de concorrência registrado: um stash de agente
 paralelo reverteu temporariamente o working tree; trabalho recuperado de
 stash@{0} e revalidado (stash mantido até o fim da onda como segurança).
+
+### 8. mail — MIGRADO (subagente, verificado e integrado)
+
+**Escopo:** freio (`--execute`) em `mail send`, `mail reply`,
+`mail providers ravi-mail send` e `gmail send` (e-mail externo irreversível;
+plan com from/to/subject/bodyPreview de 120 chars — corpo nunca completo; no
+gmail o freio vem ANTES até do resolve do connector). Sem freio (declaradas):
+accounts create/sync, mailboxes create/disable, messages import, outbox retry
+(o freio mora no enqueue; retry re-enfileira payload já autorizado), domains e
+providers config. Codes: ACCOUNT/MAILBOX_NOT_FOUND com suggestions (DB local);
+MESSAGE/OUTBOX/THREAD_NOT_FOUND sem suggestions (ULIDs opacos) com
+suggestedAction de listagem. Wrapper `readMailMessageForContract` (serviço
+lança). **Rethrow crítico**: `runMailCommand`/`runGmailCommand` rethrowam
+ContractError antes do funil legado CloudAuthError. `--fields` em 5 listagens.
+Usage contract nos subtrees `mail` e `gmail`.
+
+**Também neste commit:** `src/test/ravi-state.ts` endurecido contra EBUSY do
+Windows (Bun mantém handles mmap de WAL/SHM até GC — oven-sh/bun#25964):
+`Bun.gc(true)` + retry no rm + try/catch no sweep de exit. Benefício para toda
+a suíte win32 (menos falhas ambientais que a baseline — permitido; a régua é
+zero falhas NOVAS). Companheiros WHY/RUNBOOK/CHECKS criados para o spec root
+`mail` (dívida pré-existente que reprovava o gate ao tocar o SPEC.md
+consumidor). Known Failure Mode registrado: funil legado CloudAuthError pode
+sair exit 3 para PAYLOAD_INVALID (mapa de exits pré-existente do cloud-auth,
+declarado como dívida).
+
+**Rotina X:** typecheck limpo · `mail.test.ts` 18/18 (11 de contrato; 3 call
+sites com execute) · spec gate PASSED (cli/mail + mail + mail/local-mailbox).
+**Rotina Y (estado isolado):** accounts/mailboxes create → `send` sem
+`--execute` → exit 3 + plan (bodyPreview) · `send --execute` → `queued:true` +
+outbox com 1 entrada · MAILBOX_NOT_FOUND exit 1 · usage exit 2 · sintaxe errada
+de accounts create → USAGE_ERROR exit 2 (o contrato ensinou a correção).
