@@ -178,8 +178,17 @@ ravi crm opportunity create "Piloto CRM" \
   --currency BRL \
   --owner agent:main \
   --idempotency-key crm-agent:<contact>:opportunity:piloto-crm \
+  --execute \
   --json
 ```
+
+## Freio de escrita (dry-run por default)
+
+Escritas de `opportunity` e `pipeline` (`create`, `move`, `set`) rodam em
+dry-run por default: sem `--execute`, o comando NAO grava nada — retorna
+`exit 3` com o plano (`dryRun: true`) e o comando literal para executar.
+Isso nao e erro: e o freio do contrato. Revise o plano e re-execute com
+`--execute` para efetivar.
 
 ## Contas e Oportunidades
 
@@ -210,6 +219,7 @@ ravi crm opportunity create "Piloto Ravi" \
   --currency BRL \
   --owner agent:main \
   --idempotency-key crm-agent:<contact>:opp:piloto-ravi \
+  --execute \
   --json
 ```
 
@@ -220,10 +230,10 @@ ravi crm opportunity link-contact <opportunity-id> <contact> --role champion --p
 ravi crm opportunity contacts <opportunity-id> --json
 ```
 
-Mover oportunidade:
+Mover oportunidade (dry-run sem `--execute`):
 
 ```bash
-ravi crm opportunity move <opportunity-id> proposal --json
+ravi crm opportunity move <opportunity-id> proposal --execute --json
 ```
 
 ## Next Actions
