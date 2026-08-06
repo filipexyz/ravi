@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { dbCreateAgent, dbDeleteAgent, dbListSkillGrants, dbListSkillGrantsForAgent } from "../../router/router-db.js";
+import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { SkillsCommands } from "./skills.js";
 
@@ -23,6 +27,31 @@ function withoutLogs<T>(run: () => T): T {
   } finally {
     console.log = originalLog;
   }
+}
+
+function captureLogs(run: () => void): string {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map((arg) => String(arg)).join(" "));
+  };
+  try {
+    run();
+  } finally {
+    console.log = originalLog;
+  }
+  return lines.join("\n");
+}
+
+function expectContractError(run: () => unknown): InstanceType<typeof ContractError> {
+  let thrown: unknown;
+  try {
+    withoutLogs(run);
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(ContractError);
+  return thrown as InstanceType<typeof ContractError>;
 }
 
 /**
@@ -228,5 +257,161 @@ describe("SkillsCommands — grant/revoke/who/inspect", () => {
       const payload = withoutLogs(() => runWithContext({}, () => commands.inspect("main", true)));
       expect(payload.provenance.fromGrants).toContain(KNOWN_CATALOG_SKILL);
     });
+  });
+});
+
+describe("skills agent-first contract", () => {
+  it("blocks skills install without --execute (dry-run, exit 3, source → destination plan)", () => {
+    const commands = new SkillsCommands();
+    const contractError = expectContractError(() =>
+      runWithContext({}, () =>
+        commands.install(
+          KNOWN_CATALOG_SKILL,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true, // --skip-codex-sync
+          true, // --json
+          undefined, // no --execute → brake
+        ),
+      ),
+    );
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("skills install");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    const plan = envelope.error.plan as {
+      source: string;
+      skills: Array<{ name: string; from: string; to: string }>;
+      overwrite: boolean;
+    };
+    expect(plan.source).toBe("catalog");
+    expect(plan.overwrite).toBe(false);
+    expect(plan.skills.map((skill) => skill.name)).toEqual([KNOWN_CATALOG_SKILL]);
+    expect(plan.skills[0]?.to).toContain(KNOWN_CATALOG_SKILL);
+  });
+
+  it("validates SKILL_NOT_FOUND before the brake on skills install (exit 1, not 3)", () => {
+    const commands = new SkillsCommands();
+    const contractError = expectContractError(() =>
+      runWithContext({}, () =>
+        commands.install(
+          "definitely-not-a-real-skill",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          true,
+          undefined,
+        ),
+      ),
+    );
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("skills install");
+    expect(envelope.error.code).toBe("SKILL_NOT_FOUND");
+    expect(Array.isArray(envelope.error.suggestions)).toBe(true);
+  });
+
+  it("installs with --execute into the (redirected) user plugin bucket", () => {
+    const tempHome = mkdtempSync(join(tmpdir(), "skills-exec-home-"));
+    const previousHome = process.env.HOME;
+    const previousProfile = process.env.USERPROFILE;
+    process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
+    try {
+      // Fail fast BEFORE any write if this runtime does not honor the redirect —
+      // otherwise the install would land in the real user home.
+      expect(homedir()).toBe(tempHome);
+      const commands = new SkillsCommands();
+      const result = withoutLogs(() =>
+        runWithContext({}, () =>
+          commands.install(
+            KNOWN_CATALOG_SKILL,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true, // --skip-codex-sync
+            true, // --json
+            true, // --execute → real write
+          ),
+        ),
+      );
+      expect(result.success).toBe(true);
+      const installPath = String(result.installed[0]?.installPath ?? "");
+      expect(installPath.startsWith(tempHome)).toBe(true);
+      expect(existsSync(installPath)).toBe(true);
+    } finally {
+      if (previousHome === undefined) delete process.env.HOME;
+      else process.env.HOME = previousHome;
+      if (previousProfile === undefined) delete process.env.USERPROFILE;
+      else process.env.USERPROFILE = previousProfile;
+      rmSync(tempHome, { recursive: true, force: true });
+    }
+  });
+
+  it("emits SKILL_NOT_FOUND envelope with suggestions on skills show --json (exit 1)", () => {
+    const commands = new SkillsCommands();
+    const contractError = expectContractError(() =>
+      runWithContext({}, () => commands.show("agents-managerr", undefined, undefined, true)),
+    );
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("skills show");
+    expect(envelope.error.code).toBe("SKILL_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain(KNOWN_CATALOG_SKILL);
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+  });
+
+  it("emits AGENT_NOT_FOUND envelope with suggestions on skills grant --json (exit 1)", () => {
+    const commands = new SkillsCommands();
+    const contractError = expectContractError(() =>
+      runWithContext({}, () => commands.grant("maim", KNOWN_CATALOG_SKILL, undefined, true)),
+    );
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("skills grant");
+    expect(envelope.error.code).toBe("AGENT_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("main");
+  });
+
+  it("emits SKILL_NOT_FOUND envelope on skills grant of an unknown skill --json (exit 1)", () => {
+    const commands = new SkillsCommands();
+    const contractError = expectContractError(() =>
+      runWithContext({}, () => commands.grant("main", "agents-managerr", undefined, true)),
+    );
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.error.code).toBe("SKILL_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain(KNOWN_CATALOG_SKILL);
+  });
+
+  it("supports --fields compact mode on skills list", () => {
+    const commands = new SkillsCommands();
+    const logs = captureLogs(() =>
+      runWithContext({}, () =>
+        commands.list(undefined, undefined, undefined, true, undefined, undefined, undefined, "name,source"),
+      ),
+    );
+    const payload = JSON.parse(logs) as { items: Array<Record<string, unknown>> };
+    expect(payload.items.length).toBeGreaterThan(0);
+    expect(Object.keys(payload.items[0] ?? {}).sort()).toEqual(["name", "source"]);
+  });
+
+  it("supports --fields compact mode on skills who", () => {
+    const commands = new SkillsCommands();
+    withoutLogs(() => runWithContext({}, () => commands.grant("main", KNOWN_CATALOG_SKILL, undefined, true)));
+    const payload = withoutLogs(() =>
+      runWithContext({}, () => commands.who(KNOWN_CATALOG_SKILL, undefined, true, "agentId")),
+    );
+    expect(payload.total).toBe(1);
+    expect(Object.keys(payload.grants[0] ?? {})).toEqual(["agentId"]);
   });
 });

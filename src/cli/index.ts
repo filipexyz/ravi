@@ -71,8 +71,10 @@ const AGENT_CONTRACT_DOMAINS = [
   "mail",
   "projects",
   "routes",
-  "tasks",
   "sessions",
+  "skill-gates",
+  "skills",
+  "tasks",
   "whatsapp",
 ];
 for (const domain of AGENT_CONTRACT_DOMAINS) installUsageContract(program, domain);

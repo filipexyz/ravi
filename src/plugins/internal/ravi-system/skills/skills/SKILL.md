@@ -15,6 +15,40 @@ description: |
 
 Skills estendem as capacidades do Claude. São arquivos markdown com instruções que Claude segue quando a skill é invocada.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução (`SKILL_NOT_FOUND`, `AGENT_NOT_FOUND`). O envelope traz `suggestions` com nomes/ids reais parecidos — consulte antes de concluir "não existe".
+- `2` erro de uso (flag/argumento inválido).
+- `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` com fonte e destino exatos do que `--execute` faria. Revise e repita com `--execute`.
+
+Onde o freio existe hoje: `skills install` (instala código de terceiros no ambiente — a escrita mais arriscada do domínio) é dry-run por default e exige `--execute`. Nome inexistente falha ANTES do freio (exit 1 `SKILL_NOT_FOUND`, nunca 3).
+
+Sem freio (declarado): `skills sync` (re-materializa o que já existe no repo local; idempotente e reversível) e `skills grant`/`skills revoke` (reversíveis entre si, efeito ao vivo) escrevem na hora.
+
+Caso especial — batch: `skills grant-batch`/`skills revoke-batch` usam o `--dry-run` PRÉ-EXISTENTE como equivalente do freio: preview com contagem, exit 0, sem escrita. NÃO existe `--execute` nesses dois e o nome `--dry-run` é mantido por compatibilidade — sempre rode o `--dry-run` antes do write real.
+
+Compact mode: `skills list` e `skills who` aceitam `--fields a,b,c` (ex.: `--fields name,source`).
+
+Exemplos freados:
+
+```bash
+ravi skills install cli-creator                 # dry-run: plano fonte→destino (exit 3)
+ravi skills install cli-creator --execute       # instala de verdade
+ravi skills install --source org/repo --all --execute
+ravi skills grant-batch --all-agents --all-skills --dry-run   # preview (equivalente do freio)
+```
+
+Checklist antes de responder sobre skills:
+
+- Tratei exit 3 como freio (revisei o `plan` fonte→destino) e não como falha?
+- Consultei `suggestions` do envelope antes de declarar skill/agente inexistente?
+- Em batch, rodei `--dry-run` antes do write real?
+
 ## CLI do Ravi
 
 Use `ravi skills` para operar skills sem editar diretórios manualmente.
@@ -60,11 +94,14 @@ ravi skills list --source https://github.com/vercel-labs/skills/tree/main/skills
 
 ### Instalar
 
+`skills install` é dry-run por default: sem `--execute` ele só mostra o plano fonte→destino e sai com exit 3, sem escrever nada.
+
 ```bash
-ravi skills install image
-ravi skills install --all
-ravi skills install find-skills --source vercel-labs/skills
-ravi skills install --source ./minhas-skills --all
+ravi skills install image                # dry-run: mostra o plano (exit 3)
+ravi skills install image --execute
+ravi skills install --all --execute
+ravi skills install find-skills --source vercel-labs/skills --execute
+ravi skills install --source ./minhas-skills --all --execute
 ```
 
 Quando um catálogo/fonte contém várias skills, não instale implicitamente todas: passe um nome ou `--all`.

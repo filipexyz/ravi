@@ -32,7 +32,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 10 | chats | chats.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/chats |
 | 11 | projects | projects.ts | projects | **MIGRADO** | cli/projects |
 | 12 | artifacts | artifacts.ts | artifacts | pendente | — |
-| 13 | skills+skill-gates | skills.ts, skill-gates.ts | skills, skill-gates | pendente | — |
+| 13 | skills+skill-gates | skills.ts, skill-gates.ts | skills, skill-gates | **MIGRADO** | cli/skills, cli/skill-gates |
 | 14 | cron | cron.ts | cron | pendente | — |
 | 15 | triggers | triggers.ts | triggers | pendente | — |
 | 16 | tags+tag-rules | tags.ts, tag-rules.ts | tag-rules | pendente | — |
@@ -429,3 +429,30 @@ baseline (a cadeia aborta antes).
 **Rotina X:** `projects.test.ts` 25/25 (+9 de contrato) · typecheck limpo ·
 spec gate PASSED (cli/projects) · skill projects com `## Contrato Do CLI`.
 **Rotina Y:** `show proj-fantasma` → exit 1 · usage → exit 2.
+
+### 13. skills+skill-gates — MIGRADO (subagente, verificado e integrado)
+
+**Escopo:** freio (`--execute`) em `skills install` (instala código de
+terceiro; plan fonte→destino por skill; freio FORA de
+`withResolvedSkillSource` para limpar clones git temporários antes do exit;
+`SKILL_NOT_FOUND` valida antes — nunca exit 3 para skill inexistente),
+`skill-gates rm` (plan disable-default vs delete-custom) e `skill-gates reset`
+**só quando há override configurado** (sem override mantém o no-op legado
+exit 0 — freio incondicional colocaria exit 3 no caso "já está no default";
+documentado no WHY). Sem freio (declaradas): sync (idempotente), grant/revoke
+(reversíveis), gates set/enable/disable; **grant-batch/revoke-batch mantêm o
+`--dry-run` pré-existente como equivalente do freio (invariante: não renomear)**.
+Codes: SKILL/AGENT/GATE_NOT_FOUND com suggestions das fontes reais. `--fields`
+em skills list/who e skill-gates list. Usage contract nos subtrees.
+
+**Achados:** `selectSkills` LANÇA em not-found (mesmo padrão do getTaskDetails);
+teste de escrita real do install redireciona HOME/USERPROFILE para temp com
+guarda fail-fast (`installSkills` escreve em homedir() sem override).
+Comportamento melhorado: `skills show --source <src> <ruim>` deixou de vazar
+erro cru e emite envelope com suggestions da fonte.
+
+**Rotina X:** `skills.test.ts` 27/27 (19 pré-existentes intactos — coverage-gate
+de src/router preservado — +8 de contrato) · `skill-gates.test.ts` 14/14 (+9) ·
+`registry-snapshot.test.ts` 16 pass sem drift · typecheck limpo · spec gate
+PASSED (cli/skills + cli/skill-gates). **Rotina Y:** show/rm de fantasma →
+exit 1 · usage → exit 2 · docs/reference/skills.mdx e helpAfter ensinam o freio.

@@ -41,11 +41,14 @@ ravi skills show find-skills --source vercel-labs/skills
 
 ## Install
 
+`skills install` is dry-run by default under the agent-first contract: without `--execute` it prints the source → destination plan and exits 3 without writing anything.
+
 ```bash
-ravi skills install image
-ravi skills install --all
-ravi skills install find-skills --source vercel-labs/skills
-ravi skills install --source ./my-skills --all
+ravi skills install image                # dry-run: prints the install plan (exit 3)
+ravi skills install image --execute
+ravi skills install --all --execute
+ravi skills install find-skills --source vercel-labs/skills --execute
+ravi skills install --source ./my-skills --all --execute
 ```
 
 If a catalog/source contains multiple skills, installation is explicit: pass a skill name or `--all`.

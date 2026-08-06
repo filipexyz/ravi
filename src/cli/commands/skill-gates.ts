@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cliOffsetPaginationSchema, looseObjectSchema } from "../return-schemas.js";
@@ -193,6 +194,27 @@ function serializeEffectiveRule(rule: EffectiveSkillGateRule): Record<string, un
   };
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+/**
+ * Gate rule ids are public through `skill-gates list` (defaults + configured),
+ * so GATE_NOT_FOUND enriches the envelope with real similar ids.
+ */
+function failGateNotFound(op: string, id: string, asJson?: boolean, candidates?: string[]): never {
+  contractFail(op, "GATE_NOT_FOUND", `Skill gate rule not found: ${id}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the rule id (see suggestions; list with: ravi skill-gates list --json)",
+      suggestions: suggestSimilar(id, candidates ?? buildEffectiveRules().map((rule) => rule.id)),
+    },
+  });
+}
+
 function printRule(rule: EffectiveSkillGateRule): void {
   console.log(`${rule.enabled ? "✓" : "✗"} ${rule.id}`);
   console.log(`  Skill: ${rule.skill ?? "(none)"}`);
@@ -225,6 +247,8 @@ export class SkillGatesCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching skill gate rules to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const tagFilter = tagSlug?.trim() || null;
     const effective = filterItemsByCanonicalTag(
@@ -242,13 +266,14 @@ export class SkillGatesCommands {
       total: page.total,
       options: ["--tag", tagFilter],
     });
+    const projectedRules = pickFields(page.items.map(serializeEffectiveRule), fields);
     const payload = {
       total: page.total,
       pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
       configuredTotal: dbListSkillGateRules().length,
-      items: page.items.map(serializeEffectiveRule),
-      rules: page.items.map(serializeEffectiveRule),
+      items: projectedRules,
+      rules: projectedRules,
     };
 
     if (asJson) {
@@ -278,7 +303,7 @@ export class SkillGatesCommands {
   ) {
     const rule = buildEffectiveRules().find((candidate) => candidate.id === id);
     if (!rule) {
-      fail(`Skill gate rule not found: ${id}`);
+      failGateNotFound("skill-gates show", id, asJson);
     }
 
     const payload = { rule: serializeEffectiveRule(rule) };
@@ -347,7 +372,7 @@ export class SkillGatesCommands {
   ) {
     const existing = dbGetSkillGateRule(id);
     if (!existing && !isDefaultSkillGateRuleId(id)) {
-      fail(`Skill gate rule not found: ${id}`);
+      failGateNotFound("skill-gates disable", id, asJson);
     }
 
     const rule = dbUpsertSkillGateRule({
@@ -372,7 +397,16 @@ export class SkillGatesCommands {
   ) {
     const existing = dbGetSkillGateRule(id);
     if (!existing) {
-      fail(`Skill gate override not found: ${id}`);
+      contractFail("skill-gates enable", "GATE_NOT_FOUND", `Skill gate override not found: ${id}`, {
+        asJson,
+        details: {
+          suggestedAction: "Only configured rules/overrides can be enabled (list with: ravi skill-gates list --json)",
+          suggestions: suggestSimilar(
+            id,
+            dbListSkillGateRules().map((rule) => rule.id),
+          ),
+        },
+      });
     }
 
     const rule = dbUpsertSkillGateRule({ ...existing, disabled: false });
@@ -385,17 +419,40 @@ export class SkillGatesCommands {
     return payload;
   }
 
-  @Command({ name: "rm", description: "Remove a custom gate or disable a default gate" })
+  @Command({
+    name: "rm",
+    description: "Remove a custom gate or disable a default gate. Dry-run by default; pass --execute to write.",
+  })
   @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "rm", risk: "destructive" })
   @Returns(skillGateRemoveReturnSchema)
   rm(
     @Arg("id", { description: "Rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove/disable the gate; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const isDefault = isDefaultSkillGateRuleId(id);
     const existing = dbGetSkillGateRule(id);
     if (!isDefault && !existing) {
-      fail(`Skill gate rule not found: ${id}`);
+      failGateNotFound("skill-gates rm", id, asJson);
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): rm deletes a custom gate or disables a
+      // default one — destructive, so dry-run by default and exit 3 before any
+      // DB write. Validation (GATE_NOT_FOUND) fires before the brake.
+      contractDryRun(
+        "skill-gates rm",
+        {
+          id,
+          action: isDefault ? "disable-default" : "delete-custom",
+          ...(existing ? { current: serializeDbRule(existing) } : {}),
+        },
+        { asJson },
+      );
     }
 
     const payload = isDefault
@@ -414,13 +471,38 @@ export class SkillGatesCommands {
     return payload;
   }
 
-  @Command({ name: "reset", description: "Delete a configured override and restore the default behavior" })
+  @Command({
+    name: "reset",
+    description:
+      "Delete a configured override and restore the default behavior. Dry-run by default; pass --execute to write.",
+  })
   @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "reset", risk: "medium" })
   @Returns(skillGateResetReturnSchema)
   reset(
     @Arg("id", { description: "Rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually discard the override; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const existing = dbGetSkillGateRule(id);
+    if (existing && execute !== true) {
+      // Write brake (Manual v2 7.8): reset discards a configured override, so
+      // dry-run by default and exit 3 before the delete. Without a configured
+      // override there is nothing to discard — the legacy no-op result stands.
+      contractDryRun(
+        "skill-gates reset",
+        {
+          id,
+          discards: serializeDbRule(existing),
+          restores: isDefaultSkillGateRuleId(id) ? "default rule behavior" : "no rule (custom id)",
+        },
+        { asJson },
+      );
+    }
+
     const deleted = dbDeleteSkillGateRule(id);
     const payload = { success: true, deleted };
     if (asJson) {
