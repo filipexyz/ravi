@@ -36,8 +36,8 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 14 | cron | cron.ts | cron | **MIGRADO** | cli/cron |
 | 15 | triggers | triggers.ts | triggers | **MIGRADO** | cli/triggers |
 | 16 | tags+tag-rules | tags.ts, tag-rules.ts | tag-rules | pendente | — |
-| 17 | observers | observers.ts | observers | pendente | — |
-| 18 | workflows | workflows.ts | (sem skill) | pendente | — |
+| 17 | observers | observers.ts | observers | **MIGRADO** | cli/observers |
+| 18 | workflows | workflows.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/workflows |
 | 19 | watch | watch.ts | (sem skill) | pendente | — |
 | 20 | hooks | hooks.ts | (sem skill) | pendente | — |
 | 21 | heartbeat | heartbeat.ts | heartbeat | pendente | — |
@@ -505,3 +505,25 @@ skills cron/triggers; AGENTS.md (6 linhas) atualizado pelo integrador.
 **Rotina X:** `cron-commands.test.ts` 26/26 · `triggers.test.ts` 24/24 ·
 spec gate PASSED (cli/cron + cli/triggers) · typecheck dos arquivos limpo
 (1 erro transitório em hooks.test.ts era WIP de agente paralelo).
+
+### 17+18. observers + workflows — MIGRADOS (subagente, verificado e integrado)
+
+**Escopo:** freio (`--execute`) em `observers rules rm` (único reverso é
+recriar na mão), `workflows runs start` (arma gates de trabalho coordenado) e
+`workflows runs archive-node` — **veredito por inspeção do service: DESTRUTIVO**
+(não existe unarchive; nó arquivado sai do agregado e `assertNodeRunMutable`
+rejeita permanentemente release/skip/cancel/attach). `cancel` deliberadamente
+SEM freio (racional anti-safety documentado em código+spec+WHY: é a parada de
+emergência de nó vivo; exit 3 na frente da parada atrasaria exatamente a
+operação que limita dano). Sem freio (declaradas): refresh, rules set,
+enable/disable, profiles init, specs create, task-attach/create, release/skip.
+Codes: OBSERVER_NOT_FOUND (1 code, mensagem nomeia o recurso; pre-check onde a
+DB lança), SESSION_NOT_FOUND sem suggestions (racional cli/sessions),
+WORKFLOW_SPEC/RUN/NODE_NOT_FOUND (+TASK) com pré-resolução do run para
+desambiguar o throw do service. `--fields` em 5 listagens (aliases legados
+projetados juntos). `archive-node` mantém `risk:"medium"` no CommandAccess
+(flipar geraria drift de SDK; freio é comportamental — pendência registrada).
+
+**Rotina X:** `observers.test.ts` 12/12 · `workflows.test.ts` 13/13 · spec gate
+PASSED (cli/observers + cli/workflows) · consumidor docs/workflow-substrate-v0
+ensina o freio · skill observers com Contrato Do CLI.

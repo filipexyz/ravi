@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { readFileSync, rmSync } from "node:fs";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -99,6 +100,94 @@ async function emitDispatchResult(result: Awaited<ReturnType<typeof queueOrDispa
   }
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+//
+// Suggestion sources are the exact lists `workflows specs list` /
+// `workflows runs list` print, and the node keys of the referenced run.
+// ============================================================
+
+function failWorkflowSpecNotFound(op: string, specId: string, asJson?: boolean): never {
+  const candidates = listWorkflowSpecs()
+    .slice(0, 40)
+    .flatMap((spec) => [spec.id, spec.title]);
+  contractFail(op, "WORKFLOW_SPEC_NOT_FOUND", `Workflow spec not found: ${specId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the spec id (see suggestions; list with: ravi workflows specs list --json)",
+      suggestions: suggestSimilar(specId, candidates),
+    },
+  });
+}
+
+function failWorkflowRunNotFound(op: string, runId: string, asJson?: boolean): never {
+  const candidates = listWorkflowRuns()
+    .slice(0, 40)
+    .flatMap((run) => [run.id, run.title]);
+  contractFail(op, "WORKFLOW_RUN_NOT_FOUND", `Workflow run not found: ${runId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the workflow run id (see suggestions; list with: ravi workflows runs list --json)",
+      suggestions: suggestSimilar(runId, candidates),
+    },
+  });
+}
+
+function failWorkflowNodeNotFound(op: string, runId: string, nodeKey: string, asJson?: boolean): never {
+  const details = getWorkflowRunDetails(runId);
+  const candidates = (details?.nodes ?? []).flatMap((node) => [node.specNodeKey, node.label ?? ""]);
+  contractFail(op, "WORKFLOW_NODE_NOT_FOUND", `Workflow node not found in run ${runId}: ${nodeKey}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the node key (see suggestions; inspect with: ravi workflows runs show <run-id> --json)",
+      suggestions: suggestSimilar(nodeKey, candidates),
+    },
+  });
+}
+
+/**
+ * Node-level ops pre-resolve the run so a missing RUN surfaces as
+ * `WORKFLOW_RUN_NOT_FOUND` instead of the service's ambiguous
+ * `Workflow node K not found in run R.` throw (the service cannot tell the
+ * two cases apart: an unknown run also has no node rows).
+ */
+function requireWorkflowRunDetailsForContract(
+  op: string,
+  runId: string,
+  asJson?: boolean,
+): NonNullable<ReturnType<typeof getWorkflowRunDetails>> {
+  const details = getWorkflowRunDetails(runId);
+  if (!details) failWorkflowRunNotFound(op, runId, asJson);
+  return details;
+}
+
+/**
+ * The workflows service layer throws on unknown refs (`Workflow spec not
+ * found: X`, `Workflow node K not found in run R.`, `Task not found: X`); map
+ * those throws to the contract envelope, let ContractError pass through
+ * untouched (so the write brake keeps exit 3), and keep every other error on
+ * the legacy fail() path.
+ */
+function rethrowWorkflowCommandError(op: string, error: unknown, asJson?: boolean): never {
+  if (error instanceof ContractError) throw error;
+  const message = error instanceof Error ? error.message : String(error);
+  const spec = /^Workflow spec not found: (.+)$/.exec(message);
+  if (spec?.[1]) failWorkflowSpecNotFound(op, spec[1], asJson);
+  const node = /^Workflow node (.+) not found in run (.+)\.$/.exec(message);
+  if (node?.[1] && node[2]) failWorkflowNodeNotFound(op, node[2], node[1], asJson);
+  const task = /^Task not found: (.+)$/.exec(message);
+  if (task?.[1]) {
+    contractFail(op, "TASK_NOT_FOUND", message, {
+      asJson,
+      details: { suggestedAction: "Check the task id (list with: ravi tasks list --json)" },
+    });
+  }
+  fail(message);
+}
+
 @Group({
   name: "workflows.specs",
   description: "Workflow substrate specs",
@@ -148,6 +237,8 @@ export class WorkflowSpecCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching workflow specs to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <csv>", description: "Compact mode: keep only these top-level fields per item" })
+    fields?: string,
   ) {
     const specs = listWorkflowSpecs();
     const page = paginateCliItems(specs, { limit, offset });
@@ -158,7 +249,8 @@ export class WorkflowSpecCommands {
       returned: page.items.length,
       total: page.total,
     });
-    const payload = { total: page.total, pagination, items: page.items, specs: page.items };
+    const projectedSpecs = pickFields(page.items, fields);
+    const payload = { total: page.total, pagination, items: projectedSpecs, specs: projectedSpecs };
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
     } else if (page.items.length === 0) {
@@ -185,7 +277,7 @@ export class WorkflowSpecCommands {
   ) {
     const spec = getWorkflowSpec(specId);
     if (!spec) {
-      fail(`Workflow spec not found: ${specId}`);
+      failWorkflowSpecNotFound("workflows specs show", specId, asJson);
     }
 
     if (asJson) {
@@ -226,22 +318,54 @@ export class WorkflowRunCommands {
     @Arg("specId", { description: "Workflow spec id" }) specId: string,
     @Option({ flags: "--run-id <id>", description: "Optional workflow run id" }) runId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually start the workflow run; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
-    const actor = getTaskActor();
-    const details = startWorkflowRun(specId, {
-      ...(runId?.trim() ? { runId: runId.trim() } : {}),
-      ...(actor.actor ? { createdBy: actor.actor } : {}),
-      ...(actor.agentId ? { createdByAgentId: actor.agentId } : {}),
-      ...(actor.sessionName ? { createdBySessionName: actor.sessionName } : {}),
-    });
+    try {
+      // Validation before the brake: the spec must resolve before the dry-run
+      // plan is shown.
+      const spec = getWorkflowSpec(specId);
+      if (!spec) {
+        failWorkflowSpecNotFound("workflows runs start", specId, asJson);
+      }
 
-    if (asJson) {
-      console.log(JSON.stringify(details, null, 2));
-    } else {
-      console.log(`\n✓ Workflow run started: ${details.run.id}`);
-      printWorkflowRun(details);
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): starting a run instantiates real node
+        // runs that gate coordinated work (same class as `projects workflows
+        // start`), so dry-run by default and exit 3 before any write.
+        contractDryRun(
+          "workflows runs start",
+          {
+            specId: spec.id,
+            runId: runId?.trim() || null,
+            title: spec.title,
+            nodes: spec.nodes.length,
+          },
+          { asJson },
+        );
+      }
+
+      const actor = getTaskActor();
+      const details = startWorkflowRun(specId, {
+        ...(runId?.trim() ? { runId: runId.trim() } : {}),
+        ...(actor.actor ? { createdBy: actor.actor } : {}),
+        ...(actor.agentId ? { createdByAgentId: actor.agentId } : {}),
+        ...(actor.sessionName ? { createdBySessionName: actor.sessionName } : {}),
+      });
+
+      if (asJson) {
+        console.log(JSON.stringify(details, null, 2));
+      } else {
+        console.log(`\n✓ Workflow run started: ${details.run.id}`);
+        printWorkflowRun(details);
+      }
+      return details;
+    } catch (error) {
+      rethrowWorkflowCommandError("workflows runs start", error, asJson);
     }
-    return details;
   }
 
   @Command({ name: "list", description: "List workflow runs" })
@@ -252,6 +376,8 @@ export class WorkflowRunCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching workflow runs to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <csv>", description: "Compact mode: keep only these top-level fields per item" })
+    fields?: string,
   ) {
     const runs = listWorkflowRuns();
     const page = paginateCliItems(runs, { limit, offset });
@@ -262,7 +388,8 @@ export class WorkflowRunCommands {
       returned: page.items.length,
       total: page.total,
     });
-    const payload = { total: page.total, pagination, items: page.items, runs: page.items };
+    const projectedRuns = pickFields(page.items, fields);
+    const payload = { total: page.total, pagination, items: projectedRuns, runs: projectedRuns };
     if (asJson) {
       console.log(JSON.stringify(payload, null, 2));
     } else if (page.items.length === 0) {
@@ -289,7 +416,7 @@ export class WorkflowRunCommands {
   ) {
     const details = getWorkflowRunDetails(runId);
     if (!details) {
-      fail(`Workflow run not found: ${runId}`);
+      failWorkflowRunNotFound("workflows runs show", runId, asJson);
     }
 
     if (asJson) {
@@ -308,15 +435,20 @@ export class WorkflowRunCommands {
     @Arg("nodeKey", { description: "Node key" }) nodeKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const actor = getTaskActor();
-    const result = releaseWorkflowNodeRun(runId, nodeKey, actor);
-    if (asJson) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`\n✓ Released ${nodeKey} in ${runId}`);
-      printWorkflowRun(result.details);
+    try {
+      requireWorkflowRunDetailsForContract("workflows runs release", runId, asJson);
+      const actor = getTaskActor();
+      const result = releaseWorkflowNodeRun(runId, nodeKey, actor);
+      if (asJson) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`\n✓ Released ${nodeKey} in ${runId}`);
+        printWorkflowRun(result.details);
+      }
+      return result;
+    } catch (error) {
+      rethrowWorkflowCommandError("workflows runs release", error, asJson);
     }
-    return result;
   }
 
   @Command({ name: "skip", description: "Skip one optional workflow node" })
@@ -327,14 +459,19 @@ export class WorkflowRunCommands {
     @Arg("nodeKey", { description: "Node key" }) nodeKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = skipWorkflowNodeRun(runId, nodeKey);
-    if (asJson) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`\n✓ Skipped optional node ${nodeKey} in ${runId}`);
-      printWorkflowRun(result.details);
+    try {
+      requireWorkflowRunDetailsForContract("workflows runs skip", runId, asJson);
+      const result = skipWorkflowNodeRun(runId, nodeKey);
+      if (asJson) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`\n✓ Skipped optional node ${nodeKey} in ${runId}`);
+        printWorkflowRun(result.details);
+      }
+      return result;
+    } catch (error) {
+      rethrowWorkflowCommandError("workflows runs skip", error, asJson);
     }
-    return result;
   }
 
   @Command({ name: "cancel", description: "Cancel one workflow node run" })
@@ -345,14 +482,23 @@ export class WorkflowRunCommands {
     @Arg("nodeKey", { description: "Node key" }) nodeKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = cancelWorkflowNodeRun(runId, nodeKey);
-    if (asJson) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`\n✓ Cancelled node ${nodeKey} in ${runId}`);
-      printWorkflowRun(result.details);
+    // Deliberately NOT braked (declared): cancel is the emergency stop for a
+    // live node run — a still-active node keeps gating the aggregate until it
+    // is cancelled, so putting an exit-3 dry-run in front of the stop action
+    // would delay exactly the operation that limits damage (anti-safety).
+    try {
+      requireWorkflowRunDetailsForContract("workflows runs cancel", runId, asJson);
+      const result = cancelWorkflowNodeRun(runId, nodeKey);
+      if (asJson) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`\n✓ Cancelled node ${nodeKey} in ${runId}`);
+        printWorkflowRun(result.details);
+      }
+      return result;
+    } catch (error) {
+      rethrowWorkflowCommandError("workflows runs cancel", error, asJson);
     }
-    return result;
   }
 
   @Command({ name: "archive-node", description: "Archive one node run from workflow aggregate state" })
@@ -362,15 +508,49 @@ export class WorkflowRunCommands {
     @Arg("runId", { description: "Workflow run id" }) runId: string,
     @Arg("nodeKey", { description: "Node key" }) nodeKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually archive the node run; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
-    const result = archiveWorkflowNodeRun(runId, nodeKey);
-    if (asJson) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`\n✓ Archived node ${nodeKey} in ${runId}`);
-      printWorkflowRun(result.details);
+    try {
+      // Validation before the brake: run and node must resolve before the
+      // dry-run plan is shown.
+      const details = requireWorkflowRunDetailsForContract("workflows runs archive-node", runId, asJson);
+      const node = details.nodes.find((candidate) => candidate.specNodeKey === nodeKey);
+      if (!node) {
+        failWorkflowNodeNotFound("workflows runs archive-node", runId, nodeKey, asJson);
+      }
+
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): archiving is destructive — there is no
+        // unarchive, and an archived node is permanently excluded from the
+        // aggregate and rejects every further mutation (release/skip/cancel/
+        // attach). Dry-run by default, exit 3 before the write.
+        contractDryRun(
+          "workflows runs archive-node",
+          {
+            runId,
+            nodeKey,
+            status: node.status,
+            currentTaskId: node.currentTask?.id ?? null,
+          },
+          { asJson },
+        );
+      }
+
+      const result = archiveWorkflowNodeRun(runId, nodeKey);
+      if (asJson) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`\n✓ Archived node ${nodeKey} in ${runId}`);
+        printWorkflowRun(result.details);
+      }
+      return result;
+    } catch (error) {
+      rethrowWorkflowCommandError("workflows runs archive-node", error, asJson);
     }
-    return result;
   }
 
   @Command({ name: "task-attach", description: "Attach an existing task to a workflow task node" })
@@ -382,14 +562,19 @@ export class WorkflowRunCommands {
     @Arg("taskId", { description: "Existing task id" }) taskId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = attachTaskToWorkflowNodeRun(runId, nodeKey, taskId);
-    if (asJson) {
-      console.log(JSON.stringify(result, null, 2));
-    } else {
-      console.log(`\n✓ Attached task ${taskId} to ${nodeKey} in ${runId}`);
-      printWorkflowRun(result.details);
+    try {
+      requireWorkflowRunDetailsForContract("workflows runs task-attach", runId, asJson);
+      const result = attachTaskToWorkflowNodeRun(runId, nodeKey, taskId);
+      if (asJson) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`\n✓ Attached task ${taskId} to ${nodeKey} in ${runId}`);
+        printWorkflowRun(result.details);
+      }
+      return result;
+    } catch (error) {
+      rethrowWorkflowCommandError("workflows runs task-attach", error, asJson);
     }
-    return result;
   }
 
   @Command({ name: "task-create", description: "Create a new task attempt for one workflow task node" })
@@ -421,10 +606,11 @@ export class WorkflowRunCommands {
         fail(error instanceof Error ? error.message : String(error));
       }
     }
+    requireWorkflowRunDetailsForContract("workflows runs task-create", runId, asJson);
     try {
       assertCanAttachTaskToWorkflowNodeRun(runId, nodeKey);
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowWorkflowCommandError("workflows runs task-create", error, asJson);
     }
 
     const actor = getTaskActor();
@@ -443,7 +629,7 @@ export class WorkflowRunCommands {
     } catch (error) {
       dbDeleteTask(created.task.id);
       rmSync(getCanonicalTaskDir(created.task.id), { recursive: true, force: true });
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowWorkflowCommandError("workflows runs task-create", error, asJson);
     }
     await emitCreatedTask(created);
     let launch: Awaited<ReturnType<typeof queueOrDispatchTask>> | null = null;

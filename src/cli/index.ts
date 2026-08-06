@@ -71,6 +71,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "gmail",
   "instances",
   "mail",
+  "observers",
   "pages",
   "projects",
   "routes",
@@ -80,6 +81,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "tasks",
   "triggers",
   "whatsapp",
+  "workflows",
 ];
 for (const domain of AGENT_CONTRACT_DOMAINS) installUsageContract(program, domain);
 

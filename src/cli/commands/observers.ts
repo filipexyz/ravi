@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
+import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -89,14 +90,78 @@ function parseClearableText(value?: string): string | null | undefined {
   return normalized === "clear" ? null : normalized;
 }
 
-function sessionKeyForNameOrKey(value?: string): {
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+//
+// OBSERVER_NOT_FOUND covers the three observer-owned resources (binding,
+// rule, profile); the message names the resource and the suggestions come
+// from the matching local list — exactly what the corresponding `list`
+// command prints. Session refs reuse SESSION_NOT_FOUND from cli/sessions and
+// carry no suggestions on purpose: scope isolation masks unauthorized
+// sessions as not-found, and suggesting real names would leak them.
+// ============================================================
+
+function failObserverBindingNotFound(op: string, bindingId: string, asJson?: boolean): never {
+  const candidates = dbListObserverBindings()
+    .slice(0, 40)
+    .flatMap((binding) => [binding.id, binding.observerSessionName]);
+  contractFail(op, "OBSERVER_NOT_FOUND", `Observer binding not found: ${bindingId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the binding id (see suggestions; list with: ravi observers list --json)",
+      suggestions: suggestSimilar(bindingId, candidates),
+    },
+  });
+}
+
+function failObserverRuleNotFound(op: string, ruleId: string, asJson?: boolean): never {
+  const candidates = dbListObserverRules()
+    .slice(0, 40)
+    .map((rule) => rule.id);
+  contractFail(op, "OBSERVER_NOT_FOUND", `Observer rule not found: ${ruleId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the rule id (see suggestions; list with: ravi observers rules list --json)",
+      suggestions: suggestSimilar(ruleId, candidates),
+    },
+  });
+}
+
+function failObserverProfileNotFound(op: string, profileId: string, asJson?: boolean): never {
+  const candidates = listObserverProfiles().map((profile) => profile.id);
+  contractFail(op, "OBSERVER_NOT_FOUND", `Observer profile not found: ${profileId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the profile id (see suggestions; list with: ravi observers profiles list --json)",
+      suggestions: suggestSimilar(profileId, candidates),
+    },
+  });
+}
+
+function failObserverSessionNotFound(op: string, sessionRef: string, asJson?: boolean): never {
+  contractFail(op, "SESSION_NOT_FOUND", `Session not found: ${sessionRef}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the session name/key (list visible sessions with: ravi sessions list --json)",
+    },
+  });
+}
+
+function sessionKeyForNameOrKey(
+  op: string,
+  value?: string,
+  asJson?: boolean,
+): {
   sessionKey?: string;
   sessionName?: string;
 } {
   const target = value?.trim();
   if (!target) return {};
   const session = getSessionByName(target) ?? getSession(target);
-  if (!session) fail(`Session not found: ${target}`);
+  if (!session) failObserverSessionNotFound(op, target, asJson);
   return {
     sessionKey: session.sessionKey,
     sessionName: session.name ?? session.sessionKey,
@@ -263,8 +328,10 @@ export class ObserverCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching observer bindings to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <csv>", description: "Compact mode: keep only these top-level fields per item" })
+    fields?: string,
   ) {
-    const session = sessionKeyForNameOrKey(sessionName);
+    const session = sessionKeyForNameOrKey("observers list", sessionName, asJson);
     const bindings = dbListObserverBindings({
       ...(session.sessionKey ? { sourceSessionKey: session.sessionKey } : {}),
       ...(observerAgentId?.trim() ? { observerAgentId: observerAgentId.trim() } : {}),
@@ -278,11 +345,12 @@ export class ObserverCommands {
       total: page.total,
       options: ["--session", sessionName, "--agent", observerAgentId],
     });
+    const projectedBindings = pickFields(page.items.map(serializeBinding), fields);
     const payload = {
       total: page.total,
       pagination,
-      items: page.items.map(serializeBinding),
-      bindings: page.items.map(serializeBinding),
+      items: projectedBindings,
+      bindings: projectedBindings,
     };
     if (asJson) {
       printJson(payload);
@@ -312,7 +380,7 @@ export class ObserverCommands {
     asJson?: boolean,
   ) {
     const binding = dbGetObserverBinding(bindingId);
-    if (!binding) fail(`Observer binding not found: ${bindingId}`);
+    if (!binding) failObserverBindingNotFound("observers show", bindingId, asJson);
     const payload = { binding: serializeBinding(binding) };
     if (asJson) {
       printJson(payload);
@@ -339,7 +407,7 @@ export class ObserverCommands {
     asJson?: boolean,
   ) {
     const session = getSessionByName(sessionName) ?? getSession(sessionName);
-    if (!session) fail(`Session not found: ${sessionName}`);
+    if (!session) failObserverSessionNotFound("observers refresh", sessionName, asJson);
     const allowedModes = new Set<ObserverReconcileMode>([
       "attach-missing",
       "detach-disabled",
@@ -388,6 +456,8 @@ export class ObserverRuleCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching observer rules to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <csv>", description: "Compact mode: keep only these top-level fields per item" })
+    fields?: string,
   ) {
     const rules = dbListObserverRules();
     const page = paginateCliItems(rules, { limit, offset });
@@ -398,11 +468,12 @@ export class ObserverRuleCommands {
       returned: page.items.length,
       total: page.total,
     });
+    const projectedRules = pickFields(page.items.map(serializeRule), fields);
     const payload = {
       total: page.total,
       pagination,
-      items: page.items.map(serializeRule),
-      rules: page.items.map(serializeRule),
+      items: projectedRules,
+      rules: projectedRules,
     };
     if (asJson) {
       printJson(payload);
@@ -432,7 +503,7 @@ export class ObserverRuleCommands {
     asJson?: boolean,
   ) {
     const rule = dbGetObserverRule(id);
-    if (!rule) fail(`Observer rule not found: ${id}`);
+    if (!rule) failObserverRuleNotFound("observers rules show", id, asJson);
     const payload = { rule: serializeRule(rule) };
     if (asJson) {
       printJson(payload);
@@ -601,6 +672,9 @@ export class ObserverRuleCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
+    // dbSetObserverRuleEnabled throws on unknown ids; pre-check to keep the
+    // not-found path on the contract envelope.
+    if (!dbGetObserverRule(id)) failObserverRuleNotFound("observers rules enable", id, asJson);
     const rule = dbSetObserverRuleEnabled(id, true);
     const payload = { success: true, rule: serializeRule(rule) };
     if (asJson) printJson(payload);
@@ -615,6 +689,7 @@ export class ObserverRuleCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
+    if (!dbGetObserverRule(id)) failObserverRuleNotFound("observers rules disable", id, asJson);
     const rule = dbSetObserverRuleEnabled(id, false);
     const payload = { success: true, rule: serializeRule(rule) };
     if (asJson) printJson(payload);
@@ -628,9 +703,35 @@ export class ObserverRuleCommands {
     @Arg("id", { description: "Observer rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the observer rule; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    // Validation before the brake: the rule must exist before the dry-run
+    // plan is shown.
+    const rule = dbGetObserverRule(id);
+    if (!rule) failObserverRuleNotFound("observers rules rm", id, asJson);
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): deleting a rule is destructive — the only
+      // reverse is recreating it by hand — so dry-run by default and exit 3
+      // before the delete.
+      contractDryRun(
+        "observers rules rm",
+        {
+          id: rule.id,
+          observerAgentId: rule.observerAgentId,
+          scope: rule.scope,
+          enabled: rule.enabled,
+        },
+        { asJson },
+      );
+    }
+
     const deleted = dbDeleteObserverRule(id);
-    if (!deleted) fail(`Observer rule not found: ${id}`);
+    if (!deleted) failObserverRuleNotFound("observers rules rm", id, asJson);
     const payload = { success: true, deleted };
     if (asJson) printJson(payload);
     else console.log(`Deleted observer rule: ${id}`);
@@ -668,7 +769,7 @@ export class ObserverRuleCommands {
     asJson?: boolean,
   ) {
     const explanation = explainObserverRulesForSession(sessionName);
-    if (!explanation.source) fail(`Session not found: ${sessionName}`);
+    if (!explanation.source) failObserverSessionNotFound("observers rules explain", sessionName, asJson);
     const payload = {
       source: explanation.source,
       rules: explanation.rules.map((item) => ({
@@ -710,6 +811,8 @@ export class ObserverProfileCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching observer profiles to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <csv>", description: "Compact mode: keep only these top-level fields per item" })
+    fields?: string,
   ) {
     const profiles = listObserverProfiles();
     const page = paginateCliItems(profiles, { limit, offset });
@@ -720,11 +823,12 @@ export class ObserverProfileCommands {
       returned: page.items.length,
       total: page.total,
     });
+    const projectedProfiles = pickFields(page.items.map(serializeProfile), fields);
     const payload = {
       total: page.total,
       pagination,
-      items: page.items.map(serializeProfile),
-      profiles: page.items.map(serializeProfile),
+      items: projectedProfiles,
+      profiles: projectedProfiles,
     };
     if (asJson) {
       printJson(payload);
@@ -754,7 +858,7 @@ export class ObserverProfileCommands {
     asJson?: boolean,
   ) {
     const profile = listObserverProfiles().find((item) => item.id === profileId.trim());
-    if (!profile) fail(`Observer profile not found: ${profileId}`);
+    if (!profile) failObserverProfileNotFound("observers profiles show", profileId, asJson);
     const payload = { profile: serializeProfile(profile), body: profile.body };
     if (asJson) {
       printJson(payload);
@@ -775,7 +879,19 @@ export class ObserverProfileCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
   ) {
-    const result = previewObserverProfile(profileId, eventType?.trim() || "message.user");
+    let result: ReturnType<typeof previewObserverProfile>;
+    try {
+      result = previewObserverProfile(profileId, eventType?.trim() || "message.user");
+    } catch (error) {
+      if (error instanceof ContractError) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      // resolveObserverProfile throws `Unknown observer profile: X. ...`; map
+      // it to the contract envelope and keep other errors on the legacy path.
+      if (/^Unknown observer profile: /.test(message)) {
+        failObserverProfileNotFound("observers profiles preview", profileId, asJson);
+      }
+      fail(message);
+    }
     const payload = {
       profile: serializeProfile(result.profile),
       eventType: result.eventType,
