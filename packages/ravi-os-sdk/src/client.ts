@@ -6914,12 +6914,14 @@ export class RaviClient {
           body: { ...(options ?? {}) },
         });
       },
-      /** Delete a task automation */
-      rm: async (id: string): Promise<TasksAutomationsRmReturn> => {
+      /** Delete a task automation (dry-run by default; --execute writes) */
+      rm: async (id: string, options?: {
+        execute?: boolean;
+      }): Promise<TasksAutomationsRmReturn> => {
         return this.transport.call({
           groupSegments: ["tasks","automations"],
           command: "rm",
-          body: { id },
+          body: { id, ...(options ?? {}) },
         });
       },
       /** Show one task automation and its recent runs */
@@ -6997,12 +6999,14 @@ export class RaviClient {
           body: { taskId, ...(options ?? {}) },
         });
       },
-      /** Remove one gating dependency from a task */
-      rm: async (taskId: string, dependencyTaskId: string): Promise<TasksDepsRmReturn> => {
+      /** Remove one gating dependency from a task (dry-run by default; --execute writes) */
+      rm: async (taskId: string, dependencyTaskId: string, options?: {
+        execute?: boolean;
+      }): Promise<TasksDepsRmReturn> => {
         return this.transport.call({
           groupSegments: ["tasks","deps"],
           command: "rm",
-          body: { taskId, dependencyTaskId },
+          body: { taskId, dependencyTaskId, ...(options ?? {}) },
         });
       }
     },
@@ -7012,6 +7016,7 @@ export class RaviClient {
       agent?: string;
       checkpoint?: string;
       effort?: string;
+      execute?: boolean;
       model?: string;
       reportEvents?: string;
       reportTo?: string;
@@ -7051,6 +7056,7 @@ export class RaviClient {
       allTime?: boolean;
       archived?: boolean;
       cursor?: string;
+      fields?: string;
       last?: string;
       limit?: string;
       mine?: boolean;

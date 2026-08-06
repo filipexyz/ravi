@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { contractDryRun } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -80,14 +81,27 @@ export class TaskDependencyCommands {
     return result;
   }
 
-  @Command({ name: "rm", description: "Remove one gating dependency from a task", aliases: ["remove"] })
+  @Command({
+    name: "rm",
+    description: "Remove one gating dependency from a task (dry-run by default; --execute writes)",
+    aliases: ["remove"],
+  })
   @CommandAccess({ kind: "mutate", resource: "tasks.deps", action: "rm", risk: "destructive" })
   @Returns(taskMutationReturnSchema)
   async rm(
     @Arg("taskId", { description: "Downstream task id" }) taskId: string,
     @Arg("dependencyTaskId", { description: "Upstream task id to remove from gating" }) dependencyTaskId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove the dependency; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): dry-run by default, exit 3 before any write.
+      contractDryRun("tasks deps rm", { taskId, dependencyTaskId }, { asJson });
+    }
     const result = await removeTaskDependency(taskId, dependencyTaskId);
     await emitMutation(result);
 

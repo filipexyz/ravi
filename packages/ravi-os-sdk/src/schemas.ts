@@ -69172,6 +69172,10 @@ export const TasksAutomationsListReturnSchema = {
 export const TasksAutomationsRmInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually delete the automation; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Task automation ID",
       "type": "string"
@@ -69727,6 +69731,10 @@ export const TasksDepsRmInputSchema = {
       "description": "Upstream task id to remove from gating",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually remove the dependency; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "taskId": {
       "description": "Downstream task id",
       "type": "string"
@@ -69780,6 +69788,10 @@ export const TasksDispatchInputSchema = {
     "effort": {
       "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually dispatch the task; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "model": {
       "description": "Dispatch runtime model override",
@@ -69947,6 +69959,10 @@ export const TasksListInputSchema = {
     },
     "cursor": {
       "description": "Opaque cursor returned by the previous page",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "last": {

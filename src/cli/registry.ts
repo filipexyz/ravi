@@ -17,6 +17,7 @@ import {
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName } from "./utils.js";
+import { ContractError } from "./agent-contract.js";
 import { enforceCliCommandAuthorization } from "./command-access.js";
 import { emitCliAuditEvent } from "./audit.js";
 import {
@@ -239,6 +240,7 @@ function registerCommand(
     // Execute and emit single event with input + output
     const startTime = Date.now();
     let isError = false;
+    let contractExitCode: number | null = null;
 
     try {
       const method = (instance as Record<string, Function>)[cmdMeta.method];
@@ -246,7 +248,14 @@ function registerCommand(
       if (result instanceof Promise) await result;
     } catch (err) {
       isError = true;
-      console.error(`Error: ${err instanceof Error ? err.message : err}`);
+      if (err instanceof ContractError) {
+        // contractFail/contractDryRun already emitted the envelope (or the
+        // legacy text); preserve the Manual v2 exit taxonomy (1 error ·
+        // 2 usage · 3 policy brake) instead of the generic error path.
+        contractExitCode = err.exitCode;
+      } else {
+        console.error(`Error: ${err instanceof Error ? err.message : err}`);
+      }
     }
 
     await emitCliAuditEvent({
@@ -260,7 +269,7 @@ function registerCommand(
       closeLazyConnection: true,
     });
 
-    if (isError) process.exit(1);
+    if (isError) process.exit(contractExitCode ?? 1);
   });
 }
 

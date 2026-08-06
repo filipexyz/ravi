@@ -21,7 +21,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | # | Domínio | Arquivos CLI | Skill | Status | Spec |
 |---|---------|--------------|-------|--------|------|
 | 1 | crm | crm.ts | crm | **MIGRADO** | cli/crm |
-| 2 | tasks | tasks.ts, tasks-deps.ts, tasks-profiles.ts, tasks-automations.ts | tasks (+tasks-manager alias) | pendente | — |
+| 2 | tasks | tasks.ts, tasks-deps.ts, tasks-profiles.ts, tasks-automations.ts | tasks (+tasks-manager alias) | **MIGRADO** | cli/tasks |
 | 3 | sessions | sessions.ts, sessions-runtime.ts, session-followups.ts | sessions | pendente | — |
 | 4 | contacts | contacts.ts | contacts | pendente | — |
 | 5 | agents | agents.ts | agents | pendente | — |
@@ -126,3 +126,47 @@ grupos com posicional documentada.
 com CHANGED_FILES: **Spec gate PASSED** (221 specs indexadas). Correções vs
 piloto: `applies_to` aponta `src/cli/agent-contract.ts` (piloto apontava path
 inexistente) e `owners: ravi-dev` (piloto vazio).
+
+### 2. tasks — MIGRADO
+
+**Escopo:** primeira migração from-scratch usando `src/cli/agent-contract.ts`.
+Freio (`--execute`) em `tasks dispatch` (high — dispara execução real de agente),
+`tasks deps rm` e `tasks automations rm` (destrutivos); demais escritas
+declaradas sem freio na spec e na skill. `TASK_NOT_FOUND` com sugestões em
+`show`/`dispatch` via `getTaskDetailsForContract` (o `getTaskDetails` real LANÇA
+em id desconhecido — checar `details.task === null` era código morto).
+`--fields` em `tasks list`. Usage contract instalado no subtree `tasks`
+(`AGENT_CONTRACT_DOMAINS` em `src/cli/index.ts`). Flags novas sempre como ÚLTIMO
+parâmetro (`@Option`) para não deslocar posicionais nos testes existentes.
+
+**Correção estrutural (beneficia todos os domínios):** o catch do dispatcher em
+`src/cli/registry.ts` achatava `ContractError` lançado em contexto de agente
+(envs `RAVI_*` presentes → `hasContext()` true → throw) para `Error: ...` +
+exit 1 — o freio ficava invisível exatamente para chamadas de agente. O catch
+agora preserva `ContractError.exitCode` (1/2/3) sem reimprimir o envelope.
+Gap presente no piloto; descoberto na Rotina Y deste domínio.
+
+**Rotina X:** typecheck limpo · `tasks.test.ts` 47/47 (43 existentes + 4 de
+contrato: TASK_NOT_FOUND+suggestions, dispatch dry-run sem despachar, deps rm
+dry-run sem remover, `--fields` no list) · `registry.test.ts` + `crm.test.ts` +
+`tasks.test.ts` = 78/78 · `json-coverage`/`pagination-coverage` passam ·
+`tasks-profiles.test.ts` 3 falhas EBUSY de cleanup Windows — pré-existentes,
+verificadas idênticas no estado virgem via stash (não estão na lista da
+baseline porque a cadeia do `bun run test` aborta em `src/channels/` antes de
+chegar aos cli-commands) · `sdk:generate` + `sdk:check` current.
+
+**Rotina Y (CLI local, `RAVI_STATE_DIR` isolado):**
+- `tasks list --json --fields id,title` → paginação, exit 0.
+- `tasks show tsk-nope --json` → envelope `TASK_NOT_FOUND`, exit 1.
+- `tasks list --flag-inexistente --json` → `USAGE_ERROR` + acceptedFlags, exit 2.
+- `tasks automations add` → `rm` sem `--execute` → exit 3 + plan, automação AINDA listada → `rm --execute` → `status:"deleted"`, lista vazia.
+- Prova de contexto de agente: `RAVI_AGENT_ID=prova crm pipeline create --json` → envelope + **exit 3** (antes da correção do registry: exit 1).
+- `tasks dispatch --help` → 25 linhas (enxuto). Freio do dispatch coberto por teste unitário (criar task real fora de sessão exige `--report-to` com sessão existente; sem daemon não há sessões).
+
+**CLI↔SKILL:** skill `tasks` ganhou `## Contrato Do CLI` (5 blocos, freios COM e
+SEM listados) + exemplo do dispatch com `--execute` + checklist; `tasks-manager`
+(deprecada) não ensina sintaxe — sem mudança.
+
+**Testes de parser por domínio:** cobertos genericamente em `crm.test.ts`
+(árvore commander real); `tasks.test.ts` mocka decorators, então testa o
+contrato no corpo do comando. Decisão registrada.

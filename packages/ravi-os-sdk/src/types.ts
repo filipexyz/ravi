@@ -14231,6 +14231,7 @@ export type TasksAutomationsListReturn = {
 
 /** Input shape for `tasks.automations.rm`. */
 export type TasksAutomationsRmInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -14369,6 +14370,7 @@ export type TasksDepsLsReturn = {
 /** Input shape for `tasks.deps.rm`. */
 export type TasksDepsRmInput = {
   dependencyTaskId: string;
+  execute?: boolean;
   taskId: string;
 };
 
@@ -14385,6 +14387,7 @@ export type TasksDispatchInput = {
   agent?: string;
   checkpoint?: string;
   effort?: string;
+  execute?: boolean;
   model?: string;
   reportEvents?: string;
   reportTo?: string;
@@ -14435,6 +14438,7 @@ export type TasksListInput = {
   allTime?: boolean;
   archived?: boolean;
   cursor?: string;
+  fields?: string;
   last?: string;
   limit?: string;
   mine?: boolean;
