@@ -102,10 +102,10 @@ Approving a contact allows it and removes it from the pending list. The contact 
 ### Reject
 
 ```bash
-ravi instances pending reject main 5511999999999
+ravi instances pending reject main 5511999999999 --execute
 ```
 
-Rejecting removes the entry from the pending list without allowing it.
+Rejecting removes the entry from the pending list without allowing it. Without `--execute` the command is a dry-run: it prints the plan and exits 3 without removing anything.
 
 ## Per-Instance Routes
 
@@ -150,8 +150,8 @@ ravi instances routes show main "group:120363123456@g.us"
 ravi instances routes set main "5511*" agent new-agent
 ravi instances routes set main "5511*" priority 10
 
-# Remove a route (soft-delete)
-ravi instances routes remove main "5511*"
+# Remove a route (soft-delete; without --execute it is a dry-run, exit 3)
+ravi instances routes remove main "5511*" --execute
 
 # Restore a removed route
 ravi instances routes restore main "5511*"
@@ -212,8 +212,8 @@ Instances follow a lifecycle that supports recovery:
 6. **Restore** — `ravi instances restore` recovers a soft-deleted instance
 
 ```bash
-# Soft-delete an instance
-ravi instances delete vendas
+# Soft-delete an instance (without --execute it is a dry-run, exit 3)
+ravi instances delete vendas --execute
 
 # List deleted instances
 ravi instances deleted

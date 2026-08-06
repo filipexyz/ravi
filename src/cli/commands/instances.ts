@@ -29,6 +29,7 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import qrcode from "qrcode-terminal";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -145,9 +146,43 @@ function resolveInstanceByNameOrId(value: string) {
   return dbGetInstance(value) ?? dbGetInstanceByInstanceId(value);
 }
 
-function requireInstance(name: string) {
+// ============================================================
+// Agent-first contract helpers (Manual v2): typed not-found errors with the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+/**
+ * Instance names are public through `instances list` (no per-agent visibility
+ * cloak — only the optional tag filter), so INSTANCE_NOT_FOUND enriches the
+ * envelope with real similar names and omni instanceIds.
+ */
+function failInstanceNotFound(op: string, ref: string, asJson?: boolean): never {
+  const candidates = dbListInstances().flatMap((inst) => [inst.name, inst.instanceId ?? null]);
+  contractFail(op, "INSTANCE_NOT_FOUND", `Instance not found: ${ref}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the instance name (see suggestions; list with: ravi instances list --json)",
+      suggestions: suggestSimilar(ref, candidates),
+    },
+  });
+}
+
+/** Route patterns are scoped per instance; suggestions come from that instance's real routes. */
+function failRouteNotFound(op: string, name: string, pattern: string, asJson?: boolean): never {
+  const candidates = dbListRoutes(name).map((route) => route.pattern);
+  contractFail(op, "ROUTE_NOT_FOUND", `Route not found: ${pattern} (instance: ${name})`, {
+    asJson,
+    details: {
+      suggestedAction: `Check the route pattern (see suggestions; list with: ravi routes list ${name} --json)`,
+      suggestions: suggestSimilar(pattern, candidates),
+    },
+  });
+}
+
+function requireInstance(op: string, name: string, asJson?: boolean) {
   const instance = dbGetInstance(name);
-  if (!instance) fail(`Instance not found: ${name}`);
+  if (!instance) failInstanceNotFound(op, name, asJson);
   return instance;
 }
 
@@ -304,6 +339,7 @@ function listInstanceTags(name: string): TagBinding[] {
 }
 
 function printRouteList(
+  op: string,
   name?: string,
   tagSlug?: string,
   limit?: string,
@@ -311,7 +347,7 @@ function printRouteList(
   baseCommand: Array<string | null | undefined> = ["ravi", "routes", "list", name],
 ): void {
   if (name) {
-    requireInstance(name);
+    requireInstance(op, name);
     const routes = filterRoutesByTag(dbListRoutes(name), tagSlug);
     const page = paginateCliItems(routes, { limit, offset });
     const pagination = buildCliOffsetPagination({
@@ -373,14 +409,17 @@ function printRouteList(
 }
 
 function buildRouteListPayload(
+  op: string,
   name?: string,
   tagSlug?: string,
   limit?: string,
   offset?: string,
   baseCommand: Array<string | null | undefined> = ["ravi", "routes", "list", name],
+  fields?: string,
+  asJson?: boolean,
 ) {
   if (name) {
-    requireInstance(name);
+    requireInstance(op, name, asJson);
   }
   const routes = filterRoutesByTag(dbListRoutes(name), tagSlug);
   const page = paginateCliItems(routes, { limit, offset });
@@ -392,26 +431,27 @@ function buildRouteListPayload(
     total: page.total,
     options: ["--tag", tagSlug?.trim() || null],
   });
+  const routeRows = pickFields(
+    page.items.map((route) => ({
+      ...route,
+      tags: listRouteTags(route.id),
+    })),
+    fields,
+  );
   return {
     instance: name ?? null,
     filter: { tagSlug: tagSlug?.trim() || null },
     total: page.total,
     pagination,
-    items: page.items.map((route) => ({
-      ...route,
-      tags: listRouteTags(route.id),
-    })),
-    routes: page.items.map((route) => ({
-      ...route,
-      tags: listRouteTags(route.id),
-    })),
+    items: routeRows,
+    routes: routeRows,
   };
 }
 
-function printRouteDetails(name: string, pattern: string): void {
-  requireInstance(name);
+function printRouteDetails(op: string, name: string, pattern: string): void {
+  requireInstance(op, name);
   const route = dbGetRoute(pattern, name);
-  if (!route) fail(`Route not found: ${pattern} (instance: ${name})`);
+  if (!route) failRouteNotFound(op, name, pattern);
 
   console.log(`\nRoute: ${route.pattern} (instance: ${name})\n`);
   console.log(`  Agent:     ${route.agent}`);
@@ -426,10 +466,10 @@ function printRouteDetails(name: string, pattern: string): void {
   console.log(`  Mutate config:        ravi instances routes set ${name} "${pattern}" <key> <value>`);
 }
 
-function buildRouteDetailsPayload(name: string, pattern: string) {
-  requireInstance(name);
+function buildRouteDetailsPayload(op: string, name: string, pattern: string, asJson?: boolean) {
+  requireInstance(op, name, asJson);
   const route = dbGetRoute(pattern, name);
-  if (!route) fail(`Route not found: ${pattern} (instance: ${name})`);
+  if (!route) failRouteNotFound(op, name, pattern, asJson);
   return {
     instance: name,
     pattern,
@@ -440,11 +480,11 @@ function buildRouteDetailsPayload(name: string, pattern: string) {
   };
 }
 
-function buildRouteExplanationPayload(name: string, pattern?: string, channel?: string) {
+function buildRouteExplanationPayload(op: string, name: string, pattern?: string, channel?: string, asJson?: boolean) {
   const target = inspectCliRuntimeTarget(name);
 
   if (!target.instance?.exists) {
-    fail(`Instance not found: ${name}`);
+    failInstanceNotFound(op, name, asJson);
   }
 
   if (!pattern) {
@@ -493,14 +533,14 @@ function buildRouteExplanationPayload(name: string, pattern?: string, channel?: 
   };
 }
 
-function printRouteExplanation(name: string, pattern?: string, channel?: string): void {
+function printRouteExplanation(op: string, name: string, pattern?: string, channel?: string): void {
   const summary = inspectCliRuntimeTarget(name);
   for (const line of formatCliRuntimeTarget(summary)) {
     console.log(line);
   }
 
   if (!summary.instance?.exists) {
-    fail(`Instance not found: ${name}`);
+    failInstanceNotFound(op, name);
   }
 
   if (!pattern) {
@@ -655,6 +695,8 @@ export class InstancesCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching instances to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each instance" })
+    fields?: string,
   ) {
     const instances = filterItemsByCanonicalTag(dbListInstances(), "instance", tagSlug, (inst) => inst.name);
     const page = paginateCliItems(instances, { limit, offset });
@@ -681,22 +723,21 @@ export class InstancesCommands {
       /* omni offline */
     }
 
+    const instanceRows = pickFields(
+      pageInstances.map((inst) => ({
+        ...inst,
+        tags: listInstanceTags(inst.name),
+        raviStatus: inst.enabled === false ? "disabled" : "enabled",
+        live: inst.instanceId ? (omniStatus[inst.instanceId] ?? null) : null,
+      })),
+      fields,
+    );
     const payload = {
       filter: { tagSlug: tagSlug?.trim() || null },
       total: page.total,
       pagination,
-      items: pageInstances.map((inst) => ({
-        ...inst,
-        tags: listInstanceTags(inst.name),
-        raviStatus: inst.enabled === false ? "disabled" : "enabled",
-        live: inst.instanceId ? (omniStatus[inst.instanceId] ?? null) : null,
-      })),
-      instances: pageInstances.map((inst) => ({
-        ...inst,
-        tags: listInstanceTags(inst.name),
-        raviStatus: inst.enabled === false ? "disabled" : "enabled",
-        live: inst.instanceId ? (omniStatus[inst.instanceId] ?? null) : null,
-      })),
+      items: instanceRows,
+      instances: instanceRows,
       ignoredOmniInstanceIds,
     };
 
@@ -760,7 +801,7 @@ export class InstancesCommands {
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const inst = requireInstance(name);
+    const inst = requireInstance("instances show", name, asJson);
 
     const routes = dbListRoutes(name);
 
@@ -903,7 +944,7 @@ export class InstancesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const inst = dbGetInstance(name);
-    if (!inst) fail(`Instance not found: ${name}`);
+    if (!inst) failInstanceNotFound("instances get", name, asJson);
     const val = (inst as unknown as Record<string, unknown>)[key];
     if (val === undefined) fail(`Unknown key: ${key}. Valid keys: ${SETTABLE_KEYS.join(", ")}`);
     const payload = {
@@ -934,7 +975,7 @@ export class InstancesCommands {
       fail(`Invalid key: ${key}. Valid keys: ${SETTABLE_KEYS.join(", ")}`);
     }
     const inst = dbGetInstance(name);
-    if (!inst) fail(`Instance not found: ${name}. Create it first with: ravi instances create ${name}`);
+    if (!inst) failInstanceNotFound("instances set", name, asJson);
 
     const clear = value === "-" || value === "null";
 
@@ -1024,7 +1065,7 @@ export class InstancesCommands {
     const inst = resolveInstanceByNameOrId(target);
     if (!inst) {
       const ignored = getIgnoredOmniInstanceIds();
-      if (!ignored.includes(target)) fail(`Instance not found: ${target}`);
+      if (!ignored.includes(target)) failInstanceNotFound("instances enable", target, asJson);
       saveIgnoredOmniInstanceIds(ignored.filter((instanceId) => instanceId !== target));
       const payload = {
         status: "ignored_removed" as const,
@@ -1147,9 +1188,31 @@ export class InstancesCommands {
   delete(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the instance; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const inst = dbGetInstance(name);
-    if (!inst) fail(`Instance not found: ${name}`);
+    if (!inst) failInstanceNotFound("instances delete", name, asJson);
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): soft-delete is recoverable but still
+      // flagged destructive, so dry-run by default and exit 3 before any
+      // state change. The plan shows the resolved instance being removed.
+      contractDryRun(
+        "instances delete",
+        {
+          name: inst.name,
+          channel: inst.channel,
+          instanceId: inst.instanceId ?? null,
+          agent: inst.agent ?? null,
+          enabled: inst.enabled !== false,
+          restoreCommand: `ravi instances restore ${inst.name}`,
+        },
+        { asJson },
+      );
+    }
     const deleted = dbDeleteInstance(name);
     if (deleted) {
       const payload = {
@@ -1193,7 +1256,16 @@ export class InstancesCommands {
       emitConfigChanged();
       return payload;
     } else {
-      fail(`Instance not found in deleted records: ${name}`);
+      contractFail("instances restore", "INSTANCE_NOT_FOUND", `Instance not found in deleted records: ${name}`, {
+        asJson,
+        details: {
+          suggestedAction: "Check deleted instances (see suggestions; list with: ravi instances deleted --json)",
+          suggestions: suggestSimilar(
+            name,
+            dbListDeletedInstances().map((inst) => inst.name),
+          ),
+        },
+      });
     }
   }
 
@@ -1399,7 +1471,7 @@ export class InstancesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const inst = dbGetInstance(name);
-    if (!inst) fail(`Instance not found: ${name}`);
+    if (!inst) failInstanceNotFound("instances disconnect", name, asJson);
     if (!inst.instanceId) fail(`Instance "${name}" has no omni instanceId set`);
     try {
       const omni = getOmniClient();
@@ -1430,7 +1502,7 @@ export class InstancesCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const inst = dbGetInstance(name);
-    if (!inst) fail(`Instance not found: ${name}`);
+    if (!inst) failInstanceNotFound("instances status", name, asJson);
     if (!inst.instanceId) {
       const payload = {
         instance: inst,
@@ -1498,11 +1570,11 @@ export class InstancesCommands {
     channel?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const payload = buildRouteExplanationPayload(name, pattern, channel);
+    const payload = buildRouteExplanationPayload("instances target", name, pattern, channel, asJson);
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteExplanation(name, pattern, channel);
+      printRouteExplanation("instances target", name, pattern, channel);
     }
     return payload;
   }
@@ -1526,12 +1598,14 @@ export class RoutesCommands {
     @Option({ flags: "--tag <slug>", description: "Filter by canonical route tag" }) tagSlug?: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching routes to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each route" })
+    fields?: string,
   ) {
-    const payload = buildRouteListPayload(name, tagSlug, limit, offset);
+    const payload = buildRouteListPayload("routes list", name, tagSlug, limit, offset, undefined, fields, asJson);
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteList(name, tagSlug, limit, offset);
+      printRouteList("routes list", name, tagSlug, limit, offset);
     }
     return payload;
   }
@@ -1543,11 +1617,11 @@ export class RoutesCommands {
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const payload = buildRouteDetailsPayload(name, pattern);
+    const payload = buildRouteDetailsPayload("routes show", name, pattern, asJson);
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteDetails(name, pattern);
+      printRouteDetails("routes show", name, pattern);
     }
     return payload;
   }
@@ -1564,11 +1638,11 @@ export class RoutesCommands {
     channel?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const payload = buildRouteExplanationPayload(name, pattern, channel);
+    const payload = buildRouteExplanationPayload("routes explain", name, pattern, channel, asJson);
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteExplanation(name, pattern, channel);
+      printRouteExplanation("routes explain", name, pattern, channel);
     }
     return payload;
   }
@@ -1594,11 +1668,20 @@ export class InstancesRoutesCommands {
     @Option({ flags: "--offset <n>", description: "Number of matching routes to skip (default: 0)" }) offset?: string,
   ) {
     const baseCommand = ["ravi", "instances", "routes", "list", name];
-    const payload = buildRouteListPayload(name, tagSlug, limit, offset, baseCommand);
+    const payload = buildRouteListPayload(
+      "instances routes list",
+      name,
+      tagSlug,
+      limit,
+      offset,
+      baseCommand,
+      undefined,
+      asJson,
+    );
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteList(name, tagSlug, limit, offset, baseCommand);
+      printRouteList("instances routes list", name, tagSlug, limit, offset, baseCommand);
     }
     return payload;
   }
@@ -1610,11 +1693,11 @@ export class InstancesRoutesCommands {
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const payload = buildRouteDetailsPayload(name, pattern);
+    const payload = buildRouteDetailsPayload("instances routes show", name, pattern, asJson);
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteDetails(name, pattern);
+      printRouteDetails("instances routes show", name, pattern);
     }
     return payload;
   }
@@ -1642,7 +1725,7 @@ export class InstancesRoutesCommands {
     allowRuntimeMismatch?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    if (!dbGetInstance(name)) fail(`Instance not found: ${name}. Create with: ravi instances create ${name}`);
+    if (!dbGetInstance(name)) failInstanceNotFound("instances routes add", name, asJson);
     if (!dbGetAgent(agent))
       fail(
         `Agent not found: ${agent}. Available: ${dbListAgents()
@@ -1725,10 +1808,33 @@ export class InstancesRoutesCommands {
     })
     allowRuntimeMismatch?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove the route; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
-    if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
-    assertInstanceMutationRuntime(name, allowRuntimeMismatch);
+    if (!dbGetInstance(name)) failInstanceNotFound("instances routes remove", name, asJson);
     const route = dbGetRoute(pattern, name);
+    if (!route) failRouteNotFound("instances routes remove", name, pattern, asJson);
+    assertInstanceMutationRuntime(name, allowRuntimeMismatch);
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): removing a route silently reroutes live
+      // traffic, so dry-run by default and exit 3 before any state change.
+      // The plan shows pattern + instance + agent of the resolved route.
+      contractDryRun(
+        "instances routes remove",
+        {
+          instance: name,
+          pattern: route.pattern,
+          agent: route.agent,
+          priority: route.priority ?? 0,
+          channel: route.channel ?? null,
+          restoreCommand: `ravi instances routes restore ${name} "${pattern}"`,
+        },
+        { asJson },
+      );
+    }
     const deleted = dbDeleteRoute(pattern, name);
     if (deleted) {
       const payload = {
@@ -1750,7 +1856,7 @@ export class InstancesRoutesCommands {
       emitConfigChanged();
       return payload;
     } else {
-      fail(`Route not found: ${pattern} (instance: ${name})`);
+      failRouteNotFound("instances routes remove", name, pattern, asJson);
     }
   }
 
@@ -1786,7 +1892,21 @@ export class InstancesRoutesCommands {
       emitConfigChanged();
       return payload;
     } else {
-      fail(`Route not found in deleted records: ${pattern} (instance: ${name})`);
+      contractFail(
+        "instances routes restore",
+        "ROUTE_NOT_FOUND",
+        `Route not found in deleted records: ${pattern} (instance: ${name})`,
+        {
+          asJson,
+          details: {
+            suggestedAction: "Check deleted routes (see suggestions; list with: ravi instances routes deleted --json)",
+            suggestions: suggestSimilar(
+              pattern,
+              dbListDeletedRoutes(name).map((route) => route.pattern),
+            ),
+          },
+        },
+      );
     }
   }
 
@@ -1830,8 +1950,8 @@ export class InstancesRoutesCommands {
     allowRuntimeMismatch?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
-    if (!dbGetRoute(pattern, name)) fail(`Route not found: ${pattern} (instance: ${name})`);
+    if (!dbGetInstance(name)) failInstanceNotFound("instances routes set", name, asJson);
+    if (!dbGetRoute(pattern, name)) failRouteNotFound("instances routes set", name, pattern, asJson);
     if (!ROUTE_SETTABLE_KEYS.includes(key as (typeof ROUTE_SETTABLE_KEYS)[number])) {
       fail(`Invalid key: ${key}. Valid keys: ${ROUTE_SETTABLE_KEYS.join(", ")}`);
     }
@@ -1920,7 +2040,7 @@ export class InstancesPendingCommands {
     @Option({ flags: "--offset <n>", description: "Number of matching pending entries to skip (default: 0)" })
     offset?: string,
   ) {
-    if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
+    if (!dbGetInstance(name)) failInstanceNotFound("instances pending list", name, asJson);
     const pending = listAccountPending(name);
     const page = paginateCliItems(pending, { limit, offset });
     const pagination = buildCliOffsetPagination({
@@ -2009,7 +2129,7 @@ export class InstancesPendingCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const instance = dbGetInstance(name);
-    if (!instance) fail(`Instance not found: ${name}`);
+    if (!instance) failInstanceNotFound("instances pending approve", name, asJson);
     const pending = findPendingReviewEntry(name, contact);
     const normalizedContact = normalizePhone(contact);
     const isChatApproval = pending?.pendingKind === "chat" || normalizedContact.startsWith("group:");
@@ -2088,9 +2208,35 @@ export class InstancesPendingCommands {
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("contact", { description: "Contact identity or chat route pattern" }) contact: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description:
+        "Actually reject and remove the pending entry; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
-    if (!dbGetInstance(name)) fail(`Instance not found: ${name}`);
+    if (!dbGetInstance(name)) failInstanceNotFound("instances pending reject", name, asJson);
     const pending = findPendingReviewEntry(name, contact);
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): rejecting discards the pending entry with
+      // no restore path, so dry-run by default and exit 3 before any removal.
+      contractDryRun(
+        "instances pending reject",
+        {
+          instance: name,
+          contact,
+          resolvedPending: pending
+            ? {
+                phone: pending.phone,
+                chatId: pending.chatId ?? null,
+                kind: pending.pendingKind,
+                name: pending.name ?? null,
+              }
+            : null,
+        },
+        { asJson },
+      );
+    }
     const removed = pending ? removeAccountPending(name, pending.phone) : removeAccountPending(name, contact);
     if (removed) {
       const payload = {

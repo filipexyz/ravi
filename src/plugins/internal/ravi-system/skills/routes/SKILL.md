@@ -12,6 +12,28 @@ description: |
 
 Rotas direcionam mensagens para agents baseado em padrões. São sempre gerenciadas via `ravi instances routes <name>` — rotas pertencem a uma instância.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução (ex.: `ROUTE_NOT_FOUND`, `INSTANCE_NOT_FOUND`). O envelope traz `suggestions` com patterns/instâncias reais parecidos — consulte antes de concluir "não existe".
+- `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
+- `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` (pattern + instância + agent) com exatamente o que seria feito. Revise o plano e repita com `--execute`.
+
+Onde o freio existe hoje: só `instances routes remove` é dry-run por default e exige `--execute`. As demais escritas de rota gravam na hora, sem dry-run: `instances routes add`, `instances routes set`, `instances routes restore`. Nessas o freio é você: confira instância, pattern e agent antes de rodar.
+
+Compact mode: `routes list` aceita `--fields a,b,c` (ex.: `--fields pattern,agent,priority`) — use em varredura para não arrastar o objeto inteiro de cada rota.
+
+Help por operação: `ravi routes <op> --help` e `ravi instances routes <op> --help` são enxutos; prefira-os ao help do domínio inteiro.
+
+Checklist antes de responder sobre rotas:
+
+- Tratei exit 3 como freio (revisei o `plan`) e não como falha?
+- Consultei `suggestions` do envelope antes de declarar not-found?
+
 ## Comandos
 
 ### Listar rotas
@@ -41,7 +63,8 @@ Exemplos de padrões:
 
 ### Remover rota (soft-delete, recuperável)
 ```bash
-ravi instances routes remove <name> <pattern>
+ravi instances routes remove <name> <pattern>            # dry-run: mostra o plano e sai com exit 3
+ravi instances routes remove <name> <pattern> --execute  # remove de verdade
 ravi instances routes restore <name> <pattern>   # recuperar
 ravi instances routes deleted [name]             # ver deletadas
 ```

@@ -152,9 +152,11 @@ ravi instances set <name> <key> <value>
 ravi instances connect <name>
 ravi instances disconnect <name>
 ravi instances status <name>
-ravi instances delete <name>
+ravi instances delete <name> --execute
 ravi instances restore <name>
 ```
+
+`instances delete` is dry-run by default: without `--execute` it prints the plan and exits 3 without deleting.
 
 ### Instance Fields
 
@@ -208,9 +210,11 @@ ravi instances routes list <instance>
 ravi instances routes add <instance> <pattern> <agent> [options]
 ravi instances routes show <instance> <pattern>
 ravi instances routes set <instance> <pattern> <key> <value>
-ravi instances routes remove <instance> <pattern>
+ravi instances routes remove <instance> <pattern> --execute
 ravi instances routes restore <instance> <pattern>
 ```
+
+`routes remove` is dry-run by default: without `--execute` it prints the plan and exits 3 without removing.
 
 ### Route Fields
 

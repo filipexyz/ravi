@@ -124,7 +124,8 @@ ravi instances routes add <name> <pattern> <agent> [--priority N] [--policy open
 #   ravi instances routes add main "thread:*" agent-suporte --policy closed
 #   ravi instances routes add main "*" agent-main --policy open
 
-ravi instances routes remove <name> <pattern>
+ravi instances routes remove <name> <pattern> --execute
+# Sem --execute é dry-run: mostra o plano e sai com exit 3
 
 ravi instances routes set <name> <pattern> <key> <value>
 # ravi instances routes set main "group:120363*" policy open
@@ -144,8 +145,8 @@ ravi instances pending list <name>
 ravi instances pending approve <name> <contact-id>
 # Aprova contato → status "allowed" → desbloqueia mensagens futuras
 
-ravi instances pending reject <name> <contact-id>
-# Rejeita e descarta
+ravi instances pending reject <name> <contact-id> --execute
+# Rejeita e descarta (sem --execute é dry-run, exit 3)
 ```
 
 ---

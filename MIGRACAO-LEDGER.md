@@ -25,7 +25,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 3 | sessions | sessions.ts, sessions-runtime.ts, session-followups.ts | sessions | **MIGRADO** | cli/sessions |
 | 4 | contacts | contacts.ts | contacts | **MIGRADO** | cli/contacts |
 | 5 | agents | agents.ts | agents | **MIGRADO** | cli/agents |
-| 6 | instances+routes | instances.ts | instances, routes | pendente | — |
+| 6 | instances+routes | instances.ts | instances, routes | **MIGRADO** | cli/instances |
 | 7 | whatsapp | group.ts, whatsapp-dm.ts | whatsapp | pendente | — |
 | 8 | mail | mail.ts, gmail.ts | (sem skill) | pendente | — |
 | 9 | calendar | calendar.ts | (sem skill) | pendente | — |
@@ -260,3 +260,30 @@ agents+contacts). **Rotina Y (estado isolado):** add → `get` de número
 inexistente → CONTACT_NOT_FOUND + suggestions visíveis, exit 1 · `remove` sem
 `--execute` → exit 3 + plan com o contato resolvido · `remove --execute` →
 `status:"removed"`, list vazio depois · usage → exit 2 · `list --fields`.
+
+### 6. instances+routes — MIGRADO (subagente, verificado e integrado)
+
+**Escopo:** freio (`--execute`) em `instances delete` (destructive; plan inclui
+`restoreCommand`), `instances routes remove` (re-roteia tráfego vivo; freio
+DEPOIS de `assertInstanceMutationRuntime` — frear antes esconderia split de
+runtime atrás do exit 3) e `instances pending reject` (sem caminho de restore).
+Sem freio (declaradas): create, set, enable, disable, restore, disconnect,
+connect (QR interativo), routes add/set/restore, pending approve.
+`INSTANCE_NOT_FOUND` (suggestions de nomes+omni ids — instâncias não têm cloak
+por agente, só filtro por tag) e `ROUTE_NOT_FOUND` (suggestions de patterns da
+instância). Decisão preservada: `instances disable` de alvo desconhecido é o
+fluxo de ignore de omni id, NÃO not-found. `--fields` nos dois lists. Usage
+contract nos subtrees `instances` e `routes`.
+
+**Consumidores:** docs/guides/instances.mdx, docs/plan-instances.md,
+docs/start/configuration.mdx (este commit); docs/cli/overview.mdx e skill
+architect têm hunks mistos com o domínio whatsapp e entram no commit do
+whatsapp. AGENTS.md: zero ocorrências dos freados.
+
+**Rotina X:** typecheck limpo · `routes.test.ts` 20/20 (10 de contrato) · spec
+gate PASSED (cli/instances). **Rotina Y (estado isolado):** show fantasma →
+INSTANCE_NOT_FOUND exit 1 · create + delete sem `--execute` → exit 3 + plan com
+restoreCommand · delete `--execute` → `status:"deleted"` · usage exit 2 ·
+`list --fields name`. Incidente de concorrência registrado: um stash de agente
+paralelo reverteu temporariamente o working tree; trabalho recuperado de
+stash@{0} e revalidado (stash mantido até o fim da onda como segurança).

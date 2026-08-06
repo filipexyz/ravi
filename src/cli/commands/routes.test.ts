@@ -23,6 +23,7 @@ type RouteRecord = {
 
 let routes: RouteRecord[] = [];
 let instanceNames = new Set<string>(["main"]);
+let deleteInstanceCalls: string[] = [];
 let contactStatuses = new Map<string, { status: string }>();
 let allowContactCalls: string[] = [];
 let liveWinner: { route?: { pattern?: string | null } | null; agentId: string } | null = null;
@@ -52,6 +53,9 @@ mock.module("../decorators.js", () => ({
 mock.module("../context.js", () => ({
   ...actualCliContextModule,
   getContext: () => undefined,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -104,10 +108,23 @@ mock.module("../../router/router-db.js", () => ({
         }
       : null,
   dbGetInstanceByInstanceId: () => null,
-  dbListInstances: () => [],
+  dbListInstances: () =>
+    [...instanceNames].map((name) => ({
+      name,
+      channel: "whatsapp",
+      agent: "main",
+      dmPolicy: "open",
+      groupPolicy: "open",
+      contactIntakeMode: "off",
+      enabled: true,
+      instanceId: `omni-${name}`,
+    })),
   dbUpsertInstance: () => {},
   dbUpdateInstance: () => {},
-  dbDeleteInstance: () => false,
+  dbDeleteInstance: (name: string) => {
+    deleteInstanceCalls.push(name);
+    return instanceNames.delete(name);
+  },
   dbRestoreInstance: () => false,
   dbListDeletedInstances: () => [],
   dbGetAgent: (id: string) => ({ id }),
@@ -219,7 +236,10 @@ mock.module("../runtime-target.js", () => ({
   getCliRuntimeMismatchMessage: () => null,
 }));
 
-const { RoutesCommands, InstancesRoutesCommands, InstancesPendingCommands } = await import("./instances.js");
+const { InstancesCommands, RoutesCommands, InstancesRoutesCommands, InstancesPendingCommands } = await import(
+  "./instances.js"
+);
+const { ContractError } = await import("../agent-contract.js");
 
 function captureLogs(run: () => void): string {
   const lines: string[] = [];
@@ -550,5 +570,196 @@ describe("RoutesCommands", () => {
     expect(payload.removedPending).toBe(true);
     expect(allowContactCalls).toEqual([]);
     expect(routes).toContainEqual(expect.objectContaining({ pattern: "group:123", agent: "sales" }));
+  });
+});
+
+describe("instances/routes agent-first contract", () => {
+  beforeEach(() => {
+    routes = [];
+    instanceNames = new Set(["main"]);
+    deleteInstanceCalls = [];
+    contactStatuses = new Map();
+    allowContactCalls = [];
+    liveWinner = null;
+    sessions = [];
+    deletedSessionKeys = [];
+    pendingEntries = [];
+  });
+
+  function captureThrown(run: () => unknown): unknown {
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      run();
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    return thrown;
+  }
+
+  it("blocks instances delete without --execute (dry-run, exit 3, no write)", () => {
+    const thrown = captureThrown(() => new InstancesCommands().delete("main", true));
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("instances delete");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    expect((envelope.error.plan as Record<string, unknown>).name).toBe("main");
+    expect(deleteInstanceCalls).toHaveLength(0);
+    expect(instanceNames.has("main")).toBe(true);
+  });
+
+  it("soft-deletes the instance with --execute", () => {
+    const payload = captureJson(() => {
+      new InstancesCommands().delete("main", true, true);
+    });
+
+    expect(payload.status).toBe("deleted");
+    expect(deleteInstanceCalls).toEqual(["main"]);
+    expect(instanceNames.has("main")).toBe(false);
+  });
+
+  it("emits INSTANCE_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+    instanceNames = new Set(["main", "vendas"]);
+
+    const thrown = captureThrown(() => new InstancesCommands().delete("mainn", true));
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("instances delete");
+    expect(envelope.error.code).toBe("INSTANCE_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("main");
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+    expect(deleteInstanceCalls).toHaveLength(0);
+  });
+
+  it("emits ROUTE_NOT_FOUND envelope with pattern suggestions on --json (exit 1)", () => {
+    routes = [{ id: 1, accountId: "main", pattern: "5511999*", agent: "sales" }];
+
+    const thrown = captureThrown(() => new InstancesRoutesCommands().remove("main", "5511*", undefined, true));
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("instances routes remove");
+    expect(envelope.error.code).toBe("ROUTE_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("5511999*");
+    expect(routes).toHaveLength(1);
+  });
+
+  it("blocks instances routes remove without --execute (dry-run, exit 3, no write)", () => {
+    routes = [{ id: 1, accountId: "main", pattern: "5511*", agent: "sales", priority: 7, channel: "whatsapp" }];
+
+    const thrown = captureThrown(() => new InstancesRoutesCommands().remove("main", "5511*", undefined, true));
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("instances routes remove");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    const plan = envelope.error.plan as Record<string, unknown>;
+    expect(plan.instance).toBe("main");
+    expect(plan.pattern).toBe("5511*");
+    expect(plan.agent).toBe("sales");
+    expect(routes).toHaveLength(1);
+  });
+
+  it("removes the route with --execute", () => {
+    routes = [{ id: 1, accountId: "main", pattern: "5511*", agent: "sales" }];
+
+    const payload = captureJson(() => {
+      new InstancesRoutesCommands().remove("main", "5511*", undefined, true, true);
+    });
+
+    expect(payload.status).toBe("removed");
+    expect(routes).toHaveLength(0);
+  });
+
+  it("blocks instances pending reject without --execute (dry-run, exit 3, no removal)", () => {
+    pendingEntries = [
+      {
+        accountId: "main",
+        phone: "5511999999999",
+        name: "Alice",
+        chatId: "5511999999999",
+        isGroup: false,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+
+    const thrown = captureThrown(() => new InstancesPendingCommands().reject("main", "5511999999999", true));
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("instances pending reject");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    const plan = envelope.error.plan as Record<string, unknown>;
+    expect((plan.resolvedPending as Record<string, unknown>).phone).toBe("5511999999999");
+    expect(pendingEntries).toHaveLength(1);
+  });
+
+  it("rejects the pending entry with --execute", () => {
+    pendingEntries = [
+      {
+        accountId: "main",
+        phone: "5511999999999",
+        name: "Alice",
+        chatId: "5511999999999",
+        isGroup: false,
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    ];
+
+    const payload = captureJson(() => {
+      new InstancesPendingCommands().reject("main", "5511999999999", true, true);
+    });
+
+    expect(payload.status).toBe("rejected");
+    expect(pendingEntries).toHaveLength(0);
+  });
+
+  it("supports --fields compact mode on routes list", () => {
+    routes = [{ id: 1, accountId: "main", pattern: "5511*", agent: "sales", priority: 7, channel: "whatsapp" }];
+
+    const payload = captureJson(() => {
+      new RoutesCommands().list(undefined, true, undefined, undefined, undefined, "pattern,agent");
+    });
+
+    const items = payload.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(1);
+    expect(Object.keys(items[0]).sort()).toEqual(["agent", "pattern"]);
+  });
+
+  it("supports --fields compact mode on instances list", async () => {
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => {
+      lines.push(args.map((arg) => String(arg)).join(" "));
+    };
+    try {
+      await new InstancesCommands().list(true, undefined, undefined, undefined, "name,channel");
+    } finally {
+      console.log = originalLog;
+    }
+
+    const payload = JSON.parse(lines.join("\n")) as Record<string, unknown>;
+    const items = payload.items as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(1);
+    expect(Object.keys(items[0]).sort()).toEqual(["channel", "name"]);
   });
 });
