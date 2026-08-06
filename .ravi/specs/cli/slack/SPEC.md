@@ -10,9 +10,10 @@ tags:
   - slack
   - agent-actions
   - channels
+  - agent-first
 applies_to:
   - src/cli/commands/slack.ts
-  - src/slack
+  - src/channels/slack
 owners:
   - ravi-dev
 status: active
@@ -33,194 +34,132 @@ Channel management is the primary capability. The CLI MAY call Slack
 `conversations.*` methods internally, but the user-facing command language
 SHOULD say `channels` when the target is a Slack public/private channel.
 
+## Agent-First Contract (Manual v2)
+
+The `slack` domain follows the shared agent-first contract implemented in
+`src/cli/agent-contract.ts`:
+
+- Exit taxonomy: `0` success · `1` execution/not-found error · `2` usage error
+  · `3` blocked by policy (write brake / dry-run). Exit 3 is NOT an error — it
+  is the system working.
+- Write brake (7.8): every externally visible Slack mutation is dry-run by
+  default. Without `--execute` the command exits `3` with the
+  `WRITE_REQUIRES_EXECUTE` envelope BEFORE any Slack Web API call. The dry-run
+  plan carries the Slack method and the exact request `--execute` would send.
+- `--execute` MUST be the LAST option of every braked command, and all local
+  validation (payload files, access levels, artifact resolution) MUST run
+  BEFORE the brake so the plan never promises an impossible write.
+- Local resolution (Ravi channel config, credential broker, artifact store,
+  local SQLite) MAY run before the brake: it is local. Slack Web API calls MUST
+  NOT run before the brake — including reads (`messages-replay` brakes before
+  its `conversations.history` fetch).
+- Not-found envelopes: `CHANNEL_NOT_FOUND` (Ravi Slack channel config, with
+  suggestions from the local config store), `CREDENTIALS_NOT_CONFIGURED`
+  (credential broker gap), `MESSAGE_NOT_FOUND` (replay target),
+  `CANVAS_NOT_FOUND` (channel canvas resolution), `ARTIFACT_NOT_FOUND` (canvas
+  artifact source, with suggestions from the local artifact store). Suggestions
+  MUST come only from cheap local sources — never from extra Slack API calls.
+- Compact mode (7.9): the main listings (`channels-list`, `channels-history`,
+  `files-list`, `canvas-sections-lookup`) accept `--fields a,b,c` and narrow
+  the JSON `items` only. `members-list` items are plain user-id strings, so
+  `--fields` does not apply there.
+- In tool/test context (`hasContext()` true) the contract helpers THROW
+  `ContractError` carrying the same envelope and exit code; the dispatcher
+  preserves `exitCode`.
+
+## Command Classification (braked vs unbraked)
+
+Braked commands (dry-run by default, `--execute` required, exit 3 before any
+Slack Web API call):
+
+| Command | Slack method | Why braked |
+|---|---|---|
+| `messages-send` | `chat.postMessage` / `chat.postEphemeral` | visible to humans, cannot be reliably unsent |
+| `blocks-send` | `chat.postMessage` / `chat.postEphemeral` | visible rich message |
+| `blocks-update` | `chat.update` | rewrites a visible message |
+| `blocks-showcase` | `chat.postMessage` | posts a showcase message |
+| `interactions-respond` | interaction response URL | responds in a live interaction |
+| `modals-open` | `views.open` | opens UI for a real user |
+| `modals-update` | `views.update` | mutates live UI |
+| `modals-push` | `views.push` | mutates live UI stack |
+| `work-objects-send` | `chat.postMessage` + metadata | visible message with entity metadata |
+| `work-objects-unfurl` | `chat.unfurl` | attaches visible unfurl |
+| `work-objects-present-details` | `entity.presentDetails` | renders flexpane for a user |
+| `messages-replay` | Ravi channel pipeline | re-ingests and can trigger visible agent output; brake fires before the history read |
+| `channels-create` | `conversations.create` | creates a workspace-visible channel |
+| `channels-rename` | `conversations.rename` | renames a live channel |
+| `channels-invite` | `conversations.invite` | invites real users (they get notified) |
+| `canvas-create` | `canvases.create` | creates a visible canvas |
+| `canvas-channel-create` | `conversations.canvases.create` | creates a channel canvas |
+| `canvas-showcase` | `canvases.edit` | rewrites canvas content |
+| `canvas-channel-showcase` | `conversations.canvases.create` + `canvases.edit` | creates/rewrites canvas |
+| `canvas-artifact-publish` | `canvases.edit` (replace) | replaces canvas content from an artifact |
+| `canvas-edit` | `canvases.edit` | edits canvas sections/title |
+| `canvas-access-set` | `canvases.access.set` | changes who can see/edit |
+| `canvas-access-delete` | `canvases.access.delete` | revokes access |
+| `canvas-delete` | `canvases.delete` | destroys a canvas |
+
+Unbraked commands (reads or purely local operations; no `--execute`):
+
+| Command | Source | Note |
+|---|---|---|
+| `permissions-list` | `auth.test` | read-only identity/scopes |
+| `channels-list` | `conversations.list` | read; supports `--fields` |
+| `channels-info` | `conversations.info` | read |
+| `channels-history` | `conversations.history` | read; supports `--fields` |
+| `messages-inspect` | `conversations.history` + local DB | read/diagnostic |
+| `members-list` | `conversations.members` | read; items are id strings (`--fields` n/a) |
+| `files-list` | `files.list` | read; supports `--fields` |
+| `topology` | `conversations.list` + local router config | read/diagnostic |
+| `blocks-validate` | `blocks.validate` | validation-only API call, nothing visible or persisted |
+| `work-objects-validate` | local normalization | purely local |
+| `canvas-sections-lookup` | `canvases.sections.lookup` | read; supports `--fields` |
+| `canvas-artifact-status` | local artifact ledger | purely local |
+
 ## Invariants
 
 - `ravi slack` commands MUST be actions over Slack resources, not Ravi
   resources.
-- The first-class Slack resources are workspace identity, channels, channel
-  members, channel messages, threads, reactions, pins, bookmarks, files, users,
-  and user groups.
-- The CLI MUST NOT include default surfaces named `routes`, `chats`, `sessions`,
-  or `events` under `ravi slack`; those belong to Ravi/Omni commands.
+- The CLI MUST NOT include default surfaces named `routes`, `chats`,
+  `sessions`, or `events` under `ravi slack`; those belong to Ravi/Omni
+  commands.
 - Every agent-consumed command MUST support `--json`.
 - Every list command MUST be bounded and paginated.
-- Mutating commands MUST default to `--dry-run`.
-- Mutating commands MUST require `--apply` before they call Slack write APIs.
-- Destructive commands such as archive, delete, kick/remove, and admin deletes
-  MUST require explicit target ids and SHOULD require typed confirmation when
-  irreversible.
-- Commands MUST perform a scope/permission preflight before write APIs when the
-  required scope is known.
+- Mutating commands MUST default to dry-run and MUST require `--execute`
+  before they call Slack write APIs, exiting `3` with the
+  `WRITE_REQUIRES_EXECUTE` envelope otherwise.
 - Commands MUST NOT print Slack tokens, signing secrets, auth headers, raw
-  secret config, Ravi context keys, or provider session ids.
+  secret config, Ravi context keys, or provider session ids
+  (`private_metadata` is redacted in modal payloads).
 - Slack `ok=false` API responses MUST become actionable errors that explain the
   failed action, likely cause, missing scope/permission when known, and next
   command.
-- Slack API raw payloads MAY be available behind an explicit diagnostic flag,
-  but MUST be sanitized by default.
+- Not-found failures MUST use the Manual v2 envelope with `suggestions` sourced
+  only from cheap local data.
 - Writes MUST emit standard CLI audit metadata.
-
-## Command Surface
-
-### Workspace
-
-```bash
-ravi slack whoami --account <account>
-ravi slack auth check --account <account> --json
-```
-
-Workspace actions MUST identify the selected Slack workspace/account, bot/user
-identity, token class, and available action groups without revealing secrets.
-
-### Channels
-
-Channel management MUST be included in the first implementation slice.
-
-```bash
-ravi slack channels list --account <account> --limit 50 --json
-ravi slack channels info --account <account> --channel <channel>
-ravi slack channels create --account <account> --name <name> [--private] --dry-run
-ravi slack channels archive --account <account> --channel <channel> --dry-run
-ravi slack channels unarchive --account <account> --channel <channel> --dry-run
-ravi slack channels rename --account <account> --channel <channel> --name <name> --dry-run
-ravi slack channels set-topic --account <account> --channel <channel> --topic <text> --dry-run
-ravi slack channels set-purpose --account <account> --channel <channel> --purpose <text> --dry-run
-ravi slack channels join --account <account> --channel <channel> --dry-run
-ravi slack channels leave --account <account> --channel <channel> --dry-run
-```
-
-Channel commands MUST accept channel ids. They MAY accept names, but name
-resolution MUST fail on ambiguity and print the matching channel ids.
-
-### Channel Members
-
-```bash
-ravi slack channel-members list --account <account> --channel <channel> --json
-ravi slack channel-members invite --account <account> --channel <channel> --user <user> --dry-run
-ravi slack channel-members remove --account <account> --channel <channel> --user <user> --dry-run
-```
-
-`remove` SHOULD map to the Slack member removal method available for the token
-class. It MUST refuse to remove the acting bot/user from its current channel
-unless a future `--force` path is explicitly designed.
-
-### Messages And Threads
-
-```bash
-ravi slack messages send --account <account> --channel <channel> --text <text> --dry-run
-ravi slack messages reply --account <account> --channel <channel> --thread <ts> --text <text> --dry-run
-ravi slack messages update --account <account> --channel <channel> --ts <ts> --text <text> --dry-run
-ravi slack messages delete --account <account> --channel <channel> --ts <ts> --dry-run
-ravi slack messages schedule --account <account> --channel <channel> --at <iso-time> --text <text> --dry-run
-ravi slack messages scheduled list --account <account> --channel <channel> --json
-ravi slack messages scheduled cancel --account <account> --scheduled-message-id <id> --dry-run
-ravi slack threads replies --account <account> --channel <channel> --thread <ts> --limit 20 --json
-```
-
-Message text SHOULD support stdin for longer content. Commands MUST NOT print
-auth headers or unsanitized raw Slack request/response payloads by default.
-
-### Reactions, Pins, And Bookmarks
-
-```bash
-ravi slack reactions add --account <account> --channel <channel> --ts <ts> --name <emoji> --dry-run
-ravi slack reactions remove --account <account> --channel <channel> --ts <ts> --name <emoji> --dry-run
-ravi slack reactions list --account <account> --channel <channel> --ts <ts> --json
-
-ravi slack pins list --account <account> --channel <channel> --json
-ravi slack pins add --account <account> --channel <channel> --ts <ts> --dry-run
-ravi slack pins remove --account <account> --channel <channel> --ts <ts> --dry-run
-
-ravi slack bookmarks list --account <account> --channel <channel> --json
-ravi slack bookmarks add --account <account> --channel <channel> --title <title> --link <url> --dry-run
-ravi slack bookmarks edit --account <account> --channel <channel> --bookmark <id> --title <title> --dry-run
-ravi slack bookmarks remove --account <account> --channel <channel> --bookmark <id> --dry-run
-```
-
-### Files
-
-```bash
-ravi slack files upload --account <account> --channel <channel> --path <path> --dry-run
-ravi slack files share --account <account> --channel <channel> --file <file-id> --dry-run
-ravi slack files list --account <account> --channel <channel> --json
-ravi slack files info --account <account> --file <file-id> --json
-ravi slack files delete --account <account> --file <file-id> --dry-run
-```
-
-New file upload implementations SHOULD use Slack's external upload flow.
-
-### Users And User Groups
-
-```bash
-ravi slack users list --account <account> --limit 100 --json
-ravi slack users info --account <account> --user <user> --json
-ravi slack users lookup --account <account> --email <email> --json
-ravi slack users profile get --account <account> --user <user> --json
-ravi slack users profile set --account <account> --user <user> --field <field> --value <value> --dry-run
-
-ravi slack usergroups list --account <account> --json
-ravi slack usergroups create --account <account> --handle <handle> --name <name> --dry-run
-ravi slack usergroups update --account <account> --usergroup <id> --name <name> --dry-run
-ravi slack usergroups enable --account <account> --usergroup <id> --dry-run
-ravi slack usergroups disable --account <account> --usergroup <id> --dry-run
-ravi slack usergroups users set --account <account> --usergroup <id> --users <ids> --dry-run
-```
-
-Profile writes and user-group writes may require user tokens or elevated
-workspace permissions. They MUST NOT silently run under a bot-only account if
-Slack will reject or reinterpret the action.
-
-### Admin Tier
-
-Admin and Enterprise Grid APIs MUST NOT be part of the default MVP.
-
-If added later, admin commands MUST live under `ravi slack admin ...`, require
-an explicit admin token profile, and use stricter approval than normal channel
-management.
 
 ## Output Contract
 
-JSON output for list commands MUST include:
+JSON list output includes `items`, `pagination.limit`, `pagination.cursor`,
+`pagination.nextCursor`, and `pagination.hasMore` (Slack cursor provenance).
 
-- `total` when the total is known or cheaply computable;
-- `pagination.limit`;
-- `pagination.offset` or Slack cursor provenance;
-- `pagination.returned`;
-- `pagination.hasMore`;
-- `pagination.nextCommand`;
-- `items`.
+Braked dry-runs exit `3` and emit the `WRITE_REQUIRES_EXECUTE` envelope whose
+`plan` includes:
 
-Write dry-runs MUST include:
-
-- selected account;
-- Slack method that would be called;
-- target channel/user/message/file ids;
-- required scopes when known;
-- expected effect;
-- whether `--apply` is required.
-
-## First Build Slice
-
-The first implementation SHOULD include:
-
-1. `ravi slack whoami`
-2. `ravi slack channels list`
-3. `ravi slack channels info`
-4. `ravi slack messages send`
-5. `ravi slack messages reply`
-6. `ravi slack reactions add`
-7. `ravi slack pins add`
-8. `ravi slack users list`
+- the resolved connection and credential source;
+- the Slack method that would be called;
+- the exact request payload `--execute` would send;
+- extra planning context (`item`) when useful (e.g. canvas markdown stats).
 
 ## Known Failure Modes
 
 - A Slack CLI that primarily wraps Ravi routes/chats/traces instead of Slack
   actions.
-- Channel management hidden behind generic `conversations` naming that is
-  unclear to agents/operators.
 - Message sends that happen during a planning/dry-run step.
+- A dry-run that performs a Slack Web API call before braking (regression:
+  `messages-replay` fetching history before exit 3).
 - A failed Slack API call that prints only `invalid_auth` or `missing_scope`
   without the next corrective action.
 - Logging or printing tokens, signing secrets, auth headers, or raw config.
-- Adding admin APIs to the default MVP and accidentally broadening required
-  permissions.
+- NOT_FOUND errors that trigger extra Slack API calls just to compute
+  suggestions.

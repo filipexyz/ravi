@@ -6,34 +6,54 @@ Use these checks before considering the Slack CLI implemented or changed.
 
 ## Static Checks
 
-- `ravi --help` lists `slack`.
-- `ravi slack --help` describes Slack management actions, not Ravi diagnostics.
-- `ravi slack channels --help` exists.
-- `ravi slack channels list --help` shows `--account`, `--limit`, and `--json`.
-- `ravi slack channels create --help` shows `--dry-run` and `--apply`.
-- `ravi slack messages send --help` shows `--dry-run` and `--apply`.
-- Public commands exposed through SDK/OpenAPI declare typed return schemas or
-  are explicitly marked CLI-only when not representable as request/response.
+- The root help output (`ravi --help`) MUST list `slack`.
+- The domain help (`ravi slack --help`) MUST describe Slack management actions,
+  not Ravi diagnostics.
+- Every braked command's help (e.g. `ravi slack messages-send --help`) MUST
+  show `--execute` as the last option, described as performing the mutation
+  with dry-run as the default.
+- The main listings (`channels-list`, `channels-history`, `files-list`,
+  `canvas-sections-lookup`) MUST show `--fields` in their help output.
+- The classification table in `SPEC.md` MUST cover every command in
+  `src/cli/commands/slack.ts`, each classified as braked or unbraked.
+- Public commands exposed through SDK/OpenAPI MUST declare typed return
+  schemas or be explicitly marked CLI-only when not representable.
 
 ## Behavioral Checks
 
 ```bash
-ravi slack whoami --account <account> --json
-ravi slack channels list --account <account> --limit 5 --json
-ravi slack channels info --account <account> --channel <channel> --json
-ravi slack channels create --account <account> --name <temporary-name> --dry-run --json
-ravi slack messages send --account <account> --channel <channel> --text "smoke" --dry-run --json
+ravi slack permissions-list --channel <channel-config> --json
+ravi slack channels-list --channel <channel-config> --limit 5 --fields id,name --json
+ravi slack channels-info <channel-id> --channel <channel-config> --json
+ravi slack channels-create <temporary-name> --channel <channel-config> --json; echo $?
+ravi slack messages-send <channel-id> "smoke" --channel <channel-config> --json; echo $?
+ravi slack messages-replay <channel-id> <ts> --channel <channel-config> --json; echo $?
+bun test src/cli/commands/slack.test.ts
 ```
 
 Expected behavior:
 
-- No command prints token values, signing secrets, auth headers, or raw secret
-  config.
-- Dry-run commands do not mutate Slack.
-- Dry-run output includes the Slack method that would be called and says that
-  `--apply` is required.
-- List output is bounded and has pagination metadata.
-- Missing scopes produce actionable errors.
+- Secret hygiene holds: no command prints token values, signing secrets, auth
+  headers, or raw secret config, and modal `private_metadata` MUST be redacted.
+- A braked command without `--execute` MUST exit `3` with the
+  `WRITE_REQUIRES_EXECUTE` envelope and MUST NOT perform any Slack Web API
+  call — including reads (`messages-replay` must not fetch history in
+  dry-run).
+- The dry-run envelope's `plan` MUST include the Slack method and the exact
+  request that `--execute` would send.
+- The same braked command with `--execute` MUST perform exactly the planned
+  Slack call and return `dryRun: false`.
+- An unresolved Ravi channel config MUST exit `1` with `CHANNEL_NOT_FOUND` and
+  suggestions computed only from the local config store.
+- A missing replay target MUST exit `1` with `MESSAGE_NOT_FOUND`; a missing
+  canvas artifact MUST exit `1` with `ARTIFACT_NOT_FOUND` and local artifact
+  suggestions.
+- Listings with `--fields a,b` MUST narrow the JSON `items` to those fields and
+  MUST keep pagination metadata intact.
+- Local validation errors (invalid canvas access level, malformed Block Kit
+  selection) MUST fail before the brake, without any Slack call.
+- The `bun test` suite for `src/cli/commands/slack.test.ts` MUST pass with zero
+  failures.
 
 ## Regression Scenarios
 
@@ -41,6 +61,11 @@ Expected behavior:
   unless a later spec explicitly changes the boundary.
 - A command named `ravi slack chats ...` is introduced. This is a regression
   unless it is renamed to a Slack-native resource action.
-- `ravi slack channels create` creates a channel without `--apply`.
-- `ravi slack messages send` sends a message during dry-run.
-- A Slack API error is printed without method, target, and corrective next step.
+- `ravi slack channels-create` creates a channel without `--execute`.
+- `ravi slack messages-send` sends a message during dry-run, or a dry-run exits
+  `0` instead of `3`.
+- `ravi slack messages-replay` performs the `conversations.history` fetch
+  before the brake.
+- A NOT_FOUND envelope computes suggestions by calling the Slack Web API.
+- A Slack API error is printed without method, target, and corrective next
+  step.

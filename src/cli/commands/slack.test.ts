@@ -1,5 +1,286 @@
-import { describe, expect, it } from "bun:test";
-import {
+/**
+ * Slack CLI tests.
+ *
+ * 1. "Slack CLI Canvas helpers": pure helper behavior (pre-existing suite).
+ * 2. "slack agent-first contract" (Manual v2): write brake (exit 3,
+ *    WRITE_REQUIRES_EXECUTE) on every externally visible Slack mutation BEFORE
+ *    any Slack Web API call, not-found envelopes (CHANNEL_NOT_FOUND /
+ *    MESSAGE_NOT_FOUND / ARTIFACT_NOT_FOUND, exit 1) with suggestions from
+ *    cheap local sources, and compact `--fields` mode. Follows the
+ *    group.test.ts pattern: no-op decorator mocks + Slack client mock with
+ *    spies + `hasContext: () => true` so the contract helpers throw
+ *    ContractError instead of exiting the process.
+ */
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { fileURLToPath } from "node:url";
+
+afterAll(() => {
+  mock.restore();
+});
+
+// Any real, readable file works as the "JSON payload" fixture because the
+// Block Kit / Work Object parsers are mocked below; only readFileSync runs.
+const jsonFixturePath = fileURLToPath(import.meta.url);
+
+// ---------------------------------------------------------------------------
+// Spies and mutable fixtures
+// ---------------------------------------------------------------------------
+
+const clientCalls: Array<{ method: string; args: unknown }> = [];
+const replayEnvelopes: Array<Record<string, unknown>> = [];
+const interactionResponses: Array<Record<string, unknown>> = [];
+const createdArtifacts: Array<Record<string, unknown>> = [];
+
+let conversationsListResult: Record<string, unknown> = { ok: true, channels: [] };
+let conversationsHistoryResult: Record<string, unknown> = { ok: true, messages: [] };
+let filesListResult: Record<string, unknown> = { ok: true, files: [] };
+let credentialsAvailable = true;
+
+function recordClientCall<T extends Record<string, unknown>>(method: string, args: unknown, result: T): T {
+  clientCalls.push({ method, args });
+  return result;
+}
+
+function callsTo(method: string): Array<{ method: string; args: unknown }> {
+  return clientCalls.filter((call) => call.method === method);
+}
+
+// ---------------------------------------------------------------------------
+// Module mocks (must be installed before importing the module under test)
+// ---------------------------------------------------------------------------
+
+mock.module("../decorators.js", () => ({
+  Group: () => () => {},
+  Command: () => () => {},
+  CommandAccess: () => () => {},
+  Scope: () => () => {},
+  CliOnly: () => () => {},
+  Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
+  Arg: () => () => {},
+  Option: () => () => {},
+}));
+
+mock.module("../context.js", () => ({
+  getContext: () => undefined,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
+  fail: (message: string) => {
+    throw new Error(message);
+  },
+}));
+
+mock.module("../../config-store.js", () => ({
+  configStore: {
+    getConfig: () => ({
+      channels: {
+        main: { enabled: true, provider: "slack", name: "ravi-slack" },
+        dev: { enabled: true, provider: "slack", name: "ravi-slack-dev" },
+        zap: { enabled: true, provider: "whatsapp", name: "zap" },
+      },
+    }),
+  },
+}));
+
+mock.module("../../channels/slack/credentials.js", () => ({
+  resolveSlackCredentialConfigFromEnv: async (_env: NodeJS.ProcessEnv, options?: { channel?: { name?: string } }) => {
+    if (!credentialsAvailable) return null;
+    const name = options?.channel?.name ?? "ravi-slack";
+    return {
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: name,
+      routeAccountId: name,
+      channel: name,
+      instanceId: name,
+      connection: name,
+      source: "broker" as const,
+    };
+  },
+}));
+
+mock.module("../../channels/slack/client.js", () => ({
+  SlackWebApiClient: class SlackWebApiClient {
+    async authTest() {
+      return recordClientCall("authTest", {}, { ok: true, scopes: ["chat:write"] });
+    }
+    async conversationsList(args: Record<string, unknown>) {
+      return recordClientCall("conversationsList", args, conversationsListResult);
+    }
+    async conversationsInfo(args: Record<string, unknown>) {
+      return recordClientCall("conversationsInfo", args, { ok: true, channel: { id: args.channel } });
+    }
+    async conversationsHistory(args: Record<string, unknown>) {
+      return recordClientCall("conversationsHistory", args, conversationsHistoryResult);
+    }
+    async conversationsMembers(args: Record<string, unknown>) {
+      return recordClientCall("conversationsMembers", args, { ok: true, members: [] });
+    }
+    async conversationsCreate(args: Record<string, unknown>) {
+      return recordClientCall("conversationsCreate", args, { ok: true, channel: { id: "C_NEW", name: args.name } });
+    }
+    async conversationsRename(args: Record<string, unknown>) {
+      return recordClientCall("conversationsRename", args, {
+        ok: true,
+        channel: { id: args.channel, name: args.name },
+      });
+    }
+    async conversationsInvite(args: Record<string, unknown>) {
+      return recordClientCall("conversationsInvite", args, { ok: true, channel: { id: args.channel } });
+    }
+    async conversationsCanvasesCreate(args: Record<string, unknown>) {
+      return recordClientCall("conversationsCanvasesCreate", args, { ok: true, canvas_id: "F_NEW" });
+    }
+    async filesList(args: Record<string, unknown>) {
+      return recordClientCall("filesList", args, filesListResult);
+    }
+    async blocksValidate(args: Record<string, unknown>) {
+      return recordClientCall("blocksValidate", args, { ok: true });
+    }
+    async postMessage(args: Record<string, unknown>) {
+      return recordClientCall("postMessage", args, {
+        ok: true,
+        channel: args.channel,
+        ts: "111.222",
+        raw: { ok: true },
+      });
+    }
+    async postEphemeral(args: Record<string, unknown>) {
+      return recordClientCall("postEphemeral", args, {
+        ok: true,
+        channel: args.channel,
+        ts: "111.223",
+        raw: { ok: true },
+      });
+    }
+    async updateMessage(args: Record<string, unknown>) {
+      return recordClientCall("updateMessage", args, {
+        ok: true,
+        channel: args.channel,
+        ts: args.ts,
+        raw: { ok: true },
+      });
+    }
+    async viewsOpen(args: Record<string, unknown>) {
+      return recordClientCall("viewsOpen", args, { ok: true, view: { id: "V1", hash: "h1" } });
+    }
+    async viewsUpdate(args: Record<string, unknown>) {
+      return recordClientCall("viewsUpdate", args, { ok: true, view: { id: "V1", hash: "h2" } });
+    }
+    async viewsPush(args: Record<string, unknown>) {
+      return recordClientCall("viewsPush", args, { ok: true, view: { id: "V2", hash: "h1" } });
+    }
+    async unfurl(args: Record<string, unknown>) {
+      return recordClientCall("unfurl", args, { ok: true });
+    }
+    async entityPresentDetails(args: Record<string, unknown>) {
+      return recordClientCall("entityPresentDetails", args, { ok: true });
+    }
+    async canvasesCreate(args: Record<string, unknown>) {
+      return recordClientCall("canvasesCreate", args, { ok: true, canvas_id: "F_NEW", canvas: null });
+    }
+    async canvasesEdit(args: Record<string, unknown>) {
+      return recordClientCall("canvasesEdit", args, { ok: true, canvas: { id: args.canvasId } });
+    }
+    async canvasesSectionsLookup(args: Record<string, unknown>) {
+      return recordClientCall("canvasesSectionsLookup", args, { ok: true, sections: [] });
+    }
+    async canvasesAccessSet(args: Record<string, unknown>) {
+      return recordClientCall("canvasesAccessSet", args, { ok: true });
+    }
+    async canvasesAccessDelete(args: Record<string, unknown>) {
+      return recordClientCall("canvasesAccessDelete", args, { ok: true });
+    }
+    async canvasesDelete(args: Record<string, unknown>) {
+      return recordClientCall("canvasesDelete", args, { ok: true });
+    }
+  },
+}));
+
+mock.module("../../channels/slack/socket-mode.js", () => ({
+  SlackSocketModeService: class SlackSocketModeService {
+    async handleEnvelope(envelope: Record<string, unknown>) {
+      replayEnvelopes.push(envelope);
+      return "processed";
+    }
+  },
+}));
+
+mock.module("../../channels/slack/interactions.js", () => ({
+  respondToSlackInteraction: async (input: Record<string, unknown>) => {
+    interactionResponses.push(input);
+    return { ok: true };
+  },
+}));
+
+mock.module("../../channels/slack/topology.js", () => ({
+  buildSlackTopology: () => ({
+    ok: true as const,
+    provider: "slack" as const,
+    accountId: "ravi-slack",
+    channels: [],
+    ungroupedChannelIds: [],
+    capabilities: {},
+  }),
+}));
+
+mock.module("../../channels/slack/block-kit.js", () => ({
+  parseSlackBlockKitJson: () => ({ mocked: true }),
+  normalizeSlackBlockKitMessagePayload: (_payload: unknown, text?: string) => ({
+    text: text ?? "fallback text",
+    blocks: [{ type: "section" }],
+  }),
+  normalizeSlackBlockKitValidationPayload: (_payload: unknown, target?: string) => ({
+    target: target?.trim() || "message",
+    message: {},
+    blocks: [],
+    view: { type: "modal" },
+  }),
+  buildSlackBlockKitShowcasePayload: () => ({ text: "showcase", blocks: [{ type: "section" }] }),
+}));
+
+mock.module("../../channels/slack/work-objects.js", () => ({
+  normalizeSlackNativeWorkObjectMessagePayload: (_payload: unknown, text?: string) => ({
+    text: text ?? "work object",
+    metadata: { event_type: "ravi_work_object", event_payload: {} },
+  }),
+  normalizeSlackNativeWorkObjectMetadata: (metadata: Record<string, unknown>) => metadata,
+  normalizeSlackNativeWorkObjectDetailMetadata: (metadata: Record<string, unknown>) => metadata,
+  normalizeSlackNativeWorkObjectUnfurlPayload: (_payload: unknown, url: string) => ({
+    metadata: { event_type: "ravi_work_object", event_payload: {} },
+    unfurls: { [url]: {} },
+  }),
+}));
+
+mock.module("../../contacts.js", () => ({
+  getContact: () => null,
+}));
+
+mock.module("../../router/router-db.js", () => ({
+  dbFindChat: () => null,
+  dbFindChatMessage: () => null,
+}));
+
+mock.module("../../artifacts/store.js", () => ({
+  getArtifactDetails: () => null,
+  getArtifactVersion: () => null,
+  listArtifacts: () => [
+    { id: "art_canvas_runbook", kind: "slack.canvas.markdown" },
+    { id: "art_canvas_status", kind: "slack.canvas.markdown" },
+  ],
+  createArtifact: (input: Record<string, unknown>) => {
+    createdArtifacts.push(input);
+    return { id: "art_new_1", kind: "slack.canvas.markdown", title: input.title ?? null };
+  },
+  createArtifactVersion: () => ({ id: "artv_1", versionNumber: 1 }),
+  updateArtifact: () => ({ id: "art_new_1", kind: "slack.canvas.markdown" }),
+  appendArtifactEvent: () => {},
+  attachArtifact: () => {},
+}));
+
+const slackModule = await import("./slack.js");
+const {
+  SlackCommands,
   buildSlackCanvasArtifactPublishMetadata,
   buildSlackCanvasShowcaseMarkdown,
   buildSlackCanvasEditChange,
@@ -12,7 +293,62 @@ import {
   resolveSlackCanvasMarkdownInput,
   slackViewMutationItem,
   validateSlackCanvasAccessLevelTargets,
-} from "./slack.js";
+} = slackModule;
+const { ContractError } = await import("../agent-contract.js");
+
+type ContractErrorInstance = InstanceType<typeof ContractError>;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+async function silenced<T>(run: () => Promise<T> | T): Promise<T> {
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = () => {};
+  console.error = () => {};
+  try {
+    return await run();
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+}
+
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<ContractErrorInstance> {
+  let caught: unknown;
+  await silenced(async () => {
+    try {
+      await run();
+    } catch (error) {
+      caught = error;
+    }
+  });
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as ContractErrorInstance;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
+
+beforeEach(() => {
+  clientCalls.length = 0;
+  replayEnvelopes.length = 0;
+  interactionResponses.length = 0;
+  createdArtifacts.length = 0;
+  conversationsListResult = { ok: true, channels: [] };
+  conversationsHistoryResult = { ok: true, messages: [] };
+  filesListResult = { ok: true, files: [] };
+  credentialsAvailable = true;
+});
+
+// ---------------------------------------------------------------------------
+// Pure Canvas helpers (pre-existing suite)
+// ---------------------------------------------------------------------------
 
 describe("Slack CLI Canvas helpers", () => {
   it("builds validated Canvas edit changes", () => {
@@ -207,5 +543,314 @@ describe("Slack CLI Canvas helpers", () => {
     });
     expect(isSlackCanvasArtifactId("art_abc_123")).toBe(true);
     expect(isSlackCanvasArtifactId("canvas.md")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Agent-first contract (Manual v2)
+// ---------------------------------------------------------------------------
+
+describe("slack agent-first contract", () => {
+  it("messages-send without --execute is a dry-run: exit 3 and NO Slack Web API call", async () => {
+    const commands = new SlackCommands();
+    const error = await expectContractError(
+      () => commands.messagesSend("C123", "olá time", "ravi-slack", undefined, undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toMatchObject({
+      connection: "ravi-slack",
+      method: "chat.postMessage",
+      request: { channel: "C123", text: "olá time" },
+    });
+    expect(clientCalls).toHaveLength(0);
+  });
+
+  it("messages-send with --execute posts through chat.postMessage", async () => {
+    const commands = new SlackCommands();
+    const payload = await silenced(() =>
+      commands.messagesSend("C123", "olá time", "ravi-slack", undefined, undefined, true, true),
+    );
+
+    expect(callsTo("postMessage")).toHaveLength(1);
+    expect(callsTo("postMessage")[0]?.args).toMatchObject({ channel: "C123", text: "olá time" });
+    expect(payload).toMatchObject({ ok: true, dryRun: false, method: "chat.postMessage" });
+  });
+
+  it("blocks-send without --execute is a dry-run: exit 3 and no Web API call", async () => {
+    const commands = new SlackCommands();
+    const error = await expectContractError(
+      () =>
+        commands.blocksSend(
+          "C123",
+          jsonFixturePath,
+          "ravi-slack",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toMatchObject({ method: "chat.postMessage" });
+    expect(clientCalls).toHaveLength(0);
+  });
+
+  it("blocks-send with --execute posts the Block Kit message", async () => {
+    const commands = new SlackCommands();
+    await silenced(() =>
+      commands.blocksSend(
+        "C123",
+        jsonFixturePath,
+        "ravi-slack",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+
+    expect(callsTo("postMessage")).toHaveLength(1);
+    expect(callsTo("postMessage")[0]?.args).toMatchObject({ channel: "C123", text: "fallback text" });
+  });
+
+  it("work-objects-send without --execute is a dry-run: exit 3 and no Web API call", async () => {
+    const commands = new SlackCommands();
+    await expectContractError(
+      () =>
+        commands.workObjectsSend(
+          "C123",
+          jsonFixturePath,
+          "ravi-slack",
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(clientCalls).toHaveLength(0);
+  });
+
+  it("channels-create and channels-invite are braked; --execute performs the call", async () => {
+    const commands = new SlackCommands();
+    await expectContractError(
+      () => commands.channelsCreate("novo-canal", "ravi-slack", undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    await expectContractError(
+      () => commands.channelsInvite("C123", "U1,U2", "ravi-slack", undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(clientCalls).toHaveLength(0);
+
+    await silenced(() => commands.channelsCreate("novo-canal", "ravi-slack", undefined, true, true));
+    expect(callsTo("conversationsCreate")).toHaveLength(1);
+    expect(callsTo("conversationsCreate")[0]?.args).toMatchObject({ name: "novo-canal" });
+  });
+
+  it("canvas-create without --execute is a dry-run: exit 3, no Web API call, no artifact created", async () => {
+    const commands = new SlackCommands();
+    const error = await expectContractError(
+      () =>
+        commands.canvasCreate(
+          "ravi-slack",
+          "Titulo",
+          "# markdown",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toMatchObject({ method: "canvases.create" });
+    expect(clientCalls).toHaveLength(0);
+    expect(createdArtifacts).toHaveLength(0);
+  });
+
+  it("canvas-create with --execute calls canvases.create", async () => {
+    const commands = new SlackCommands();
+    await silenced(() =>
+      commands.canvasCreate(
+        "ravi-slack",
+        "Titulo",
+        "# markdown",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+
+    expect(callsTo("canvasesCreate")).toHaveLength(1);
+    expect(callsTo("canvasesCreate")[0]?.args).toMatchObject({ title: "Titulo", markdown: "# markdown" });
+  });
+
+  it("canvas-delete and canvas-access-set are braked before any Web API call", async () => {
+    const commands = new SlackCommands();
+    await expectContractError(
+      () => commands.canvasDelete("F123", "ravi-slack", true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    await expectContractError(
+      () => commands.canvasAccessSet("F123", "write", "ravi-slack", "U1", undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(clientCalls).toHaveLength(0);
+
+    await silenced(() => commands.canvasDelete("F123", "ravi-slack", true, true));
+    expect(callsTo("canvasesDelete")).toHaveLength(1);
+  });
+
+  it("canvas-access-set still validates the access level BEFORE the brake", async () => {
+    const commands = new SlackCommands();
+    await silenced(async () => {
+      await expect(
+        commands.canvasAccessSet("F123", "bogus", "ravi-slack", "U1", undefined, true, undefined),
+      ).rejects.toThrow("Invalid canvas access level");
+    });
+    expect(clientCalls).toHaveLength(0);
+  });
+
+  it("messages-replay without --execute exits 3 BEFORE the conversations.history read", async () => {
+    const commands = new SlackCommands();
+    await expectContractError(
+      () => commands.messagesReplay("C123", "111.222", "ravi-slack", undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    // The brake fires before ANY Slack Web API call — including the read.
+    expect(callsTo("conversationsHistory")).toHaveLength(0);
+    expect(replayEnvelopes).toHaveLength(0);
+  });
+
+  it("messages-replay with --execute on a missing message exits 1 with MESSAGE_NOT_FOUND", async () => {
+    conversationsHistoryResult = { ok: true, messages: [] };
+    const commands = new SlackCommands();
+    const error = await expectContractError(
+      () => commands.messagesReplay("C123", "111.222", "ravi-slack", undefined, true, true),
+      "MESSAGE_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestedAction).toContain("ravi slack channels-history");
+    expect(replayEnvelopes).toHaveLength(0);
+  });
+
+  it("messages-replay with --execute replays a found message through the channel pipeline", async () => {
+    conversationsHistoryResult = {
+      ok: true,
+      messages: [{ type: "message", ts: "111.222", user: "U1", text: "oi", channel_type: "channel" }],
+    };
+    const commands = new SlackCommands();
+    const payload = await silenced(() =>
+      commands.messagesReplay("C123", "111.222", "ravi-slack", undefined, true, true),
+    );
+
+    expect(replayEnvelopes).toHaveLength(1);
+    expect(payload).toMatchObject({ ok: true, dryRun: false });
+  });
+
+  it("an unknown Ravi channel config exits 1 with CHANNEL_NOT_FOUND and local suggestions", async () => {
+    const commands = new SlackCommands();
+    const error = await expectContractError(
+      () => commands.channelsList("ravi-slak", undefined, undefined, undefined, undefined, undefined, true),
+      "CHANNEL_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestions).toContain("ravi-slack");
+    expect(clientCalls).toHaveLength(0);
+  });
+
+  it("missing credentials exit 1 with CREDENTIALS_NOT_CONFIGURED", async () => {
+    credentialsAvailable = false;
+    const commands = new SlackCommands();
+    await expectContractError(
+      () => commands.channelsList("ravi-slack", undefined, undefined, undefined, undefined, undefined, true),
+      "CREDENTIALS_NOT_CONFIGURED",
+      1,
+    );
+    expect(clientCalls).toHaveLength(0);
+  });
+
+  it("canvas-artifact-status on an unknown artifact exits 1 with ARTIFACT_NOT_FOUND and local suggestions", async () => {
+    const commands = new SlackCommands();
+    const error = await expectContractError(
+      () => commands.canvasArtifactStatus("art_canvas_runbok", true),
+      "ARTIFACT_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestions).toContain("art_canvas_runbook");
+  });
+
+  it("channels-list --fields narrows each item to the requested fields", async () => {
+    conversationsListResult = {
+      ok: true,
+      channels: [
+        { id: "C1", name: "geral", is_channel: true, is_archived: false },
+        { id: "C2", name: "dev", is_channel: true, is_archived: false },
+      ],
+    };
+    const commands = new SlackCommands();
+    const payload = await silenced(() =>
+      commands.channelsList("ravi-slack", undefined, undefined, undefined, undefined, "id,name", true),
+    );
+
+    expect(payload.items).toHaveLength(2);
+    for (const item of payload.items as Array<Record<string, unknown>>) {
+      expect(Object.keys(item).sort()).toEqual(["id", "name"]);
+    }
+  });
+
+  it("files-list --fields narrows each item to the requested fields", async () => {
+    filesListResult = {
+      ok: true,
+      files: [
+        { id: "F1", name: "doc.pdf", size: 100, mimetype: "application/pdf" },
+        { id: "F2", name: "img.png", size: 200, mimetype: "image/png" },
+      ],
+    };
+    const commands = new SlackCommands();
+    const payload = await silenced(() =>
+      commands.filesList("ravi-slack", undefined, undefined, undefined, undefined, "id,name", true),
+    );
+
+    expect(payload.items).toHaveLength(2);
+    for (const item of payload.items as Array<Record<string, unknown>>) {
+      expect(Object.keys(item).sort()).toEqual(["id", "name"]);
+    }
+  });
+
+  it("blocks-validate is declared UNBRAKED: the validation-only call runs without --execute", async () => {
+    const commands = new SlackCommands();
+    const payload = await silenced(() => commands.blocksValidate(jsonFixturePath, "ravi-slack", undefined, true));
+
+    expect(callsTo("blocksValidate")).toHaveLength(1);
+    expect(payload).toMatchObject({ ok: true });
   });
 });

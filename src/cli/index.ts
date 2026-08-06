@@ -84,6 +84,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "self",
   "sessions",
   "settings",
+  "slack",
   "specs",
   "skill-gates",
   "skills",

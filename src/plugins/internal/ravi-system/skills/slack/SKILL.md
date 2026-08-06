@@ -25,7 +25,8 @@ Slack e um canal nativo do Ravi. Para Slack, use `ravi slack ...` e as specs
 - Slack e adapter/plataforma: workspace, channel, DM, thread, files, Canvas e
   assistant status sao projetados para o modelo Ravi.
 - Mutacoes Slack devem ser dry-run por padrao e executar somente com
-  `--execute`.
+  `--execute` (contrato agent-first: dry-run sai com exit 3 — veja
+  "Contrato Do CLI" abaixo).
 - Use `--json` quando outro agent ou workflow for consumir a resposta.
 - Nunca exponha tokens Slack, scopes sensiveis brutos ou secrets. Use o broker
   de credenciais/connections.
@@ -34,6 +35,71 @@ Slack e um canal nativo do Ravi. Para Slack, use `ravi slack ...` e as specs
 ```bash
 ravi slack permissions-list --json
 ```
+
+## Contrato Do CLI
+
+O dominio `ravi slack` segue o contrato agent-first (Manual v2), igual aos
+demais dominios migrados:
+
+- Exit codes: `0` sucesso · `1` erro/not-found · `2` erro de uso · `3` freio
+  de escrita (dry-run). **Exit 3 NAO e erro** — e o sistema funcionando.
+- Toda mutacao visivel a humanos e dry-run por padrao. Sem `--execute`, o
+  comando sai com exit 3 e o envelope `WRITE_REQUIRES_EXECUTE`, SEM fazer
+  nenhuma chamada a Web API do Slack (nem leituras — `messages-replay` freia
+  antes do fetch do historico). O `plan` do envelope mostra o metodo Slack e o
+  request exato que `--execute` faria.
+- `--execute` e sempre a ULTIMA flag do comando. Validacao local (arquivos
+  JSON, access level, artifact) roda ANTES do freio.
+- Not-found sai com exit 1 e envelope com codigo: `CHANNEL_NOT_FOUND` (config
+  de canal Ravi, com suggestions do config store local),
+  `CREDENTIALS_NOT_CONFIGURED`, `MESSAGE_NOT_FOUND` (replay),
+  `CANVAS_NOT_FOUND`, `ARTIFACT_NOT_FOUND` (com suggestions do ledger local de
+  artifacts). Suggestions vem SOMENTE de fontes locais baratas.
+- Listagens principais aceitam `--fields a,b,c` (modo compacto: reduz os
+  `items` do JSON): `channels-list`, `channels-history`, `files-list`,
+  `canvas-sections-lookup`. `members-list` retorna strings de user id, entao
+  `--fields` nao se aplica.
+
+### Exemplos freados
+
+```bash
+# Dry-run (exit 3, nada enviado — mostra o plano):
+ravi slack messages-send C0123456789 "olá time" --json
+ravi slack canvas-delete F0123456789 --json
+
+# Escrita real (apos conferir o plano):
+ravi slack messages-send C0123456789 "olá time" --json --execute
+ravi slack blocks-send C0123456789 ./message.json --json --execute
+ravi slack channels-invite C0123456789 U111,U222 --json --execute
+ravi slack canvas-edit F0123456789 replace --artifact art_abc_123 --json --execute
+```
+
+### Comandos freados (exigem `--execute`)
+
+`messages-send`, `blocks-send`, `blocks-update`, `blocks-showcase`,
+`interactions-respond`, `modals-open`, `modals-update`, `modals-push`,
+`work-objects-send`, `work-objects-unfurl`, `work-objects-present-details`,
+`messages-replay`, `channels-create`, `channels-rename`, `channels-invite`,
+`canvas-create`, `canvas-channel-create`, `canvas-showcase`,
+`canvas-channel-showcase`, `canvas-artifact-publish`, `canvas-edit`,
+`canvas-access-set`, `canvas-access-delete`, `canvas-delete`.
+
+### Comandos sem freio (leitura/local)
+
+`permissions-list`, `channels-list`, `channels-info`, `channels-history`,
+`messages-inspect`, `members-list`, `files-list`, `topology`,
+`blocks-validate` (chamada de validacao, nada visivel), `work-objects-validate`
+(local puro), `canvas-sections-lookup`, `canvas-artifact-status` (local puro).
+
+### Checklist antes de mutar
+
+1. Confira scopes: `ravi slack permissions-list --json`.
+2. Rode o comando SEM `--execute` e inspecione o `plan` do envelope (exit 3 e
+   esperado).
+3. Valide payloads antes: `blocks-validate` / `work-objects-validate`.
+4. So entao repita o comando com `--execute` (ultima flag).
+5. Exit 3 = freio (repita com `--execute` se o plano estiver certo); exit 1 =
+   erro real (leia `error.code` e `suggestedAction`); exit 0 = escrita feita.
 
 ## Descoberta Rapida
 

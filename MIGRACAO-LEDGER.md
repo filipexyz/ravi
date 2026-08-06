@@ -57,7 +57,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 35 | prox-calls | prox-calls.ts | prox-calls | pendente | — |
 | 36 | meetings | meetings.ts | meetings | pendente | — |
 | 37 | devin | devin.ts | (sem skill) | pendente | — |
-| 38 | slack | slack.ts | slack | pendente | — |
+| 38 | slack | slack.ts | slack | **MIGRADO** | cli/slack (atualizada) |
 | 39 | media/image/audio/video/transcribe | media.ts, image.ts, audio.ts, video.ts, transcribe.ts | audio, image, video | pendente | — |
 | 40 | costs/metrics/insights | costs.ts, metrics.ts, insights.ts | (sem skill) | pendente | — |
 | 41 | context+runtime | context.ts, runtime-credentials.ts, runtime-presets.ts | context-cli (dev) | pendente | — |
@@ -624,6 +624,30 @@ settings 10/10 · self 7/7 · feedback 4/4 · rules 7/7 · specs 8/8 · typechec
 limpo · spec gate PASSED (5 specs cli/*). **Rotina Y:** settings set →
 delete sem `--execute` → envelope exit 3 · delete de key nunca setada →
 exit 1 (not-found vence o freio, ao vivo).
+
+### 38. slack — MIGRADO (subagente, verificado e integrado)
+
+**Escopo (36 comandos classificados um a um):** **24 ops freadas** — todas as
+mutações externas visíveis a humanos (messages-send, blocks-send/update/
+showcase, interactions-respond, modals open/update/push, work-objects
+send/unfurl/present-details, canvas create/edit/delete/access-set/
+showcase/artifact-publish, channels create/rename/invite, messages-replay —
+este com o freio movido para ANTES do fetch de conversations.history, que
+antes rodava no dry-run). 12 sem freio (leituras/locais, declaradas). Codes:
+WRITE_REQUIRES_EXECUTE com plan mostrando o método Slack e o request exato;
+CHANNEL_NOT_FOUND (suggestions do config local), CREDENTIALS_NOT_CONFIGURED,
+MESSAGE_NOT_FOUND (sem suggestions — id Slack sem fonte local),
+CANVAS/ARTIFACT_NOT_FOUND (artifacts do SQLite local). `--fields` em 4
+listagens. Usage contract no subtree. **Mudança declarada:** dry-runs
+pré-existentes de slack saíam exit 0 com payload dryRun — agora exit 3 com
+envelope (documentado em spec/skill/runbook). Spec cli/slack era ASPIRACIONAL
+(ensinava --dry-run/--apply e subcomandos inexistentes) — atualizada para o
+CLI real com superseding registrado no WHY.
+
+**Rotina X:** baseline do arquivo ANOTADA antes (9 pass/0 fail) → depois 28/28
+(9 preservados + 19 de contrato; replay dry-run prova ZERO chamadas de
+history) · spec gate PASSED · skill slack (que já ensinava --execute) ganhou
+Contrato Do CLI.
 
 ### INCIDENTE — limite de sessão da conta (2026-08-06 ~05:00)
 
