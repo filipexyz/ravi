@@ -69,6 +69,8 @@ const AGENT_CONTRACT_DOMAINS = [
   "crm",
   "cron",
   "gmail",
+  "heartbeat",
+  "hooks",
   "instances",
   "mail",
   "observers",
@@ -82,6 +84,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "tags",
   "tasks",
   "triggers",
+  "watch",
   "whatsapp",
   "workflows",
 ];

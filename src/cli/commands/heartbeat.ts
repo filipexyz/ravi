@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
+import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { commandTargetSchema } from "../return-schemas.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -125,6 +126,42 @@ function serializeHeartbeatAgent(agent: AgentConfig) {
   };
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+//
+// Heartbeat deliberately declares NO braked op (no `--execute` anywhere):
+// `trigger` fires the agent's OWN heartbeat — a benign, frequent operational
+// action that just processes HEARTBEAT.md (and is suppressed on HEARTBEAT_OK) —
+// while `enable`, `disable` and `set` are reversible config writes with an
+// obvious inverse. Braking them would put exit-3 friction inside routine
+// operation without protecting anything destructive.
+// ============================================================
+
+/**
+ * Agent ids are public through `agents list`, so AGENT_NOT_FOUND enriches the
+ * envelope with real similar ids/names from the local router config.
+ */
+function failHeartbeatAgentNotFound(op: string, agentId: string, asJson?: boolean): never {
+  const candidates = getAllAgents().flatMap((agent) => [agent.id, agent.name ?? null]);
+  contractFail(op, "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+      suggestions: suggestSimilar(agentId, candidates),
+    },
+  });
+}
+
+/** Resolve an agent or fail with the contract envelope (exit 1). */
+function requireHeartbeatAgent(op: string, agentId: string, asJson?: boolean): AgentConfig {
+  const agent = getAgent(agentId);
+  if (!agent) failHeartbeatAgentNotFound(op, agentId, asJson);
+  return agent;
+}
+
 @Group({
   name: "heartbeat",
   description: "Heartbeat scheduling management",
@@ -134,9 +171,13 @@ export class HeartbeatCommands {
   @Command({ name: "status", description: "Show heartbeat status for all agents" })
   @CommandAccess({ kind: "read", resource: "heartbeat", action: "status", risk: "low" })
   @Returns(heartbeatStatusReturnSchema)
-  status(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+  status(
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
+  ) {
     const agents = getAllAgents();
-    const payload = { total: agents.length, agents: agents.map(serializeHeartbeatAgent) };
+    const payload = { total: agents.length, agents: pickFields(agents.map(serializeHeartbeatAgent), fields) };
 
     if (asJson) {
       printJson(payload);
@@ -177,10 +218,7 @@ export class HeartbeatCommands {
     @Arg("id", { description: "Agent ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const agent = getAgent(id);
-    if (!agent) {
-      fail(`Agent not found: ${id}`);
-    }
+    const agent = requireHeartbeatAgent("heartbeat show", id, asJson);
 
     const hb = normalizeHeartbeatConfig(agent);
     const payload = serializeHeartbeatAgent(agent);
@@ -212,10 +250,7 @@ export class HeartbeatCommands {
     @Arg("interval", { required: false, description: "Interval (e.g., 30m, 1h)" }) interval?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const agent = getAgent(id);
-    if (!agent) {
-      fail(`Agent not found: ${id}`);
-    }
+    requireHeartbeatAgent("heartbeat enable", id, asJson);
 
     try {
       const updates: { enabled: boolean; intervalMs?: number } = { enabled: true };
@@ -255,10 +290,7 @@ export class HeartbeatCommands {
     @Arg("id", { description: "Agent ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const agent = getAgent(id);
-    if (!agent) {
-      fail(`Agent not found: ${id}`);
-    }
+    requireHeartbeatAgent("heartbeat disable", id, asJson);
 
     try {
       const updatedAgent = updateAgentHeartbeatConfig(id, { enabled: false });
@@ -292,10 +324,7 @@ export class HeartbeatCommands {
     @Arg("value", { description: "Property value" }) value: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const agent = getAgent(id);
-    if (!agent) {
-      fail(`Agent not found: ${id}`);
-    }
+    requireHeartbeatAgent("heartbeat set", id, asJson);
 
     try {
       let normalizedValue: unknown = value;
@@ -373,10 +402,10 @@ export class HeartbeatCommands {
     @Arg("id", { description: "Agent ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const agent = getAgent(id);
-    if (!agent) {
-      fail(`Agent not found: ${id}`);
-    }
+    // Deliberately NOT braked: this fires the agent's own heartbeat (reads
+    // HEARTBEAT.md, suppressed on HEARTBEAT_OK) and is a frequent operational
+    // action — see the contract note above the helpers.
+    const agent = requireHeartbeatAgent("heartbeat trigger", id, asJson);
 
     if (!asJson) {
       console.log(`\nTriggering heartbeat for: ${id}`);

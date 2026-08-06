@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -176,6 +177,35 @@ function serializeHook(hook: HookRecord) {
   };
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+/**
+ * Hook ids are public through `hooks list`, so HOOK_NOT_FOUND enriches the
+ * envelope with real similar ids/names from the local store.
+ */
+function failHookNotFound(op: string, hookId: string, asJson?: boolean): never {
+  const candidates = dbListHooks().flatMap((hook) => [hook.id, hook.name]);
+  contractFail(op, "HOOK_NOT_FOUND", `Hook not found: ${hookId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the hook id (see suggestions; list with: ravi hooks list --json)",
+      suggestions: suggestSimilar(hookId, candidates),
+    },
+  });
+}
+
+/** Resolve a hook or fail with the contract envelope (exit 1). */
+function requireHook(op: string, hookId: string, asJson?: boolean): HookRecord {
+  const hook = dbGetHook(hookId);
+  if (!hook) failHookNotFound(op, hookId, asJson);
+  return hook;
+}
+
 @Group({
   name: "hooks",
   description: "Generic runtime hooks",
@@ -190,6 +220,8 @@ export class HooksCommands {
     @Option({ flags: "--tag <slug>", description: "Filter by canonical hook tag" }) tagSlug?: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching hooks to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const tagFilter = tagSlug?.trim() || null;
     const hooks = filterItemsByCanonicalTag(dbListHooks(), "hook", tagFilter ?? undefined, (hook) => hook.id);
@@ -203,12 +235,13 @@ export class HooksCommands {
       total: page.total,
       options: ["--tag", tagFilter],
     });
+    const projectedHooks = pickFields(pageHooks.map(serializeHook), fields);
     const payload = {
       total: page.total,
       pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      items: pageHooks.map(serializeHook),
-      hooks: pageHooks.map(serializeHook),
+      items: projectedHooks,
+      hooks: projectedHooks,
     };
 
     if (asJson) {
@@ -249,7 +282,7 @@ export class HooksCommands {
       console.log("  ravi hooks test <id>");
       console.log("  ravi hooks enable <id>");
       console.log("  ravi hooks disable <id>");
-      console.log("  ravi hooks rm <id>");
+      console.log("  ravi hooks rm <id> --execute");
     }
     return payload;
   }
@@ -261,10 +294,7 @@ export class HooksCommands {
     @Arg("id", { description: "Hook ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const hook = dbGetHook(id);
-    if (!hook) {
-      fail(`Hook not found: ${id}`);
-    }
+    const hook = requireHook("hooks show", id, asJson);
 
     const payload = { hook: serializeHook(hook) };
     if (asJson) {
@@ -383,10 +413,7 @@ export class HooksCommands {
     @Arg("id", { description: "Hook ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const hook = dbGetHook(id);
-    if (!hook) {
-      fail(`Hook not found: ${id}`);
-    }
+    const hook = requireHook("hooks enable", id, asJson);
     const updated = dbUpdateHook(id, { enabled: true });
     await emitHookRefresh();
     const payload = {
@@ -410,10 +437,7 @@ export class HooksCommands {
     @Arg("id", { description: "Hook ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const hook = dbGetHook(id);
-    if (!hook) {
-      fail(`Hook not found: ${id}`);
-    }
+    const hook = requireHook("hooks disable", id, asJson);
     const updated = dbUpdateHook(id, { enabled: false });
     await emitHookRefresh();
     const payload = {
@@ -440,10 +464,29 @@ export class HooksCommands {
   async remove(
     @Arg("id", { description: "Hook ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the hook; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
-    const hook = dbGetHook(id);
-    if (!hook) {
-      fail(`Hook not found: ${id}`);
+    const hook = requireHook("hooks rm", id, asJson);
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): deleting a hook is destructive (config
+      // and fire counters are gone), so dry-run by default and exit 3 before
+      // the DB delete.
+      contractDryRun(
+        "hooks rm",
+        {
+          hookId: hook.id,
+          name: hook.name,
+          eventName: hook.eventName,
+          scope: formatScope(hook),
+          actionType: hook.actionType,
+          enabled: hook.enabled,
+        },
+        { asJson },
+      );
     }
     dbDeleteHook(id);
     await emitHookRefresh();
@@ -468,6 +511,7 @@ export class HooksCommands {
     @Arg("id", { description: "Hook ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw execution result" }) asJson?: boolean,
   ) {
+    requireHook("hooks test", id, asJson);
     const result = await runHookById(id);
     if (asJson) {
       printJson(result);

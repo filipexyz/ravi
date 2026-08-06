@@ -2,13 +2,13 @@
 
 ## Static Checks
 
-- Watch creation is exposed through `ravi watch`, not `ravi inbox`.
-- Connector specs declare supported placements and event types.
-- Watch event payloads do not include provider access tokens or raw private
+- Watch creation MUST be exposed through `ravi watch`, not `ravi inbox`.
+- Connector specs MUST declare supported placements and event types.
+- Watch event payloads MUST NOT include provider access tokens or raw private
   content.
-- Console-produced watch events are delivered through Console delivery and
+- Console-produced watch events MUST be delivered through Console delivery and
   republished as normalized `ravi.watch...` subjects.
-- Trigger creation helpers create normal trigger records.
+- Trigger creation helpers MUST create normal trigger records.
 
 ## Event Contract Regression
 

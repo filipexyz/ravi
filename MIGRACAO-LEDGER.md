@@ -38,9 +38,9 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 16 | tags+tag-rules | tags.ts, tag-rules.ts | tag-rules (tags sem skill — lacuna registrada) | **MIGRADO** | cli/tags, cli/tag-rules |
 | 17 | observers | observers.ts | observers | **MIGRADO** | cli/observers |
 | 18 | workflows | workflows.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/workflows |
-| 19 | watch | watch.ts | (sem skill) | pendente | — |
-| 20 | hooks | hooks.ts | (sem skill) | pendente | — |
-| 21 | heartbeat | heartbeat.ts | heartbeat | pendente | — |
+| 19 | watch | watch.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/watch (atualizada) |
+| 20 | hooks | hooks.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/hooks |
+| 21 | heartbeat | heartbeat.ts | heartbeat | **MIGRADO** | cli/heartbeat |
 | 22 | threads | threads.ts | (sem skill) | pendente | — |
 | 23 | inbox | inbox.ts | (sem skill) | pendente | — |
 | 24 | work-objects | work-objects.ts | (sem skill) | pendente | — |
@@ -548,3 +548,31 @@ inexistente; real é `tags create`) — registrado na spec cli/tags.
 **Rotina X:** `tags.test.ts` 7/7 · `tag-rules.test.ts` (novo, estado real
 isolado) 6/6 · spec gate PASSED (cli/tags + cli/tag-rules) · skill tag-rules
 com Contrato Do CLI.
+
+### 19+20+21. watch + hooks + heartbeat — MIGRADOS (subagente, verificado e integrado)
+
+**Escopo:** freio (`--execute`) em `watch rm` (apaga local e remoto console),
+`watch trigger` (arma automação real; plan mostra o registro exato do trigger)
+e `watch run` (ciclo real de poll que pode disparar triggers); `hooks rm`
+(aliases delete/remove herdam pelo corpo único). **heartbeat: nenhum freio
+novo** com racional declarado (trigger dispara o heartbeat do próprio agente —
+benigno, HEARTBEAT_OK suprime; frear taxaria a rotina sem proteger nada).
+Sem freio (declaradas): watch create/enable/disable, hooks
+create/enable/disable/test, heartbeat enable/disable/set. Codes:
+WATCH/HOOK/AGENT_NOT_FOUND com suggestions locais; `hooks test` pré-resolve
+(runHookById lançava cru). **`runWatchCommand` re-lança ContractError** (senão
+o wrapper legado WATCH_COMMAND_FAILED engoliria freio/not-found — mesma classe
+do bug do dispatcher). `--fields` em watch list, hooks list, heartbeat status.
+Usage contract nos 3 subtrees. Spec `cli/watch` ATUALIZADA (draft→active,
+conteúdo original preservado); `cli/hooks` e `cli/heartbeat` criadas.
+Consumidores: hints internos + RUNBOOKs de `.ravi/specs/watch/*` ensinam
+`--execute`; CHECKS.md do root `watch` (dívida pré-existente que reprovava o
+regex de verificabilidade do gate) reformulado com MUST fiel ao original.
+Known Failure Modes registrados: `watch trigger --json` legado com erro de
+provider sai 0 (pré-existente); heartbeat trigger com HEARTBEAT.md vazio é
+sucesso `skipped` por design.
+
+**Rotina X:** `watch.test.ts` (novo) 14/14 · `hooks.test.ts` 9/9 ·
+`heartbeat.test.ts` 8/8 (prova de trigger disparando SEM --execute) · typecheck
+limpo · spec gate PASSED (cli/watch + cli/hooks + cli/heartbeat + consumidores
+watch e watch/connectors/github).

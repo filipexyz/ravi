@@ -1,4 +1,7 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 afterAll(() => mock.restore());
 
@@ -20,6 +23,12 @@ mock.module("../decorators.js", () => ({
 }));
 
 mock.module("../context.js", () => ({
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
+  // Exported defensively: bun's mock.module leaks across test files in a
+  // shared process, and sibling command modules import getContext.
+  getContext: () => undefined,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -67,6 +76,9 @@ mock.module("../../heartbeat/index.js", () => ({
 }));
 
 const { HeartbeatCommands } = await import("./heartbeat.js");
+const { ContractError } = await import("../agent-contract.js");
+
+type ContractErrorInstance = InstanceType<typeof ContractError>;
 
 async function captureJson(run: () => Promise<unknown> | unknown): Promise<Record<string, unknown>> {
   const lines: string[] = [];
@@ -151,5 +163,115 @@ describe("HeartbeatCommands --json", () => {
       changedCount: 0,
     });
     expect(promptMock).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Agent-first contract (Manual v2): heartbeat declares NO braked op — trigger
+// fires the agent's own heartbeat (benign, frequent) and enable/disable/set
+// are reversible — so the contract surface here is the AGENT_NOT_FOUND
+// envelope (exit 1 + suggestions) and compact `--fields` mode.
+// ---------------------------------------------------------------------------
+
+async function silenced<T>(run: () => Promise<T> | T): Promise<T> {
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = () => {};
+  console.error = () => {};
+  try {
+    return await run();
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+}
+
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<ContractErrorInstance> {
+  let caught: unknown;
+  await silenced(async () => {
+    try {
+      await run();
+    } catch (error) {
+      caught = error;
+    }
+  });
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as ContractErrorInstance;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
+
+describe("HeartbeatCommands agent-first contract", () => {
+  let heartbeatWorkspace: string | null = null;
+
+  beforeEach(() => {
+    emitMock.mockClear();
+    promptMock.mockClear();
+    agents = [
+      {
+        id: "dev",
+        name: "Dev",
+        cwd: missingHeartbeatCwd,
+        model: "sonnet",
+        heartbeat: {
+          enabled: false,
+          intervalMs: 1_800_000,
+          lastRunAt: 123,
+        },
+      },
+    ];
+  });
+
+  afterAll(() => {
+    if (heartbeatWorkspace) rmSync(heartbeatWorkspace, { recursive: true, force: true });
+  });
+
+  it("show on an unknown agent exits 1 with AGENT_NOT_FOUND and suggestions from the local agent list", async () => {
+    const error = await expectContractError(() => new HeartbeatCommands().show("ghost", true), "AGENT_NOT_FOUND", 1);
+
+    expect(error.details.suggestions).toContain("dev");
+    expect(error.details.suggestedAction).toContain("ravi agents list");
+  });
+
+  it("enable on an unknown agent exits 1 with AGENT_NOT_FOUND and writes nothing", async () => {
+    await expectContractError(() => new HeartbeatCommands().enable("ghost", "1h", true), "AGENT_NOT_FOUND", 1);
+
+    expect(emitMock).not.toHaveBeenCalled();
+    expect((agents[0]?.heartbeat as Record<string, unknown>).enabled).toBe(false);
+  });
+
+  it("trigger on an unknown agent exits 1 with AGENT_NOT_FOUND and publishes no prompt", async () => {
+    await expectContractError(() => new HeartbeatCommands().trigger("ghost", true), "AGENT_NOT_FOUND", 1);
+
+    expect(promptMock).not.toHaveBeenCalled();
+  });
+
+  it("trigger is deliberately UNBRAKED: it fires the heartbeat prompt without any --execute flag", async () => {
+    heartbeatWorkspace = mkdtempSync(join(tmpdir(), "ravi-heartbeat-contract-"));
+    writeFileSync(join(heartbeatWorkspace, "HEARTBEAT.md"), "- tarefa pendente\n");
+    agents[0]!.cwd = heartbeatWorkspace;
+
+    const payload = await captureJson(() => new HeartbeatCommands().trigger("dev", true));
+
+    expect(payload).toMatchObject({
+      status: "triggered",
+      target: { type: "heartbeat", agentId: "dev" },
+      sessionName: "dev-main",
+    });
+    expect(promptMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("status --fields narrows each item to the requested top-level fields", async () => {
+    const payload = await captureJson(() => new HeartbeatCommands().status(true, "agent,heartbeatFileExists"));
+
+    expect(payload.total).toBe(1);
+    for (const item of payload.agents as Array<Record<string, unknown>>) {
+      expect(Object.keys(item).sort()).toEqual(["agent", "heartbeatFileExists"]);
+    }
   });
 });

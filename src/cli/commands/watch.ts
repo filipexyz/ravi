@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import {
@@ -30,6 +31,39 @@ import {
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+/**
+ * Watch ids are public through `watch list`, so WATCH_NOT_FOUND enriches the
+ * envelope with real similar ids/names/resources from the local store.
+ */
+function failWatchNotFound(op: string, watchId: string, asJson?: boolean): never {
+  const candidates = listWatchRecords({ limit: 40 }).items.flatMap((watch) => [
+    watch.id,
+    watch.name,
+    watch.resourceRef,
+  ]);
+  contractFail(op, "WATCH_NOT_FOUND", `Watch not found: ${watchId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the watch id (see suggestions; list with: ravi watch list --json)",
+      suggestions: suggestSimilar(watchId, candidates),
+    },
+  });
+}
+
+/** Resolve a watch or fail with the contract envelope (exit 1). */
+function requireWatch(op: string, watchId: string, asJson?: boolean): WatchRecord {
+  const watch = showWatch(watchId);
+  if (!watch) failWatchNotFound(op, watchId, asJson);
+  return watch;
 }
 
 @Group({
@@ -90,7 +124,7 @@ export class WatchCommands {
         watch: serializeWatch(result.watch),
         capabilities: result.capabilities,
         next: {
-          trigger: `ravi watch trigger ${result.watch.id} --message ${JSON.stringify("Descreva o evento e diga se precisamos agir.")}`,
+          trigger: `ravi watch trigger ${result.watch.id} --message ${JSON.stringify("Descreva o evento e diga se precisamos agir.")} --execute`,
           disable: `ravi watch disable ${result.watch.id}`,
         },
       };
@@ -103,7 +137,9 @@ export class WatchCommands {
       console.log("\nTrigger topic(s):");
       for (const subject of result.watch.eventSubjects) console.log(`  ${subject}`);
       console.log("\nNext:");
-      console.log(`  ravi watch trigger ${result.watch.id} --message "Descreva o evento e diga se precisamos agir."`);
+      console.log(
+        `  ravi watch trigger ${result.watch.id} --message "Descreva o evento e diga se precisamos agir." --execute`,
+      );
       return payload;
     });
   }
@@ -117,6 +153,8 @@ export class WatchCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of watches to skip" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const page = listWatchRecords({
       provider: provider?.trim() || null,
@@ -132,11 +170,12 @@ export class WatchCommands {
       total: page.total,
       options: ["--provider", provider?.trim() || null, "--status", status?.trim() || null],
     });
+    const projectedWatches = pickFields(page.items.map(serializeWatch), fields);
     const payload = {
       total: page.total,
       pagination,
-      items: page.items.map(serializeWatch),
-      watches: page.items.map(serializeWatch),
+      items: projectedWatches,
+      watches: projectedWatches,
     };
     if (asJson) {
       printJson(payload);
@@ -165,8 +204,7 @@ export class WatchCommands {
     @Arg("id", { description: "Watch id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const watch = showWatch(id);
-    if (!watch) fail(`Watch not found: ${id}`);
+    const watch = requireWatch("watch show", id, asJson);
     const payload = { watch: serializeWatch(watch) };
     if (asJson) {
       printJson(payload);
@@ -183,6 +221,7 @@ export class WatchCommands {
     @Arg("id", { description: "Watch id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    requireWatch("watch enable", id, asJson);
     return runWatchCommand(asJson, async () => {
       const watch = await setWatchEnabled(id, true);
       const payload = { status: "enabled", watch: serializeWatch(watch) };
@@ -199,6 +238,7 @@ export class WatchCommands {
     @Arg("id", { description: "Watch id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    requireWatch("watch disable", id, asJson);
     return runWatchCommand(asJson, async () => {
       const watch = await setWatchEnabled(id, false);
       const payload = { status: "disabled", watch: serializeWatch(watch) };
@@ -214,12 +254,36 @@ export class WatchCommands {
   async rm(
     @Arg("id", { description: "Watch id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove the watch; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const watch = requireWatch("watch rm", id, asJson);
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): removing a watch is destructive (console
+      // watches are also deleted remotely), so dry-run by default and exit 3
+      // before any local or remote deletion.
+      contractDryRun(
+        "watch rm",
+        {
+          watchId: watch.id,
+          provider: watch.provider,
+          resourceRef: watch.resourceRef,
+          placement: watch.placement,
+          status: watch.status,
+          ...(watch.name ? { name: watch.name } : {}),
+        },
+        { asJson },
+      );
+    }
     return runWatchCommand(asJson, async () => {
       const deleted = await removeWatch(id);
+      if (!deleted) failWatchNotFound("watch rm", id, asJson);
       const payload = { deleted, id };
       if (asJson) printJson(payload);
-      else console.log(deleted ? `Removed watch ${id}.` : `Watch not found: ${id}.`);
+      else console.log(`Removed watch ${id}.`);
       return payload;
     });
   }
@@ -231,8 +295,7 @@ export class WatchCommands {
     @Arg("id", { description: "Watch id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const watch = showWatch(id);
-    if (!watch) fail(`Watch not found: ${id}`);
+    const watch = requireWatch("watch events", id, asJson);
     const payload = {
       watchId: watch.id,
       eventTypes: watch.eventTypes,
@@ -259,11 +322,15 @@ export class WatchCommands {
     @Option({ flags: "--session <type>", description: "main or isolated (default: isolated)" }) session?: string,
     @Option({ flags: "--cooldown <duration>", description: "Cooldown between fires (default: 5s)" }) cooldown?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually create the trigger; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runWatchCommand(asJson, async () => {
       if (!message?.trim()) throw new Error("--message is required");
-      const watch = showWatch(id);
-      if (!watch) throw new Error(`Watch not found: ${id}`);
+      const watch = requireWatch("watch trigger", id, asJson);
       const eventType = event?.trim() || watch.eventTypes[0];
       if (!eventType) throw new Error(`Watch ${id} has no event type configured`);
       const subject = watch.eventSubjects.find((item) => item.endsWith(`.${eventType}`)) ?? watch.eventSubjects[0];
@@ -296,6 +363,35 @@ export class WatchCommands {
         cooldownMs: cooldown ? parseDurationMs(cooldown) : 5000,
         filter: `data.watchId == ${JSON.stringify(watch.id)}`,
       };
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): this arms a real automation — every
+        // future watch event will fire a prompt at an agent session. Dry-run
+        // by default and exit 3 before dbCreateTrigger, showing the resolved
+        // watch and the exact trigger that would be created.
+        contractDryRun(
+          "watch trigger",
+          {
+            watch: {
+              id: watch.id,
+              provider: watch.provider,
+              resourceRef: watch.resourceRef,
+              placement: watch.placement,
+              status: watch.status,
+            },
+            trigger: {
+              name: input.name,
+              topic: input.topic,
+              filter: input.filter,
+              message: input.message,
+              agentId: input.agentId ?? null,
+              accountId: input.accountId ?? null,
+              session: input.session,
+              cooldownMs: input.cooldownMs,
+            },
+          },
+          { asJson },
+        );
+      }
       const trigger = dbCreateTrigger(input);
       const payload = {
         status: "created",
@@ -321,10 +417,31 @@ export class WatchCommands {
     @Arg("id", { description: "Watch id" }) id: string,
     @Option({ flags: "--once", description: "Run one cycle and exit" }) _once?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually run the watch cycle; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
-    const watch = showWatch(id);
-    if (!watch) fail(`Watch not found: ${id}`);
+    const watch = requireWatch("watch run", id, asJson);
     if (watch.placement !== "local") fail("Only local watches can be run from the OSS CLI.");
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): a run cycle polls the provider and can
+      // emit real watch events (firing whatever triggers are wired to them),
+      // so dry-run by default and exit 3 before any polling starts.
+      contractDryRun(
+        "watch run",
+        {
+          watchId: watch.id,
+          provider: watch.provider,
+          resourceRef: watch.resourceRef,
+          placement: watch.placement,
+          eventTypes: watch.eventTypes,
+          once: true,
+        },
+        { asJson },
+      );
+    }
     const payload = {
       ok: false,
       watch: serializeWatch(watch),
@@ -417,6 +534,10 @@ async function runWatchCommand<T>(asJson: boolean | undefined, fn: () => Promise
   try {
     return await fn();
   } catch (error) {
+    // Contract errors (not-found envelope / write brake) are already rendered
+    // and carry their own exit code (1/3) — never remap them to
+    // WATCH_COMMAND_FAILED, or the brake taxonomy would be silently defeated.
+    if (error instanceof ContractError) throw error;
     const payload = errorPayload(error);
     if (asJson) {
       printJson(payload);
