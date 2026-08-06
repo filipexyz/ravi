@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import {
@@ -151,6 +152,68 @@ function buildCredentialInput(options: {
   };
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+//
+// SECURITY NOTE: secret values (env var contents, auth profiles) never reach
+// this layer — the store only exposes redacted serializations. Envelopes and
+// suggestions carry only credential ids and labels.
+// ============================================================
+
+function failRuntimeCredentialNotFound(op: string, credentialId: string, asJson?: boolean): never {
+  const candidates = listRuntimeCredentials({ includeDisabled: true, limit: 40 }).items.flatMap((credential) => [
+    credential.id,
+    credential.label,
+  ]);
+  contractFail(op, "CREDENTIAL_NOT_FOUND", `Runtime credential not found: ${credentialId}`, {
+    asJson,
+    details: {
+      suggestedAction:
+        "Check the credential id (see suggestions; list with: ravi runtime credentials list --all --json)",
+      suggestions: suggestSimilar(credentialId, candidates),
+    },
+  });
+}
+
+/**
+ * The credential store throws plain `Runtime credential not found: <id>`
+ * errors; map those to the CREDENTIAL_NOT_FOUND envelope and keep every other
+ * store error on the legacy `fail()` path.
+ */
+function runCredentialOp<T>(op: string, credentialId: string, asJson: boolean | undefined, action: () => T): T {
+  try {
+    return action();
+  } catch (err) {
+    if (err instanceof ContractError) throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    if (/runtime credential not found/i.test(message)) {
+      failRuntimeCredentialNotFound(op, credentialId, asJson);
+    }
+    fail(message);
+  }
+}
+
+async function runCredentialOpAsync<T>(
+  op: string,
+  credentialId: string,
+  asJson: boolean | undefined,
+  action: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await action();
+  } catch (err) {
+    if (err instanceof ContractError) throw err;
+    const message = err instanceof Error ? err.message : String(err);
+    if (/runtime credential not found/i.test(message)) {
+      failRuntimeCredentialNotFound(op, credentialId, asJson);
+    }
+    fail(message);
+  }
+}
+
 @Group({
   name: "runtime.credentials",
   description: "Runtime provider credential pools",
@@ -170,6 +233,8 @@ export class RuntimeCredentialsCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching credentials to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const page = listRuntimeCredentials({
       runtimeProvider: provider,
@@ -187,15 +252,16 @@ export class RuntimeCredentialsCommands {
       total: page.total,
       options: ["--provider", provider, "--upstream", upstream, "--status", status, includeDisabled ? "--all" : null],
     });
+    const serialized = page.items.map((item) => serializeRuntimeCredential(item, { includeBindings: true }));
     const payload = {
       total: page.total,
       pagination,
-      credentials: page.items.map((item) => serializeRuntimeCredential(item, { includeBindings: true })),
+      credentials: pickFields(serialized, fields),
       providerHealth: listRuntimeProviderHealth(),
     };
     printPayload(payload, asJson, () => {
       console.log(`\nRuntime credentials (${page.items.length} returned of ${page.total}):\n`);
-      for (const credential of payload.credentials) {
+      for (const credential of serialized) {
         console.log(`  ${credential.id}  ${credential.label}`);
         console.log(
           `    provider=${credential.runtimeProvider} upstream=${credential.upstreamProvider ?? "-"} status=${credential.status}`,
@@ -319,7 +385,7 @@ export class RuntimeCredentialsCommands {
   ) {
     if (id) {
       const credential = getRuntimeCredential(id);
-      if (!credential) fail(`Runtime credential not found: ${id}`);
+      if (!credential) failRuntimeCredentialNotFound("runtime credentials status", id, asJson);
       const payload = {
         credential: serializeRuntimeCredential(credential, { includeBindings: true }),
         health: getRuntimeCredentialHealth(id),
@@ -331,7 +397,7 @@ export class RuntimeCredentialsCommands {
       });
       return payload;
     }
-    return this.list(undefined, undefined, undefined, true, asJson, undefined, undefined);
+    return this.list(undefined, undefined, undefined, true, asJson, undefined, undefined, undefined);
   }
 
   @Command({ name: "disable", description: "Disable a runtime credential immediately" })
@@ -341,7 +407,9 @@ export class RuntimeCredentialsCommands {
     @Arg("id", { description: "Credential id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
-    const credential = setRuntimeCredentialEnabled(id, false);
+    const credential = runCredentialOp("runtime credentials disable", id, asJson, () =>
+      setRuntimeCredentialEnabled(id, false),
+    );
     const payload = { credential: serializeRuntimeCredential(credential, { includeBindings: true }) };
     printPayload(payload, asJson, () => console.log(`Disabled runtime credential ${credential.id}`));
     return payload;
@@ -354,7 +422,9 @@ export class RuntimeCredentialsCommands {
     @Arg("id", { description: "Credential id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
-    const credential = setRuntimeCredentialEnabled(id, true);
+    const credential = runCredentialOp("runtime credentials enable", id, asJson, () =>
+      setRuntimeCredentialEnabled(id, true),
+    );
     const payload = { credential: serializeRuntimeCredential(credential, { includeBindings: true }) };
     printPayload(payload, asJson, () => console.log(`Enabled runtime credential ${credential.id}`));
     return payload;
@@ -367,7 +437,9 @@ export class RuntimeCredentialsCommands {
     @Arg("id", { description: "Credential id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
-    const result = resetRuntimeCredentialHealth(id);
+    const result = runCredentialOp("runtime credentials reset-health", id, asJson, () =>
+      resetRuntimeCredentialHealth(id),
+    );
     const payload = {
       credential: serializeRuntimeCredential(result.credential, { includeBindings: true }),
       health: result.health,
@@ -391,7 +463,9 @@ export class RuntimeCredentialsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
   ) {
     if (id) {
-      const result = await refreshRuntimeCredential(id, { reason: "operator", force });
+      const result = await runCredentialOpAsync("runtime credentials refresh", id, asJson, () =>
+        refreshRuntimeCredential(id, { reason: "operator", force }),
+      );
       const payload = { refreshed: [result] };
       printPayload(payload, asJson, () => {
         console.log(`${result.credentialId} ${result.action}: ${result.message ?? result.statusAfter}`);

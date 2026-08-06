@@ -1075,7 +1075,7 @@ ANTHROPIC_API_KEY=
           console.error(`  - ${ctx.contextId}  kind=${ctx.kind}  label=${label}  expires=${expires}`);
         }
         console.error(
-          "\nRevoke them first via 'ravi context revoke <id>' if you really intend to rotate the bootstrap key.",
+          "\nRevoke them first via 'ravi context revoke <id> --execute' if you really intend to rotate the bootstrap key (without --execute it is a dry-run).",
         );
       }
       process.exit(2);

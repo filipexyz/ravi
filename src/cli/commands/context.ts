@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { Arg, Group, Command, CommandAccess, Option } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -145,6 +146,58 @@ interface AgentRuntimeCleanupCandidate {
   sessionExists: boolean;
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+//
+// SECURITY NOTE: context keys (rctx_*) ARE credentials. Envelopes, plans and
+// suggestions carry only context IDs, agent ids and labels — a full context
+// key must NEVER appear in an error envelope or dry-run plan. When the user
+// input itself is a key, it is masked to its first 8 characters.
+// ============================================================
+
+function failContextNotFound(op: string, contextId: string, asJson?: boolean): never {
+  // Candidates are context IDs only (never rctx_* keys).
+  const candidates = dbListContexts({ includeInactive: true })
+    .slice(0, 40)
+    .map((context) => context.contextId);
+  contractFail(op, "CONTEXT_NOT_FOUND", `Context not found: ${contextId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the context id (see suggestions; list with: ravi context list --all --json)",
+      suggestions: suggestSimilar(contextId, candidates),
+    },
+  });
+}
+
+/** Mask an rctx_* key for display: enough to recognize, never enough to use. */
+function maskContextKey(contextKey: string): string {
+  return `${contextKey.slice(0, 8)}...`;
+}
+
+function failCredentialEntryNotFound(
+  op: string,
+  contextKey: string,
+  path: string,
+  file: CredentialsFile | null,
+  asJson?: boolean,
+): never {
+  // Suggestions carry context IDs and labels only — stored context keys are
+  // credentials and never enter the envelope. The masked input is shown so the
+  // caller can recognize a typo without the envelope becoming a secret.
+  const entries = file ? serializeCredentialsFile(file) : [];
+  const candidates = entries.flatMap((entry) => [entry.contextId, entry.label]);
+  contractFail(op, "CREDENTIAL_NOT_FOUND", `No credential entry for ${maskContextKey(contextKey)} in ${path}`, {
+    asJson,
+    details: {
+      suggestedAction: "Inspect stored entries with: ravi context credentials list --json",
+      suggestions: suggestSimilar(contextKey, candidates),
+    },
+  });
+}
+
 @Group({
   name: "context",
   description: "Runtime context registry and introspection",
@@ -161,6 +214,8 @@ export class ContextCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching contexts to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const contexts = dbListContexts({ agentId, sessionKey, kind, includeInactive });
     const page = paginateCliItems(contexts, { limit, offset });
@@ -173,15 +228,18 @@ export class ContextCommands {
       total: page.total,
       options: ["--agent", agentId, "--session", sessionKey, "--kind", kind, includeInactive ? "--all" : null],
     });
+    const summaries = pageContexts.map((context) => this.serializeContextSummary(context));
+    const projected = pickFields(summaries, fields);
     const payload = {
       count: page.total,
       total: page.total,
       pagination,
-      items: pageContexts.map((context) => this.serializeContextSummary(context)),
-      contexts: pageContexts.map((context) => this.serializeContextSummary(context)),
+      items: projected,
+      contexts: projected,
     };
 
-    this.printPayload(payload, asJson, () => this.printContextList(payload.contexts));
+    // Human output always prints the full summaries; --fields narrows JSON only.
+    this.printPayload(payload, asJson, () => this.printContextList(summaries));
     if (!asJson && pagination.nextCommand) {
       console.log("\nNext page:");
       console.log(`  ${pagination.nextCommand}`);
@@ -197,7 +255,7 @@ export class ContextCommands {
   ) {
     const context = dbGetContext(contextId);
     if (!context) {
-      fail(`Context not found: ${contextId}`);
+      failContextNotFound("context info", contextId, asJson);
     }
 
     const payload = this.serializeContextDetail(context);
@@ -376,13 +434,38 @@ export class ContextCommands {
     @Option({ flags: "--reason <text>", description: "Reason recorded in metadata for audit and forensics" })
     reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+    @Option({
+      flags: "--execute",
+      description: "Actually revoke the context; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const existing = dbGetContext(contextId);
+    if (!existing) {
+      failContextNotFound("context revoke", contextId, asJson);
+    }
     if (noCascade) {
       console.error(
         "WARNING: --no-cascade leaves descendant contexts active. Workers using child rctx_* keys will keep auth.",
       );
     }
     const cascade = !noCascade;
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): revoking kills auth on a live runtime
+      // context (cascading to children by default), so dry-run by default and
+      // exit 3 before any write. The plan carries only IDs — never rctx_* keys.
+      contractDryRun(
+        "context revoke",
+        {
+          contextId,
+          kind: existing.kind,
+          agentId: existing.agentId ?? null,
+          cascade,
+          reason: reason ?? null,
+        },
+        { asJson },
+      );
+    }
     const result = revokeRuntimeContext(contextId, { cascade, reason });
     const payload = this.serializeRevokeResult(result.context, result.cascaded, result.revokedAt);
     this.printPayload(payload, asJson, () =>
@@ -511,7 +594,7 @@ export class ContextCommands {
   ) {
     const lineage = getContextLineage(contextId);
     if (!lineage) {
-      fail(`Context not found: ${contextId}`);
+      failContextNotFound("context lineage", contextId, asJson);
     }
 
     const payload = {
@@ -928,6 +1011,8 @@ export class ContextCredentialsCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching credential entries to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const path = getCredentialsPath();
     const file = this.loadCredentialsOrFail(path);
@@ -942,14 +1027,15 @@ export class ContextCredentialsCommands {
       returned: page.items.length,
       total: page.total,
     });
+    const projected = pickFields(page.items, fields);
     const payload = {
       path,
       exists,
       default: data.default ?? null,
       total: page.total,
       pagination,
-      items: page.items,
-      entries: page.items,
+      items: projected,
+      entries: projected,
     };
 
     if (asJson) {
@@ -1029,11 +1115,8 @@ export class ContextCredentialsCommands {
   ) {
     const path = getCredentialsPath();
     const file = this.loadCredentialsOrFail(path);
-    if (!file) {
-      fail(`No credentials file at ${path} — add an entry first with 'ravi context credentials add'`);
-    }
-    if (!(contextKey in file.contexts)) {
-      fail(`No credential entry for ${contextKey} — add it first with 'ravi context credentials add'`);
+    if (!file || !(contextKey in file.contexts)) {
+      failCredentialEntryNotFound("context credentials set-default", contextKey, path, file, asJson);
     }
     const next = setDefaultCredentialsEntry(file, contextKey);
     writeCredentialsFile(next, path);
@@ -1051,11 +1134,36 @@ export class ContextCredentialsCommands {
   remove(
     @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove the stored entry; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const path = getCredentialsPath();
     const file = this.loadCredentialsOrFail(path);
     if (!file || !(contextKey in file.contexts)) {
-      fail(`No credential entry for ${contextKey} in ${path}`);
+      failCredentialEntryNotFound("context credentials remove", contextKey, path, file, asJson);
+    }
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): removing a stored entry drops a working
+      // local credential, so dry-run by default and exit 3 before any write.
+      // The plan identifies the entry by contextId/label and a masked key —
+      // the full rctx_* key never enters the plan.
+      const entry = file.contexts[contextKey];
+      contractDryRun(
+        "context credentials remove",
+        {
+          path,
+          contextKey: maskContextKey(contextKey),
+          contextId: entry?.context_id ?? null,
+          agentId: entry?.agent_id || null,
+          label: entry?.label || null,
+          kind: entry?.kind ?? null,
+          wasDefault: file.default === contextKey,
+        },
+        { asJson },
+      );
     }
     const contexts = { ...file.contexts };
     delete contexts[contextKey];

@@ -60,7 +60,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 38 | slack | slack.ts | slack | **MIGRADO** | cli/slack (atualizada) |
 | 39 | media/image/audio/video/transcribe | media.ts, image.ts, audio.ts, video.ts, transcribe.ts | audio, image, video (media/transcribe sem skill) | **MIGRADO** | cli/media, cli/image, cli/audio, cli/video, cli/transcribe |
 | 40 | costs/metrics/insights | costs.ts, metrics.ts, insights.ts | (sem skill — lacunas registradas) | **MIGRADO** | cli/costs, cli/metrics, cli/insights |
-| 41 | context+runtime | context.ts, runtime-credentials.ts, runtime-presets.ts | context-cli (dev) | pendente | — |
+| 41 | context+runtime | context.ts, runtime-credentials.ts, runtime-presets.ts | context-cli (dev) | **MIGRADO** | cli/context, cli/runtime-credentials, cli/runtime-presets |
 | 42 | credentials/connectors/bridges | credentials.ts, connectors.ts, bridges.ts | (sem skill) | pendente | — |
 | 43 | cloud | cloud-projects.ts, cloud-scope.ts | (sem skill) | pendente | — |
 | 44 | sync | sync.ts | (sem skill) | pendente | — |
@@ -743,6 +743,27 @@ de companheiros ausentes).
 **Rotina X:** youtube 11/11 · prox-calls 65/65 · meetings 13/13+1 skip(win32)
 · devin 13/13 · rodada conjunta 102 pass/1 skip/0 fail · typecheck limpo ·
 spec gate PASSED (4 specs). Usage contract nos subtrees yt/prox/meetings/devin.
+
+### 41. context + runtime-credentials + runtime-presets — MIGRADOS (lote de substrato de auth; subagente, verificado e integrado)
+
+**Freadas:** `context revoke` (mata auth viva com cascata; plan só com IDs —
+NUNCA chave rctx_) e `context credentials remove` (plan identifica por
+contextId/label/kind + chave MASCARADA 8 chars). Equivalentes mantidos:
+`context prune` (`--apply` + `--confirm prune-contexts` — freio MAIS FORTE) e
+`cleanup-agent-runtime` (dry-run default + `--revoke`); `runtime presets`
+mantém `--dry-run` opt-in em set/enable/disable/delete (delete tem hard-block
+próprio do store quando referenciado). **Surpresas de superfície:**
+`runtime credentials remove`/`exec` NÃO EXISTEM (premissa do censo estava
+errada) — regra "nasce freado" registrada no spec; `presets create` não tinha
+--dry-run (declarada sem freio). Codes: CONTEXT/CREDENTIAL/PRESET_NOT_FOUND
+com suggestions restritas a {id, label} — **provas anti-vazamento em teste:**
+`not.toContain("rctx_")`, chave completa, nomes de env de API. `--fields` nos
+3 lists. Usage contract nos subtrees `context` e `runtime`. Consumidor
+`daemon.ts` (hint de revoke) atualizado pelo integrador; specs antigas
+wa-overlay/auth citam revoke — dívida de reconciliação registrada.
+
+**Rotina X:** context 37/37 · runtime-credentials 7/7 · runtime-presets 11/11
+· spec gate PASSED (3 specs) · skill context-cli (ravi-dev) com Contrato Do CLI.
 
 ### INCIDENTE — limite de sessão da conta (2026-08-06 ~05:00)
 
