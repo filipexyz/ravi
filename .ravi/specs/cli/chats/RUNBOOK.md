@@ -26,9 +26,8 @@
 9. If a braked op exits 1 with `Error: ...` text when `RAVI_*` envs are set,
    the registry dispatcher lost the `ContractError` branch — see
    `src/cli/registry.ts`.
-10. If an invalid flag on a `chats` op exits 1 with plain text instead of 2
-    with the envelope, that is the known gap: `"chats"` is not yet listed in
-    `AGENT_CONTRACT_DOMAINS` in `src/cli/index.ts`.
+10. An invalid flag on a `chats` op MUST exit 2 with the `USAGE_ERROR`
+    envelope and `acceptedFlags`.
 
 ## Validation
 

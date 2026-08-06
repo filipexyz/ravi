@@ -26,7 +26,7 @@ normative: true
 ## Intent
 
 Make `ravi meetings` (and `meetings profiles`) reliable for agent consumers
-under the agent-first contract defined by `cli/crm`. This domain has NO new
+under the agent-first contract defined by `cli`. This domain has NO new
 `--execute` brake: its riskiest op (`join`) already ships `--dry-run` as the
 inspect-before-acting path, and that pre-existing flag is kept as the
 documented write-brake equivalent instead of being renamed.

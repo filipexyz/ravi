@@ -26,7 +26,7 @@ normative: true
 ## Intent
 
 Make `ravi insights` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit
+contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
 taxonomy and compact discovery. Insights is the "record what I learned"
 surface — `create` writes only local, reversible rows, so the domain declares
 NO braked op; the contract value is cheap reads (`--fields` on `list` and
@@ -77,9 +77,8 @@ No repo doc or shipped skill teaches `ravi insights` today (gap registered by
 the CLI migration); the domain has no SKILL.md and none is created in this
 wave. `src/whatsapp-overlay/insights.ts` consumes the store through
 `buildOverlayInsightsPayload` (the `--rich` path), not through the CLI
-contract. Parser-level usage errors (unknown flag → exit 2 envelope) require
-adding `insights` to `AGENT_CONTRACT_DOMAINS` in `src/cli/index.ts` — owned by
-the integrator wave, registered here as PENDING.
+contract. Parser-level usage errors use the global exit-2 `USAGE_ERROR`
+envelope because `insights` is registered in `AGENT_CONTRACT_DOMAINS`.
 
 ## Validation
 

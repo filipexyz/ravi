@@ -28,7 +28,7 @@ normative: true
 ## Intent
 
 Make `ravi tag-rules` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit
+contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
 taxonomy and compact discovery. The domain's only two writes — `tick --apply`
 (bulk, every contact) and `evaluate --apply` (single target) — were BORN
 dry-run-by-default: without `--apply` they are pure previews. That pre-existing
@@ -116,10 +116,8 @@ tagging.
   the same precedent as `cli/whatsapp` (`join`/`leave` with kind read). The
   correction is tracked as an authorization-wave follow-up, not a contract
   change.
-- The `tag-rules` domain is NOT listed in `AGENT_CONTRACT_DOMAINS`
-  (`src/cli/index.ts`, frozen in this wave), so parser-level usage errors
-  (unknown flag, missing argument) still exit with commander's default plain
-  text instead of the `USAGE_ERROR` envelope + exit 2.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.
 - The `CONTACT_NOT_FOUND` mapping depends on the engine throwing the literal
   prefix `Contact not found:` (`evaluateRulesForContact`); changing that
   message breaks the envelope silently.

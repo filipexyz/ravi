@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi rules` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`. The domain imports provider rule files
+defined by `cli`. The domain imports provider rule files
 (`.claude/rules`, `.agents/rules`) into Ravi-owned `.ravi/rules/imported`.
 Its riskiest op, `import --force`, can overwrite previously imported rules —
 but the domain ALREADY ships a native two-stage brake (`--write`, then

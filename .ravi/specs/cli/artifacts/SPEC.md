@@ -28,7 +28,7 @@ normative: true
 ## Intent
 
 Make `ravi artifacts` (and the `artifacts.release` group) reliable for agent
-consumers under the agent-first contract defined by `cli/crm`: typed error
+consumers under the agent-first contract defined by `cli`: typed error
 envelopes, the 0/1/2/3 exit taxonomy, a write brake on the ops that expose
 content externally, and compact discovery. The local ledger writes stay
 immediate — the brake sits exactly where bytes leave the machine: `publish`
@@ -88,13 +88,10 @@ writes explicitly. `README.md` teaches `ravi artifacts publish` and carries
 `artifacts show` through the gateway registry and stays green — the not-found
 path there is not exercised with unknown ids.
 
-## Known gaps
+## Parser contract
 
-- Parser-level usage errors (unknown flag / missing argument → exit 2 with
-  `acceptedFlags`) require adding `artifacts` to `AGENT_CONTRACT_DOMAINS` in
-  `src/cli/index.ts`, which is owned by the shared contract wave and was out of
-  scope for this migration. Until then, commander's default text/exit applies
-  to parser errors; command-body errors already follow the contract.
+Parser-level usage errors (unknown flag / missing argument) use the exit-2
+`USAGE_ERROR` envelope with `acceptedFlags`.
 
 ## Validation
 

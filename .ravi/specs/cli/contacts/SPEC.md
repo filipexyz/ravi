@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi contacts` (and its `metadata` group) reliable for agent consumers
-under the agent-first contract defined by `cli/crm`: typed error envelopes, the
+under the agent-first contract defined by `cli`: typed error envelopes, the
 0/1/2/3 exit taxonomy, a write brake on the riskiest mutations, and compact
 discovery. Contacts gate who can talk to the bot, so `remove`, `block` and
 `merge` — the ops that delete a record, silence a live channel peer, or

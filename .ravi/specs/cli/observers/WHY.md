@@ -27,7 +27,5 @@ Two decisions worth keeping visible:
 `enable/disable` pre-check with `dbGetObserverRule` — the same
 throw-vs-null asymmetry `cli/tasks` documented for `getTaskDetails`.
 
-The `observers` domain is not yet listed in `AGENT_CONTRACT_DOMAINS`
-(`src/cli/index.ts`), which this migration could not edit; command-body errors
-follow the contract now, and parser-level exit-2 lands with that one-line
-registration.
+Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
+`observers` is registered in `AGENT_CONTRACT_DOMAINS`.

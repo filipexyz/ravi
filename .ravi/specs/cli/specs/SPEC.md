@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi specs` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`. Specs are the durable rules memory agents consult
+defined by `cli`. Specs are the durable rules memory agents consult
 BEFORE editing code, so the priority here is precise not-found feedback and
 compact discovery. The domain has NO braked op: `new` creates local Markdown
 and fails on existing specs; `sync` is an idempotent local reindex whose

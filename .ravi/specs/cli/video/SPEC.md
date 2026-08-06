@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi video` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`. `video analyze` has a split personality: the subtitles
+defined by `cli`. `video analyze` has a split personality: the subtitles
 path (yt-dlp captions) is free and local, while the Gemini path is paid
 EXTERNAL API money. The brake follows the money: any run that may reach Gemini
 (`--strategy gemini`, `--force-analyze`, the `auto` default and local files) is
@@ -70,9 +70,8 @@ immediate.
 
 ## Known gaps
 
-- Parser-level usage errors (exit 2 + `acceptedFlags`) depend on registering
-  `video` in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`), out of scope for
-  this migration batch.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
+  `video` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
 
 ## Validation
 

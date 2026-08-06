@@ -26,7 +26,7 @@ normative: true
 ## Intent
 
 Make `ravi triggers` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit
+contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
 taxonomy, a write brake on the destructive mutation, and compact discovery.
 Only the CLI surface (`src/cli/commands/triggers.ts`) is in scope — the trigger
 RUNTIME (`src/triggers/`) is a separate, untouched contract.

@@ -27,10 +27,8 @@ Decisions that shaped this wave:
 - Dry-run plans show `bodyPreview` (first 120 chars, whitespace-collapsed)
   instead of the full body, matching the domain's existing redaction posture
   (outbox payloads print `[redacted]`).
-- The parser-level usage contract (exit 2) is wired per domain in
-  `src/cli/index.ts` (`AGENT_CONTRACT_DOMAINS`), a file this migration was not
-  allowed to touch; registering `mail` and `gmail` there is the one pending
-  step and is recorded in SPEC invariant 8.
+- The parser-level usage contract uses the shared exit-2 `USAGE_ERROR`
+  envelope for both `mail` and `gmail`.
 
 Test-infrastructure finding that benefits every domain: on Windows,
 `cleanupIsolatedRaviState` failed with EBUSY because Bun keeps memory-mapped

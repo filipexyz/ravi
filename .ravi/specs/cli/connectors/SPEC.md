@@ -27,7 +27,7 @@ normative: true
 
 Make `ravi connectors` (external service connections via Ravi Console/Link)
 reliable for agent consumers under the agent-first contract defined by
-`cli/crm`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write brake on
+`cli`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write brake on
 the destructive revoke, and compact discovery. Connectors are remote Console
 resources, so the not-found surface stays with the provider (Link/Console
 errors through the legacy CloudAuthError funnel) instead of inventing local
@@ -84,10 +84,8 @@ this spec are the teaching surface.
 
 ## Known Failure Modes
 
-- The `connectors` domain root is not yet listed in `AGENT_CONTRACT_DOMAINS`
-  (`src/cli/index.ts`, out of scope for this migration lot), so commander
-  parser usage errors still print plain text with exit 1 instead of the
-  `USAGE_ERROR` envelope with exit 2.
+- Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
+  `connectors` root is registered in `AGENT_CONTRACT_DOMAINS`.
 - The legacy CloudAuthError funnel has its own conflicting exit map
   (`PAYLOAD_INVALID` → 3, `AUTH_REQUIRED` → 2): a remote payload error can
   exit 3 without being a write brake. Read `error.code`, not the exit code,

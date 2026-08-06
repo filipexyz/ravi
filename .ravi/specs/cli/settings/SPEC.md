@@ -26,7 +26,7 @@ normative: true
 ## Intent
 
 Make `ravi settings` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit
+contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
 taxonomy, a write brake on the destructive op, and compact discovery. Settings
 are global daemon configuration; `delete` erases a live config row and is the
 single braked op of the domain.

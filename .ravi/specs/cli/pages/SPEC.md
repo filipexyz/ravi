@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi pages` (and the `pages.password` group) reliable for agent
-consumers under the agent-first contract defined by `cli/crm`: typed error
+consumers under the agent-first contract defined by `cli`: typed error
 envelopes, the 0/1/2/3 exit taxonomy, a write brake on every op that changes
 what the open web can reach, and compact discovery. Pages talks exclusively to
 Console, so the contract lives IN FRONT of the legacy CloudAuthError funnel:
@@ -101,9 +101,8 @@ is added it MUST arrive braked.
 - Pages has NO dedicated skill: the `artifacts` skill hosts the Pages
   publishing/password guidance today. A `pages` skill is a registered gap for
   a follow-up wave.
-- Parser-level usage errors (unknown flag → exit 2 with `acceptedFlags`)
-  require adding `pages` to `AGENT_CONTRACT_DOMAINS` in `src/cli/index.ts`,
-  owned by the shared contract wave and out of scope here.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.
 - The Console not-found mapping is message-based (`site|route ... not found`);
   unrecognized 404 phrasings intentionally fall back to the legacy funnel
   instead of guessing a resource kind.

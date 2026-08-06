@@ -25,7 +25,7 @@ normative: true
 ## Intent
 
 Make `ravi costs` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit taxonomy and
+defined by `cli`: typed error envelopes, the 0/1/2/3 exit taxonomy and
 compact discovery. Costs is a read domain — its value for agents is CHEAP
 reads: `--fields` on every array payload so a budget check does not cost more
 tokens than the tokens it audits. The single mutating path
@@ -84,10 +84,8 @@ NOT flipped in this wave to avoid changing the permission surface.
 
 No repo doc or shipped skill teaches `ravi costs` today (gap registered by the
 CLI migration); the domain has no SKILL.md and none is created in this wave.
-Parser-level usage errors (unknown flag → exit 2 envelope) require adding
-`costs` to `AGENT_CONTRACT_DOMAINS` in `src/cli/index.ts` — that path is owned
-by the integrator wave and is registered here as PENDING; until then unknown
-flags keep commander's default behavior.
+Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
+`costs` is registered in `AGENT_CONTRACT_DOMAINS`.
 
 ## Validation
 

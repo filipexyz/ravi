@@ -25,6 +25,5 @@ Implementation findings specific to this wave:
 - `listProjects` has no visibility filter (unlike agents/contacts), so
   suggestions can be built from the raw list without leaking anything that
   `projects list` would not print anyway.
-- `projects` is not in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`, out of
-  scope for this wave), so parser-level usage errors are not yet enveloped;
-  the command-body contract does not depend on it.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.

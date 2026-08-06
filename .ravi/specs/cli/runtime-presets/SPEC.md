@@ -24,7 +24,7 @@ normative: true
 ## Intent
 
 Make `ravi runtime presets` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit
+contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
 taxonomy and compact discovery. This domain predates the wave with its own
 write-preview convention — opt-in `--dry-run` on `set`, `enable`, `disable`
 and `delete` — plus a store-level integrity guard that blocks `disable` and
@@ -90,9 +90,8 @@ contract changes affect operator/agent CLI calls only.
 
 ## Known Failure Modes
 
-- Parser-level usage errors still follow commander's default path until
-  `runtime` is added to `AGENT_CONTRACT_DOMAINS` in `src/cli/index.ts` (file
-  owned by the shared-contract wave, not this domain migration).
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.
 - The not-found mapping matches `^Model preset not found: ` exactly; the
   store's internal `not found after write` error is a consistency failure and
   must stay on the legacy error path, not become `PRESET_NOT_FOUND`.

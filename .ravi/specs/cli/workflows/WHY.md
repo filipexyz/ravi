@@ -31,7 +31,4 @@ misleading node error.
 
 There is no shipped `workflows` skill — a known gap registered in the SPEC.
 Until one exists, `docs/workflow-substrate-v0.md` is the teaching surface and
-now carries `--execute` on both braked ops. The `workflows` domain is also not
-yet in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`, untouchable in this
-migration), so parser-level usage errors keep commander defaults until that
-one-line registration lands.
+now carries `--execute` on both braked ops.

@@ -27,7 +27,7 @@ normative: true
 
 Make `ravi prox calls` (and its `profiles`, `voice-agents`, `tools` groups)
 reliable for agent consumers under the agent-first contract defined by
-`cli/crm`. The riskiest op in the whole surface is `request` — it schedules a
+`cli`. The riskiest op in the whole surface is `request` — it schedules a
 REAL phone call to a real person through a live voice provider — so it is the
 primary braked op. `cancel` is deliberately unbraked (damage stop).
 

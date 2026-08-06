@@ -24,7 +24,7 @@ normative: true
 ## Intent
 
 Make `ravi threads` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit
+contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
 taxonomy, and compact discovery. This domain ships WITHOUT a write brake —
 the value of the migration here is the envelope, the exit taxonomy and
 `--fields`, not exit 3.
@@ -93,6 +93,5 @@ section teaches braked threads syntax (there is none).
 - `findThread` also throws on ambiguous slugs; treating every throw as
   not-found would mislabel ambiguity. Only messages matching
   `/thread not found/i` map to `THREAD_NOT_FOUND`.
-- Parser-level usage errors only exit 2 once the `threads` group is listed in
-  `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`) — that list is owned by the
-  migration coordinator, not this spec's wave.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.

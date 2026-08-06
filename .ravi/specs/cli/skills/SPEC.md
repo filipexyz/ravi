@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi skills` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write
+defined by `cli`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write
 brake on the riskiest mutation, and compact discovery. This domain governs what
 other agents can DO (per-agent skill visibility via grants), and `install`
 copies third-party code into the operator environment — that is the braked op.
@@ -102,10 +102,8 @@ equivalence in place.
 
 ## Known Failure Modes
 
-- Parser-level usage errors (exit 2 + `acceptedFlags`) require registering
-  `skills` in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`); that file is
-  integration-owned and pending for this domain — until then commander's
-  default text/exit applies to parser errors.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.
 - `selectSkills` throws plain errors ("Skill not found: ...") instead of
   returning null; mapping must catch the throw or the envelope never fires
   (`surveyInstallSelection` covers it) — and the mapping must happen OUTSIDE

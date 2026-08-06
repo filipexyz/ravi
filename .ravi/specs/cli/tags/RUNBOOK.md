@@ -16,9 +16,8 @@
 6. If an unknown slug produces a raw `Error: Tag not found ...` instead of the
    envelope, the rethrow wrapper (`rethrowTagCommandError`) lost the throw
    mapping — see `src/cli/commands/tags.ts`.
-7. Parser-level errors (unknown flag) still print commander's default text:
-   known gap while `tags` is not in `AGENT_CONTRACT_DOMAINS`
-   (`src/cli/index.ts`).
+7. Parser-level errors (unknown flag) MUST exit 2 with the `USAGE_ERROR`
+   envelope and `acceptedFlags`.
 
 ## Validation
 

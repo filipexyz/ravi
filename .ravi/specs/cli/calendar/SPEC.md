@@ -33,7 +33,7 @@ and agenda layer.
 Agents MUST be able to use the CLI to inspect and mutate local calendar state
 without knowing which remote provider, if any, backs the calendar.
 
-The domain follows the agent-first contract defined by `cli/crm`: typed error
+The domain follows the agent-first contract defined by `cli`: typed error
 envelopes, the 0/1/2/3 exit taxonomy, a write brake on ops with external or
 irreversible effect, and compact discovery via `--fields`.
 
@@ -106,14 +106,8 @@ irreversible effect, and compact discovery via `--fields`.
 | outbox row not found | `OUTBOX_NOT_FOUND` + suggestedAction | 1 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 
-## Known gaps (this wave)
+## Known gap
 
-- The parser-level usage contract (`installUsageContract`) is NOT installed for
-  the `calendars` domain: `AGENT_CONTRACT_DOMAINS` lives in `src/cli/index.ts`,
-  frozen during this migration wave. Until `"calendars"` is added there,
-  parser-raised usage errors (unknown flag, missing argument) keep commander's
-  default plain-text behavior instead of the exit-2 envelope. Command-body
-  errors already follow the contract.
 - There is NO dedicated `calendar` skill teaching this surface; the spec and
   runbook are the only shipped guidance. When a skill is added it MUST document
   `--execute` on every braked op.

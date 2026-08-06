@@ -25,7 +25,7 @@ normative: true
 ## Intent
 
 Make `ravi devin sessions` (and `devin auth`) reliable for agent consumers
-under the agent-first contract defined by `cli/crm`. Devin is a PAID external
+under the agent-first contract defined by `cli`. Devin is a PAID external
 service: `create` starts a billable remote session and `send` steers billable
 work, so both are braked. `sync` and `archive` are declared unbraked, and
 `terminate` is unbraked as a cost/damage stop. Only

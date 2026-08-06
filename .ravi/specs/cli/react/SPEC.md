@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi react` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`. The domain's single op, `react send`, is DECLARED
+defined by `cli`. The domain's single op, `react send`, is DECLARED
 UNBRAKED: an emoji reaction is trivially reversible (WhatsApp replaces a
 reaction with the next one and removes it with an empty reaction; the Slack
 chat_action contract has an explicit remove operation), and it is the surface
@@ -82,9 +82,8 @@ missing context and unknown messages.
 - SKILL GAP: there is no `react` skill under
   `src/plugins/internal/ravi-system/skills/`; the surface is taught through
   the sessions hints, the stickers skill (response-surface list) and AGENTS.md.
-- Parser-level usage errors (exit 2 + `acceptedFlags`) depend on registering
-  `react` in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`), out of scope for
-  this migration batch.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
+  `react` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
 
 ## Validation
 

@@ -33,7 +33,7 @@ normative: true
 Make the instance/routing surface (`ravi instances`, `ravi routes`,
 `ravi instances routes`, `ravi instances pending` — all living in
 `src/cli/commands/instances.ts`) reliable for agent consumers under the
-agent-first contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3
+agent-first contract defined by `cli`: typed error envelopes, the 0/1/2/3
 exit taxonomy, a write brake on the destructive-flagged mutations, and compact
 discovery. Routes decide which agent answers live traffic, so removing one
 silently reroutes real conversations — that is why `routes remove` is braked

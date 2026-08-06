@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi image` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`. `image generate` spends EXTERNAL API money (OpenAI /
+defined by `cli`. `image generate` spends EXTERNAL API money (OpenAI /
 Gemini image models) on every call, so it is the braked op: dry-run by default
 showing exactly which provider/model/size would be billed. `image atlas split`
 is a local ImageMagick operation and stays unbraked.
@@ -75,9 +75,8 @@ is a local ImageMagick operation and stays unbraked.
 
 ## Known gaps
 
-- Parser-level usage errors (exit 2 + `acceptedFlags`) depend on registering
-  `image` in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`), out of scope for
-  this migration batch.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
+  `image` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
 
 ## Validation
 

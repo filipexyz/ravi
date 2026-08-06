@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi cloud projects` (remote Ravi Console projects) reliable for agent
-consumers under the agent-first contract defined by `cli/crm`: typed error
+consumers under the agent-first contract defined by `cli`: typed error
 envelopes, the 0/1/2/3 exit taxonomy, a write brake on remote project
 creation, and compact discovery. This is the domain of the RBBT wrong-scope
 incident (see `cli/console-scope`): an agent creating a Console project in the
@@ -84,10 +84,8 @@ plus this spec are the teaching surface.
 
 ## Known Failure Modes
 
-- The `cloud` domain root is not yet listed in `AGENT_CONTRACT_DOMAINS`
-  (`src/cli/index.ts`, out of scope for this migration lot), so commander
-  parser usage errors still print plain text with exit 1 instead of the
-  `USAGE_ERROR` envelope with exit 2.
+- Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
+  `cloud` root is registered in `AGENT_CONTRACT_DOMAINS`.
 - The legacy CloudAuthError funnel maps `PAYLOAD_INVALID` to exit 3, which
   collides numerically with the write brake. Read `error.code` — only
   `WRITE_REQUIRES_EXECUTE` means "re-run with --execute".

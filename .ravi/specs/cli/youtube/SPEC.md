@@ -25,7 +25,7 @@ normative: true
 ## Intent
 
 Make `ravi yt` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit taxonomy, a
+defined by `cli`: typed error envelopes, the 0/1/2/3 exit taxonomy, a
 write brake on every provider mutation, and compact discovery. Every `yt`
 write hits the EXTERNAL Google/YouTube API — comment replies and metadata
 changes are publicly visible, deletes are irreversible — so all seven

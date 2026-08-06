@@ -18,7 +18,6 @@
 - The daemon NATS path (`ravi.work_objects.action`) MUST remain unaffected by
   the CLI brake.
 - An invalid flag on any `work-objects` op SHOULD exit 2 with
-  `acceptedFlags` once the domain is registered in `AGENT_CONTRACT_DOMAINS`
-  (coordinator-owned).
+  `acceptedFlags`.
 - `bun test src/cli/commands/work-objects.test.ts` SHOULD pass after any
   change to the work-objects CLI surface.

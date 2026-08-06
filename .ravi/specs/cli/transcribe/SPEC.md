@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi transcribe` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`. `transcribe file` always calls a PAID external
+contract defined by `cli`. `transcribe file` always calls a PAID external
 API (OpenAI Whisper) — there is no free local path — so the single op is
 braked: dry-run by default showing the file, size and language that would be
 billed.
@@ -73,9 +73,8 @@ CLI-initiated spends only and does not affect message-flow transcription.
   `src/plugins/internal/ravi-system/skills/`; agents currently discover the
   command via `--help` only. A dedicated skill (or a section in the audio
   skill) is pending.
-- Parser-level usage errors (exit 2 + `acceptedFlags`) depend on registering
-  `transcribe` in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`), out of scope
-  for this migration batch.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
+  `transcribe` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
 
 ## Validation
 

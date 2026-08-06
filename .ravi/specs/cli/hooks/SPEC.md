@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi hooks` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write
+defined by `cli`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write
 brake on the only destructive op (`rm`), and compact discovery. Hooks are
 durable runtime automations (event → action), so deleting one silently removes
 behavior the daemon depends on — that is the op that gets the brake.

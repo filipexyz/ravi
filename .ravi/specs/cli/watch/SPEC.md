@@ -57,7 +57,7 @@ agent-first contract below.
 
 ## Agent-First Contract (Manual v2)
 
-`ravi watch` follows the agent-first contract defined by `cli/crm` (typed error
+`ravi watch` follows the agent-first contract defined by `cli` (typed error
 envelopes, 0/1/2/3 exit taxonomy, write brake, compact discovery), implemented
 at the source with the shared helpers in `src/cli/agent-contract.ts`.
 

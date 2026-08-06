@@ -26,7 +26,7 @@ normative: true
 ## Intent
 
 Make `ravi feedback` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`. The domain has a single op, `send` (alias
+contract defined by `cli`. The domain has a single op, `send` (alias
 `create`), and it publishes OUTSIDE the local runtime — a POST to the Ravi
 Console (`/api/cli/feedback`) visible to the whole organization. External,
 non-retractable publication is exactly the class the write brake exists for,

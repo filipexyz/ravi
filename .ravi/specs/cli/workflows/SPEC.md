@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi workflows` (`specs` and `runs` groups) reliable for agent consumers
-under the agent-first contract defined by `cli/crm`: typed error envelopes, the
+under the agent-first contract defined by `cli`: typed error envelopes, the
 0/1/2/3 exit taxonomy, a write brake on the two riskiest mutations, and compact
 discovery. `runs start` instantiates a live run that gates coordinated work
 (the direct analog of `projects workflows start`), and `runs archive-node` is
@@ -94,10 +94,8 @@ learn this surface only from `docs/workflow-substrate-v0.md` (which documents
 `--execute` on both braked ops) and from `projects workflows start`, the braked
 project-level wrapper in `cli/projects`. `src/projects/fixtures.ts` only prints
 `workflows runs show` hints (read-only). SDK/openapi surfaces call the service
-layer, not the CLI brake. Parser-level usage errors (exit 2) depend on the
-`workflows` domain being listed in `AGENT_CONTRACT_DOMAINS`
-(`src/cli/index.ts`); until that registration lands, parser errors keep
-commander defaults while command-body errors already follow this contract.
+layer, not the CLI brake. Parser-level usage errors use the global exit-2
+`USAGE_ERROR` envelope with `acceptedFlags`.
 
 ## Validation
 

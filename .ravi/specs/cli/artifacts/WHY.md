@@ -30,6 +30,5 @@ Findings from this wave worth carrying forward:
   SQLite, so candidates are cheap; version numbers are dense integers where
   similarity would be noise, hence suggestedAction-only on version misses.
 
-Parser-level usage errors stay on commander's default path for now: the
-`AGENT_CONTRACT_DOMAINS` list lives in `src/cli/index.ts`, owned by the shared
-contract wave, and this migration was scoped away from that file.
+Parser-level usage errors use the shared exit-2 `USAGE_ERROR` envelope because
+`artifacts` is registered in the global contract domain list.

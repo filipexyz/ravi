@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi observers` (and its `rules` and `profiles` groups) reliable for agent
-consumers under the agent-first contract defined by `cli/crm`: typed error
+consumers under the agent-first contract defined by `cli`: typed error
 envelopes, the 0/1/2/3 exit taxonomy, a write brake on the only destructive op,
 and compact discovery. Observer rules are durable coordination config — a stray
 `rules rm` silently deletes what routes observation to sidecar sessions — so
@@ -83,10 +83,8 @@ and compact discovery. Observer rules are durable coordination config — a stra
 `src/plugins/internal/ravi-system/skills/observers/SKILL.md` teaches this
 surface and MUST document `--execute` on `rules rm` and list the unbraked
 writes explicitly. No other non-test consumer invokes `observers rules rm`.
-Parser-level usage errors (exit 2 with `acceptedFlags`) depend on the
-`observers` domain being listed in `AGENT_CONTRACT_DOMAINS`
-(`src/cli/index.ts`); until that registration lands, parser errors keep
-commander defaults while command-body errors already follow this contract.
+Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+`acceptedFlags`.
 
 ## Validation
 

@@ -26,7 +26,7 @@ normative: true
 ## Intent
 
 Make `ravi chats` (and its `chats.messages` and `chats.lists` groups) reliable
-for agent consumers under the agent-first contract defined by `cli/crm`: typed
+for agent consumers under the agent-first contract defined by `cli`: typed
 error envelopes, the 0/1/2/3 exit taxonomy, a write brake on the destructive
 membership removal, and compact discovery. Chats are the canonical read surface
 for conversations and reading queues, so most ops stay read-only or reversible;
@@ -102,12 +102,6 @@ carries `--execute` on `lists remove`.
 
 ## Known gaps
 
-- Parser-level usage errors (unknown flag, missing argument) exit 2 with the
-  envelope only for domains listed in `AGENT_CONTRACT_DOMAINS` in
-  `src/cli/index.ts`; `"chats"` is NOT in that list yet because editing
-  `src/cli/index.ts` was out of scope for this wave. Until that one-line
-  follow-up lands, chats parser errors keep commander's default text + exit 1.
-  Command-body errors already follow the contract.
 - No dedicated `chats` skill exists to teach the surface (see Internal
   consumers).
 

@@ -26,7 +26,7 @@ normative: true
 ## Intent
 
 Make `ravi cron` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write
+defined by `cli`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write
 brake on the riskiest mutations, and compact discovery. `cron run` fires the
 REAL job right now, outside its schedule — agent execution (or a shell command)
 with real side effects — so it is braked together with the destructive

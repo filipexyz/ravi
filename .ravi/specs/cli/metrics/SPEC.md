@@ -26,7 +26,7 @@ normative: true
 ## Intent
 
 Make `ravi metrics` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`. Metrics is a reporting domain over
+contract defined by `cli`. Metrics is a reporting domain over
 `daily_metrics` roll-ups; its value for agents is cheap reads (`--fields` on
 the row report) and a clean usage taxonomy. No op is braked: the only write,
 `rollup`, produces derived, idempotent, fully recomputable rows.
@@ -82,10 +82,9 @@ No repo doc or shipped skill teaches `ravi metrics` today (gap registered by
 the CLI migration); the domain has no SKILL.md and none is created in this
 wave. The daemon consumer (`src/ephemeral/runner.ts`) uses the service layer,
 not the CLI. The `metrics show` empty-state hint ("Run `ravi metrics rollup`
-first.") stays valid because rollup is unbraked. Parser-level usage errors
-(unknown flag → exit 2 envelope) require adding `metrics` to
-`AGENT_CONTRACT_DOMAINS` in `src/cli/index.ts` — owned by the integrator wave,
-registered here as PENDING.
+first.") stays valid because rollup is unbraked. Parser-level usage errors use
+the global exit-2 `USAGE_ERROR` envelope because `metrics` is registered in
+`AGENT_CONTRACT_DOMAINS`.
 
 ## Validation
 

@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi media` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit taxonomy and a
+defined by `cli`: typed error envelopes, the 0/1/2/3 exit taxonomy and a
 write brake on `media send` — the op that delivers a file to a REAL chat on a
 live channel (WhatsApp/Slack) and cannot be unsent.
 
@@ -76,9 +76,8 @@ live channel (WhatsApp/Slack) and cannot be unsent.
   `src/plugins/internal/ravi-system/skills/`; the surface is taught only through
   the sessions action hints and the image/audio skills. A dedicated skill (or a
   section in a channel skill) is pending.
-- Parser-level usage errors (exit 2 + `acceptedFlags`) depend on registering
-  `media` in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`), which was out of
-  scope for this migration batch.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
+  `media` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
 
 ## Validation
 

@@ -30,7 +30,7 @@ normative: true
 ## Intent
 
 Make `ravi sessions` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`. Sessions are the communication surface between agents, so
+defined by `cli`. Sessions are the communication surface between agents, so
 the brake lands only on the irrecoverable ops (`reset`, `delete`,
 `delete-message`, `edit-message`) and never on the messaging loop
 (`send`/`ask`/`answer`/`inform`/`execute`), which must stay friction-free.

@@ -11,7 +11,7 @@
    scopes (disambiguate with `--scope type:id`) or an invalid pointer
    (`type:id` syntax).
 5. Exit `2`: read `error.acceptedFlags`; the list is authoritative for that
-   op (requires the domain to be registered in `AGENT_CONTRACT_DOMAINS`).
+   op.
 6. There is NO exit 3 in this domain — if a threads op ever returns 3,
    someone added a brake without updating this spec.
 

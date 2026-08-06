@@ -42,7 +42,5 @@ Decisions that shaped this wave:
   registration); the brake sits before `ensureGroupAgent`, otherwise a
   dry-run with `--create-agent` would still create agents and directories.
 
-One scope note: parser-level usage errors (exit 2 + `acceptedFlags`) require
-adding `"whatsapp"` to `AGENT_CONTRACT_DOMAINS` in `src/cli/index.ts`, which
-this wave was forbidden to touch. The command-body contract (exits 1 and 3,
-envelopes) is complete; the parser hook is a reported one-line follow-up.
+Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+`acceptedFlags`; command-body errors preserve the same shared taxonomy.

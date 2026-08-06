@@ -30,7 +30,7 @@ normative: true
 ## Intent
 
 Make `ravi tasks` (and its `deps`, `automations`, `profiles` groups) reliable for
-agent consumers under the agent-first contract defined by `cli/crm`: typed error
+agent consumers under the agent-first contract defined by `cli`: typed error
 envelopes, the 0/1/2/3 exit taxonomy, a write brake on the riskiest mutations,
 and compact discovery. Tasks are the core work-dispatch surface for agents, so
 `dispatch` — which triggers real agent execution — is the primary braked op.

@@ -27,7 +27,7 @@ normative: true
 
 Make `ravi projects` (and its `workflows`, `tasks`, `resources`, `fixtures`
 groups) reliable for agent consumers under the agent-first contract defined by
-`cli/crm`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write brake on
+`cli`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write brake on
 the riskiest mutations, and compact discovery. Projects are the
 alignment/context substrate, but two of its ops launch real execution
 (`workflows start`, `tasks dispatch` — the direct analog of `tasks dispatch`),
@@ -108,9 +108,8 @@ and MUST document `--execute` on every braked op (its `workflows start`,
 `tasks dispatch`, `fixtures seed` and `resources import` examples carry the
 flag). `src/projects/fixtures.ts` proofCommands are read-only
 (`projects status|show`, `tasks show`) and are not affected by the brake.
-The `projects` domain is not yet listed in `AGENT_CONTRACT_DOMAINS`
-(`src/cli/index.ts`), so parser-level usage errors still exit 1 with plain text
-until that one-line follow-up lands.
+Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+`acceptedFlags`.
 
 ## Validation
 

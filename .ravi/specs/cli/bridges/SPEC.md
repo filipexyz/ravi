@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi bridges` (Ravi MCP bridges managed through Console) reliable for
-agent consumers under the agent-first contract defined by `cli/crm`: typed
+agent consumers under the agent-first contract defined by `cli`: typed
 error envelopes, the 0/1/2/3 exit taxonomy, a write brake on the destructive
 revoke, and compact discovery. Bridges are remote Console resources; remote
 errors keep the legacy CloudAuthError funnel, with `ContractError` rethrown
@@ -84,10 +84,8 @@ CLI `--help` plus this spec are the teaching surface.
 
 ## Known Failure Modes
 
-- The `bridges` domain root is not yet listed in `AGENT_CONTRACT_DOMAINS`
-  (`src/cli/index.ts`, out of scope for this migration lot), so commander
-  parser usage errors still print plain text with exit 1 instead of the
-  `USAGE_ERROR` envelope with exit 2.
+- Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
+  `bridges` root is registered in `AGENT_CONTRACT_DOMAINS`.
 - The legacy CloudAuthError funnel has its own conflicting exit map
   (`PAYLOAD_INVALID` → 3): a missing `--project` can exit 3 without being a
   write brake. Read `error.code`, not the exit code, to distinguish.

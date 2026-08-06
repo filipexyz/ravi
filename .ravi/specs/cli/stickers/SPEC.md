@@ -30,7 +30,7 @@ normative: true
 ## Intent
 
 Make `ravi stickers` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit
+contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
 taxonomy, a write brake on `send` (reaches a live chat) and `remove`
 (destructive catalog deletion), plus `STICKER_NOT_FOUND` with local-catalog
 suggestions and compact `--fields` on `list`.
@@ -86,9 +86,8 @@ suggestions and compact `--fields` on `list`.
 
 ## Known gaps
 
-- Parser-level usage errors (exit 2 + `acceptedFlags`) depend on registering
-  `stickers` in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`), out of scope
-  for this migration batch.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
+  `stickers` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
 
 ## Validation
 

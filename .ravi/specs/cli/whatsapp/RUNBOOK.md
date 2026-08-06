@@ -21,9 +21,8 @@
 7. If a braked op exits 1 with `Error: ...` text when `RAVI_*` envs are set,
    the registry dispatcher lost the `ContractError` branch — see
    `src/cli/registry.ts`.
-8. Unknown-flag errors still print commander's default text (exit 1) on this
-   domain: the `whatsapp` group is not yet in `AGENT_CONTRACT_DOMAINS`
-   (`src/cli/index.ts`). That is a known gap, not a per-op regression.
+8. Unknown-flag errors MUST exit 2 with the `USAGE_ERROR` envelope and
+   `acceptedFlags`.
 
 ## Validation
 

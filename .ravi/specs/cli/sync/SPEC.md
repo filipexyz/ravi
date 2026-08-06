@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi sync` (local-first outbox/inbox and the Console bridge) reliable
-for agent consumers under the agent-first contract defined by `cli/crm`:
+for agent consumers under the agent-first contract defined by `cli`:
 typed error envelopes, the 0/1/2/3 exit taxonomy, a write brake on the bulk
 transfers, and a not-found envelope on row inspection. `push` and `pull` move
 data in bulk between the local install and Console — the highest-blast-radius
@@ -88,10 +88,8 @@ contract. There is no shipped `sync` skill — lacuna registrada; the CLI
 
 ## Known Failure Modes
 
-- The `sync` domain root is not yet listed in `AGENT_CONTRACT_DOMAINS`
-  (`src/cli/index.ts`, out of scope for this migration lot), so commander
-  parser usage errors still print plain text with exit 1 instead of the
-  `USAGE_ERROR` envelope with exit 2.
+- Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
+  `sync` root is registered in `AGENT_CONTRACT_DOMAINS`.
 - Before this contract, `sync inspect <unknown-id>` returned
   `{found:false, id}` with exit 0 — an agent scanning exit codes never saw the
   miss. The declared return schema keeps the `found:false` variant for SDK

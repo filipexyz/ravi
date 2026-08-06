@@ -15,7 +15,6 @@
 - Every threads write (`create`, `comment`, `note`, `link`, `close`) MUST
   keep immediate-write behavior — the domain is declared brake-free and no op
   may exit 3.
-- An invalid flag on any `threads` op SHOULD exit 2 with `acceptedFlags` once
-  the domain is registered in `AGENT_CONTRACT_DOMAINS` (coordinator-owned).
+- An invalid flag on any `threads` op SHOULD exit 2 with `acceptedFlags`.
 - `bun test src/cli/commands/threads.test.ts` SHOULD pass after any change to
   the threads contract surface.

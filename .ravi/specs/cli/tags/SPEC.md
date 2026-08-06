@@ -25,7 +25,7 @@ normative: true
 ## Intent
 
 Make `ravi tags` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit taxonomy and
+defined by `cli`: typed error envelopes, the 0/1/2/3 exit taxonomy and
 compact discovery. Tags are the unified labeling surface for every Ravi asset;
 all of its mutations are unitary and reversible and the domain has NO
 destructive op (there is no `tags rm`/`delete`), so this is a write domain with
@@ -97,11 +97,8 @@ but not edited here because that skill belongs to the contacts wave.
 
 ## Known Failure Modes
 
-- The `tags` domain is NOT listed in `AGENT_CONTRACT_DOMAINS`
-  (`src/cli/index.ts`, frozen in this wave), so parser-level usage errors
-  (unknown flag, missing argument) still exit with commander's default plain
-  text instead of the `USAGE_ERROR` envelope + exit 2. Adding `"tags"` there is
-  the one-line follow-up.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.
 - `dbDeleteTagBinding` returns `false` both for an unknown tag and for a
   missing binding; `tags detach` disambiguates by calling
   `dbGetTagDefinition` after the failed delete. Removing that check regresses

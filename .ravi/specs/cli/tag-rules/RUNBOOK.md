@@ -20,9 +20,8 @@
    cascade guard (`cascade-cycle-skipped` in `skipped`).
 7. Exit `3` on any tag-rules op is a regression: this domain has no
    `--execute` brake — its write switch is `--apply`, and the previews exit 0.
-8. Parser-level errors (unknown flag) still print commander's default text:
-   known gap while `tag-rules` is not in `AGENT_CONTRACT_DOMAINS`
-   (`src/cli/index.ts`).
+8. Parser-level errors (unknown flag) MUST exit 2 with the `USAGE_ERROR`
+   envelope and `acceptedFlags`.
 
 ## Validation
 

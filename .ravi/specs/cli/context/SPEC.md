@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi context` and `ravi context credentials` reliable for agent consumers
-under the agent-first contract defined by `cli/crm`: typed error envelopes, the
+under the agent-first contract defined by `cli`: typed error envelopes, the
 0/1/2/3 exit taxonomy, a write brake on the destructive ops, and compact
 discovery. This domain is auth substrate: `revoke` kills live runtime auth
 (cascading to child contexts by default) and `credentials remove` drops a
@@ -105,10 +105,8 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
 
 ## Known Failure Modes
 
-- Parser-level usage errors (unknown flag) still follow commander's default
-  path until `context` is added to `AGENT_CONTRACT_DOMAINS` in
-  `src/cli/index.ts` (file owned by the shared-contract wave, not this domain
-  migration).
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.
 - `context.test.ts` mocks `../context.js`; the mock MUST export `hasContext`
   (returning true) or the contract helpers call `process.exit` in tests.
 - The local credentials store lists full keys in its own `credentials list`

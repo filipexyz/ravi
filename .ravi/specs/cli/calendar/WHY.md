@@ -46,12 +46,10 @@ the write brake's exit 3 and the not-found envelopes would be silently flattened
 into `PAYLOAD_INVALID` — the same dispatcher-flattening failure the tasks wave
 documented, one layer earlier.
 
-## Known Gap: No Dedicated Skill, No Parser-Level Usage Contract
+## Known Gap: No Dedicated Skill
 
-This wave shipped no `calendar` skill, and `AGENT_CONTRACT_DOMAINS` in
-`src/cli/index.ts` (frozen during the wave) does not yet list `calendars`, so
-parser-raised usage errors still use commander's plain-text path. Both are
-recorded in the SPEC as known gaps.
+This wave shipped no `calendar` skill, so the spec and runbook remain the
+domain teaching surface.
 
 ## Why Provider-Neutral Commands
 

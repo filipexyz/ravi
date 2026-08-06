@@ -26,7 +26,7 @@ normative: true
 
 Make `ravi commands` (prompt-command management: list, show, validate, run)
 reliable for agent consumers under the agent-first contract defined by
-`cli/crm`: typed error envelopes, the 0/1/2/3 exit taxonomy, and compact
+`cli`: typed error envelopes, the 0/1/2/3 exit taxonomy, and compact
 discovery. The domain is READ-ONLY — `run` only RENDERS the composed prompt
 and never publishes to a session — so this migration ships WITHOUT a write
 brake.
@@ -96,5 +96,5 @@ syntax (there is none).
 - `--agent` failures after discovery would waste a filesystem scan; agent
   resolution happens first and fails with `AGENT_NOT_FOUND` from the local
   config only.
-- Parser-level usage errors only exit 2 once the `commands` group is listed
-  in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`) — coordinator-owned.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.

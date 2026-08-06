@@ -28,7 +28,7 @@ normative: true
 ## Intent
 
 Make `ravi whatsapp group` and `ravi whatsapp dm` reliable for agent consumers
-under the agent-first contract defined by `cli/crm`: typed error envelopes, the
+under the agent-first contract defined by `cli`: typed error envelopes, the
 0/1/2/3 exit taxonomy, a write brake on every external mutation, and compact
 discovery. This is the highest external-risk CLI domain: its mutations act on
 REAL WhatsApp groups and people — a wrong send, remove or leave is socially
@@ -124,11 +124,8 @@ through this CLI, so the brake does not affect runtime message routing.
 
 ## Known Failure Modes
 
-- The `whatsapp` domain is NOT yet listed in `AGENT_CONTRACT_DOMAINS`
-  (`src/cli/index.ts`, frozen in this wave), so parser-level usage errors
-  (unknown flag, missing argument) still exit with commander's default plain
-  text instead of the `USAGE_ERROR` envelope + exit 2. Adding `"whatsapp"` to
-  that list is the one-line follow-up.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.
 - `group send` resolves group metadata via a provider call BEFORE sending when
   mentions are used; if the brake were placed after that resolution, dry-run
   would still hit the live bridge. The brake sits before ANY provider call.

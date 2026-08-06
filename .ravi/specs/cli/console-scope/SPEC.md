@@ -427,7 +427,7 @@ is project-scoped.
 ## Agent-First CLI Contract (`ravi cloud scope`)
 
 The implemented `cloud scope` commands (`show`, `explain`, `set`, `clear`)
-follow the Manual v2 agent-first contract defined by `cli/crm`:
+follow the Manual v2 agent-first contract defined by `cli`:
 
 - `set` and `clear` are declared UNBRAKED (no `--execute`): they are a
   reversible local-default pair (`set` ⇄ `clear`), write only non-secret local
@@ -445,9 +445,8 @@ follow the Manual v2 agent-first contract defined by `cli/crm`:
 - Unknown project refs on `set` fail as `PROJECT_ACCESS_DENIED` listing the
   visible project refs (already safe, id/slug-only) — the resolver's message
   is the suggestion surface for this remote resource.
-- The `cloud` domain root is not yet listed in `AGENT_CONTRACT_DOMAINS`
-  (`src/cli/index.ts`), so commander parser usage errors still print plain
-  text with exit 1 instead of the `USAGE_ERROR` envelope with exit 2.
+- Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
+  `cloud` root is registered in `AGENT_CONTRACT_DOMAINS`.
 
 There is no shipped `cloud-scope` skill — lacuna registrada; the CLI `--help`
 plus this spec are the teaching surface.

@@ -28,7 +28,7 @@ normative: true
 ## Intent
 
 Make `ravi audio` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`. `audio generate` and `audio tts` spend EXTERNAL API money
+defined by `cli`. `audio generate` and `audio tts` spend EXTERNAL API money
 (ElevenLabs) on every call, so both are braked: dry-run by default showing the
 resolved voice/model/speed that would be billed. `voices`, `pending` and `blob`
 are reads and stay immediate.
@@ -76,9 +76,8 @@ are reads and stay immediate.
 
 ## Known gaps
 
-- Parser-level usage errors (exit 2 + `acceptedFlags`) depend on registering
-  `audio` in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`), out of scope for
-  this migration batch.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope because
+  `audio` is registered in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`).
 
 ## Validation
 

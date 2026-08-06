@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi agents` reliable for agent consumers under the agent-first contract
-defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write
+defined by `cli`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write
 brake on the riskiest mutations, and compact discovery. Agents are runtime
 identities: `delete` removes one permanently, `reset` discards irrecoverable
 session context, and `permissions` rewrites the agent's runtime authority — so

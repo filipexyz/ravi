@@ -79,7 +79,7 @@ compatibility alias remains.
 ## Agent-First CLI Contract (Manual v2)
 
 The `ravi inbox` CLI group follows the agent-first contract defined by
-`cli/crm`:
+`cli`:
 
 1. With `--json`, every failure on a migrated op MUST return the envelope
    `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.

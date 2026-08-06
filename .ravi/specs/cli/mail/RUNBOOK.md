@@ -21,9 +21,8 @@
    `RAVI_*` envs are set, the `ContractError` rethrow in
    `runMailCommand`/`runGmailCommand` was lost — see
    `src/cli/commands/mail.ts` / `gmail.ts`.
-8. Usage errors (unknown flag) still exit 1 with commander text: `mail`/`gmail`
-   are not yet in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`) — that is the
-   pending registration, not a per-op bug.
+8. Usage errors (unknown flag) MUST exit 2 with the `USAGE_ERROR` envelope and
+   `acceptedFlags` for both `mail` and `gmail`.
 
 ## Validation
 

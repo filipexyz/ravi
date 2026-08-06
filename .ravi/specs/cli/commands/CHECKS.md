@@ -17,8 +17,6 @@
   files carry validation errors; that exit is not renamed to a contract code.
 - The shipped `commands` skill MUST document the contract (envelope, exits,
   `--fields`, absence of brakes) in its `## Contrato Do CLI` section.
-- An invalid flag on any `commands` op SHOULD exit 2 with `acceptedFlags`
-  once the domain is registered in `AGENT_CONTRACT_DOMAINS`
-  (coordinator-owned).
+- An invalid flag on any `commands` op SHOULD exit 2 with `acceptedFlags`.
 - `bun test src/cli/commands/commands.test.ts` SHOULD pass after any change
   to the commands contract surface.

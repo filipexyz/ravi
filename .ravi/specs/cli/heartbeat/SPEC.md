@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi heartbeat` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit
+contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
 taxonomy, and compact discovery. This domain deliberately declares NO braked
 op — the contract value here is the `AGENT_NOT_FOUND` envelope, exit
 discipline and `--fields`, not `--execute`.

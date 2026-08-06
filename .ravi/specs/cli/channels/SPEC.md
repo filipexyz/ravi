@@ -27,7 +27,7 @@ normative: true
 
 Make the CONFIG surface of `ravi channels` (`list`, `show`, `create`, `set`)
 reliable for agent consumers under the agent-first contract defined by
-`cli/crm`: typed not-found envelopes with cheap local suggestions and compact
+`cli`: typed not-found envelopes with cheap local suggestions and compact
 discovery. The process-infrastructure surface of the same domain —
 `start`, `stop`, `restart`, `run`, `logs`, `probe`, `status` (PM2/runner
 lifecycle) and everything in `channel-backend.ts` — is OUTSIDE this contract:
@@ -87,10 +87,8 @@ runner itself reads configs through `router-db`, not through the CLI.
 
 ## Known Failure Modes
 
-- The `channels` domain root is not yet listed in `AGENT_CONTRACT_DOMAINS`
-  (`src/cli/index.ts`, out of scope for this migration lot), so commander
-  parser usage errors still print plain text with exit 1 instead of the
-  `USAGE_ERROR` envelope with exit 2.
+- Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
+  `channels` root is registered in `AGENT_CONTRACT_DOMAINS`.
 - `CHANNEL_NOT_FOUND` is overloaded across domains: here it means a local
   channel CONFIG name; in the `slack` domain it means a Slack workspace
   channel. Consumers MUST disambiguate by `op`, never by code alone.

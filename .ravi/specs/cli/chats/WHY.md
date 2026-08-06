@@ -34,8 +34,5 @@ happens inside that try, so without an explicit `instanceof ContractError`
 rethrow the envelope would be flattened back into a legacy `fail()` — the same
 class of bug the contacts wave hit with its service-layer wrapper.
 
-`chats` is not yet in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`), because
-that file was frozen during this parallel wave; parser-level usage errors keep
-commander's default behavior until that one-line follow-up. There is also no
-dedicated `chats` skill to teach the surface — both are registered as gaps in
-the SPEC rather than silently ignored.
+There is no dedicated `chats` skill to teach the surface; that gap remains
+registered in the SPEC rather than silently ignored.

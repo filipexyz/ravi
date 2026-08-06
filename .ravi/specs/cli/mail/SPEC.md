@@ -30,7 +30,7 @@ normative: true
 
 Make `ravi mail` (accounts, mailboxes, messages, outbox, threads, providers,
 domains) and `ravi gmail` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit
+contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
 taxonomy, a write brake on every op that produces external e-mail to real
 humans, and compact discovery. Mail is the highest-blast-radius surface in the
 CLI — a sent e-mail cannot be unsent — so every send path (`mail send`,
@@ -66,10 +66,9 @@ CLI — a sent e-mail cannot be unsent — so every send path (`mail send`,
 7. `runMailCommand` and `runGmailCommand` wrap every command body in a legacy
    CloudAuthError catch; both MUST rethrow `ContractError` untouched so the
    registry dispatcher preserves the exit taxonomy (1/2/3) for agent callers.
-8. Without `--json`, error output keeps the legacy text path (exit 1).
-   Parser-level usage errors (exit 2 + `acceptedFlags`) require registering
-   `mail` and `gmail` in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`), which
-   is outside this migration's allowed paths — documented as pending.
+8. Without `--json`, command-body error output keeps the legacy text path
+   (exit 1). Parser-level usage errors use the global exit-2 `USAGE_ERROR`
+   envelope with `acceptedFlags` for both `mail` and `gmail`.
 
 ## Write classification (brake decision per op)
 

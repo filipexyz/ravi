@@ -25,7 +25,7 @@ suggestions drawn from the live index, with candidates fetched defensively
 Enum flags moved to the usage taxonomy: `--mode` and `--kind` have closed
 vocabularies, so a wrong value is a caller bug (exit 2 + `acceptedValues`),
 not an execution failure. This mirrors the in-body `USAGE_ERROR` precedent
-set by `cli/crm` for `--value`.
+set by `cli` for `--value`.
 
 `--fields` lands on `list` only: `get` returns a single inherited-context
 blob whose value is the content itself, while `list` is the scan surface

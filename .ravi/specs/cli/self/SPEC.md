@@ -24,7 +24,7 @@ normative: true
 ## Intent
 
 Keep `ravi self` a purely read-only orientation surface under the agent-first
-contract defined by `cli/crm`. The domain answers "who am I, in which session,
+contract defined by `cli`. The domain answers "who am I, in which session,
 bound to which chat/route, with which capabilities" — it never writes, so the
 contract here is compact discovery, not brakes.
 

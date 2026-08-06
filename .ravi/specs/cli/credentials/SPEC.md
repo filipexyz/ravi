@@ -28,7 +28,7 @@ normative: true
 ## Intent
 
 Make `ravi credentials` (groups `connections`, `policies`, `broker`) reliable
-for agent consumers under the agent-first contract defined by `cli/crm`: typed
+for agent consumers under the agent-first contract defined by `cli`: typed
 error envelopes, the 0/1/2/3 exit taxonomy, a write brake on the riskiest
 mutations, and compact discovery — with one domain-specific hardening on top:
 credential material is radioactive, so secret values and secret refs MUST NOT
@@ -90,10 +90,8 @@ registrada; the CLI `--help` plus this spec are the teaching surface.
 
 ## Known Failure Modes
 
-- The `credentials` domain root is not yet listed in `AGENT_CONTRACT_DOMAINS`
-  (`src/cli/index.ts`, out of scope for this migration lot), so commander
-  parser usage errors (unknown flag/missing argument) still print plain text
-  with exit 1 instead of the `USAGE_ERROR` envelope with exit 2.
+- Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
+  `credentials` root is registered in `AGENT_CONTRACT_DOMAINS`.
 - `broker exec` predates the brake with an opt-in `--dry-run`; inverting its
   polarity silently (making `--dry-run` the default semantics of the same
   flag) would break scripts — that is why the brake is a separate `--execute`

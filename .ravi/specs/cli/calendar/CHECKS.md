@@ -38,9 +38,9 @@ owners:
 - Unbraked writes declared in the SPEC (`events create/update`, `sources
   create/sync`, `calendars create/disable`, `outbox retry`) MUST keep
   immediate-write behavior while no provider delivery adapter exists.
-- The known gaps MUST stay recorded in the SPEC while they exist: no dedicated
-  `calendar` skill ships this surface, and the parser-level usage contract is
-  not installed for `calendars` (usage errors are not yet exit 2).
+- The known skill gap MUST stay recorded in the SPEC while no dedicated
+  `calendar` skill ships this surface.
+- Parser-level usage errors MUST use the global exit-2 `USAGE_ERROR` envelope.
 
 ## JSON
 

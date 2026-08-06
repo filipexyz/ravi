@@ -25,7 +25,7 @@ normative: true
 ## Intent
 
 Make `ravi work-objects` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit
+contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
 taxonomy, and a write brake on `action` — the one op whose blast radius the
 CLI cannot inspect, because the actionId is executed by a domain adapter with
 provider-defined semantics. The domain contract for adapters themselves stays
@@ -103,5 +103,5 @@ not-found contract.
   `formError: "Task not found"`) arrives as a SUCCESSFUL result envelope; the
   CLI must not re-classify it, or it would mask the adapter's structured
   field errors.
-- Parser-level usage errors only exit 2 once the `work-objects` group is
-  listed in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`) — coordinator-owned.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.

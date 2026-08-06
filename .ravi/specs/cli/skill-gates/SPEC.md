@@ -27,7 +27,7 @@ normative: true
 ## Intent
 
 Make `ravi skill-gates` reliable for agent consumers under the agent-first
-contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3 exit
+contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
 taxonomy, a write brake on destructive rule changes, and compact discovery.
 Skill gates decide which skills load automatically at runtime — removing or
 resetting a rule silently changes runtime behavior for every session, so `rm`
@@ -95,10 +95,8 @@ brake does not affect gate evaluation.
 
 ## Known Failure Modes
 
-- Parser-level usage errors (exit 2 + `acceptedFlags`) require registering
-  `skill-gates` in `AGENT_CONTRACT_DOMAINS` (`src/cli/index.ts`); that file is
-  integration-owned and pending for this domain — until then commander's
-  default text/exit applies to parser errors.
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.
 - `rm` on a DEFAULT id with no configured row is valid (it plans
   `disable-default`); guarding not-found with `!existing` alone would wrongly
   reject default ids — the check must be `!isDefault && !existing`.

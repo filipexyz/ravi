@@ -25,7 +25,7 @@ normative: true
 ## Intent
 
 Make `ravi runtime credentials` reliable for agent consumers under the
-agent-first contract defined by `cli/crm`: typed error envelopes, the 0/1/2/3
+agent-first contract defined by `cli`: typed error envelopes, the 0/1/2/3
 exit taxonomy and compact discovery. The surface manages provider credential
 POOLS (metadata, health, selection) — never secret values: the store only
 exposes redacted serializations (`secretRef`, env names and auth-profile paths
@@ -89,9 +89,8 @@ teaches this surface.
 
 ## Known Failure Modes
 
-- Parser-level usage errors still follow commander's default path until
-  `runtime` is added to `AGENT_CONTRACT_DOMAINS` in `src/cli/index.ts` (file
-  owned by the shared-contract wave, not this domain migration).
+- Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
+  `acceptedFlags`.
 - The store throws plain `Error("Runtime credential not found: ...")`; mapping
   by message pattern is intentional — wrapping only `getRuntimeCredential`
   would miss the enable/disable/reset-health/refresh paths.
