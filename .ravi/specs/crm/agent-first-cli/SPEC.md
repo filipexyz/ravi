@@ -74,6 +74,16 @@ help calls per task 2.33 → 1.60).
 | irreversible write blocked | HITL block before network | 3 |
 | provider error | sanitized (ANSI stripped, ~2KB truncated) | 1 |
 
+## Delivery scope (pilot)
+
+This change implements the contract on the surfaces measured by the benchmark:
+`pipeline` (show/list/create/set) and `opportunity` (show/create/move) ops carry
+the envelope, taxonomy, suggestions and the write brake; listings carry
+`--fields` and actionable pagination; per-op help ships in the apps router.
+Remaining crm surfaces (`task`, `fact`, `contact`, `account`) keep their current
+behavior and are declared debt of this spec — they migrate in the follow-up
+waves, spec-first, same invariants.
+
 ## Internal consumers
 
 `src/plugins/internal/ravi-system/skills/crm/SKILL.md` teaches agents this CLI,
