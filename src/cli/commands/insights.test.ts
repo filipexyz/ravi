@@ -31,9 +31,15 @@ mock.module("../decorators.js", () => ({
   Option: () => () => {},
 }));
 
+let insightsListMock: Array<Record<string, unknown>> = [];
+let searchResultsMock: Array<Record<string, unknown>> = [];
+
 mock.module("../context.js", () => ({
   ...actualCliContextModule,
   getContext: () => runtimeContext,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -59,10 +65,10 @@ mock.module("../../insights/index.js", () => ({
   },
   dbListInsights: (query: Record<string, unknown>) => {
     listCalls.push(query);
-    return [];
+    return insightsListMock;
   },
   dbGetInsight: () => null,
-  dbSearchInsights: () => [],
+  dbSearchInsights: () => searchResultsMock,
   dbUpsertInsightLink: () => ({}),
   dbAddInsightComment: () => ({}),
 }));
@@ -79,6 +85,7 @@ mock.module("../../tags/index.js", () => ({
 }));
 
 const { InsightCommands } = await import("./insights.js");
+const { ContractError } = await import("../agent-contract.js");
 
 describe("InsightCommands create", () => {
   beforeEach(() => {
@@ -173,5 +180,180 @@ describe("InsightCommands create", () => {
       insightIds: ["ins-123"],
       limit: 10,
     });
+  });
+});
+
+describe("insights agent-first contract", () => {
+  const fullInsight = (id: string): Record<string, unknown> => ({
+    id,
+    kind: "pattern",
+    confidence: "high",
+    importance: "high",
+    summary: "Sempre linkar o artifact da task.",
+    detail: null,
+    author: { name: "dev" },
+    origin: { kind: "manual" },
+    createdAt: 1,
+    updatedAt: 2,
+    links: [],
+    comments: [],
+  });
+
+  beforeEach(() => {
+    createCalls.length = 0;
+    listCalls.length = 0;
+    tagAttachCalls.length = 0;
+    insightsListMock = [];
+    searchResultsMock = [];
+  });
+
+  function expectContractError(run: () => unknown): InstanceType<typeof ContractError> {
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      run();
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    return thrown as InstanceType<typeof ContractError>;
+  }
+
+  it("emits INSIGHT_NOT_FOUND envelope with suggestions on show --json (exit 1)", () => {
+    insightsListMock = [fullInsight("ins-123"), fullInsight("ins-456")];
+    const error = expectContractError(() => new InsightCommands().show("ins-999", true));
+    expect(error.exitCode).toBe(1);
+    const envelope = error.envelope();
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("insights show");
+    expect(envelope.error.code).toBe("INSIGHT_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("ins-123");
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+  });
+
+  it("emits USAGE_ERROR with acceptedValues on invalid --kind for list (exit 2)", () => {
+    const error = expectContractError(() =>
+      new InsightCommands().list(
+        "bogus",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "10",
+        true,
+      ),
+    );
+    expect(error.exitCode).toBe(2);
+    const envelope = error.envelope();
+    expect(envelope.op).toBe("insights list");
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(envelope.error.acceptedValues).toContain("observation");
+  });
+
+  it("emits USAGE_ERROR on invalid --kind for create (exit 2) and creates nothing", () => {
+    const error = expectContractError(() =>
+      new InsightCommands().create(
+        "Resumo qualquer.",
+        undefined,
+        "bogus",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      ),
+    );
+    expect(error.exitCode).toBe(2);
+    expect(error.envelope().error.code).toBe("USAGE_ERROR");
+    expect(createCalls).toHaveLength(0);
+  });
+
+  it("emits USAGE_ERROR on invalid --limit for list (exit 2)", () => {
+    const error = expectContractError(() =>
+      new InsightCommands().list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "0",
+        true,
+      ),
+    );
+    expect(error.exitCode).toBe(2);
+    expect(error.envelope().error.code).toBe("USAGE_ERROR");
+  });
+
+  it("supports --fields compact mode on insights list", () => {
+    insightsListMock = [fullInsight("ins-123")];
+    const originalLog = console.log;
+    console.log = () => {};
+    let payload: { items: Array<Record<string, unknown>>; insights: Array<Record<string, unknown>> };
+    try {
+      payload = new InsightCommands().list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "10",
+        true,
+        undefined,
+        undefined,
+        "id,kind",
+      ) as unknown as typeof payload;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(payload.items).toHaveLength(1);
+    expect(Object.keys(payload.items[0] ?? {}).sort()).toEqual(["id", "kind"]);
+    expect(payload.insights).toEqual(payload.items);
+  });
+
+  it("supports --fields compact mode on insights search", () => {
+    searchResultsMock = [fullInsight("ins-123")];
+    const originalLog = console.log;
+    console.log = () => {};
+    let payload: { insights: Array<Record<string, unknown>> };
+    try {
+      payload = new InsightCommands().search("linkar", "10", true, "id,summary") as unknown as typeof payload;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(payload.insights).toHaveLength(1);
+    expect(Object.keys(payload.insights[0] ?? {}).sort()).toEqual(["id", "summary"]);
+  });
+
+  it("keeps create unbraked: writes immediately without any --execute flag", () => {
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      new InsightCommands().create("Escrita local reversível é imediata.");
+    } finally {
+      console.log = originalLog;
+    }
+    expect(createCalls).toHaveLength(1);
   });
 });

@@ -1,6 +1,29 @@
-import { afterAll, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
 let pricingUpdates: unknown[] = [];
+
+type MockCostSummary = {
+  total_cost: number;
+  total_input: number;
+  total_output: number;
+  total_cache_read: number;
+  total_cache_creation: number;
+  turns: number;
+};
+
+const zeroSummary = (): MockCostSummary => ({
+  total_cost: 0,
+  total_input: 0,
+  total_output: 0,
+  total_cache_read: 0,
+  total_cache_creation: 0,
+  turns: 0,
+});
+
+let agentCostMock: MockCostSummary = zeroSummary();
+let sessionCostMock: MockCostSummary = zeroSummary();
+let topSessionsMock: Array<Record<string, unknown>> = [];
+let knownAgentIds: string[] = [];
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -10,6 +33,18 @@ mock.module("../decorators.js", () => ({
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
   Arg: () => () => {},
   Option: () => () => {},
+}));
+
+const actualCliContextModule = await import("../context.js");
+
+mock.module("../context.js", () => ({
+  ...actualCliContextModule,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
+  fail: (message: string) => {
+    throw new Error(message);
+  },
 }));
 
 mock.module("../../router/index.js", () => ({
@@ -43,23 +78,18 @@ mock.module("../../router/index.js", () => ({
       turns: 1,
     },
   ],
-  dbGetCostForAgent: () => ({
-    total_cost: 0,
-    total_input: 0,
-    total_output: 0,
-    total_cache_read: 0,
-    total_cache_creation: 0,
-    turns: 0,
-  }),
-  dbGetCostForSession: () => ({
-    total_cost: 0,
-    total_input: 0,
-    total_output: 0,
-    total_cache_read: 0,
-    total_cache_creation: 0,
-    turns: 0,
-  }),
-  dbGetTopSessions: () => [],
+  dbGetCostForAgent: () => agentCostMock,
+  dbGetCostForSession: () => sessionCostMock,
+  dbGetTopSessions: () => topSessionsMock,
+  getAgent: (agentId: string) => (knownAgentIds.includes(agentId) ? { id: agentId } : null),
+  getAllAgents: () => [
+    { id: "main", name: "Main" },
+    { id: "vendas", name: null },
+  ],
+  listSessions: () => [
+    { sessionKey: "agent:main:main", name: "main-session" },
+    { sessionKey: "agent:vendas:main", name: "vendas-session" },
+  ],
   dbListCostEventsForPricingRecompute: () => [
     {
       id: 123,
@@ -121,6 +151,7 @@ mock.module("../../costs/pricing-catalog.js", () => ({
 }));
 
 const { CostCommands } = await import("./costs.js");
+const { ContractError } = await import("../agent-contract.js");
 
 async function captureJson(run: () => unknown | Promise<unknown>): Promise<Record<string, unknown>> {
   const lines: string[] = [];
@@ -210,6 +241,127 @@ describe("CostCommands --json", () => {
         pricingModel: "claude-haiku-4-5",
       }),
     ]);
+  });
+});
+
+describe("costs agent-first contract", () => {
+  beforeEach(() => {
+    pricingUpdates = [];
+    agentCostMock = zeroSummary();
+    sessionCostMock = zeroSummary();
+    topSessionsMock = [];
+    knownAgentIds = [];
+  });
+
+  function expectContractError(run: () => unknown): InstanceType<typeof ContractError> {
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      run();
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    return thrown as InstanceType<typeof ContractError>;
+  }
+
+  it("emits AGENT_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+    const error = expectContractError(() => new CostCommands().agent("mainn", "24", true));
+    expect(error.exitCode).toBe(1);
+    const envelope = error.envelope();
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("costs agent");
+    expect(envelope.error.code).toBe("AGENT_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("main");
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+  });
+
+  it("keeps returning numbers for a deleted agent that still has cost history", async () => {
+    agentCostMock = { ...zeroSummary(), total_cost: 2, total_input: 10, turns: 4 };
+    const payload = await captureJson(() => {
+      new CostCommands().agent("ghost", "24", true);
+    });
+    expect(payload.agentId).toBe("ghost");
+    expect(payload.summary).toMatchObject({ turns: 4, total_cost: 2 });
+  });
+
+  it("emits SESSION_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+    const error = expectContractError(() => new CostCommands().session("main-sesion", true));
+    expect(error.exitCode).toBe(1);
+    const envelope = error.envelope();
+    expect(envelope.op).toBe("costs session");
+    expect(envelope.error.code).toBe("SESSION_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("main-session");
+  });
+
+  it("keeps the raw-key fallback for unresolved sessions that still have cost history", async () => {
+    sessionCostMock = { ...zeroSummary(), total_cost: 1, turns: 2 };
+    const payload = await captureJson(() => {
+      new CostCommands().session("agent:pruned:main", true);
+    });
+    expect(payload.sessionKey).toBe("agent:pruned:main");
+    expect(payload.sessionName).toBeNull();
+    expect(payload.summary).toMatchObject({ turns: 2 });
+  });
+
+  it("supports --fields compact mode on costs agents", async () => {
+    const payload = await captureJson(() => {
+      new CostCommands().agents("24", "10", true, "agentId,total_cost");
+    });
+    const agents = payload.agents as Array<Record<string, unknown>>;
+    expect(agents).toHaveLength(1);
+    expect(Object.keys(agents[0] ?? {}).sort()).toEqual(["agentId", "total_cost"]);
+  });
+
+  it("supports --fields compact mode on costs top-sessions", async () => {
+    topSessionsMock = [
+      {
+        session_key: "agent:main:main",
+        total_cost: 3,
+        total_input: 100,
+        total_output: 50,
+        total_cache_read: 0,
+        total_cache_creation: 0,
+        turns: 5,
+      },
+    ];
+    const payload = await captureJson(() => {
+      new CostCommands().topSessions("24", "10", true, "sessionKey,total_cost");
+    });
+    const sessions = payload.sessions as Array<Record<string, unknown>>;
+    expect(sessions).toHaveLength(1);
+    expect(Object.keys(sessions[0] ?? {}).sort()).toEqual(["sessionKey", "total_cost"]);
+  });
+
+  it("supports --fields compact mode on costs pricing coverage rows", async () => {
+    const payload = await captureJson(async () => {
+      await new CostCommands().pricing("24", true, undefined, undefined, undefined, undefined, "model,events");
+    });
+    const rows = payload.rows as Array<Record<string, unknown>>;
+    expect(rows).toHaveLength(1);
+    expect(Object.keys(rows[0] ?? {}).sort()).toEqual(["events", "model"]);
+  });
+
+  it("previews recompute with --dry-run: reports rows and writes nothing", async () => {
+    const payload = await captureJson(async () => {
+      await new CostCommands().pricing("24", true, true, "10", undefined, true);
+    });
+    expect(payload.recompute).toEqual(
+      expect.objectContaining({
+        dryRun: true,
+        attempted: 1,
+        updated: 0,
+        priced: 1,
+        unpriced: 0,
+      }),
+    );
+    const recompute = payload.recompute as { rows: Array<Record<string, unknown>> };
+    expect(recompute.rows).toHaveLength(1);
+    expect(recompute.rows[0]).toMatchObject({ id: 123, pricingStatus: "priced" });
+    expect(pricingUpdates).toHaveLength(0);
   });
 });
 

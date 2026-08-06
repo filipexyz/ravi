@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
-import { fail, getContext } from "../context.js";
+import { getContext } from "../context.js";
+import { CONTRACT_EXIT_USAGE, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListOffset } from "../pagination.js";
 import {
   declareCommandReturns,
@@ -30,29 +31,96 @@ import {
   type InsightListQuery,
 } from "../../insights/types.js";
 
-function requireInsightKind(value?: string): InsightKind | undefined {
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+//
+// Insights deliberately declares NO braked op: `create` writes ONLY local,
+// reversible rows (an insight, an optional comment and tag bindings in the
+// local SQLite) — nothing leaves the machine and nothing is destroyed, so
+// braking it would put exit-3 friction inside the routine "record what I
+// learned" loop without protecting anything.
+// ============================================================
+
+const INSIGHT_LINK_TYPES = ["task", "session", "agent", "artifact", "profile"] as const;
+
+function failInsightsUsage(op: string, message: string, acceptedValues: readonly string[], asJson?: boolean): never {
+  contractFail(op, "USAGE_ERROR", message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: {
+      suggestedAction: `Re-run '${op}' with one of: ${acceptedValues.join(", ")}`,
+      acceptedValues: [...acceptedValues],
+    },
+  });
+}
+
+function requireInsightLimit(op: string, limit: string | undefined, asJson?: boolean): number {
+  const parsedLimit = Number.parseInt(limit ?? "20", 10);
+  if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
+    contractFail(op, "USAGE_ERROR", `Invalid --limit: ${limit}. Use a positive integer.`, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: { suggestedAction: `Re-run '${op}' with --limit <positive integer>` },
+    });
+  }
+  return parsedLimit;
+}
+
+/** Real insight ids for NOT_FOUND suggestions; empty when the store is unreadable. */
+function insightIdCandidates(): string[] {
+  try {
+    return dbListInsights({ limit: 40 }).map((insight) => insight.id);
+  } catch {
+    return [];
+  }
+}
+
+function failInsightNotFound(op: string, id: string, asJson?: boolean): never {
+  contractFail(op, "INSIGHT_NOT_FOUND", `Insight not found: ${id}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the insight id (see suggestions; list with: ravi insights list --json)",
+      suggestions: suggestSimilar(id, insightIdCandidates()),
+    },
+  });
+}
+
+function requireInsightKind(op: string, value?: string, asJson?: boolean): InsightKind | undefined {
   if (!value?.trim()) return undefined;
   const normalized = value.trim().toLowerCase() as InsightKind;
   if (!INSIGHT_KINDS.includes(normalized)) {
-    fail(`Invalid insight kind: ${value}. Use ${INSIGHT_KINDS.join("|")}.`);
+    failInsightsUsage(op, `Invalid insight kind: ${value}. Use ${INSIGHT_KINDS.join("|")}.`, INSIGHT_KINDS, asJson);
   }
   return normalized;
 }
 
-function requireConfidence(value?: string): InsightConfidence | undefined {
+function requireConfidence(op: string, value?: string, asJson?: boolean): InsightConfidence | undefined {
   if (!value?.trim()) return undefined;
   const normalized = value.trim().toLowerCase() as InsightConfidence;
   if (!INSIGHT_CONFIDENCE.includes(normalized)) {
-    fail(`Invalid insight confidence: ${value}. Use ${INSIGHT_CONFIDENCE.join("|")}.`);
+    failInsightsUsage(
+      op,
+      `Invalid insight confidence: ${value}. Use ${INSIGHT_CONFIDENCE.join("|")}.`,
+      INSIGHT_CONFIDENCE,
+      asJson,
+    );
   }
   return normalized;
 }
 
-function requireImportance(value?: string): InsightImportance | undefined {
+function requireImportance(op: string, value?: string, asJson?: boolean): InsightImportance | undefined {
   if (!value?.trim()) return undefined;
   const normalized = value.trim().toLowerCase() as InsightImportance;
   if (!INSIGHT_IMPORTANCE.includes(normalized)) {
-    fail(`Invalid insight importance: ${value}. Use ${INSIGHT_IMPORTANCE.join("|")}.`);
+    failInsightsUsage(
+      op,
+      `Invalid insight importance: ${value}. Use ${INSIGHT_IMPORTANCE.join("|")}.`,
+      INSIGHT_IMPORTANCE,
+      asJson,
+    );
   }
   return normalized;
 }
@@ -147,11 +215,21 @@ export class InsightCommands {
 
     if (extraLinkType?.trim() || extraLinkId?.trim()) {
       const normalizedType = extraLinkType?.trim() as InsightLinkTargetType | undefined;
-      if (!normalizedType || !["task", "session", "agent", "artifact", "profile"].includes(normalizedType)) {
-        fail("Invalid --link-type. Use task|session|agent|artifact|profile.");
+      if (!normalizedType || !INSIGHT_LINK_TYPES.includes(normalizedType)) {
+        failInsightsUsage(
+          "insights create",
+          `Invalid --link-type. Use ${INSIGHT_LINK_TYPES.join("|")}.`,
+          INSIGHT_LINK_TYPES,
+          asJson,
+        );
       }
       if (!extraLinkId?.trim()) {
-        fail("--link-id is required when --link-type is set.");
+        failInsightsUsage(
+          "insights create",
+          "--link-id is required when --link-type is set.",
+          INSIGHT_LINK_TYPES,
+          asJson,
+        );
       }
       links.push({ targetType: normalizedType, targetId: extraLinkId.trim() });
     }
@@ -165,12 +243,15 @@ export class InsightCommands {
       }
     }
 
+    const normalizedKind = requireInsightKind("insights create", kind, asJson);
+    const normalizedConfidence = requireConfidence("insights create", confidence, asJson);
+    const normalizedImportance = requireImportance("insights create", importance, asJson);
     const created = dbCreateInsight({
       summary: summary.trim(),
       ...(detail?.trim() ? { detail: detail.trim() } : {}),
-      ...(requireInsightKind(kind) ? { kind: requireInsightKind(kind) } : {}),
-      ...(requireConfidence(confidence) ? { confidence: requireConfidence(confidence) } : {}),
-      ...(requireImportance(importance) ? { importance: requireImportance(importance) } : {}),
+      ...(normalizedKind ? { kind: normalizedKind } : {}),
+      ...(normalizedConfidence ? { confidence: normalizedConfidence } : {}),
+      ...(normalizedImportance ? { importance: normalizedImportance } : {}),
       author,
       origin: {
         kind: ctx?.contextId ? "runtime-context" : "manual",
@@ -235,15 +316,14 @@ export class InsightCommands {
     @Option({
       flags: "--rich",
       description:
-        "Return rich projection with stats, decorated lineage (task/session/agent refs), and per-link metadata. Honors --limit only; other filters are ignored.",
+        "Return rich projection with stats, decorated lineage (task/session/agent refs), and per-link metadata. Honors --limit only; other filters and --fields are ignored.",
     })
     rich?: boolean,
     @Option({ flags: "--offset <n>", description: "Number of matching insights to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
-    const parsedLimit = Number.parseInt(limit ?? "20", 10);
-    if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
-      fail(`Invalid --limit: ${limit}`);
-    }
+    const parsedLimit = requireInsightLimit("insights list", limit, asJson);
     const pageOffset = parseCliListOffset(offset);
 
     if (rich) {
@@ -254,10 +334,13 @@ export class InsightCommands {
 
     const linkFilter = resolveLinkFilter({ taskId, sessionName, agentId, profileId });
     const insightIds = canonicalAssetIdsForTag("insight", tag);
+    const normalizedKind = requireInsightKind("insights list", kind, asJson);
+    const normalizedConfidence = requireConfidence("insights list", confidence, asJson);
+    const normalizedImportance = requireImportance("insights list", importance, asJson);
     const queryInput: InsightListQuery = {
-      ...(requireInsightKind(kind) ? { kind: requireInsightKind(kind) } : {}),
-      ...(requireConfidence(confidence) ? { confidence: requireConfidence(confidence) } : {}),
-      ...(requireImportance(importance) ? { importance: requireImportance(importance) } : {}),
+      ...(normalizedKind ? { kind: normalizedKind } : {}),
+      ...(normalizedConfidence ? { confidence: normalizedConfidence } : {}),
+      ...(normalizedImportance ? { importance: normalizedImportance } : {}),
       ...(query?.trim() ? { text: query.trim() } : {}),
       ...(linkFilter.linkType && linkFilter.linkId ? linkFilter : {}),
       ...(insightIds ? { insightIds } : {}),
@@ -292,13 +375,14 @@ export class InsightCommands {
         query?.trim() || null,
       ],
     });
+    const projectedItems = pickFields(page.items, fields);
     const payload = {
       count: page.items.length,
       total: page.total,
       pagination,
       query: { ...queryInput, tag: tag?.trim() || undefined },
-      items: page.items,
-      insights: page.items,
+      items: projectedItems,
+      insights: projectedItems,
     };
 
     if (asJson) {
@@ -332,7 +416,7 @@ export class InsightCommands {
   ) {
     const insight = dbGetInsight(id.trim());
     if (!insight) {
-      fail(`Insight not found: ${id}`);
+      failInsightNotFound("insights show", id.trim(), asJson);
     }
 
     const tags = canonicalTagSlugsForAsset("insight", insight.id);
@@ -377,11 +461,10 @@ export class InsightCommands {
     @Arg("text", { description: "Search text" }) text: string,
     @Option({ flags: "--limit <n>", description: "Result limit", defaultValue: "20" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
-    const parsedLimit = Number.parseInt(limit ?? "20", 10);
-    if (!Number.isFinite(parsedLimit) || parsedLimit <= 0) {
-      fail(`Invalid --limit: ${limit}`);
-    }
+    const parsedLimit = requireInsightLimit("insights search", limit, asJson);
 
     const items = dbSearchInsights(text.trim(), { limit: parsedLimit });
     const payload = {
@@ -390,7 +473,7 @@ export class InsightCommands {
         text: text.trim(),
         limit: parsedLimit,
       },
-      insights: items,
+      insights: pickFields(items, fields),
     };
 
     if (asJson) {

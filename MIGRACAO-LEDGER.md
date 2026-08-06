@@ -59,7 +59,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 37 | devin | devin.ts | (sem skill) | pendente | — |
 | 38 | slack | slack.ts | slack | **MIGRADO** | cli/slack (atualizada) |
 | 39 | media/image/audio/video/transcribe | media.ts, image.ts, audio.ts, video.ts, transcribe.ts | audio, image, video | pendente | — |
-| 40 | costs/metrics/insights | costs.ts, metrics.ts, insights.ts | (sem skill) | pendente | — |
+| 40 | costs/metrics/insights | costs.ts, metrics.ts, insights.ts | (sem skill — lacunas registradas) | **MIGRADO** | cli/costs, cli/metrics, cli/insights |
 | 41 | context+runtime | context.ts, runtime-credentials.ts, runtime-presets.ts | context-cli (dev) | pendente | — |
 | 42 | credentials/connectors/bridges | credentials.ts, connectors.ts, bridges.ts | (sem skill) | pendente | — |
 | 43 | cloud | cloud-projects.ts, cloud-scope.ts | (sem skill) | pendente | — |
@@ -648,6 +648,26 @@ CLI real com superseding registrado no WHY.
 (9 preservados + 19 de contrato; replay dry-run prova ZERO chamadas de
 history) · spec gate PASSED · skill slack (que já ensinava --execute) ganhou
 Contrato Do CLI.
+
+### 40. costs + metrics + insights — MIGRADOS (lote de leitura; subagente, verificado e integrado)
+
+**Escopo:** NENHUM freio novo, confirmado por inspeção: `costs pricing
+--recompute` mantém `--dry-run` equivalente (kind:"read" mau-declarado
+registrado sem flipar); `metrics rollup` grava só derivados idempotentes (o
+daemon chama a service layer direto — freio no CLI não bloquearia nada);
+`insights create` grava linhas locais reversíveis (teste prova escrita
+imediata). Codes com semântica cuidadosa: `AGENT_NOT_FOUND` em `costs agent`
+só quando sem config E sem histórico all-time (agente deletado com histórico
+continua auditável — decisão documentada); `SESSION_NOT_FOUND` preservando
+fallback de chave crua para sessões podadas; `INSIGHT_NOT_FOUND` com
+suggestions; `USAGE_ERROR` exit 2 com `acceptedValues` em `--by`/`--kind`/
+`--confidence`/`--importance`/`--limit` (antes coagiam silenciosamente ou
+colapsavam em fail() exit 1). `--fields` em todas as listagens de array
+(agents, top-sessions, pricing rows, metrics show, insights list/search;
+payloads-objeto e `--rich` declarados N/A). Usage contract nos 3 subtrees.
+
+**Rotina X:** costs 12/12 · metrics 7/7 (novo) · insights 10/10 · typecheck
+repo limpo · spec gate PASSED (3 specs).
 
 ### INCIDENTE — limite de sessão da conta (2026-08-06 ~05:00)
 
