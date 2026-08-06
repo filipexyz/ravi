@@ -52,6 +52,9 @@ let currentAgent: AgentLike | null = null;
 let allAgents: AgentLike[] = [];
 let createAgentCalls: Array<Record<string, unknown>> = [];
 let updateAgentCalls: Array<{ id: string; partial: Record<string, unknown> }> = [];
+let deleteAgentCalls: string[] = [];
+let deleteAgentResult = true;
+let deleteSessionCalls: string[] = [];
 let resolvedSession: SessionLike | null = null;
 let mainSession: SessionLike | null = null;
 let sessionsByAgent: SessionLike[] = [];
@@ -93,6 +96,9 @@ mock.module("../decorators.js", () => ({
 mock.module("../context.js", () => ({
   ...actualCliContextModule,
   getContext: () => undefined,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -141,7 +147,10 @@ mock.module("../../router/config.js", () => ({
       currentAgent = { ...currentAgent, ...partial };
     }
   },
-  deleteAgent: () => false,
+  deleteAgent: (id: string) => {
+    deleteAgentCalls.push(id);
+    return deleteAgentResult;
+  },
   setAgentDebounce: () => {},
   checkAgentDirs: () => [],
   ensureAgentDirs: () => {},
@@ -198,7 +207,10 @@ mock.module("../../router/router-db.js", () => ({
 
 mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
-  deleteSession: () => true,
+  deleteSession: (sessionKey: string) => {
+    deleteSessionCalls.push(sessionKey);
+    return true;
+  },
   getSessionTurnUsageSummary: (sessionKey: string) =>
     sessionTurnUsageSummaries.get(sessionKey) ?? defaultTurnUsageSummary(),
   getSessionsByAgent: () => sessionsByAgent,
@@ -229,6 +241,7 @@ mock.module("../../runtime/model-preset-store.js", () => ({
 }));
 
 const { AgentsCommands } = await import("./agents.js");
+const { ContractError } = await import("../agent-contract.js");
 const { agentPermissionsReturnSchema, agentSetReturnSchema, agentShowReturnSchema, agentsListReturnSchema } =
   await import("./operational-return-schemas.js");
 
@@ -659,7 +672,7 @@ describe("AgentsCommands permissions", () => {
     };
 
     try {
-      const payload = commands.permissions("dev", "full-access", undefined, true);
+      const payload = commands.permissions("dev", "full-access", undefined, true, undefined, true);
 
       expect(payload).toMatchObject({
         action: "permissions",
@@ -750,7 +763,7 @@ describe("AgentsCommands permissions", () => {
     };
 
     try {
-      const payload = commands.permissions("dev", "none", undefined, true);
+      const payload = commands.permissions("dev", "none", undefined, true, undefined, true);
 
       expect(payload).toMatchObject({
         action: "permissions",
@@ -788,7 +801,7 @@ describe("AgentsCommands permissions", () => {
     console.log = () => {};
 
     try {
-      const payload = commands.permissions("dev", undefined, undefined, true, true);
+      const payload = commands.permissions("dev", undefined, undefined, true, true, true);
 
       expect(payload).toMatchObject({
         action: "permissions",
@@ -1102,4 +1115,189 @@ describe("AgentsCommands sync-instructions --json", () => {
     });
   });
 });
+describe("agents agent-first contract", () => {
+  beforeEach(() => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev" };
+    allAgents = [
+      { id: "dev", cwd: "/tmp/dev" },
+      { id: "vendas", cwd: "/tmp/vendas" },
+    ];
+    createAgentCalls = [];
+    updateAgentCalls = [];
+    deleteAgentCalls = [];
+    deleteAgentResult = true;
+    deleteSessionCalls = [];
+    resolvedSession = null;
+    mainSession = null;
+    sessionsByAgent = [];
+    presetsById = {};
+  });
+
+  it("emits AGENT_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      commands.show("vendass", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("agents show");
+    expect(envelope.error.code).toBe("AGENT_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("vendas");
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+  });
+
+  it("blocks agents delete without --execute (dry-run, exit 3, no delete)", () => {
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      commands.delete("dev", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("agents delete");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    expect((envelope.error.plan as Record<string, unknown>).agentId).toBe("dev");
+    expect(deleteAgentCalls).toHaveLength(0);
+  });
+
+  it("deletes the agent when --execute is passed", () => {
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const payload = commands.delete("dev", true, true);
+      expect(payload).toMatchObject({ action: "delete", changed: true, agentId: "dev" });
+    } finally {
+      console.log = originalLog;
+    }
+    expect(deleteAgentCalls).toEqual(["dev"]);
+  });
+
+  it("blocks agents reset all without --execute (dry-run, exit 3, no reset)", async () => {
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:main",
+        name: "dev-main",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await commands.reset("dev", "all", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("agents reset");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect((envelope.error.plan as { sessions?: string[] }).sessions).toEqual(["dev-main"]);
+    expect(deleteSessionCalls).toHaveLength(0);
+  });
+
+  it("resets all sessions when --execute is passed", async () => {
+    sessionsByAgent = [
+      {
+        sessionKey: "agent:dev:main",
+        name: "dev-main",
+        agentId: "dev",
+        agentCwd: "/tmp/dev",
+        createdAt: 1,
+        updatedAt: 1,
+      },
+    ];
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const payload = await commands.reset("dev", "all", true, true);
+      expect(payload).toMatchObject({ action: "reset", changed: true, target: "all", count: 1 });
+    } finally {
+      console.log = originalLog;
+    }
+    expect(deleteSessionCalls).toEqual(["agent:dev:main"]);
+  });
+
+  it("blocks agents permissions profile change without --execute (dry-run, exit 3, no write)", () => {
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      commands.permissions("dev", "full-access", undefined, true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("agents permissions");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect((envelope.error.plan as { after?: { profile?: string } }).after?.profile).toBe("full-access");
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("keeps the read-only permissions form unbraked (no --execute needed)", () => {
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const payload = commands.permissions("dev", undefined, undefined, true);
+      expect(payload).toMatchObject({ action: "permissions", changed: false, agentId: "dev" });
+    } finally {
+      console.log = originalLog;
+    }
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("supports --fields compact mode on agents list", () => {
+    const commands = new AgentsCommands();
+    const logs: string[] = [];
+    const originalLog = console.log;
+    console.log = (value?: unknown) => {
+      if (typeof value === "string") logs.push(value);
+    };
+    try {
+      commands.list(true, undefined, undefined, undefined, "id,cwd");
+    } finally {
+      console.log = originalLog;
+    }
+    const payload = JSON.parse(logs.join("\n"));
+    expect(payload.items).toHaveLength(2);
+    expect(Object.keys(payload.items[0]).sort()).toEqual(["cwd", "id"]);
+  });
+});
+
 afterAll(() => mock.restore());

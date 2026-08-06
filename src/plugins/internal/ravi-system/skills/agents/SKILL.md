@@ -16,6 +16,28 @@ Agents são identidades operacionais do Ravi com configurações específicas: d
 
 **Importante:** Criar ou modificar agents **não requer restart** do daemon. Tudo atualiza em tempo real.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução (ex.: `AGENT_NOT_FOUND`). O envelope traz `suggestions` com ids/nomes reais de agents parecidos — consulte antes de concluir "não existe".
+- `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
+- `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
+
+Onde o freio existe hoje: `agents delete` (destrutivo), `agents reset` (inclusive `reset <id> all` — o contexto da sessão é irrecuperável) e `agents permissions` quando muda perfil/capabilities (muda a autoridade de runtime do agent) são dry-run por default e exigem `--execute`. A forma só-leitura `agents permissions <id>` (sem perfil) continua exit 0, sem freio. Todas as demais escritas gravam na hora, sem dry-run: `create`, `set`, `sync-instructions`, `debounce`, `spec-mode`. Nessas o freio é você: confira o alvo antes de rodar.
+
+Compact mode: `agents list` aceita `--fields a,b,c` (ex.: `--fields id,cwd,tags`) — use em varredura para não arrastar o objeto inteiro de cada agent.
+
+Help por operação: `ravi agents <op> --help` é enxuto; prefira-o ao help do domínio inteiro.
+
+Checklist antes de responder sobre agents:
+
+- Tratei exit 3 como freio (revisei o `plan`) e não como falha?
+- Consultei `suggestions` do envelope antes de declarar not-found?
+
 ## Fluxo Completo: Criar um Agent e Colocar pra Funcionar
 
 ### 1. Criar o agent
@@ -122,7 +144,7 @@ Pra aprovar e rotear:
 ```bash
 ravi contacts approve <phone> <agent>   # Aprova e associa ao agent
 ravi contacts approve <phone>           # Aprova sem associar (usa rota ou default)
-ravi contacts block <phone>             # Bloqueia
+ravi contacts block <phone> --execute   # Bloqueia (sem --execute é dry-run, exit 3)
 ```
 
 ### Prioridade de roteamento
@@ -160,7 +182,7 @@ ravi agents sync-instructions --materialize-missing
 
 ### Deletar agent
 ```bash
-ravi agents delete <id>
+ravi agents delete <id> --execute   # sem --execute é dry-run (exit 3) e nada é apagado
 ```
 
 ### Configurar propriedades
@@ -218,11 +240,13 @@ ravi agents permissions <id>
 ravi permissions materialize --subject-type agent --subject-id <id> --json
 
 # Voltar ao bootstrap mínimo
-ravi agents permissions <id> none
+ravi agents permissions <id> none --execute
 
 # Capability explícita de bootstrap quando ainda não existe profile agent-only
-ravi agents permissions <id> bootstrap --capabilities execute:executable:omni
+ravi agents permissions <id> bootstrap --capabilities execute:executable:omni --execute
 ```
+
+Mudar perfil/capabilities sem `--execute` é dry-run (exit 3): o `plan` mostra `before`/`after` e nada é gravado. A forma só-leitura `ravi agents permissions <id>` não precisa de `--execute`.
 
 Para acesso recorrente, prefira criar/aplicar um permission profile ou tag
 provider-owned com `ravi permissions allow/resolve`. Capability solta é
@@ -250,7 +274,7 @@ capability de snapshot do Ravi para o agent e para automações que rodam em nom
 dele. Isso não desativa automaticamente hooks globais do provider, denylist
 local, PreToolUse externo ou políticas instaladas fora do Ravi.
 
-Quando Bash ainda é negado depois de `ravi agents permissions <id> full-access`:
+Quando Bash ainda é negado depois de `ravi agents permissions <id> full-access --execute`:
 
 1. Leia a mensagem de denial e identifique se veio do Ravi ou do provider/hook externo.
 2. Verifique hooks locais do workspace do agent antes de mudar grants.
@@ -278,10 +302,12 @@ ravi agents session <id>
 
 ### Resetar sessão
 ```bash
-ravi agents reset <id>              # Sessão principal
-ravi agents reset <id> <sessionKey> # Sessão específica
-ravi agents reset <id> all          # Todas as sessões
+ravi agents reset <id> --execute              # Sessão principal
+ravi agents reset <id> <sessionKey> --execute # Sessão específica
+ravi agents reset <id> all --execute          # Todas as sessões
 ```
+
+Sem `--execute`, `reset` é dry-run (exit 3) e mostra no `plan` exatamente quais sessões seriam resetadas — o contexto descartado é irrecuperável.
 
 ## Interação
 

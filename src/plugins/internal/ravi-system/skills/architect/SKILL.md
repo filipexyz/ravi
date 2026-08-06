@@ -161,7 +161,7 @@ Cria uma ponte conversacional dedicada entre Ravi e um contato específico. Úti
 ```
 1. sessions delete <session_name> (opcional)
 2. instances routes remove <instance> <phone>
-3. agents delete <agent_id> (com confirmação dupla — irreversível)
+3. agents delete <agent_id> --execute (sem --execute é dry-run exit 3; com confirmação dupla — irreversível)
 ```
 
 **Quando usar**:

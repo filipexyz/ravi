@@ -7,6 +7,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isDeepStrictEqual } from "node:util";
 import { Group, Command, CommandAccess, Arg, Option } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -432,6 +433,29 @@ function parseTranscriptEntries(raw: string): {
   return { parsedEntries, turns };
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+/**
+ * Agent ids are public through `agents list`, so AGENT_NOT_FOUND enriches the
+ * envelope with real similar ids/names. Candidates come from the same
+ * visibility filter as `agents list`, keeping scope isolation intact.
+ */
+function failAgentNotFound(op: string, agentId: string, asJson?: boolean): never {
+  const candidates = filterVisibleAgents(getScopeContext(), getAllAgents()).flatMap((agent) => [agent.id, agent.name]);
+  contractFail(op, "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+      suggestions: suggestSimilar(agentId, candidates),
+    },
+  });
+}
+
 @Group({
   name: "agents",
   description: "Agent management",
@@ -462,6 +486,8 @@ export class AgentsCommands {
       description: "Number of matching agents to skip (default: 0)",
     })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const ctx = getScopeContext();
     const agents = filterItemsByCanonicalTag(
@@ -482,6 +508,7 @@ export class AgentsCommands {
       total: page.total,
       options: ["--tag", tagSlug?.trim() || null],
     });
+    const projectedRows = pickFields(agentRows, fields);
     const payload = {
       total: page.total,
       pagination,
@@ -489,8 +516,8 @@ export class AgentsCommands {
       filters: {
         tag: tagSlug?.trim() || null,
       },
-      items: agentRows,
-      agents: agentRows,
+      items: projectedRows,
+      agents: projectedRows,
     };
 
     if (asJson) {
@@ -536,13 +563,13 @@ export class AgentsCommands {
   ) {
     const ctx = getScopeContext();
     if (!canViewAgent(ctx, id)) {
-      fail(`Agent not found: ${id}`);
+      failAgentNotFound("agents show", id, asJson);
     }
     const agent = getAgent(id);
     const config = loadRouterConfig();
 
     if (!agent) {
-      fail(`Agent not found: ${id}`);
+      failAgentNotFound("agents show", id, asJson);
     }
 
     const isDefault = agent.id === config.defaultAgent;
@@ -682,8 +709,8 @@ export class AgentsCommands {
           default: "bootstrap" as const,
           configureCommand: `ravi agents permissions ${id}`,
           inspectCommand: `ravi permissions materialize --subject-type agent --subject-id ${id} --json`,
-          leastPrivilegeExample: `ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
-          breakGlassCommand: `ravi agents permissions ${id} full-access`,
+          leastPrivilegeExample: `ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId> --execute`,
+          breakGlassCommand: `ravi agents permissions ${id} full-access --execute`,
           visibility: {
             defaultAgent: config.defaultAgent,
             ...(creatorAgentId ? { creatorAgentId, creatorVisibilityChanged } : {}),
@@ -708,9 +735,9 @@ export class AgentsCommands {
         console.log(`  Permissions: bootstrap`);
         console.log(`  Inspect: ravi permissions materialize --subject-type agent --subject-id ${id} --json`);
         console.log(
-          `  Configure least privilege: ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
+          `  Configure least privilege: ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId> --execute`,
         );
-        console.log(`  Break-glass only: ravi agents permissions ${id} full-access`);
+        console.log(`  Break-glass only: ravi agents permissions ${id} full-access --execute`);
       }
       emitConfigChanged();
       return payload;
@@ -745,7 +772,7 @@ export class AgentsCommands {
     const selectedAgents = agentId ? visibleAgents.filter((agent) => agent.id === agentId) : visibleAgents;
 
     if (agentId && selectedAgents.length === 0) {
-      fail(`Agent not found: ${agentId}`);
+      failAgentNotFound("agents sync-instructions", agentId, json);
     }
 
     const results: AgentInstructionSyncSummary[] = selectedAgents.map((agent) => {
@@ -822,29 +849,54 @@ export class AgentsCommands {
     @Arg("id", { description: "Agent ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the agent; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
-    try {
-      const before = getAgent(id);
-      const deleted = deleteAgent(id);
-      if (deleted) {
-        const payload = {
-          action: "delete" as const,
-          changed: true as const,
+    const before = getAgent(id);
+    if (!before) {
+      failAgentNotFound("agents delete", id, asJson);
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): deleting an agent is destructive, so
+      // dry-run by default and exit 3 before any state change.
+      contractDryRun(
+        "agents delete",
+        {
           agentId: id,
-          before,
-        };
-        if (asJson) {
-          printJson(payload);
-        } else {
-          console.log(`\u2713 Agent deleted: ${id}`);
-        }
-        emitConfigChanged();
-        return payload;
-      }
-      fail(`Agent not found: ${id}`);
+          cwd: before.cwd,
+          ...(before.name ? { name: before.name } : {}),
+        },
+        { asJson },
+      );
+    }
+
+    let deleted = false;
+    try {
+      deleted = deleteAgent(id);
     } catch (err) {
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
+    if (!deleted) {
+      failAgentNotFound("agents delete", id, asJson);
+    }
+
+    const payload = {
+      action: "delete" as const,
+      changed: true as const,
+      agentId: id,
+      before,
+    };
+    if (asJson) {
+      printJson(payload);
+    } else {
+      console.log(`\u2713 Agent deleted: ${id}`);
+    }
+    emitConfigChanged();
+    return payload;
   }
 
   @Command({ name: "set", description: "Set agent property and report active session runtime overrides" })
@@ -863,7 +915,7 @@ export class AgentsCommands {
   ) {
     const agent = getAgent(id);
     if (!agent) {
-      fail(`Agent not found: ${id}`);
+      failAgentNotFound("agents set", id, asJson);
     }
 
     const validKeys = [
@@ -1144,10 +1196,16 @@ export class AgentsCommands {
       description: "Remove explicit capabilities while preserving profile",
     })
     clearCapabilities?: boolean,
+    @Option({
+      flags: "--execute",
+      description:
+        "Actually change the runtime permission profile; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
-      fail(`Agent not found: ${id}`);
+      failAgentNotFound("agents permissions", id, asJson);
     }
 
     const before = getAgentRuntimePermissionsConfigFromDefaults(agent.defaults);
@@ -1165,8 +1223,8 @@ export class AgentsCommands {
         runtimePermissions: before,
         command: `ravi agents permissions ${id}`,
         inspectCommand: `ravi permissions materialize --subject-type agent --subject-id ${id} --json`,
-        leastPrivilegeExample: `ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
-        breakGlassCommand: `ravi agents permissions ${id} full-access`,
+        leastPrivilegeExample: `ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId> --execute`,
+        breakGlassCommand: `ravi agents permissions ${id} full-access --execute`,
         agent: buildAgentJson(agent, loadRouterConfig().defaultAgent),
       };
       if (asJson) {
@@ -1175,10 +1233,10 @@ export class AgentsCommands {
         console.log(`Runtime permissions for ${id}: ${describeRuntimePermissionConfig(before)}`);
         console.log(`  Inspect effective: ravi permissions materialize --subject-type agent --subject-id ${id} --json`);
         console.log(
-          `  Least privilege:   ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId>`,
+          `  Least privilege:   ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId> --execute`,
         );
-        console.log(`  Clear:             ravi agents permissions ${id} none`);
-        console.log(`  Break-glass only:  ravi agents permissions ${id} full-access`);
+        console.log(`  Clear:             ravi agents permissions ${id} none --execute`);
+        console.log(`  Break-glass only:  ravi agents permissions ${id} full-access --execute`);
       }
       return payload;
     }
@@ -1204,6 +1262,22 @@ export class AgentsCommands {
     }
     const after: AgentRuntimePermissionsConfig | null =
       nextConfig && Object.keys(nextConfig).length > 0 ? nextConfig : null;
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): changing the runtime permission profile
+      // changes the agent's runtime authority, so dry-run by default and exit 3
+      // before any state change. The read-only form (no profile/capabilities)
+      // returned above and is never braked.
+      contractDryRun(
+        "agents permissions",
+        {
+          agentId: id,
+          before: before ?? null,
+          after,
+        },
+        { asJson },
+      );
+    }
 
     const nextDefaults = buildAgentRuntimePermissionsDefaults(agent.defaults, after);
     updateAgent(id, { defaults: nextDefaults });
@@ -1252,7 +1326,7 @@ export class AgentsCommands {
   ) {
     const agent = getAgent(id);
     if (!agent) {
-      fail(`Agent not found: ${id}`);
+      failAgentNotFound("agents debounce", id, asJson);
     }
 
     // No ms = show current debounce
@@ -1332,7 +1406,7 @@ export class AgentsCommands {
   ) {
     const agent = getAgent(id);
     if (!agent) {
-      fail(`Agent not found: ${id}`);
+      failAgentNotFound("agents spec-mode", id, asJson);
     }
 
     if (enabled === undefined) {
@@ -1391,7 +1465,7 @@ export class AgentsCommands {
   ) {
     const agent = getAgent(id);
     if (!agent) {
-      fail(`Agent not found: ${id}`);
+      failAgentNotFound("agents session", id, asJson);
     }
 
     const sessions = getSessionsByAgent(id);
@@ -1470,10 +1544,15 @@ export class AgentsCommands {
     nameOrKey?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually reset the session(s); default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const agent = getAgent(id);
     if (!agent) {
-      fail(`Agent not found: ${id}`);
+      failAgentNotFound("agents reset", id, asJson);
     }
 
     // Helper: abort SDK session + delete from DB
@@ -1509,6 +1588,20 @@ export class AgentsCommands {
           console.log(`ℹ️  No sessions to reset for agent: ${id}`);
         }
         return emptyPayload;
+      }
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): resetting discards session context
+        // irrecoverably, so dry-run by default and exit 3 before any abort.
+        contractDryRun(
+          "agents reset",
+          {
+            agentId: id,
+            target: "all",
+            count: sessions.length,
+            sessions: sessions.map((s) => s.name ?? s.sessionKey),
+          },
+          { asJson },
+        );
       }
       let count = 0;
       const resetSessions: Array<{
@@ -1550,6 +1643,20 @@ export class AgentsCommands {
     }
 
     if (session) {
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): the session context is irrecoverable
+        // after a reset, so dry-run by default and exit 3 before any abort.
+        contractDryRun(
+          "agents reset",
+          {
+            agentId: id,
+            target: nameOrKey ?? "main",
+            session: session.name ?? session.sessionKey,
+            sessionKey: session.sessionKey,
+          },
+          { asJson },
+        );
+      }
       const deleted = await resetOne(session.sessionKey, session.name);
       const label = session.name ?? session.sessionKey;
       const sessionPayload = {
@@ -1590,8 +1697,8 @@ export class AgentsCommands {
             console.log(`    ${s.name ?? s.sessionKey}`);
           }
           console.log(`\n  Usage:`);
-          console.log(`    ravi agents reset ${id} <name>   Reset specific session`);
-          console.log(`    ravi agents reset ${id} all      Reset all sessions`);
+          console.log(`    ravi agents reset ${id} <name> --execute   Reset specific session`);
+          console.log(`    ravi agents reset ${id} all --execute      Reset all sessions`);
         } else {
           console.log(`ℹ️  No sessions to reset for agent: ${id}`);
         }
@@ -1627,7 +1734,7 @@ export class AgentsCommands {
   ) {
     const agent = getAgent(id);
     if (!agent) {
-      fail(`Agent not found: ${id}`);
+      failAgentNotFound("agents debug", id, asJson);
     }
 
     let session;

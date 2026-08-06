@@ -370,8 +370,8 @@ defaults:
 
 ```bash
 ravi agents permissions dev             # Show runtime profile
-ravi agents permissions dev full-access # Full Ravi permissions for agent + own automations
-ravi agents permissions dev none        # Return to bootstrap defaults
+ravi agents permissions dev full-access --execute # Full Ravi permissions (sem --execute e dry-run, exit 3)
+ravi agents permissions dev none --execute        # Return to bootstrap defaults (dry-run sem --execute)
 ```
 
 The legacy relation ledger remains available for audit/migration:
@@ -519,9 +519,9 @@ ravi agents debounce <id> <ms>      # Set debounce
 ravi agents run <id> "prompt"       # Send prompt and stream response
 ravi agents chat <id>               # Interactive chat mode (/reset, /session, /exit)
 ravi agents session <id>            # Check session status
-ravi agents reset <id>              # Reset main session
-ravi agents reset <id> <sessionKey> # Reset specific session
-ravi agents reset <id> all          # Reset ALL sessions for agent
+ravi agents reset <id> --execute              # Reset main session (sem --execute e dry-run, exit 3)
+ravi agents reset <id> <sessionKey> --execute # Reset specific session
+ravi agents reset <id> all --execute          # Reset ALL sessions for agent
 
 # Contacts
 ravi contacts list                   # List contacts
@@ -618,9 +618,9 @@ ravi agents chat main
 ravi agents session main
 
 # Reset session (clear context)
-ravi agents reset main                    # Reset main session
-ravi agents reset main <sessionKey>       # Reset specific session
-ravi agents reset main all                # Reset ALL sessions for agent
+ravi agents reset main --execute                    # Reset main session (dry-run sem --execute)
+ravi agents reset main <sessionKey> --execute       # Reset specific session
+ravi agents reset main all --execute                # Reset ALL sessions for agent
 ```
 
 ### CLI Tools
@@ -639,7 +639,7 @@ Tool and executable access is controlled via REBAC permissions:
 ravi permissions grant agent:main use tool:Bash          # Allow SDK tool
 ravi permissions grant agent:main execute executable:git  # Allow CLI executable
 ravi permissions grant agent:main execute group:contacts  # Allow CLI command group
-ravi agents permissions main full-access                  # Full Ravi runtime profile
+ravi agents permissions main full-access --execute        # Full Ravi runtime profile (dry-run sem --execute)
 ```
 
 ## Emoji Reactions

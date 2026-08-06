@@ -24,7 +24,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 2 | tasks | tasks.ts, tasks-deps.ts, tasks-profiles.ts, tasks-automations.ts | tasks (+tasks-manager alias) | **MIGRADO** | cli/tasks |
 | 3 | sessions | sessions.ts, sessions-runtime.ts, session-followups.ts | sessions | **MIGRADO** | cli/sessions |
 | 4 | contacts | contacts.ts | contacts | pendente | — |
-| 5 | agents | agents.ts | agents | pendente | — |
+| 5 | agents | agents.ts | agents | **MIGRADO** | cli/agents |
 | 6 | instances+routes | instances.ts | instances, routes | pendente | — |
 | 7 | whatsapp | group.ts, whatsapp-dm.ts | whatsapp | pendente | — |
 | 8 | mail | mail.ts, gmail.ts | (sem skill) | pendente | — |
@@ -208,3 +208,28 @@ USAGE_ERROR exit 2 · `delete --help` → 12 linhas · `list --fields name,agent
 **CLI↔SKILL:** skill `sessions` ganhou `## Contrato Do CLI` (com a explicação do
 not-found sem suggestions), exemplos de reset/delete com `--execute` e nota de
 dry-run; anti-pattern do delete atualizado.
+
+### 5. agents — MIGRADO (migração executada por subagente, verificada e integrada)
+
+**Escopo:** freio (`--execute`) em `agents delete` (destrutivo), `agents reset`
+(contexto de sessões irrecuperável; cobre `reset <id>`, `<sessionKey>` e `all`)
+e `agents permissions` quando MUDA perfil (autoridade de runtime; a forma
+read-only continua exit 0 sem freio; validação de perfil inválido PRECEDE o
+freio). Sem freio (declaradas): create, set, sync-instructions, debounce,
+spec-mode. `AGENT_NOT_FOUND` (exit 1) com suggestions filtradas por
+`filterVisibleAgents` (mesmo cloak do list) em 10 ops. `--fields` no list.
+Usage contract no subtree (`agents` adicionado a AGENT_CONTRACT_DOMAINS).
+Decisão estrutural: o try/catch legado do delete achataria ContractError —
+resolve/freio movidos para fora do try (registrado no spec).
+
+**Consumidores atualizados:** hints internos de permissions em agents.ts,
+`docs/cli/overview.mdx`, skill `architect` (receita inversa), e **AGENTS.md**
+(10 linhas ensinando reset/permissions agora com `--execute` — feito pelo
+integrador, fora do escopo do subagente).
+
+**Rotina X:** typecheck limpo · `agents.test.ts` 39/39 (8 testes de contrato) ·
+spec gate PASSED (cli/agents). **Rotina Y (estado isolado):** show fantasma →
+AGENT_NOT_FOUND + suggestions reais, exit 1 · create + delete sem `--execute` →
+exit 3 + plan · delete `--execute` → `changed:true` · usage → exit 2 · list
+`--fields id`. SDK: regenerado no commit seguinte da onda (contacts) — regen
+único cobre as flags das duas migrações paralelas.

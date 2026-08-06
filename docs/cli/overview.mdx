@@ -49,12 +49,12 @@ Agent lifecycle and configuration.
 ravi agents list                              # List all agents
 ravi agents show <id>                         # Show agent details (model, mode, permissions, defaults)
 ravi agents create <id> <cwd>                 # Create a new agent
-ravi agents delete <id>                       # Delete an agent
+ravi agents delete <id> --execute             # Delete an agent (without --execute: dry-run, exit 3)
 ravi agents set <id> <key> <value>            # Set property (name, cwd, model, effort, dmScope, mode, defaults, ...)
 ravi agents debounce <id> [ms]                # Set/show message debounce (0 to disable)
 ravi agents spec-mode <id> [true|false]       # Enable/disable spec mode
 ravi agents session <id>                      # Show all sessions for agent
-ravi agents reset <id> [nameOrKey|all]        # Reset session (omit for main, "all" for all sessions)
+ravi agents reset <id> [nameOrKey|all] --execute  # Reset session (omit for main, "all" for all; without --execute: dry-run, exit 3)
 ravi agents debug <id> [nameOrKey] [-n count] # Show last N turns of a session transcript
 ```
 
@@ -137,9 +137,9 @@ ravi contacts add <identity> [name]           # Add/allow a contact (phone, LID,
   --agent <ids>                               #   Restrict to agent(s), comma-separated
 ravi contacts approve <contact> [mode]        # Approve pending contact (mode: auto|mention)
   --agent <ids>                               #   Restrict to agent(s)
-ravi contacts remove <contact>                # Remove a contact
+ravi contacts remove <contact> --execute      # Remove a contact (without --execute it is a dry-run, exit 3)
 ravi contacts allow <contact>                 # Allow a contact
-ravi contacts block <contact>                 # Block a contact
+ravi contacts block <contact> --execute       # Block a contact (without --execute it is a dry-run, exit 3)
 ravi contacts info <contact>                  # Show contact details with all identities
 ravi contacts check <contact>                 # Alias for info
 ravi contacts find <query> [--tag]            # Search by name/phone or by tag
@@ -150,7 +150,7 @@ ravi contacts group-tag <contact> <group> <tag>    # Set tag in a specific group
 ravi contacts group-untag <contact> <group>        # Remove tag from a specific group
 ravi contacts identity-add <contact> <platform> <value>  # Add identity (phone, whatsapp_lid, whatsapp_group, matrix, telegram)
 ravi contacts identity-remove <platform> <value>         # Remove identity
-ravi contacts merge <source> <target>         # Merge contacts (move identities, delete source)
+ravi contacts merge <source> <target> --execute  # Merge contacts (move identities, delete source; without --execute it is a dry-run, exit 3)
 ```
 
 ## Sessions
