@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { readFileSync } from "node:fs";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListOffset } from "../pagination.js";
@@ -209,11 +210,31 @@ function resolveOrigin(options: { taskId?: string; projectId?: string; proxRunId
   return { originType: "cli" };
 }
 
-function resolveDevinId(identifier: string): string {
+/**
+ * DEVIN_SESSION_NOT_FOUND envelope (Manual v2): suggestions come from the
+ * LOCAL Devin session cache (`listDevinSessions`), a cheap sqlite read — no
+ * remote Devin API call is made to build the envelope.
+ */
+function failDevinSessionNotFound(op: string, identifier: string, asJson?: boolean): never {
+  const candidates = listDevinSessions({ limit: 40 }).flatMap((session) => [
+    session.id,
+    session.devinId,
+    session.title ?? "",
+  ]);
+  contractFail(op, "DEVIN_SESSION_NOT_FOUND", `Unknown Devin session: ${identifier}`, {
+    asJson,
+    details: {
+      suggestedAction: "List known sessions with `ravi devin sessions list --json` (add --remote to refresh the cache)",
+      suggestions: suggestSimilar(identifier, candidates),
+    },
+  });
+}
+
+function resolveDevinId(op: string, identifier: string, asJson?: boolean): string {
   const stored = getDevinSession(identifier);
   if (stored) return stored.devinId;
   if (identifier.startsWith("devin-")) return identifier;
-  fail(`Unknown Devin session: ${identifier}`);
+  failDevinSessionNotFound(op, identifier, asJson);
 }
 
 export function determineMaxAcuLimit(
@@ -284,7 +305,7 @@ function parseSessionSecrets(refs?: string[]): Array<{ key: string; value: strin
 
 async function syncDevinSession(
   client: DevinClient,
-  identifier: string,
+  devinId: string,
   options: {
     syncMessages?: boolean;
     syncAttachments?: boolean;
@@ -298,7 +319,6 @@ async function syncDevinSession(
   insights: DevinSessionInsights | null;
   artifacts: string[];
 }> {
-  const devinId = resolveDevinId(identifier);
   const remote = await client.getSession(devinId);
   const session = upsertDevinSession(remote, { lastSyncedAt: Date.now() });
   const remoteMessages = options.syncMessages === false ? [] : await client.listAllMessages(devinId);
@@ -435,8 +455,12 @@ export class DevinSessionCommands {
     @Option({ flags: "--project <id>", description: "Link to Ravi project" }) projectId?: string,
     @Option({ flags: "--prox-run <id>", description: "Link to prox run" }) proxRunId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually create the Devin session; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
-    const client = createDevinClientFromEnv();
     const text = readPrompt(prompt, promptFile).trim();
     if (!text) fail("Prompt is empty.");
     const acu = determineMaxAcuLimit(maxAcu, noMaxAcuLimit);
@@ -477,6 +501,35 @@ export class DevinSessionCommands {
     const createOptions: CreateDevinSessionOptions | undefined = devinId?.trim()
       ? { idempotencyKey: devinId.trim() }
       : undefined;
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): this creates a REAL session on the paid
+      // external Devin service (ACU consumption starts on its side), so
+      // dry-run by default and exit 3 before the client is even constructed.
+      // Session secret VALUES are never echoed — only the count.
+      contractDryRun(
+        "devin sessions create",
+        {
+          promptChars: text.length,
+          promptPreview: text.slice(0, 200),
+          title: title?.trim() || null,
+          tags: tagList,
+          repos: resolvedRepos.value ?? null,
+          devinMode: resolvedMode.value ?? null,
+          platform: resolvedPlatform.value ?? null,
+          resumable: resolvedResumable.value ?? null,
+          maxAcuLimit: acu.maxAcuLimit ?? null,
+          maxAcuLimitSource: acu.source,
+          playbookId: playbookId?.trim() || null,
+          idempotencyKey: devinId?.trim() || null,
+          sessionSecretCount: sessionSecrets.length,
+          origin: resolveOrigin({ taskId, projectId, proxRunId }),
+        },
+        { asJson },
+      );
+    }
+
+    const client = createDevinClientFromEnv();
     const startedAt = Date.now();
     const remote = await client.createSession(input, createOptions);
     const origin = resolveOrigin({ taskId, projectId, proxRunId });
@@ -537,6 +590,8 @@ export class DevinSessionCommands {
     @Option({ flags: "--limit <n>", description: "Max sessions to show (default: 20)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching sessions to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each session" })
+    fields?: string,
   ) {
     const max = parsePositiveInteger(limit, "--limit") ?? 20;
     const pageOffset = parseCliListOffset(offset);
@@ -556,13 +611,14 @@ export class DevinSessionCommands {
         total: remotePage.total ?? sessions.length,
         options: ["--remote", "--status", status?.trim() || null, "--tag", tag?.trim() || null],
       });
+      const projectedSessions = pickFields(page.items.map(summarizeSession), fields);
       const payload = {
         source: "remote",
         total: remotePage.total ?? sessions.length,
         pagination,
         hasNextPage: pagination.hasMore || (remotePage.has_next_page ?? false),
-        items: page.items.map(summarizeSession),
-        sessions: page.items.map(summarizeSession),
+        items: projectedSessions,
+        sessions: projectedSessions,
       };
       if (asJson) {
         printJson(payload);
@@ -586,12 +642,13 @@ export class DevinSessionCommands {
       total: page.total,
       options: ["--status", status?.trim() || null, "--tag", tag?.trim() || null],
     });
+    const projectedSessions = pickFields(page.items.map(summarizeSession), fields);
     const payload = {
       source: "local",
       total: page.total,
       pagination,
-      items: page.items.map(summarizeSession),
-      sessions: page.items.map(summarizeSession),
+      items: projectedSessions,
+      sessions: projectedSessions,
     };
     if (asJson) {
       printJson(payload);
@@ -617,9 +674,11 @@ export class DevinSessionCommands {
     let session = getDevinSession(identifier);
     if (sync || (!session && identifier.startsWith("devin-"))) {
       const client = createDevinClientFromEnv();
-      session = upsertDevinSession(await client.getSession(resolveDevinId(identifier)), { lastSyncedAt: Date.now() });
+      session = upsertDevinSession(await client.getSession(resolveDevinId("devin sessions show", identifier, asJson)), {
+        lastSyncedAt: Date.now(),
+      });
     }
-    if (!session) fail(`Unknown Devin session: ${identifier}`);
+    if (!session) failDevinSessionNotFound("devin sessions show", identifier, asJson);
     const payload = { session };
     if (asJson) {
       printJson(payload);
@@ -641,7 +700,7 @@ export class DevinSessionCommands {
     @Option({ flags: "--cached", description: "Use local cache only" }) cached?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const devinId = resolveDevinId(identifier);
+    const devinId = resolveDevinId("devin sessions messages", identifier, asJson);
     const messages = cached
       ? listDevinMessages(devinId)
       : upsertDevinMessages(devinId, await createDevinClientFromEnv().listAllMessages(devinId));
@@ -665,10 +724,34 @@ export class DevinSessionCommands {
     @Arg("message", { description: "Message text" }) message: string,
     @Option({ flags: "--as-user <id>", description: "message_as_user_id" }) messageAsUserId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually send the message to Devin; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    // Validation BEFORE the brake: empty message and unknown session fail with
+    // their own codes (exit 1) instead of a wasted dry-run.
     if (!message.trim()) fail("Message is empty.");
+    const devinId = resolveDevinId("devin sessions send", identifier, asJson);
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): the message drives a REAL session on the
+      // paid external Devin service (it resumes/steers billable work), so
+      // dry-run by default and exit 3 before the client is constructed.
+      contractDryRun(
+        "devin sessions send",
+        {
+          session: identifier,
+          devinId,
+          messageChars: message.length,
+          messagePreview: message.slice(0, 200),
+          messageAsUserId: messageAsUserId?.trim() || null,
+        },
+        { asJson },
+      );
+    }
     const client = createDevinClientFromEnv();
-    const remote = await client.sendMessage(resolveDevinId(identifier), message, messageAsUserId?.trim());
+    const remote = await client.sendMessage(devinId, message, messageAsUserId?.trim());
     const session = upsertDevinSession(remote, { lastSyncedAt: Date.now() });
     const payload = { status: "sent", session: summarizeSession(session) };
     if (asJson) {
@@ -687,7 +770,7 @@ export class DevinSessionCommands {
     @Option({ flags: "--cached", description: "Use local cache only" }) cached?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const devinId = resolveDevinId(identifier);
+    const devinId = resolveDevinId("devin sessions attachments", identifier, asJson);
     const attachments = cached
       ? listDevinAttachments(devinId)
       : upsertDevinAttachments(devinId, await createDevinClientFromEnv().listAttachments(devinId));
@@ -713,7 +796,7 @@ export class DevinSessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const client = createDevinClientFromEnv();
-    const devinId = resolveDevinId(identifier);
+    const devinId = resolveDevinId("devin sessions insights", identifier, asJson);
     const insights = generate
       ? await client.generateSessionInsights(devinId)
       : await client.getSessionInsights(devinId);
@@ -731,6 +814,9 @@ export class DevinSessionCommands {
     return payload;
   }
 
+  // Declared UNBRAKED: sync reads remote state and refreshes the LOCAL cache
+  // (plus optional local artifact). It creates nothing and sends nothing on
+  // the external Devin service, so no --execute gate is added.
   @Command({ name: "sync", description: "Sync session status, messages and attachments" })
   @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "sync", risk: "high" })
   async sync(
@@ -739,7 +825,8 @@ export class DevinSessionCommands {
     @Option({ flags: "--artifacts", description: "Register a sync artifact" }) artifacts?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = await syncDevinSession(createDevinClientFromEnv(), identifier, {
+    const devinId = resolveDevinId("devin sessions sync", identifier, asJson);
+    const result = await syncDevinSession(createDevinClientFromEnv(), devinId, {
       syncInsights: insights === true,
       createArtifacts: artifacts === true,
     });
@@ -768,6 +855,9 @@ export class DevinSessionCommands {
     return payload;
   }
 
+  // Declared UNBRAKED (damage/cost stop): terminate halts a running BILLABLE
+  // Devin session. Gating it behind --execute would delay exactly the action
+  // that stops spend — same rationale as prox calls cancel.
   @Command({ name: "terminate", description: "Terminate a Devin session" })
   @CommandAccess({ kind: "read", resource: "devin.sessions", action: "terminate", risk: "low" })
   async terminate(
@@ -776,7 +866,9 @@ export class DevinSessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const client = createDevinClientFromEnv();
-    const remote = await client.terminateSession(resolveDevinId(identifier), { archive: archive === true });
+    const remote = await client.terminateSession(resolveDevinId("devin sessions terminate", identifier, asJson), {
+      archive: archive === true,
+    });
     const session = upsertDevinSession(remote, { lastSyncedAt: Date.now() });
     const payload = { status: "terminated", archive: archive === true, session: summarizeSession(session) };
     if (asJson) {
@@ -788,6 +880,9 @@ export class DevinSessionCommands {
     return payload;
   }
 
+  // Declared UNBRAKED: archive is a reversible organizational state change on
+  // an already-idle session — it consumes no ACUs and produces no new work on
+  // the external service, so no --execute gate is added.
   @Command({ name: "archive", description: "Archive a Devin session" })
   @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "archive", risk: "medium" })
   async archive(
@@ -795,7 +890,7 @@ export class DevinSessionCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const client = createDevinClientFromEnv();
-    const remote = await client.archiveSession(resolveDevinId(identifier));
+    const remote = await client.archiveSession(resolveDevinId("devin sessions archive", identifier, asJson));
     const session = upsertDevinSession(remote, { lastSyncedAt: Date.now() });
     const payload = { status: "archived", session: summarizeSession(session) };
     if (asJson) {

@@ -7,6 +7,7 @@
 import "reflect-metadata";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
@@ -206,6 +207,78 @@ function serializeRules(rules: CallRulesType) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Manual v2 contract helpers: not-found envelopes per resource (exit 1) with
+// suggestions sourced from the LOCAL calls DB (cheap reads, no provider call).
+// ---------------------------------------------------------------------------
+
+function failCallProfileNotFound(op: string, profileId: string, asJson?: boolean): never {
+  const candidates = listCallProfiles().flatMap((profile) => [profile.id, profile.name]);
+  contractFail(op, "CALL_PROFILE_NOT_FOUND", `Call profile not found: ${profileId}`, {
+    asJson,
+    details: {
+      suggestedAction: "List call profiles with `ravi prox calls profiles list --json`",
+      suggestions: suggestSimilar(profileId, candidates),
+    },
+  });
+}
+
+/**
+ * There is no local list command for call requests, so the envelope teaches
+ * where the id comes from instead of guessing suggestions.
+ */
+function failCallRequestNotFound(op: string, callRequestId: string, asJson?: boolean): never {
+  contractFail(op, "CALL_REQUEST_NOT_FOUND", `Call request not found: ${callRequestId}`, {
+    asJson,
+    details: {
+      suggestedAction:
+        "Use the cr_* id returned by `ravi prox calls request` (or found in `ravi prox calls events <id> --json`)",
+    },
+  });
+}
+
+function failCallTranscriptNotFound(op: string, callRequestId: string, asJson?: boolean): never {
+  contractFail(op, "TRANSCRIPT_NOT_FOUND", `No transcript found for call request: ${callRequestId}`, {
+    asJson,
+    details: {
+      retryable: true,
+      suggestedAction:
+        "For ElevenLabs profiles retry with --sync; Agora transcripts arrive through the provider webhook (event 103)",
+    },
+  });
+}
+
+function failVoiceAgentNotFound(op: string, voiceAgentId: string, asJson?: boolean): never {
+  const candidates = listCallVoiceAgents().flatMap((agent) => [agent.id, agent.name]);
+  contractFail(op, "VOICE_AGENT_NOT_FOUND", `Voice agent not found: ${voiceAgentId}`, {
+    asJson,
+    details: {
+      suggestedAction: "List voice agents with `ravi prox calls voice-agents list --json`",
+      suggestions: suggestSimilar(voiceAgentId, candidates),
+    },
+  });
+}
+
+function failCallToolNotFound(op: string, toolId: string, asJson?: boolean): never {
+  const candidates = listCallTools().flatMap((tool) => [tool.id, tool.name]);
+  contractFail(op, "CALL_TOOL_NOT_FOUND", `Tool not found: ${toolId}`, {
+    asJson,
+    details: {
+      suggestedAction: "List call tools with `ravi prox calls tools list --json`",
+      suggestions: suggestSimilar(toolId, candidates),
+    },
+  });
+}
+
+function failToolBindingNotFound(op: string, toolId: string, scope: string, scopeId: string, asJson?: boolean): never {
+  contractFail(op, "TOOL_BINDING_NOT_FOUND", `No binding found for tool ${toolId} on ${scope} ${scopeId}`, {
+    asJson,
+    details: {
+      suggestedAction: `Inspect current bindings with \`ravi prox calls ${scope === "voice_agent" ? "voice-agents show" : "profiles show"} ${scopeId} --json\``,
+    },
+  });
+}
+
 function serializeEvent(event: CallEvent) {
   return {
     id: event.id,
@@ -239,6 +312,8 @@ export class ProxCallsProfileCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching call profiles to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     initCallsDefaults();
     const tagFilter = tagSlug?.trim() || null;
@@ -258,12 +333,13 @@ export class ProxCallsProfileCommands {
       total: page.total,
       options: ["--tag", tagFilter],
     });
+    const projectedProfiles = pickFields(pageProfiles.map(serializeProfile), fields);
     const payload = {
       total: page.total,
       pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      items: pageProfiles.map(serializeProfile),
-      profiles: pageProfiles.map(serializeProfile),
+      items: projectedProfiles,
+      profiles: projectedProfiles,
     };
 
     if (asJson) {
@@ -300,7 +376,7 @@ export class ProxCallsProfileCommands {
     initCallsDefaults();
     const profile = getCallProfile(profileId);
     if (!profile) {
-      fail(`Call profile not found: ${profileId}`);
+      failCallProfileNotFound("prox calls profiles show", profileId, asJson);
     }
 
     const payload = serializeProfile(profile);
@@ -368,7 +444,7 @@ export class ProxCallsProfileCommands {
 
     const existing = getCallProfile(profileId);
     if (!existing) {
-      fail(`Call profile not found: ${profileId}`);
+      failCallProfileNotFound("prox calls profiles configure", profileId, asJson);
     }
 
     const validVoicemailPolicies = new Set(["leave_message", "hangup", "skip"]);
@@ -527,6 +603,11 @@ export class ProxCallsCommands {
     })
     force?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually submit the call request; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     if (!profileId) fail("--profile is required");
     if (!personId) fail("--person is required");
@@ -539,9 +620,36 @@ export class ProxCallsCommands {
 
     initCallsDefaults();
 
+    // Validation BEFORE the brake: an unknown profile is exit 1 (not-found
+    // envelope with local suggestions), never a wasted dry-run.
+    const profile = getCallProfile(profileId);
+    if (!profile) failCallProfileNotFound("prox calls request", profileId, asJson);
+
     const ctx = getContext();
     const usingStub = !hasRealProvider();
     const dynamicVariables = parseDynamicVariableOptions(dynamicVars);
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): this schedules a REAL phone call to a
+      // real person through the configured voice provider, so dry-run by
+      // default and exit 3 before submitCallRequest touches rules/providers.
+      contractDryRun(
+        "prox calls request",
+        {
+          profileId,
+          profileProvider: profile.provider,
+          personId,
+          phone: phone ?? null,
+          reason,
+          priority: priority ?? "normal",
+          dynamicVariables: dynamicVariables ?? null,
+          force: Boolean(force),
+          providerMode: usingStub ? "stub" : "live",
+        },
+        { asJson },
+      );
+    }
+
     const metadata: Record<string, unknown> = {};
     if (dynamicVariables) {
       metadata.dynamic_variables = dynamicVariables;
@@ -611,7 +719,7 @@ export class ProxCallsCommands {
     initCallsDefaults();
     const request = getCallRequest(callRequestId);
     if (!request) {
-      fail(`Call request not found: ${callRequestId}`);
+      failCallRequestNotFound("prox calls show", callRequestId, asJson);
     }
 
     const runs = listCallRuns(request.id);
@@ -694,7 +802,7 @@ export class ProxCallsCommands {
     initCallsDefaults();
     const request = getCallRequest(callRequestId);
     if (!request) {
-      fail(`Call request not found: ${callRequestId}`);
+      failCallRequestNotFound("prox calls events", callRequestId, asJson);
     }
 
     const events = listCallEvents(request.id);
@@ -734,7 +842,7 @@ export class ProxCallsCommands {
     let result = getCallResultForRequest(callRequestId);
     if (sync || !result?.transcript) {
       const request = getCallRequest(callRequestId);
-      if (!request) fail(`Call request not found: ${callRequestId}`);
+      if (!request) failCallRequestNotFound("prox calls transcript", callRequestId, asJson);
       const profile = getCallProfile(request.profile_id);
       const canSyncElevenLabs = profile?.provider === "elevenlabs" || profile?.provider === "elevenlabs_twilio";
       if (canSyncElevenLabs) {
@@ -748,8 +856,8 @@ export class ProxCallsCommands {
     }
 
     const request = getCallRequest(callRequestId);
-    if (!request) fail(`Call request not found: ${callRequestId}`);
-    if (!result?.transcript) fail(`No transcript found for call request: ${callRequestId}`);
+    if (!request) failCallRequestNotFound("prox calls transcript", callRequestId, asJson);
+    if (!result?.transcript) failCallTranscriptNotFound("prox calls transcript", callRequestId, asJson);
 
     const payload = {
       request_id: callRequestId,
@@ -779,6 +887,9 @@ export class ProxCallsCommands {
     @Option({ flags: "--reason <text>", description: "Cancellation reason" }) reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    // Declared UNBRAKED (damage stop): cancel halts a pending/imminent REAL
+    // phone call. Gating it behind --execute would delay exactly the action
+    // that stops harm — same rationale as the workflows cancel precedent.
     initCallsDefaults();
     const result = cancelCallRequest(callRequestId, reason);
     const payload = {
@@ -895,6 +1006,8 @@ export class ProxCallsVoiceAgentCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching voice agents to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     initCallsDefaults();
     const tagFilter = tagSlug?.trim() || null;
@@ -914,12 +1027,13 @@ export class ProxCallsVoiceAgentCommands {
       total: page.total,
       options: ["--tag", tagFilter],
     });
+    const projectedAgents = pickFields(pageAgents.map(serializeVoiceAgent), fields);
     const payload = {
       total: page.total,
       pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      items: pageAgents.map(serializeVoiceAgent),
-      voice_agents: pageAgents.map(serializeVoiceAgent),
+      items: projectedAgents,
+      voice_agents: projectedAgents,
     };
 
     if (asJson) {
@@ -956,7 +1070,7 @@ export class ProxCallsVoiceAgentCommands {
     initCallsDefaults();
     const agent = getCallVoiceAgent(voiceAgentId);
     if (!agent) {
-      fail(`Voice agent not found: ${voiceAgentId}`);
+      failVoiceAgentNotFound("prox calls voice-agents show", voiceAgentId, asJson);
     }
 
     const payload = serializeVoiceAgent(agent);
@@ -1056,7 +1170,7 @@ export class ProxCallsVoiceAgentCommands {
 
     const existing = getCallVoiceAgent(voiceAgentId);
     if (!existing) {
-      fail(`Voice agent not found: ${voiceAgentId}`);
+      failVoiceAgentNotFound("prox calls voice-agents configure", voiceAgentId, asJson);
     }
 
     let systemPrompt: string | undefined;
@@ -1109,9 +1223,9 @@ export class ProxCallsVoiceAgentCommands {
     initCallsDefaults();
 
     const agent = getCallVoiceAgent(voiceAgentId);
-    if (!agent) fail(`Voice agent not found: ${voiceAgentId}`);
+    if (!agent) failVoiceAgentNotFound("prox calls voice-agents bind-tool", voiceAgentId, asJson);
     const tool = getCallTool(toolId);
-    if (!tool) fail(`Tool not found: ${toolId}`);
+    if (!tool) failCallToolNotFound("prox calls voice-agents bind-tool", toolId, asJson);
 
     const existing = getCallToolBinding(toolId, "voice_agent", voiceAgentId);
     if (existing) fail(`Tool ${toolId} is already bound to voice agent ${voiceAgentId}`);
@@ -1144,7 +1258,8 @@ export class ProxCallsVoiceAgentCommands {
     initCallsDefaults();
 
     const removed = deleteCallToolBinding(toolId, "voice_agent", voiceAgentId);
-    if (!removed) fail(`No binding found for tool ${toolId} on voice agent ${voiceAgentId}`);
+    if (!removed)
+      failToolBindingNotFound("prox calls voice-agents unbind-tool", toolId, "voice_agent", voiceAgentId, asJson);
 
     const payload = { success: true as const, voice_agent_id: voiceAgentId, tool_id: toolId };
 
@@ -1157,6 +1272,10 @@ export class ProxCallsVoiceAgentCommands {
     return payload;
   }
 
+  // Manual v2 write-brake EQUIVALENT: this op is dry-run by DEFAULT via its
+  // pre-existing `--dry-run` flag (kept as-is — renaming provider flags is out
+  // of contract scope). The live push path additionally requires --provider
+  // and is still reported as would_push/skipped, so no --execute is added.
   @Command({ name: "sync", description: "Sync voice agent to provider (dry-run by default)" })
   @CommandAccess({ kind: "mutate", resource: "prox.calls.voice-agents", action: "sync", risk: "high" })
   @Returns(proxVoiceAgentSyncReturnSchema)
@@ -1170,7 +1289,7 @@ export class ProxCallsVoiceAgentCommands {
     initCallsDefaults();
 
     const agent = getCallVoiceAgent(voiceAgentId);
-    if (!agent) fail(`Voice agent not found: ${voiceAgentId}`);
+    if (!agent) failVoiceAgentNotFound("prox calls voice-agents sync", voiceAgentId, asJson);
 
     const bindings = listCallToolBindings("voice_agent", voiceAgentId);
     const tools = bindings.map((b) => getCallTool(b.tool_id)).filter((t): t is CallTool => t !== null);
@@ -1241,6 +1360,8 @@ export class ProxCallsToolCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching call tools to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     initCallsDefaults();
     const tagFilter = tagSlug?.trim() || null;
@@ -1260,12 +1381,13 @@ export class ProxCallsToolCommands {
       total: page.total,
       options: ["--profile", profileId, "--tag", tagFilter],
     });
+    const projectedTools = pickFields(pageTools.map(serializeCallTool), fields);
     const payload = {
       total: page.total,
       pagination,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      items: pageTools.map(serializeCallTool),
-      tools: pageTools.map(serializeCallTool),
+      items: projectedTools,
+      tools: projectedTools,
     };
 
     if (asJson) {
@@ -1301,7 +1423,7 @@ export class ProxCallsToolCommands {
   ) {
     initCallsDefaults();
     const tool = getCallTool(toolId);
-    if (!tool) fail(`Tool not found: ${toolId}`);
+    if (!tool) failCallToolNotFound("prox calls tools show", toolId, asJson);
 
     const payload = serializeCallTool(tool);
 
@@ -1417,7 +1539,7 @@ export class ProxCallsToolCommands {
     initCallsDefaults();
 
     const existing = getCallTool(toolId);
-    if (!existing) fail(`Tool not found: ${toolId}`);
+    if (!existing) failCallToolNotFound("prox calls tools configure", toolId, asJson);
 
     const updated = updateCallTool(toolId, {
       ...(timeoutMs !== undefined ? { timeout_ms: parseInt(timeoutMs, 10) } : {}),
@@ -1457,9 +1579,9 @@ export class ProxCallsToolCommands {
     initCallsDefaults();
 
     const profile = getCallProfile(profileId);
-    if (!profile) fail(`Profile not found: ${profileId}`);
+    if (!profile) failCallProfileNotFound("prox calls tools bind", profileId, asJson);
     const tool = getCallTool(toolId);
-    if (!tool) fail(`Tool not found: ${toolId}`);
+    if (!tool) failCallToolNotFound("prox calls tools bind", toolId, asJson);
 
     const existing = getCallToolBinding(toolId, "profile", profileId);
     if (existing) fail(`Tool ${toolId} is already bound to profile ${profileId}`);
@@ -1494,7 +1616,7 @@ export class ProxCallsToolCommands {
     initCallsDefaults();
 
     const removed = deleteCallToolBinding(toolId, "profile", profileId);
-    if (!removed) fail(`No binding found for tool ${toolId} on profile ${profileId}`);
+    if (!removed) failToolBindingNotFound("prox calls tools unbind", toolId, "profile", profileId, asJson);
 
     const payload = { success: true as const, profile_id: profileId, tool_id: toolId };
 
@@ -1516,7 +1638,7 @@ export class ProxCallsToolCommands {
   ) {
     initCallsDefaults();
     const request = getCallRequest(callRequestId);
-    if (!request) fail(`Call request not found: ${callRequestId}`);
+    if (!request) failCallRequestNotFound("prox calls tools runs", callRequestId, asJson);
 
     const runs = listCallToolRuns(callRequestId);
     const payload = { request_id: callRequestId, total: runs.length, tool_runs: runs.map(serializeToolRun) };
@@ -1539,6 +1661,10 @@ export class ProxCallsToolCommands {
     return payload;
   }
 
+  // Manual v2 write-brake EQUIVALENT: the pre-existing `--dry-run` flag (kept
+  // as-is, not renamed to --execute) validates schema + policy without side
+  // effects, and live execution is additionally hard-blocked
+  // (execution_not_implemented) until the native runtime lands.
   @Command({ name: "run", description: "Execute a tool (dry-run validates without side effects)" })
   @CommandAccess({ kind: "mutate", resource: "prox.calls.tools", action: "run", risk: "high" })
   @Returns(proxToolRunReturnSchema)
@@ -1556,7 +1682,7 @@ export class ProxCallsToolCommands {
     initCallsDefaults();
 
     const tool = getCallTool(toolId);
-    if (!tool) fail(`Tool not found: ${toolId}`);
+    if (!tool) failCallToolNotFound("prox calls tools run", toolId, asJson);
     if (!tool.enabled) fail(`Tool is disabled: ${toolId}`);
 
     // Parse input

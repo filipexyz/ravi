@@ -2,34 +2,47 @@ import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { MeetingProfileCommands, MeetingsCommands } from "./meetings.js";
 
 let tempDir: string | undefined;
 let previousPath: string | undefined;
 let previousOpenAiApiKey: string | undefined;
+let previousRecorderBin: string | undefined;
+
+// Spawning a bash stub is not possible on Windows; resolution still works via
+// RAVI_GOOGLE_MEET_RECORDER_BIN, so only spawn-dependent tests are skipped.
+const isWindows = process.platform === "win32";
 
 describe("MeetingsCommands", () => {
   beforeEach(async () => {
     tempDir = await mkdtemp(join(tmpdir(), "ravi-meetings-command-test-"));
     previousPath = process.env.PATH;
     previousOpenAiApiKey = process.env.OPENAI_API_KEY;
+    previousRecorderBin = process.env.RAVI_GOOGLE_MEET_RECORDER_BIN;
     const binDir = join(tempDir, "bin");
     await mkdir(binDir, { recursive: true });
     const executable = join(binDir, "meet-record");
     await writeFile(executable, "#!/usr/bin/env bash\nexit 0\n", "utf8");
     await chmod(executable, 0o755);
     process.env.PATH = `${binDir}:${previousPath ?? ""}`;
+    // PATH-based lookup (X_OK + ':' separator) is POSIX-only; the explicit BIN
+    // override keeps provider RESOLUTION working on every platform.
+    process.env.RAVI_GOOGLE_MEET_RECORDER_BIN = executable;
   });
 
   afterEach(async () => {
     process.env.PATH = previousPath;
     if (previousOpenAiApiKey === undefined) delete process.env.OPENAI_API_KEY;
     else process.env.OPENAI_API_KEY = previousOpenAiApiKey;
+    if (previousRecorderBin === undefined) delete process.env.RAVI_GOOGLE_MEET_RECORDER_BIN;
+    else process.env.RAVI_GOOGLE_MEET_RECORDER_BIN = previousRecorderBin;
     if (tempDir) await rm(tempDir, { recursive: true, force: true });
     tempDir = undefined;
     previousPath = undefined;
     previousOpenAiApiKey = undefined;
+    previousRecorderBin = undefined;
   });
 
   it("validates Google Meet provider invocation without joining on dry-run", async () => {
@@ -196,7 +209,7 @@ describe("MeetingsCommands", () => {
     ).rejects.toThrow("native Meet voice bridge");
   });
 
-  it("opens Google Meet provider login with the selected persistent profile", async () => {
+  it.skipIf(isWindows)("opens Google Meet provider login with the selected persistent profile", async () => {
     const { output, result } = await captureConsole(() =>
       new MeetingsCommands().login(
         "google-meet",
@@ -270,6 +283,126 @@ describe("MeetingsCommands", () => {
     const payload = JSON.parse(output);
     const parsed = meetingProfilesValidateReturnSchema.safeParse(payload);
     expect(parsed.success).toBe(true);
+  });
+
+  // -------------------------------------------------------------------------
+  // Agent-first contract (Manual v2): not-found envelope, --fields, and the
+  // documented --dry-run write-brake equivalent on join (flag NOT renamed).
+  // Nested so the recorder-stub beforeEach applies.
+  // -------------------------------------------------------------------------
+  describe("meetings agent-first contract", () => {
+    async function expectContractError(
+      run: () => Promise<unknown> | unknown,
+      code: string,
+      exitCode: number,
+    ): Promise<InstanceType<typeof ContractError>> {
+      let caught: unknown;
+      await runWithContext({ sessionKey: "meet-test", sessionName: "meet-test", agentId: "meet-test" }, async () => {
+        await captureConsole(async () => {
+          try {
+            await run();
+          } catch (error) {
+            caught = error;
+          }
+        });
+      });
+      expect(caught).toBeInstanceOf(ContractError);
+      const contractError = caught as InstanceType<typeof ContractError>;
+      expect(contractError.code).toBe(code);
+      expect(contractError.exitCode).toBe(exitCode);
+      return contractError;
+    }
+
+    it("profiles show on an unknown id exits 1 with MEETING_PROFILE_NOT_FOUND and local suggestions", async () => {
+      const error = await expectContractError(
+        () => new MeetingProfileCommands().show("defualt", true),
+        "MEETING_PROFILE_NOT_FOUND",
+        1,
+      );
+
+      expect(error.op).toBe("meetings profiles show");
+      expect(error.details.suggestions).toContain("default");
+      expect(error.details.suggestedAction).toContain("ravi meetings profiles list");
+    });
+
+    it("join with an unknown --profile exits 1 with MEETING_PROFILE_NOT_FOUND before touching the provider", async () => {
+      const error = await expectContractError(
+        () =>
+          new MeetingsCommands().join(
+            "google-meet",
+            "https://meet.google.com/abc-defg-hij",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            false,
+            false,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            true,
+            undefined,
+            "ghost-profile",
+          ),
+        "MEETING_PROFILE_NOT_FOUND",
+        1,
+      );
+
+      expect(error.op).toBe("meetings join");
+    });
+
+    it("profiles list --fields narrows items and the profiles alias equally", async () => {
+      const { result } = await captureConsole(() =>
+        new MeetingProfileCommands().list(true, undefined, undefined, "id,label"),
+      );
+
+      expect(result.items.length).toBeGreaterThan(0);
+      for (const item of result.items as Array<Record<string, unknown>>) {
+        expect(Object.keys(item).sort()).toEqual(["id", "label"]);
+      }
+      expect(result.profiles).toEqual(result.items);
+    });
+
+    it("join --dry-run stays the documented write-brake equivalent: validates and joins nothing", async () => {
+      const { result } = await captureConsole(() =>
+        new MeetingsCommands().join(
+          "google-meet",
+          "https://meet.google.com/abc-defg-hij",
+          "Ravi",
+          "/tmp/ravi-meetings",
+          undefined,
+          undefined,
+          "120",
+          "5",
+          "webrtc-tap",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          false,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          true,
+        ),
+      );
+
+      expect(result).toMatchObject({ mode: "dry-run", provider: "google-meet" });
+    });
   });
 });
 

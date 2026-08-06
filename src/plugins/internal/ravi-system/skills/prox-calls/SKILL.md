@@ -25,6 +25,47 @@ Use sempre o wrapper canonico do repo fonte:
 /Users/luis/dev/filipelabs/ravi.bot/bin/ravi
 ```
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?}}`.
+
+Taxonomia de saida:
+
+- `0` sucesso.
+- `1` erro de execucao (ex.: `CALL_PROFILE_NOT_FOUND`, `CALL_REQUEST_NOT_FOUND`, `VOICE_AGENT_NOT_FOUND`, `CALL_TOOL_NOT_FOUND`, `TRANSCRIPT_NOT_FOUND`). O envelope traz `suggestions` de entidades locais parecidas — consulte antes de concluir "nao existe".
+- `2` erro de uso (flag/argumento invalido).
+- `3` freio de escrita — nao e erro. Nada foi feito; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
+
+Onde o freio existe: `prox calls request` e dry-run por default porque agenda uma LIGACAO telefonica real. Sem `--execute` sai exit 3 com o plano; com `--execute` a ligacao e submetida de verdade:
+
+```bash
+# 1. Dry-run (exit 3): revise o plano
+ravi prox calls request --profile followup --person luis --phone +5511947879044 \
+  --reason "Motivo objetivo" --json
+
+# 2. Execucao real, apos revisar
+ravi prox calls request --profile followup --person luis --phone +5511947879044 \
+  --reason "Motivo objetivo" --execute --json
+```
+
+Sem freio (declaradas, com racional):
+
+- `prox calls cancel` — parada de dano: cancela ligacao pendente/iminente; um freio aqui atrasaria exatamente a acao que interrompe o dano (precedente: workflows cancel).
+- `profiles configure`, `voice-agents create|configure|bind-tool|unbind-tool`, `tools create|configure|bind|unbind` — escrita local de configuracao, reversivel. Atencao: `profiles configure` pode sincronizar prompt/first-message com o provider ElevenLabs; use `--skip-provider-sync` quando quiser so persistir localmente.
+
+Equivalentes de freio (flags `--dry-run` PRE-EXISTENTES, nao renomeadas):
+
+- `voice-agents sync` — dry-run por DEFAULT; o push live segue reportado como `would_push`/`skipped`.
+- `tools run --dry-run` — valida schema + policy sem efeito colateral; a execucao live esta bloqueada (`execution_not_implemented`) ate o runtime nativo existir.
+
+Compact mode: `profiles list`, `voice-agents list` e `tools list` aceitam `--fields a,b,c` (ex.: `--fields id,name`) — use em varredura para nao arrastar o objeto inteiro.
+
+Checklist antes de responder sobre calls:
+
+- Tratei exit 3 como freio (revisei o `plan`) e nao como falha?
+- Consultei `suggestions` do envelope antes de declarar not-found?
+- So usei `--execute` depois de revisar o plano da ligacao?
+
 ## Modelo Mental
 
 - `call_profile` escolhe **como** a call roda: provider, prompt, first message, numero de origem, agent/pipeline id e placeholders.
@@ -88,7 +129,7 @@ ravi prox calls profiles configure followup \
 
 Para limpar `provider_agent_id` e voltar ao full-config dinamico, use o comando de profile apropriado se existir; se o CLI ainda nao tiver unset explicito, nao improvise direto no DB sem revisar a storage layer.
 
-Criar ligacao:
+Criar ligacao (dry-run por default; `--execute` faz a ligacao real):
 
 ```bash
 ravi prox calls request \
@@ -98,13 +139,16 @@ ravi prox calls request \
   --reason "Motivo objetivo da ligacao" \
   --var "opening_line=Oi, Luis. E o Ravi." \
   --var "goal=Faca X, pergunte Y, depois encerre." \
+  --execute \
   --json
 ```
+
+Sem `--execute` o comando sai com exit 3 e imprime o plano (freio de escrita) — revise antes de executar.
 
 Use `--force` so para chamada explicitamente pedida pelo operador, especialmente fora de janela normal:
 
 ```bash
-ravi prox calls request ... --force --json
+ravi prox calls request ... --force --execute --json
 ```
 
 Ver status:

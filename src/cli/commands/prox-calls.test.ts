@@ -2,9 +2,16 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { ContractError } from "../agent-contract.js";
+import { runWithContext } from "../context.js";
 import { getDb } from "../../router/router-db.js";
 import { attachTagSlugsToAsset } from "../../tags/helpers.js";
-import { ProxCallsProfileCommands, ProxCallsToolCommands, ProxCallsVoiceAgentCommands } from "./prox-calls.js";
+import {
+  ProxCallsCommands,
+  ProxCallsProfileCommands,
+  ProxCallsToolCommands,
+  ProxCallsVoiceAgentCommands,
+} from "./prox-calls.js";
 
 const testDir = join(tmpdir(), `ravi-prox-calls-cli-test-${Date.now()}`);
 mkdirSync(testDir, { recursive: true });
@@ -953,6 +960,206 @@ describe("dry-run validation", () => {
     expect(runs.length).toBe(2);
     expect(runs[0].tool_id).toBe("call.end");
     expect(runs[1].tool_id).toBe("person.lookup");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Agent-first contract (Manual v2): write brake, not-found envelopes, --fields
+// ---------------------------------------------------------------------------
+
+/**
+ * Contract helpers throw ContractError (instead of process.exit) only when a
+ * tool context is present; runWithContext provides one without env mutation.
+ */
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<InstanceType<typeof ContractError>> {
+  let caught: unknown;
+  await runWithContext({ sessionKey: "prox-test", sessionName: "prox-test", agentId: "prox-test" }, async () => {
+    await withoutLogsAsync(async () => {
+      try {
+        await run();
+      } catch (error) {
+        caught = error;
+      }
+    });
+  });
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as InstanceType<typeof ContractError>;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
+
+async function withoutLogsAsync<T>(run: () => Promise<T> | T): Promise<T> {
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = () => {};
+  console.error = () => {};
+  try {
+    return await run();
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+}
+
+describe("prox calls agent-first contract", () => {
+  it("request without --execute is a dry-run: exit 3 and NO call request persisted", async () => {
+    initCallsDefaultsForDialing();
+    updateCallProfile("checkin", { provider: "stub" });
+
+    const error = await expectContractError(
+      () =>
+        new ProxCallsCommands().request(
+          "checkin",
+          "person_brake_1",
+          "Teste do freio",
+          "+5511999999999",
+          "normal",
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toMatchObject({
+      profileId: "checkin",
+      personId: "person_brake_1",
+      phone: "+5511999999999",
+      providerMode: "stub",
+    });
+    const row = getDb()
+      .prepare("SELECT COUNT(*) AS c FROM call_requests WHERE target_person_id = ?")
+      .get("person_brake_1") as { c: number };
+    expect(row.c).toBe(0);
+  });
+
+  it("request with --execute submits the call request (stub provider)", async () => {
+    initCallsDefaultsForDialing();
+    updateCallProfile("checkin", { provider: "stub" });
+
+    const payload = await runWithContext(
+      { sessionKey: "prox-test", sessionName: "prox-test", agentId: "prox-test" },
+      () =>
+        withoutLogsAsync(() =>
+          new ProxCallsCommands().request(
+            "checkin",
+            "person_brake_2",
+            "Teste com execute",
+            "+5511999999999",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            true,
+          ),
+        ),
+    );
+
+    expect(payload.request.target_person_id).toBe("person_brake_2");
+    expect(getCallRequest(payload.request.id as string)).not.toBeNull();
+  });
+
+  it("request on an unknown profile exits 1 with CALL_PROFILE_NOT_FOUND before the brake", async () => {
+    initCallsDefaultsForDialing();
+    const error = await expectContractError(
+      () =>
+        new ProxCallsCommands().request(
+          "checkin-typo",
+          "person_brake_3",
+          "Perfil errado",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      "CALL_PROFILE_NOT_FOUND",
+      1,
+    );
+    expect(error.details.suggestions).toContain("checkin");
+  });
+
+  it("show and events on an unknown request exit 1 with CALL_REQUEST_NOT_FOUND", async () => {
+    initCallsDefaults();
+    const showError = await expectContractError(
+      () => new ProxCallsCommands().show("cr_nope", true),
+      "CALL_REQUEST_NOT_FOUND",
+      1,
+    );
+    expect(showError.details.suggestedAction).toContain("ravi prox calls request");
+    await expectContractError(() => new ProxCallsCommands().events("cr_nope", true), "CALL_REQUEST_NOT_FOUND", 1);
+  });
+
+  it("profiles/voice-agents/tools show unknown ids return typed envelopes with local suggestions", async () => {
+    initCallsDefaults();
+    const profileError = await expectContractError(
+      () => new ProxCallsProfileCommands().show("checkinn", true),
+      "CALL_PROFILE_NOT_FOUND",
+      1,
+    );
+    expect(profileError.details.suggestions).toContain("checkin");
+
+    const agentError = await expectContractError(
+      () => new ProxCallsVoiceAgentCommands().show("ravi-follow", true),
+      "VOICE_AGENT_NOT_FOUND",
+      1,
+    );
+    expect(agentError.details.suggestions).toContain("ravi-followup");
+
+    const toolError = await expectContractError(
+      () => new ProxCallsToolCommands().show("call.endd", true),
+      "CALL_TOOL_NOT_FOUND",
+      1,
+    );
+    expect(toolError.details.suggestions).toContain("call.end");
+  });
+
+  it("cancel is declared UNBRAKED (damage stop): it cancels without --execute", async () => {
+    initCallsDefaultsForDialing();
+    const request = createCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_cancel_unbraked",
+      reason: "Cancel contract test",
+    });
+
+    const payload = withoutLogs(() => new ProxCallsCommands().cancel(request.id, "parada de dano", true));
+
+    expect(payload.success).toBe(true);
+    expect(getCallRequest(request.id)!.status).toBe("canceled");
+  });
+
+  it("profiles list --fields narrows items and the profiles alias equally", () => {
+    initCallsDefaults();
+    const payload = withoutLogs(() =>
+      new ProxCallsProfileCommands().list(true, undefined, undefined, undefined, "id,name"),
+    );
+
+    expect(payload.items.length).toBeGreaterThan(0);
+    for (const item of payload.items as Array<Record<string, unknown>>) {
+      expect(Object.keys(item).sort()).toEqual(["id", "name"]);
+    }
+    expect(payload.profiles).toEqual(payload.items);
+  });
+
+  it("tools run --dry-run stays the documented write-brake equivalent (exit 0, no side effects)", () => {
+    initCallsDefaults();
+    const payload = withoutLogs(() =>
+      new ProxCallsToolCommands().run("person.lookup", '{"person_id":"p1"}', undefined, true, true),
+    );
+
+    expect(payload).toMatchObject({ ok: true, dry_run: true, tool_id: "person.lookup" });
   });
 });
 

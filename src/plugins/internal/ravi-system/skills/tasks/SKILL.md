@@ -158,7 +158,7 @@ de sessões runtime de pesquisa em lote.
 - `devin`
   - workspace = task workspace
   - artifact primário = `TASK.md`
-  - protocolo = delegar via `ravi devin sessions create|show|messages|insights|send|sync`
+  - protocolo = delegar via `ravi devin sessions create|show|messages|insights|send|sync` (`create` e `send` são dry-run por default — adicione `--execute` na execução real)
   - use `ravi devin sessions insights <session> --json` para enxergar status rico/contagens/análise remota quando a API disponibilizar
   - use `ravi devin sessions sync <session> --insights --artifacts --json` para registrar estado remoto com artifact
   - uso = externalizar investigação/implementação longa mantendo o Ravi como dono da task

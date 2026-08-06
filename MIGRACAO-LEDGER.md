@@ -53,10 +53,10 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 31 | stickers | stickers.ts | stickers | **MIGRADO** | cli/stickers |
 | 32 | react | react.ts | stickers (compartilhada) | **MIGRADO** (sem freio — veredito) | cli/react |
 | 33 | pages | pages.ts | — | **MIGRADO** (junto com artifacts, entrada 12) | cli/pages |
-| 34 | youtube | youtube.ts | (sem skill) | pendente | — |
-| 35 | prox-calls | prox-calls.ts | prox-calls | pendente | — |
-| 36 | meetings | meetings.ts | meetings | pendente | — |
-| 37 | devin | devin.ts | (sem skill) | pendente | — |
+| 34 | youtube | youtube.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/youtube |
+| 35 | prox-calls | prox-calls.ts | prox-calls | **MIGRADO** | cli/prox-calls |
+| 36 | meetings | meetings.ts | meetings | **MIGRADO** | cli/meetings |
+| 37 | devin | devin.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/devin |
 | 38 | slack | slack.ts | slack | **MIGRADO** | cli/slack (atualizada) |
 | 39 | media/image/audio/video/transcribe | media.ts, image.ts, audio.ts, video.ts, transcribe.ts | audio, image, video (media/transcribe sem skill) | **MIGRADO** | cli/media, cli/image, cli/audio, cli/video, cli/transcribe |
 | 40 | costs/metrics/insights | costs.ts, metrics.ts, insights.ts | (sem skill — lacunas registradas) | **MIGRADO** | cli/costs, cli/metrics, cli/insights |
@@ -702,6 +702,47 @@ ensina o caminho grátis primeiro).
 PASSED (7 specs). Falhas ambientais pré-existentes observadas e não
 relacionadas: runtime-system-prompt (separador `\`) e specs/service.test
 (split de path) — Windows.
+
+### 34–37. youtube + prox-calls + meetings + devin — MIGRADOS (lote; subagente, verificado e integrado)
+
+**youtube (`yt`):** 7 freadas — reply, video-update, video-delete e
+playlist-delete (plan com `irreversible:true`), playlist-remove, e **por
+veredito de princípio** playlist-create e playlist-add (escrita externa
+NÃO-idempotente: retry cego duplica; externalidade+não-idempotência vencem a
+reversibilidade — racional do mail send). 21 leituras sem freio.
+`VIDEO_NOT_FOUND` sem suggestions (sem fonte local). Funil `execute()` com
+rethrow de ContractError. `mutationHelp` reescrito ("No dry-run is available"
+→ ensina o freio). `--fields` em 7 listagens.
+**prox-calls (`prox`):** `request` freada (LIGAÇÃO real; validação de profile
+ANTES do freio; plan com pessoa/telefone/motivo/providerMode). `cancel` sem
+freio (parada de dano). Equivalentes documentados: voice-agents sync (dry-run
+default) e tools run --dry-run (live hard-block). 6 codes not-found; freio
+verificado contra o sqlite real (0 linhas sem --execute). `--fields` em 3
+listagens. Mislabel kind:"read" em `request` reportado sem flipar.
+**meetings:** NENHUM freio novo — `join --dry-run` pré-existente documentado
+como equivalente; login (interativo humano), finalize e profiles init
+declaradas. `MEETING_PROFILE_NOT_FOUND` com guarda para não mascarar erro de
+config como not-found. Correção cross-platform da suíte que já MORRIA no
+Windows (stub bash + PATH `:`): env do recorder no beforeEach + skipIf(win32)
+só no teste de spawn; CI POSIX roda tudo.
+**devin:** create e send freadas (serviço PAGO/ACUs; freio ANTES do client —
+dry-run sem credenciais; plan sem segredos: sessionSecretCount +
+promptPreview 200 chars). terminate sem freio (parada de custo). sync/archive
+declaradas. `DEVIN_SESSION_NOT_FOUND` em 8 ops com suggestions do cache local.
+Mislabel kind:"read" em terminate reportado. Mock de artifacts/store com
+spread do real (vazamento entre arquivos corrigido).
+
+**Consumidores:** skills prox-calls/meetings com Contrato Do CLI; skill tasks
+e docs/task-profiles-catalog ensinam devin create/send com --execute.
+Reportado sem editar: templates do app youtube (`ravi.app.json`) propagam o
+freio até o chamador passar --execute em {args} — hard-codar anularia o freio
+(deliberado); specs antigas de devin/prox/console-scope ensinam sintaxe
+pré-freio — dívida de reconciliação registrada (tocar nelas exigiria authoring
+de companheiros ausentes).
+
+**Rotina X:** youtube 11/11 · prox-calls 65/65 · meetings 13/13+1 skip(win32)
+· devin 13/13 · rodada conjunta 102 pass/1 skip/0 fail · typecheck limpo ·
+spec gate PASSED (4 specs). Usage contract nos subtrees yt/prox/meetings/devin.
 
 ### INCIDENTE — limite de sessão da conta (2026-08-06 ~05:00)
 

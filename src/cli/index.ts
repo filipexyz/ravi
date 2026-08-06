@@ -70,6 +70,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "costs",
   "crm",
   "cron",
+  "devin",
   "feedback",
   "gmail",
   "audio",
@@ -81,10 +82,12 @@ const AGENT_CONTRACT_DOMAINS = [
   "instances",
   "mail",
   "media",
+  "meetings",
   "metrics",
   "observers",
   "pages",
   "projects",
+  "prox",
   "react",
   "routes",
   "rules",
@@ -107,6 +110,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "whatsapp",
   "work-objects",
   "workflows",
+  "yt",
 ];
 for (const domain of AGENT_CONTRACT_DOMAINS) installUsageContract(program, domain);
 

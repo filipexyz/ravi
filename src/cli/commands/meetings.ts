@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { accessSync, constants, mkdirSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { z } from "zod";
+import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
@@ -135,6 +136,30 @@ function notifyOwnerSession(artifact: ArtifactRecord, status: "completed" | "fai
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * MEETING_PROFILE_NOT_FOUND envelope (Manual v2): suggestions come from the
+ * LOCAL meeting-profile catalog (`listMeetingProfiles`), a cheap local read.
+ * Resolve errors on profiles that DO exist keep the legacy fail() path.
+ */
+function failMeetingProfileNotFound(op: string, profileId: string, asJson?: boolean): never {
+  const candidates = listMeetingProfiles().flatMap((profile) => [profile.id, profile.label]);
+  contractFail(op, "MEETING_PROFILE_NOT_FOUND", `Meeting profile not found: ${profileId}`, {
+    asJson,
+    details: {
+      suggestedAction: "List meeting profiles with `ravi meetings profiles list --json`",
+      suggestions: suggestSimilar(profileId, candidates),
+    },
+  });
+}
+
+function meetingProfileExists(profileId: string): boolean {
+  try {
+    return listMeetingProfiles().some((profile) => profile.id === profileId);
+  } catch {
+    return false;
+  }
 }
 
 function isExecutable(path: string): boolean {
@@ -565,6 +590,10 @@ function buildResolvedProfileInput(input: {
   scope: "open",
 })
 export class MeetingsCommands {
+  // Declared UNBRAKED: login opens an interactive human-driven Google login
+  // in a local browser profile — the human at the browser IS the confirmation
+  // step, and a dry-run gate would only break that flow. No external write
+  // happens without the human completing it.
   @Command({
     name: "login",
     description: "Open Google login for the persistent Google Meet recorder browser profile",
@@ -618,6 +647,12 @@ export class MeetingsCommands {
     return payload;
   }
 
+  // Manual v2 write-brake EQUIVALENT: `join` keeps its pre-existing
+  // `--dry-run` flag (not renamed to --execute) as the inspect-before-acting
+  // path — it validates the provider invocation, prints args/env and joins
+  // nothing. The default is a real join because joining is the whole point of
+  // the op and it is visible/interruptible (the bot appears as a participant
+  // and can be removed), unlike an irreversible external write.
   @Command({
     name: "join",
     description: "Join a meeting through a native Ravi meeting provider",
@@ -683,6 +718,9 @@ export class MeetingsCommands {
       try {
         meetingProfile = resolveMeetingProfile(requestedMeetingProfileId);
       } catch (error) {
+        if (!meetingProfileExists(requestedMeetingProfileId)) {
+          failMeetingProfileNotFound("meetings join", requestedMeetingProfileId, asJson);
+        }
         fail(errorMessage(error));
       }
     }
@@ -1155,6 +1193,9 @@ export class MeetingsCommands {
     return payload;
   }
 
+  // Declared UNBRAKED: finalize only registers a LOCAL meeting.raw artifact
+  // from an already-completed local run dir — no external side effect, and the
+  // registration is inspectable/reversible through the artifacts surface.
   @Command({
     name: "finalize",
     description: "Finalize a completed meeting recorder run into a Ravi meeting.raw artifact",
@@ -1252,11 +1293,13 @@ export class MeetingProfileCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching profiles to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const profiles = listMeetingProfiles();
     const page = paginateCliItems(profiles, { limit, offset });
     const pageProfiles = page.items;
-    const publicProfiles = pageProfiles.map(publicMeetingProfile);
+    const publicProfiles = pickFields(pageProfiles.map(publicMeetingProfile), fields);
     const pagination = buildCliOffsetPagination({
       baseCommand: ["ravi", "meetings", "profiles", "list"],
       limit: page.limit,
@@ -1299,6 +1342,9 @@ export class MeetingProfileCommands {
     try {
       profile = resolveMeetingProfile(profileId);
     } catch (error) {
+      if (!meetingProfileExists(profileId)) {
+        failMeetingProfileNotFound("meetings profiles show", profileId, asJson);
+      }
       fail(errorMessage(error));
     }
     const payload = publicMeetingProfile(profile);
@@ -1317,6 +1363,9 @@ export class MeetingProfileCommands {
     return payload;
   }
 
+  // Declared UNBRAKED: init scaffolds a LOCAL profile file (reversible config
+  // write) — same class as tasks `profiles init`, which is unbraked by
+  // precedent.
   @Command({ name: "init", description: "Create a reusable meeting profile scaffold" })
   @CommandAccess({ kind: "mutate", resource: "meetings.profiles", action: "init", risk: "medium" })
   @Returns(meetingProfileInitReturnSchema)
