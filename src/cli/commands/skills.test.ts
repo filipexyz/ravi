@@ -330,24 +330,50 @@ describe("skills agent-first contract", () => {
         ...withoutRaviRuntimeContextEnv(),
         HOME: tempHome,
         USERPROFILE: tempHome,
+        RAVI_TEST_EXPECTED_HOME: tempHome,
         RAVI_LOG_LEVEL: "error",
-        RAVI_SUPPRESS_AUDIT_EVENTS: "1",
       };
 
       // Bun 1.3.11/Linux does not update os.homedir() when HOME changes after
-      // process start. Probe a fresh process before the write so a runtime that
-      // cannot honor the redirected home fails without touching the real one.
-      const homeProbe = spawnSync(
-        process.execPath,
-        ["--eval", 'import { homedir } from "node:os"; process.stdout.write(homedir());'],
-        { cwd: process.cwd(), encoding: "utf8", env: childEnv },
-      );
-      expect(homeProbe.status).toBe(0);
-      expect(homeProbe.stdout).toBe(tempHome);
-
+      // process start. Validate the redirect and perform the write in that same
+      // fresh process so a runtime that cannot honor it exits before mutation.
       const execution = spawnSync(
         process.execPath,
-        ["src/cli/index.ts", "skills", "install", KNOWN_CATALOG_SKILL, "--skip-codex-sync", "--json", "--execute"],
+        [
+          "--eval",
+          `
+            import { homedir } from "node:os";
+            import { runWithContext } from "./src/cli/context.ts";
+            import { SkillsCommands } from "./src/cli/commands/skills.ts";
+
+            const expectedHome = process.env.RAVI_TEST_EXPECTED_HOME;
+            if (!expectedHome || homedir() !== expectedHome) {
+              console.error("Redirected home was not honored; refusing skills install");
+              process.exit(70);
+            }
+
+            const originalLog = console.log;
+            console.log = () => {};
+            try {
+              const result = runWithContext({}, () =>
+                new SkillsCommands().install(
+                  ${JSON.stringify(KNOWN_CATALOG_SKILL)},
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  true,
+                  true,
+                  true,
+                ),
+              );
+              process.stdout.write(JSON.stringify(result));
+            } finally {
+              console.log = originalLog;
+            }
+          `,
+        ],
         { cwd: process.cwd(), encoding: "utf8", env: childEnv },
       );
       expect(execution.status).toBe(0);
