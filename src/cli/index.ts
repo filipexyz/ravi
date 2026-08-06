@@ -63,6 +63,7 @@ registerCommands(program, Object.values(allCommands) as Array<new () => object>)
 const AGENT_CONTRACT_DOMAINS = [
   "agents",
   "calendars",
+  "chats",
   "contacts",
   "crm",
   "gmail",

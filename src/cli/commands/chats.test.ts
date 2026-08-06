@@ -12,6 +12,7 @@ import {
   getDb,
 } from "../../router/router-db.js";
 import { attachTagSlugsToAsset } from "../../tags/helpers.js";
+import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { getArgsMetadata, getCliOnlyMetadata, getCommandAccessMetadata } from "../decorators.js";
 import {
@@ -797,5 +798,210 @@ describe("ChatsCommands --json", () => {
       wouldUpdate: 0,
       updated: 0,
     });
+  });
+});
+
+describe("chats agent-first contract", () => {
+  function catchContractError(run: () => unknown): unknown {
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      run();
+      return undefined;
+    } catch (error) {
+      return error;
+    } finally {
+      console.log = originalLog;
+    }
+  }
+
+  it("emits CHAT_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511900000001@s.whatsapp.net",
+      chatType: "dm",
+      title: "Contract target",
+    });
+    const chats = new ChatsCommands();
+    const thrown = catchContractError(() =>
+      runWithContext({}, () =>
+        chats.read(
+          "chat_ffffffffffffffffffffffff",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      ),
+    );
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("chats read");
+    expect(envelope.error.code).toBe("CHAT_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain(chat.id);
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+  });
+
+  it("emits READING_LIST_NOT_FOUND with suggestions from the same listing surface (exit 1)", () => {
+    dbCreateChatReadingList({ name: "contract-queue", ownerType: "system", ownerId: "ravi" });
+    const lists = new ChatReadingListCommands();
+    const thrown = catchContractError(() =>
+      runWithContext({}, () => lists.members("contract-qeue", undefined, undefined, undefined, true)),
+    );
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("chats lists members");
+    expect(envelope.error.code).toBe("READING_LIST_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("contract-queue");
+  });
+
+  it("emits CONTACT_NOT_FOUND without cross-scope suggestions on chats list --contact (exit 1)", () => {
+    const chats = new ChatsCommands();
+    const thrown = catchContractError(() =>
+      runWithContext({}, () =>
+        chats.list(
+          undefined,
+          undefined,
+          undefined,
+          "contact_missing_ref",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      ),
+    );
+    expect(thrown).toBeInstanceOf(ContractError);
+    const envelope = (thrown as InstanceType<typeof ContractError>).envelope();
+    expect(envelope.op).toBe("chats list");
+    expect(envelope.error.code).toBe("CONTACT_NOT_FOUND");
+    expect(envelope.error.suggestions).toBeUndefined();
+    expect(envelope.error.suggestedAction).toContain("ravi contacts list");
+  });
+
+  it("blocks chats lists remove without --execute (dry-run, exit 3, no write)", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511900000002@s.whatsapp.net",
+      chatType: "dm",
+      title: "Brake member",
+    });
+    const lists = new ChatReadingListCommands();
+    const created = captureJson(() =>
+      lists.create("brake-queue", "system:ravi", undefined, undefined, undefined, true),
+    );
+    const listId = (created.list as Record<string, string>).id;
+    captureJson(() =>
+      lists.add("brake-queue", chat.id, undefined, undefined, undefined, undefined, true, "system:ravi"),
+    );
+    expect(dbListChatReadingListMembers({ listId }).total).toBe(1);
+
+    const thrown = catchContractError(() =>
+      runWithContext({}, () => lists.remove("brake-queue", chat.id, undefined, undefined, true, "system:ravi")),
+    );
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("chats lists remove");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    expect((envelope.error.plan as Record<string, unknown>).chat).toBe(chat.id);
+    expect(dbListChatReadingListMembers({ listId }).total).toBe(1);
+  });
+
+  it("removes the member when chats lists remove carries --execute", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511900000003@s.whatsapp.net",
+      chatType: "dm",
+      title: "Removable member",
+    });
+    const lists = new ChatReadingListCommands();
+    const created = captureJson(() => lists.create("exec-queue", "system:ravi", undefined, undefined, undefined, true));
+    const listId = (created.list as Record<string, string>).id;
+    captureJson(() =>
+      lists.add("exec-queue", chat.id, undefined, undefined, undefined, undefined, true, "system:ravi"),
+    );
+    expect(dbListChatReadingListMembers({ listId }).total).toBe(1);
+
+    const payload = captureJson(() =>
+      lists.remove("exec-queue", chat.id, undefined, undefined, true, "system:ravi", true),
+    );
+    expect(payload.removed).toBe(true);
+    expect(dbListChatReadingListMembers({ listId }).total).toBe(0);
+  });
+
+  it("supports --fields compact mode on chats list, chats lists list, and chats lists members", () => {
+    const chat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "instance-1",
+      platformChatId: "5511900000004@s.whatsapp.net",
+      chatType: "dm",
+      title: "Fields target",
+    });
+    const chats = new ChatsCommands();
+    const listPayload = captureJson(() =>
+      chats.list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "10",
+        undefined,
+        true,
+        undefined,
+        "messageCount,participantCount",
+      ),
+    );
+    const listItems = listPayload.items as Array<Record<string, unknown>>;
+    expect(listItems.length).toBeGreaterThan(0);
+    for (const item of listItems) {
+      expect(Object.keys(item).sort()).toEqual(["messageCount", "participantCount"]);
+    }
+
+    const lists = new ChatReadingListCommands();
+    captureJson(() => lists.create("fields-queue", "system:ravi", undefined, undefined, undefined, true));
+    const listsPayload = captureJson(() => lists.list(undefined, undefined, undefined, undefined, true, "id,name"));
+    const listRows = listsPayload.items as Array<Record<string, unknown>>;
+    expect(listRows.length).toBeGreaterThan(0);
+    for (const item of listRows) {
+      expect(Object.keys(item).sort()).toEqual(["id", "name"]);
+    }
+
+    captureJson(() =>
+      lists.add("fields-queue", chat.id, undefined, undefined, undefined, undefined, true, "system:ravi"),
+    );
+    const membersPayload = captureJson(() =>
+      lists.members(
+        "fields-queue",
+        undefined,
+        undefined,
+        undefined,
+        true,
+        "system:ravi",
+        undefined,
+        "chat,unreadMessageCount",
+      ),
+    );
+    const memberRows = membersPayload.members as Array<Record<string, unknown>>;
+    expect(memberRows.length).toBeGreaterThan(0);
+    for (const item of memberRows) {
+      expect(Object.keys(item).sort()).toEqual(["chat", "unreadMessageCount"]);
+    }
   });
 });

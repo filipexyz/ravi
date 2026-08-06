@@ -29,7 +29,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 7 | whatsapp | group.ts, whatsapp-dm.ts | whatsapp | **MIGRADO** | cli/whatsapp |
 | 8 | mail | mail.ts, gmail.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/mail |
 | 9 | calendar | calendar.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/calendar |
-| 10 | chats | chats.ts | (sem skill) | pendente | — |
+| 10 | chats | chats.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/chats |
 | 11 | projects | projects.ts | projects | pendente | — |
 | 12 | artifacts | artifacts.ts | artifacts | pendente | — |
 | 13 | skills+skill-gates | skills.ts, skill-gates.ts | skills, skill-gates | pendente | — |
@@ -380,3 +380,27 @@ máquina por EBUSY — o hardening do ravi-state + complemento resolveu) ·
 · flags erradas → USAGE_ERROR exit 2 com acceptedFlags (o envelope ensinou a
 sintaxe correta em 2 iterações — dogfooding real) · `list --fields` ok · freio
 do share provado nos testes com verificação de DB.
+
+### 10. chats — MIGRADO (subagente, verificado e integrado)
+
+**Escopo:** freio (`--execute`) em `chats lists remove` (derruba chat de fila
+de leitura viva; validação de list+chat ANTES do freio). Equivalentes
+pré-existentes documentados, não renomeados: `backfill-provider-timestamps`
+(`--apply` default-dry-run) e `lists recompute` (guardado por `lists preview` +
+gate de selector inseguro). Sem freio (declaradas): ensure e messages create
+(idempotentes por clientRequestId), lists create/add/mark-read, delta
+--mark-read. Codes: `CHAT_NOT_FOUND` (suggestions da mesma superfície do list),
+`READING_LIST_NOT_FOUND` (suggestions respeitando o filtro --owner),
+`CONTACT_NOT_FOUND` SEM suggestions (chats não reproduz o contactScope barato —
+aponta contacts list). Rethrow de ContractError no resolveReadingList.
+`--fields` em 3 listagens. Usage contract no subtree (`chats` no index).
+Failure mode documentado: `chats messages` delega para `read` e o envelope
+reporta `op: "chats read"`.
+
+**Rotina X:** `chats.test.ts` 24/24 (7 de contrato; usa runWithContext como o
+resto do arquivo — sem mock de context) · regressão colateral verificada
+(registry-snapshot 16 pass, canonical-chat 2 pass) · typecheck do domínio limpo
+(erros transitórios em pages.ts eram WIP do agente paralelo) · spec gate PASSED
+(cli/chats + channels/chats/reading-lists consumidor). **Rotina Y:** `read
+chat-fantasma --json` → CHAT_NOT_FOUND exit 1 · subcomando inexistente → usage
+exit 2 do subtree · `list --fields id,title` ok.
