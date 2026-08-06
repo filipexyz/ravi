@@ -1,8 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import {
+  cleanupIsolatedRaviState,
+  createIsolatedRaviState,
+  withoutRaviRuntimeContextEnv,
+} from "../../test/ravi-state.js";
 import { dbCreateAgent, dbDeleteAgent, dbListSkillGrants, dbListSkillGrantsForAgent } from "../../router/router-db.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
@@ -320,42 +325,45 @@ describe("skills agent-first contract", () => {
 
   it("installs with --execute into the (redirected) user plugin bucket", () => {
     const tempHome = mkdtempSync(join(tmpdir(), "skills-exec-home-"));
-    const previousHome = process.env.HOME;
-    const previousProfile = process.env.USERPROFILE;
-    process.env.HOME = tempHome;
-    process.env.USERPROFILE = tempHome;
     try {
-      // Fail fast BEFORE any write if this runtime does not honor the redirect —
-      // otherwise the install would land in the real user home.
-      expect(homedir()).toBe(tempHome);
-      const commands = new SkillsCommands();
-      const result = withoutLogs(() =>
-        runWithContext({}, () =>
-          commands.install(
-            KNOWN_CATALOG_SKILL,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            true, // --skip-codex-sync
-            true, // --json
-            true, // --execute → real write
-          ),
-        ),
+      const childEnv = {
+        ...withoutRaviRuntimeContextEnv(),
+        HOME: tempHome,
+        USERPROFILE: tempHome,
+        RAVI_LOG_LEVEL: "error",
+        RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+      };
+
+      // Bun 1.3.11/Linux does not update os.homedir() when HOME changes after
+      // process start. Probe a fresh process before the write so a runtime that
+      // cannot honor the redirected home fails without touching the real one.
+      const homeProbe = spawnSync(
+        process.execPath,
+        ["--eval", 'import { homedir } from "node:os"; process.stdout.write(homedir());'],
+        { cwd: process.cwd(), encoding: "utf8", env: childEnv },
       );
+      expect(homeProbe.status).toBe(0);
+      expect(homeProbe.stdout).toBe(tempHome);
+
+      const execution = spawnSync(
+        process.execPath,
+        ["src/cli/index.ts", "skills", "install", KNOWN_CATALOG_SKILL, "--skip-codex-sync", "--json", "--execute"],
+        { cwd: process.cwd(), encoding: "utf8", env: childEnv },
+      );
+      expect(execution.status).toBe(0);
+      expect(execution.stderr).toBe("");
+      const result = JSON.parse(execution.stdout) as {
+        success: boolean;
+        installed: Array<{ installPath?: string }>;
+      };
       expect(result.success).toBe(true);
       const installPath = String(result.installed[0]?.installPath ?? "");
       expect(installPath.startsWith(tempHome)).toBe(true);
       expect(existsSync(installPath)).toBe(true);
     } finally {
-      if (previousHome === undefined) delete process.env.HOME;
-      else process.env.HOME = previousHome;
-      if (previousProfile === undefined) delete process.env.USERPROFILE;
-      else process.env.USERPROFILE = previousProfile;
       rmSync(tempHome, { recursive: true, force: true });
     }
-  });
+  }, 20_000);
 
   it("emits SKILL_NOT_FOUND envelope with suggestions on skills show --json (exit 1)", () => {
     const commands = new SkillsCommands();
