@@ -21,6 +21,26 @@ Sessões são conversas persistentes entre agents e usuários. Cada sessão tem 
 
 Sessões são a superfície de comunicação do Ravi. Não são o task runtime. Se o trabalho precisa de dono, progresso e estado terminal, use `ravi tasks ...`. Se a pergunta é medir regressão ou comparar comportamento, use `ravi eval ...`.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, acceptedFlags?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução (ex.: `SESSION_NOT_FOUND`, `MESSAGE_NOT_FOUND`). `SESSION_NOT_FOUND` NÃO traz `suggestions` de propósito: o isolamento de escopo mascara sessão não-autorizada como not-found, e sugerir nomes reais vazaria sessões de outros escopos. Liste as visíveis com `ravi sessions list --json`.
+- `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
+- `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan`. Revise e repita com `--execute`.
+
+Onde o freio existe hoje: `reset` (contexto é irrecuperável), `delete` (permanente), `delete-message` e `edit-message` (mutação irreversível no canal) são dry-run por default e exigem `--execute`. `prune` já era dry-run nativo com `--execute` e mantém seu payload rico de candidatos (exit 0 no preview). Todas as demais escritas gravam na hora, sem dry-run: `send`, `ask`, `answer`, `inform`, `execute`, `rename`, `set-display`, `set-provider|model|effort|thinking`, `set-ttl`, `extend`, `keep`, `attach`, `detach`, `mute`, `unmute`, `create-thread`, `close-thread`, followups e runtime. Nessas o freio é você: confira o alvo (sessão certa!) antes de rodar.
+
+Compact mode: `sessions list` aceita `--fields a,b,c` (ex.: `--fields name,agentId,updatedAt`).
+
+Checklist antes de responder sobre sessões:
+
+- Tratei exit 3 como freio (revisei o `plan`) e não como falha?
+- Chequei `ravi sessions list --json` antes de declarar que uma sessão não existe?
+
 ## Tipos de Sessão
 
 - **Permanent** (padrão): Sessão normal, sem expiração.
@@ -65,11 +85,11 @@ ravi sessions set-model <name> <model>
 # Definir thinking level
 ravi sessions set-thinking <name> <level>
 
-# Resetar sessão (limpa conversa, mantém config)
-ravi sessions reset <name>
+# Resetar sessão (limpa conversa, mantém config; sem --execute é dry-run, exit 3)
+ravi sessions reset <name> --execute
 
-# Deletar sessão permanentemente (abort + delete)
-ravi sessions delete <name>
+# Deletar sessão permanentemente (abort + delete; sem --execute é dry-run, exit 3)
+ravi sessions delete <name> --execute
 
 # Preview de limpeza por inatividade (não apaga nada)
 ravi sessions prune --inactive-for 2d --json
@@ -126,7 +146,7 @@ ravi sessions detach <session> --chat <chat-id>
 2. **Unificar histórico de N grupos numa sessão.** Caso: dev atende o grupo `ravi - dev` e você quer que o mesmo dev também receba inbound de `ravi - dev - test`.
    - Primeiro garanta que a route do grupo novo aponta para o agent `dev`: `ravi instances routes add <instance> "group:<id>" dev --priority 10`.
    - Se a intenção é fixar a sessão canônica já na route, prefira: `ravi instances routes add <instance> "group:<id>" dev --session dev --priority 10`.
-   - Se o grupo novo já criou uma sessão paralela (`dev-2`, vazia), apague a paralela (`sessions delete dev-2`) antes de consolidar.
+   - Se o grupo novo já criou uma sessão paralela (`dev-2`, vazia), apague a paralela (`sessions delete dev-2 --execute`) antes de consolidar.
    - Depois use `sessions attach dev --chat <chat-id-do-test>` para ligar o chat à sessão existente e ajustar fala/output.
    - Use `sessions mute dev --chat <chat-id-do-test>` se o test deve ser listen-only.
 

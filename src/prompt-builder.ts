@@ -143,7 +143,7 @@ function sessionAttachText(): string {
 
 **Anti-patterns:**
 
-- ❌ Adicionar route pra "mover" chat já atachado em outra sessão — subscription override puxa de volta. Detach (ou \`sessions delete\` da sessão antiga) primeiro.
+- ❌ Adicionar route pra "mover" chat já atachado em outra sessão — subscription override puxa de volta. Detach (ou \`sessions delete --execute\` da sessão antiga) primeiro.
 - ❌ Tentar redirecionar output com \`focus\` — focus não existe; use \`attach\` para escolher o chat que recebe as respostas da sessão.
 - ❌ Externalizar para o usuário que você está mutando, desmutando ou roteando uma resposta.
 - ❌ Esperar attach trocar o agent. Attach decide sessão; agent vem da route ou default da instance.`;
@@ -159,9 +159,9 @@ Leia os campos \`promptHint\` e \`usage.tools\` retornados por \`actions --json\
 
 O CLI infere a sessão pelo contexto de execução do agent. Não passe o nome da sessão quando estiver rodando dentro do Ravi; use \`ravi sessions actions ${sessionRef} --json\` apenas para depuração fora do runtime.
 
-Para apagar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions delete-message <message-id>\`.
+Para apagar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions delete-message <message-id> --execute\` (sem \`--execute\` é dry-run, exit 3).
 
-Para editar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions edit-message <message-id> "novo texto"\`.
+Para editar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions edit-message <message-id> "novo texto" --execute\` (sem \`--execute\` é dry-run, exit 3).
 
 Só apague ou edite mensagens próprias quando estiver corrigindo ou removendo uma saída acidental. Não exponha IDs internos ao usuário a menos que isso seja útil para depuração.`;
 }

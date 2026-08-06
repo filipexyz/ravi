@@ -11253,6 +11253,7 @@ export type SessionsCreateThreadReturn = {
 
 /** Input shape for `sessions.delete`. */
 export type SessionsDeleteInput = {
+  execute?: boolean;
   nameOrKey: string;
 };
 
@@ -11261,6 +11262,7 @@ export type SessionsDeleteReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.delete-message`. */
 export type SessionsDeleteMessageInput = {
+  execute?: boolean;
   messageRef?: string;
   sessionOrMessage: string;
 };
@@ -11279,6 +11281,7 @@ export type SessionsDetachReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.edit-message`. */
 export type SessionsEditMessageInput = {
+  execute?: boolean;
   messageOrText?: string;
   sessionOrMessage: string;
   text?: string;
@@ -11559,6 +11562,7 @@ export type SessionsKeepReturn = Record<string, unknown>;
 export type SessionsListInput = {
   agent?: string;
   ephemeral?: boolean;
+  fields?: string;
   limit?: string;
   live?: boolean;
   offset?: string;
@@ -11659,6 +11663,7 @@ export type SessionsRenameReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.reset`. */
 export type SessionsResetInput = {
+  execute?: boolean;
   nameOrKey: string;
 };
 

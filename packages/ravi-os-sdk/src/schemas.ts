@@ -55291,6 +55291,10 @@ export const SessionsCreateThreadReturnSchema = {
 export const SessionsDeleteInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually delete the session; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "nameOrKey": {
       "description": "Session name or key",
       "type": "string"
@@ -55313,6 +55317,10 @@ export const SessionsDeleteReturnSchema = {
 export const SessionsDeleteMessageInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually delete the message; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "messageRef": {
       "description": "Canonical or provider message id",
       "type": "string"
@@ -55365,6 +55373,10 @@ export const SessionsDetachReturnSchema = {
 export const SessionsEditMessageInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually edit the message; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "messageOrText": {
       "description": "Message id, or new text when running inside a session",
       "type": "string"
@@ -56453,6 +56465,10 @@ export const SessionsListInputSchema = {
       "description": "Show only ephemeral sessions",
       "type": "boolean"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -56803,6 +56819,10 @@ export const SessionsRenameReturnSchema = {
 export const SessionsResetInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually reset the session; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "nameOrKey": {
       "description": "Session name or key",
       "type": "string"

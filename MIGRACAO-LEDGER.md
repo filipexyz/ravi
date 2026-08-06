@@ -22,7 +22,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 |---|---------|--------------|-------|--------|------|
 | 1 | crm | crm.ts | crm | **MIGRADO** | cli/crm |
 | 2 | tasks | tasks.ts, tasks-deps.ts, tasks-profiles.ts, tasks-automations.ts | tasks (+tasks-manager alias) | **MIGRADO** | cli/tasks |
-| 3 | sessions | sessions.ts, sessions-runtime.ts, session-followups.ts | sessions | pendente | — |
+| 3 | sessions | sessions.ts, sessions-runtime.ts, session-followups.ts | sessions | **MIGRADO** | cli/sessions |
 | 4 | contacts | contacts.ts | contacts | pendente | — |
 | 5 | agents | agents.ts | agents | pendente | — |
 | 6 | instances+routes | instances.ts | instances, routes | pendente | — |
@@ -170,3 +170,41 @@ SEM listados) + exemplo do dispatch com `--execute` + checklist; `tasks-manager`
 **Testes de parser por domínio:** cobertos genericamente em `crm.test.ts`
 (árvore commander real); `tasks.test.ts` mocka decorators, então testa o
 contrato no corpo do comando. Decisão registrada.
+
+### 3. sessions — MIGRADO
+
+**Escopo:** freio (`--execute`) só nos ops irrecuperáveis — `reset` (contexto),
+`delete` (permanente), `delete-message`/`edit-message` (mutação irreversível no
+canal). Loop de mensagens (`send/ask/answer/inform/execute`) deliberadamente SEM
+freio (fricção em cada coordenação); `prune` mantém o dry-run nativo rico
+(candidatos, exit 0) como exceção declarada — é a origem do padrão `--execute`.
+`SESSION_NOT_FOUND` **sem suggestions por segurança**: o isolamento de escopo
+mascara sessão não-autorizada como not-found; sugerir nomes reais permitiria
+enumeração entre escopos. `MESSAGE_NOT_FOUND` em delete/edit-message.
+`--fields` em `sessions list`. Usage contract no subtree.
+
+**Consumidores atualizados no mesmo commit** (ensinavam comando freado sem
+`--execute`): hint builders de session actions em `sessions.ts`
+(`build*DeleteMessageCommand`/`build*EditMessageCommand` — consumidos por
+agentes vivos), aviso de TTL efêmero em `src/ephemeral/runner.ts`, e orientação
+do `src/prompt-builder.ts`. Nenhum desses paths dispara o coverage gate.
+
+**Rotina X:** typecheck limpo · `sessions.test.ts` 49/49 (5 testes de contrato
+novos + 1 call site existente de edit/delete-message atualizado + asserts dos
+hint builders) · `sessions-runtime.test.ts` 4/4 · `prompt-builder.test.ts` 19/19 ·
+`sessions-trace.test.ts` (5) e `session-followups.test.ts` (5) falham EBUSY
+Windows — pré-existentes, verificados idênticos no virgem via stash ·
+arquivos de teste do CLI rodam um-a-um (mock.module vaza entre arquivos no
+mesmo processo bun; é por isso que `test:cli-commands` usa loop) ·
+`sdk:generate`/`sdk:check` current.
+
+**Rotina Y (`RAVI_STATE_DIR` isolado):** `info ghost --json` → SESSION_NOT_FOUND
+sem suggestions, exit 1 · sessão criada via `send -a main` (send falha sem
+daemon, criação persiste) · `reset` sem `--execute` → exit 3 + plan · `delete`
+sem `--execute` → exit 3 (sessão ainda resolvia) · `delete --execute` →
+`changed:true`, lista vazia depois · `list --flag-inexistente --json` →
+USAGE_ERROR exit 2 · `delete --help` → 12 linhas · `list --fields name,agentId`.
+
+**CLI↔SKILL:** skill `sessions` ganhou `## Contrato Do CLI` (com a explicação do
+not-found sem suggestions), exemplos de reset/delete com `--execute` e nota de
+dry-run; anti-pattern do delete atualizado.

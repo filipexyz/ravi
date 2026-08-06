@@ -60,7 +60,7 @@ registerCommands(program, Object.values(allCommands) as Array<new () => object>)
 // errors (unknown flag, missing required argument) exit 2 with the error
 // envelope instead of plain text with exit 1. Unlisted groups keep commander's
 // default behavior until they are migrated.
-const AGENT_CONTRACT_DOMAINS = ["crm", "tasks"];
+const AGENT_CONTRACT_DOMAINS = ["crm", "tasks", "sessions"];
 for (const domain of AGENT_CONTRACT_DOMAINS) installUsageContract(program, domain);
 
 // Top-level commands (not via decorator groups)

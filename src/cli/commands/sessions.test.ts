@@ -104,6 +104,9 @@ mock.module("../decorators.js", () => ({
 
 mock.module("../context.js", () => ({
   getContext: () => toolContext,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -872,8 +875,10 @@ describe("SessionCommands attach hints", () => {
 
   it("builds action discovery and own-message deletion commands", () => {
     expect(buildCurrentSessionActionsCommand()).toBe("ravi sessions actions --json");
-    expect(buildCurrentSessionDeleteMessageCommand("cm_123")).toBe("ravi sessions delete-message cm_123");
-    expect(buildCurrentSessionEditMessageCommand("cm_123")).toBe('ravi sessions edit-message cm_123 "<new-text>"');
+    expect(buildCurrentSessionDeleteMessageCommand("cm_123")).toBe("ravi sessions delete-message cm_123 --execute");
+    expect(buildCurrentSessionEditMessageCommand("cm_123")).toBe(
+      'ravi sessions edit-message cm_123 "<new-text>" --execute',
+    );
     expect(buildCurrentSessionReactionCommand("cm_123", "<emoji>")).toBe("ravi react send cm_123 <emoji>");
     expect(buildCurrentSessionStickerSendCommand("wave")).toBe("ravi stickers send wave");
     expect(buildCurrentSessionMediaSendCommand("/tmp/card.png")).toBe('ravi media send "/tmp/card.png"');
@@ -884,8 +889,10 @@ describe("SessionCommands attach hints", () => {
     expect(buildCurrentSessionCloseThreadCommand()).toBe("ravi sessions close-thread");
     expect(buildCurrentSessionCloseThreadCommand("done")).toBe('ravi sessions close-thread --return "done"');
     expect(buildSessionActionsCommand("dev")).toBe("ravi sessions actions dev --json");
-    expect(buildSessionDeleteMessageCommand("dev", "cm_123")).toBe("ravi sessions delete-message dev cm_123");
-    expect(buildSessionEditMessageCommand("dev", "cm_123")).toBe('ravi sessions edit-message dev cm_123 "<new-text>"');
+    expect(buildSessionDeleteMessageCommand("dev", "cm_123")).toBe("ravi sessions delete-message dev cm_123 --execute");
+    expect(buildSessionEditMessageCommand("dev", "cm_123")).toBe(
+      'ravi sessions edit-message dev cm_123 "<new-text>" --execute',
+    );
   });
 
   it("builds a prompt-ready hint for session action tools", () => {
@@ -1247,7 +1254,7 @@ describe("SessionCommands attach hints", () => {
     const commands = new SessionCommands();
     let deleted: Record<string, unknown> | undefined;
     await captureLogsAsync(async () => {
-      deleted = (await commands.deleteMessage("dev-slack", "cm_slack", true)) as Record<string, unknown>;
+      deleted = (await commands.deleteMessage("dev-slack", "cm_slack", true, true)) as Record<string, unknown>;
     });
     expect(deleted).toMatchObject({
       deleted: false,
@@ -1264,7 +1271,7 @@ describe("SessionCommands attach hints", () => {
 
     let edited: Record<string, unknown> | undefined;
     await captureLogsAsync(async () => {
-      edited = (await commands.editMessage("dev-slack", "cm_slack", "new text", undefined, true)) as Record<
+      edited = (await commands.editMessage("dev-slack", "cm_slack", "new text", undefined, true, true)) as Record<
         string,
         unknown
       >;
@@ -2095,5 +2102,102 @@ describe("extractNormalizedTranscriptMessages", () => {
       ["assistant", "Vou olhar isso agora."],
       ["assistant", "Feito."],
     ]);
+  });
+});
+
+const { ContractError } = await import("../agent-contract.js");
+
+describe("sessions agent-first contract", () => {
+  beforeEach(() => {
+    deletedSessionKeys.length = 0;
+    listedSessions = [];
+    resolvedSession = {
+      sessionKey: "agent:dev:main",
+      name: "dev",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+  });
+
+  it("emits SESSION_NOT_FOUND envelope without suggestions (exit 1)", async () => {
+    resolvedSession = null;
+    const commands = new SessionCommands();
+    let thrown: unknown;
+    await captureLogsAsync(async () => {
+      try {
+        await commands.reset("ghost", true);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("sessions reset");
+    expect(envelope.error.code).toBe("SESSION_NOT_FOUND");
+    expect(envelope.error.suggestions).toBeUndefined();
+  });
+
+  it("blocks sessions delete without --execute (dry-run, exit 3, no delete)", async () => {
+    const commands = new SessionCommands();
+    let thrown: unknown;
+    await captureLogsAsync(async () => {
+      try {
+        await commands.delete("dev", true);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    expect((envelope.error.plan as Record<string, unknown>).sessionKey).toBe("agent:dev:main");
+    expect(deletedSessionKeys).toHaveLength(0);
+  });
+
+  it("deletes the session with --execute", async () => {
+    const commands = new SessionCommands();
+    await captureLogsAsync(async () => {
+      await commands.delete("dev", true, true);
+    });
+    expect(deletedSessionKeys).toEqual(["agent:dev:main"]);
+  });
+
+  it("blocks sessions reset without --execute (dry-run, exit 3)", async () => {
+    const commands = new SessionCommands();
+    let thrown: unknown;
+    await captureLogsAsync(async () => {
+      try {
+        await commands.reset("dev", true);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect((thrown as InstanceType<typeof ContractError>).exitCode).toBe(3);
+  });
+
+  it("supports --fields compact mode on sessions list", () => {
+    listedSessions = [
+      {
+        sessionKey: "agent:main:main",
+        name: "main",
+        agentId: "main",
+        agentCwd: "/tmp/main",
+        createdAt: 1000,
+        updatedAt: 2000,
+      },
+    ];
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().list(undefined, false, true, false, undefined, undefined, undefined, "name,agentId");
+      }),
+    );
+    expect(payload.items).toHaveLength(1);
+    expect(Object.keys(payload.items[0]).sort()).toEqual(["agentId", "name"]);
   });
 });

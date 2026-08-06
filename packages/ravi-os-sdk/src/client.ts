@@ -5295,19 +5295,23 @@ export class RaviClient {
       });
     },
     /** Delete a session permanently */
-    delete: async (nameOrKey: string): Promise<SessionsDeleteReturn> => {
+    delete: async (nameOrKey: string, options?: {
+      execute?: boolean;
+    }): Promise<SessionsDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],
         command: "delete",
-        body: { nameOrKey },
+        body: { nameOrKey, ...(options ?? {}) },
       });
     },
     /** Delete one of this session agent's own channel messages */
-    deleteMessage: async (sessionOrMessage: string, messageRef?: string): Promise<SessionsDeleteMessageReturn> => {
+    deleteMessage: async (sessionOrMessage: string, messageRef?: string, options?: {
+      execute?: boolean;
+    }): Promise<SessionsDeleteMessageReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],
         command: "delete-message",
-        body: { sessionOrMessage, messageRef },
+        body: { sessionOrMessage, messageRef, ...(options ?? {}) },
       });
     },
     /** Detach a chat/output target from a session */
@@ -5322,6 +5326,7 @@ export class RaviClient {
     },
     /** Edit one of this session agent's own text channel messages */
     editMessage: async (sessionOrMessage: string, messageOrText?: string, textArg?: string, options?: {
+      execute?: boolean;
       text?: string;
     }): Promise<SessionsEditMessageReturn> => {
       return this.transport.call({
@@ -5520,6 +5525,7 @@ export class RaviClient {
     list: async (options?: {
       agent?: string;
       ephemeral?: boolean;
+      fields?: string;
       limit?: string;
       live?: boolean;
       offset?: string;
@@ -5576,11 +5582,13 @@ export class RaviClient {
       });
     },
     /** Reset a session (fresh start) */
-    reset: async (nameOrKey: string): Promise<SessionsResetReturn> => {
+    reset: async (nameOrKey: string, options?: {
+      execute?: boolean;
+    }): Promise<SessionsResetReturn> => {
       return this.transport.call({
         groupSegments: ["sessions"],
         command: "reset",
-        body: { nameOrKey },
+        body: { nameOrKey, ...(options ?? {}) },
       });
     },
     runtime: {
