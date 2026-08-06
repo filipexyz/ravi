@@ -805,3 +805,39 @@ API (reset 7:30am America/Sao_Paulo): lote settings/self/feedback/rules/specs
 slack / youtube+prox-calls+meetings+devin / mídia+stickers+react /
 costs+metrics+insights (mal começaram). Plano: retomar pós-reset com
 re-despacho; nada foi perdido nem revertido.
+
+---
+
+## FASE 2 — Integração final (2026-08-06)
+
+**Veredito da suíte: ZERO falhas novas vs baseline.**
+
+- `bun test src/channels/`: **254 pass / 1 fail** (baseline: 145/110). A única
+  falha restante consta na lista da baseline; **109 falhas da baseline foram
+  CORRIGIDAS** pelo hardening EBUSY de `src/test/ravi-state.ts`
+  (oven-sh/bun#25964).
+- Varredura `test:cli-commands` (arquivo a arquivo): todos verdes exceto
+  pré-existentes ambientais win32 documentados: `tasks-profiles` (3, EBUSY
+  próprio, verificado no virgem), `daemon` (1, EPERM symlink — privilégio
+  Windows), `doctor` (1, path `~/` vs backslash). `runtime-presets` e `sync`
+  flakaram sob contenção e passam isolados (11/11, 6/6).
+- Demais segmentos da suíte oficial: 544+246+1+2+79+13+8+4+39 pass; as 22
+  falhas observadas (bash stdio, hooks MEMORY.md, projects smoke, task profile
+  catalog, task substrate, transcripts) estão TODAS em paths com **0 commits
+  nossos** (`git log def9a763..HEAD` vazio para src/bash, src/hooks,
+  src/projects, src/tasks, src/workflow-substrate, src/transcripts.ts) —
+  pré-existentes ambientais win32 por definição; a baseline nunca alcançou
+  esses segmentos porque a cadeia abortava em channels.
+- `test:sdk`: 49/49 · `sdk:check`: artifacts current · `bun run typecheck`:
+  limpo · `bun run build`: ok.
+- **Quality gate local (`GITHUB_BASE_REF=dev`): PASSED** — 65 spec ids
+  alterados validados, 273 specs indexadas, coverage gate não disparado
+  (nenhum path de runtime tocado).
+- `origin/dev` inalterado em `def9a763` — rebase desnecessário; branch com os
+  commits de migração limpos à frente.
+
+**Cobertura final:** 45 entradas de domínio MIGRADAS (58 roots commander no
+usage-contract em ordem alfabética), 13 domínios dispensados com justificativa
+(tabela acima), 54 specs `cli/*` novas/atualizadas + 3 specs root com
+companheiros criados (mail) ou corrigidos (watch CHECKS), ~30 skills/docs/
+hints/prompts de agente ensinando o contrato.
