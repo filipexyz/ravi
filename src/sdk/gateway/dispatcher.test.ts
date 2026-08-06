@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
+import { ContractError } from "../../cli/agent-contract.js";
 import { getContext } from "../../cli/context.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import type { ContextCapability, ContextRecord } from "../../router/router-db.js";
@@ -81,6 +82,18 @@ class GatewayDemoCommands {
   @CommandAccess({ kind: "read", resource: "demo", action: "boom", risk: "low" })
   boom() {
     throw new Error("kaboom");
+  }
+
+  @Command({ name: "contract", description: "Throws a structured contract error" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "contract", risk: "low", input: ["exitCode"] })
+  contract(@Arg("exitCode", { description: "Contract exit taxonomy code" }) exitCode: string) {
+    const numericExitCode = Number(exitCode);
+    const code =
+      numericExitCode === 2 ? "USAGE_ERROR" : numericExitCode === 3 ? "WRITE_REQUIRES_EXECUTE" : "DEMO_NOT_FOUND";
+    throw new ContractError("demo contract", code, "contract stopped execution", numericExitCode, {
+      retryable: false,
+      suggestedAction: "inspect the structured response",
+    });
   }
 
   @Command({ name: "blob", description: "Returns raw binary Response" })
@@ -370,6 +383,41 @@ describe("dispatch — error path", () => {
     };
     expect(body.error).toBe("InternalError");
     expect(body.message).toContain("kaboom");
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]?.isError).toBe(true);
+  });
+
+  it.each([
+    ["1", 422, "DEMO_NOT_FOUND"],
+    ["2", 400, "USAGE_ERROR"],
+    ["3", 409, "WRITE_REQUIRES_EXECUTE"],
+  ])("preserves ContractError exit %s as a non-500 structured response", async (exitCode, status, code) => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.contract"),
+      { exitCode },
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(status);
+    const body = (await result.response.json()) as {
+      success: boolean;
+      op: string;
+      exitCode: number;
+      error: { code: string; message: string; retryable: boolean; suggestedAction: string };
+    };
+    expect(body).toEqual({
+      success: false,
+      op: "demo contract",
+      exitCode: Number(exitCode),
+      error: {
+        code,
+        message: "contract stopped execution",
+        retryable: false,
+        suggestedAction: "inspect the structured response",
+      },
+    });
     expect(audits.events).toHaveLength(1);
     expect(audits.events[0]?.isError).toBe(true);
   });

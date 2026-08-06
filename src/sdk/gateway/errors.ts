@@ -2,6 +2,8 @@
  * Shared JSON response helpers for the gateway.
  */
 
+import type { ContractError, ContractErrorEnvelope } from "../../cli/agent-contract.js";
+
 export interface JsonIssue {
   path: (string | number)[];
   code: string;
@@ -13,6 +15,11 @@ export interface ErrorBody {
   message?: string;
   issues?: JsonIssue[];
   [key: string]: unknown;
+}
+
+export interface GatewayContractErrorBody extends ContractErrorEnvelope {
+  /** CLI-compatible exit taxonomy, retained for non-CLI consumers. */
+  exitCode: number;
 }
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" } as const;
@@ -48,6 +55,20 @@ export function unauthorized(reason: string): Response {
 
 export function internalError(message: string): Response {
   return errorResponse(500, "InternalError", { message });
+}
+
+/**
+ * Translate a CLI contract failure without flattening it into InternalError.
+ * HTTP status communicates the broad class; the body remains the canonical
+ * contract envelope and carries the original CLI exit code losslessly.
+ */
+export function contractErrorResponse(error: ContractError): Response {
+  const status = error.exitCode === 2 ? 400 : error.exitCode === 3 ? 409 : 422;
+  const body: GatewayContractErrorBody = {
+    ...error.envelope(),
+    exitCode: error.exitCode,
+  };
+  return json(status, body);
 }
 
 export function returnShapeError(issues: JsonIssue[]): Response {

@@ -27,7 +27,9 @@ import { emitCliAuditEvent } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
 import { RaviAppError } from "../../apps/types.js";
+import { ContractError } from "../../cli/agent-contract.js";
 import {
+  contractErrorResponse,
   errorResponse,
   internalError,
   json,
@@ -157,7 +159,9 @@ export async function dispatch(
     );
   } catch (err) {
     isError = true;
-    if (err instanceof RaviAppError) {
+    if (err instanceof ContractError) {
+      response = contractErrorResponse(err);
+    } else if (err instanceof RaviAppError) {
       response = errorResponse(err.status, err.code, {
         message: err.message,
         evidence: err.evidence,

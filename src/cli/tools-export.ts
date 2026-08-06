@@ -19,6 +19,7 @@ import { nats } from "../nats.js";
 import { getContext } from "./context.js";
 import { enforceCliCommandAuthorization } from "./command-access.js";
 import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
+import { ContractError } from "./agent-contract.js";
 
 // ============================================================================
 // Types
@@ -47,6 +48,8 @@ export interface ExportedTool {
 export interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
+  /** CLI-compatible exit taxonomy for structured contract failures. */
+  exitCode?: number;
 }
 
 /** Manifest entry for documentation/inspection */
@@ -234,6 +237,7 @@ function buildHandler(
     };
 
     let isError = false;
+    let contractExitCode: number | undefined;
 
     try {
       // Build args array in parameter order
@@ -263,7 +267,19 @@ function buildHandler(
       }
     } catch (err) {
       isError = true;
-      output.push(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      if (err instanceof ContractError) {
+        contractExitCode = err.exitCode;
+        // Contract helpers emit their structured envelope before throwing in a
+        // tool context. Preserve that envelope without appending a second,
+        // lossy `Error: ...` line. A directly-thrown ContractError may not have
+        // emitted anything, so synthesize the envelope only when it is absent.
+        const envelope = err.envelope();
+        if (!output.some((line) => isSameContractEnvelope(line, envelope))) {
+          output.push(JSON.stringify(envelope));
+        }
+      } else {
+        output.push(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      }
     } finally {
       console.log = originalLog;
       console.error = originalError;
@@ -287,6 +303,16 @@ function buildHandler(
     return {
       content: [{ type: "text", text }],
       isError,
+      ...(contractExitCode !== undefined ? { exitCode: contractExitCode } : {}),
     };
   };
+}
+
+function isSameContractEnvelope(line: string, expected: ReturnType<ContractError["envelope"]>): boolean {
+  try {
+    const parsed = JSON.parse(line) as unknown;
+    return JSON.stringify(parsed) === JSON.stringify(expected);
+  } catch {
+    return false;
+  }
 }

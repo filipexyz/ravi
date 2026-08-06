@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import type { ContextRecord } from "../router/router-db.js";
+import { ContractError, contractFail } from "./agent-contract.js";
 import { runWithContext } from "./context.js";
 import { Command, CommandAccess, Group, Option } from "./decorators.js";
 import { extractTools } from "./tools-export.js";
@@ -38,12 +39,45 @@ class MediaAuthorizationCommands {
   }
 }
 
+@Group({ name: "contract", description: "Contract error fixture", scope: "open" })
+class ContractToolCommands {
+  @Command({ name: "emitted", description: "Emit then throw a contract envelope" })
+  @CommandAccess({ kind: "read", resource: "contract", action: "emitted", risk: "low" })
+  emitted() {
+    contractFail("contract emitted", "USAGE_ERROR", "invalid tool input", {
+      asJson: true,
+      exitCode: 2,
+      details: { acceptedFlags: ["--json"] },
+    });
+  }
+
+  @Command({ name: "silent", description: "Throw a contract error directly" })
+  @CommandAccess({ kind: "read", resource: "contract", action: "silent", risk: "low" })
+  silent() {
+    throw new ContractError("contract silent", "WRITE_REQUIRES_EXECUTE", "confirmation required", 3, {
+      dryRun: true,
+    });
+  }
+}
+
 const mediaContext: ContextRecord = {
   contextId: "ctx_media_authorization_test",
   contextKey: "rctx_media_authorization_test",
   kind: "test-runtime",
   agentId: "media-test",
   capabilities: [{ permission: "mutate", objectType: "media", objectId: "send", source: "test" }],
+  createdAt: Date.now(),
+};
+
+const contractContext: ContextRecord = {
+  contextId: "ctx_contract_transport_test",
+  contextKey: "rctx_contract_transport_test",
+  kind: "test-runtime",
+  agentId: "contract-test",
+  capabilities: [
+    { permission: "read", objectType: "contract", objectId: "emitted", source: "test" },
+    { permission: "read", objectType: "contract", objectId: "silent", source: "test" },
+  ],
   createdAt: Date.now(),
 };
 
@@ -80,5 +114,51 @@ describe("tools export provider-runtime authorization", () => {
     expect(denied.isError).toBe(true);
     expect(denied.content[0]?.text).toContain("Missing capability: mutate:media:remove");
     expect(denied.content[0]?.text).not.toContain("execute:group:media_remove");
+  });
+});
+
+describe("tools export contract errors", () => {
+  it("keeps an emitted contract envelope without a duplicate Error line", async () => {
+    const tool = extractTools([ContractToolCommands]).find((candidate) => candidate.name === "contract_emitted");
+    expect(tool).toBeDefined();
+
+    const result = await runWithContext({ agentId: contractContext.agentId, context: contractContext }, () =>
+      tool!.handler({}),
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.exitCode).toBe(2);
+    expect(result.content[0]?.text).not.toContain("Error: invalid tool input");
+    const envelope = JSON.parse(result.content[0]?.text ?? "{}") as {
+      success: boolean;
+      op: string;
+      error: { code: string; acceptedFlags: string[] };
+    };
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("contract emitted");
+    expect(envelope.error.code).toBe("USAGE_ERROR");
+    expect(envelope.error.acceptedFlags).toEqual(["--json"]);
+  });
+
+  it("synthesizes the structured envelope for a directly-thrown ContractError", async () => {
+    const tool = extractTools([ContractToolCommands]).find((candidate) => candidate.name === "contract_silent");
+    expect(tool).toBeDefined();
+
+    const result = await runWithContext({ agentId: contractContext.agentId, context: contractContext }, () =>
+      tool!.handler({}),
+    );
+
+    expect(result.exitCode).toBe(3);
+    expect(result.content[0]?.text).not.toContain("Error: confirmation required");
+    const envelope = JSON.parse(result.content[0]?.text ?? "{}") as {
+      success: boolean;
+      op: string;
+      error: { code: string; dryRun: boolean };
+    };
+    expect(envelope).toMatchObject({
+      success: false,
+      op: "contract silent",
+      error: { code: "WRITE_REQUIRES_EXECUTE", dryRun: true },
+    });
   });
 });
