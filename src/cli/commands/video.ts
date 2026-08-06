@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
+import { contractDryRun } from "../agent-contract.js";
 import { analyzeVideo, type VideoAnalyzeStrategy } from "../../video/gemini.js";
 import { videoAnalyzeReturnSchema } from "./operational-return-schemas.js";
 
@@ -46,12 +47,40 @@ export class VideoCommands {
     @Option({ flags: "--force-analyze", description: "Force Gemini analysis even when YouTube subtitles exist" })
     forceAnalyze?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description:
+        "Actually run an analysis that may call the paid Gemini API; the free subtitles-only path never needs it",
+    })
+    execute?: boolean,
   ) {
+    // Validation BEFORE the brake: invalid strategy is a plain error.
+    const requestedStrategy = forceAnalyze ? "gemini" : parseStrategy(strategy);
+
+    if (requestedStrategy !== "subtitles" && execute !== true) {
+      // Write brake (Manual v2 7.8) on EXTERNAL API money: `gemini` always
+      // bills, and `auto` may fall back to Gemini (no subtitles, extraction
+      // failure, or a local file). Only the explicit `--strategy subtitles`
+      // path is guaranteed free/local, so only it runs without --execute.
+      contractDryRun(
+        "video analyze",
+        {
+          url,
+          strategy: requestedStrategy,
+          paidPath: requestedStrategy === "gemini" ? "gemini" : "gemini-fallback-possible",
+          model: process.env.GEMINI_VIDEO_MODEL ?? "gemini-2.5-flash",
+          prompt: prompt ?? null,
+          output: output ?? null,
+          freeAlternative: "ravi video analyze <url> --strategy subtitles",
+        },
+        { asJson },
+      );
+    }
+
     if (!asJson) {
       console.log("Analyzing video...");
     }
 
-    const requestedStrategy = forceAnalyze ? "gemini" : parseStrategy(strategy);
     const result = await analyzeVideo(url, prompt, { strategy: requestedStrategy });
 
     // Determine output path

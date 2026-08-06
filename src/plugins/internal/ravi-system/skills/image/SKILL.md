@@ -13,46 +13,60 @@ description: |
 ## TL;DR
 
 ```bash
-ravi image generate "<prompt>"
+ravi image generate "<prompt>" --execute
 ```
 
 Comportamento padrão:
-- **Async**: retorna na hora um `artifact_id`, geração roda em background
+- **Freio de custo**: geração gasta API paga — sem `--execute` o comando é dry-run (exit 3) e mostra provider/modelo/tamanho que seriam cobrados
+- **Async**: com `--execute`, retorna na hora um `artifact_id`, geração roda em background
 - **Auto-send**: se a sessão tem chat de origem, a imagem é enviada lá automaticamente quando completar
 - **Lifecycle events**: a sessão é notificada de completed/failed sem precisar de polling
 - **Provider/modelo**: `openai` + `gpt-image-2` (configurável por instância)
 
 NÃO faça polling. NÃO use `--sync`. NÃO use `--send` se há chat de origem. Os eventos chegam sozinhos.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, ...}}`.
+
+Taxonomia de saída: `0` sucesso · `1` erro de execução (ex.: provider não configurado) · `2` erro de uso · `3` freio de escrita — não é erro: nada foi cobrado; o envelope traz `dryRun:true` e `plan` com provider/modelo/tamanho RESOLVIDOS.
+
+Onde o freio existe: `image generate` gasta DINHEIRO de API externa e é dry-run por default — exige `--execute`. `image atlas split` é operação local (ImageMagick), sem freio; o `--send` dele continua opt-in explícito.
+
+Checklist antes de responder sobre imagens:
+
+- Tratei exit 3 como freio (revisei provider/modelo/tamanho no `plan`) e não como falha?
+- Confirmei que o gasto é intencional antes de repetir com `--execute`?
+
 ## Comandos
 
 | Comando | Uso |
 |---|---|
-| `ravi image generate "prompt"` | Comando principal — gera 1 imagem |
-| `ravi image atlas split <atlas>` | Corta atlas/contact sheet em N crops |
+| `ravi image generate "prompt" --execute` | Comando principal — gera 1 imagem (sem `--execute` = dry-run exit 3) |
+| `ravi image atlas split <atlas>` | Corta atlas/contact sheet em N crops (local, sem freio) |
 
 ## Casos de uso
 
 ### 1. Gerar imagem nova
 ```bash
-ravi image generate "purple cat floating in space, cinematic lighting"
+ravi image generate "purple cat floating in space, cinematic lighting" --execute
 ```
 
 ### 2. Editar imagem existente
 ```bash
-ravi image generate "remove background, add sunset" --source /tmp/photo.png
+ravi image generate "remove background, add sunset" --source /tmp/photo.png --execute
 ```
 
 ### 3. Aspect ratio e tamanho
 ```bash
-ravi image generate "instagram story" --aspect 9:16 --size 2K
+ravi image generate "instagram story" --aspect 9:16 --size 2K --execute
 ```
 
 ### 4. Múltiplas imagens consistentes (atlas)
 Pra reduzir custo e manter estilo coerente, gere 1 atlas e divida:
 ```bash
 ravi image generate "atlas 3x2 grid, 6 product variants, no gutter, no margin, photorealistic" \
-  --aspect 3:2 --size 4K
+  --aspect 3:2 --size 4K --execute
 # após completar:
 ravi image atlas split /path/to/atlas.png \
   --cols 3 --rows 2 \

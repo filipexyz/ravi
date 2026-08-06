@@ -7,6 +7,7 @@ import { readFileSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, normalize, relative, resolve } from "node:path";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { contractDryRun, pickFields } from "../agent-contract.js";
 import { generateAudio, listElevenLabsVoices } from "../../audio/generator.js";
 import { getAgent } from "../../router/config.js";
 import { sendMediaWithOmniCli } from "../media-send.js";
@@ -109,7 +110,14 @@ export class AudioCommands {
       description: "Relative .md or .txt file to convert to speech",
     })
     textFile?: string,
+    @Option({
+      flags: "--execute",
+      description: "Actually call the paid TTS API; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    // Validation BEFORE the brake: text/--text-file resolution fails with the
+    // legacy messages, no plan is shown for a call that could never happen.
     const fileText = readTextFileOption(textFile);
     const inlineText = text?.trim();
     if (fileText && inlineText) fail("Use either text or --text-file, not both.");
@@ -125,6 +133,28 @@ export class AudioCommands {
     const resolvedSpeed = speed ? Number.parseFloat(speed) : (defaults?.tts_speed as number | undefined);
     const resolvedLang = lang ?? (defaults?.tts_lang as string) ?? "pt-br";
 
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): TTS spends EXTERNAL API money
+      // (ElevenLabs) — dry-run by default, exit 3 BEFORE any provider call.
+      // The plan shows the resolved voice/model/speed that would be billed.
+      contractDryRun(
+        "audio generate",
+        {
+          textPreview: resolvedText.slice(0, 120),
+          textChars: resolvedText.length,
+          voice: resolvedVoice ?? null,
+          model: resolvedModel ?? null,
+          speed: resolvedSpeed ?? null,
+          lang: resolvedLang,
+          format: format ?? null,
+          outputDir: output ? resolve(output) : null,
+          send: send === true,
+          caption: caption ?? null,
+        },
+        { asJson },
+      );
+    }
+
     if (!asJson) {
       console.log("Generating audio...");
     }
@@ -139,7 +169,7 @@ export class AudioCommands {
       ptt: !!send,
     });
 
-    const sendCommand = `ravi media send "${result.filePath}"`;
+    const sendCommand = `ravi media send "${result.filePath}" --execute`;
     const payload: {
       success: true;
       audio: {
@@ -273,7 +303,13 @@ export class AudioCommands {
     noAutoplay?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually publish the paid TTS request; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    // Validation BEFORE the brake: malformed JSON options fail immediately.
     const contextAgentId = getContext()?.agentId;
     const resolvedAgentId = agentId ?? contextAgentId;
     const voiceSettings = parseJsonObjectOption(voiceSettingsJson, "voice-settings");
@@ -313,6 +349,24 @@ export class AudioCommands {
       createdAt: Date.now(),
       metadata: { origin: "cli.audio.tts" },
     };
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): the ravi.tts request triggers a paid
+      // ElevenLabs generation downstream — dry-run by default, exit 3 BEFORE
+      // the NATS emit. The plan shows the resolved voice config to be billed.
+      contractDryRun(
+        "audio tts",
+        {
+          textPreview: text.slice(0, 120),
+          textChars: text.length,
+          agentId: resolvedAgentId ?? null,
+          target: request.target ?? null,
+          playback: request.playback,
+          voice: request.voice ?? null,
+          topic: RAVI_TTS_TOPIC,
+        },
+        { asJson },
+      );
+    }
     await nats.emit(RAVI_TTS_TOPIC, request as unknown as Record<string, unknown>);
     const payload = { ok: true, topic: RAVI_TTS_TOPIC, request };
     if (asJson) console.log(JSON.stringify(payload, null, 2));
@@ -336,6 +390,8 @@ export class AudioCommands {
     voiceType?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each voice" })
+    fields?: string,
   ) {
     const result = await listElevenLabsVoices({
       search,
@@ -348,6 +404,8 @@ export class AudioCommands {
       provider: "elevenlabs" as const,
       generatedAt: Date.now(),
       ...result,
+      // Compact mode (Manual v2 7.9): narrows the voice objects only.
+      voices: pickFields(result.voices, fields),
     };
     if (asJson) console.log(JSON.stringify(payload, null, 2));
     return payload;
@@ -382,22 +440,28 @@ export class AudioCommands {
     includeFailed?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const payload = {
       ok: true,
       generatedAt: Date.now(),
-      items: listTtsPlaybackItems({
-        id,
-        requestId,
-        since: since ? Number.parseFloat(since) : undefined,
-        sessionName,
-        sessionKey,
-        chatId,
-        agentId,
-        clientId,
-        limit: limit ? Number.parseInt(limit, 10) : undefined,
-        includeFailed,
-      }),
+      // Compact mode (Manual v2 7.9): narrows the playback items only.
+      items: pickFields(
+        listTtsPlaybackItems({
+          id,
+          requestId,
+          since: since ? Number.parseFloat(since) : undefined,
+          sessionName,
+          sessionKey,
+          chatId,
+          agentId,
+          clientId,
+          limit: limit ? Number.parseInt(limit, 10) : undefined,
+          includeFailed,
+        }),
+        fields,
+      ),
     };
     if (asJson) console.log(JSON.stringify(payload, null, 2));
     return payload;

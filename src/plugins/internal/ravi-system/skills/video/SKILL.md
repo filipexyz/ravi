@@ -12,35 +12,60 @@ description: |
 
 Analisa vídeos do YouTube usando legendas/captions via `yt-dlp` como caminho padrão por custo e latência. Usa Gemini como fallback quando não há legenda, quando a extração falha, ou quando o usuário pede análise visual/resumo via `--strategy gemini` ou `--force-analyze`. Arquivos locais seguem via Gemini.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, ...}}`.
+
+Taxonomia de saída: `0` sucesso · `1` erro de execução (ex.: strategy inválida) · `2` erro de uso · `3` freio de escrita — não é erro: nada foi cobrado; o envelope traz `dryRun:true`, o `plan` com o modelo Gemini que seria faturado e o campo `freeAlternative` com o caminho grátis.
+
+Onde o freio existe: qualquer análise que PODE cair no Gemini pago é dry-run por default — `--strategy gemini`, `--force-analyze`, o default `auto` (fallback possível) e arquivos locais exigem `--execute`. O único caminho garantidamente grátis/local é `--strategy subtitles`, que roda direto, sem `--execute`.
+
+Checklist antes de responder sobre vídeo:
+
+- Se um transcript resolve, tentei primeiro o caminho grátis `--strategy subtitles`?
+- Tratei exit 3 como freio (revisei o `plan` e o `freeAlternative`) e não como falha?
+- Confirmei que o gasto Gemini é intencional antes de repetir com `--execute`?
+
 ## Como usar
 
-### Analisar vídeo do YouTube
+### Analisar vídeo do YouTube (caminho grátis primeiro)
 ```bash
-ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID"
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --strategy subtitles
 ```
+
+Só legendas: grátis, local, roda sem `--execute`. Se o vídeo não tiver legenda, o comando falha e aí sim vale pagar o Gemini.
+
+### Analisar com fallback automático (pode faturar Gemini)
+```bash
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --execute
+```
+
+Sem `--execute`, o modo `auto` é dry-run (exit 3): o plano mostra o modelo Gemini que seria cobrado.
 
 Por padrão, URLs do YouTube tentam `pt-BR`, `pt` e `en` em legendas manuais/automáticas antes de chamar Gemini.
 
 ### Analisar com output específico
 ```bash
-ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -o ./video-analysis.md
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -o ./video-analysis.md --execute
 ```
 
 ### Analisar com prompt custom
 ```bash
-ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -p "Foque nos argumentos técnicos apresentados"
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -p "Foque nos argumentos técnicos apresentados" --execute
 ```
 
 Prompt custom é aplicado no caminho Gemini. Se precisar garantir resumo, tópicos ou descrição visual, force Gemini:
 
 ```bash
-ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --strategy gemini
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --strategy gemini --execute
 ```
 
 ### Analisar arquivo local
 ```bash
-ravi video analyze /path/to/video.mp4
+ravi video analyze /path/to/video.mp4 --execute
 ```
+
+Arquivo local sempre passa pelo Gemini (pago) — por isso exige `--execute`.
 
 ## O que é extraído
 
@@ -57,7 +82,7 @@ No caminho por legendas, o comando não gera resumo/tópicos/descrição visual 
 
 ## Fluxo recomendado
 
-1. Rode `ravi video analyze <url>` — gera o `.md`
+1. Rode `ravi video analyze <url> --strategy subtitles` (grátis) ou `ravi video analyze <url> --execute` (pode faturar Gemini) — gera o `.md`
 2. Leia o arquivo gerado com a tool Read
 3. Interprete e responda ao usuário baseado no conteúdo
 

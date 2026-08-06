@@ -448,11 +448,11 @@ export function buildCurrentSessionReactionCommand(messageRef = "<message-id>", 
 }
 
 export function buildCurrentSessionStickerSendCommand(stickerId = "<sticker-id>"): string {
-  return `ravi stickers send ${stickerId}`;
+  return `ravi stickers send ${stickerId} --execute`;
 }
 
 export function buildCurrentSessionMediaSendCommand(filePath = "<file-path>"): string {
-  return `ravi media send ${quoteCliArg(filePath)}`;
+  return `ravi media send ${quoteCliArg(filePath)} --execute`;
 }
 
 export function buildCurrentSessionReadCommand(): string {
@@ -545,7 +545,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "Respect each sticker's description, avoid guidance, channel allowlist, and agent allowlist.",
       ],
       promptHint:
-        "Use `ravi stickers send <sticker-id>` after choosing an enabled catalog sticker for the current conversation.",
+        "Use `ravi stickers send <sticker-id> --execute` after choosing an enabled catalog sticker for the current conversation (without --execute it is a dry-run, exit 3).",
     },
     sendMedia: {
       id: "media.send",
@@ -560,7 +560,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "When not running from the desired chat context, pass an explicit `--account` and `--to` target after confirming it.",
       ],
       promptHint:
-        'Use `ravi media send "<file-path>"` to send an existing local file; add `--caption "..."` when useful.',
+        'Use `ravi media send "<file-path>" --execute` to send an existing local file; add `--caption "..."` when useful (without --execute it is a dry-run, exit 3).',
     },
     readSession: {
       id: "session.read",

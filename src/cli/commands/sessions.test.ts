@@ -880,8 +880,8 @@ describe("SessionCommands attach hints", () => {
       'ravi sessions edit-message cm_123 "<new-text>" --execute',
     );
     expect(buildCurrentSessionReactionCommand("cm_123", "<emoji>")).toBe("ravi react send cm_123 <emoji>");
-    expect(buildCurrentSessionStickerSendCommand("wave")).toBe("ravi stickers send wave");
-    expect(buildCurrentSessionMediaSendCommand("/tmp/card.png")).toBe('ravi media send "/tmp/card.png"');
+    expect(buildCurrentSessionStickerSendCommand("wave")).toBe("ravi stickers send wave --execute");
+    expect(buildCurrentSessionMediaSendCommand("/tmp/card.png")).toBe('ravi media send "/tmp/card.png" --execute');
     expect(buildCurrentSessionReadCommand()).toBe("ravi sessions read --json");
     expect(buildCurrentSessionCreateThreadCommand("investigue", "gpt-5.6")).toBe(
       'ravi sessions create-thread "investigue" --model gpt-5.6',
@@ -904,7 +904,7 @@ describe("SessionCommands attach hints", () => {
     expect(hint).toContain("chatTitle");
     expect(hint).toContain("ravi sessions delete-message <message-id>");
     expect(hint).toContain('ravi sessions edit-message <message-id> "novo texto"');
-    expect(hint).toContain('ravi media send "<file-path>"');
+    expect(hint).toContain('ravi media send "<file-path>" --execute');
     expect(hint).toContain("ravi sessions create-thread");
     expect(hint).toContain("ravi sessions close-thread");
     expect(hint).toContain("usage.tools");
@@ -961,19 +961,19 @@ describe("SessionCommands attach hints", () => {
         expect.objectContaining({
           id: "sticker.send",
           status: "available",
-          command: "ravi stickers send <sticker-id>",
+          command: "ravi stickers send <sticker-id> --execute",
         }),
         expect.objectContaining({
           id: "media.send",
           status: "available",
-          command: 'ravi media send "<file-path>"',
+          command: 'ravi media send "<file-path>" --execute',
         }),
       ]),
     );
     expect(payload.usage.tools.sendMedia).toMatchObject({
       id: "media.send",
       tool: "ravi media send",
-      command: 'ravi media send "<file-path>"',
+      command: 'ravi media send "<file-path>" --execute',
     });
     expect(payload.surfaces.subscriptions[0]).toMatchObject({
       chatId: "chat_ae70f8bc7ec999d2e2048219",

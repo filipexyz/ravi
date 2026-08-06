@@ -8,6 +8,7 @@ afterAll(() => mock.restore());
 const emittedEvents: Array<{ topic: string; payload: Record<string, unknown> }> = [];
 const mediaSendCalls: Array<Record<string, unknown>> = [];
 const publishedOutboundJobs: Array<Record<string, unknown>> = [];
+const generateAudioCalls: Array<Record<string, unknown>> = [];
 
 const runtimeContext: {
   agentId: string;
@@ -29,6 +30,16 @@ const runtimeContext: {
   },
 };
 
+let sourceAvailable = true;
+
+// Chat-ledger fixtures for the react MESSAGE_NOT_FOUND contract.
+let ledgerChat: { id: string } | null = null;
+let ledgerMessageFound = false;
+let ledgerRecentMessages: Array<{ providerMessageId: string }> = [];
+
+// TTS playback fixtures for the audio pending --fields contract.
+let ttsPlaybackItems: Array<Record<string, unknown>> = [];
+
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
@@ -41,7 +52,10 @@ mock.module("../decorators.js", () => ({
 }));
 
 mock.module("../context.js", () => ({
-  getContext: () => runtimeContext,
+  getContext: () => (sourceAvailable ? runtimeContext : { agentId: "dev", sessionName: "dev" }),
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -69,11 +83,28 @@ mock.module("../../channels/outbound-publish-outbox.js", () => ({
 }));
 
 mock.module("../../audio/generator.js", () => ({
-  generateAudio: mock(async () => ({
-    filePath: "/tmp/ravi-audio.mp3",
-    mimeType: "audio/mpeg",
+  generateAudio: mock(async (text: string, options: Record<string, unknown>) => {
+    generateAudioCalls.push({ text, ...options });
+    return {
+      filePath: "/tmp/ravi-audio.mp3",
+      mimeType: "audio/mpeg",
+    };
+  }),
+  listElevenLabsVoices: mock(async () => ({
+    voices: [
+      { voiceId: "v1", name: "Aria", category: "premade", labels: { accent: "us" } },
+      { voiceId: "v2", name: "Bruno", category: "cloned", labels: { accent: "br" } },
+    ],
+    hasMore: false,
   })),
-  listElevenLabsVoices: mock(async () => []),
+}));
+
+mock.module("../../audio/tts.js", () => ({
+  RAVI_TTS_TOPIC: "ravi.tts",
+  resolveTtsVoiceConfig: (input: { voice?: Record<string, unknown> }) => input.voice ?? {},
+  listTtsPlaybackItems: () => ttsPlaybackItems,
+  getTtsPlaybackItem: () => null,
+  readTtsPlaybackAudio: () => null,
 }));
 
 mock.module("../../router/config.js", () => ({
@@ -84,7 +115,16 @@ mock.module("../../router/config.js", () => ({
   }),
 }));
 
+mock.module("../../router/router-db.js", () => ({
+  dbFindChat: () => ledgerChat,
+  dbFindChatMessage: () => (ledgerMessageFound ? { id: "cm_1", providerMessageId: "mid-1" } : null),
+  dbGetChatMessage: () => null,
+  dbListChatMessages: () => ledgerRecentMessages,
+}));
+
 mock.module("../media-send.js", () => ({
+  inferMediaMimeType: (filePath: string) => (filePath.endsWith(".png") ? "image/png" : "application/octet-stream"),
+  inferMediaType: (mime: string) => (mime.startsWith("image/") ? "image" : "document"),
   sendMediaWithOmniCli: mock(async (input: Record<string, unknown>) => {
     mediaSendCalls.push(input);
     const filePath = String(input.filePath ?? "/tmp/unknown.bin");
@@ -116,6 +156,9 @@ mock.module("../media-send.js", () => ({
 const { AudioCommands } = await import("./audio.js");
 const { MediaCommands } = await import("./media.js");
 const { ReactCommands } = await import("./react.js");
+const { ContractError } = await import("../agent-contract.js");
+
+type ContractErrorInstance = InstanceType<typeof ContractError>;
 
 async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: string; result: T }> {
   const originalLog = console.log;
@@ -131,18 +174,44 @@ async function captureConsole<T>(run: () => T | Promise<T>): Promise<{ output: s
   }
 }
 
-describe("media/audio/react JSON output", () => {
-  beforeEach(() => {
-    emittedEvents.length = 0;
-    mediaSendCalls.length = 0;
-    publishedOutboundJobs.length = 0;
-    runtimeContext.source.channel = "whatsapp";
-    runtimeContext.source.accountId = "main";
-    runtimeContext.source.chatId = "5511999999999";
-    delete runtimeContext.source.instanceId;
-    delete runtimeContext.source.canonicalChatId;
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<ContractErrorInstance> {
+  let caught: unknown;
+  await captureConsole(async () => {
+    try {
+      await run();
+    } catch (error) {
+      caught = error;
+    }
   });
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as ContractErrorInstance;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
 
+beforeEach(() => {
+  emittedEvents.length = 0;
+  mediaSendCalls.length = 0;
+  publishedOutboundJobs.length = 0;
+  generateAudioCalls.length = 0;
+  sourceAvailable = true;
+  runtimeContext.source.channel = "whatsapp";
+  runtimeContext.source.accountId = "main";
+  runtimeContext.source.chatId = "5511999999999";
+  delete runtimeContext.source.instanceId;
+  delete runtimeContext.source.canonicalChatId;
+  ledgerChat = null;
+  ledgerMessageFound = false;
+  ledgerRecentMessages = [];
+  ttsPlaybackItems = [];
+});
+
+describe("media/audio/react JSON output", () => {
   it("prints generated audio artifacts as typed JSON without human progress text", async () => {
     const { output, result } = await captureConsole(() =>
       new AudioCommands().generate(
@@ -154,6 +223,8 @@ describe("media/audio/react JSON output", () => {
         undefined,
         undefined,
         false,
+        undefined,
+        true,
         undefined,
         true,
       ),
@@ -191,6 +262,7 @@ describe("media/audio/react JSON output", () => {
           undefined,
           true,
           textFile,
+          true,
         ),
       );
       const payload = JSON.parse(output);
@@ -260,7 +332,7 @@ describe("media/audio/react JSON output", () => {
     writeFileSync(filePath, "png");
     try {
       const { output, result } = await captureConsole(() =>
-        new MediaCommands().send(filePath, "caption", "whatsapp", "chat-1", "main", undefined, false, true),
+        new MediaCommands().send(filePath, "caption", "whatsapp", "chat-1", "main", undefined, false, true, true),
       );
       const payload = JSON.parse(output);
 
@@ -314,6 +386,8 @@ describe("media/audio/react JSON output", () => {
         undefined,
         undefined,
         undefined,
+        undefined,
+        true,
         undefined,
         true,
         undefined,
@@ -410,5 +484,287 @@ describe("media/audio/react JSON output", () => {
       chatId: "C123",
       canonicalChatId: "chat-slack-C123",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// media send — agent-first contract (write brake + not-found envelope)
+// ---------------------------------------------------------------------------
+
+describe("media send contract", () => {
+  it("send without --execute is a dry-run: exit 3 and NO delivery call", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-media-brake-"));
+    const filePath = join(dir, "sample.png");
+    writeFileSync(filePath, "png");
+    try {
+      const error = await expectContractError(
+        () => new MediaCommands().send(filePath, "caption", undefined, undefined, undefined, undefined, false, true),
+        "WRITE_REQUIRES_EXECUTE",
+        3,
+      );
+
+      expect(error.details.dryRun).toBe(true);
+      expect(error.details.plan).toMatchObject({
+        filePath,
+        filename: "sample.png",
+        mimeType: "image/png",
+        type: "image",
+        caption: "caption",
+        target: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatId: "5511999999999",
+        },
+      });
+      expect(mediaSendCalls).toHaveLength(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("send on a missing file exits 1 with FILE_NOT_FOUND before the brake", async () => {
+    const error = await expectContractError(
+      () =>
+        new MediaCommands().send(
+          "/tmp/nope-does-not-exist.png",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          true,
+        ),
+      "FILE_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestedAction).toContain("file path");
+    expect(mediaSendCalls).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// audio generate / tts — agent-first contract (external API money brake)
+// ---------------------------------------------------------------------------
+
+describe("audio contract", () => {
+  it("generate without --execute is a dry-run: exit 3 and NO provider call", async () => {
+    const error = await expectContractError(
+      () =>
+        new AudioCommands().generate(
+          "hello world",
+          "voice-1",
+          "eleven_turbo_v2_5",
+          "1.5",
+          undefined,
+          undefined,
+          undefined,
+          false,
+          undefined,
+          true,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toMatchObject({
+      textPreview: "hello world",
+      textChars: 11,
+      voice: "voice-1",
+      model: "eleven_turbo_v2_5",
+      speed: 1.5,
+      lang: "en",
+    });
+    expect(generateAudioCalls).toHaveLength(0);
+    expect(mediaSendCalls).toHaveLength(0);
+  });
+
+  it("generate validates text BEFORE the brake", async () => {
+    await expect(
+      new AudioCommands().generate(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        true,
+      ),
+    ).rejects.toThrow("Provide text or --text-file.");
+    expect(generateAudioCalls).toHaveLength(0);
+  });
+
+  it("tts without --execute is a dry-run: exit 3 and NO ravi.tts emit", async () => {
+    const error = await expectContractError(
+      () =>
+        new AudioCommands().tts(
+          "fala comigo",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toMatchObject({
+      textPreview: "fala comigo",
+      textChars: 11,
+      topic: "ravi.tts",
+    });
+    expect(emittedEvents).toHaveLength(0);
+  });
+
+  it("tts with --execute publishes the ravi.tts request", async () => {
+    const { result } = await captureConsole(() =>
+      new AudioCommands().tts(
+        "fala comigo",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        true,
+      ),
+    );
+
+    expect(emittedEvents).toHaveLength(1);
+    expect(emittedEvents[0]?.topic).toBe("ravi.tts");
+    expect((result as { ok: boolean }).ok).toBe(true);
+  });
+
+  it("voices --fields narrows each voice to the requested fields", async () => {
+    const { result } = await captureConsole(() =>
+      new AudioCommands().voices(undefined, undefined, undefined, undefined, true, "voiceId,name"),
+    );
+
+    const voices = (result as unknown as { voices: Array<Record<string, unknown>> }).voices;
+    expect(voices).toHaveLength(2);
+    for (const voice of voices) {
+      expect(Object.keys(voice).sort()).toEqual(["name", "voiceId"]);
+    }
+  });
+
+  it("pending --fields narrows each playback item to the requested fields", async () => {
+    ttsPlaybackItems = [
+      { id: "tts-1", status: "ready", filePath: "/tmp/a.mp3", createdAt: 1 },
+      { id: "tts-2", status: "ready", filePath: "/tmp/b.mp3", createdAt: 2 },
+    ];
+
+    const { result } = await captureConsole(() =>
+      new AudioCommands().pending(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        "id,status",
+      ),
+    );
+
+    const items = (result as unknown as { items: Array<Record<string, unknown>> }).items;
+    expect(items).toHaveLength(2);
+    for (const item of items) {
+      expect(Object.keys(item).sort()).toEqual(["id", "status"]);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// react send — agent-first contract (declared UNBRAKED + MESSAGE_NOT_FOUND)
+// ---------------------------------------------------------------------------
+
+describe("react send contract", () => {
+  it("is declared UNBRAKED: reacting is trivially reversible, so no --execute is required", async () => {
+    // Rationale: WhatsApp replaces/removes reactions and the Slack chat_action
+    // contract has a remove operation — the emit above happened without any
+    // brake flag in the signature.
+    const { result } = await captureConsole(() => new ReactCommands().send("mid-1", "+1", true));
+    expect((result as { status: string }).status).toBe("accepted");
+    expect(emittedEvents).toHaveLength(1);
+  });
+
+  it("fails with NO_CHANNEL_CONTEXT (exit 1) when there is no channel source", async () => {
+    sourceAvailable = false;
+    const error = await expectContractError(
+      () => new ReactCommands().send("mid-1", "+1", true),
+      "NO_CHANNEL_CONTEXT",
+      1,
+    );
+
+    expect(error.details.suggestedAction).toContain("routed channel session");
+    expect(emittedEvents).toHaveLength(0);
+  });
+
+  it("exits 1 with MESSAGE_NOT_FOUND and ledger suggestions when the chat is known and the mid is not", async () => {
+    ledgerChat = { id: "chat-1" };
+    ledgerMessageFound = false;
+    ledgerRecentMessages = [{ providerMessageId: "mid-100" }, { providerMessageId: "mid-200" }];
+
+    const error = await expectContractError(
+      () => new ReactCommands().send("mid-999", "+1", true),
+      "MESSAGE_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestions).toContain("mid-100");
+    expect(emittedEvents).toHaveLength(0);
+  });
+
+  it("emits normally when the ledger knows both the chat and the message", async () => {
+    ledgerChat = { id: "chat-1" };
+    ledgerMessageFound = true;
+
+    const { result } = await captureConsole(() => new ReactCommands().send("mid-1", "+1", true));
+
+    expect((result as { status: string }).status).toBe("accepted");
+    expect(emittedEvents).toHaveLength(1);
+  });
+
+  it("fails open when the current chat is not in the local ledger", async () => {
+    ledgerChat = null;
+
+    const { result } = await captureConsole(() => new ReactCommands().send("mid-unknown", "+1", true));
+
+    expect((result as { status: string }).status).toBe("accepted");
+    expect(emittedEvents).toHaveLength(1);
   });
 });

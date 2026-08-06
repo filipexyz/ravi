@@ -50,15 +50,15 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 28 | feedback | feedback.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/feedback |
 | 29 | rules | rules.ts | ravi-rules (dev) | **MIGRADO** | cli/rules |
 | 30 | specs | specs.ts | specs | **MIGRADO** | cli/specs |
-| 31 | stickers | stickers.ts | stickers | pendente | — |
-| 32 | react | react.ts | stickers (compartilhada) | pendente | — |
+| 31 | stickers | stickers.ts | stickers | **MIGRADO** | cli/stickers |
+| 32 | react | react.ts | stickers (compartilhada) | **MIGRADO** (sem freio — veredito) | cli/react |
 | 33 | pages | pages.ts | — | **MIGRADO** (junto com artifacts, entrada 12) | cli/pages |
 | 34 | youtube | youtube.ts | (sem skill) | pendente | — |
 | 35 | prox-calls | prox-calls.ts | prox-calls | pendente | — |
 | 36 | meetings | meetings.ts | meetings | pendente | — |
 | 37 | devin | devin.ts | (sem skill) | pendente | — |
 | 38 | slack | slack.ts | slack | **MIGRADO** | cli/slack (atualizada) |
-| 39 | media/image/audio/video/transcribe | media.ts, image.ts, audio.ts, video.ts, transcribe.ts | audio, image, video | pendente | — |
+| 39 | media/image/audio/video/transcribe | media.ts, image.ts, audio.ts, video.ts, transcribe.ts | audio, image, video (media/transcribe sem skill) | **MIGRADO** | cli/media, cli/image, cli/audio, cli/video, cli/transcribe |
 | 40 | costs/metrics/insights | costs.ts, metrics.ts, insights.ts | (sem skill — lacunas registradas) | **MIGRADO** | cli/costs, cli/metrics, cli/insights |
 | 41 | context+runtime | context.ts, runtime-credentials.ts, runtime-presets.ts | context-cli (dev) | pendente | — |
 | 42 | credentials/connectors/bridges | credentials.ts, connectors.ts, bridges.ts | (sem skill) | pendente | — |
@@ -668,6 +668,40 @@ payloads-objeto e `--rich` declarados N/A). Usage contract nos 3 subtrees.
 
 **Rotina X:** costs 12/12 · metrics 7/7 (novo) · insights 10/10 · typecheck
 repo limpo · spec gate PASSED (3 specs).
+
+### 31+32+39. mídia (media/image/audio/video/transcribe) + stickers + react — MIGRADOS (lote; subagente, verificado e integrado)
+
+**Freados:** `media send` e `stickers send` (canal vivo), `stickers remove`
+(destrutivo), `image generate` (API paga; freio ANTES de criar artifact e
+spawnar worker — e o worker async recebe `--execute` nos args, senão ficaria
+preso no próprio freio com artifact eterno em pending), `audio generate` E
+`audio tts` (frear só generate deixaria tts como bypass da fatura ElevenLabs),
+`video` com **freio condicional** (tudo que PODE cair no Gemini pago —
+auto/gemini/--force-analyze/arquivo local; `--strategy subtitles` grátis roda
+sem freio; plan traz `freeAlternative`), `transcribe file` (Whisper pago
+sempre). **react: SEM freio por veredito** — reação é trivialmente reversível
+(WhatsApp substitui/remove; Slack tem remove explícito) e é a superfície de
+ack mais barata; freio contradiria os próprios hints de sessão. Ordem
+validação→freio garante que exit 3 só aparece para envios que funcionariam.
+Codes: FILE/STICKER/STICKER_MEDIA/MESSAGE_NOT_FOUND (react com not-found
+best-effort FAIL-OPEN: só rejeita quando o chat existe no ledger local — gap
+de ledger nunca vira falso not-found), MEDIA_SEND/TRANSCRIBE_FAILED retryable.
+`--fields` em stickers list, audio voices/pending. `audio blob` intocado
+(allowlist binária). Usage contract nos 7 subtrees.
+
+**Consumidores críticos atualizados:** builders de sessions
+(sticker/media send com `--execute`; reaction inalterado) + asserts literais;
+`src/stickers/prompt.ts` (prompt injetado em agentes vivos) ensina
+`stickers send --execute`. AGENTS.md ensina react send — nada a mudar (react
+sem freio). Skills audio/image/video/stickers com Contrato Do CLI (video
+ensina o caminho grátis primeiro).
+
+**Rotina X:** media-json 20/20 · stickers 9/9 · image 2/2 + image-contract
+4/4 (novo) · video 5/5 (novo) · transcribe 4/4 (novo) · sessions 49/49
+(asserts de builders) · gates json/pagination-coverage intactos · spec gate
+PASSED (7 specs). Falhas ambientais pré-existentes observadas e não
+relacionadas: runtime-system-prompt (separador `\`) e specs/service.test
+(split de path) — Windows.
 
 ### INCIDENTE — limite de sessão da conta (2026-08-06 ~05:00)
 

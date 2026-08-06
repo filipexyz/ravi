@@ -8,6 +8,7 @@ import { createHash } from "node:crypto";
 import { resolve, basename } from "node:path";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { getContext, fail, type ToolContext } from "../context.js";
+import { contractDryRun } from "../agent-contract.js";
 import { generateImage, normalizeImageProvider, type ImageMode } from "../../image/generator.js";
 import { getAgent } from "../../router/config.js";
 import { dbGetInstance, dbGetInstanceByInstanceId, dbGetSetting } from "../../router/router-db.js";
@@ -234,6 +235,11 @@ export class ImageCommands {
     asyncWorker?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually call the paid image API; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     // Resolve defaults: explicit flag > agent > instance > global setting > env.
     // There is intentionally no implicit provider fallback: if the selected
@@ -376,6 +382,34 @@ export class ImageCommands {
       fail("--artifact-id is reserved for internal image async workers.");
     }
 
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): image generation spends EXTERNAL API money
+      // — dry-run by default, exit 3 BEFORE creating any artifact record,
+      // spawning the async worker or calling the provider. The plan shows the
+      // resolved provider/model/size that would be billed. Internal async
+      // workers are always spawned with --execute already applied.
+      contractDryRun(
+        "image generate",
+        {
+          prompt,
+          provider: normalizedProvider,
+          model: resolvedModel ?? null,
+          mode: resolvedMode,
+          aspect: resolvedAspect ?? null,
+          size: resolvedSize ?? null,
+          quality: resolvedQuality ?? null,
+          format: resolvedFormat ?? null,
+          compression: compressionValue ?? null,
+          background: resolvedBackground ?? null,
+          source: sourcePath ?? null,
+          outputDir: outputDir ?? null,
+          async: shouldRunAsync,
+          send: shouldSend,
+        },
+        { asJson },
+      );
+    }
+
     if (shouldRunAsync) {
       const artifact = createArtifact(baseArtifactInput);
       appendArtifactEvent(artifact.id, {
@@ -399,7 +433,7 @@ export class ImageCommands {
       pushOption(workerArgs, "--background", resolvedBackground);
       if (shouldSend) workerArgs.push("--send");
       pushOption(workerArgs, "--caption", caption);
-      workerArgs.push("--artifact-id", artifact.id, "--async-worker", "--json");
+      workerArgs.push("--artifact-id", artifact.id, "--async-worker", "--json", "--execute");
 
       const pid = spawnDetachedCli(workerArgs);
       appendArtifactEvent(artifact.id, {
@@ -680,7 +714,7 @@ export class ImageCommands {
         ...(img.outputFormat ? { outputFormat: img.outputFormat } : {}),
         ...(img.usage ? { usage: img.usage } : {}),
         artifactId: artifacts[index]?.id ?? "",
-        sendCommand: `ravi media send "${img.filePath}"`,
+        sendCommand: `ravi media send "${img.filePath}" --execute`,
       })),
       options: {
         ...optionsPayload,
@@ -693,7 +727,7 @@ export class ImageCommands {
         console.log(`\n✓ Image saved: ${img.filePath}`);
         const artifact = artifacts.find((item) => item.filePath === img.filePath);
         if (artifact) console.log(`  Artifact: ${artifact.id}`);
-        console.log(`  Send to chat: ravi media send "${img.filePath}"`);
+        console.log(`  Send to chat: ravi media send "${img.filePath}" --execute`);
       }
 
       console.log(`\nPrompt: ${prompt}`);

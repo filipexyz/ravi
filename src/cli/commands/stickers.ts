@@ -8,6 +8,7 @@ import { resolve } from "node:path";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cliOffsetPaginationSchema, looseObjectSchema } from "../return-schemas.js";
 import { nats } from "../../nats.js";
@@ -26,6 +27,22 @@ import { buildStickerSendEvent, type StickerSendTarget } from "../../stickers/se
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+/**
+ * STICKER_NOT_FOUND envelope (Manual v2): the id does not exist in the typed
+ * catalog. Suggestions come from the LOCAL catalog (`listStickers`) — ids and
+ * labels — a cheap local file read, no live channel call involved.
+ */
+function failStickerNotFound(op: string, id: string, asJson?: boolean): never {
+  const candidates = listStickers().flatMap((sticker) => [sticker.id, sticker.label]);
+  contractFail(op, "STICKER_NOT_FOUND", `Sticker not found: ${id}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the sticker id (list with: ravi stickers list --json)",
+      suggestions: suggestSimilar(id, candidates),
+    },
+  });
 }
 
 const stickerReturnSchema = z
@@ -218,6 +235,8 @@ export class StickerCommands {
     @Option({ flags: "--overwrite", description: "Overwrite an existing sticker id" }) overwrite?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    // Declared UNBRAKED: adding a catalog entry is local config, reversible with
+    // `stickers remove`, and touches no live channel — no --execute required.
     if (!description?.trim()) {
       fail("Missing --description. Sticker prompts need a natural usage description.");
     }
@@ -261,6 +280,8 @@ export class StickerCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching stickers to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const stickers = listStickers();
     const page = paginateCliItems(stickers, { limit, offset });
@@ -272,11 +293,14 @@ export class StickerCommands {
       returned: pageStickers.length,
       total: page.total,
     });
+    // Compact mode (Manual v2 7.9): narrows the JSON items only; the text list
+    // below keeps rendering from the full records.
+    const compactItems = pickFields(pageStickers.map(serializeSticker), fields);
     const payload = {
       total: page.total,
       pagination,
-      items: pageStickers.map(serializeSticker),
-      stickers: pageStickers.map(serializeSticker),
+      items: compactItems,
+      stickers: compactItems,
     };
 
     if (asJson) {
@@ -306,7 +330,7 @@ export class StickerCommands {
   ) {
     const sticker = getSticker(id);
     if (!sticker) {
-      fail(`Sticker not found: ${id}`);
+      failStickerNotFound("stickers show", id, asJson);
     }
 
     const payload = {
@@ -333,7 +357,35 @@ export class StickerCommands {
   remove(
     @Arg("id", { description: "Sticker id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove the sticker; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    // Validation BEFORE the brake: unknown id is exit 1 + suggestions, not a
+    // dry-run of a removal that could never happen.
+    const sticker = getSticker(id);
+    if (!sticker) {
+      failStickerNotFound("stickers remove", id, asJson);
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): removal deletes the catalog entry (the
+      // media file reference included) and there is no undo — dry-run by
+      // default, exit 3 before touching the catalog.
+      contractDryRun(
+        "stickers remove",
+        {
+          stickerId: sticker.id,
+          label: sticker.label,
+          mediaPath: sticker.media.path,
+          enabled: sticker.enabled,
+        },
+        { asJson },
+      );
+    }
+
     const removed = removeSticker(id);
     const payload = {
       success: removed,
@@ -360,17 +412,54 @@ export class StickerCommands {
     @Option({ flags: "--account <id>", description: "Explicit channel account id" }) account?: string,
     @Option({ flags: "--to <chatId>", description: "Explicit target chat id" }) to?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually send the sticker; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    // Validation BEFORE the brake: unknown sticker, missing media, target
+    // resolution and channel-capability checks all fail with exit 1 before any
+    // dry-run plan is shown.
     const sticker = getSticker(id);
     if (!sticker) {
-      fail(`Sticker not found: ${id}`);
+      failStickerNotFound("stickers send", id, asJson);
     }
     if (!existsSync(sticker.media.path)) {
-      fail(`Sticker media file not found: ${sticker.media.path}`);
+      contractFail("stickers send", "STICKER_MEDIA_NOT_FOUND", `Sticker media file not found: ${sticker.media.path}`, {
+        asJson,
+        details: {
+          suggestedAction: `Re-add the sticker media (ravi stickers add ${sticker.id} <mediaPath> --overwrite ...)`,
+        },
+      });
     }
 
     const target = resolveSendTarget({ channel, account, to, session });
     const eventPayload = buildStickerSendEvent(sticker, target);
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): a sticker reaches a real chat on a live
+      // channel and cannot be unsent — dry-run by default, exit 3 BEFORE the
+      // NATS emit that triggers delivery.
+      contractDryRun(
+        "stickers send",
+        {
+          sticker: {
+            id: sticker.id,
+            label: sticker.label,
+          },
+          target: {
+            channel: eventPayload.channel,
+            accountId: eventPayload.accountId,
+            chatId: eventPayload.chatId,
+            ...(eventPayload.threadId ? { threadId: eventPayload.threadId } : {}),
+          },
+          filename: eventPayload.filename,
+          mimeType: eventPayload.mimeType,
+        },
+        { asJson },
+      );
+    }
 
     await nats.emit("ravi.stickers.send", { ...eventPayload });
 

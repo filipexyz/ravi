@@ -5,10 +5,12 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
-import { getContext, fail } from "../context.js";
+import { getContext } from "../context.js";
+import { contractFail, suggestSimilar } from "../agent-contract.js";
 import { nats } from "../../nats.js";
 import { buildChannelChatActionJob } from "../../channels/outbound-stream.js";
 import { publishChannelOutboundJobDurably } from "../../channels/outbound-publish-outbox.js";
+import { dbFindChat, dbFindChatMessage, dbGetChatMessage, dbListChatMessages } from "../../router/router-db.js";
 
 const reactSendReturnSchema = z.object({
   status: z.enum(["queued", "accepted"]),
@@ -54,14 +56,62 @@ export class ReactCommands {
     @Arg("emoji", { description: "Emoji to react with" }) emoji: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    // Declared UNBRAKED (Manual v2 write classification): an emoji reaction is
+    // trivially reversible — WhatsApp replaces a reaction with the next one and
+    // removes it with an empty reaction, and the Slack chat_action contract has
+    // an explicit remove operation. Braking the cheapest acknowledgement
+    // surface would add exit-3 friction to every lightweight ack, so `react
+    // send` performs immediately, no --execute required.
     const ctx = getContext();
     const source = ctx?.source;
 
     if (!source) {
-      fail("No channel context available — cannot determine where to send reaction");
+      contractFail(
+        "react send",
+        "NO_CHANNEL_CONTEXT",
+        "No channel context available — cannot determine where to send reaction",
+        {
+          asJson,
+          details: {
+            suggestedAction: "Run from a routed channel session; reactions always target the current chat",
+          },
+        },
+      );
     }
 
     const { channel, accountId, chatId } = source;
+
+    // MESSAGE_NOT_FOUND envelope (Manual v2): validated best-effort against the
+    // LOCAL chat ledger. When the current chat is known to the ledger and the
+    // message id resolves to nothing there (neither providerMessageId nor
+    // canonical cm id), exit 1 with suggestions of real recent provider ids.
+    // When the chat itself is not ledgered, validation is skipped (fail-open):
+    // an unmatched reaction emit is harmless and reversible.
+    const ledgerInstanceId = source.instanceId ?? accountId;
+    const ledgerChat = dbFindChat({ channel, instanceId: ledgerInstanceId, platformChatId: chatId });
+    if (ledgerChat) {
+      const known =
+        dbFindChatMessage({
+          channel,
+          instanceId: ledgerInstanceId,
+          chatId: ledgerChat.id,
+          providerMessageId: messageId,
+        }) ?? dbGetChatMessage(messageId);
+      if (!known) {
+        const recent = dbListChatMessages(ledgerChat.id, 30);
+        contractFail("react send", "MESSAGE_NOT_FOUND", `Message not found in current chat: ${messageId}`, {
+          asJson,
+          details: {
+            suggestedAction:
+              "Use a [mid:ID] from a visible message in this chat (or inspect: ravi sessions actions --json)",
+            suggestions: suggestSimilar(
+              messageId,
+              recent.map((message) => message.providerMessageId),
+            ),
+          },
+        });
+      }
+    }
 
     const eventPayload = {
       channel,
@@ -74,7 +124,17 @@ export class ReactCommands {
     if (channel.toLowerCase() === "slack") {
       const canonicalChatId = source.canonicalChatId?.trim();
       if (!canonicalChatId) {
-        fail("invalid_target: Slack reactions require a canonical chat target");
+        contractFail(
+          "react send",
+          "INVALID_TARGET",
+          "invalid_target: Slack reactions require a canonical chat target",
+          {
+            asJson,
+            details: {
+              suggestedAction: "Run from a Slack-routed session whose source carries canonicalChatId",
+            },
+          },
+        );
       }
       const job = buildChannelChatActionJob({
         sessionName: ctx?.sessionName ?? ctx?.sessionKey ?? ctx?.agentId ?? "cli",
