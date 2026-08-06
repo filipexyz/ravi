@@ -4,12 +4,13 @@ title: "Console Delivery CLI Compatibility"
 kind: capability
 domain: cli
 capability: inbox
-status: draft
+status: active
 normative: true
 owners:
   - ravi-dev
 applies_to:
   - src/cli/commands/inbox.ts
+  - src/cli/agent-contract.ts
   - src/inbox
   - src/daemon.ts
 tags:
@@ -18,6 +19,10 @@ tags:
   - delivery
   - legacy-inbox
   - nats
+  - agent-first
+  - error-envelope
+  - exit-taxonomy
+  - write-brake
 ---
 
 # Console Delivery CLI Compatibility
@@ -64,11 +69,64 @@ ravi inbox status
 ravi inbox enable
 ravi inbox disable
 ravi inbox poll --once
-ravi inbox replay <item-id|local-row-id>
+ravi inbox replay <item-id|local-row-id>            # dry-run plan (exit 3)
+ravi inbox replay <item-id|local-row-id> --execute  # real republish
 ```
 
 `ravi inbox items` MAY exist as a bounded local inspection helper while the
 compatibility alias remains.
+
+## Agent-First CLI Contract (Manual v2)
+
+The `ravi inbox` CLI group follows the agent-first contract defined by
+`cli/crm`:
+
+1. With `--json`, every failure on a migrated op MUST return the envelope
+   `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
+2. Exit codes MUST follow the taxonomy: `0` success · `1` error (not-found /
+   provider) · `2` usage error · `3` blocked by policy (write brake).
+3. `inbox read|done|snooze|archive` on an unknown local item MUST exit 1 with
+   `INBOX_ITEM_NOT_FOUND` and up to 3 `suggestions` from the local inbox
+   listing (ids/titles, archived included) — even though the underlying
+   `readLocalInboxItem`/`markLocalInboxItem` throw on unknown ids.
+4. `inbox replay` on an unknown ref MUST exit 1 with `INBOX_ITEM_NOT_FOUND`
+   and suggestions from the local delivery mirror (`inbox items`). Ambiguous
+   remote ids keep the pre-existing fail-closed error (no NOT_FOUND code).
+5. `inbox replay` MUST default to dry-run and require `--execute`: the
+   dry-run MUST report `dryRun: true` and the plan (`ref`, `itemId`,
+   `sequence`, `subject`, `nextReplayCount`) and MUST NOT publish to NATS or
+   increment the replay count. Ref resolution and the ambiguity check happen
+   BEFORE the brake, so not-found exits 1, never 3.
+6. `inbox list` and `inbox items` MUST accept `--fields a,b,c` for compact
+   output.
+7. Unbraked writes are declared: `done`/`archive`/`snooze` (reversible local
+   status transitions), `enable`/`disable` (reversible toggle pair) and
+   `poll` (the routine delivery tick the daemon already runs on a timer;
+   braking it would break the foreground debug flow in this RUNBOOK) keep
+   immediate-write behavior.
+
+### Write classification (brake decision per op)
+
+| op | class | brake |
+|---|---|---|
+| replay | republishes a stored NATS event, re-triggering every downstream consumer/trigger | dry-run + `--execute` |
+| done / archive / snooze | reversible local status transitions | not braked (declared) |
+| enable / disable | reversible toggle pair | not braked (declared) |
+| poll | routine delivery tick, same loop the daemon runs automatically | not braked (declared) |
+| list / items / read / sources / status | read (read marks items seen — reversible) | n/a |
+
+### Official error cases
+
+| case | code | exit |
+|---|---|---|
+| item not found (local or mirror) | `INBOX_ITEM_NOT_FOUND` + suggestions | 1 |
+| ambiguous remote id across orgs | pre-existing fail-closed error | 1 |
+| invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
+| `replay` without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
+
+No shipped skill teaches `ravi inbox` today — **skill gap registered**: a
+future inbox/console-delivery skill MUST document `--execute` on `replay` and
+the not-found contract.
 
 The target technical surface SHOULD be:
 
@@ -238,7 +296,9 @@ For GitHub/source-control watches, `category` SHOULD be `source_control`.
 
 Replay is local. Compatibility `ravi inbox replay` and target
 `ravi console delivery replay` MUST republish the stored NATS payload from
-SQLite and MUST NOT create a new Console delivery item.
+SQLite and MUST NOT create a new Console delivery item. On the CLI surface,
+replay is a braked write: without `--execute` it emits the dry-run plan and
+exits 3 (see the Agent-First CLI Contract section).
 
 Replay MUST preserve `eventId`, `sequence`, `dedupeKey`, `eventType`, and
 original timestamps. Replay MAY add delivery metadata such as `replayed`,

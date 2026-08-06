@@ -41,10 +41,10 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 19 | watch | watch.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/watch (atualizada) |
 | 20 | hooks | hooks.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/hooks |
 | 21 | heartbeat | heartbeat.ts | heartbeat | **MIGRADO** | cli/heartbeat |
-| 22 | threads | threads.ts | (sem skill) | pendente | — |
-| 23 | inbox | inbox.ts | (sem skill) | pendente | — |
-| 24 | work-objects | work-objects.ts | (sem skill) | pendente | — |
-| 25 | commands | commands.ts | commands | pendente | — |
+| 22 | threads | threads.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/threads |
+| 23 | inbox | inbox.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/inbox (atualizada) |
+| 24 | work-objects | work-objects.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/work-objects |
+| 25 | commands | commands.ts | commands | **MIGRADO** | cli/commands |
 | 26 | settings | settings.ts | settings | pendente | — |
 | 27 | self | self.ts | (sem skill) | pendente | — |
 | 28 | feedback | feedback.ts | (sem skill) | pendente | — |
@@ -576,3 +576,43 @@ sucesso `skipped` por design.
 `heartbeat.test.ts` 8/8 (prova de trigger disparando SEM --execute) · typecheck
 limpo · spec gate PASSED (cli/watch + cli/hooks + cli/heartbeat + consumidores
 watch e watch/connectors/github).
+
+### 22–25. threads + inbox + work-objects + commands — MIGRADOS (lote; subagente, verificado e integrado)
+
+**threads:** SEM freios (escritas append/status-flip locais reversíveis —
+racional na spec). `THREAD_NOT_FOUND` com suggestions; slug ambíguo entre
+scopes mantém fail() legado de propósito. `--fields` no list. `threads link`
+deixou de vazar stack trace de pointer cru (consistência).
+**inbox:** freio em `replay` (republica evento no NATS → re-dispara triggers;
+plan com ref/sequence/subject; resolução+ambiguidade ANTES do freio). Sem
+freio: done/archive/snooze, enable/disable, poll (mesmo tick do daemon; frear
+quebraria o debug do RUNBOOK). `INBOX_ITEM_NOT_FOUND` com suggestions;
+ambiguidade cross-org mantém fail-closed. `--fields` em list/items. Spec
+cli/inbox ATUALIZADA (status: active) + consumidores SPEC/RUNBOOK ensinam
+--execute.
+**work-objects:** freio em `action` (actionId opaco via adapter pode
+concluir/arquivar trabalho externo); `update` declarado SEM freio (form-submit
+validado campo-a-campo com guard otimista --revision — gate duplo). Nota
+registrada: via adapter tasks o action fica mais estrito que `tasks done` —
+deliberado (action não nomeia sua semântica). `WORK_OBJECT_NOT_FOUND` sem
+suggestions (sem enumeração cross-adapter barata). Transporte NATS do daemon
+não freado (integração programática — documentado). Sem listagem → sem
+--fields (declarado).
+**commands:** SEM freios (domínio read-only; `run` só renderiza o prompt).
+`COMMAND_NOT_FOUND` (registry do próprio lookup) e `AGENT_NOT_FOUND`
+(resolvido antes do discovery). `--fields` no list. Skill commands com
+Contrato Do CLI. `validate` mantém exit 1 pré-existente como veredito.
+
+**Rotina X:** threads 8/8 (novo) · inbox 11/11 · work-objects 9/9 (novo) ·
+commands 5/5 (novo) · typecheck limpo · spec gate PASSED (cli/threads +
+cli/inbox + cli/work-objects + cli/commands + consumidores work-objects).
+Usage contract nos 4 subtrees.
+
+### INCIDENTE — limite de sessão da conta (2026-08-06 ~05:00)
+
+Os 5 agentes em voo da onda seguinte foram terminados pelo limite de sessão da
+API (reset 7:30am America/Sao_Paulo): lote settings/self/feedback/rules/specs
+(QUASE completo — parcial preservado no working tree, compila), e
+slack / youtube+prox-calls+meetings+devin / mídia+stickers+react /
+costs+metrics+insights (mal começaram). Plano: retomar pós-reset com
+re-despacho; nada foi perdido nem revertido.

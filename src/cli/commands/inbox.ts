@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import {
   inboxItemEnvelopeReturnSchema,
@@ -92,6 +93,56 @@ function parseTimestamp(value: string | undefined, label: string): number {
   fail(`${label} must be a Unix ms timestamp or ISO date`);
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// Braked op: `inbox replay` (republishes a stored NATS event, re-triggering
+// downstream consumers/triggers). Everything else is unbraked and declared in
+// .ravi/specs/cli/inbox/SPEC.md.
+// ============================================================
+
+/**
+ * Local inbox items and delivery-mirror rows are enumerable through
+ * `inbox list` / `inbox items`, so INBOX_ITEM_NOT_FOUND enriches the envelope
+ * with real similar candidates from the same local listings.
+ */
+function failInboxItemNotFound(
+  op: string,
+  ref: string,
+  options: { asJson?: boolean; candidates: Array<string | null | undefined>; listCommand: string },
+): never {
+  contractFail(op, "INBOX_ITEM_NOT_FOUND", `Inbox item not found: ${ref}`, {
+    asJson: options.asJson,
+    details: {
+      suggestedAction: `Check the item ref (see suggestions; list with: ${options.listCommand})`,
+      suggestions: suggestSimilar(ref, options.candidates),
+    },
+  });
+}
+
+function localInboxCandidates(): Array<string | null | undefined> {
+  return listLocalInboxItems({ includeArchived: true, limit: 40 }).flatMap((item) => [item.id, item.title]);
+}
+
+/**
+ * `readLocalInboxItem`/`markLocalInboxItem` throw a plain
+ * "Inbox item not found: ..." on unknown ids; map that to the contract
+ * envelope. Other errors keep the legacy path.
+ */
+function mapLocalInboxItemError(op: string, itemId: string, error: unknown, asJson?: boolean): never {
+  const message = error instanceof Error ? error.message : String(error);
+  if (/inbox item not found/i.test(message)) {
+    failInboxItemNotFound(op, itemId, {
+      asJson,
+      candidates: localInboxCandidates(),
+      listCommand: "ravi inbox list --include-archived --json",
+    });
+  }
+  throw error instanceof Error ? error : new Error(message);
+}
+
 @Group({
   name: "inbox",
   description: "Local Ravi inbox and Console delivery compatibility commands",
@@ -113,6 +164,8 @@ export class InboxCommands {
     @Option({ flags: "--offset <n>", description: "Items to skip before returning results" })
     offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const items = listLocalInboxItems({
       status: parseLocalInboxStatus(status),
@@ -121,7 +174,7 @@ export class InboxCommands {
       limit: parsePositiveInteger(limit, "--limit"),
       offset: parseNonNegativeInteger(offset, "--offset"),
     });
-    const payload = { items };
+    const payload = { items: pickFields(items, fields) };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -150,7 +203,12 @@ export class InboxCommands {
     @Arg("item", { description: "Local inbox item id" }) itemId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = readLocalInboxItem(itemId);
+    let result: ReturnType<typeof readLocalInboxItem>;
+    try {
+      result = readLocalInboxItem(itemId);
+    } catch (error) {
+      mapLocalInboxItemError("inbox read", itemId, error, asJson);
+    }
     if (asJson) {
       printJson(result);
       return result;
@@ -174,7 +232,12 @@ export class InboxCommands {
     @Arg("item", { description: "Local inbox item id" }) itemId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const item = markLocalInboxItem(itemId, "done");
+    let item: ReturnType<typeof markLocalInboxItem>;
+    try {
+      item = markLocalInboxItem(itemId, "done");
+    } catch (error) {
+      mapLocalInboxItemError("inbox done", itemId, error, asJson);
+    }
     const payload = { item };
     if (asJson) printJson(payload);
     else console.log(`✓ Marked ${item.id} done.`);
@@ -190,10 +253,15 @@ export class InboxCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const snoozedUntil = parseTimestamp(until, "--until");
-    const item = markLocalInboxItem(itemId, "snoozed", {
-      snoozedUntil,
-      payload: { snoozedUntil },
-    });
+    let item: ReturnType<typeof markLocalInboxItem>;
+    try {
+      item = markLocalInboxItem(itemId, "snoozed", {
+        snoozedUntil,
+        payload: { snoozedUntil },
+      });
+    } catch (error) {
+      mapLocalInboxItemError("inbox snooze", itemId, error, asJson);
+    }
     const payload = { item };
     if (asJson) printJson(payload);
     else console.log(`✓ Snoozed ${item.id} until ${formatTimestamp(item.snoozedUntil)}.`);
@@ -207,7 +275,12 @@ export class InboxCommands {
     @Arg("item", { description: "Local inbox item id" }) itemId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const item = markLocalInboxItem(itemId, "archived");
+    let item: ReturnType<typeof markLocalInboxItem>;
+    try {
+      item = markLocalInboxItem(itemId, "archived");
+    } catch (error) {
+      mapLocalInboxItemError("inbox archive", itemId, error, asJson);
+    }
     const payload = { item };
     if (asJson) printJson(payload);
     else console.log(`✓ Archived ${item.id}.`);
@@ -330,6 +403,8 @@ export class InboxCommands {
     @Option({ flags: "--limit <n>", description: "Maximum items to return (default: 25, max: 500)" })
     limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const parsedLimit = limit ? Number(limit) : undefined;
     if (parsedLimit !== undefined && (!Number.isInteger(parsedLimit) || parsedLimit < 1)) {
@@ -337,7 +412,7 @@ export class InboxCommands {
       return;
     }
     const items = listRecentItems({ limit: parsedLimit });
-    const payload = { total: items.length, items };
+    const payload = { total: items.length, items: pickFields(items, fields) };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -364,6 +439,11 @@ export class InboxCommands {
   async replay(
     @Arg("ref", { description: "Local row id (number) or remote item id (uuid)" }) ref: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually republish the stored NATS event; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     if (!ref) {
       fail("replay requires an item reference");
@@ -380,8 +460,28 @@ export class InboxCommands {
     }
 
     if (!row) {
-      fail(`No inbox item found for ref ${ref}`);
-      return;
+      failInboxItemNotFound("inbox replay", ref, {
+        asJson,
+        candidates: listRecentItems({ limit: 40 }).flatMap((item) => [String(item.id), item.itemId]),
+        listCommand: "ravi inbox items --json",
+      });
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): replay republishes the stored event to
+      // NATS, re-triggering every downstream consumer/trigger — dry-run by
+      // default and exit 3 BEFORE any publish or replay-count write.
+      contractDryRun(
+        "inbox replay",
+        {
+          ref,
+          itemId: row.itemId,
+          sequence: row.sequence,
+          subject: row.natsSubject || INBOX_NATS_SUBJECT,
+          nextReplayCount: row.replayCount + 1,
+        },
+        { asJson },
+      );
     }
 
     let payload: InboxNatsPayload;

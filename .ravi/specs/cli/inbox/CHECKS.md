@@ -1,5 +1,26 @@
 # Console Delivery CLI Compatibility / CHECKS
 
+## Agent-First Contract Checks
+
+- `inbox replay <ref> --json` without `--execute` MUST exit 3, MUST report
+  `dryRun: true` with the `{ref, itemId, sequence, subject, nextReplayCount}`
+  plan, and MUST NOT publish to NATS or change `replay_count`; with
+  `--execute` the republish MUST happen.
+- `inbox replay <unknown-ref> --json` MUST exit 1 with the
+  `INBOX_ITEM_NOT_FOUND` envelope and suggestions from the delivery mirror —
+  not-found resolves BEFORE the brake, so it is never exit 3.
+- `inbox read|done|snooze|archive <unknown-id> --json` MUST exit 1 with
+  `INBOX_ITEM_NOT_FOUND` and suggestions from the local inbox listing, even
+  though the underlying local-db helpers throw on unknown ids.
+- An ambiguous remote item id MUST keep the pre-existing fail-closed error
+  (exit 1, no NOT_FOUND code) requiring the local numeric row id.
+- `inbox list --fields a,b,c --json` and `inbox items --fields a,b,c --json`
+  MUST return items containing only the requested fields.
+- Unbraked writes (`done`, `archive`, `snooze`, `enable`, `disable`, `poll`)
+  MUST keep immediate-write behavior as declared in the SPEC.
+- `bun test src/cli/commands/inbox.test.ts` SHOULD pass after any change to
+  the inbox CLI surface.
+
 ## Static Checks
 
 - No Console server secrets or proprietary policy are embedded in OSS code.

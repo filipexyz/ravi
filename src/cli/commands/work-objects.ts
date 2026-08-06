@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { contractDryRun, contractFail } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { jsonObjectSchema, jsonValueSchema } from "../return-schemas.js";
 import {
@@ -105,6 +106,31 @@ const workObjectSuggestReturnSchema = z.object({
   result: z.array(z.object({ text: z.string(), value: z.string() })),
 });
 
+// ============================================================
+// Manual v2 contract helpers (error envelope).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+//
+// SCOPE NOTE: Work Objects are provider-owned external references resolved
+// through domain adapters; there is no cheap local enumeration across
+// adapters, so WORK_OBJECT_NOT_FOUND carries a suggestedAction pointing to
+// the adapter-backed listing (tasks today) instead of `suggestions`.
+// Braked op: `action` executes an opaque provider actionId whose blast
+// radius the CLI cannot inspect. `update` stays unbraked (declared): it is a
+// field-validated patch with an optimistic `--revision` guard.
+// ============================================================
+
+function failWorkObjectNotFound(op: string, ref: string, asJson?: boolean): never {
+  contractFail(op, "WORK_OBJECT_NOT_FOUND", `Work Object not found: ${ref}`, {
+    asJson,
+    details: {
+      suggestedAction:
+        "Check the reference (URL or type:id). Task-backed objects use --type task --id <task-id>; list ids with: ravi tasks list --json",
+    },
+  });
+}
+
 @Group({
   name: "work-objects",
   description: "Resolve and mutate generic Work Objects through Ravi domain adapters",
@@ -129,7 +155,9 @@ export class WorkObjectCommands {
   ) {
     const input = buildResolveInput({ target, type, id, url });
     const result = await resolveWorkObject(input, buildCommandContext());
-    if (!result) fail("Work Object not found.");
+    if (!result) {
+      failWorkObjectNotFound("work-objects resolve", describeResolveInput(input), asJson);
+    }
     if (asJson) console.log(JSON.stringify(result, null, 2));
     else printResolved(result.result);
     return result;
@@ -160,7 +188,11 @@ export class WorkObjectCommands {
       },
       buildCommandContext(),
     );
-    if (!result) fail("Work Object update was not handled.");
+    if (!result) {
+      // No adapter handled the external reference — the object cannot exist
+      // for this CLI, so the not-found envelope applies.
+      failWorkObjectNotFound("work-objects update", `${type}:${id}`, asJson);
+    }
     if (asJson) console.log(JSON.stringify(result, null, 2));
     else printMutation(result.result);
     return result;
@@ -181,16 +213,41 @@ export class WorkObjectCommands {
     @Arg("actionId", { description: "Action id, e.g. task.comment" }) actionId: string,
     @Option({ flags: "--value <value>", description: "Optional action value" }) value?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually execute the provider action; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const ref = requireRef(type, id);
+    const normalizedActionId = requireNonEmpty(actionId, "actionId");
+    const normalizedValue = value?.trim() || undefined;
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): the actionId is executed by a domain
+      // adapter and its semantics are opaque to the CLI (it may complete,
+      // archive, or fail external work) — dry-run by default and exit 3
+      // BEFORE any adapter call.
+      contractDryRun(
+        "work-objects action",
+        {
+          ref,
+          actionId: normalizedActionId,
+          ...(normalizedValue ? { value: normalizedValue } : {}),
+        },
+        { asJson },
+      );
+    }
     const result = await executeWorkObjectAction(
-      requireRef(type, id),
+      ref,
       {
-        actionId: requireNonEmpty(actionId, "actionId"),
-        ...(value?.trim() ? { value: value.trim() } : {}),
+        actionId: normalizedActionId,
+        ...(normalizedValue ? { value: normalizedValue } : {}),
       },
       buildCommandContext(),
     );
-    if (!result) fail("Work Object action was not handled.");
+    if (!result) {
+      failWorkObjectNotFound("work-objects action", `${type}:${id}`, asJson);
+    }
     if (asJson) console.log(JSON.stringify(result, null, 2));
     else printMutation(result.result);
     return result;
@@ -220,7 +277,9 @@ export class WorkObjectCommands {
       },
       buildCommandContext(),
     );
-    if (!result) fail("Work Object suggestions were not handled.");
+    if (!result) {
+      failWorkObjectNotFound("work-objects suggest", `${type}:${id}`, asJson);
+    }
     if (asJson) console.log(JSON.stringify(result, null, 2));
     else {
       for (const option of result.result) console.log(`${option.value}\t${option.text}`);
@@ -248,6 +307,14 @@ function buildResolveInput(input: { target?: string; type?: string; id?: string;
     };
   }
   fail("Provide a URL, --url, or --id.");
+}
+
+function describeResolveInput(input: { url?: string; externalRef?: WorkObjectExternalRef }): string {
+  if (input.url) return input.url;
+  if (input.externalRef) {
+    return input.externalRef.type ? `${input.externalRef.type}:${input.externalRef.id}` : input.externalRef.id;
+  }
+  return "(empty reference)";
 }
 
 function buildCommandContext(): WorkObjectRequestContext {

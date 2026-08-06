@@ -34,6 +34,18 @@ make replay and idempotency ambiguous after a crash.
 Replay is an operator/debug action. It should re-emit the exact local event to
 NATS consumers without mutating Console state or creating a new delivery item.
 
+## Why Replay Carries The Write Brake
+
+Replay is the one op in this CLI group that re-dispatches processing: the
+republished event reaches every NATS consumer again — triggers fire, agents
+get prompted, automations run — and none of that can be un-run. Under the
+agent-first contract (Manual v2) that makes it the braked op: dry-run by
+default, `--execute` to publish. The rest of the group stays immediate —
+`done`/`archive`/`snooze` are reversible local status flips,
+`enable`/`disable` reverse each other, and `poll` is the same delivery tick
+the daemon already fires on a timer (braking it would break the foreground
+debug flow this spec's RUNBOOK depends on).
+
 ## Why Console Delivery Does Not Create Watches
 
 Watch creation belongs to `ravi watch`, because a watch may run locally or in

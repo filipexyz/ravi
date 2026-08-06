@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { fail } from "../context.js";
+import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { configStore } from "../../config-store.js";
 import {
@@ -24,14 +24,57 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
-function resolveAgent(agentId?: string): AgentConfig {
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// The whole domain is read-only — `run` only RENDERS the composed prompt, it
+// never publishes to a session — so there is no braked op (declared in
+// .ravi/specs/cli/commands/SPEC.md).
+// ============================================================
+
+interface ContractCallSite {
+  op: string;
+  asJson?: boolean;
+}
+
+/**
+ * Agent ids are public through `agents list`, so AGENT_NOT_FOUND enriches the
+ * envelope with real similar ids from the local config.
+ */
+function resolveAgent(agentId: string | undefined, site: ContractCallSite): AgentConfig {
   const config = configStore.getConfig();
   const resolvedAgentId = agentId?.trim() || config.defaultAgent;
   const agent = config.agents[resolvedAgentId];
   if (!agent) {
-    fail(`Agent not found: ${resolvedAgentId}`);
+    contractFail(site.op, "AGENT_NOT_FOUND", `Agent not found: ${resolvedAgentId}`, {
+      asJson: site.asJson,
+      details: {
+        suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+        suggestions: suggestSimilar(resolvedAgentId, Object.keys(config.agents)),
+      },
+    });
   }
   return agent;
+}
+
+/**
+ * Command ids are public through `commands list` on the same registry the
+ * lookup used, so COMMAND_NOT_FOUND enriches the envelope with real similar
+ * ids at zero extra cost.
+ */
+function failCommandNotFound(site: ContractCallSite, id: string, registry: { commands: RaviCommandRecord[] }): never {
+  contractFail(site.op, "COMMAND_NOT_FOUND", `Ravi command not found: #${id}`, {
+    asJson: site.asJson,
+    details: {
+      suggestedAction: "Check the command name (see suggestions; list with: ravi commands list --json)",
+      suggestions: suggestSimilar(
+        id,
+        registry.commands.map((command) => command.id),
+      ),
+    },
+  });
 }
 
 function serializeIssue(issue: RaviCommandIssue): Record<string, unknown> {
@@ -106,8 +149,10 @@ export class RaviCommandsCommands {
     @Option({ flags: "--tag <slug>", description: "Filter by canonical command tag" }) tagSlug?: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching commands to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
-    const agent = resolveAgent(agentId);
+    const agent = resolveAgent(agentId, { op: "commands list", asJson });
     const registry = discoverRaviCommands({ agentCwd: agent.cwd });
     const tagFilter = tagSlug?.trim() || null;
     const commands = filterItemsByCanonicalTag(
@@ -126,6 +171,10 @@ export class RaviCommandsCommands {
       total: page.total,
       options: ["--agent", agentId, "--tag", tagFilter],
     });
+    const commandRows = pickFields(
+      pageCommands.map((command) => serializeCommand(command)),
+      fields,
+    );
     const payload = {
       total: page.total,
       pagination,
@@ -135,8 +184,8 @@ export class RaviCommandsCommands {
         agent: registry.agentCommandsDir ?? null,
         global: registry.globalCommandsDir,
       },
-      items: pageCommands.map((command) => serializeCommand(command)),
-      commands: pageCommands.map((command) => serializeCommand(command)),
+      items: commandRows,
+      commands: commandRows,
       issues: registry.issues.map(serializeIssue),
     };
 
@@ -174,12 +223,12 @@ export class RaviCommandsCommands {
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const agent = resolveAgent(agentId);
+    const agent = resolveAgent(agentId, { op: "commands show", asJson });
     const id = normalizeRaviCommandId(name);
     const registry = discoverRaviCommands({ agentCwd: agent.cwd });
     const command = resolveRaviCommand(registry, id);
     if (!command) {
-      fail(`Ravi command not found: #${id}`);
+      failCommandNotFound({ op: "commands show", asJson }, id, registry);
     }
 
     const payload = {
@@ -203,7 +252,7 @@ export class RaviCommandsCommands {
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const agent = resolveAgent(agentId);
+    const agent = resolveAgent(agentId, { op: "commands validate", asJson });
     const registry = discoverRaviCommands({ agentCwd: agent.cwd });
     const errors = registry.issues.filter((issue) => issue.level === "error");
     const warnings = registry.issues.filter((issue) => issue.level === "warning");
@@ -239,14 +288,14 @@ export class RaviCommandsCommands {
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const agent = resolveAgent(agentId);
+    const agent = resolveAgent(agentId, { op: "commands run", asJson });
     const id = normalizeRaviCommandId(name);
     const args = normalizeRestArgs(rest);
     const rawArguments = args.join(" ");
     const registry = discoverRaviCommands({ agentCwd: agent.cwd });
     const command = resolveRaviCommand(registry, id);
     if (!command) {
-      fail(`Ravi command not found: #${id}`);
+      failCommandNotFound({ op: "commands run", asJson }, id, registry);
     }
 
     const rendered = renderRaviCommand(
