@@ -5283,6 +5283,7 @@ export type CrmAccountShowReturn = {
 
 /** Input shape for `crm.board`. */
 export type CrmBoardInput = {
+  fields?: string;
   includeEmptyStages?: boolean;
   pipeline?: string;
 };
@@ -5336,6 +5337,7 @@ export type CrmContactShowReturn = {
 
 /** Input shape for `crm.contacts`. */
 export type CrmContactsInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   owner?: string;
@@ -5441,6 +5443,7 @@ export type CrmNextInput = {
   dueAfter?: string;
   dueBefore?: string;
   dueToday?: boolean;
+  fields?: string;
   limit?: string;
   offset?: string;
   opportunity?: string;
@@ -5494,6 +5497,7 @@ export type CrmOpportunityCreateInput = {
   account?: string;
   contact?: string;
   currency?: string;
+  execute?: boolean;
   idempotencyKey?: string;
   owner?: string;
   pipeline?: string;
@@ -5527,6 +5531,7 @@ export type CrmOpportunityLinkContactReturn = {
 
 /** Input shape for `crm.opportunity.move`. */
 export type CrmOpportunityMoveInput = {
+  execute?: boolean;
   lostReason?: string;
   opportunity: string;
   stage: string;
@@ -5559,6 +5564,7 @@ export type CrmPipelineCreateInput = {
   consumer?: string;
   default?: boolean;
   entityType?: string;
+  execute?: boolean;
   hitlRequiredWhen?: string;
   idempotencyKey?: string;
   messagePrefix?: string;
@@ -5589,6 +5595,7 @@ export type CrmPipelineCreateReturn = {
 /** Input shape for `crm.pipeline.list`. */
 export type CrmPipelineListInput = {
   entityType?: string;
+  fields?: string;
   includeArchived?: boolean;
   limit?: string;
   offset?: string;

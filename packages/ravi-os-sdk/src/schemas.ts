@@ -27903,6 +27903,10 @@ export const CrmAccountShowReturnSchema = {
 export const CrmBoardInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each opportunity",
+      "type": "string"
+    },
     "includeEmptyStages": {
       "description": "Include configured stages with no opportunities",
       "type": "boolean"
@@ -28067,6 +28071,10 @@ export const CrmContactShowReturnSchema = {
 export const CrmContactsInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -28441,6 +28449,10 @@ export const CrmNextInputSchema = {
       "description": "Only actions whose due_at is today",
       "type": "boolean"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 25, max: 500)",
       "type": "string"
@@ -28628,6 +28640,10 @@ export const CrmOpportunityCreateInputSchema = {
       "description": "Currency (default: BRL)",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually create the opportunity; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "idempotencyKey": {
       "description": "Deduplicate repeated opportunity creation",
       "type": "string"
@@ -28731,6 +28747,10 @@ export const CrmOpportunityLinkContactReturnSchema = {
 export const CrmOpportunityMoveInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually move the opportunity; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "lostReason": {
       "description": "Lost reason when moving to lost",
       "type": "string"
@@ -28831,6 +28851,10 @@ export const CrmPipelineCreateInputSchema = {
     "entityType": {
       "description": "CRM entity type (default: opportunity)",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually create the pipeline; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "hitlRequiredWhen": {
       "description": "JSON {conditions:[...]}",
@@ -28938,6 +28962,10 @@ export const CrmPipelineListInputSchema = {
   "properties": {
     "entityType": {
       "description": "Filter by CRM entity type",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "includeArchived": {

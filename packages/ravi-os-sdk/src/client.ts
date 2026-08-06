@@ -1950,6 +1950,7 @@ export class RaviClient {
     },
     /** Show open opportunity board */
     board: async (options?: {
+      fields?: string;
       includeEmptyStages?: boolean;
       pipeline?: string;
     }): Promise<CrmBoardReturn> => {
@@ -1989,6 +1990,7 @@ export class RaviClient {
     },
     /** List CRM contact cards */
     contacts: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       owner?: string;
@@ -2058,6 +2060,7 @@ export class RaviClient {
       dueAfter?: string;
       dueBefore?: string;
       dueToday?: boolean;
+      fields?: string;
       limit?: string;
       offset?: string;
       opportunity?: string;
@@ -2079,11 +2082,12 @@ export class RaviClient {
           body: { opportunity },
         });
       },
-      /** Create a CRM opportunity */
+      /** Create a CRM opportunity (dry-run by default; --execute writes) */
       create: async (title: string, options?: {
         account?: string;
         contact?: string;
         currency?: string;
+        execute?: boolean;
         idempotencyKey?: string;
         owner?: string;
         pipeline?: string;
@@ -2108,8 +2112,9 @@ export class RaviClient {
           body: { opportunity, contact, ...(options ?? {}) },
         });
       },
-      /** Move an opportunity to another stage */
+      /** Move an opportunity to another stage (dry-run by default; --execute writes) */
       move: async (opportunity: string, stage: string, options?: {
+        execute?: boolean;
         lostReason?: string;
       }): Promise<CrmOpportunityMoveReturn> => {
         return this.transport.call({
@@ -2136,7 +2141,7 @@ export class RaviClient {
       });
     },
     pipeline: {
-      /** Create a CRM pipeline (with optional declarative metadata) */
+      /** Create a CRM pipeline (dry-run by default; --execute writes) */
       create: async (name: string, options?: {
         analystAvoid?: string;
         analystMentions?: string;
@@ -2144,6 +2149,7 @@ export class RaviClient {
         consumer?: string;
         default?: boolean;
         entityType?: string;
+        execute?: boolean;
         hitlRequiredWhen?: string;
         idempotencyKey?: string;
         messagePrefix?: string;
@@ -2171,6 +2177,7 @@ export class RaviClient {
       /** List CRM pipelines */
       list: async (options?: {
         entityType?: string;
+        fields?: string;
         includeArchived?: boolean;
         limit?: string;
         offset?: string;

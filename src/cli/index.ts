@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { registerCommands } from "./registry.js";
 import * as allCommands from "./commands/index.js";
+import { installUsageContract } from "./agent-contract.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
 import { runUpdate } from "./commands/update.js";
@@ -54,6 +55,12 @@ program.showSuggestionAfterError();
 
 // Register all command groups (auto-discovered from barrel)
 registerCommands(program, Object.values(allCommands) as Array<new () => object>);
+
+// Manual v2 contract, installed per migrated domain group: commander usage
+// errors (unknown flag, missing required argument) exit 2 with the error
+// envelope instead of plain text with exit 1. Unlisted groups keep commander's
+// default behavior until they are migrated.
+installUsageContract(program, "crm");
 
 // Top-level commands (not via decorator groups)
 program
