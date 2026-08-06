@@ -69,6 +69,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "gmail",
   "instances",
   "mail",
+  "projects",
   "routes",
   "tasks",
   "sessions",

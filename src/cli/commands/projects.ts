@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { statSync } from "node:fs";
 import { basename, resolve as resolvePath } from "node:path";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -795,6 +796,98 @@ function resolveLinkTarget(
   }
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+//
+// Suggestion source: `listProjects` applies no visibility/scope filter — it is
+// the exact source `projects list` prints — so PROJECT_NOT_FOUND candidates
+// are real slugs/titles with no cloaking to preserve.
+// ============================================================
+
+function failProjectNotFound(op: string, projectRef: string, asJson?: boolean): never {
+  const candidates = listProjects({})
+    .slice(0, 40)
+    .flatMap((project) => [project.slug, project.title]);
+  contractFail(op, "PROJECT_NOT_FOUND", `Project not found: ${projectRef}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the project id/slug (see suggestions; list with: ravi projects list --json)",
+      suggestions: suggestSimilar(projectRef, candidates),
+    },
+  });
+}
+
+function failWorkflowRunNotFound(op: string, workflowRunId: string, asJson?: boolean): never {
+  contractFail(op, "WORKFLOW_RUN_NOT_FOUND", `Workflow run not found: ${workflowRunId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the workflow run id (inspect linked runs with: ravi projects show <project> --json)",
+    },
+  });
+}
+
+function failWorkflowNodeNotFound(op: string, nodeKey: string, workflowRunId: string, asJson?: boolean): never {
+  const details = getWorkflowRunDetails(workflowRunId);
+  const candidates = (details?.nodes ?? []).flatMap((node) => [node.specNodeKey, node.label ?? ""]);
+  contractFail(op, "WORKFLOW_NODE_NOT_FOUND", `Workflow node not found in run ${workflowRunId}: ${nodeKey}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the node key (see suggestions from the linked workflow run)",
+      suggestions: suggestSimilar(nodeKey, candidates),
+    },
+  });
+}
+
+function failProjectResourceNotFound(op: string, projectRef: string, resourceRef: string, asJson?: boolean): never {
+  let candidates: string[] = [];
+  try {
+    candidates = listProjectResourceLinks(projectRef).flatMap((resource) => [
+      resource.id,
+      resource.label ?? "",
+      resource.locator,
+    ]);
+  } catch {
+    // Project itself missing: keep the resource envelope with no suggestions.
+  }
+  contractFail(op, "RESOURCE_NOT_FOUND", `Resource not found on project ${projectRef}: ${resourceRef}`, {
+    asJson,
+    details: {
+      suggestedAction:
+        "Check the resource id/label/locator (see suggestions; list with: ravi projects resources list <project> --json)",
+      suggestions: suggestSimilar(resourceRef, candidates),
+    },
+  });
+}
+
+/**
+ * The projects service layer throws on unknown refs (`Project not found: X`,
+ * `Workflow run not found: X`, `Workflow node K not found in run R.`,
+ * `Task not found: X`); map those throws to the contract envelope, let
+ * ContractError pass through untouched (so the write brake keeps exit 3), and
+ * keep every other error on the legacy fail() path.
+ */
+function rethrowProjectCommandError(op: string, error: unknown, asJson?: boolean): never {
+  if (error instanceof ContractError) throw error;
+  const message = error instanceof Error ? error.message : String(error);
+  const project = /^Project not found: (.+)$/.exec(message);
+  if (project?.[1]) failProjectNotFound(op, project[1], asJson);
+  const run = /^Workflow run not found: (.+)$/.exec(message);
+  if (run?.[1]) failWorkflowRunNotFound(op, run[1], asJson);
+  const node = /^Workflow node (.+) not found in run (.+)\.$/.exec(message);
+  if (node?.[1] && node[2]) failWorkflowNodeNotFound(op, node[1], node[2], asJson);
+  const task = /^Task not found: (.+)$/.exec(message);
+  if (task?.[1]) {
+    contractFail(op, "TASK_NOT_FOUND", message, {
+      asJson,
+      details: { suggestedAction: "Check the task id (list with: ravi tasks list --json)" },
+    });
+  }
+  fail(message);
+}
+
 @Group({
   name: "projects",
   description: "Project alignment/context substrate",
@@ -874,7 +967,7 @@ export class ProjectCommands {
       }
       return result;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects init", error, asJson);
     }
   }
 
@@ -919,7 +1012,7 @@ export class ProjectCommands {
       }
       return details;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects create", error, asJson);
     }
   }
 
@@ -932,6 +1025,8 @@ export class ProjectCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching projects to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     try {
       const normalizedTagSlug = parseTagSlug(tagSlug);
@@ -948,6 +1043,7 @@ export class ProjectCommands {
         total: page.total,
         options: ["--status", status, "--tag", normalizedTagSlug],
       });
+      const projectedItems = pickFields(page.items, fields);
       const payload = {
         total: page.total,
         pagination,
@@ -955,8 +1051,8 @@ export class ProjectCommands {
           status: status ? normalizeProjectStatus(status) : null,
           tagSlug: normalizedTagSlug ?? null,
         },
-        items: page.items,
-        projects: page.items,
+        items: projectedItems,
+        projects: projectedItems,
       };
 
       if (asJson) {
@@ -985,7 +1081,7 @@ export class ProjectCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects list", error, asJson);
     }
   }
 
@@ -998,7 +1094,7 @@ export class ProjectCommands {
   ) {
     const details = getProjectDetails(projectRef.trim());
     if (!details) {
-      fail(`Project not found: ${projectRef}`);
+      failProjectNotFound("projects show", projectRef, asJson);
     }
 
     if (asJson) {
@@ -1018,7 +1114,7 @@ export class ProjectCommands {
   ) {
     const details = getProjectDetails(projectRef.trim());
     if (!details) {
-      fail(`Project not found: ${projectRef}`);
+      failProjectNotFound("projects status", projectRef, asJson);
     }
 
     if (asJson) {
@@ -1036,6 +1132,8 @@ export class ProjectCommands {
     @Option({ flags: "--status <status>", description: "Filter by project status" }) status?: string,
     @Option({ flags: "--tag <slug>", description: "Filter by canonical project tag" }) tagSlug?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     try {
       const normalizedTagSlug = parseTagSlug(tagSlug);
@@ -1049,7 +1147,7 @@ export class ProjectCommands {
           status: status ? normalizeProjectStatus(status) : null,
           tagSlug: normalizedTagSlug ?? null,
         },
-        projects: entries,
+        projects: pickFields(entries, fields),
       };
 
       if (asJson) {
@@ -1059,7 +1157,7 @@ export class ProjectCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects next", error, asJson);
     }
   }
 
@@ -1103,7 +1201,7 @@ export class ProjectCommands {
       }
       return details;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects update", error, asJson);
     }
   }
 
@@ -1146,7 +1244,7 @@ export class ProjectCommands {
       }
       return details;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects link", error, asJson);
     }
   }
 }
@@ -1167,14 +1265,42 @@ export class ProjectWorkflowCommands {
     role?: string,
     @Option({ flags: "--run-id <id>", description: "Optional workflow run id" }) workflowRunId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually start the workflow run; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     try {
+      // Validation before the brake: project and role must resolve before the
+      // dry-run plan is shown.
+      const details = getProjectDetails(projectRef.trim());
+      if (!details) {
+        failProjectNotFound("projects workflows start", projectRef, asJson);
+      }
+      const resolvedRole = role?.trim() ? parseProjectWorkflowRole(role) : undefined;
+
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): starting a workflow run launches real
+        // coordinated work, so dry-run by default and exit 3 before any write.
+        contractDryRun(
+          "projects workflows start",
+          {
+            projectRef: details.project.slug,
+            workflowSpecId,
+            workflowRunId: workflowRunId?.trim() || null,
+            role: resolvedRole ?? null,
+          },
+          { asJson },
+        );
+      }
+
       const actor = resolveActor();
       const result = startProjectWorkflowRun({
         projectRef,
         workflowSpecId,
         ...(workflowRunId?.trim() ? { workflowRunId: workflowRunId.trim() } : {}),
-        ...(role?.trim() ? { role: parseProjectWorkflowRole(role) } : {}),
+        ...(resolvedRole ? { role: resolvedRole } : {}),
         ...actor,
       });
 
@@ -1191,7 +1317,7 @@ export class ProjectWorkflowCommands {
       }
       return result;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects workflows start", error, asJson);
     }
   }
 
@@ -1227,7 +1353,7 @@ export class ProjectWorkflowCommands {
       }
       return result;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects workflows attach", error, asJson);
     }
   }
 }
@@ -1289,7 +1415,7 @@ export class ProjectTaskCommands {
       }
       return result;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects tasks create", error, asJson);
     }
   }
 
@@ -1337,7 +1463,7 @@ export class ProjectTaskCommands {
       }
       return result;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects tasks attach", error, asJson);
     }
   }
 
@@ -1350,8 +1476,36 @@ export class ProjectTaskCommands {
     @Option({ flags: "--agent <id>", description: "Override project owner agent" }) agentId?: string,
     @Option({ flags: "--session <name>", description: "Override project operator session" }) sessionName?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually dispatch the task; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     try {
+      // Validation before the brake: the project must resolve before the
+      // dry-run plan is shown.
+      const details = getProjectDetails(projectRef.trim());
+      if (!details) {
+        failProjectNotFound("projects tasks dispatch", projectRef, asJson);
+      }
+
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): dispatch triggers real agent execution
+        // (direct analog of `tasks dispatch`), so dry-run by default and exit 3
+        // before any dispatch.
+        contractDryRun(
+          "projects tasks dispatch",
+          {
+            projectRef: details.project.slug,
+            taskId,
+            agentId: agentId?.trim() || details.project.ownerAgentId || null,
+            sessionName: sessionName?.trim() || details.project.operatorSessionName || null,
+          },
+          { asJson },
+        );
+      }
+
       const actor = resolveActor();
       const result = await dispatchProjectTask({
         projectRef,
@@ -1374,7 +1528,7 @@ export class ProjectTaskCommands {
       }
       return result;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects tasks dispatch", error, asJson);
     }
   }
 }
@@ -1421,7 +1575,7 @@ export class ProjectResourceCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects resources add", error, asJson);
     }
   }
 
@@ -1435,6 +1589,8 @@ export class ProjectResourceCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching resources to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     try {
       const resources = listProjectResourceLinks(
@@ -1450,7 +1606,8 @@ export class ProjectResourceCommands {
         total: page.total,
         options: ["--type", resourceType?.trim() || null],
       });
-      const payload = { total: page.total, pagination, items: page.items, resources: page.items };
+      const projectedResources = pickFields(page.items, fields);
+      const payload = { total: page.total, pagination, items: projectedResources, resources: projectedResources };
 
       if (asJson) {
         console.log(JSON.stringify(payload, null, 2));
@@ -1470,7 +1627,7 @@ export class ProjectResourceCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects resources list", error, asJson);
     }
   }
 
@@ -1485,7 +1642,7 @@ export class ProjectResourceCommands {
     try {
       const resource = getProjectResourceLink(projectRef, resourceRef);
       if (!resource) {
-        fail(`Resource not found on project ${projectRef}: ${resourceRef}`);
+        failProjectResourceNotFound("projects resources show", projectRef, resourceRef, asJson);
       }
 
       if (asJson) {
@@ -1495,7 +1652,7 @@ export class ProjectResourceCommands {
       }
       return resource;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects resources show", error, asJson);
     }
   }
 
@@ -1515,6 +1672,11 @@ export class ProjectResourceCommands {
     @Option({ flags: "--meta <json>", description: "Common JSON metadata merged into every imported resource" })
     metadataJson?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually import the resources; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     try {
       const queue = [
@@ -1528,10 +1690,15 @@ export class ProjectResourceCommands {
         fail("Provide at least one of --repo, --worktree, --url, or --group.");
       }
 
-      const imported: ProjectResourceLink[] = [];
-      const seen = new Set<string>();
-      const actor = resolveActor();
+      // Validation before the brake: project must resolve and every locator
+      // must normalize, so the dry-run plan shows exactly what would be linked.
+      const details = getProjectDetails(projectRef.trim());
+      if (!details) {
+        failProjectNotFound("projects resources import", projectRef, asJson);
+      }
 
+      const resolvedEntries: Array<ReturnType<typeof resolveResourceLinkInput>> = [];
+      const seen = new Set<string>();
       for (const entry of queue) {
         const resolved = resolveResourceLinkInput(entry.target, entry.type, undefined, metadataJson);
         const dedupeKey = `${resolved.resourceType}:${resolved.assetId}`;
@@ -1539,7 +1706,31 @@ export class ProjectResourceCommands {
           continue;
         }
         seen.add(dedupeKey);
+        resolvedEntries.push(resolved);
+      }
 
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): bulk ingestion is high-risk, so dry-run
+        // by default and exit 3 before any link is written.
+        contractDryRun(
+          "projects resources import",
+          {
+            projectRef: details.project.slug,
+            total: resolvedEntries.length,
+            resources: resolvedEntries.map((resolved) => ({
+              type: resolved.resourceType,
+              locator: resolved.assetId,
+            })),
+            role: role?.trim() || null,
+          },
+          { asJson },
+        );
+      }
+
+      const imported: ProjectResourceLink[] = [];
+      const actor = resolveActor();
+
+      for (const resolved of resolvedEntries) {
         linkProject({
           projectRef,
           assetType: "resource",
@@ -1567,7 +1758,7 @@ export class ProjectResourceCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects resources import", error, asJson);
     }
   }
 }
@@ -1584,12 +1775,30 @@ export class ProjectFixtureCommands {
   async seed(
     @Option({ flags: "--owner-agent <id>", description: "Owner agent for the seeded projects" }) ownerAgentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually reset and seed the fixtures; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     try {
       const actor = resolveActor();
       const resolvedOwnerAgentId = resolveOwnerAgent(ownerAgentId) ?? resolveOwnerAgent("main");
       if (!resolvedOwnerAgentId) {
         fail("Owner agent is required.");
+      }
+
+      if (execute !== true) {
+        // Write brake (Manual v2 7.8): seeding RESETS the canonical fixtures
+        // (destructive), so dry-run by default and exit 3 before any write.
+        contractDryRun(
+          "projects fixtures seed",
+          {
+            ownerAgentId: resolvedOwnerAgentId,
+            effect: "reset and reseed the canonical project/workflow/task fixtures",
+          },
+          { asJson },
+        );
       }
 
       const result = await seedCanonicalProjectFixtures({
@@ -1619,7 +1828,7 @@ export class ProjectFixtureCommands {
       }
       return result;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      rethrowProjectCommandError("projects fixtures seed", error, asJson);
     }
   }
 }

@@ -30,7 +30,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 8 | mail | mail.ts, gmail.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/mail |
 | 9 | calendar | calendar.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/calendar |
 | 10 | chats | chats.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/chats |
-| 11 | projects | projects.ts | projects | pendente | — |
+| 11 | projects | projects.ts | projects | **MIGRADO** | cli/projects |
 | 12 | artifacts | artifacts.ts | artifacts | pendente | — |
 | 13 | skills+skill-gates | skills.ts, skill-gates.ts | skills, skill-gates | pendente | — |
 | 14 | cron | cron.ts | cron | pendente | — |
@@ -404,3 +404,28 @@ resto do arquivo — sem mock de context) · regressão colateral verificada
 (cli/chats + channels/chats/reading-lists consumidor). **Rotina Y:** `read
 chat-fantasma --json` → CHAT_NOT_FOUND exit 1 · subcomando inexistente → usage
 exit 2 do subtree · `list --fields id,title` ok.
+
+### 11. projects — MIGRADO (subagente, verificado e integrado)
+
+**Escopo:** freio (`--execute`) em `projects tasks dispatch` (execução real de
+agente — análogo de tasks dispatch; plan com defaults resolvidos),
+`projects workflows start` (instancia run real), `projects fixtures seed`
+(destrutivo — reset+resemeia) e `projects resources import` (ingestão em massa;
+locators normalizados/deduplicados no plan). Sem freio (declaradas): init,
+create, update, link, workflows attach, tasks create/attach, resources add.
+Codes: `PROJECT_NOT_FOUND` (suggestions de listProjects — sem filtro de
+visibilidade, mesma fonte do list; not-found VENCE o freio, testado),
+`WORKFLOW_RUN/NODE_NOT_FOUND`, `TASK_NOT_FOUND` (via surface),
+`RESOURCE_NOT_FOUND` (suggestions do próprio project). 16 catches legados
+migrados com rethrow de ContractError. `--fields` em list/next/resources list.
+Usage contract no subtree (`projects` no index).
+
+**Nota:** 2 expectativas de teste legadas com path POSIX hardcoded
+(`/workspace/ravi.bot` vs resolve win32) corrigidas para
+`resolve("/workspace/ravi.bot")` — agnóstico de plataforma, mesmo valor no CI
+Linux; falha era pré-existente determinística no Windows, fora da lista da
+baseline (a cadeia aborta antes).
+
+**Rotina X:** `projects.test.ts` 25/25 (+9 de contrato) · typecheck limpo ·
+spec gate PASSED (cli/projects) · skill projects com `## Contrato Do CLI`.
+**Rotina Y:** `show proj-fantasma` → exit 1 · usage → exit 2.
