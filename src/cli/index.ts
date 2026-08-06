@@ -62,6 +62,7 @@ registerCommands(program, Object.values(allCommands) as Array<new () => object>)
 // default behavior until they are migrated.
 const AGENT_CONTRACT_DOMAINS = [
   "agents",
+  "artifacts",
   "calendars",
   "chats",
   "contacts",
@@ -69,6 +70,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "gmail",
   "instances",
   "mail",
+  "pages",
   "projects",
   "routes",
   "sessions",

@@ -1167,6 +1167,7 @@ export type ArtifactsEventsReturn = {
 /** Input shape for `artifacts.list`. */
 export type ArtifactsListInput = {
   agent?: string;
+  fields?: string;
   includeDeleted?: boolean;
   kind?: string;
   lifecycle?: string;
@@ -1222,6 +1223,7 @@ export type ArtifactsPublishInput = {
   console?: string;
   description?: string;
   entrypoint?: string;
+  execute?: boolean;
   idempotencyKey?: string;
   name?: string;
   noActivate?: boolean;
@@ -1274,6 +1276,7 @@ export type ArtifactsPublishReturn = {
 /** Input shape for `artifacts.release.activate`. */
 export type ArtifactsReleaseActivateInput = {
   console?: string;
+  execute?: boolean;
   id: string;
   release?: string;
   site?: string;
@@ -3148,6 +3151,7 @@ export type ChatsListInput = {
   agent?: string;
   channel?: string;
   contact?: string;
+  fields?: string;
   includeRaw?: boolean;
   instance?: string;
   limit?: string;
@@ -3311,6 +3315,7 @@ export type ChatsListsDeltaReturn = Record<string, unknown>;
 
 /** Input shape for `chats.lists.list`. */
 export type ChatsListsListInput = {
+  fields?: string;
   includeArchived?: boolean;
   limit?: string;
   offset?: string;
@@ -3338,6 +3343,7 @@ export type ChatsListsMarkReadReturn = Record<string, unknown>;
 
 /** Input shape for `chats.lists.members`. */
 export type ChatsListsMembersInput = {
+  fields?: string;
   includeRaw?: boolean;
   limit?: string;
   list: string;
@@ -3462,6 +3468,7 @@ export type ChatsListsRecomputeReturn = {
 export type ChatsListsRemoveInput = {
   channel?: string;
   chat: string;
+  execute?: boolean;
   instance?: string;
   list: string;
   owner?: string;
@@ -9321,6 +9328,7 @@ export type PagesDomainsReturn = {
 /** Input shape for `pages.list`. */
 export type PagesListInput = {
   console?: string;
+  fields?: string;
   limit?: string;
   offset?: string;
   project?: string;
@@ -9349,6 +9357,7 @@ export type PagesListReturn = {
 export type PagesPasswordRemoveInput = {
   args: string[];
   console?: string;
+  execute?: boolean;
   project?: string;
   route?: string;
   visibility?: string;
@@ -9406,6 +9415,7 @@ export type PagesPublishInput = {
   console?: string;
   description?: string;
   entrypoint?: string;
+  execute?: boolean;
   idempotencyKey?: string;
   noActivate?: boolean;
   project?: string;
@@ -9456,6 +9466,7 @@ export type PagesPublishReturn = {
 /** Input shape for `pages.published`. */
 export type PagesPublishedInput = {
   console?: string;
+  fields?: string;
   limit?: string;
   offset?: string;
   project?: string;
@@ -9484,6 +9495,7 @@ export type PagesPublishedReturn = {
 export type PagesUpdateInput = {
   args: string[];
   console?: string;
+  execute?: boolean;
   project?: string;
   visibility?: string;
 };
@@ -9503,6 +9515,7 @@ export type PagesUpdateReturn = {
 export type PagesVisibilityInput = {
   args: string[];
   console?: string;
+  execute?: boolean;
   project?: string;
 };
 
@@ -9758,6 +9771,7 @@ export type ProjectsCreateReturn = Record<string, unknown>;
 
 /** Input shape for `projects.fixtures.seed`. */
 export type ProjectsFixturesSeedInput = {
+  execute?: boolean;
   ownerAgent?: string;
 };
 
@@ -9807,6 +9821,7 @@ export type ProjectsLinkReturn = Record<string, unknown>;
 
 /** Input shape for `projects.list`. */
 export type ProjectsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   status?: string;
@@ -9834,6 +9849,7 @@ export type ProjectsListReturn = {
 
 /** Input shape for `projects.next`. */
 export type ProjectsNextInput = {
+  fields?: string;
   status?: string;
   tag?: string;
 };
@@ -9861,6 +9877,7 @@ export type ProjectsResourcesAddReturn = Record<string, unknown>;
 
 /** Input shape for `projects.resources.import`. */
 export type ProjectsResourcesImportInput = {
+  execute?: boolean;
   group?: string[];
   meta?: string;
   project: string;
@@ -9879,6 +9896,7 @@ export type ProjectsResourcesImportReturn = {
 
 /** Input shape for `projects.resources.list`. */
 export type ProjectsResourcesListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   project: string;
@@ -9972,6 +9990,7 @@ export type ProjectsTasksCreateReturn = {
 /** Input shape for `projects.tasks.dispatch`. */
 export type ProjectsTasksDispatchInput = {
   agent?: string;
+  execute?: boolean;
   project: string;
   session?: string;
   taskId: string;
@@ -10018,6 +10037,7 @@ export type ProjectsWorkflowsAttachReturn = {
 
 /** Input shape for `projects.workflows.start`. */
 export type ProjectsWorkflowsStartInput = {
+  execute?: boolean;
   project: string;
   role?: string;
   runId?: string;
@@ -12293,6 +12313,7 @@ export type SkillGatesEnableReturn = {
 
 /** Input shape for `skill-gates.list`. */
 export type SkillGatesListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   tag?: string;
@@ -12357,6 +12378,7 @@ export type SkillGatesListReturn = {
 
 /** Input shape for `skill-gates.reset`. */
 export type SkillGatesResetInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -12368,6 +12390,7 @@ export type SkillGatesResetReturn = {
 
 /** Input shape for `skill-gates.rm`. */
 export type SkillGatesRmInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -12534,6 +12557,7 @@ export type SkillsInspectReturn = {
 /** Input shape for `skills.install`. */
 export type SkillsInstallInput = {
   all?: boolean;
+  execute?: boolean;
   name?: string;
   overwrite?: boolean;
   plugin?: string;
@@ -12562,6 +12586,7 @@ export type SkillsInstallReturn = {
 /** Input shape for `skills.list`. */
 export type SkillsListInput = {
   codex?: boolean;
+  fields?: string;
   installed?: boolean;
   limit?: string;
   offset?: string;
@@ -12677,6 +12702,7 @@ export type SkillsSyncReturn = {
 /** Input shape for `skills.who`. */
 export type SkillsWhoInput = {
   agent?: string;
+  fields?: string;
   skill?: string;
 };
 

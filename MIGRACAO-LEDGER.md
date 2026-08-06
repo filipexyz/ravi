@@ -31,7 +31,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 9 | calendar | calendar.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/calendar |
 | 10 | chats | chats.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/chats |
 | 11 | projects | projects.ts | projects | **MIGRADO** | cli/projects |
-| 12 | artifacts | artifacts.ts | artifacts | pendente | — |
+| 12 | artifacts+pages | artifacts.ts, pages.ts | artifacts (pages sem skill — lacuna registrada) | **MIGRADO** | cli/artifacts, cli/pages |
 | 13 | skills+skill-gates | skills.ts, skill-gates.ts | skills, skill-gates | **MIGRADO** | cli/skills, cli/skill-gates |
 | 14 | cron | cron.ts | cron | pendente | — |
 | 15 | triggers | triggers.ts | triggers | pendente | — |
@@ -52,7 +52,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 30 | specs | specs.ts | specs | pendente | — |
 | 31 | stickers | stickers.ts | stickers | pendente | — |
 | 32 | react | react.ts | stickers (compartilhada) | pendente | — |
-| 33 | pages | pages.ts | (sem skill) | pendente | — |
+| 33 | pages | pages.ts | — | **MIGRADO** (junto com artifacts, entrada 12) | cli/pages |
 | 34 | youtube | youtube.ts | (sem skill) | pendente | — |
 | 35 | prox-calls | prox-calls.ts | prox-calls | pendente | — |
 | 36 | meetings | meetings.ts | meetings | pendente | — |
@@ -456,3 +456,33 @@ de src/router preservado — +8 de contrato) · `skill-gates.test.ts` 14/14 (+9)
 `registry-snapshot.test.ts` 16 pass sem drift · typecheck limpo · spec gate
 PASSED (cli/skills + cli/skill-gates). **Rotina Y:** show/rm de fantasma →
 exit 1 · usage → exit 2 · docs/reference/skills.mdx e helpAfter ensinam o freio.
+
+### 12. artifacts + pages — MIGRADO (subagente, verificado e integrado)
+
+**Escopo:** freio (`--execute`) em `artifacts publish` e `artifacts release
+activate` (exposição externa; rethrow de ContractError antes do funil
+CloudAuthError — que tem taxonomia própria conflitante), `pages publish`
+(freio ANTES da resolução de scope — dry-run funciona offline), `pages
+password set` (freio ANTES do prompt — dry-run nunca lê o segredo; plan sem
+senha) e `pages password remove`. **Freio DIRECIONAL** em `pages
+update`/`visibility`: alvo `public` → exit 3; reduzir exposição
+(`private`/`protected_link`) grava na hora — lockdown nunca é freado (decisão
+de segurança documentada). Sem freio (declaradas): artifacts
+create/update/attach/event/snapshot e o par archive/restore (soft-delete
+consultável); pages create (exposição real é gateada pelo publish) e domains.
+Codes: `ARTIFACT_NOT_FOUND` (store LANÇA; suggestions do SQLite local),
+`ARTIFACT_VERSION_NOT_FOUND` (sem suggestions — números densos),
+`SITE/ROUTE_NOT_FOUND` (Console-only, sem fonte local — suggestedAction de
+listagem). `--fields` em artifacts list e pages list/published. Usage contract
+nos subtrees. `pages visibility` tem kind:"read" mal-declarado (não flipado —
+pendência registrada, mesmo precedente do whatsapp). Não existe op de remoção
+de rota hoje; spec registra que, se criada, nasce freada.
+
+**Consumidores:** skill artifacts, README.md, `src/pages/client.ts`
+(contentPublishCommand retornado pelo `pages create` agora ensina --execute),
+help texts; AGENTS.md (6 linhas de pages) atualizado pelo integrador.
+
+**Rotina X:** `artifacts.test.ts` criado 14/14 · `pages.test.ts` 21/21 (freios,
+freio direcional, senha nunca lida em dry-run) · integração
+artifacts-show 6/6 · typecheck limpo · spec gate PASSED (cli/artifacts +
+cli/pages). **Rotina Y:** show art-fantasma → exit 1 · usage → exit 2.

@@ -146,7 +146,7 @@ Cloud-linked artifact publishing is exposed through a generic Console-compatible
 ```bash
 ravi login
 ravi whoami
-ravi artifacts publish <artifact-id-or-path> --project <project> --site <site>
+ravi artifacts publish <artifact-id-or-path> --project <project> --site <site> --execute
 ```
 
 Native channel drivers may also declare a bounded set of inbound actions in

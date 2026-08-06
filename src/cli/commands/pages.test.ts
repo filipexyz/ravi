@@ -6,6 +6,8 @@ import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { closeConsoleScopeStore, upsertConsoleScopeDefault } from "../../console-scope/store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { CloudAuthError } from "../../cloud-auth/errors.js";
+import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { getCliOnlyMetadata, getOptionsMetadata } from "../decorators.js";
 import { PagesCommands, PagesPasswordCommands } from "./pages.js";
@@ -55,7 +57,7 @@ describe("pages CLI commands", () => {
     });
 
     const { output } = await captureConsole(() =>
-      command.set(["proj", "demo"], undefined, "/report", false, undefined, true),
+      command.set(["proj", "demo"], undefined, "/report", false, undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -272,7 +274,7 @@ describe("pages CLI commands", () => {
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() =>
-      command.update(["proj", "demo"], undefined, "public", undefined, true),
+      command.update(["proj", "demo"], undefined, "public", undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -474,6 +476,8 @@ describe("pages CLI commands", () => {
         noActivate,
         undefined,
         true,
+        undefined,
+        true,
       );
 
     const defaultResult = await captureConsole(() => publish());
@@ -578,6 +582,8 @@ describe("pages CLI commands", () => {
         undefined,
         undefined,
         true,
+        undefined,
+        true,
       ),
     );
     const payload = JSON.parse(output);
@@ -628,6 +634,230 @@ describe("pages CLI commands", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Agent-first contract (Manual v2): write brake (exit 3), Console not-found
+// mapping (SITE_NOT_FOUND / ROUTE_NOT_FOUND, exit 1) and compact --fields.
+// The real context module is in play here, so braked calls run inside
+// runWithContext to make the contract helpers throw instead of process.exit.
+// ---------------------------------------------------------------------------
+
+describe("pages agent-first contract", () => {
+  it("publish without --execute is a dry-run: exit 3 and no Console call at all", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return [];
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () =>
+        command.publish(
+          ["proj", "demo", "./site"],
+          undefined,
+          "/guide",
+          "public",
+          "Docs",
+          undefined,
+          undefined,
+          "index.html",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toMatchObject({
+      project: "proj",
+      site: "demo",
+      source: "./site",
+      route: "/guide",
+      visibility: "public",
+      entrypoint: "index.html",
+      activate: true,
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("password set without --execute never prompts for the password nor calls Console", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return passwordResponse();
+    });
+    let prompted = false;
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async () => {
+        prompted = true;
+        return "never-used";
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.set(["proj", "demo"], undefined, "/report", false, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toMatchObject({ project: "proj", site: "demo", route: "/report", action: "set" });
+    expect(Object.keys(error.details.plan as Record<string, unknown>)).not.toContain("password");
+    expect(prompted).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("password remove keeps validation BEFORE the brake and exits 3 once the visibility is valid", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return passwordResponse();
+    });
+    const command = new PagesPasswordCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () => command.remove(["proj", "demo"], undefined, "/report", "private", undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toMatchObject({
+      project: "proj",
+      site: "demo",
+      route: "/report",
+      replacementVisibility: "private",
+    });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("update to public without --execute exits 3; reducing visibility writes immediately", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return {
+        site: { id: "site_1", slug: "demo", defaultHostname: "demo.ravi.page", defaultVisibility: "private" },
+      };
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    await expectContractError(
+      () => command.update(["proj", "demo"], undefined, "public", undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(calls).toHaveLength(0);
+
+    await captureConsole(() => command.update(["proj", "demo"], undefined, "private", undefined, true));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ method: "PATCH" });
+  });
+
+  it("visibility shortcut to public is braked too", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return { site: { id: "site_1", slug: "demo" } };
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () => command.visibility(["proj", "demo", "public"], undefined, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toMatchObject({ site: "demo", defaultVisibility: "public" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("maps a Console 'site not found' failure to the SITE_NOT_FOUND envelope (exit 1)", async () => {
+    const client = makeClient(async () => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Pages site not found: ghost", { status: 404 });
+    });
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async () => {
+        throw new Error("unexpected password prompt");
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.status(["proj", "ghost"], undefined, undefined, undefined, true),
+      "SITE_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestedAction).toContain("ravi pages list");
+  });
+
+  it("maps a Console 'route not found' failure to the ROUTE_NOT_FOUND envelope (exit 1)", async () => {
+    const client = makeClient(async () => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Route not found: /missing", { status: 404 });
+    });
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async () => {
+        throw new Error("unexpected password prompt");
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.status(["proj", "demo"], undefined, "/missing", undefined, true),
+      "ROUTE_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestedAction).toContain("ravi pages published");
+  });
+
+  it("list --fields narrows each site to the requested fields", async () => {
+    const client = makeClient(async () => [
+      { id: "site_1", slug: "demo", defaultHostname: "demo.ravi.page", defaultVisibility: "public", status: "active" },
+    ]);
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.list("proj", undefined, undefined, undefined, undefined, true, "slug,status"),
+    );
+    const payload = JSON.parse(output);
+
+    expect(payload.sites).toEqual([{ slug: "demo", status: "active" }]);
+    expect(payload.items).toEqual([{ slug: "demo", status: "active" }]);
+  });
+});
+
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<ContractError> {
+  let caught: unknown;
+  await captureConsole(async () => {
+    try {
+      await runWithContext({}, run);
+    } catch (error) {
+      caught = error;
+    }
+  });
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as ContractError;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
 
 function passwordResponse(overrides: Record<string, unknown> = {}) {
   return {

@@ -6176,6 +6176,10 @@ export const ArtifactsListInputSchema = {
       "description": "Filter rich projection by agent id",
       "type": "string"
     },
+    "fields": {
+      "description": "Comma-separated fields to keep on each listed item (standard listing; ignored with --rich)",
+      "type": "string"
+    },
     "includeDeleted": {
       "description": "Include archived/deleted artifacts",
       "type": "boolean"
@@ -6423,6 +6427,10 @@ export const ArtifactsPublishInputSchema = {
     "entrypoint": {
       "description": "Package entrypoint path",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually upload/release to Console; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "idempotencyKey": {
       "description": "Idempotency key for Console retries",
@@ -6708,6 +6716,10 @@ export const ArtifactsReleaseActivateInputSchema = {
     "console": {
       "description": "Console base URL",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually activate the release in Console; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "id": {
       "description": "Local artifact id",
@@ -17444,6 +17456,10 @@ export const ChatsListInputSchema = {
       "description": "Filter by contact id, phone, or identity",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "includeRaw": {
       "description": "Include raw provider ids and provenance in JSON output",
       "type": "boolean"
@@ -18147,6 +18163,10 @@ export const ChatsListsDeltaReturnSchema = {
 export const ChatsListsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "includeArchived": {
       "description": "Include archived lists",
       "type": "boolean"
@@ -18233,6 +18253,10 @@ export const ChatsListsMarkReadReturnSchema = {
 export const ChatsListsMembersInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "includeRaw": {
       "description": "Include raw provider ids and provenance in JSON output",
       "type": "boolean"
@@ -18727,6 +18751,10 @@ export const ChatsListsRemoveInputSchema = {
     "chat": {
       "description": "Chat id, phone, group id, or normalized chat id",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually remove the chat from the list; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "instance": {
       "description": "Resolve chat within an instance",
@@ -47662,6 +47690,10 @@ export const PagesListInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "fields": {
+      "description": "Comma-separated fields to keep on each listed site",
+      "type": "string"
+    },
     "limit": {
       "description": "Maximum sites to return (default: 50)",
       "type": "string"
@@ -47830,6 +47862,10 @@ export const PagesPasswordRemoveInputSchema = {
     "console": {
       "description": "Console base URL",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually remove the route password; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "project": {
       "description": "Console project id or slug; overrides saved Console scope",
@@ -48193,6 +48229,10 @@ export const PagesPublishInputSchema = {
       "description": "Package entrypoint path, usually index.html",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually upload/publish to Pages; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "idempotencyKey": {
       "description": "Idempotency key for Console retries",
       "type": "string"
@@ -48470,6 +48510,10 @@ export const PagesPublishedInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "fields": {
+      "description": "Comma-separated fields to keep on each listed page",
+      "type": "string"
+    },
     "limit": {
       "description": "Maximum pages to return (default: 50)",
       "type": "string"
@@ -48639,6 +48683,10 @@ export const PagesUpdateInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "execute": {
+      "description": "Required to switch a site to public visibility; other updates apply immediately",
+      "type": "boolean"
+    },
     "project": {
       "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
@@ -48757,6 +48805,10 @@ export const PagesVisibilityInputSchema = {
     "console": {
       "description": "Console base URL",
       "type": "string"
+    },
+    "execute": {
+      "description": "Required to switch a site to public visibility; other visibilities apply immediately",
+      "type": "boolean"
     },
     "project": {
       "description": "Console project id or slug; overrides saved Console scope",
@@ -49844,6 +49896,10 @@ export const ProjectsCreateReturnSchema = {
 export const ProjectsFixturesSeedInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually reset and seed the fixtures; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "ownerAgent": {
       "description": "Owner agent for the seeded projects",
       "type": "string"
@@ -50020,6 +50076,10 @@ export const ProjectsLinkReturnSchema = {
 export const ProjectsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -50133,6 +50193,10 @@ export const ProjectsListReturnSchema = {
 export const ProjectsNextInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "status": {
       "description": "Filter by project status",
       "type": "string"
@@ -50221,6 +50285,10 @@ export const ProjectsResourcesAddReturnSchema = {
 export const ProjectsResourcesImportInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually import the resources; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "group": {
       "description": "One or more group:<id> or <id>@g.us locators",
       "items": {
@@ -50295,6 +50363,10 @@ export const ProjectsResourcesImportReturnSchema = {
 export const ProjectsResourcesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -50630,6 +50702,10 @@ export const ProjectsTasksDispatchInputSchema = {
       "description": "Override project owner agent",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually dispatch the task; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "project": {
       "description": "Project id or slug",
       "type": "string"
@@ -50786,6 +50862,10 @@ export const ProjectsWorkflowsAttachReturnSchema = {
 export const ProjectsWorkflowsStartInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually start the workflow run; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "project": {
       "description": "Project id or slug",
       "type": "string"
@@ -59695,6 +59775,10 @@ export const SkillGatesEnableReturnSchema = {
 export const SkillGatesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -60080,6 +60164,10 @@ export const SkillGatesListReturnSchema = {
 export const SkillGatesResetInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually discard the override; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Rule id",
       "type": "string"
@@ -60114,6 +60202,10 @@ export const SkillGatesResetReturnSchema = {
 export const SkillGatesRmInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually remove/disable the gate; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Rule id",
       "type": "string"
@@ -60925,6 +61017,10 @@ export const SkillsInstallInputSchema = {
       "description": "Install all skills found in source",
       "type": "boolean"
     },
+    "execute": {
+      "description": "Actually install the skill(s); default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "name": {
       "description": "Skill name. Defaults to the Ravi catalog unless --source is passed",
       "type": "string"
@@ -61036,6 +61132,10 @@ export const SkillsListInputSchema = {
     "codex": {
       "description": "Include materialized Codex skills",
       "type": "boolean"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
     },
     "installed": {
       "description": "List operator-installed skills instead of the Ravi catalog",
@@ -61481,6 +61581,10 @@ export const SkillsWhoInputSchema = {
   "properties": {
     "agent": {
       "description": "List grants for a specific agent instead",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each grant",
       "type": "string"
     },
     "skill": {

@@ -351,6 +351,7 @@ export class RaviClient {
     /** List artifacts */
     list: async (options?: {
       agent?: string;
+      fields?: string;
       includeDeleted?: boolean;
       kind?: string;
       lifecycle?: string;
@@ -376,6 +377,7 @@ export class RaviClient {
       console?: string;
       description?: string;
       entrypoint?: string;
+      execute?: boolean;
       idempotencyKey?: string;
       name?: string;
       noActivate?: boolean;
@@ -398,6 +400,7 @@ export class RaviClient {
       /** Activate an existing Pages release for a local artifact */
       activate: async (id: string, options?: {
         console?: string;
+        execute?: boolean;
         release?: string;
         site?: string;
         version?: string;
@@ -987,6 +990,7 @@ export class RaviClient {
       agent?: string;
       channel?: string;
       contact?: string;
+      fields?: string;
       includeRaw?: boolean;
       instance?: string;
       limit?: string;
@@ -1047,6 +1051,7 @@ export class RaviClient {
       },
       /** List chat reading lists */
       list: async (options?: {
+        fields?: string;
         includeArchived?: boolean;
         limit?: string;
         offset?: string;
@@ -1076,6 +1081,7 @@ export class RaviClient {
       },
       /** List chats in a reading list with unread counts */
       members: async (list: string, options?: {
+        fields?: string;
         includeRaw?: boolean;
         limit?: string;
         offset?: string;
@@ -1111,6 +1117,7 @@ export class RaviClient {
       /** Remove a chat from a reading list without deleting cursor history */
       remove: async (list: string, chat: string, options?: {
         channel?: string;
+        execute?: boolean;
         instance?: string;
         owner?: string;
       }): Promise<ChatsListsRemoveReturn> => {
@@ -4139,6 +4146,7 @@ export class RaviClient {
     /** List Ravi Pages sites in a Console project */
     list: async (project?: string, options?: {
       console?: string;
+      fields?: string;
       limit?: string;
       offset?: string;
     }): Promise<PagesListReturn> => {
@@ -4152,6 +4160,7 @@ export class RaviClient {
       /** Remove a route password after activating an explicit replacement visibility */
       remove: async (args: string[], options?: {
         console?: string;
+        execute?: boolean;
         project?: string;
         route?: string;
         visibility?: string;
@@ -4184,6 +4193,7 @@ export class RaviClient {
       console?: string;
       description?: string;
       entrypoint?: string;
+      execute?: boolean;
       idempotencyKey?: string;
       noActivate?: boolean;
       project?: string;
@@ -4204,6 +4214,7 @@ export class RaviClient {
     /** List published Ravi Pages URLs in a Console project */
     published: async (project?: string, options?: {
       console?: string;
+      fields?: string;
       limit?: string;
       offset?: string;
     }): Promise<PagesPublishedReturn> => {
@@ -4216,6 +4227,7 @@ export class RaviClient {
     /** Update a Ravi Pages site in a Console project */
     update: async (args: string[], options?: {
       console?: string;
+      execute?: boolean;
       project?: string;
       visibility?: string;
     }): Promise<PagesUpdateReturn> => {
@@ -4228,6 +4240,7 @@ export class RaviClient {
     /** Set a Ravi Pages site default visibility */
     visibility: async (args: string[], options?: {
       console?: string;
+      execute?: boolean;
       project?: string;
     }): Promise<PagesVisibilityReturn> => {
       return this.transport.call({
@@ -4321,6 +4334,7 @@ export class RaviClient {
     fixtures: {
       /** Reset and seed the canonical project fixtures used in demos and smoke tests */
       seed: async (options?: {
+        execute?: boolean;
         ownerAgent?: string;
       }): Promise<ProjectsFixturesSeedReturn> => {
         return this.transport.call({
@@ -4365,6 +4379,7 @@ export class RaviClient {
     },
     /** List projects */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       status?: string;
@@ -4378,6 +4393,7 @@ export class RaviClient {
     },
     /** List projects as an operational next-work surface */
     next: async (options?: {
+      fields?: string;
       status?: string;
       tag?: string;
     }): Promise<ProjectsNextReturn> => {
@@ -4403,6 +4419,7 @@ export class RaviClient {
       },
       /** Import multiple cheap resources into a project */
       import: async (project: string, options?: {
+        execute?: boolean;
         group?: string[];
         meta?: string;
         repo?: string[];
@@ -4418,6 +4435,7 @@ export class RaviClient {
       },
       /** List resource links for a project */
       list: async (project: string, options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
         type?: string;
@@ -4486,6 +4504,7 @@ export class RaviClient {
       /** Dispatch a task using project owner/session defaults */
       dispatch: async (project: string, taskId: string, options?: {
         agent?: string;
+        execute?: boolean;
         session?: string;
       }): Promise<ProjectsTasksDispatchReturn> => {
         return this.transport.call({
@@ -4526,6 +4545,7 @@ export class RaviClient {
       },
       /** Start one workflow run from a project and link it in one step */
       start: async (project: string, specId: string, options?: {
+        execute?: boolean;
         role?: string;
         runId?: string;
       }): Promise<ProjectsWorkflowsStartReturn> => {
@@ -5886,6 +5906,7 @@ export class RaviClient {
     },
     /** List skill gate rules */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -5896,20 +5917,24 @@ export class RaviClient {
         body: { ...(options ?? {}) },
       });
     },
-    /** Delete a configured override and restore the default behavior */
-    reset: async (id: string): Promise<SkillGatesResetReturn> => {
+    /** Delete a configured override and restore the default behavior. Dry-run by default; pass --execute to write. */
+    reset: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<SkillGatesResetReturn> => {
       return this.transport.call({
         groupSegments: ["skill-gates"],
         command: "reset",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
-    /** Remove a custom gate or disable a default gate */
-    rm: async (id: string): Promise<SkillGatesRmReturn> => {
+    /** Remove a custom gate or disable a default gate. Dry-run by default; pass --execute to write. */
+    rm: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<SkillGatesRmReturn> => {
       return this.transport.call({
         groupSegments: ["skill-gates"],
         command: "rm",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** Create or overwrite a skill gate rule */
@@ -5973,9 +5998,10 @@ export class RaviClient {
         body: { agent },
       });
     },
-    /** Install Ravi catalog skills or skills from an explicit source */
+    /** Install Ravi catalog skills or skills from an explicit source. Dry-run by default; pass --execute to write. */
     install: async (name?: string, options?: {
       all?: boolean;
+      execute?: boolean;
       overwrite?: boolean;
       plugin?: string;
       skill?: string;
@@ -5991,6 +6017,7 @@ export class RaviClient {
     /** List Ravi catalog skills, installed skills or source skills */
     list: async (options?: {
       codex?: boolean;
+      fields?: string;
       installed?: boolean;
       limit?: string;
       offset?: string;
@@ -6047,6 +6074,7 @@ export class RaviClient {
     /** List agents currently granted a skill (or list all grants for an agent with --agent) */
     who: async (skill?: string, options?: {
       agent?: string;
+      fields?: string;
     }): Promise<SkillsWhoReturn> => {
       return this.transport.call({
         groupSegments: ["skills"],

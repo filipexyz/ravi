@@ -52,24 +52,25 @@ Use the Pages publish command for content:
 
 ```bash
 ravi pages create <project-ref> <site-slug> --visibility public
-ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html
+ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html --execute
 ```
 
 If a local Ravi artifact already exists, publish the artifact id:
 
 ```bash
-ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public
+ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public --execute
 ```
 
 `ravi pages publish` is the user-facing Pages command. It delegates to the
-artifact upload/publish pipeline internally.
+artifact upload/publish pipeline internally. Publishing and password changes
+are dry-run by default (exit 3): re-run with `--execute` to perform the write.
 
 Protect an active route with a password without republishing its bytes:
 
 ```bash
-ravi pages password set <project-ref> <site-slug> --route /
+ravi pages password set <project-ref> <site-slug> --route / --execute
 ravi pages password status <project-ref> <site-slug> --route / --json
-ravi pages password remove <project-ref> <site-slug> --route / --visibility private
+ravi pages password remove <project-ref> <site-slug> --route / --visibility private --execute
 ```
 
 `password set` prompts invisibly and confirms by default. Non-interactive
