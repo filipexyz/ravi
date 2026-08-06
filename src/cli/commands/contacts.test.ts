@@ -19,6 +19,8 @@ let timelineRecords: Array<Record<string, unknown>> = [];
 let metadataRecords: Array<Record<string, unknown>> = [];
 let crmProfileRecord: Record<string, unknown> | null = null;
 let mergeCall: { targetId: string; sourceId: string } | null = null;
+const deleteContactCalls: string[] = [];
+const blockContactCalls: string[] = [];
 
 function pageRecords<T>(
   records: T[],
@@ -52,6 +54,9 @@ function findContactRecord(ref: string): Record<string, unknown> | null {
 mock.module("../context.js", () => ({
   ...actualCliContextModule,
   getContext: () => undefined,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -133,15 +138,27 @@ mock.module("../../contacts.js", () => ({
   },
   getPendingContacts: () => pendingContacts,
   upsertContact: () => {},
-  deleteContact: () => false,
+  deleteContact: (ref: string) => {
+    deleteContactCalls.push(ref);
+    return true;
+  },
   allowContact: () => {},
-  blockContact: () => {},
+  blockContact: (phone: string) => {
+    blockContactCalls.push(phone);
+  },
   normalizePhone: (value: string) => value,
   formatPhone: (value: string) => value,
   setContactReplyMode: () => {},
   updateContact: () => {},
   findContactsByTag: () => [],
-  searchContacts: () => [],
+  searchContacts: (query: string) =>
+    allContacts.filter(
+      (contact) =>
+        String(contact.id).includes(query) ||
+        String(contact.name ?? "")
+          .toLowerCase()
+          .includes(query.toLowerCase()),
+    ),
   addContactTag: () => {},
   removeContactTag: () => {},
   setOptOut: () => {},
@@ -251,6 +268,7 @@ mock.module("../../permissions/scope.js", () => ({
 }));
 
 const { ContactsCommands } = await import("./contacts.js");
+const { ContractError } = await import("../agent-contract.js");
 
 function captureLogs(run: () => void): string {
   const lines: string[] = [];
@@ -535,11 +553,152 @@ describe("ContactsCommands info", () => {
     ];
 
     const payload = captureJson(() => {
-      new ContactsCommands().merge("source-contact", "target-contact", true);
+      // --execute is required since the agent-first write brake landed on merge.
+      new ContactsCommands().merge("source-contact", "target-contact", true, true);
     });
 
     expect(mergeCall).toEqual({ targetId: "target-contact", sourceId: "source-contact" });
     expect(payload.source).toBe("source-contact");
     expect(payload.target).toBe("target-contact");
+  });
+});
+
+describe("contacts agent-first contract", () => {
+  beforeEach(() => {
+    contactRecord = null;
+    allContacts = [
+      {
+        id: "contact-1",
+        phone: "5511999999999",
+        name: "Alice",
+        status: "allowed",
+        tags: [],
+        notes: {},
+        identities: [{ platform: "phone", value: "5511999999999", isPrimary: true }],
+      },
+      {
+        id: "source-contact",
+        phone: "5511111111111",
+        name: "Source",
+        status: "allowed",
+        tags: [],
+        notes: {},
+        identities: [{ platform: "phone", value: "5511111111111", isPrimary: true }],
+      },
+      {
+        id: "target-contact",
+        phone: "5522222222222",
+        name: "Target",
+        status: "allowed",
+        tags: [],
+        notes: {},
+        identities: [{ platform: "phone", value: "5522222222222", isPrimary: true }],
+      },
+    ];
+    pendingContacts = [];
+    accountPendingEntries = [];
+    deleteContactCalls.length = 0;
+    blockContactCalls.length = 0;
+    mergeCall = null;
+    sessionRecord = null;
+    routeRecords = [];
+  });
+
+  function expectContractError(run: () => unknown): InstanceType<typeof ContractError> {
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      run();
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    return thrown as InstanceType<typeof ContractError>;
+  }
+
+  it("blocks contacts remove without --execute (dry-run, exit 3, no delete)", () => {
+    const contractError = expectContractError(() => new ContactsCommands().remove("contact-1", true));
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("contacts remove");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    expect((envelope.error.plan as Record<string, unknown>).contact).toBe("contact-1");
+    expect(deleteContactCalls).toHaveLength(0);
+  });
+
+  it("blocks contacts block without --execute (dry-run, exit 3, no write)", () => {
+    const contractError = expectContractError(() => new ContactsCommands().block("contact-1", true));
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("contacts block");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(blockContactCalls).toHaveLength(0);
+  });
+
+  it("blocks contacts merge without --execute (dry-run, exit 3, no merge)", () => {
+    const contractError = expectContractError(() =>
+      new ContactsCommands().merge("source-contact", "target-contact", true),
+    );
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("contacts merge");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    const plan = envelope.error.plan as Record<string, unknown>;
+    expect(plan.source).toBe("source-contact");
+    expect(plan.target).toBe("target-contact");
+    expect(plan.identitiesToMove).toBe(1);
+    expect(mergeCall).toBeNull();
+  });
+
+  it("performs contacts remove with --execute", () => {
+    const payload = captureJson(() => new ContactsCommands().remove("contact-1", true, true));
+    expect(payload.status).toBe("removed");
+    expect(deleteContactCalls).toEqual(["contact-1"]);
+  });
+
+  it("performs contacts block with --execute", () => {
+    const payload = captureJson(() => new ContactsCommands().block("contact-1", true, true));
+    expect(payload.status).toBe("blocked");
+    expect(blockContactCalls).toEqual(["5511999999999"]);
+  });
+
+  it("emits CONTACT_NOT_FOUND envelope with scoped suggestions on mutations (exit 1)", () => {
+    const contractError = expectContractError(() => new ContactsCommands().block("contact-nope", true, true));
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.success).toBe(false);
+    expect(envelope.op).toBe("contacts block");
+    expect(envelope.error.code).toBe("CONTACT_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("contact-1");
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+    expect(blockContactCalls).toHaveLength(0);
+  });
+
+  it("emits CONTACT_NOT_FOUND envelope on contacts get (exit 1)", () => {
+    const contractError = expectContractError(() => new ContactsCommands().get("contact-nope", true));
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("contacts get");
+    expect(envelope.error.code).toBe("CONTACT_NOT_FOUND");
+  });
+
+  it("supports --fields compact mode on contacts list", () => {
+    const payload = captureJson(() => new ContactsCommands().list(undefined, true, undefined, undefined, "id,name"));
+    const items = payload.items as Array<Record<string, unknown>>;
+    const contacts = payload.contacts as Array<Record<string, unknown>>;
+    expect(items).toHaveLength(3);
+    expect(Object.keys(items[0]).sort()).toEqual(["id", "name"]);
+    expect(Object.keys(contacts[0]).sort()).toEqual(["id", "name"]);
+  });
+
+  it("supports --fields compact mode on contacts find", () => {
+    const payload = captureJson(() => new ContactsCommands().find("Ali", undefined, true, "id,status"));
+    const contacts = payload.contacts as Array<Record<string, unknown>>;
+    expect(contacts).toHaveLength(1);
+    expect(Object.keys(contacts[0]).sort()).toEqual(["id", "status"]);
   });
 });

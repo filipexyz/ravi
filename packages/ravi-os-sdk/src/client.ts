@@ -73,15 +73,18 @@ export class RaviClient {
       });
     },
     /** Delete an agent */
-    delete: async (id: string): Promise<AgentsDeleteReturn> => {
+    delete: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<AgentsDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["agents"],
         command: "delete",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** List all agents */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -96,6 +99,7 @@ export class RaviClient {
     permissions: async (id: string, profile?: string, options?: {
       capabilities?: string;
       clearCapabilities?: boolean;
+      execute?: boolean;
     }): Promise<AgentsPermissionsReturn> => {
       return this.transport.call({
         groupSegments: ["agents"],
@@ -104,11 +108,13 @@ export class RaviClient {
       });
     },
     /** Reset agent session */
-    reset: async (id: string, nameOrKey?: string): Promise<AgentsResetReturn> => {
+    reset: async (id: string, nameOrKey?: string, options?: {
+      execute?: boolean;
+    }): Promise<AgentsResetReturn> => {
       return this.transport.call({
         groupSegments: ["agents"],
         command: "reset",
-        body: { id, nameOrKey },
+        body: { id, nameOrKey, ...(options ?? {}) },
       });
     },
     /** Show agent session status */
@@ -1370,11 +1376,13 @@ export class RaviClient {
       });
     },
     /** Block a contact */
-    block: async (contact: string): Promise<ContactsBlockReturn> => {
+    block: async (contact: string, options?: {
+      execute?: boolean;
+    }): Promise<ContactsBlockReturn> => {
       return this.transport.call({
         groupSegments: ["contacts"],
         command: "block",
-        body: { contact },
+        body: { contact, ...(options ?? {}) },
       });
     },
     /** Check contact status (alias for info) */
@@ -1395,6 +1403,7 @@ export class RaviClient {
     },
     /** Find contacts by tag or search query */
     find: async (query: string, options?: {
+      fields?: string;
       tag?: boolean;
     }): Promise<ContactsFindReturn> => {
       return this.transport.call({
@@ -1434,6 +1443,7 @@ export class RaviClient {
     },
     /** List all contacts */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       status?: string;
@@ -1445,11 +1455,13 @@ export class RaviClient {
       });
     },
     /** Merge two contacts (move identities from source to target) */
-    merge: async (source: string, target: string): Promise<ContactsMergeReturn> => {
+    merge: async (source: string, target: string, options?: {
+      execute?: boolean;
+    }): Promise<ContactsMergeReturn> => {
       return this.transport.call({
         groupSegments: ["contacts"],
         command: "merge",
-        body: { source, target },
+        body: { source, target, ...(options ?? {}) },
       });
     },
     /** Show messages attributed to a contact */
@@ -1532,11 +1544,13 @@ export class RaviClient {
       });
     },
     /** Remove a contact */
-    remove: async (contact: string): Promise<ContactsRemoveReturn> => {
+    remove: async (contact: string, options?: {
+      execute?: boolean;
+    }): Promise<ContactsRemoveReturn> => {
       return this.transport.call({
         groupSegments: ["contacts"],
         command: "remove",
-        body: { contact },
+        body: { contact, ...(options ?? {}) },
       });
     },
     /** Show session summaries attributed to a contact */

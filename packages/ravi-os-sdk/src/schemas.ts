@@ -819,6 +819,10 @@ export const AgentsDebugReturnSchema = {
 export const AgentsDeleteInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually delete the agent; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Agent ID",
       "type": "string"
@@ -862,6 +866,10 @@ export const AgentsDeleteReturnSchema = {
 export const AgentsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -1615,6 +1623,10 @@ export const AgentsPermissionsInputSchema = {
       "description": "Remove explicit capabilities while preserving profile",
       "type": "boolean"
     },
+    "execute": {
+      "description": "Actually change the runtime permission profile; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Agent ID",
       "type": "string"
@@ -2157,6 +2169,10 @@ export const AgentsPermissionsReturnSchema = {
 export const AgentsResetInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually reset the session(s); default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Agent ID",
       "type": "string"
@@ -21777,6 +21793,10 @@ export const ContactsBlockInputSchema = {
     "contact": {
       "description": "Contact ID or identity",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually block the contact; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     }
   },
   "required": [
@@ -21832,6 +21852,10 @@ export const ContactsDuplicatesReturnSchema = {
 export const ContactsFindInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "query": {
       "description": "Tag name (with --tag) or search query",
       "type": "string"
@@ -21940,6 +21964,10 @@ export const ContactsLinkReturnSchema = {
 export const ContactsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -21967,6 +21995,10 @@ export const ContactsListReturnSchema = {
 export const ContactsMergeInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually merge the contacts; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "source": {
       "description": "Source contact ID (will be deleted)",
       "type": "string"
@@ -22220,6 +22252,10 @@ export const ContactsRemoveInputSchema = {
     "contact": {
       "description": "Contact ID or identity",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually remove the contact; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     }
   },
   "required": [

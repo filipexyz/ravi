@@ -23,7 +23,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 1 | crm | crm.ts | crm | **MIGRADO** | cli/crm |
 | 2 | tasks | tasks.ts, tasks-deps.ts, tasks-profiles.ts, tasks-automations.ts | tasks (+tasks-manager alias) | **MIGRADO** | cli/tasks |
 | 3 | sessions | sessions.ts, sessions-runtime.ts, session-followups.ts | sessions | **MIGRADO** | cli/sessions |
-| 4 | contacts | contacts.ts | contacts | pendente | — |
+| 4 | contacts | contacts.ts | contacts | **MIGRADO** | cli/contacts |
 | 5 | agents | agents.ts | agents | **MIGRADO** | cli/agents |
 | 6 | instances+routes | instances.ts | instances, routes | pendente | — |
 | 7 | whatsapp | group.ts, whatsapp-dm.ts | whatsapp | pendente | — |
@@ -233,3 +233,30 @@ AGENT_NOT_FOUND + suggestions reais, exit 1 · create + delete sem `--execute` �
 exit 3 + plan · delete `--execute` → `changed:true` · usage → exit 2 · list
 `--fields id`. SDK: regenerado no commit seguinte da onda (contacts) — regen
 único cobre as flags das duas migrações paralelas.
+
+### 4. contacts — MIGRADO (migração executada por subagente, verificada e integrada)
+
+**Escopo:** freio (`--execute`) em `contacts remove` (destrutivo), `contacts
+block` (silencia peer vivo) e `contacts merge` (irreversível — move identidades
+e apaga o source; plan traz source/target/identitiesToMove). `backfill` mantém
+o freio pré-existente `--apply` (documentado como equivalente, não renomeado).
+Sem freio (declaradas): add, allow, approve, set, tag/untag, link/unlink, note,
+metadata set/remove. `CONTACT_NOT_FOUND` (exit 1) em mutações e leituras, com
+**suggestions vindas exclusivamente de `filterVisibleContacts`** (mesmo filtro
+do contactScope own/tagged/all — cloak anti-enumeração preservado). Wrapper
+`rethrowContactCommandError` para as rotas em que o SERVIÇO lança
+`Contact not found` dentro de try/catch legado (note/metadata/link). Not-founds
+"macios" (`get` found:false exit 0; `remove` not_found exit 0) convertidos para
+envelope exit 1 — mudança de comportamento declarada no WHY. `--fields` em
+`list` (items+contacts) e `find`. Usage contract no subtree.
+
+**Consumidores atualizados:** docs/cli/overview.mdx, docs/guides/contacts.mdx
+(5 blocos), hint do `contacts pending`, hint na skill agents.
+
+**Rotina X:** typecheck limpo · `contacts.test.ts` 18/18 (9 de contrato; spies
+deleteContact/blockContact; call site do merge com execute) · spec gate PASSED
+(cli/contacts) · `sdk:generate`+`sdk:check` current (regen único da onda
+agents+contacts). **Rotina Y (estado isolado):** add → `get` de número
+inexistente → CONTACT_NOT_FOUND + suggestions visíveis, exit 1 · `remove` sem
+`--execute` → exit 3 + plan com o contato resolvido · `remove --execute` →
+`status:"removed"`, list vazio depois · usage → exit 2 · `list --fields`.

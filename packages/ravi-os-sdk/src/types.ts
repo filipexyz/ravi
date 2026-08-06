@@ -166,6 +166,7 @@ export type AgentsDebugReturn = ({
 
 /** Input shape for `agents.delete`. */
 export type AgentsDeleteInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -180,6 +181,7 @@ export type AgentsDeleteReturn = {
 
 /** Input shape for `agents.list`. */
 export type AgentsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   tag?: string;
@@ -307,6 +309,7 @@ export type AgentsListReturn = {
 export type AgentsPermissionsInput = {
   capabilities?: string;
   clearCapabilities?: boolean;
+  execute?: boolean;
   id: string;
   profile?: string;
 };
@@ -400,6 +403,7 @@ export type AgentsPermissionsReturn = {
 
 /** Input shape for `agents.reset`. */
 export type AgentsResetInput = {
+  execute?: boolean;
   id: string;
   nameOrKey?: string;
 };
@@ -4083,6 +4087,7 @@ export type ContactsBackfillReturn = Record<string, unknown>;
 /** Input shape for `contacts.block`. */
 export type ContactsBlockInput = {
   contact: string;
+  execute?: boolean;
 };
 
 /** Return shape for `contacts.block`. */
@@ -4104,6 +4109,7 @@ export type ContactsDuplicatesReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.find`. */
 export type ContactsFindInput = {
+  fields?: string;
   query: string;
   tag?: boolean;
 };
@@ -4141,6 +4147,7 @@ export type ContactsLinkReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.list`. */
 export type ContactsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   status?: string;
@@ -4151,6 +4158,7 @@ export type ContactsListReturn = Record<string, unknown>;
 
 /** Input shape for `contacts.merge`. */
 export type ContactsMergeInput = {
+  execute?: boolean;
   source: string;
   target: string;
 };
@@ -4234,6 +4242,7 @@ export type ContactsProfileReturn = Record<string, unknown>;
 /** Input shape for `contacts.remove`. */
 export type ContactsRemoveInput = {
   contact: string;
+  execute?: boolean;
 };
 
 /** Return shape for `contacts.remove`. */
