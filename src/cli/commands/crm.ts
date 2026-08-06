@@ -1,6 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns, Scope } from "../decorators.js";
 import { fail } from "../context.js";
+import { crmDryRun, crmFail, pickFields, suggestSimilar } from "./crm-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   changedEntityReturnSchema,
@@ -73,6 +74,38 @@ import { canAccessContact, getScopeContext, isScopeEnforced } from "../../permis
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+function failPipelineNotFound(op: string, pipelineRef: string, asJson?: boolean): never {
+  const candidates = listCrmPipelines({ includeArchived: true }).flatMap((pipeline) => [pipeline.id, pipeline.name]);
+  crmFail(op, "PIPELINE_NOT_FOUND", `CRM pipeline not found: ${pipelineRef}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the pipeline id/name (see suggestions for similar pipelines)",
+      suggestions: suggestSimilar(pipelineRef, candidates),
+    },
+  });
+}
+
+function failOpportunityNotFound(op: string, opportunityId: string, asJson?: boolean): never {
+  const candidates = listCrmOpportunityBoard({}).flatMap((opportunity) => [
+    String(opportunity.opportunityId ?? ""),
+    String(opportunity.title ?? ""),
+  ]);
+  crmFail(op, "OPPORTUNITY_NOT_FOUND", `CRM opportunity not found: ${opportunityId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the opportunity id (crm_opp_*) or title (see suggestions)",
+      suggestions: suggestSimilar(opportunityId, candidates),
+    },
+  });
 }
 
 // ============================================================
@@ -215,6 +248,10 @@ function assertValidPipelineMetadata(metadata: Record<string, unknown>, context:
 }
 
 const PIPELINE_CREATE_HELP_AFTER = `
+WRITE BRAKE (Manual v2): this command is DRY-RUN BY DEFAULT. Without --execute
+it prints the planned input and exits 3 (blocked by policy — nothing is
+written). Pass --execute to perform the real write (exit 0 on success).
+
 The structured flags below map onto pipeline.metadata canonical schema fields.
 All groups optional — pipelines without these fields keep working identically
 to legacy. Validate via: ravi crm pipeline validate <id>
@@ -792,7 +829,7 @@ function showCrmAccount(accountRef: string, asJson?: boolean) {
 
 function showCrmOpportunity(opportunityId: string, asJson?: boolean) {
   const opportunity = getCrmOpportunity(opportunityId);
-  if (!opportunity) fail(`CRM opportunity not found: ${opportunityId}`);
+  if (!opportunity) failOpportunityNotFound("crm opportunity show", opportunityId, asJson);
   const payload = { target: opportunityId, opportunity };
   if (asJson) {
     printJson(payload);
@@ -827,6 +864,8 @@ export class ACrmCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 25, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching actions to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const ownerFilter = parseOwner(owner);
     if (contact) assertCanReadCrmContact(contact);
@@ -867,7 +906,8 @@ export class ACrmCommands {
         dueAfter,
       ],
     });
-    const payload = { total: page.total, pagination, items: page.items, actions: page.items };
+    const items = pickFields(page.items, fields);
+    const payload = { total: page.total, pagination, items, actions: items };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -925,6 +965,8 @@ export class ACrmCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching contacts to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const ownerFilter = parseOwner(owner);
     const page = listCrmContactCards({
@@ -942,7 +984,8 @@ export class ACrmCommands {
       total: page.total,
       options: ["--status", lifecycle, "--owner", owner],
     });
-    const payload = { total: page.total, pagination, items: page.items, contacts: page.items };
+    const contactItems = pickFields(page.items, fields);
+    const payload = { total: page.total, pagination, items: contactItems, contacts: contactItems };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -970,12 +1013,14 @@ export class ACrmCommands {
     @Option({ flags: "--pipeline <pipeline>", description: "Filter by CRM pipeline ID or name" }) pipeline?: string,
     @Option({ flags: "--include-empty-stages", description: "Include configured stages with no opportunities" })
     includeEmptyStages?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each opportunity" })
+    fields?: string,
   ) {
-    const board = filterCrmRecordsByContact(listCrmOpportunityBoard({ pipelineRef: pipeline }));
+    const board = pickFields(filterCrmRecordsByContact(listCrmOpportunityBoard({ pipelineRef: pipeline })), fields);
     const stages = includeEmptyStages
       ? listCrmOpportunityBoardStages(pipeline).map((stage) => ({
           ...stage,
-          opportunities: filterCrmRecordsByContact(stage.opportunities),
+          opportunities: pickFields(filterCrmRecordsByContact(stage.opportunities), fields),
         }))
       : undefined;
     const payload = stages
@@ -1023,6 +1068,8 @@ export class CrmPipelineCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching pipelines to skip (default: 0)" })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const pipelines = listCrmPipelines({ entityType, includeArchived: Boolean(includeArchived) });
     const page = paginateCliItems(pipelines, { limit, offset });
@@ -1034,7 +1081,8 @@ export class CrmPipelineCommands {
       total: page.total,
       options: ["--entity-type", entityType, ...(includeArchived ? ["--include-archived"] : [])],
     });
-    const payload = { total: page.total, pagination, items: page.items, pipelines: page.items };
+    const pipelineItems = pickFields(page.items, fields);
+    const payload = { total: page.total, pagination, items: pipelineItems, pipelines: pipelineItems };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -1061,7 +1109,7 @@ export class CrmPipelineCommands {
     explain?: boolean,
   ) {
     const pipeline = getCrmPipeline(pipelineRef);
-    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    if (!pipeline) failPipelineNotFound("crm pipeline show", pipelineRef, asJson);
     const payload = pipeline;
     if (asJson) {
       printJson(payload);
@@ -1118,7 +1166,7 @@ export class CrmPipelineCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const pipeline = getCrmPipeline(pipelineRef);
-    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    if (!pipeline) failPipelineNotFound("crm pipeline review", pipelineRef, asJson);
     const report = reviewPipelineMetadata(
       {
         id: pipeline.pipeline.id,
@@ -1184,7 +1232,7 @@ export class CrmPipelineCommands {
     }
     if (!pipelineRef) fail("pipeline argument required (or pass --schema-json)");
     const pipeline = getCrmPipeline(pipelineRef);
-    if (!pipeline) fail(`CRM pipeline not found: ${pipelineRef}`);
+    if (!pipeline) failPipelineNotFound("crm pipeline validate", pipelineRef, asJson);
     const result = validatePipelineMetadata(pipeline.pipeline.metadata ?? {}, {
       runtimeStageKeys: pipeline.stages.map((s) => s.key),
     });
@@ -1223,7 +1271,7 @@ export class CrmPipelineCommands {
   @Scope("writeContacts")
   @Command({
     name: "create",
-    description: "Create a CRM pipeline (with optional declarative metadata)",
+    description: "Create a CRM pipeline (dry-run by default; --execute writes)",
     helpAfter: PIPELINE_CREATE_HELP_AFTER,
   })
   @CommandAccess({ kind: "mutate", resource: "crm.pipeline", action: "create", risk: "medium" })
@@ -1239,6 +1287,11 @@ export class CrmPipelineCommands {
     })
     metadataJson?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually create the pipeline; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
     @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated create attempts" })
     idempotencyKey?: string,
     @Option({ flags: "--objetivo <text>", description: "One-paragraph pipeline purpose" })
@@ -1316,6 +1369,20 @@ export class CrmPipelineCommands {
     });
     if (Object.keys(metadata).length > 0) {
       assertValidPipelineMetadata(metadata, "crm pipeline create");
+    }
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): dry-run by default, exit 3 before any write.
+      crmDryRun(
+        "crm pipeline create",
+        {
+          name,
+          entityType,
+          isDefault: isDefault === true,
+          metadata: Object.keys(metadata).length > 0 ? metadata : null,
+          idempotencyKey,
+        },
+        { asJson },
+      );
     }
     const pipeline = createCrmPipeline({
       name,
@@ -2100,7 +2167,7 @@ export class CrmOpportunityCommands {
   }
 
   @Scope("writeContacts")
-  @Command({ name: "create", description: "Create a CRM opportunity" })
+  @Command({ name: "create", description: "Create a CRM opportunity (dry-run by default; --execute writes)" })
   @CommandAccess({ kind: "mutate", resource: "crm.opportunity", action: "create", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   create(
@@ -2113,10 +2180,36 @@ export class CrmOpportunityCommands {
     @Option({ flags: "--currency <code>", description: "Currency (default: BRL)" }) currency?: string,
     @Option({ flags: "--owner <type:id>", description: "Owner, e.g. agent:main" }) owner?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually create the opportunity; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
     @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated opportunity creation" })
     idempotencyKey?: string,
   ) {
-    const opportunity = createCrmOpportunity({
+    if (value !== undefined && value !== "-" && value !== "null" && !Number.isFinite(Number(value))) {
+      crmFail("crm opportunity create", "USAGE_ERROR", `--value must be a number (got: ${value})`, {
+        asJson,
+        exitCode: 2,
+        details: {
+          suggestedAction: "Pass the opportunity value in integer cents, e.g. --value 500000",
+          acceptedFlags: [
+            "--account",
+            "--contact",
+            "--pipeline",
+            "--stage",
+            "--value",
+            "--currency",
+            "--owner",
+            "--json",
+            "--execute",
+            "--idempotency-key",
+          ],
+        },
+      });
+    }
+    const createInput = {
       title,
       accountId,
       contactRef,
@@ -2126,6 +2219,13 @@ export class CrmOpportunityCommands {
       currency,
       ...parseOwner(owner),
       idempotencyKey,
+    };
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): dry-run by default, exit 3 before any write.
+      crmDryRun("crm opportunity create", createInput, { asJson });
+    }
+    const opportunity = createCrmOpportunity({
+      ...createInput,
       source: "cli",
       actorType: "user",
     });
@@ -2139,7 +2239,7 @@ export class CrmOpportunityCommands {
   }
 
   @Scope("writeContacts")
-  @Command({ name: "move", description: "Move an opportunity to another stage" })
+  @Command({ name: "move", description: "Move an opportunity to another stage (dry-run by default; --execute writes)" })
   @CommandAccess({ kind: "read", resource: "crm.opportunity", action: "move", risk: "low" })
   @Returns(changedEntityReturnSchema)
   move(
@@ -2147,7 +2247,16 @@ export class CrmOpportunityCommands {
     @Arg("stage", { description: "Pipeline stage key or ID" }) stageRef: string,
     @Option({ flags: "--lost-reason <text>", description: "Lost reason when moving to lost" }) lostReason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually move the opportunity; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): dry-run by default, exit 3 before any write.
+      crmDryRun("crm opportunity move", { opportunityId, stageRef, lostReason }, { asJson });
+    }
     const opportunity = moveCrmOpportunityStage({
       opportunityId,
       stageRef,

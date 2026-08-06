@@ -347,6 +347,97 @@ describe("Ravi app router", () => {
     expect(result.result).toMatchObject({ ok: true, checked: 1 });
   });
 
+  it("keeps the operation name when routing <op> --help to the help builtin", () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", manifest("khal-tasks"));
+
+    expect(
+      resolveAppAliasInvocation(["khal-tasks", "list", "--help"], {
+        staticRootCommands: new Set(["apps"]),
+      }),
+    ).toEqual({
+      appId: "khal-tasks",
+      operation: "help",
+      args: ["list"],
+      json: false,
+    });
+    expect(
+      resolveAppAliasInvocation(["khal-tasks", "help", "list"], {
+        staticRootCommands: new Set(["apps"]),
+      }),
+    ).toEqual({
+      appId: "khal-tasks",
+      operation: "help",
+      args: ["list"],
+      json: false,
+    });
+  });
+
+  it("returns per-operation help instead of the full manifest help", async () => {
+    const root = makeRepo();
+    const body = manifest("khal-tasks");
+    (body.operations as Record<string, unknown>)["khal-tasks.list"] = {
+      interface: "builtin",
+      handler: "apps.stub.list",
+      mutating: false,
+      description: "List tasks.",
+      help: {
+        usage: "ravi khal-tasks list [--status <s>]",
+        options: [{ flag: "--status", description: "Filter by status" }],
+      },
+    };
+    writeManifest(root, "khal-tasks", body);
+
+    const found = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "help",
+      args: ["list"],
+      json: true,
+    });
+
+    expect(found.result).toMatchObject({
+      app: "khal-tasks",
+      operation: "khal-tasks.list",
+      found: true,
+      usage: "ravi khal-tasks list [--status <s>]",
+      description: "List tasks.",
+      mutating: false,
+    });
+    expect(found.result).not.toHaveProperty("operations");
+
+    const missing = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "help",
+      args: ["nonexistent-op"],
+      json: true,
+    });
+
+    expect(missing.result).toMatchObject({
+      app: "khal-tasks",
+      operation: "nonexistent-op",
+      found: false,
+      suggestions: [],
+    });
+  });
+
+  it("keeps global help additive with hint and index when no op is requested", async () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", manifest("khal-tasks"));
+
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "help",
+      args: [],
+      json: true,
+    });
+
+    expect(result.result).toMatchObject({
+      operations: ["khal-tasks.check", "khal-tasks.create", "khal-tasks.list", "khal-tasks.test.a"],
+    });
+    expect(result.result).toHaveProperty("hint");
+    expect(result.result).toHaveProperty("index");
+  });
+
   it("prefers declared operations over virtual router builtins", async () => {
     const root = makeRepo();
     const body = manifest("khal-tasks");

@@ -143,7 +143,7 @@ export function resolveAppAliasInvocation(
     return {
       appId: candidate,
       operation,
-      args: operation ? args.slice(1) : args,
+      args: help ? args : operation ? args.slice(1) : args,
       json,
     };
   }
@@ -334,7 +334,7 @@ async function dispatchResolvedOperation(
         durationMs: Date.now() - options.startedAt,
         ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
         handler,
-        result: runBuiltinHandler(handler, app),
+        result: runBuiltinHandler(handler, app, options.args),
       },
       permissionProvider,
     );
@@ -418,12 +418,77 @@ async function runCliOperation(
   };
 }
 
-function runBuiltinHandler(handler: string, app: RaviAppManifestRecord): unknown {
+function runBuiltinHandler(handler: string, app: RaviAppManifestRecord, args: string[] = []): unknown {
   if (handler === "apps.help") {
     const operationIds = visibleOperationIdsForHelp(app);
+    const perOpHint = `ravi ${app.id.split("/").join(" ")} help <op> — help enxuto por operacao`;
+    const requested = args[0];
+    if (requested) {
+      const operations = manifestOperations(app);
+      const ids = Object.keys(operations);
+      const match = ids.find((id) => id === requested) ?? ids.find((id) => id.endsWith(`.${requested}`));
+      if (match) {
+        const operation = (operations[match] ?? {}) as RaviAppOperationDeclaration & Record<string, unknown>;
+        const help = (operation.help ?? {}) as Record<string, unknown>;
+        const safety = operation.safety as Record<string, unknown> | undefined;
+        return {
+          app: app.id,
+          operation: match,
+          found: true,
+          usage: help.usage,
+          routedUsage: help.routedUsage,
+          description: operation.description,
+          mutating: operation.mutating === true,
+          safety: safety
+            ? {
+                risk: safety.risk,
+                liveExecution: safety.liveExecution,
+                confirmationRequired: safety.confirmationRequired,
+                destructive: safety.destructive,
+                gates: safety.gates,
+              }
+            : undefined,
+          backingRequest: help.backingRequest,
+          arguments: help.arguments ?? [],
+          options: help.options ?? [],
+          examples: help.examples ?? [],
+          inputSchema: operation.inputSchema,
+          summary: help.summary,
+          sections: help.sections ?? [],
+          dica: perOpHint,
+        };
+      }
+      return {
+        app: app.id,
+        operation: requested,
+        found: false,
+        error: `Operacao desconhecida: ${requested}`,
+        suggestions: ids.filter((id) => id.includes(requested)).slice(0, 10),
+        disponiveis: ids.length,
+      };
+    }
     return {
       app: toDetail(app),
       operations: operationIds,
+      index: operationIds.map((id) => {
+        const operation = (manifestOperations(app)[id] ?? {}) as RaviAppOperationDeclaration & Record<string, unknown>;
+        let description = typeof operation.description === "string" ? operation.description : "";
+        if (!description && operation.interface === "builtin") {
+          if (operation.handler === "apps.help") {
+            description = "Mostra este indice (ou help <op> para detalhe)";
+          } else if (operation.handler === "apps.manifest.show") {
+            description = "Mostra o manifesto completo do app (grande, uso raro)";
+          } else if (operation.handler === "apps.manifest.check") {
+            description = "Valida a saude/config do app";
+          }
+        }
+        return {
+          op: localOperationName(app.id, id),
+          description,
+          mutating: operation.mutating === true,
+        };
+      }),
+      hint: perOpHint,
       nextCommands: [
         `ravi ${app.id.split("/").join(" ")} --help`,
         `ravi ${app.id.split("/").join(" ")} check --json`,
