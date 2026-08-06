@@ -28,7 +28,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 6 | instances+routes | instances.ts | instances, routes | **MIGRADO** | cli/instances |
 | 7 | whatsapp | group.ts, whatsapp-dm.ts | whatsapp | **MIGRADO** | cli/whatsapp |
 | 8 | mail | mail.ts, gmail.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/mail |
-| 9 | calendar | calendar.ts | (sem skill) | pendente | — |
+| 9 | calendar | calendar.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/calendar |
 | 10 | chats | chats.ts | (sem skill) | pendente | — |
 | 11 | projects | projects.ts | projects | pendente | — |
 | 12 | artifacts | artifacts.ts | artifacts | pendente | — |
@@ -351,3 +351,32 @@ pré-freio correta ("No WhatsApp account configured", exit 1 — sem conta no
 estado isolado; freio provado nos testes) · usage → exit 2. Nota de
 concorrência: o `git stash` que reverteu o tree na onda era deste fluxo
 (verificação de baseline); tudo restaurado e revalidado.
+
+### 9. calendar — MIGRADO (subagente, verificado e integrado)
+
+**Escopo:** freio (`--execute`) em `calendars share` (expõe agenda a outro
+subject), `calendars events cancel` (irreversível para participantes quando um
+adapter entregar o outbox) e `calendars events respond` (endereçado ao
+organizador). **Veredito create/update (inspecionado):** hoje só gravam SQLite
+local + linha de outbox `acked` para provider local; NÃO existe adapter de
+entrega nem consumidor do outbox — logo SEM freio, revisitar quando um adapter
+de provider-sync for implementado (documentado na tabela de classificação).
+Sem freio (declaradas): sources create/sync, calendars create/disable, outbox
+retry. `CALENDAR_NOT_FOUND` (suggestions de `visibleCalendars()` — já filtrado
+por permissão), `SOURCE_NOT_FOUND` (accounts locais); `EVENT/OUTBOX_NOT_FOUND`
+sem suggestions (janela temporal/ids opacos). `runCalendarCommand` rethrowa
+ContractError antes do wrapping legado CloudAuthError. `--fields` em 5
+listagens. Usage contract no subtree `calendars`. Spec pré-existente
+`cli/calendar` ATUALIZADA (sem duplicata; draft→active); consumidor
+`.ravi/specs/calendar/SPEC.md` ensina `--execute` (root calendar tem os 4
+companheiros — gate PASSED).
+
+**Rotina X:** typecheck limpo · `calendar.test.ts` 11/11 (dry-run verificado
+NO DB: sem member/outbox/status gravados; era 1 pass/5 fail em HEAD nesta
+máquina por EBUSY — o hardening do ravi-state + complemento resolveu) ·
+`src/calendar/{db,access}.test.ts` verdes · spec gate PASSED · SDK regenerado
+(regen único fecha a onda instances/whatsapp/mail/calendar) · build ok.
+**Rotina Y (estado isolado):** `share cal-fantasma` → CALENDAR_NOT_FOUND exit 1
+· flags erradas → USAGE_ERROR exit 2 com acceptedFlags (o envelope ensinou a
+sintaxe correta em 2 iterações — dogfooding real) · `list --fields` ok · freio
+do share provado nos testes com verificação de DB.

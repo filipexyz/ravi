@@ -1715,6 +1715,7 @@ export type BridgesRevokeReturn = {
 /** Input shape for `calendars.availability`. */
 export type CalendarsAvailabilityInput = {
   calendar?: string;
+  fields?: string;
   from?: string;
   limit?: string;
   to?: string;
@@ -1805,6 +1806,7 @@ export type CalendarsDisableReturn = {
 /** Input shape for `calendars.events.cancel`. */
 export type CalendarsEventsCancelInput = {
   event: string;
+  execute?: boolean;
   idempotencyKey?: string;
 };
 
@@ -1994,6 +1996,7 @@ export type CalendarsEventsCreateReturn = {
 /** Input shape for `calendars.events.list`. */
 export type CalendarsEventsListInput = {
   calendar?: string;
+  fields?: string;
   from?: string;
   includeCancelled?: boolean;
   limit?: string;
@@ -2155,6 +2158,7 @@ export type CalendarsEventsRespondInput = {
   attendeeAgent?: string;
   attendeeEmail?: string;
   event: string;
+  execute?: boolean;
   idempotencyKey?: string;
   status?: string;
 };
@@ -2346,6 +2350,7 @@ export type CalendarsEventsUpdateReturn = {
 /** Input shape for `calendars.list`. */
 export type CalendarsListInput = {
   account?: string;
+  fields?: string;
   limit?: string;
   offset?: string;
   status?: string;
@@ -2377,6 +2382,7 @@ export type CalendarsListReturn = {
 /** Input shape for `calendars.share`. */
 export type CalendarsShareInput = {
   calendar: string;
+  execute?: boolean;
   expiresAt?: string;
   relation?: string;
   with?: string;
@@ -7487,6 +7493,7 @@ export type InstancesCreateReturn = Record<string, unknown>;
 
 /** Input shape for `instances.delete`. */
 export type InstancesDeleteInput = {
+  execute?: boolean;
   name: string;
 };
 
@@ -7534,6 +7541,7 @@ export type InstancesGetReturn = Record<string, unknown>;
 
 /** Input shape for `instances.list`. */
 export type InstancesListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   tag?: string;
@@ -7565,6 +7573,7 @@ export type InstancesPendingListReturn = Record<string, unknown>;
 /** Input shape for `instances.pending.reject`. */
 export type InstancesPendingRejectInput = {
   contact: string;
+  execute?: boolean;
   name: string;
 };
 
@@ -7617,6 +7626,7 @@ export type InstancesRoutesListReturn = Record<string, unknown>;
 /** Input shape for `instances.routes.remove`. */
 export type InstancesRoutesRemoveInput = {
   allowRuntimeMismatch?: boolean;
+  execute?: boolean;
   name: string;
   pattern: string;
 };
@@ -7717,6 +7727,7 @@ export type MailAccountsCreateReturn = {
 
 /** Input shape for `mail.accounts.list`. */
 export type MailAccountsListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
   provider?: string;
@@ -7858,6 +7869,7 @@ export type MailMailboxesDisableReturn = {
 /** Input shape for `mail.mailboxes.list`. */
 export type MailMailboxesListInput = {
   account?: string;
+  fields?: string;
   limit?: string;
   offset?: string;
   status?: string;
@@ -7997,6 +8009,7 @@ export type MailMessagesImportReturn = {
 /** Input shape for `mail.messages.list`. */
 export type MailMessagesListInput = {
   addresses?: boolean;
+  fields?: string;
   limit?: string;
   mailbox?: string;
   offset?: string;
@@ -8264,6 +8277,7 @@ export type MailOutboxInspectReturn = {
 
 /** Input shape for `mail.outbox.list`. */
 export type MailOutboxListInput = {
+  fields?: string;
   limit?: string;
   mailbox?: string;
   offset?: string;
@@ -8328,6 +8342,7 @@ export type MailOutboxStatusReturn = {
 
 /** Input shape for `mail.providers.list`. */
 export type MailProvidersListInput = {
+  fields?: string;
   limit?: string;
   offset?: string;
 };
@@ -8417,6 +8432,7 @@ export type MailProvidersRaviMailMessagesShowReturn = Record<string, unknown>;
 export type MailProvidersRaviMailSendInput = {
   body?: string;
   console?: string;
+  execute?: boolean;
   from?: string;
   idempotencyKey?: string;
   subject?: string;
@@ -8431,6 +8447,7 @@ export type MailReplyInput = {
   bcc?: string;
   body?: string;
   cc?: string;
+  execute?: boolean;
   from?: string;
   idempotencyKey?: string;
   message: string;
@@ -8532,6 +8549,7 @@ export type MailReplyReturn = {
 /** Input shape for `mail.send`. */
 export type MailSendInput = {
   body?: string;
+  execute?: boolean;
   from?: string;
   idempotencyKey?: string;
   subject?: string;
@@ -10418,6 +10436,7 @@ export type RoutesExplainReturn = {
 
 /** Input shape for `routes.list`. */
 export type RoutesListInput = {
+  fields?: string;
   limit?: string;
   name?: string;
   offset?: string;
@@ -15302,6 +15321,7 @@ export type WhatsappDmAckReturn = Record<string, unknown>;
 export type WhatsappDmReadInput = {
   account?: string;
   contact: string;
+  fields?: string;
   last?: string;
   noAck?: boolean;
 };
@@ -15313,6 +15333,7 @@ export type WhatsappDmReadReturn = Record<string, unknown>;
 export type WhatsappDmSendInput = {
   account?: string;
   contact: string;
+  execute?: boolean;
   message: string;
 };
 
@@ -15322,6 +15343,7 @@ export type WhatsappDmSendReturn = Record<string, unknown>;
 /** Input shape for `whatsapp.group.add`. */
 export type WhatsappGroupAddInput = {
   account?: string;
+  execute?: boolean;
   groupId: string;
   participants: string;
 };
@@ -15339,6 +15361,7 @@ export type WhatsappGroupCreateInput = {
   agentModel?: string;
   agentProvider?: string;
   createAgent?: boolean;
+  execute?: boolean;
   name: string;
   participants?: string;
   skipTaggedAdmins?: boolean;
@@ -15350,6 +15373,7 @@ export type WhatsappGroupCreateReturn = Record<string, unknown>;
 /** Input shape for `whatsapp.group.demote`. */
 export type WhatsappGroupDemoteInput = {
   account?: string;
+  execute?: boolean;
   groupId: string;
   participants: string;
 };
@@ -15360,6 +15384,7 @@ export type WhatsappGroupDemoteReturn = Record<string, unknown>;
 /** Input shape for `whatsapp.group.description`. */
 export type WhatsappGroupDescriptionInput = {
   account?: string;
+  execute?: boolean;
   groupId: string;
   text: string;
 };
@@ -15389,6 +15414,7 @@ export type WhatsappGroupInviteReturn = Record<string, unknown>;
 export type WhatsappGroupJoinInput = {
   account?: string;
   code: string;
+  execute?: boolean;
 };
 
 /** Return shape for `whatsapp.group.join`. */
@@ -15397,6 +15423,7 @@ export type WhatsappGroupJoinReturn = Record<string, unknown>;
 /** Input shape for `whatsapp.group.leave`. */
 export type WhatsappGroupLeaveInput = {
   account?: string;
+  execute?: boolean;
   groupId: string;
 };
 
@@ -15406,6 +15433,7 @@ export type WhatsappGroupLeaveReturn = Record<string, unknown>;
 /** Input shape for `whatsapp.group.list`. */
 export type WhatsappGroupListInput = {
   account?: string;
+  fields?: string;
   limit?: string;
   offset?: string;
 };
@@ -15416,6 +15444,7 @@ export type WhatsappGroupListReturn = Record<string, unknown>;
 /** Input shape for `whatsapp.group.promote`. */
 export type WhatsappGroupPromoteInput = {
   account?: string;
+  execute?: boolean;
   groupId: string;
   participants: string;
 };
@@ -15426,6 +15455,7 @@ export type WhatsappGroupPromoteReturn = Record<string, unknown>;
 /** Input shape for `whatsapp.group.remove`. */
 export type WhatsappGroupRemoveInput = {
   account?: string;
+  execute?: boolean;
   groupId: string;
   participants: string;
 };
@@ -15436,6 +15466,7 @@ export type WhatsappGroupRemoveReturn = Record<string, unknown>;
 /** Input shape for `whatsapp.group.rename`. */
 export type WhatsappGroupRenameInput = {
   account?: string;
+  execute?: boolean;
   groupId: string;
   name: string;
 };
@@ -15446,6 +15477,7 @@ export type WhatsappGroupRenameReturn = Record<string, unknown>;
 /** Input shape for `whatsapp.group.revoke-invite`. */
 export type WhatsappGroupRevokeInviteInput = {
   account?: string;
+  execute?: boolean;
   groupId: string;
 };
 
@@ -15455,6 +15487,7 @@ export type WhatsappGroupRevokeInviteReturn = Record<string, unknown>;
 /** Input shape for `whatsapp.group.send`. */
 export type WhatsappGroupSendInput = {
   account?: string;
+  execute?: boolean;
   groupId: string;
   mention?: string[];
   message: string;
@@ -15466,6 +15499,7 @@ export type WhatsappGroupSendReturn = Record<string, unknown>;
 /** Input shape for `whatsapp.group.settings`. */
 export type WhatsappGroupSettingsInput = {
   account?: string;
+  execute?: boolean;
   groupId: string;
   setting: string;
 };

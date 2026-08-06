@@ -629,6 +629,7 @@ export class RaviClient {
     /** Return free/busy availability in a bounded time window */
     availability: async (options?: {
       calendar?: string;
+      fields?: string;
       from?: string;
       limit?: string;
       to?: string;
@@ -669,6 +670,7 @@ export class RaviClient {
     events: {
       /** Cancel a local calendar event */
       cancel: async (event: string, options?: {
+        execute?: boolean;
         idempotencyKey?: string;
       }): Promise<CalendarsEventsCancelReturn> => {
         return this.transport.call({
@@ -698,6 +700,7 @@ export class RaviClient {
       /** List local calendar events in a bounded time window */
       list: async (options?: {
         calendar?: string;
+        fields?: string;
         from?: string;
         includeCancelled?: boolean;
         limit?: string;
@@ -724,6 +727,7 @@ export class RaviClient {
       respond: async (event: string, options?: {
         attendeeAgent?: string;
         attendeeEmail?: string;
+        execute?: boolean;
         idempotencyKey?: string;
         status?: string;
       }): Promise<CalendarsEventsRespondReturn> => {
@@ -755,6 +759,7 @@ export class RaviClient {
     /** List local calendars visible to the current requester */
     list: async (options?: {
       account?: string;
+      fields?: string;
       limit?: string;
       offset?: string;
       status?: string;
@@ -767,6 +772,7 @@ export class RaviClient {
     },
     /** Grant a calendar relation to an agent/contact/system subject */
     share: async (calendar: string, options?: {
+      execute?: boolean;
       expiresAt?: string;
       relation?: string;
       with?: string;
@@ -3228,11 +3234,13 @@ export class RaviClient {
       });
     },
     /** Delete an instance (soft-delete, recoverable) */
-    delete: async (name: string): Promise<InstancesDeleteReturn> => {
+    delete: async (name: string, options?: {
+      execute?: boolean;
+    }): Promise<InstancesDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["instances"],
         command: "delete",
-        body: { name },
+        body: { name, ...(options ?? {}) },
       });
     },
     /** List soft-deleted instances */
@@ -3277,6 +3285,7 @@ export class RaviClient {
     },
     /** List all instances */
     list: async (options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -3310,11 +3319,13 @@ export class RaviClient {
         });
       },
       /** Reject and remove a pending contact or chat */
-      reject: async (name: string, contact: string): Promise<InstancesPendingRejectReturn> => {
+      reject: async (name: string, contact: string, options?: {
+        execute?: boolean;
+      }): Promise<InstancesPendingRejectReturn> => {
         return this.transport.call({
           groupSegments: ["instances","pending"],
           command: "reject",
-          body: { name, contact },
+          body: { name, contact, ...(options ?? {}) },
         });
       }
     },
@@ -3365,6 +3376,7 @@ export class RaviClient {
       /** Remove a route (soft-delete, recoverable) */
       remove: async (name: string, pattern: string, options?: {
         allowRuntimeMismatch?: boolean;
+        execute?: boolean;
       }): Promise<InstancesRoutesRemoveReturn> => {
         return this.transport.call({
           groupSegments: ["instances","routes"],
@@ -3455,6 +3467,7 @@ export class RaviClient {
       },
       /** List local mail accounts */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
         provider?: string;
@@ -3527,6 +3540,7 @@ export class RaviClient {
       /** List local mailboxes */
       list: async (options?: {
         account?: string;
+        fields?: string;
         limit?: string;
         offset?: string;
         status?: string;
@@ -3568,6 +3582,7 @@ export class RaviClient {
       /** List local mail messages */
       list: async (options?: {
         addresses?: boolean;
+        fields?: string;
         limit?: string;
         mailbox?: string;
         offset?: string;
@@ -3613,6 +3628,7 @@ export class RaviClient {
       },
       /** List local outbox rows */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         mailbox?: string;
         offset?: string;
@@ -3644,6 +3660,7 @@ export class RaviClient {
     providers: {
       /** List known mail providers and local account counts */
       list: async (options?: {
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<MailProvidersListReturn> => {
@@ -3742,6 +3759,7 @@ export class RaviClient {
         send: async (options?: {
           body?: string;
           console?: string;
+          execute?: boolean;
           from?: string;
           idempotencyKey?: string;
           subject?: string;
@@ -3760,6 +3778,7 @@ export class RaviClient {
       bcc?: string;
       body?: string;
       cc?: string;
+      execute?: boolean;
       from?: string;
       idempotencyKey?: string;
       subject?: string;
@@ -3774,6 +3793,7 @@ export class RaviClient {
     /** Queue mail in the local outbox */
     send: async (options?: {
       body?: string;
+      execute?: boolean;
       from?: string;
       idempotencyKey?: string;
       subject?: string;
@@ -4817,6 +4837,7 @@ export class RaviClient {
     },
     /** List routes across all instances or for one instance */
     list: async (name?: string, options?: {
+      fields?: string;
       limit?: string;
       offset?: string;
       tag?: string;
@@ -7598,6 +7619,7 @@ export class RaviClient {
       /** Read recent messages from a DM chat */
       read: async (contact: string, options?: {
         account?: string;
+        fields?: string;
         last?: string;
         noAck?: boolean;
       }): Promise<WhatsappDmReadReturn> => {
@@ -7610,6 +7632,7 @@ export class RaviClient {
       /** Send a direct message to a contact */
       send: async (contact: string, message: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappDmSendReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","dm"],
@@ -7622,6 +7645,7 @@ export class RaviClient {
       /** Add participants to a group */
       add: async (groupId: string, participants: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupAddReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7639,6 +7663,7 @@ export class RaviClient {
         agentModel?: string;
         agentProvider?: string;
         createAgent?: boolean;
+        execute?: boolean;
         skipTaggedAdmins?: boolean;
       }): Promise<WhatsappGroupCreateReturn> => {
         return this.transport.call({
@@ -7650,6 +7675,7 @@ export class RaviClient {
       /** Demote participants from admin */
       demote: async (groupId: string, participants: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupDemoteReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7660,6 +7686,7 @@ export class RaviClient {
       /** Update group description */
       description: async (groupId: string, text: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupDescriptionReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7690,6 +7717,7 @@ export class RaviClient {
       /** Join a group via invite link/code */
       join: async (code: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupJoinReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7700,6 +7728,7 @@ export class RaviClient {
       /** Leave a group */
       leave: async (groupId: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupLeaveReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7710,6 +7739,7 @@ export class RaviClient {
       /** List all groups the bot participates in */
       list: async (options?: {
         account?: string;
+        fields?: string;
         limit?: string;
         offset?: string;
       }): Promise<WhatsappGroupListReturn> => {
@@ -7722,6 +7752,7 @@ export class RaviClient {
       /** Promote participants to admin */
       promote: async (groupId: string, participants: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupPromoteReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7732,6 +7763,7 @@ export class RaviClient {
       /** Remove participants from a group */
       remove: async (groupId: string, participants: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupRemoveReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7742,6 +7774,7 @@ export class RaviClient {
       /** Rename a group */
       rename: async (groupId: string, name: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupRenameReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7752,6 +7785,7 @@ export class RaviClient {
       /** Revoke current invite link */
       revokeInvite: async (groupId: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupRevokeInviteReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],
@@ -7762,6 +7796,7 @@ export class RaviClient {
       /** Send a message to a WhatsApp group */
       send: async (groupId: string, message: string, options?: {
         account?: string;
+        execute?: boolean;
         mention?: string[];
       }): Promise<WhatsappGroupSendReturn> => {
         return this.transport.call({
@@ -7773,6 +7808,7 @@ export class RaviClient {
       /** Update group settings (announcement, not_announcement, locked, unlocked) */
       settings: async (groupId: string, setting: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappGroupSettingsReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],

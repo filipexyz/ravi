@@ -9,12 +9,17 @@ tags:
   - calendar
   - local-first
   - agents
+  - agent-first
+  - error-envelope
+  - exit-taxonomy
+  - write-brake
 applies_to:
   - src/cli/commands/calendar.ts
+  - src/cli/agent-contract.ts
   - src/calendar
 owners:
   - ravi-dev
-status: draft
+status: active
 normative: true
 ---
 
@@ -27,6 +32,10 @@ and agenda layer.
 
 Agents MUST be able to use the CLI to inspect and mutate local calendar state
 without knowing which remote provider, if any, backs the calendar.
+
+The domain follows the agent-first contract defined by `cli/crm`: typed error
+envelopes, the 0/1/2/3 exit taxonomy, a write brake on ops with external or
+irreversible effect, and compact discovery via `--fields`.
 
 ## General Rules
 
@@ -45,6 +54,70 @@ without knowing which remote provider, if any, backs the calendar.
   a documented safe default window. They MUST NOT perform unbounded full-history
   scans by default.
 
+## Agent-First Contract Invariants
+
+1. With `--json`, every failure on a migrated op MUST return the envelope
+   `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?}}`.
+2. Exit codes MUST follow the taxonomy: `0` success · `1` error (not-found /
+   payload / permission) · `2` usage error · `3` blocked by policy (write brake).
+3. NOT_FOUND codes follow the resource: `CALENDAR_NOT_FOUND`,
+   `SOURCE_NOT_FOUND`, `EVENT_NOT_FOUND`, `OUTBOX_NOT_FOUND`. Calendar and
+   source envelopes MUST carry up to 3 `suggestions` from cheap local lists
+   already scoped to the requester (visible calendars; local sources). Event and
+   outbox envelopes omit `suggestions` — there is no cheap candidate list
+   without a bounded window — and MUST carry a `suggestedAction` pointing at the
+   listing command.
+4. `calendars share`, `calendars events cancel`, and `calendars events respond`
+   MUST default to dry-run and require `--execute`; the dry-run MUST report
+   `dryRun: true` and the `plan`, exit 3, and MUST NOT write anything (no
+   membership row, no event mutation, no outbox row). Validation and permission
+   checks run BEFORE the brake so a dry-run is an honest preview.
+5. `calendars events list`, `calendars list`, `calendars sources list`,
+   `calendars outbox list`, and `calendars availability` MUST accept
+   `--fields a,b,c` for compact output.
+6. When invoked from an agent context (`RAVI_*` envs present), a thrown
+   `ContractError` MUST pass through `runCalendarCommand` untouched (never
+   re-wrapped into a `CloudAuthError`) so the registry dispatcher preserves its
+   exit code.
+7. Unbraked writes keep their current immediate-write behavior (declared):
+   `sources create`, `sources sync`, `calendars create`, `calendars disable`,
+   `events create`, `events update`, `outbox retry`. All of them are local-only
+   and reversible today — see the write classification below.
+
+## Write classification (brake decision per op)
+
+| op | class | brake |
+|---|---|---|
+| calendars share | exposes agenda to another subject (external visibility) | dry-run + `--execute` |
+| events cancel | irreversible toward attendees once a provider adapter delivers it | dry-run + `--execute` |
+| events respond | addressed to the event organizer once delivered | dry-run + `--execute` |
+| events create / update | local write + outbox row only; NO invite is dispatched today (no provider sync adapter exists; `local` provider rows are born `acked`, non-local rows stay `pending` with no consumer). If a provider delivery adapter ships, revisit the brake for create/update with attendees. | not braked (declared) |
+| sources create / sync | local config; sync is a no-op tick (`adapter_not_started` for non-local) | not braked (declared) |
+| calendars create / disable | reversible local projection | not braked (declared) |
+| outbox retry | moves a failed row back to pending; nothing consumes it yet | not braked (declared) |
+
+## Official error cases
+
+| case | code | exit |
+|---|---|---|
+| calendar not found | `CALENDAR_NOT_FOUND` + suggestions | 1 |
+| source not found | `SOURCE_NOT_FOUND` + suggestions | 1 |
+| event not found | `EVENT_NOT_FOUND` + suggestedAction | 1 |
+| outbox row not found | `OUTBOX_NOT_FOUND` + suggestedAction | 1 |
+| braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
+
+## Known gaps (this wave)
+
+- The parser-level usage contract (`installUsageContract`) is NOT installed for
+  the `calendars` domain: `AGENT_CONTRACT_DOMAINS` lives in `src/cli/index.ts`,
+  frozen during this migration wave. Until `"calendars"` is added there,
+  parser-raised usage errors (unknown flag, missing argument) keep commander's
+  default plain-text behavior instead of the exit-2 envelope. Command-body
+  errors already follow the contract.
+- There is NO dedicated `calendar` skill teaching this surface; the spec and
+  runbook are the only shipped guidance. When a skill is added it MUST document
+  `--execute` on every braked op.
+
 ## Commands
 
 ### Calendars
@@ -53,9 +126,12 @@ without knowing which remote provider, if any, backs the calendar.
 ravi calendars list
 ravi calendars create --name "Luis" --timezone America/Sao_Paulo
 ravi calendars show <calendar>
-ravi calendars share <calendar> --with <subject> --relation reader
+ravi calendars share <calendar> --with <subject> --relation reader --execute
 ravi calendars disable <calendar>
 ```
+
+`calendars share` is write-braked: without `--execute` it prints the plan and
+exits 3 without granting anything.
 
 Listing calendars in agent/runtime context MUST return only calendars visible to
 the requester.
@@ -76,9 +152,12 @@ ravi calendars events list --from <time> --to <time>
 ravi calendars events read <event>
 ravi calendars events create --calendar <calendar> --title <title> --start <time> --end <time>
 ravi calendars events update <event>
-ravi calendars events cancel <event>
-ravi calendars events respond <event> --status accepted
+ravi calendars events cancel <event> --execute
+ravi calendars events respond <event> --status accepted --execute
 ```
+
+`events cancel` and `events respond` are write-braked: without `--execute` they
+print the plan and exit 3 without mutating the event or enqueueing outbox rows.
 
 `events list` with no explicit calendar MUST scope to the requester's visible
 calendars. It MUST NOT list all local calendars in agent/runtime context.
@@ -125,9 +204,11 @@ JSON output SHOULD include:
 
 - Agents can list and read their authorized calendars through `--json`.
 - Agents can create local-only events through the CLI.
-- Agents can update/cancel/respond through local outbox semantics.
+- Agents can update/cancel/respond through local outbox semantics; cancel and
+  respond require `--execute` (exit 3 dry-run otherwise).
 - Availability can return free/busy without leaking private details.
-- CLI failures are sanitized and machine-readable.
+- CLI failures are sanitized and machine-readable; not-found failures use the
+  per-resource `*_NOT_FOUND` envelope codes with exit 1.
 - `ravi calendar` MAY remain a compatibility alias, but docs, prompts,
   runbooks, and new agent behavior MUST prefer `ravi calendars`.
 - Public registry/OpenAPI/SDK surfaces MUST expose only the offline calendar

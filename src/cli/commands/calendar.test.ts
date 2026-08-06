@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
-import { listCalendarEvents, listCalendarOutbox } from "../../calendar/index.js";
+import { listCalendarEvents, listCalendarMembers, listCalendarOutbox } from "../../calendar/index.js";
+import { ContractError } from "../agent-contract.js";
 import { buildRegistry } from "../registry-snapshot.js";
 import {
   CalendarAccountsCommands,
@@ -192,7 +193,7 @@ describe("calendar CLI commands", () => {
     );
 
     await captureConsole(() =>
-      calendars.share(calendarPayload.calendar.id, "agent:agent-freebusy", "free_busy", undefined, true),
+      calendars.share(calendarPayload.calendar.id, "agent:agent-freebusy", "free_busy", undefined, true, true),
     );
     process.env.RAVI_AGENT_ID = "agent-freebusy";
 
@@ -260,7 +261,7 @@ describe("calendar CLI commands", () => {
         true,
       ),
     );
-    await captureConsole(() => calendars.share(calendar.id, "agent:reader", "reader", undefined, true));
+    await captureConsole(() => calendars.share(calendar.id, "agent:reader", "reader", undefined, true, true));
 
     process.env.RAVI_AGENT_ID = "reader";
     const { output } = await captureConsole(() =>
@@ -337,9 +338,9 @@ describe("calendar CLI commands", () => {
       ),
     );
     await captureConsole(() =>
-      events.respond(created.event.id, "accepted", "bob@example.com", undefined, "ops-respond-1", true),
+      events.respond(created.event.id, "accepted", "bob@example.com", undefined, "ops-respond-1", true, true),
     );
-    await captureConsole(() => events.cancel(created.event.id, "ops-cancel-1", true));
+    await captureConsole(() => events.cancel(created.event.id, "ops-cancel-1", true, true));
 
     const rows = listCalendarOutbox();
     const event = listCalendarEvents({
@@ -354,6 +355,189 @@ describe("calendar CLI commands", () => {
     expect(
       listCalendarEvents({ from: Date.parse("2026-06-05T00:00:00.000Z"), to: Date.parse("2026-06-06T00:00:00.000Z") }),
     ).toHaveLength(0);
+  });
+});
+
+describe("calendar agent-first contract", () => {
+  // RAVI_AGENT_ID makes hasContext() true, so the contract helpers throw
+  // ContractError (with the envelope + exit code) instead of process.exit.
+  beforeEach(async () => {
+    stateDir = await createIsolatedRaviState("ravi-calendar-contract-test-");
+    previousAgentId = process.env.RAVI_AGENT_ID;
+    previousSessionKey = process.env.RAVI_SESSION_KEY;
+    previousSessionName = process.env.RAVI_SESSION_NAME;
+    process.env.RAVI_AGENT_ID = "main";
+    delete process.env.RAVI_SESSION_KEY;
+    delete process.env.RAVI_SESSION_NAME;
+  });
+
+  afterEach(async () => {
+    restoreEnv("RAVI_AGENT_ID", previousAgentId);
+    restoreEnv("RAVI_SESSION_KEY", previousSessionKey);
+    restoreEnv("RAVI_SESSION_NAME", previousSessionName);
+    await cleanupIsolatedRaviState(stateDir);
+    stateDir = null;
+  });
+
+  async function setupCalendar() {
+    const accounts = new CalendarAccountsCommands();
+    const calendars = new CalendarCalendarsCommands();
+    await captureConsole(() => accounts.create("local", "acct_1", undefined, undefined, true));
+    const { output } = await captureConsole(() =>
+      calendars.create(
+        "Luis",
+        "acct_1",
+        undefined,
+        "America/Sao_Paulo",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "agent:main",
+        true,
+        true,
+      ),
+    );
+    return JSON.parse(output).calendar as { id: string; name: string };
+  }
+
+  async function expectContractError(run: () => Promise<unknown>): Promise<InstanceType<typeof ContractError>> {
+    let thrown: unknown;
+    try {
+      await captureConsole(run);
+    } catch (error) {
+      thrown = error;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    return thrown as InstanceType<typeof ContractError>;
+  }
+
+  it("blocks calendars share without --execute (dry-run, exit 3, no membership write)", async () => {
+    const calendars = new CalendarCalendarsCommands();
+    const calendar = await setupCalendar();
+
+    const error = await expectContractError(() =>
+      calendars.share(calendar.id, "agent:reader", "reader", undefined, true),
+    );
+    expect(error.exitCode).toBe(3);
+    const envelope = error.envelope();
+    expect(envelope.op).toBe("calendars share");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    expect((envelope.error.plan as Record<string, unknown>).with).toBe("agent:reader");
+    expect(listCalendarMembers(calendar.id).some((member) => member.memberId === "reader")).toBe(false);
+
+    await captureConsole(() => calendars.share(calendar.id, "agent:reader", "reader", undefined, true, true));
+    expect(listCalendarMembers(calendar.id).some((member) => member.memberId === "reader")).toBe(true);
+  });
+
+  it("blocks events respond and cancel without --execute (dry-run, exit 3, no local write)", async () => {
+    const events = new CalendarEventsCommands();
+    const calendar = await setupCalendar();
+    const { output } = await captureConsole(() =>
+      events.create(
+        calendar.id,
+        "Contract Sync",
+        "2026-06-05T13:00:00.000Z",
+        "2026-06-05T14:00:00.000Z",
+        undefined,
+        undefined,
+        undefined,
+        "bob@example.com",
+        "contract-1",
+        true,
+      ),
+    );
+    const created = JSON.parse(output);
+
+    const respondError = await expectContractError(() =>
+      events.respond(created.event.id, "accepted", "bob@example.com", undefined, undefined, true),
+    );
+    expect(respondError.exitCode).toBe(3);
+    const respondEnvelope = respondError.envelope();
+    expect(respondEnvelope.op).toBe("calendars events respond");
+    expect(respondEnvelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect((respondEnvelope.error.plan as Record<string, unknown>).status).toBe("accepted");
+    expect(listCalendarOutbox().some((row) => row.operation === "respond")).toBe(false);
+
+    const cancelError = await expectContractError(() => events.cancel(created.event.id, undefined, true));
+    expect(cancelError.exitCode).toBe(3);
+    expect(cancelError.envelope().op).toBe("calendars events cancel");
+    expect(listCalendarOutbox().some((row) => row.operation === "cancel")).toBe(false);
+    const window = { from: Date.parse("2026-06-05T00:00:00.000Z"), to: Date.parse("2026-06-06T00:00:00.000Z") };
+    expect(listCalendarEvents(window)[0]?.status).toBe("confirmed");
+
+    await captureConsole(() => events.cancel(created.event.id, undefined, true, true));
+    expect(listCalendarOutbox().some((row) => row.operation === "cancel")).toBe(true);
+    expect(listCalendarEvents({ ...window, includeCancelled: true })[0]?.status).toBe("cancelled");
+  });
+
+  it("emits EVENT_NOT_FOUND envelope with exit 1 on --json", async () => {
+    await setupCalendar();
+    const events = new CalendarEventsCommands();
+    const error = await expectContractError(() => events.read("evt-nope", true));
+    expect(error.exitCode).toBe(1);
+    const envelope = error.envelope();
+    expect(envelope.op).toBe("calendars events read");
+    expect(envelope.error.code).toBe("EVENT_NOT_FOUND");
+    expect(envelope.error.suggestedAction).toContain("calendars events list");
+  });
+
+  it("emits CALENDAR_NOT_FOUND and SOURCE_NOT_FOUND with cheap local suggestions", async () => {
+    const calendars = new CalendarCalendarsCommands();
+    const accounts = new CalendarAccountsCommands();
+    await setupCalendar();
+
+    const calendarError = await expectContractError(() => calendars.show("Luiz", undefined, true));
+    expect(calendarError.exitCode).toBe(1);
+    const calendarEnvelope = calendarError.envelope();
+    expect(calendarEnvelope.error.code).toBe("CALENDAR_NOT_FOUND");
+    expect(calendarEnvelope.error.suggestions).toContain("Luis");
+
+    const sourceError = await expectContractError(() => accounts.sync("acct_9", undefined, true));
+    expect(sourceError.exitCode).toBe(1);
+    const sourceEnvelope = sourceError.envelope();
+    expect(sourceEnvelope.op).toBe("calendars sources sync");
+    expect(sourceEnvelope.error.code).toBe("SOURCE_NOT_FOUND");
+    expect(sourceEnvelope.error.suggestions).toContain("acct_1");
+  });
+
+  it("supports --fields compact mode on events list", async () => {
+    const events = new CalendarEventsCommands();
+    const calendar = await setupCalendar();
+    await captureConsole(() =>
+      events.create(
+        calendar.id,
+        "Compact",
+        "2026-06-05T13:00:00.000Z",
+        "2026-06-05T14:00:00.000Z",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "compact-1",
+        true,
+      ),
+    );
+
+    const { output } = await captureConsole(() =>
+      events.list(
+        calendar.id,
+        "2026-06-05T00:00:00.000Z",
+        "2026-06-06T00:00:00.000Z",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+        "id,title",
+      ),
+    );
+    const payload = JSON.parse(output);
+    expect(payload.events).toHaveLength(1);
+    expect(Object.keys(payload.events[0]).sort()).toEqual(["id", "title"]);
+    expect(payload.events[0].title).toBe("Compact");
   });
 });
 

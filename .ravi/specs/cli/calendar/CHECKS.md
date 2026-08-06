@@ -4,13 +4,43 @@ title: Calendar CLI Checks
 kind: checks
 domain: cli
 capability: calendar
-status: draft
+status: active
 normative: false
 owners:
   - ravi-dev
 ---
 
 # Calendar CLI Checks
+
+## Agent-First Contract
+
+- `calendars show <unknown>` and `calendars events read <unknown>` with `--json`
+  MUST exit 1 with the `CALENDAR_NOT_FOUND` / `EVENT_NOT_FOUND` envelope; the
+  calendar envelope MUST carry up to three `suggestions` from visible calendars.
+- `calendars sources sync <unknown>` with `--json` MUST exit 1 with the
+  `SOURCE_NOT_FOUND` envelope and suggestions from local sources.
+- `calendars outbox inspect|retry <unknown>` with `--json` MUST exit 1 with the
+  `OUTBOX_NOT_FOUND` envelope and a `suggestedAction` pointing at the listing.
+- `calendars share` without `--execute` MUST exit 3 with `dryRun: true` and the
+  `plan`, and MUST NOT insert a membership row; with `--execute` the grant MUST
+  happen.
+- `calendars events cancel` and `calendars events respond` without `--execute`
+  MUST exit 3 and MUST NOT mutate the event or enqueue an outbox row; with
+  `--execute` the local write and outbox row MUST happen.
+- Validation and permission checks on braked ops MUST run before the brake, so
+  a dry-run against a missing event still yields `EVENT_NOT_FOUND` (exit 1),
+  never a misleading exit-3 plan.
+- Listing ops (`events list`, `calendars list`, `sources list`, `outbox list`,
+  `availability`) with `--fields a,b,c --json` MUST return items containing only
+  the requested fields.
+- A thrown `ContractError` MUST pass through `runCalendarCommand` untouched —
+  never re-wrapped into a `CloudAuthError` exit-1 body.
+- Unbraked writes declared in the SPEC (`events create/update`, `sources
+  create/sync`, `calendars create/disable`, `outbox retry`) MUST keep
+  immediate-write behavior while no provider delivery adapter exists.
+- The known gaps MUST stay recorded in the SPEC while they exist: no dedicated
+  `calendar` skill ships this surface, and the parser-level usage contract is
+  not installed for `calendars` (usage errors are not yet exit 2).
 
 ## JSON
 
@@ -40,7 +70,7 @@ owners:
 ## Suggested Validation Commands
 
 ```bash
-bun test src/cli/commands/calendar.test.ts
+bun test src/cli/commands/calendar.test.ts   # includes the "calendar agent-first contract" block
 bun test src/calendar/*.test.ts
 bun run typecheck
 bun run build

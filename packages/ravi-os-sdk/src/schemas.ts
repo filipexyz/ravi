@@ -8489,6 +8489,10 @@ export const CalendarsAvailabilityInputSchema = {
       "description": "Local calendar id or name",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "from": {
       "description": "Window start; default now",
       "type": "string"
@@ -9002,6 +9006,10 @@ export const CalendarsEventsCancelInputSchema = {
     "event": {
       "description": "Local event id",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually cancel the event; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "idempotencyKey": {
       "description": "Local write idempotency key",
@@ -10456,6 +10464,10 @@ export const CalendarsEventsListInputSchema = {
       "description": "Local calendar id or name",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "from": {
       "description": "Window start; default now",
       "type": "string"
@@ -11700,6 +11712,10 @@ export const CalendarsEventsRespondInputSchema = {
     "event": {
       "description": "Local event id",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually record the response; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "idempotencyKey": {
       "description": "Local write idempotency key",
@@ -13158,6 +13174,10 @@ export const CalendarsListInputSchema = {
       "description": "Local account id",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Maximum records",
       "type": "string"
@@ -13361,6 +13381,10 @@ export const CalendarsShareInputSchema = {
     "calendar": {
       "description": "Local calendar id or name",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually grant the relation; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "expiresAt": {
       "description": "Optional membership expiration timestamp",
@@ -36926,6 +36950,10 @@ export const InstancesCreateReturnSchema = {
 export const InstancesDeleteInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually delete the instance; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "name": {
       "description": "Instance name",
       "type": "string"
@@ -37055,6 +37083,10 @@ export const InstancesGetReturnSchema = {
 export const InstancesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each instance",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -37146,6 +37178,10 @@ export const InstancesPendingRejectInputSchema = {
     "contact": {
       "description": "Contact identity or chat route pattern",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually reject and remove the pending entry; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "name": {
       "description": "Instance name",
@@ -37303,6 +37339,10 @@ export const InstancesRoutesRemoveInputSchema = {
   "properties": {
     "allowRuntimeMismatch": {
       "description": "Allow mutation even when the CLI bundle differs from the live daemon runtime",
+      "type": "boolean"
+    },
+    "execute": {
+      "description": "Actually remove the route; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "name": {
@@ -37689,6 +37729,10 @@ export const MailAccountsCreateReturnSchema = {
 export const MailAccountsListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Maximum records",
       "type": "string"
@@ -38606,6 +38650,10 @@ export const MailMailboxesListInputSchema = {
   "properties": {
     "account": {
       "description": "Local account id",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "limit": {
@@ -39655,6 +39703,10 @@ export const MailMessagesListInputSchema = {
     "addresses": {
       "description": "Include local address rows",
       "type": "boolean"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
     },
     "limit": {
       "description": "Maximum records",
@@ -41853,6 +41905,10 @@ export const MailOutboxInspectReturnSchema = {
 export const MailOutboxListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Maximum records",
       "type": "string"
@@ -42256,6 +42312,10 @@ export const MailOutboxStatusReturnSchema = {
 export const MailProvidersListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
+      "type": "string"
+    },
     "limit": {
       "description": "Maximum records",
       "type": "string"
@@ -42813,6 +42873,10 @@ export const MailProvidersRaviMailSendInputSchema = {
       "description": "Console base URL",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually send through Console; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "from": {
       "description": "Explicit provider sender mailbox id or address",
       "type": "string"
@@ -42896,6 +42960,10 @@ export const MailReplyInputSchema = {
     "cc": {
       "description": "CC recipient or comma-separated recipients",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually queue the reply; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "from": {
       "description": "Local sender mailbox id or address",
@@ -43701,6 +43769,10 @@ export const MailSendInputSchema = {
     "body": {
       "description": "Message body",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually queue the send; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "from": {
       "description": "Local sender mailbox id or address",
@@ -52163,6 +52235,10 @@ export const RoutesExplainReturnSchema = {
 export const RoutesListInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "fields": {
+      "description": "Compact mode: keep only these fields of each route",
+      "type": "string"
+    },
     "limit": {
       "description": "Page size (default: 50, max: 500)",
       "type": "string"
@@ -73231,6 +73307,10 @@ export const WhatsappDmReadInputSchema = {
       "description": "Contact ID, phone, or WhatsApp identity",
       "type": "string"
     },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each message",
+      "type": "string"
+    },
     "last": {
       "description": "Number of messages to read (default: 10)",
       "type": "string"
@@ -73266,6 +73346,10 @@ export const WhatsappDmSendInputSchema = {
       "description": "Contact ID, phone, or WhatsApp identity",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually send the message; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "message": {
       "description": "Message text",
       "type": "string"
@@ -73292,6 +73376,10 @@ export const WhatsappGroupAddInputSchema = {
     "account": {
       "description": "WhatsApp account ID",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually add the participants; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "groupId": {
       "description": "Group ID or JID",
@@ -73358,6 +73446,10 @@ export const WhatsappGroupCreateInputSchema = {
       "description": "Create --agent first when it does not exist",
       "type": "boolean"
     },
+    "execute": {
+      "description": "Actually create the group; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "name": {
       "description": "Group name/subject",
       "type": "string"
@@ -73392,6 +73484,10 @@ export const WhatsappGroupDemoteInputSchema = {
       "description": "WhatsApp account ID",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually demote the participants; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "groupId": {
       "description": "Group ID or JID",
       "type": "string"
@@ -73422,6 +73518,10 @@ export const WhatsappGroupDescriptionInputSchema = {
     "account": {
       "description": "WhatsApp account ID",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually update the description; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "groupId": {
       "description": "Group ID or JID",
@@ -73509,6 +73609,10 @@ export const WhatsappGroupJoinInputSchema = {
     "code": {
       "description": "Invite code or full link",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually join the group; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     }
   },
   "required": [
@@ -73531,6 +73635,10 @@ export const WhatsappGroupLeaveInputSchema = {
     "account": {
       "description": "WhatsApp account ID",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually leave the group; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "groupId": {
       "description": "Group ID or JID",
@@ -73556,6 +73664,10 @@ export const WhatsappGroupListInputSchema = {
   "properties": {
     "account": {
       "description": "WhatsApp account ID",
+      "type": "string"
+    },
+    "fields": {
+      "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
     "limit": {
@@ -73584,6 +73696,10 @@ export const WhatsappGroupPromoteInputSchema = {
     "account": {
       "description": "WhatsApp account ID",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually promote the participants; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "groupId": {
       "description": "Group ID or JID",
@@ -73616,6 +73732,10 @@ export const WhatsappGroupRemoveInputSchema = {
       "description": "WhatsApp account ID",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually remove the participants; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "groupId": {
       "description": "Group ID or JID",
       "type": "string"
@@ -73646,6 +73766,10 @@ export const WhatsappGroupRenameInputSchema = {
     "account": {
       "description": "WhatsApp account ID",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually rename the group; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "groupId": {
       "description": "Group ID or JID",
@@ -73678,6 +73802,10 @@ export const WhatsappGroupRevokeInviteInputSchema = {
       "description": "WhatsApp account ID",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually revoke the invite link; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "groupId": {
       "description": "Group ID or JID",
       "type": "string"
@@ -73703,6 +73831,10 @@ export const WhatsappGroupSendInputSchema = {
     "account": {
       "description": "WhatsApp account ID",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually send the message; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "groupId": {
       "description": "Group ID, JID, or 'here' for the current chat",
@@ -73741,6 +73873,10 @@ export const WhatsappGroupSettingsInputSchema = {
     "account": {
       "description": "WhatsApp account ID",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually apply the setting; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "groupId": {
       "description": "Group ID or JID",
