@@ -19,11 +19,33 @@ Funcionalidades do WhatsApp expostas via Omni/Baileys. Permite criar grupos, reg
 
 **Criação de grupo:** `ravi whatsapp group create` usa a API HTTP pública do Omni (`POST /api/v2/instances/:id/groups`) e depois registra chat, rota, participantes e sessão no SQLite local do Ravi. Não use o tópico legado `ravi.whatsapp.group.create`.
 
-**Operações de grupo:** `list` e `info` tentam REST público do Omni e caem para o modelo local `chats` se o Omni falhar. Todas as mutações (`add`, `remove`, `promote`, `demote`, `leave`, `join`, `invite`, `revoke-invite`, `rename`, `description`, `settings`) usam contratos REST do Omni pelo cliente público. Não use nem sugira o bridge NATS legado `ravi.whatsapp.group.{op}`; quando um endpoint REST ainda não existir no Omni, o comando deve falhar explicitamente com erro `*_REST_UNAVAILABLE`.
+**Operações de grupo:** `list`, `info` e `invite` são leituras; `list` e `info` tentam REST público do Omni e caem para o modelo local `chats` se o Omni falhar. Todas as mutações (`send`, `add`, `remove`, `promote`, `demote`, `leave`, `join`, `revoke-invite`, `rename`, `description`, `settings`) usam contratos REST do Omni pelo cliente público e são dry-run por default — exigem `--execute` (ver "Contrato Do CLI" abaixo). Não use nem sugira o bridge NATS legado `ravi.whatsapp.group.{op}`; quando um endpoint REST ainda não existir no Omni, o comando deve falhar explicitamente com erro `*_REST_UNAVAILABLE`.
 
 **Novo fio de trabalho:** quando o usuário pedir para criar um grupo/agent para um assunto novo, use o fluxo transacional de criação. Não tente localizar o grupo com `ravi whatsapp group list`: listagem não registra chat/rota/sessão. Use `group list` apenas para inspeção.
 
 **Gerenciamento de contas/instâncias:** use `ravi instances` (conectar, desconectar, status, policies).
+
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução (ex.: `GROUP_NOT_FOUND`, `CONTACT_NOT_FOUND`). O envelope traz `suggestions` com grupos/contatos reais parecidos — consulte antes de concluir "não existe".
+- `2` erro de uso (flag/argumento inválido): corrija a chamada, não insista na mesma sintaxe.
+- `3` freio de escrita — não é erro. Nada foi enviado/alterado no WhatsApp; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
+
+Onde o freio existe: TODA mutação externa é dry-run por default e exige `--execute` — `group send`, `group create`, `group add`, `group remove`, `group promote`, `group demote`, `group revoke-invite`, `group join`, `group leave`, `group rename`, `group description`, `group settings` e `dm send`. Essas operações agem sobre grupos e pessoas REAIS no WhatsApp (socialmente irreversível): o freio existe para você revisar o plano antes do efeito.
+
+Sem freio (executam na hora, declaradas): `group list`, `group info` e `group invite` (leituras), e `dm read` / `dm ack` (o ack só confirma leitura — ticks azuis — sem gerar conteúdo novo para o contato; `dm read` envia ack por padrão, use `--no-ack` para evitar).
+
+Compact mode: `group list` e `dm read` aceitam `--fields a,b,c` (ex.: `--fields id,subject`) — use em varredura para não arrastar o objeto inteiro de cada item.
+
+Checklist antes de responder sobre WhatsApp:
+
+- Tratei exit 3 como freio (revisei o `plan`) e só repeti com `--execute` quando o efeito sobre pessoas reais era realmente desejado?
+- Consultei `suggestions` do envelope (`GROUP_NOT_FOUND`/`CONTACT_NOT_FOUND`) antes de declarar que o grupo/contato não existe?
 
 ## Gerenciamento de Grupos
 
@@ -43,14 +65,14 @@ O `groupId` aceita:
 
 ### Criar grupo
 ```bash
-ravi whatsapp group create "Nome do Grupo" "5511999999999,5511888888888"
+ravi whatsapp group create "Nome do Grupo" "5511999999999,5511888888888" --execute
 ```
 
-Participantes separados por vírgula. Aceita números de telefone ou JIDs.
+Participantes separados por vírgula. Aceita números de telefone ou JIDs. Sem `--execute` é dry-run (exit 3): mostra o plano (participantes, admins, agent) e não cria nada.
 
 **Com agent (recomendado):** cria o grupo real no WhatsApp, registra o chat local, cria a rota, cria/atacha a sessão e envia um inform inicial ao agent:
 ```bash
-ravi whatsapp group create "Vida - Health" "5511947879044" --agent health
+ravi whatsapp group create "Vida - Health" "5511947879044" --agent health --execute
 ```
 
 **Criar agent, criar grupo, adicionar participantes inferidos/explicitados e rotear em uma chamada:**
@@ -60,7 +82,8 @@ ravi whatsapp group create "Vida - Health" "5511888888888" \
   --create-agent \
   --agent-cwd ~/ravi/health \
   --agent-provider codex \
-  --agent-model gpt-5.5
+  --agent-model gpt-5.5 \
+  --execute
 ```
 
 Ao criar agent inline com `--create-agent`, passe todas as configurações conhecidas no mesmo comando: `--agent-cwd`, `--agent-provider` e `--agent-model`. Use ajustes posteriores (`ravi agents set ...`) só para corrigir/migrar agent existente, não como fluxo normal de criação.
@@ -82,30 +105,30 @@ Saída:
 
 ### Sair de um grupo
 ```bash
-ravi whatsapp group leave <groupId>
+ravi whatsapp group leave <groupId> --execute
 ```
 
 ## Membros
 
 ### Adicionar participantes
 ```bash
-ravi whatsapp group add <groupId> "5511999999999,5511888888888"
+ravi whatsapp group add <groupId> "5511999999999,5511888888888" --execute
 ```
 
 ### Remover participantes
 ```bash
-ravi whatsapp group remove <groupId> "5511999999999"
+ravi whatsapp group remove <groupId> "5511999999999" --execute
 ```
 
 ### Promover a admin
 ```bash
-ravi whatsapp group promote <groupId> "5511999999999"
+ravi whatsapp group promote <groupId> "5511999999999" --execute
 ```
 No fluxo `group create`, o Ravi usa o mesmo contrato REST de participantes do Omni para promover actor/admins inferidos ou explicitados. Fora da criação, `promote` chama esse mesmo contrato e deve falhar explicitamente se o endpoint não estiver disponível.
 
 ### Remover admin
 ```bash
-ravi whatsapp group demote <groupId> "5511999999999"
+ravi whatsapp group demote <groupId> "5511999999999" --execute
 ```
 
 ## Convites
@@ -119,31 +142,31 @@ Retorna o link `https://chat.whatsapp.com/...`
 
 ### Revogar link (gera novo)
 ```bash
-ravi whatsapp group revoke-invite <groupId>
+ravi whatsapp group revoke-invite <groupId> --execute
 ```
 
 ### Entrar via link
 ```bash
-ravi whatsapp group join "https://chat.whatsapp.com/ABC123"
+ravi whatsapp group join "https://chat.whatsapp.com/ABC123" --execute
 # ou só o código:
-ravi whatsapp group join ABC123
+ravi whatsapp group join ABC123 --execute
 ```
 
 ## Configurações
 
 ### Renomear grupo
 ```bash
-ravi whatsapp group rename <groupId> "Novo Nome"
+ravi whatsapp group rename <groupId> "Novo Nome" --execute
 ```
 
 ### Mudar descrição
 ```bash
-ravi whatsapp group description <groupId> "Nova descrição do grupo"
+ravi whatsapp group description <groupId> "Nova descrição do grupo" --execute
 ```
 
 ### Alterar settings
 ```bash
-ravi whatsapp group settings <groupId> <setting>
+ravi whatsapp group settings <groupId> <setting> --execute
 ```
 
 Settings disponíveis:
@@ -158,7 +181,7 @@ Todos os comandos aceitam `--account <id>` pra especificar qual conta WhatsApp u
 
 ```bash
 ravi whatsapp group list --account business
-ravi whatsapp group create "Equipe" "5511999" --account business
+ravi whatsapp group create "Equipe" "5511999" --account business --execute
 ```
 
 ## Exemplos Práticos
@@ -166,14 +189,15 @@ ravi whatsapp group create "Equipe" "5511999" --account business
 ### Criar grupo pra um agent
 ```bash
 # Tudo num comando só:
-ravi whatsapp group create "Vida - Finanças" "5511947879044" --agent financas
+ravi whatsapp group create "Vida - Finanças" "5511947879044" --agent financas --execute
 
 # Cria o agent se ainda não existir; o actor da sessão entra como participante inicial:
 ravi whatsapp group create "Vida - Finanças" "5511888888888" \
   --agent financas \
   --create-agent \
   --agent-provider codex \
-  --agent-model gpt-5.5
+  --agent-model gpt-5.5 \
+  --execute
 
 # Fora de uma sessão Ravi, ou para participantes que você quer incluir explicitamente:
 ravi whatsapp group create "Vida - Finanças" "5511888888888" \
@@ -181,12 +205,13 @@ ravi whatsapp group create "Vida - Finanças" "5511888888888" \
   --create-agent \
   --agent-provider codex \
   --agent-model gpt-5.5 \
-  --admin 5511947879044
+  --admin 5511947879044 \
+  --execute
 ```
 
 Sem `--agent`, precisa rotear manualmente:
 ```bash
-ravi whatsapp group create "Grupo Avulso" "5511999999999"
+ravi whatsapp group create "Grupo Avulso" "5511999999999" --execute
 ravi instances routes add main "group:<id>" meu-agent
 ```
 
@@ -196,10 +221,10 @@ ravi instances routes add main "group:<id>" meu-agent
 ravi whatsapp group info group:120363425628305127
 
 # Adicionar novo membro
-ravi whatsapp group add group:120363425628305127 "5511777777777"
+ravi whatsapp group add group:120363425628305127 "5511777777777" --execute
 
 # Promover a admin
-ravi whatsapp group promote group:120363425628305127 "5511777777777"
+ravi whatsapp group promote group:120363425628305127 "5511777777777" --execute
 ```
 
 ### Gerar convite temporário
@@ -209,5 +234,5 @@ ravi whatsapp group invite group:120363425628305127
 # → https://chat.whatsapp.com/ABC123
 
 # Depois de todos entrarem, revogar
-ravi whatsapp group revoke-invite group:120363425628305127
+ravi whatsapp group revoke-invite group:120363425628305127 --execute
 ```

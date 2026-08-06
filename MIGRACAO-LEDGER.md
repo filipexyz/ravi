@@ -26,7 +26,7 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 | 4 | contacts | contacts.ts | contacts | **MIGRADO** | cli/contacts |
 | 5 | agents | agents.ts | agents | **MIGRADO** | cli/agents |
 | 6 | instances+routes | instances.ts | instances, routes | **MIGRADO** | cli/instances |
-| 7 | whatsapp | group.ts, whatsapp-dm.ts | whatsapp | pendente | — |
+| 7 | whatsapp | group.ts, whatsapp-dm.ts | whatsapp | **MIGRADO** | cli/whatsapp |
 | 8 | mail | mail.ts, gmail.ts | (sem skill — lacuna registrada na spec) | **MIGRADO** | cli/mail |
 | 9 | calendar | calendar.ts | (sem skill) | pendente | — |
 | 10 | chats | chats.ts | (sem skill) | pendente | — |
@@ -319,3 +319,35 @@ sites com execute) · spec gate PASSED (cli/mail + mail + mail/local-mailbox).
 `--execute` → exit 3 + plan (bodyPreview) · `send --execute` → `queued:true` +
 outbox com 1 entrada · MAILBOX_NOT_FOUND exit 1 · usage exit 2 · sintaxe errada
 de accounts create → USAGE_ERROR exit 2 (o contrato ensinou a correção).
+
+### 7. whatsapp — MIGRADO (subagente, verificado e integrado)
+
+**Escopo (domínio de maior risco externo — pessoas/grupos REAIS):** freio
+(`--execute`) em 13 ops: `group send/create/add/remove/promote/demote/
+revoke-invite/rename` + 4 descobertas mal-declaradas como `kind:"read"` mas
+mutantes na prática (`join/leave/description/settings` — freadas SEM flipar o
+CommandAccess, que alimenta autorização de agentes existentes; pendência
+registrada na spec) + `dm send`. Freio ANTES de qualquer chamada de
+provider/NATS: em `group send` antes até da leitura de metadata; em
+`group create` antes do `ensureGroupAgent` (dry-run com `--create-agent` não
+cria agent nem diretório), com pré-validação de agent para o plan nunca
+prometer rota a agent inexistente. Sem freio (declaradas): `group list/info/
+invite` (leituras), `dm read/ack`. `GROUP_NOT_FOUND` (suggestions da própria
+listagem já resolvida — zero chamadas extras) e `CONTACT_NOT_FOUND` (DB local).
+`--fields` em `group list` e `dm read`. Usage contract no subtree `whatsapp`.
+
+**Consumidores atualizados neste commit:** skill whatsapp (Contrato Do CLI),
+skills agents/architect (hunks mistos com instances entram aqui),
+prompt-builder (hints de group create/dm send), docs/guides/whatsapp-groups.mdx
+(~25 exemplos), docs/cli/overview.mdx (hunks instances+whatsapp). NÃO editado
+(path de coverage-gate): hint sentinel em `src/omni/consumer.ts:1551` ensina
+`whatsapp dm send` sem `--execute` — registrado como pendência na spec.
+
+**Testes criados do zero:** `group.test.ts` 22/22 (dry-run sem chamada ao spy
+nas 13 ops; execute chamando; not-founds; --fields; ack sem freio; validações
+pré-freio). Typecheck limpo. **Rotina Y (estado isolado):** `dm send` sem
+`--execute` → exit 3 + plan com JID resolvido · `group send` → validação
+pré-freio correta ("No WhatsApp account configured", exit 1 — sem conta no
+estado isolado; freio provado nos testes) · usage → exit 2. Nota de
+concorrência: o `git stash` que reverteu o tree na onda era deste fluxo
+(verificação de baseline); tudo restaurado e revalidado.

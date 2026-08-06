@@ -4,9 +4,10 @@
 
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
-import { getContact, getContactIdentities, normalizePhone, formatPhone } from "../../contacts.js";
+import { getContact, getContactIdentities, normalizePhone, formatPhone, searchContacts } from "../../contacts.js";
 import { getFirstAccountName } from "../../router/router-db.js";
 import { phoneToJid, jidToSessionId } from "../../utils/phone.js";
 import { getRecentHistory } from "../../db.js";
@@ -16,10 +17,31 @@ function printJson(payload: unknown): void {
 }
 
 /**
+ * CONTACT_NOT_FOUND envelope (Manual v2): the target could not be resolved to
+ * a WhatsApp JID. Suggestions come from the LOCAL contacts DB
+ * (`searchContacts`) — a cheap local source, no live bridge call involved.
+ */
+function failDmContactNotFound(op: string, contactRef: string, asJson?: boolean): never {
+  const digits = contactRef.replace(/\D/g, "");
+  const candidates = [
+    ...searchContacts(contactRef),
+    ...(digits.length >= 4 ? searchContacts(digits.slice(-4)) : []),
+  ].flatMap((contact) => [contact.name ?? "", contact.phone ?? ""]);
+  contractFail(op, "CONTACT_NOT_FOUND", `Cannot resolve to WhatsApp JID: ${contactRef}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the contact id/phone (list with: ravi contacts list --json)",
+      suggestions: suggestSimilar(contactRef, candidates),
+    },
+  });
+}
+
+/**
  * Resolve the best WhatsApp JID for a contact reference.
  * Prefers WhatsApp platform identities over phone number.
+ * Fails with the CONTACT_NOT_FOUND envelope when nothing resolves.
  */
-function resolveWhatsAppJid(contactRef: string): { jid: string; displayName: string } {
+function resolveWhatsAppJid(op: string, contactRef: string, asJson?: boolean): { jid: string; displayName: string } {
   const contact = getContact(contactRef);
 
   if (contact) {
@@ -44,7 +66,7 @@ function resolveWhatsAppJid(contactRef: string): { jid: string; displayName: str
   // No contact found — try raw input
   const normalized = normalizePhone(contactRef);
   const jid = phoneToJid(normalized);
-  if (!jid) throw new Error(`Cannot resolve to WhatsApp JID: ${contactRef}`);
+  if (!jid) failDmContactNotFound(op, contactRef, asJson);
   return { jid, displayName: formatPhone(normalized) };
 }
 
@@ -61,12 +83,35 @@ export class WhatsAppDmCommands {
     @Arg("message", { description: "Message text" }) message: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually send the message; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
-    const { jid, displayName } = resolveWhatsAppJid(contactRef);
+    const { jid, displayName } = resolveWhatsAppJid("whatsapp dm send", contactRef, asJson);
     const accountId = account ?? getFirstAccountName() ?? "";
 
     // Strip common bash escape artifacts (e.g. Claude writes "oi\!" instead of "oi!")
     const cleanMessage = message.replace(/\\([!#$&*?])/g, "$1");
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): a DM reaches a real person and cannot be
+      // reliably unsent, so dry-run by default and exit 3 before any NATS/queue
+      // call.
+      contractDryRun(
+        "whatsapp dm send",
+        {
+          channel: "whatsapp",
+          accountId,
+          contact: contactRef,
+          to: jid,
+          displayName,
+          text: cleanMessage,
+        },
+        { asJson },
+      );
+    }
 
     await nats.emit("ravi.outbound.deliver", {
       channel: "whatsapp",
@@ -102,8 +147,10 @@ export class WhatsAppDmCommands {
     @Option({ flags: "--no-ack", description: "Don't send read receipt" }) noAck?: boolean,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each message" })
+    fields?: string,
   ) {
-    const { jid, displayName } = resolveWhatsAppJid(contactRef);
+    const { jid, displayName } = resolveWhatsAppJid("whatsapp dm read", contactRef, asJson);
     const sessionId = jidToSessionId(jid);
     const limit = last ? parseInt(last, 10) : 10;
     const accountId = account ?? getFirstAccountName() ?? "";
@@ -166,7 +213,8 @@ export class WhatsAppDmCommands {
       sessionId,
       limit,
       total: messages.length,
-      messages,
+      // Compact mode (Manual v2 7.9): narrows the message objects only.
+      messages: pickFields(messages, fields),
       ackedMessageId,
     };
 
@@ -184,7 +232,9 @@ export class WhatsAppDmCommands {
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const { jid, displayName } = resolveWhatsAppJid(contactRef);
+    // Declared UNBRAKED: an ack only confirms reading (blue ticks) and does not
+    // produce new content for the peer — no --execute required.
+    const { jid, displayName } = resolveWhatsAppJid("whatsapp dm ack", contactRef, asJson);
     const accountId = account ?? getFirstAccountName() ?? "";
 
     await nats.emit("ravi.outbound.receipt", {

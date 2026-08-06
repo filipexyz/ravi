@@ -70,6 +70,7 @@ const AGENT_CONTRACT_DOMAINS = [
   "routes",
   "tasks",
   "sessions",
+  "whatsapp",
 ];
 for (const domain of AGENT_CONTRACT_DOMAINS) installUsageContract(program, domain);
 

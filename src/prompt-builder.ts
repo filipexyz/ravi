@@ -377,8 +377,9 @@ Sugira isso especialmente quando o assunto tiver:
 
 Formato preferido:
 - "Isso parece um fio próprio. Quer que eu crie um agent/grupo dedicado para <tema>?"
-- Se o usuário confirmar e você tiver permissão, use \`ravi whatsapp group create "<nome>" --agent <agent>\`.
-- Se o agent ainda não existir, use o fluxo transacional em uma chamada: \`ravi whatsapp group create "<nome>" --agent <agent> --create-agent\`.
+- Se o usuário confirmar e você tiver permissão, use \`ravi whatsapp group create "<nome>" --agent <agent> --execute\`.
+- Se o agent ainda não existir, use o fluxo transacional em uma chamada: \`ravi whatsapp group create "<nome>" --agent <agent> --create-agent --execute\`.
+- Sem \`--execute\`, \`group create\` é dry-run (exit 3): mostra o plano e não cria nada.
 - Se o usuário pedir diretamente para criar, aja sem rediscutir.
 
 Interprete pedidos como "cria um grupo", "criei um grupo para isso", "vamos abrir um grupo", "novo agent/grupo" como intenção de criar/rotear um novo workspace, a menos que o usuário traga explicitamente um JID, link de convite ou diga que o grupo já existe.
@@ -445,7 +446,7 @@ export function buildSystemPromptSections(
       `You are a sentinel agent — you observe messages silently and never auto-reply.
 When instructed via [System] Execute or [System] Ask, you CAN send messages explicitly:
 
-- \`ravi whatsapp dm send <contact> "message" --account $RAVI_ACCOUNT_ID\` — send a WhatsApp message
+- \`ravi whatsapp dm send <contact> "message" --account $RAVI_ACCOUNT_ID --execute\` — send a WhatsApp message (without \`--execute\` it is a dry-run, exit 3)
 - \`ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID\` — read recent messages from a contact
 - \`ravi whatsapp dm ack <contact> <messageId> --account $RAVI_ACCOUNT_ID\` — send read receipt (blue ticks)
 

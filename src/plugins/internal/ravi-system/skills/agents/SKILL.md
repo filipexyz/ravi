@@ -48,7 +48,7 @@ ravi agents create <id> <cwd> [--provider <provider>] [--model <model>]
 
 O `cwd` é o diretório onde fica o `AGENTS.md` do agent (suas instruções canônicas). Crie o diretório e o `AGENTS.md` antes. O Ravi materializa um `CLAUDE.md` de compatibilidade quando necessário.
 
-**Regra de criação completa:** agent novo deve nascer com as configurações runtime conhecidas, não ser criado "cru" para depois corrigir manualmente. Quando souber o runtime, passe `--provider` e `--model` no `agents create`; quando estiver criando junto com WhatsApp, passe `--agent-provider` e `--agent-model` no `whatsapp group create --create-agent`. Antes de colocar o agent numa rota live, garanta que o Permission Provider Runtime vai materializar as capabilities necessárias para ele.
+**Regra de criação completa:** agent novo deve nascer com as configurações runtime conhecidas, não ser criado "cru" para depois corrigir manualmente. Quando souber o runtime, passe `--provider` e `--model` no `agents create`; quando estiver criando junto com WhatsApp, passe `--agent-provider` e `--agent-model` no `whatsapp group create --create-agent --execute` (sem `--execute`, `group create` é dry-run exit 3). Antes de colocar o agent numa rota live, garanta que o Permission Provider Runtime vai materializar as capabilities necessárias para ele.
 
 ## Runtimes Disponíveis
 

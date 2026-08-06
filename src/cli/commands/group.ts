@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { Group, Command, CommandAccess, Arg, Option, Scope } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
@@ -345,9 +346,11 @@ function upsertGroupChatParticipants(input: {
 
 /**
  * Validate that all phone numbers exist in contacts.
- * Fails with suggestions if any number is unknown.
+ * Fails with the CONTACT_NOT_FOUND envelope (Manual v2) when any number is
+ * unknown. Suggestions come from the LOCAL contacts DB (`searchContacts`) —
+ * a cheap local source, no live bridge/daemon call involved.
  */
-function validateParticipantsAreContacts(participants: string[]): void {
+function validateParticipantsAreContacts(op: string, participants: string[], asJson?: boolean): void {
   const unknown: string[] = [];
   for (const phone of participants) {
     const contact = getContact(phone);
@@ -356,27 +359,41 @@ function validateParticipantsAreContacts(participants: string[]): void {
     }
   }
 
-  if (unknown.length > 0) {
+  if (unknown.length === 0) return;
+
+  const suggestionCandidates = uniqueStrings(
+    unknown.flatMap((phone) =>
+      searchContacts(phone.slice(-4))
+        .filter((c) => c.identities.some((i) => i.platform === "phone"))
+        .map((c) => {
+          const phoneId = c.identities.find((i) => i.platform === "phone");
+          return `${c.name ?? "(sem nome)"} <${phoneId?.value ?? c.phone}>`;
+        }),
+    ),
+  ).slice(0, 3);
+
+  if (!asJson) {
     console.error(`\n✗ Participant(s) not found in contacts:\n`);
     for (const phone of unknown) {
       console.error(`  - ${phone}`);
-      // Try fuzzy search with last digits
-      const lastDigits = phone.slice(-4);
-      const suggestions = searchContacts(lastDigits)
-        .filter((c) => c.identities.some((i) => i.platform === "phone"))
-        .slice(0, 3);
-      if (suggestions.length > 0) {
-        console.error(`    Did you mean?`);
-        for (const s of suggestions) {
-          const phoneId = s.identities.find((i) => i.platform === "phone");
-          console.error(`      ${s.name ?? "(sem nome)"} — ${phoneId?.value ?? s.phone}`);
-        }
+    }
+    if (suggestionCandidates.length > 0) {
+      console.error(`    Did you mean?`);
+      for (const s of suggestionCandidates) {
+        console.error(`      ${s}`);
       }
     }
     console.error(`\nOnly known contacts can be added to groups.`);
     console.error(`Use 'ravi contacts list' to see all contacts.\n`);
-    fail("Unknown participant(s). Verify phone numbers against contacts.");
   }
+
+  contractFail(op, "CONTACT_NOT_FOUND", `Unknown participant(s): ${unknown.join(", ")}. Verify against contacts.`, {
+    asJson,
+    details: {
+      suggestedAction: "Only known contacts can join groups (list with: ravi contacts list --json)",
+      suggestions: suggestionCandidates,
+    },
+  });
 }
 
 function resolveGroupInstance(account?: string): { accountId: string; instanceId: string } {
@@ -511,7 +528,8 @@ async function listGroupsViaOmni(account?: string): Promise<{
 
 async function getGroupInfoViaOmni(
   groupId: string,
-  account?: string,
+  account: string | undefined,
+  contract: { op: string; asJson?: boolean },
 ): Promise<
   Record<string, unknown> & { id: string; subject: string; participants?: Array<{ id: string; admin: string | null }> }
 > {
@@ -537,7 +555,21 @@ async function getGroupInfoViaOmni(
     maxAgeMs: 0,
   }).catch(() => null);
 
-  if (!group && !metadata) fail(`Group not found via Omni REST: ${groupId}`);
+  if (!group && !metadata) {
+    // GROUP_NOT_FOUND (Manual v2): suggestions reuse the group list ALREADY
+    // fetched for resolution above (omni REST, or the local chat model when
+    // the bridge is down) — no extra provider call is made for suggestions.
+    contractFail(contract.op, "GROUP_NOT_FOUND", `Group not found via Omni REST: ${groupId}`, {
+      asJson: contract.asJson,
+      details: {
+        suggestedAction: "Check the group id/JID (list with: ravi whatsapp group list --json)",
+        suggestions: suggestSimilar(
+          groupId,
+          list.groups.flatMap((item) => [item.id, item.subject]),
+        ),
+      },
+    });
+  }
 
   const participants = metadata?.participants.map((participant) => ({
     id: participant.platformUserId,
@@ -827,6 +859,8 @@ export class GroupCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching groups to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const result = await listGroupsViaOmni(account);
     const groups = result.groups.filter((group) => !group.isCommunity);
@@ -839,13 +873,16 @@ export class GroupCommands {
       total: page.total,
       options: ["--account", account],
     });
+    // Compact mode (Manual v2 7.9): narrows the JSON items only; the text table
+    // below keeps rendering from the full records.
+    const compactItems = pickFields(page.items, fields);
     const payload = {
       accountId: result.accountId,
       instanceId: result.instanceId,
       total: page.total,
       pagination,
-      items: page.items,
-      groups: page.items,
+      items: compactItems,
+      groups: compactItems,
       source: result.source,
       meta: result.meta,
     };
@@ -887,7 +924,7 @@ export class GroupCommands {
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = await getGroupInfoViaOmni(groupId, account);
+    const result = await getGroupInfoViaOmni(groupId, account, { op: "whatsapp group info", asJson });
 
     if (asJson) {
       printJson({
@@ -950,6 +987,11 @@ export class GroupCommands {
     })
     mentionTargetsRaw?: string[] | string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually send the message; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const accountId = resolveGroupSendAccount(account);
     if (!accountId) fail("No WhatsApp account configured.");
@@ -964,6 +1006,26 @@ export class GroupCommands {
     const groupJid = normalizeGroupJid(rawGroupId);
     const cleanMessage = cleanCliText(message);
     const mentionTargets = parseMentionTargets(mentionTargetsRaw);
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): a group message reaches real humans and
+      // cannot be reliably unsent, so dry-run by default and exit 3 BEFORE any
+      // provider call — including the group-metadata read below.
+      contractDryRun(
+        "whatsapp group send",
+        {
+          channel: "whatsapp",
+          accountId,
+          instanceId,
+          groupId: rawGroupId,
+          to: groupJid,
+          text: cleanMessage,
+          mentionTargets,
+        },
+        { asJson },
+      );
+    }
+
     const shouldResolveParticipants = mentionTargets.length > 0 || cleanMessage.includes("@");
     const metadata = shouldResolveParticipants
       ? await resolveOmniGroupMetadata({
@@ -1045,6 +1107,11 @@ export class GroupCommands {
     @Option({ flags: "--skip-tagged-admins", description: "Do not auto-promote contacts tagged admin" })
     skipTaggedAdmins?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually create the group; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const requestedParticipants = uniquePhones(parseCsvValues(participantsStr));
     const explicitAdmins = uniquePhones(parseCsvValues(adminPhonesRaw, adminsAliasRaw));
@@ -1060,7 +1127,32 @@ export class GroupCommands {
     }
 
     // Validate all participants exist in contacts before creating group
-    validateParticipantsAreContacts(participants);
+    validateParticipantsAreContacts("whatsapp group create", participants, asJson);
+
+    // Same guard ensureGroupAgent applies later, surfaced BEFORE the brake so
+    // the dry-run plan never promises a route to a nonexistent agent.
+    if (agent && !createAgentIfMissing && !getAgent(agent)) {
+      fail(`Agent not found: ${agent}. Pass --create-agent to create it before routing the group.`);
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): creating a group is a visible, hard-to-undo
+      // social act (participants get notified), so dry-run by default and exit 3
+      // BEFORE any provider call or local side effect (including agent creation).
+      contractDryRun(
+        "whatsapp group create",
+        {
+          subject: name,
+          accountId: resolveGroupAccount(account) || null,
+          participants,
+          requestedAdmins: explicitAdmins,
+          actorAdmins,
+          agent: agent ?? null,
+          createAgent: createAgentIfMissing === true,
+        },
+        { asJson },
+      );
+    }
 
     const preparedAgent = agent
       ? ensureGroupAgent({
@@ -1296,6 +1388,11 @@ export class GroupCommands {
     @Arg("participants", { description: "Phone numbers to add (comma-separated)" }) participantsStr: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually add the participants; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const participants = participantsStr
       .split(",")
@@ -1303,7 +1400,21 @@ export class GroupCommands {
       .filter(Boolean);
 
     // Validate all participants exist in contacts before adding
-    validateParticipantsAreContacts(participants);
+    validateParticipantsAreContacts("whatsapp group add", participants, asJson);
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): adding real people to a group is a visible
+      // social act, so dry-run by default and exit 3 before any provider call.
+      contractDryRun(
+        "whatsapp group add",
+        {
+          groupId: normalizeGroupJid(groupId),
+          participants,
+          accountId: resolveGroupAccount(account) || null,
+        },
+        { asJson },
+      );
+    }
 
     const payload = await addGroupParticipantsViaOmni({ groupId, participants, account });
     if (asJson) {
@@ -1321,11 +1432,32 @@ export class GroupCommands {
     @Arg("participants", { description: "Phone numbers to remove (comma-separated)" }) participantsStr: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove the participants; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const participants = participantsStr
       .split(",")
       .map((p) => p.trim())
       .filter(Boolean);
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): removing real people from a group is
+      // socially irreversible (everyone sees it), so dry-run by default and
+      // exit 3 before any provider call.
+      contractDryRun(
+        "whatsapp group remove",
+        {
+          groupId: normalizeGroupJid(groupId),
+          participants,
+          accountId: resolveGroupAccount(account) || null,
+        },
+        { asJson },
+      );
+    }
+
     const payload = await updateGroupParticipantsViaOmni({
       action: "remove",
       status: "removed",
@@ -1348,11 +1480,31 @@ export class GroupCommands {
     @Arg("participants", { description: "Phone numbers to promote (comma-separated)" }) participantsStr: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually promote the participants; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const participants = participantsStr
       .split(",")
       .map((p) => p.trim())
       .filter(Boolean);
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): promotion grants real admin power over
+      // real people, so dry-run by default and exit 3 before any provider call.
+      contractDryRun(
+        "whatsapp group promote",
+        {
+          groupId: normalizeGroupJid(groupId),
+          participants,
+          accountId: resolveGroupAccount(account) || null,
+        },
+        { asJson },
+      );
+    }
+
     const payload = await updateGroupParticipantsViaOmni({
       action: "promote",
       status: "promoted",
@@ -1375,11 +1527,32 @@ export class GroupCommands {
     @Arg("participants", { description: "Phone numbers to demote (comma-separated)" }) participantsStr: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually demote the participants; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const participants = participantsStr
       .split(",")
       .map((p) => p.trim())
       .filter(Boolean);
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): demotion strips admin rights from real
+      // people (publicly visible), so dry-run by default and exit 3 before any
+      // provider call.
+      contractDryRun(
+        "whatsapp group demote",
+        {
+          groupId: normalizeGroupJid(groupId),
+          participants,
+          accountId: resolveGroupAccount(account) || null,
+        },
+        { asJson },
+      );
+    }
+
     const payload = await updateGroupParticipantsViaOmni({
       action: "demote",
       status: "demoted",
@@ -1418,7 +1591,26 @@ export class GroupCommands {
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually revoke the invite link; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): revoking kills every invite link already
+      // shared with real people (irreversible), so dry-run by default and
+      // exit 3 before any provider call.
+      contractDryRun(
+        "whatsapp group revoke-invite",
+        {
+          groupId: normalizeGroupJid(groupId),
+          accountId: resolveGroupAccount(account) || null,
+        },
+        { asJson },
+      );
+    }
+
     const payload = await revokeGroupInviteViaOmni({ groupId, account });
     if (asJson) {
       printJson(payload);
@@ -1435,7 +1627,27 @@ export class GroupCommands {
     @Arg("code", { description: "Invite code or full link" }) code: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually join the group; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): joining puts the account inside a real
+      // group ("X entrou via link" is visible to every member), an external
+      // mutation despite the legacy read/low CommandAccess metadata — so
+      // dry-run by default and exit 3 before any provider call.
+      contractDryRun(
+        "whatsapp group join",
+        {
+          code: normalizeGroupInviteCode(code),
+          accountId: resolveGroupAccount(account) || null,
+        },
+        { asJson },
+      );
+    }
+
     const payload = await joinGroupViaOmni({ code, account });
     if (asJson) {
       printJson(payload);
@@ -1451,7 +1663,27 @@ export class GroupCommands {
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually leave the group; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): leaving is visible to every member and
+      // re-entry needs an invite, an external mutation despite the legacy
+      // read/low CommandAccess metadata — so dry-run by default and exit 3
+      // before any provider call.
+      contractDryRun(
+        "whatsapp group leave",
+        {
+          groupId: normalizeGroupJid(groupId),
+          accountId: resolveGroupAccount(account) || null,
+        },
+        { asJson },
+      );
+    }
+
     const payload = await leaveGroupViaOmni({ groupId, account });
     if (asJson) {
       printJson(payload);
@@ -1468,7 +1700,26 @@ export class GroupCommands {
     @Arg("name", { description: "New group name" }) name: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually rename the group; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): renaming changes what every member sees,
+      // so dry-run by default and exit 3 before any provider call.
+      contractDryRun(
+        "whatsapp group rename",
+        {
+          groupId: normalizeGroupJid(groupId),
+          subject: name,
+          accountId: resolveGroupAccount(account) || null,
+        },
+        { asJson },
+      );
+    }
+
     const payload = await renameGroupViaOmni({ groupId, subject: name, account });
     if (asJson) {
       printJson(payload);
@@ -1485,7 +1736,27 @@ export class GroupCommands {
     @Arg("text", { description: "New description" }) text: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually update the description; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): the description is shown to every member,
+      // an external mutation despite the legacy read/low CommandAccess metadata
+      // — so dry-run by default and exit 3 before any provider call.
+      contractDryRun(
+        "whatsapp group description",
+        {
+          groupId: normalizeGroupJid(groupId),
+          description: text,
+          accountId: resolveGroupAccount(account) || null,
+        },
+        { asJson },
+      );
+    }
+
     const payload = await setGroupDescriptionViaOmni({ groupId, description: text, account });
     if (asJson) {
       printJson(payload);
@@ -1505,10 +1776,31 @@ export class GroupCommands {
     @Arg("setting", { description: "Setting: announcement, not_announcement, locked, unlocked" }) setting: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually apply the setting; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const valid = ["announcement", "not_announcement", "locked", "unlocked"];
     if (!valid.includes(setting)) {
       fail(`Invalid setting: ${setting}. Valid: ${valid.join(", ")}`);
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): settings change who can post/edit in a
+      // live group, an external mutation despite the legacy read/low
+      // CommandAccess metadata — so dry-run by default and exit 3 before any
+      // provider call.
+      contractDryRun(
+        "whatsapp group settings",
+        {
+          groupId: normalizeGroupJid(groupId),
+          setting,
+          accountId: resolveGroupAccount(account) || null,
+        },
+        { asJson },
+      );
     }
 
     const payload = await setGroupSettingsViaOmni({ groupId, setting, account });
