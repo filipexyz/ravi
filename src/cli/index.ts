@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { registerCommands } from "./registry.js";
 import * as allCommands from "./commands/index.js";
-import { installUsageContract } from "./agent-contract.js";
+import { ContractError, installUsageContract } from "./agent-contract.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
 import { runUpdate } from "./commands/update.js";
@@ -309,6 +309,14 @@ program
 maybeSuggestKnownRootCommand(process.argv.slice(2), program);
 
 void bootstrapCli().catch((error: unknown) => {
+  if (error instanceof ContractError) {
+    // Manual v2: parser-level usage errors (installUsageContract) throw when a
+    // runtime context is present. The envelope was already printed by
+    // contractFail — only the exit taxonomy (1 error · 2 usage · 3 brake)
+    // must survive to the process exit code.
+    process.exitCode = error.exitCode;
+    return;
+  }
   console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
   process.exitCode = 1;
 });
