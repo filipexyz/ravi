@@ -263,6 +263,12 @@ mock.module("../../contacts.js", () => ({
 mock.module("../../router/router-db.js", () => ({
   dbFindChat: () => null,
   dbFindChatMessage: () => null,
+  dbGetAgent: () => null,
+  dbUpdateAgent: () => null,
+  getDb: () => {
+    throw new Error("router DB is not available in Slack command unit tests");
+  },
+  getRaviDbPath: () => "",
 }));
 
 mock.module("../../artifacts/store.js", () => ({
