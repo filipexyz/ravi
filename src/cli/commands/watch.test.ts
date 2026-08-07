@@ -9,6 +9,8 @@
  */
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 
+const { CliExpectedError } = await import("../expected-error.js");
+
 afterAll(() => mock.restore());
 
 // ---------------------------------------------------------------------------
@@ -33,6 +35,7 @@ interface MockWatch {
 }
 
 let watchStore: MockWatch[] = [];
+let watchOperationError: unknown = null;
 
 function buildWatch(overrides: Partial<MockWatch> = {}): MockWatch {
   return {
@@ -71,7 +74,7 @@ mock.module("../context.js", () => ({
   // ContractError instead of process.exit, which is what tests need.
   hasContext: () => true,
   fail: (message: string) => {
-    throw new Error(message);
+    throw new CliExpectedError(message);
   },
 }));
 
@@ -107,7 +110,8 @@ mock.module("../../triggers/index.js", () => ({
 }));
 
 mock.module("../../watch/index.js", () => ({
-  isWatchApiError: () => false,
+  isWatchApiError: (error: unknown) =>
+    Boolean(error && typeof error === "object" && (error as Record<string, unknown>).__watchApi === true),
   listWatchConnectors: () => [],
   listWatchRecords: (input?: { limit?: number; offset?: number }) => {
     const limit = input?.limit ?? 50;
@@ -125,12 +129,14 @@ mock.module("../../watch/index.js", () => ({
     return watchStore.some((watch) => watch.id === id);
   },
   setWatchEnabled: async (id: string, enabled: boolean) => {
+    if (watchOperationError) throw watchOperationError;
     setEnabledCalls.push({ id, enabled });
     const watch = watchStore.find((item) => item.id === id);
     if (!watch) throw new Error(`Watch not found: ${id}`);
     return { ...watch, status: enabled ? "active" : "disabled" };
   },
   createWatch: async () => {
+    if (watchOperationError) throw watchOperationError;
     throw new Error("createWatch is not exercised by the contract tests");
   },
 }));
@@ -182,6 +188,7 @@ beforeEach(() => {
   setEnabledCalls.length = 0;
   createTriggerCalls.length = 0;
   watchStore = [buildWatch()];
+  watchOperationError = null;
 });
 
 // ---------------------------------------------------------------------------
@@ -339,6 +346,16 @@ describe("watch write brake", () => {
     });
   });
 
+  it("run with --execute emits LOCAL_RUNNER_NOT_IMPLEMENTED with exit 1", async () => {
+    const error = await expectContractError(
+      () => new WatchCommands().run("watch-gh-1", true, true, true),
+      "LOCAL_RUNNER_NOT_IMPLEMENTED",
+      1,
+    );
+
+    expect(error.details.retryable).toBe(false);
+  });
+
   it("run still validates placement BEFORE the brake: console watches fail with the legacy message", async () => {
     watchStore = [buildWatch({ id: "watch-npm-console", placement: "console" })];
 
@@ -356,6 +373,33 @@ describe("watch write brake", () => {
 // ---------------------------------------------------------------------------
 
 describe("watch envelopes and compact mode", () => {
+  it("preserves safe provider errors and removes arbitrary provider details", async () => {
+    watchOperationError = {
+      __watchApi: true,
+      code: "RATE_LIMITED",
+      message: "Provider rate limit reached.",
+      details: { retryAfterMs: 1_000, accessToken: "secret-token" },
+    };
+
+    const error = await expectContractError(() => new WatchCommands().enable("watch-gh-1", true), "RATE_LIMITED", 1);
+    expect(error.details.retryable).toBe(true);
+    expect(error.details.retryAfterMs).toBe(1_000);
+    expect(error.details.accessToken).toBeUndefined();
+    expect(JSON.stringify(error.envelope())).not.toContain("secret-token");
+  });
+
+  it("redacts unexpected provider failures as UNHANDLED_ERROR", async () => {
+    watchOperationError = new Error("provider https://secret.invalid?token=abc failed");
+
+    const error = await expectContractError(
+      () => new WatchCommands().disable("watch-gh-1", true),
+      "UNHANDLED_ERROR",
+      1,
+    );
+    expect(error.message).toBe("Command failed unexpectedly.");
+    expect(JSON.stringify(error.envelope())).not.toContain("secret.invalid");
+  });
+
   it("show on an unknown watch exits 1 with WATCH_NOT_FOUND and suggestions from the local store", async () => {
     const commands = new WatchCommands();
     const error = await expectContractError(() => commands.show("watch-gh-9", true), "WATCH_NOT_FOUND", 1);

@@ -80,8 +80,9 @@ at the source with the shared helpers in `src/cli/agent-contract.ts`.
 6. `watch list` MUST accept `--fields a,b,c` for compact output.
 7. In agent context (`RAVI_*` envs present) a thrown `ContractError` MUST
    preserve its exit code through the registry dispatcher, and the
-   `runWatchCommand` wrapper MUST rethrow `ContractError` instead of remapping
-   it to `WATCH_COMMAND_FAILED`.
+   `runWatchCommand` wrapper MUST rethrow it unchanged. Provider failures keep
+   their stable code with exit 1 and only allowlisted actionable details;
+   unexpected failures become redacted `UNHANDLED_ERROR`.
 8. Unbraked writes (`create`, `enable`, `disable`) keep their current
    immediate-write behavior (declared): `create` is the domain's entry point
    with an obvious inverse (`rm`), and `enable`/`disable` are a reversible
@@ -102,6 +103,7 @@ at the source with the shared helpers in `src/cli/agent-contract.ts`.
 | case | code | exit |
 |---|---|---|
 | watch not found | `WATCH_NOT_FOUND` + suggestions | 1 |
+| local run requested before runner support exists | `LOCAL_RUNNER_NOT_IMPLEMENTED` | 1 |
 | invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 | provider/console failure | stable console codes (see Error Handling) | 1 |

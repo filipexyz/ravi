@@ -53,11 +53,15 @@ Expected:
   create the trigger; with `--execute` the trigger MUST be created.
 - `watch run <id> --once` without `--execute` MUST exit 3 and MUST NOT start a
   poll cycle.
+- `watch run <id> --once --execute` without local runner support MUST emit
+  `LOCAL_RUNNER_NOT_IMPLEMENTED` with exit 1 in text and JSON, never an
+  `ok:false` success payload.
 - Validation on `trigger`/`run` (missing `--message`, unknown watch, unknown
   `--agent`, non-local placement) MUST fail before any dry-run plan is emitted.
 - A braked op invoked with `RAVI_*` envs present (agent context) MUST still
   exit 3 with the envelope — `runWatchCommand` MUST rethrow `ContractError`
-  instead of remapping it to `WATCH_COMMAND_FAILED`.
+  unchanged. Stable provider errors MUST use exit 1 with only allowlisted
+  details; unexpected errors MUST become redacted `UNHANDLED_ERROR`.
 - `watch list --fields a,b,c --json` MUST return items containing only the
   requested fields.
 - Unbraked writes (`create`, `enable`, `disable`) MUST keep immediate-write

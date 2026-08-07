@@ -1,6 +1,13 @@
 import "reflect-metadata";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import {
+  ContractError,
+  contractDryRun,
+  contractFail,
+  expectedErrorToContractError,
+  pickFields,
+  suggestSimilar,
+} from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import {
@@ -108,7 +115,7 @@ export class WatchCommands {
     @Option({ flags: "--project <id>", description: "Console project id" }) projectId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    return runWatchCommand(asJson, async () => {
+    return runWatchCommand("watch create", asJson, async () => {
       const result = await createWatch({
         provider,
         resourceRef: resource,
@@ -222,7 +229,7 @@ export class WatchCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     requireWatch("watch enable", id, asJson);
-    return runWatchCommand(asJson, async () => {
+    return runWatchCommand("watch enable", asJson, async () => {
       const watch = await setWatchEnabled(id, true);
       const payload = { status: "enabled", watch: serializeWatch(watch) };
       if (asJson) printJson(payload);
@@ -239,7 +246,7 @@ export class WatchCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     requireWatch("watch disable", id, asJson);
-    return runWatchCommand(asJson, async () => {
+    return runWatchCommand("watch disable", asJson, async () => {
       const watch = await setWatchEnabled(id, false);
       const payload = { status: "disabled", watch: serializeWatch(watch) };
       if (asJson) printJson(payload);
@@ -278,7 +285,7 @@ export class WatchCommands {
         { asJson },
       );
     }
-    return runWatchCommand(asJson, async () => {
+    return runWatchCommand("watch rm", asJson, async () => {
       const deleted = await removeWatch(id);
       if (!deleted) failWatchNotFound("watch rm", id, asJson);
       const payload = { deleted, id };
@@ -328,15 +335,15 @@ export class WatchCommands {
     })
     execute?: boolean,
   ) {
-    return runWatchCommand(asJson, async () => {
-      if (!message?.trim()) throw new Error("--message is required");
+    return runWatchCommand("watch trigger", asJson, async () => {
+      if (!message?.trim()) fail("--message is required");
       const watch = requireWatch("watch trigger", id, asJson);
       const eventType = event?.trim() || watch.eventTypes[0];
-      if (!eventType) throw new Error(`Watch ${id} has no event type configured`);
+      if (!eventType) fail(`Watch ${id} has no event type configured`);
       const subject = watch.eventSubjects.find((item) => item.endsWith(`.${eventType}`)) ?? watch.eventSubjects[0];
-      if (!subject) throw new Error(`Watch ${id} has no trigger subject configured`);
+      if (!subject) fail(`Watch ${id} has no trigger subject configured`);
 
-      if (agent && !getAgent(agent)) throw new Error(`Agent not found: ${agent}`);
+      if (agent && !getAgent(agent)) fail(`Agent not found: ${agent}`);
       const ctx = getContext();
       const resolvedAgent = agent ?? ctx?.agentId;
       const resolvedAccount =
@@ -442,19 +449,13 @@ export class WatchCommands {
         { asJson },
       );
     }
-    const payload = {
-      ok: false,
-      watch: serializeWatch(watch),
-      error: {
-        code: "LOCAL_RUNNER_NOT_IMPLEMENTED",
-        message: "Local watch polling runner is not implemented in this cut.",
+    contractFail("watch run", "LOCAL_RUNNER_NOT_IMPLEMENTED", "Local watch polling runner is not implemented.", {
+      asJson,
+      details: {
+        retryable: false,
+        suggestedAction: "Run the watch through a supported Console placement or wait for local runner support",
       },
-    };
-    if (asJson) {
-      printJson(payload);
-      return payload;
-    }
-    fail(payload.error.message);
+    });
   }
 }
 
@@ -481,7 +482,7 @@ function parseStatus(value: string | undefined): "active" | "disabled" | "error"
 function parseSession(value: string | undefined): "main" | "isolated" {
   if (!value) return "isolated";
   if (value === "main" || value === "isolated") return value;
-  throw new Error("--session must be main or isolated");
+  fail("--session must be main or isolated");
 }
 
 function parsePositiveInt(value: string | undefined, fallback: number, max: number): number {
@@ -530,35 +531,66 @@ function printWatchSummary(watch: WatchRecord): void {
   for (const subject of watch.eventSubjects) console.log(`    - ${subject}`);
 }
 
-async function runWatchCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<T | undefined> {
+async function runWatchCommand<T>(
+  op: string,
+  asJson: boolean | undefined,
+  fn: () => Promise<T>,
+): Promise<T | undefined> {
   try {
     return await fn();
   } catch (error) {
     // Contract errors (not-found envelope / write brake) are already rendered
-    // and carry their own exit code (1/3) — never remap them to
-    // WATCH_COMMAND_FAILED, or the brake taxonomy would be silently defeated.
+    // and carry their own exit code (1/3) — never remap them, or the brake
+    // taxonomy would be silently defeated.
     if (error instanceof ContractError) throw error;
-    const payload = errorPayload(error);
-    if (asJson) {
-      printJson(payload);
-      return undefined;
+    const expected = expectedErrorToContractError(op, error);
+    if (expected) {
+      contractFail(op, expected.code, expected.message, {
+        asJson,
+        exitCode: expected.exitCode,
+        details: expected.details,
+      });
     }
-    const hint = actionableHint(payload.error);
-    fail(`${payload.error.code}: ${payload.error.message}${hint ? `\n${hint}` : ""}`);
+    if (isWatchApiError(error)) {
+      const details = safeWatchErrorDetails(error.details);
+      const hint = actionableHint({ code: error.code, details });
+      contractFail(op, error.code, `Watch provider request failed (${error.code}).`, {
+        asJson,
+        details: {
+          ...details,
+          retryable: isRetryableWatchError(error.code),
+          suggestedAction: hint ?? "Inspect the watch provider configuration and retry",
+        },
+      });
+    }
+    contractFail(op, "UNHANDLED_ERROR", "Command failed unexpectedly.", {
+      asJson,
+      details: {
+        retryable: false,
+        suggestedAction: "Inspect redacted runtime logs and retry when the underlying cause is resolved",
+      },
+    });
   }
 }
 
-function errorPayload(error: unknown): { success: false; error: { code: string; message: string; details?: unknown } } {
-  if (isWatchApiError(error)) {
-    return { success: false, error: { code: error.code, message: error.message, details: error.details } };
+function safeWatchErrorDetails(details: Record<string, unknown> | undefined): Record<string, unknown> {
+  if (!details) return {};
+  const safe: Record<string, unknown> = {};
+  for (const key of [
+    "installUrl",
+    "connectUrl",
+    "missingPermissions",
+    "missingCapabilities",
+    "unsupportedEventTypes",
+    "retryAfterMs",
+  ]) {
+    if (details[key] !== undefined) safe[key] = details[key];
   }
-  return {
-    success: false,
-    error: {
-      code: "WATCH_COMMAND_FAILED",
-      message: error instanceof Error ? error.message : String(error),
-    },
-  };
+  return safe;
+}
+
+function isRetryableWatchError(code: string): boolean {
+  return code === "RATE_LIMITED" || code === "SERVER_UNAVAILABLE" || code === "WEBHOOK_UNHEALTHY";
 }
 
 function actionableHint(error: { code: string; details?: unknown }): string | null {
