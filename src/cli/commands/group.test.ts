@@ -405,11 +405,24 @@ describe("whatsapp group write brake", () => {
 
   it("add validates contacts BEFORE the brake: unknown participant exits 1 with CONTACT_NOT_FOUND and no provider call", async () => {
     const commands = new GroupCommands();
-    const error = await expectContractError(
-      () => commands.add("120363000000000001", "5511000000000", undefined, true, undefined),
-      "CONTACT_NOT_FOUND",
-      1,
-    );
+    const originalError = console.error;
+    const errorLines: string[] = [];
+    let caught: unknown;
+    console.error = (...args: unknown[]) => errorLines.push(args.map(String).join(" "));
+    try {
+      await commands.add("120363000000000001", "5511000000000", undefined, undefined, undefined);
+    } catch (error) {
+      caught = error;
+    } finally {
+      console.error = originalError;
+    }
+
+    expect(caught).toBeInstanceOf(ContractError);
+    const error = caught as ContractErrorInstance;
+    expect(error.code).toBe("CONTACT_NOT_FOUND");
+    expect(error.exitCode).toBe(1);
+    expect(errorLines).toHaveLength(1);
+    expect(errorLines[0]).toContain("Unknown participant(s): 5511000000000");
 
     expect(error.details.suggestedAction).toContain("ravi contacts list");
     expect(addParticipantCalls).toHaveLength(0);

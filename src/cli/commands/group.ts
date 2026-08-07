@@ -380,21 +380,6 @@ function validateParticipantsAreContacts(op: string, participants: string[], asJ
     ),
   ).slice(0, 3);
 
-  if (!asJson) {
-    console.error(`\n✗ Participant(s) not found in contacts:\n`);
-    for (const phone of unknown) {
-      console.error(`  - ${phone}`);
-    }
-    if (suggestionCandidates.length > 0) {
-      console.error(`    Did you mean?`);
-      for (const s of suggestionCandidates) {
-        console.error(`      ${s}`);
-      }
-    }
-    console.error(`\nOnly known contacts can be added to groups.`);
-    console.error(`Use 'ravi contacts list' to see all contacts.\n`);
-  }
-
   contractFail(op, "CONTACT_NOT_FOUND", `Unknown participant(s): ${unknown.join(", ")}. Verify against contacts.`, {
     asJson,
     details: {

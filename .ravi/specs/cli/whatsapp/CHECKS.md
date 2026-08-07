@@ -6,6 +6,7 @@
 - Every braked op invoked with `--execute` MUST perform the real write through the same provider path it planned.
 - `whatsapp group info <unknown>` with `--json` MUST exit 1 with the `GROUP_NOT_FOUND` envelope and suggestions built only from the group list already fetched during resolution.
 - `whatsapp group create|add` with an unknown participant MUST exit 1 with `CONTACT_NOT_FOUND` (local contacts DB suggestions) BEFORE the brake and BEFORE any provider call.
+- Text mode MUST render that `CONTACT_NOT_FOUND` failure exactly once; helper diagnostics MUST NOT preprint a second error.
 - `whatsapp dm send|read|ack` with an unresolvable contact MUST exit 1 with the `CONTACT_NOT_FOUND` envelope.
 - `whatsapp group create` in dry-run MUST NOT create the group, the agent (`--create-agent`), the local chat, the route, or the session.
 - `dm read --no-ack` MUST read immediately. A default `dm read` with a receipt candidate and every `dm ack` MUST exit 3 without `--execute`, before any NATS emit; the matching `--execute` call MUST emit the receipt.
