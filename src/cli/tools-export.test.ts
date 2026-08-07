@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import type { ContextRecord } from "../router/router-db.js";
-import { ContractError, contractFail } from "./agent-contract.js";
+import { ContractError, contractDryRun, contractFail } from "./agent-contract.js";
 import { runWithContext } from "./context.js";
 import { CliOnly, Command, CommandAccess, Group, Option } from "./decorators.js";
 import { extractTools } from "./tools-export.js";
@@ -58,6 +58,12 @@ class ContractToolCommands {
       dryRun: true,
     });
   }
+
+  @Command({ name: "dry-run", description: "Render the default human dry-run before throwing" })
+  @CommandAccess({ kind: "mutate", resource: "contract", action: "dry-run", risk: "high" })
+  dryRun(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    contractDryRun("contract dry-run", { target: "fixture" }, { asJson });
+  }
 }
 
 @Group({ name: "terminal", description: "CLI-only fixture", scope: "open" })
@@ -93,6 +99,7 @@ const contractContext: ContextRecord = {
   capabilities: [
     { permission: "read", objectType: "contract", objectId: "emitted", source: "test" },
     { permission: "read", objectType: "contract", objectId: "silent", source: "test" },
+    { permission: "mutate", objectType: "contract", objectId: "dry-run", source: "test" },
   ],
   createdAt: Date.now(),
 };
@@ -184,6 +191,24 @@ describe("tools export contract errors", () => {
       success: false,
       op: "contract silent",
       error: { code: "WRITE_REQUIRES_EXECUTE", dryRun: true },
+    });
+  });
+
+  it("replaces a default human dry-run with one parseable contract envelope", async () => {
+    const tool = extractTools([ContractToolCommands]).find((candidate) => candidate.name === "contract_dry-run");
+    expect(tool).toBeDefined();
+
+    const result = await runWithContext({ agentId: contractContext.agentId, context: contractContext }, () =>
+      tool!.handler({}),
+    );
+
+    expect(result).toMatchObject({ isError: false, outcome: "blocked", exitCode: 3 });
+    const text = result.content[0]?.text ?? "{}";
+    expect(text).not.toContain("[dry-run]");
+    expect(JSON.parse(text)).toMatchObject({
+      success: false,
+      op: "contract dry-run",
+      error: { code: "WRITE_REQUIRES_EXECUTE", dryRun: true, plan: { target: "fixture" } },
     });
   });
 });

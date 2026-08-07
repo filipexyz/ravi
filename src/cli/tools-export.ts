@@ -303,14 +303,12 @@ function buildHandler(
         contractErrorCode = contractError.code;
         outcome = contractFailureOutcome(contractError);
         isError = outcome !== "blocked";
-        // Contract helpers emit their structured envelope before throwing in a
-        // tool context. Preserve that envelope without appending a second,
-        // lossy `Error: ...` line. A directly-thrown ContractError may not have
-        // emitted anything, so synthesize the envelope only when it is absent.
+        // A tool result must contain exactly one machine-readable envelope.
+        // Preserve an already-emitted envelope; otherwise replace any captured
+        // human rendering or incidental output with the canonical structure.
         const envelope = contractError.envelope();
-        if (!output.some((line) => isSameContractEnvelope(line, envelope))) {
-          output.push(JSON.stringify(envelope));
-        }
+        const renderedEnvelope = output.find((line) => isSameContractEnvelope(line, envelope));
+        output.splice(0, output.length, renderedEnvelope ?? JSON.stringify(envelope));
       } else {
         contractExitCode = 1;
         outcome = "failed";
