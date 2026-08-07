@@ -66,7 +66,7 @@ immediately.
 
 - `bun test src/cli/commands/video.test.ts` green.
 - Live checks: `ravi video analyze <url> --json`, `--strategy subtitles` and
-  `--force-analyze` all run directly; invalid strategy exits 1.
+  `--force-analyze` all run directly; invalid strategy exits 2 with `USAGE_ERROR`.
 
 ## Known Failure Modes
 

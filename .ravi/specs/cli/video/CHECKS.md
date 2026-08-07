@@ -9,6 +9,6 @@
 - `video analyze <url> --strategy subtitles --json` MUST run without
   `--execute` and MUST invoke the subtitles strategy only.
 - `video analyze <url> --strategy gemini --json` MUST perform the analysis.
-- An invalid `--strategy` value MUST fail with exit 1 before analysis.
+- An invalid `--strategy` value MUST fail with `USAGE_ERROR` and exit 2 before analysis.
 - `bun test src/cli/commands/video.test.ts` SHOULD pass after any change to the
   video contract surface.

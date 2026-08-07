@@ -254,7 +254,7 @@ Suggested CLI shape:
 ```bash
 ravi chats lists create <name> [--owner <type:id>] [--json]
 ravi chats lists add <list> <chat> [--owner <type:id>] [--reason <text>] [--json]
-ravi chats lists remove <list> <chat> [--owner <type:id>] [--json] --execute
+ravi chats lists remove <list> <chat> [--owner <type:id>] [--json]
 ravi chats lists show <list> [--owner <type:id>] [--json]
 ravi chats lists preview <list> [--owner <type:id>] [--json]
 ravi chats lists members <list> [--owner <type:id>] [--json]
@@ -262,7 +262,7 @@ ravi chats lists delta <list> <chat> [--owner <type:id>] [--reader <type:id>] [-
 ravi chats lists mark-read <list> <chat> --message <message-id> [--owner <type:id>] [--reader <type:id>] [--json]
 ```
 
-`remove` follows the agent-first write brake (`.ravi/specs/cli/chats/SPEC.md`): without `--execute` it is a dry-run that exits 3 and changes nothing.
+`remove` is a local soft-deactivate operation: it takes effect immediately, does not accept `--execute`, and retains the membership record for audit/recovery.
 
 If `ravi chats` does not exist yet, the feature MAY start under an existing operational command, but public naming SHOULD converge on chats because the unit being read is a chat.
 
