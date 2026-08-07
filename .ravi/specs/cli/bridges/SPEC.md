@@ -52,8 +52,9 @@ before it.
 6. A `ContractError` thrown inside a command MUST pass through
    `runBridgesCommand` untouched — the legacy CloudAuthError funnel MUST NOT
    rewrap it.
-7. Remote failures (missing project, auth, Console denials) keep the legacy
-   CloudAuthError funnel with its pre-existing code/exit map.
+7. Remote failures (missing project, auth, Console denials) preserve their
+   stable CloudAuthError code through the global taxonomy: `PAYLOAD_INVALID`
+   exits `2`; other provider/auth failures exit `1`.
 
 ## Write classification (brake decision per op)
 
@@ -67,7 +68,7 @@ before it.
 | case | code | exit |
 |---|---|---|
 | braked revoke without `--yes`/`--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
-| remote/provider errors | legacy CloudAuthError codes (`AUTH_REQUIRED`, `PAYLOAD_INVALID`, ...) | legacy CloudAuthError exit map |
+| remote/provider errors | stable CloudAuthError code | `2` for `PAYLOAD_INVALID`; otherwise `1` |
 
 ## Internal consumers
 
@@ -86,8 +87,7 @@ CLI `--help` plus this spec are the teaching surface.
 
 - Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
   `bridges` root is registered in `AGENT_CONTRACT_DOMAINS`.
-- The legacy CloudAuthError funnel has its own conflicting exit map
-  (`PAYLOAD_INVALID` → 3): a missing `--project` can exit 3 without being a
-  write brake. Read `error.code`, not the exit code, to distinguish.
+- The shared transport boundary must normalize the legacy CloudAuthError
+  object's historical exit map; only `WRITE_REQUIRES_EXECUTE` may exit `3`.
 - Before the rethrow guard, a `ContractError` thrown by the brake was
   rewrapped as `SERVER_UNAVAILABLE` exit 5 by `cloudAuthErrorFromUnknown`.

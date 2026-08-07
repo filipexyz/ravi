@@ -77,7 +77,7 @@ immediate — the brake sits exactly where bytes leave the machine: `publish`
 | artifact not found | `ARTIFACT_NOT_FOUND` + suggestions (local ids/titles) | 1 |
 | artifact version not found | `ARTIFACT_VERSION_NOT_FOUND` + versions listing suggestedAction | 1 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
-| Console auth/provider failure on publish/activate | legacy CloudAuthError funnel (unchanged) | legacy CloudAuthError exit codes |
+| Console auth/provider failure on publish/activate | stable CloudAuthError code | `2` for `PAYLOAD_INVALID`; otherwise `1` |
 
 ## Internal consumers
 

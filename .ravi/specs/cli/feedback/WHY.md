@@ -17,7 +17,7 @@ Two ordering rules keep the brake honest:
   can rehearse feedback on a machine that never ran `ravi login`.
 - **Validation before the brake outcome matters.** Invalid `--kind`,
   `--severity`, broken `--metadata-json` or an empty message fail with the
-  pre-existing `PAYLOAD_INVALID` CloudAuthError (exit 1) even in dry-run —
+  pre-existing `PAYLOAD_INVALID` CloudAuthError code (exit 2) even in dry-run —
   a plan for an unsendable payload would be noise.
 
 One integration subtlety: the domain already had its own error funnel

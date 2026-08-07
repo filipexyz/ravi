@@ -44,14 +44,15 @@ wrong organization is exactly the mistake the brake prevents.
    `name`, `description`, effective `defaultVisibility`, `defaultPageSite`),
    and MUST NOT call Console.
 4. Validation runs BEFORE the brake: an invalid `--visibility` MUST fail with
-   `PAYLOAD_INVALID` (legacy funnel) with or without `--execute`, and MUST NOT
+   `PAYLOAD_INVALID`, exit `2`, with or without `--execute`, and MUST NOT
    produce a plan.
 5. `cloud projects list` MUST accept `--fields a,b,c` for compact output.
 6. A `ContractError` thrown inside a command MUST pass through
    `runCloudProjectsCommand` untouched — the legacy CloudAuthError funnel MUST
    NOT rewrap it.
-7. Remote failures (auth, org denials) keep the legacy CloudAuthError funnel
-   with its pre-existing code/exit map.
+7. Remote failures preserve their stable CloudAuthError code through the
+   global taxonomy: payload validation exits `2`; provider/auth failures exit
+   `1`.
 
 ## Write classification (brake decision per op)
 
@@ -64,8 +65,8 @@ wrong organization is exactly the mistake the brake prevents.
 | case | code | exit |
 |---|---|---|
 | braked create without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
-| invalid `--visibility` | `PAYLOAD_INVALID` (legacy funnel) | legacy CloudAuthError exit map (3) |
-| remote/provider errors | legacy CloudAuthError codes | legacy CloudAuthError exit map |
+| invalid `--visibility` | `PAYLOAD_INVALID` | 2 |
+| remote/provider errors | stable CloudAuthError code | 1 |
 
 ## Internal consumers
 
@@ -86,8 +87,8 @@ plus this spec are the teaching surface.
 
 - Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
   `cloud` root is registered in `AGENT_CONTRACT_DOMAINS`.
-- The legacy CloudAuthError funnel maps `PAYLOAD_INVALID` to exit 3, which
-  collides numerically with the write brake. Read `error.code` — only
-  `WRITE_REQUIRES_EXECUTE` means "re-run with --execute".
+- The shared transport boundary MUST override the CloudAuthError object's
+  historical exit map. Only `WRITE_REQUIRES_EXECUTE` means "re-run with
+  --execute" and exits `3`.
 - Before the rethrow guard, a `ContractError` thrown by the brake was
   rewrapped as `SERVER_UNAVAILABLE` exit 5 by `cloudAuthErrorFromUnknown`.

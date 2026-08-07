@@ -27,10 +27,10 @@ Decisions specific to this domain:
   generic 404/PAYLOAD_INVALID errors. Only recognizable "site/route not found"
   messages map to `SITE_NOT_FOUND`/`ROUTE_NOT_FOUND` (with listing
   suggestedAction — sites live in Console, there is no cheap local candidate
-  source for similarity suggestions); anything else keeps the legacy
-  CloudAuthError funnel, whose exit scheme (PAYLOAD_INVALID → 3) predates and
-  collides with the Manual v2 taxonomy. That collision is also why the funnel
-  rethrows ContractError first (mail.ts model).
+  source for similarity suggestions); anything else keeps its stable
+  CloudAuthError code, normalized by the shared transport to the global exit
+  taxonomy. The funnel still rethrows ContractError first (mail.ts model) so
+  policy blocks retain their exact semantics.
 - **Validation before the brake on `password remove`.** The replacement
   visibility requirement exists so removing a password can never make a page
   public by accident; the check stays ahead of the brake so a dry-run already

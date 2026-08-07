@@ -3,11 +3,11 @@
 ## Debug Flow
 
 1. Read the rules: `ravi specs get cli/connectors --mode rules --json`.
-2. Reproduce with `--json` and read `error.code` first — on this domain the
-   exit code alone is ambiguous (legacy CloudAuthError map coexists).
+2. Reproduce with `--json`; verify the stable CloudAuthError code is preserved
+   under the global exit map.
 3. `WRITE_REQUIRES_EXECUTE` (exit 3): read `error.plan`, confirm the revoke is
    intended, re-run with `--execute` (or `--yes`, the legacy equivalent).
-4. `AUTH_REQUIRED`/`AUTH_EXPIRED` (exit 2): run `ravi login` and retry.
+4. `AUTH_REQUIRED`/`AUTH_EXPIRED` (exit 1): run `ravi login` and retry.
 5. `PAYLOAD_INVALID` mentioning projects: connectors are project-scoped — pass
    `--project <id-or-slug>` from `ravi cloud projects list --json`.
 6. If `revoke` executed without `--yes`/`--execute`, the brake regressed:

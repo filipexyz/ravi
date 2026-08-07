@@ -437,11 +437,10 @@ follow the Manual v2 agent-first contract defined by `cli`:
 - A `ContractError` thrown inside a scope command MUST pass through
   `runCloudScopeCommand` untouched — the legacy CloudAuthError funnel MUST NOT
   rewrap it into `SERVER_UNAVAILABLE`.
-- Validation failures keep the legacy CloudAuthError funnel and its
-  pre-existing code/exit map. Known ambiguity: `PAYLOAD_INVALID` (for example
-  "Choose only one scope target" or a missing `--project`) exits 3 without
-  being a write brake — consumers MUST branch on `error.code`, and only
-  `WRITE_REQUIRES_EXECUTE` means "re-run with --execute".
+- Validation failures preserve the stable CloudAuthError code through the
+  global taxonomy. `PAYLOAD_INVALID` (for example "Choose only one scope
+  target" or a missing `--project`) exits `2`; only
+  `WRITE_REQUIRES_EXECUTE` exits `3`.
 - Unknown project refs on `set` fail as `PROJECT_ACCESS_DENIED` listing the
   visible project refs (already safe, id/slug-only) — the resolver's message
   is the suggestion surface for this remote resource.

@@ -10,7 +10,7 @@
    (`kind`, `severity`, `title`, `message`, `surface`, `project`, `url`,
    `tags`, `metadata`, `console`) that `--execute` would submit. Review it,
    then re-run the same command adding `--execute`.
-4. `PAYLOAD_INVALID` (exit 1): fix the flag it names — kind must be
+4. `PAYLOAD_INVALID` (exit 2): fix the flag it names — kind must be
    bug|idea|ux|docs|performance|security|other, severity
    low|medium|high|critical, `--metadata-json` a JSON object, message
    non-empty. These fire even in dry-run, by design.
@@ -32,6 +32,6 @@ Live checks (dry-run is network-free; `--execute` requires `ravi login`):
 
 ```bash
 ravi feedback send "teste de contrato" --kind idea --json      # expect exit 3 + plan
-ravi feedback send "teste" --kind bogus --json                 # expect PAYLOAD_INVALID, exit 1
+ravi feedback send "teste" --kind bogus --json                 # expect PAYLOAD_INVALID, exit 2
 ravi feedback send "feedback real" --kind idea --execute --json  # expect success:true + url
 ```

@@ -38,9 +38,9 @@ contract errors rethrow first, recognizable Console not-found failures map to
 
 1. With `--json`, every failure on a migrated op MUST return the envelope
    `{success:false, op, error:{code, message, retryable, suggestedAction}}`.
-2. Exit codes MUST follow the taxonomy: `0` success · `1` error (not-found) ·
-   `2` usage error · `3` blocked by policy (write brake). Non-mapped Console
-   failures keep the legacy CloudAuthError codes/exits unchanged.
+2. Exit codes MUST follow the taxonomy: `0` success · `1` execution/provider
+   error · `2` usage error · `3` blocked by policy. Non-mapped Console failures
+   preserve their stable CloudAuthError code under this global exit map.
 3. A Console failure whose message matches a site not-found MUST exit 1 with
    `SITE_NOT_FOUND` and suggestedAction `ravi pages list --json`; a route
    not-found MUST exit 1 with `ROUTE_NOT_FOUND` and suggestedAction
@@ -87,7 +87,7 @@ is added it MUST arrive braked.
 | Console site not found | `SITE_NOT_FOUND` + listing suggestedAction | 1 |
 | Console route not found | `ROUTE_NOT_FOUND` + listing suggestedAction | 1 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
-| other Console failures (auth, payload, rate limit) | legacy CloudAuthError funnel (unchanged) | legacy CloudAuthError exit codes |
+| other Console failures (auth, payload, rate limit) | stable CloudAuthError code | `2` for `PAYLOAD_INVALID`; otherwise `1` |
 
 ## Internal consumers
 
@@ -119,10 +119,10 @@ is added it MUST arrive braked.
 
 ## Known Failure Modes
 
-- CloudAuthError carries its OWN exit scheme (`PAYLOAD_INVALID` → 3!) that
-  collides with the Manual v2 taxonomy; without the ContractError rethrow in
-  `runPagesCommand`, a braked dry-run in agent context would be re-wrapped and
-  mis-exited by the legacy funnel.
+- The CloudAuthError object retains a historical internal exit scheme, but the
+  shared transport MUST normalize it to the global taxonomy. The
+  ContractError rethrow in `runPagesCommand` keeps a braked dry-run from being
+  re-wrapped as a provider failure.
 - `pages.test.ts` uses the REAL context module (no context mock): braked calls
   in tests MUST run inside `runWithContext({}, ...)` so the contract helpers
   throw `ContractError` instead of killing the test process with

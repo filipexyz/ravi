@@ -10,7 +10,7 @@
 - The dry-run plan MUST carry normalized values (kind/severity defaults
   applied, tags normalized) — not the raw flag inputs.
 - Invalid `--kind`, `--severity`, `--metadata-json` or an empty message MUST
-  exit 1 with `PAYLOAD_INVALID` even without `--execute` — payload validation
+  exit 2 with `PAYLOAD_INVALID` even without `--execute` — payload validation
   fires in dry-run too, never as exit 3.
 - The `ContractError` thrown by the brake MUST NOT be wrapped by
   `cloudAuthErrorFromUnknown` — exit 3 must survive `runFeedbackCommand`.

@@ -15,8 +15,8 @@
 - A `ContractError` thrown inside a bridges command MUST pass through
   `runBridgesCommand` with its exit code intact — never rewrapped as
   `SERVER_UNAVAILABLE`.
-- Remote failures MUST keep the legacy CloudAuthError codes and exit map; the
-  brake code `WRITE_REQUIRES_EXECUTE` MUST remain the only exit-3 emitted by
-  the contract layer itself.
+- Remote failures MUST keep their stable CloudAuthError codes while using the
+  global exit map (`PAYLOAD_INVALID` → `2`; other provider/auth failures →
+  `1`). `WRITE_REQUIRES_EXECUTE` MUST remain the only exit-3 code.
 - `bun test src/cli/commands/bridges.test.ts` SHOULD pass after any change to
   this contract surface.

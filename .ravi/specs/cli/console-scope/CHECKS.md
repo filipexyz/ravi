@@ -20,9 +20,9 @@ owners:
 - A `ContractError` thrown inside a `cloud scope` command MUST pass through
   `runCloudScopeCommand` with its exit code intact — never rewrapped as
   `SERVER_UNAVAILABLE` by the legacy CloudAuthError funnel.
-- Legacy CloudAuthError validation failures MUST keep their pre-existing
-  codes and exits (`PAYLOAD_INVALID` → 3 is NOT a write brake; only
-  `WRITE_REQUIRES_EXECUTE` carries that meaning).
+- CloudAuthError validation failures MUST preserve their stable codes under
+  the global exit map (`PAYLOAD_INVALID` → `2`; only
+  `WRITE_REQUIRES_EXECUTE` exits `3`).
 - `bun test src/cli/commands/cloud-scope.test.ts` SHOULD pass after any change
   to the scope command surface.
 

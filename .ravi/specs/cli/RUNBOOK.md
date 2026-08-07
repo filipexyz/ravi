@@ -10,8 +10,9 @@
    and gateway when the command is public on those surfaces.
 4. If an envelope is followed by `Error:`, inspect generic catches. A
    `ContractError` must remain structured and be rendered once.
-5. If a gateway returns 500, verify the dispatcher translates
-   `ContractError` before its generic error path.
+5. If a gateway returns 500, verify its body is the redacted
+   `UNHANDLED_ERROR` envelope. A known `ContractError` must be translated before
+   the unexpected-error path and must retain its own non-500 status mapping.
 6. If an operation is denied/allowed unexpectedly, inspect the implementation
    effect before changing `CommandAccess.kind`; then scan live capability
    consumers and templates.

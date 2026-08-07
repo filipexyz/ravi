@@ -14,8 +14,8 @@
 - A `ContractError` thrown inside a cloud-projects command MUST pass through
   `runCloudProjectsCommand` with its exit code intact — never rewrapped as
   `SERVER_UNAVAILABLE`.
-- Remote failures MUST keep the legacy CloudAuthError codes and exit map; the
-  brake code `WRITE_REQUIRES_EXECUTE` MUST remain the only signal that means
-  "re-run with --execute".
+- Remote failures MUST preserve their stable CloudAuthError codes under the
+  global exit map (`PAYLOAD_INVALID` → `2`; provider/auth failures → `1`). The
+  brake code `WRITE_REQUIRES_EXECUTE` remains the only exit-3 signal.
 - `bun test src/cli/commands/cloud-projects.test.ts` SHOULD pass after any
   change to this contract surface.

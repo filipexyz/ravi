@@ -3,8 +3,8 @@
 ## Debug Flow
 
 1. Read the rules: `ravi specs get cli/bridges --mode rules --json`.
-2. Reproduce with `--json` and read `error.code` first — the legacy
-   CloudAuthError exit map coexists on this domain.
+2. Reproduce with `--json`; verify the stable CloudAuthError code is preserved
+   under the global exit map.
 3. `WRITE_REQUIRES_EXECUTE` (exit 3): read `error.plan`, confirm the bridge id,
    re-run with `--execute` (or `--yes`, the legacy equivalent).
 4. `PAYLOAD_INVALID` "Missing --project": pass `--project <ref>` or set

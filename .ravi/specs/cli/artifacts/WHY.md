@@ -21,11 +21,10 @@ Findings from this wave worth carrying forward:
   distinguishes the version-miss from the artifact-miss so the envelope can
   point at the right listing.
 - `publish` and `release activate` already had a legacy CloudAuthError funnel
-  ending in `process.exit(cloudError.exitCode)` — with CloudAuthError's OWN
-  exit scheme (e.g. PAYLOAD_INVALID → 3), which collides with the Manual v2
-  taxonomy. The brake therefore fires BEFORE the try block, and the catch
-  rethrows ContractError first (mail.ts model) so a dry-run can never be
-  flattened into `SERVER_UNAVAILABLE` + exit 5 in agent context.
+  whose historical exits conflicted with the global taxonomy. The shared
+  transport now normalizes those exits, while the brake still fires BEFORE
+  the try block and the catch rethrows ContractError first so a dry-run can
+  never be flattened into a provider failure in agent context.
 - Suggestions come from `listArtifactsPage({limit: 40})` — the ledger is local
   SQLite, so candidates are cheap; version numbers are dense integers where
   similarity would be noise, hence suggestedAction-only on version misses.

@@ -6,8 +6,9 @@
   operation path.
 - Exit `0/1/2/3` survives handler, root/domain parser, bootstrap, tool and
   gateway paths; an unknown root command is `USAGE_ERROR`, exit `2`.
-- Tool and gateway adapters preserve `ContractError`; neither appends a generic
-  error nor maps it to HTTP 500.
+- Tool and gateway adapters preserve known `ContractError` values; neither
+  appends a generic error nor replaces the envelope with a generic HTTP 500
+  body. Only `UNHANDLED_ERROR` may retain HTTP status `500`.
 - Audit distinguishes `blocked`, `usage_error`, `denied` and `failed`; policy
   blocks are not recorded as execution failures.
 - CLI, tool and gateway authorize the same semantic operation and produce the

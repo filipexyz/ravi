@@ -43,7 +43,7 @@ so `send` is braked.
    credentials and leaks nothing off the machine.
 3. Payload validation MUST fail fast even in dry-run: invalid `--kind`,
    `--severity`, `--metadata-json` or an empty message exit with the existing
-   `PAYLOAD_INVALID` CloudAuthError (exit 1), never exit 3.
+   `PAYLOAD_INVALID` CloudAuthError code (exit `2`), never exit `3`.
 4. A thrown `ContractError` (the brake) MUST NOT be wrapped by the
    CloudAuthError mapper — it bubbles to the dispatcher preserving exit 3.
 5. Existing cloud error semantics stay: `AUTH_REQUIRED`/`AUTH_EXPIRED` teach
@@ -65,7 +65,7 @@ so `send` is braked.
 | case | code | exit |
 |---|---|---|
 | braked send without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
-| invalid payload (kind/severity/metadata/message) | `PAYLOAD_INVALID` | 1 |
+| invalid payload (kind/severity/metadata/message) | `PAYLOAD_INVALID` | 2 |
 | missing/expired credentials | `AUTH_REQUIRED` / `AUTH_EXPIRED` | 1 |
 
 ## Internal consumers
@@ -81,7 +81,7 @@ plan as the review step.
   included).
 - Live checks: `ravi feedback send "test" --json` → exit 3 + plan, no network;
   `ravi feedback send "test" --execute --json` → submits (requires login);
-  `--kind bogus` → `PAYLOAD_INVALID` exit 1 even without `--execute`.
+  `--kind bogus` → `PAYLOAD_INVALID` exit 2 even without `--execute`.
 
 ## Known Failure Modes
 

@@ -3,8 +3,8 @@
 ## Debug Flow
 
 1. Read the rules: `ravi specs get cli/cloud-projects --mode rules --json`.
-2. Reproduce with `--json` and read `error.code` first — exit 3 is ambiguous
-   here (`WRITE_REQUIRES_EXECUTE` brake vs legacy `PAYLOAD_INVALID`).
+2. Reproduce with `--json`; `PAYLOAD_INVALID` exits `2` and
+   `WRITE_REQUIRES_EXECUTE` is the only exit-3 code.
 3. `WRITE_REQUIRES_EXECUTE`: read `error.plan`; FIRST confirm the organization
    with `ravi whoami --json` (wrong-org creates are the incident pattern —
    see `cli/console-scope`), then re-run with `--execute`.

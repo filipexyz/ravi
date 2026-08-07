@@ -52,8 +52,9 @@ suggestions that would require extra remote calls.
 6. A `ContractError` thrown inside a command MUST pass through
    `runConnectorCommand` untouched — the legacy CloudAuthError funnel MUST NOT
    rewrap it (which would corrupt the exit taxonomy).
-7. Remote failures (auth, project resolution, unknown connector ids) keep the
-   legacy CloudAuthError funnel with its pre-existing code/exit map.
+7. Remote failures (auth, project resolution, unknown connector ids) preserve
+   their stable CloudAuthError code through the global taxonomy:
+   `PAYLOAD_INVALID` exits `2`; other provider/auth failures exit `1`.
 
 ## Write classification (brake decision per op)
 
@@ -67,7 +68,7 @@ suggestions that would require extra remote calls.
 | case | code | exit |
 |---|---|---|
 | braked revoke without `--yes`/`--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
-| remote/provider errors | legacy CloudAuthError codes (`AUTH_REQUIRED`, `PAYLOAD_INVALID`, ...) | legacy CloudAuthError exit map |
+| remote/provider errors | stable CloudAuthError code | `2` for `PAYLOAD_INVALID`; otherwise `1` |
 
 ## Internal consumers
 
@@ -86,10 +87,8 @@ this spec are the teaching surface.
 
 - Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
   `connectors` root is registered in `AGENT_CONTRACT_DOMAINS`.
-- The legacy CloudAuthError funnel has its own conflicting exit map
-  (`PAYLOAD_INVALID` → 3, `AUTH_REQUIRED` → 2): a remote payload error can
-  exit 3 without being a write brake. Read `error.code`, not the exit code,
-  to distinguish (`WRITE_REQUIRES_EXECUTE` is the only brake code).
+- The shared transport boundary MUST normalize the CloudAuthError object's
+  historical exit map. `WRITE_REQUIRES_EXECUTE` is the only exit-3 code.
 - Before the rethrow guard, a `ContractError` thrown by the brake was
   rewrapped as `SERVER_UNAVAILABLE` exit 5 by `cloudAuthErrorFromUnknown`,
   silently defeating the taxonomy.

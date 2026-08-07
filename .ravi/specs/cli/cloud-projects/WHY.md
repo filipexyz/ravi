@@ -21,5 +21,6 @@ Two ordering decisions matter:
 
 `list` stays a plain read with `--fields`. Not-found suggestions do not apply:
 projects are listed, not addressed by id, and the corpus is remote. The funnel
-keeps the legacy CloudAuthError exits, with the ContractError rethrow guard so
-the brake's exit 3 survives agent context.
+keeps stable CloudAuthError codes, while the shared transport maps them to the
+global exit taxonomy. The ContractError rethrow guard ensures the brake's exit
+3 survives agent context.
