@@ -58,7 +58,7 @@ export function normalizeCloudAuthErrorCode(value: unknown, fallback: CloudAuthE
 
 export function cloudAuthErrorFromUnknown(error: unknown): CloudAuthError {
   if (isCloudAuthError(error)) return error;
-  return new CloudAuthError("SERVER_UNAVAILABLE", error instanceof Error ? error.message : String(error), {
+  return new CloudAuthError("SERVER_UNAVAILABLE", "Cloud service request failed.", {
     cause: error,
   });
 }

@@ -71,6 +71,23 @@ describe("usage exit taxonomy smoke", () => {
     expect(result.stderr).not.toContain("Error: error:");
   });
 
+  it("redacts inline values from unknown options before rendering the usage envelope", () => {
+    const secret = "usage-secret-that-must-not-leak";
+    const result = runCli(["tasks", "list", `--token=${secret}`, "--json"], { RAVI_AGENT_ID: undefined });
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).not.toContain(secret);
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      success: false,
+      op: "tasks list",
+      error: {
+        code: "USAGE_ERROR",
+        message: "error: unknown option '--token=[REDACTED]'",
+      },
+    });
+  });
+
   it("renders migrated handler failures as canonical JSON at the real process boundary", () => {
     const cases = [
       {

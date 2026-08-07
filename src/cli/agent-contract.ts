@@ -201,16 +201,17 @@ function failUsage(command: CommanderCommand, error: CommanderError): never {
   const acceptedFlags = collectAcceptedFlags(command);
   const acceptedPositionals = collectAcceptedPositionals(command);
   const asJson = wantsJson(command);
+  const safeMessage = sanitizeUsageErrorMessage(error.message);
   // Text mode teaches the correct syntax inline; --json keeps the message on a
   // single line because `usage`/`acceptedFlags` are already structured fields.
   const textMessage = [
-    error.message,
+    safeMessage,
     `usage: ${usage}`,
     acceptedFlags.length > 0 ? `accepted flags: ${acceptedFlags.join(", ")}` : null,
   ]
     .filter((line): line is string => line !== null)
     .join("\n");
-  contractFail(op, "USAGE_ERROR", asJson ? error.message : textMessage, {
+  contractFail(op, "USAGE_ERROR", asJson ? safeMessage : textMessage, {
     asJson,
     exitCode: CONTRACT_EXIT_USAGE,
     details: {
@@ -220,6 +221,11 @@ function failUsage(command: CommanderCommand, error: CommanderError): never {
       acceptedPositionals,
     },
   });
+}
+
+/** Commander may echo an unknown option's inline value verbatim. */
+function sanitizeUsageErrorMessage(message: string): string {
+  return message.replace(/(-{1,2}[A-Za-z0-9][A-Za-z0-9-]*)=([^\s'"]+)/g, "$1=[REDACTED]");
 }
 
 /** Operation path without the binary name, e.g. `crm opportunity show`. */
