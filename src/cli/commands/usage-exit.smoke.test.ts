@@ -140,7 +140,7 @@ describe("usage exit taxonomy smoke", () => {
         exitCode: 1,
       },
       {
-        args: ["apps", "show", "__contract_missing_app__", "--json"],
+        args: ["apps", "show", "contract-missing-app", "--json"],
         op: "apps show",
         code: "not_found",
         exitCode: 1,
