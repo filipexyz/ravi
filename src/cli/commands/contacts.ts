@@ -1505,7 +1505,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "note", description: "Append a note to a contact timeline" })
-  @CommandAccess({ kind: "read", resource: "contacts", action: "note", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "note", risk: "medium" })
   note(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("text", { description: "Note text" }) text: string,

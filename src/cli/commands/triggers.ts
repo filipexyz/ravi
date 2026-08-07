@@ -805,7 +805,7 @@ export class TriggersCommands {
   // braking it would remove the very escape hatch agents use to validate a
   // trigger without waiting for a real event.
   @Command({ name: "test", description: "Test trigger with fake event data" })
-  @CommandAccess({ kind: "read", resource: "triggers", action: "test", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "triggers", action: "test", risk: "high" })
   @Returns(triggerMutationReturnSchema)
   async test(
     @Arg("id", { description: "Trigger ID" }) id: string,

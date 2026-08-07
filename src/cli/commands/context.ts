@@ -340,7 +340,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "authorize", description: "Request approval and extend the current runtime context if approved" })
-  @CommandAccess({ kind: "read", resource: "context", action: "authorize", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "context", action: "authorize", risk: "high" })
   async authorize(
     @Arg("permission", { description: "Permission name (e.g. execute, access, use)" }) permission: string,
     @Arg("objectType", { description: "Object type (e.g. group, session, tool)" }) objectType: string,
@@ -373,7 +373,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "issue", description: "Issue a least-privilege child context for an external CLI" })
-  @CommandAccess({ kind: "read", resource: "context", action: "issue", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "context", action: "issue", risk: "high" })
   issue(
     @Arg("cliName", { description: "Logical CLI name for audit and lineage" }) cliName: string,
     @Option({

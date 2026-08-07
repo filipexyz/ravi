@@ -815,7 +815,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "uninstall", description: "Remove ravi from PM2 and clean up" })
-  @CommandAccess({ kind: "read", resource: "daemon", action: "uninstall", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "uninstall", risk: "destructive" })
   @Returns(daemonMutationReturnSchema)
   uninstall(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
@@ -926,7 +926,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "env", description: "Edit environment file (~/.ravi/.env)" })
-  @CommandAccess({ kind: "read", resource: "daemon", action: "env", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "env", risk: "medium" })
   @Returns(daemonEnvReturnSchema)
   env(@Option({ flags: "--json", description: "Print raw JSON result without opening an editor" }) asJson?: boolean) {
     mkdirSync(RAVI_DIR, { recursive: true });

@@ -840,7 +840,7 @@ export class ChannelsCommands {
   }
 
   @Command({ name: "probe", description: "Start channel runner infrastructure and print foreground status" })
-  @CommandAccess({ kind: "read", resource: "channels", action: "probe", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "channels", action: "probe", risk: "high" })
   @Returns(channelsRunStatusReturnSchema)
   async probe(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const runner = new ChannelRunner({ consumeOutbound: false });

@@ -428,7 +428,7 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "release", description: "Release a manual node transition or gate" })
-  @CommandAccess({ kind: "read", resource: "workflows.runs", action: "release", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "release", risk: "medium" })
   @Returns(workflowRunMutationReturnSchema)
   release(
     @Arg("runId", { description: "Workflow run id" }) runId: string,
@@ -452,7 +452,7 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "skip", description: "Skip one optional workflow node" })
-  @CommandAccess({ kind: "read", resource: "workflows.runs", action: "skip", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "skip", risk: "medium" })
   @Returns(workflowRunMutationReturnSchema)
   skip(
     @Arg("runId", { description: "Workflow run id" }) runId: string,

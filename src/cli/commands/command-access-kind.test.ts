@@ -10,11 +10,21 @@ import { enforceCliCommandAuthorization } from "../command-access.js";
 import { runWithContext } from "../context.js";
 import { getCommandAccessMetadata, type CommandAccessOptions } from "../decorators.js";
 import { ArtifactsCommands } from "./artifacts.js";
+import { ChannelsCommands } from "./channels.js";
+import { ContactsCommands } from "./contacts.js";
+import { ContextCommands } from "./context.js";
+import { CrmFactCommands, CrmOpportunityCommands, CrmTaskCommands } from "./crm.js";
+import { DaemonCommands } from "./daemon.js";
+import { HooksCommands } from "./hooks.js";
 import { InboxCommands } from "./inbox.js";
+import { InstancesCommands } from "./instances.js";
 import { MetricsCommands } from "./metrics.js";
+import { PagesCommands } from "./pages.js";
 import { SessionFollowupCommands } from "./session-followups.js";
 import { SpecsCommands } from "./specs.js";
 import { ThreadCommands } from "./threads.js";
+import { TriggersCommands } from "./triggers.js";
+import { WorkflowRunCommands } from "./workflows.js";
 
 setDefaultTimeout(90_000);
 
@@ -24,6 +34,7 @@ interface AccessCase {
   command: string;
   target: Function;
   method: string;
+  risk: CommandAccessOptions["risk"];
 }
 
 const ACCESS_CASES: AccessCase[] = [
@@ -33,6 +44,7 @@ const ACCESS_CASES: AccessCase[] = [
     command: "snapshot",
     target: ArtifactsCommands,
     method: "snapshot",
+    risk: "medium",
   },
   {
     label: "artifacts event",
@@ -40,19 +52,192 @@ const ACCESS_CASES: AccessCase[] = [
     command: "event",
     target: ArtifactsCommands,
     method: "event",
+    risk: "medium",
   },
-  { label: "inbox snooze", group: "inbox", command: "snooze", target: InboxCommands, method: "snooze" },
+  {
+    label: "channels probe",
+    group: "channels",
+    command: "probe",
+    target: ChannelsCommands,
+    method: "probe",
+    risk: "high",
+  },
+  {
+    label: "contacts note",
+    group: "contacts",
+    command: "note",
+    target: ContactsCommands,
+    method: "note",
+    risk: "medium",
+  },
+  {
+    label: "context authorize",
+    group: "context",
+    command: "authorize",
+    target: ContextCommands,
+    method: "authorize",
+    risk: "high",
+  },
+  {
+    label: "context issue",
+    group: "context",
+    command: "issue",
+    target: ContextCommands,
+    method: "issue",
+    risk: "high",
+  },
+  {
+    label: "crm opportunity move",
+    group: "crm.opportunity",
+    command: "move",
+    target: CrmOpportunityCommands,
+    method: "move",
+    risk: "high",
+  },
+  {
+    label: "crm fact propose",
+    group: "crm.fact",
+    command: "propose",
+    target: CrmFactCommands,
+    method: "propose",
+    risk: "medium",
+  },
+  {
+    label: "crm fact confirm",
+    group: "crm.fact",
+    command: "confirm",
+    target: CrmFactCommands,
+    method: "confirm",
+    risk: "medium",
+  },
+  {
+    label: "crm task snooze",
+    group: "crm.task",
+    command: "snooze",
+    target: CrmTaskCommands,
+    method: "snooze",
+    risk: "medium",
+  },
+  {
+    label: "daemon uninstall",
+    group: "daemon",
+    command: "uninstall",
+    target: DaemonCommands,
+    method: "uninstall",
+    risk: "destructive",
+  },
+  {
+    label: "daemon env",
+    group: "daemon",
+    command: "env",
+    target: DaemonCommands,
+    method: "env",
+    risk: "medium",
+  },
+  {
+    label: "hooks test",
+    group: "hooks",
+    command: "test",
+    target: HooksCommands,
+    method: "test",
+    risk: "high",
+  },
+  {
+    label: "inbox snooze",
+    group: "inbox",
+    command: "snooze",
+    target: InboxCommands,
+    method: "snooze",
+    risk: "medium",
+  },
+  {
+    label: "instances disconnect",
+    group: "instances",
+    command: "disconnect",
+    target: InstancesCommands,
+    method: "disconnect",
+    risk: "medium",
+  },
+  {
+    label: "pages visibility",
+    group: "pages",
+    command: "visibility",
+    target: PagesCommands,
+    method: "visibility",
+    risk: "medium",
+  },
+  {
+    label: "pages domains",
+    group: "pages",
+    command: "domains",
+    target: PagesCommands,
+    method: "domains",
+    risk: "medium",
+  },
   {
     label: "sessions followups snooze",
     group: "sessions_followups",
     command: "snooze",
     target: SessionFollowupCommands,
     method: "snooze",
+    risk: "medium",
   },
-  { label: "threads note", group: "threads", command: "note", target: ThreadCommands, method: "note" },
-  { label: "threads close", group: "threads", command: "close", target: ThreadCommands, method: "close" },
-  { label: "specs new", group: "specs", command: "new", target: SpecsCommands, method: "new" },
-  { label: "metrics rollup", group: "metrics", command: "rollup", target: MetricsCommands, method: "rollup" },
+  {
+    label: "threads note",
+    group: "threads",
+    command: "note",
+    target: ThreadCommands,
+    method: "note",
+    risk: "medium",
+  },
+  {
+    label: "threads close",
+    group: "threads",
+    command: "close",
+    target: ThreadCommands,
+    method: "close",
+    risk: "medium",
+  },
+  {
+    label: "specs new",
+    group: "specs",
+    command: "new",
+    target: SpecsCommands,
+    method: "new",
+    risk: "medium",
+  },
+  {
+    label: "metrics rollup",
+    group: "metrics",
+    command: "rollup",
+    target: MetricsCommands,
+    method: "rollup",
+    risk: "medium",
+  },
+  {
+    label: "triggers test",
+    group: "triggers",
+    command: "test",
+    target: TriggersCommands,
+    method: "test",
+    risk: "high",
+  },
+  {
+    label: "workflows release",
+    group: "workflows.runs",
+    command: "release",
+    target: WorkflowRunCommands,
+    method: "release",
+    risk: "medium",
+  },
+  {
+    label: "workflows skip",
+    group: "workflows.runs",
+    command: "skip",
+    target: WorkflowRunCommands,
+    method: "skip",
+    risk: "medium",
+  },
 ];
 
 let stateDir: string | null = null;
@@ -106,14 +291,14 @@ describe("corrected mutating command access", () => {
   it("denies read capabilities before DB/FS effects and allows mutate capabilities", () => {
     for (const testCase of ACCESS_CASES) {
       const access = getCommandAccessMetadata(testCase.target).get(testCase.method);
-      expect(access).toMatchObject({ kind: "mutate", risk: "medium" });
+      expect(access).toMatchObject({ kind: "mutate", risk: testCase.risk });
       if (!access) throw new Error(`Missing command access metadata for ${testCase.label}`);
 
       const effectFile = join(stateDir!, `${testCase.label.replaceAll(" ", "-")}.effect`);
       let handlerCalls = 0;
       const runEffect = () => {
         handlerCalls += 1;
-        effectsDb!.run("INSERT INTO effects (operation) VALUES (?)", testCase.label);
+        effectsDb!.run("INSERT INTO effects (operation) VALUES (?)", [testCase.label]);
         writeFileSync(effectFile, testCase.label, "utf8");
       };
 

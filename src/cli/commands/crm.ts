@@ -2240,7 +2240,7 @@ export class CrmOpportunityCommands {
 
   @Scope("writeContacts")
   @Command({ name: "move", description: "Move an opportunity to another stage (dry-run by default; --execute writes)" })
-  @CommandAccess({ kind: "read", resource: "crm.opportunity", action: "move", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "crm.opportunity", action: "move", risk: "high" })
   @Returns(changedEntityReturnSchema)
   move(
     @Arg("opportunity", { description: "CRM opportunity ID" }) opportunityId: string,
@@ -2403,7 +2403,7 @@ export class CrmFactCommands {
 
   @Scope("writeContacts")
   @Command({ name: "propose", description: "Propose or confirm a CRM fact" })
-  @CommandAccess({ kind: "read", resource: "crm.fact", action: "propose", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "crm.fact", action: "propose", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   propose(
     @Arg("entityType", { description: "CRM entity type" }) entityType: string,
@@ -2444,7 +2444,7 @@ export class CrmFactCommands {
 
   @Scope("writeContacts")
   @Command({ name: "confirm", description: "Confirm a CRM fact" })
-  @CommandAccess({ kind: "read", resource: "crm.fact", action: "confirm", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "crm.fact", action: "confirm", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   confirm(
     @Arg("fact", { description: "CRM fact ID" }) factId: string,
@@ -2600,7 +2600,7 @@ export class CrmTaskCommands {
 
   @Scope("writeContacts")
   @Command({ name: "snooze", description: "Snooze a CRM task to a new due_at" })
-  @CommandAccess({ kind: "read", resource: "crm.task", action: "snooze", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "crm.task", action: "snooze", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   snooze(
     @Arg("task", { description: "CRM task ID" }) taskId: string,

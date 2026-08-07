@@ -505,7 +505,7 @@ export class HooksCommands {
   }
 
   @Command({ name: "test", description: "Execute a hook once with a synthetic event" })
-  @CommandAccess({ kind: "read", resource: "hooks", action: "test", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "hooks", action: "test", risk: "high" })
   @Returns(hookTestReturnSchema)
   async test(
     @Arg("id", { description: "Hook ID" }) id: string,

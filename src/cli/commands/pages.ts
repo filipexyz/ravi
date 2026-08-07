@@ -312,7 +312,7 @@ export class PagesCommands {
   }
 
   @Command({ name: "visibility", description: "Set a Ravi Pages site default visibility" })
-  @CommandAccess({ kind: "read", resource: "pages", action: "visibility", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "visibility", risk: "medium" })
   async visibility(
     @Arg("args", {
       variadic: true,
@@ -350,7 +350,7 @@ export class PagesCommands {
   }
 
   @Command({ name: "domains", description: "Bind custom hostnames to a Ravi Pages site" })
-  @CommandAccess({ kind: "read", resource: "pages", action: "domains", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "domains", risk: "medium" })
   async domains(
     @Arg("args", {
       variadic: true,

@@ -1465,7 +1465,7 @@ export class InstancesCommands {
   // disconnect
   // --------------------------------------------------------------------------
   @Command({ name: "disconnect", description: "Disconnect an instance from omni" })
-  @CommandAccess({ kind: "read", resource: "instances", action: "disconnect", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "instances", action: "disconnect", risk: "medium" })
   async disconnect(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
