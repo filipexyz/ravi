@@ -28,20 +28,26 @@ applies_to:
   - src/sdk/gateway
 owners:
   - ravi-dev
-status: active
+status: draft
 normative: true
 ---
 
 ## Intent and precedence
 
-This is the global source of truth for the agent-first CLI contract. It binds
-the process CLI, exported tools, gateway/SDK calls, authorization and audit.
+This is the global source of truth for the agent-first command-line interface
+(CLI) contract. It binds the process CLI, exported tools, gateway/software
+development kit (SDK) calls, authorization and audit.
 
-Specs under `cli/<domain>` may define domain-specific operation names, entity
-resolution, risk classification and failure codes. They MUST NOT redefine the
-global envelope, exit taxonomy, confirmation policy, authorization semantics
-or transport behavior. If a domain spec conflicts with this file, this file
-wins.
+Specs under `.ravi/specs/cli/<domain>/` may define domain-specific operation
+names, entity resolution, risk classification, failure codes and focused
+checks. They MUST NOT redefine the global envelope, exit taxonomy,
+confirmation policy, authorization semantics or transport behavior. If a
+domain spec conflicts with this file, this file wins.
+
+The rules in this document are normative for the migration while its status is
+`draft`. `draft` means that implementation evidence is still pending for the
+current PR head; it MUST change to `active` only after every required check in
+[`CHECKS.md`](./CHECKS.md) and the pull-request CI pass on that same head.
 
 ## Canonical failure contract
 
@@ -63,6 +69,9 @@ The canonical failure value is a `ContractError` and its envelope:
 - `op` MUST identify the real operation path.
 - The envelope MAY add bounded structured details such as `suggestions`,
   `acceptedFlags`, `acceptedPositionals`, `dryRun` and `plan`.
+- The envelope is transport-independent. The process carries the exit code in
+  the OS status; tools carry `exitCode` and `outcome` beside the content; the
+  gateway adds `exitCode` and `outcome` to the JSON body.
 - A failure MUST be rendered exactly once. A transport MUST NOT append a
   generic `Error:` line, stack trace or second envelope.
 - Exit codes are: `0` success; `1` execution, provider or entity failure; `2`
@@ -82,6 +91,10 @@ The canonical failure value is a `ContractError` and its envelope:
   tools, gateway and audit MUST NOT expose the raw exception, provider detail
   or stack. The gateway MAY retain HTTP `500` for this internal-fault class,
   but its body remains the canonical contract envelope.
+- A return-shape violation is `RETURN_SHAPE_ERROR`, exit `1`, outcome `failed`
+  and MAY retain HTTP `500`. A non-success binary response is normalized to a
+  safe stable code before it reaches SDK callers or audit; provider response
+  bodies are not forwarded as contract details.
 
 ## Transport equivalence
 
@@ -89,50 +102,71 @@ All public invocation surfaces MUST preserve the same `op`, `error.code`,
 details and policy outcome:
 
 - Process CLI: `--json` writes the envelope to stdout and exits with the
-  canonical code. Text mode stays concise and keeps the same exit code.
+  canonical code without adding stderr output. Text mode stays concise and
+  keeps the same exit code.
 - Exported tool: returns the canonical envelope as tool content without a
-  duplicate generic error. A policy block remains distinguishable from an
-  execution failure.
-- Gateway/SDK: returns the canonical envelope plus `exitCode`. HTTP status MAY
-  communicate the broad class, but a `ContractError` MUST NOT become a generic
-  HTTP 500 body.
+  duplicate generic error, plus the canonical `exitCode` and `outcome`. A
+  policy block has `outcome: "blocked"` and is not marked as an execution
+  error.
+- Gateway/SDK: returns the canonical envelope plus `exitCode` and `outcome`.
+  HTTP status MAY communicate the broad class, but a known `ContractError`
+  MUST NOT become a generic HTTP 500 body.
 - Audit: records the same operation and outcome as `succeeded`, `blocked`,
   `usage_error`, `denied` or `failed`. A policy block MUST NOT be recorded as
   an executed mutation or generic failure.
 - Permission denial is `PERMISSION_DENIED`, exit `1`, outcome `denied` across
-  CLI, tool, gateway and audit. Remote CLI mode MUST normalize legacy gateway
-  bodies and transport failures into the same safe envelope; it MUST NOT print
-  raw URLs, provider responses or exception text.
+  CLI, tool, gateway and audit.
+- Remote CLI mode delegates authorization to the target gateway instead of
+  pre-authorizing against a possibly different local principal. It accepts a
+  remote contract body only when `success`, `op`, `exitCode`, `outcome` and the
+  error shape are coherent; partial, mismatched or legacy failures are
+  normalized to the same safe envelope. Invalid gateway configuration is a
+  usage error (`REMOTE_GATEWAY_INVALID`, exit `2`). Remote failures MUST NOT
+  print raw URLs, credentials, provider responses or exception text.
 
 ## Authorization and confirmation are different controls
 
-`@CommandAccess.kind` controls authority. `--execute` controls confirmation.
+`CommandAccess.kind` controls authority. `--execute` controls confirmation.
 One MUST NOT be inferred from the other.
 
+- Every operation that exposes an `--execute` barrier MUST declare
+  `requiresConfirmation: true`. This metadata means that the operation has a
+  confirmable execution path; for conditional commands it does not mean that
+  every invocation is blocked. The handler still classifies the actual
+  invocation before deciding whether the flag is required.
 - `kind: "read"` is allowed only when the implementation is side-effect-free:
   no persistent mutation, outbound communication, paid generation, provider
   mutation or triggered execution.
 - A reversible local write is `kind: "mutate"`, even when it intentionally
   runs without `--execute`.
 - Authorization MUST run before entity disclosure and before a confirmation
-  plan is returned.
-- After authorization, validation and entity resolution MUST run before the
-  brake. An invalid argument exits `2`; an unknown visible entity exits `1`;
-  neither is replaced by exit `3`.
+  plan is returned. In remote mode, the target gateway owns this decision.
+- After authorization, every side-effect-free validation and entity lookup
+  MUST run before the brake. An invalid argument exits `2`; an unknown visible
+  entity exits `1`; neither is replaced by exit `3`.
+- A lookup that initializes storage, creates schema or performs another effect
+  MUST NOT run during dry-run. Validate its selector without effects, mark the
+  deferred resolution in the plan, and perform the lookup only after
+  `--execute`. This exception preserves the stronger zero-effect invariant; it
+  MUST NOT be used to defer validation that can safely run first.
 
 Changing `kind` is a permission-surface change. It requires a consumer scan,
-focused REBAC tests and explicit release notes; it MUST NOT be deferred as
-documentation debt when the implementation already performs the effect.
+focused relationship-based access control (REBAC) tests and explicit release
+notes; it MUST NOT be deferred as documentation debt when the implementation
+already performs the effect.
 
 When this migration corrects an existing `read` operation to `mutate`, Ravi
 preserves exact least-privilege grants by appending the corresponding mutate
 grant in provider-owned agent defaults, system permission tags, observer rules
 and durable observer bindings. The migration MUST preserve the original read
-grant, be idempotent and leave runtime context snapshots unchanged. A legacy
-read wildcard MUST expand only to exact mutate grants for reclassified
-operations that it already authorized; it MUST NOT become a broad mutate
-wildcard. The versioned compatibility inventory MUST stay mechanically aligned
-with the live `CommandAccess` metadata.
+grant and be idempotent. Active, non-revoked runtime context snapshots MUST
+receive the same exact compatibility grants so a context issued before the
+upgrade does not lose access; expired or revoked contexts MUST remain
+unchanged. A legacy read wildcard MUST expand only to exact mutate grants for
+reclassified operations that it already authorized; it MUST NOT become a broad
+mutate wildcard. The versioned compatibility inventory in
+`src/permissions/command-access-kind-migration.ts` MUST stay mechanically
+aligned with the live `CommandAccess` metadata.
 
 ## Risk-based confirmation policy
 
@@ -146,7 +180,7 @@ actual effect, not the command verb.
 | Relevant state change in an external service or provider | Require `--execute` |
 | Irreversible destruction, secret rotation or authority escalation | Require `--execute` |
 | Starting, dispatching or replaying work that continues independently | Require `--execute` |
-| Emergency stop that reduces active damage or spend | Execute immediately |
+| Emergency stop, authority reduction or containment that reduces exposure | Execute immediately |
 | Paid local generation below the configured confirmation threshold | Execute immediately |
 | Reliably estimated cost at or above the configured threshold | Require `--execute` |
 
@@ -160,16 +194,27 @@ Conditional effects are classified per invocation. For example,
 `audio generate` writes a local file and runs immediately, while
 `audio generate --send` reaches a live chat and requires confirmation.
 `artifacts publish` uploads/releases externally and always requires it.
+`agents permissions` requires confirmation only when it expands authority;
+revocation, capability removal and no-op updates run immediately.
+
+Commands named `test` are not automatically safe. `triggers test` emits a
+synthetic event that can start agent or shell execution and is braked. `hooks
+test` is braked only for action types that deliver into sessions. Runtime
+`follow-up`, `rollback` and `fork` are braked because they queue work or change
+runtime history; an emergency interrupt remains immediate.
 
 ## Brake behavior
 
-- The dry-run MUST happen before every side effect: no DB/resource creation,
-  provider call, event emission, queue publication or worker spawn.
+- The dry-run MUST happen before every side effect: no database/resource
+  creation, provider call, event emission, queue publication or worker spawn.
 - It MUST return `WRITE_REQUIRES_EXECUTE`, exit `3`, `dryRun: true` and a
   bounded plan identifying the target and material effect.
-- Plans, envelopes and suggestions MUST NOT contain secrets, credential refs,
-  full message bodies or unnecessary personal data. Use identifiers, counts,
-  masked values and bounded previews.
+- Plans, envelopes, suggestions and audits MUST NOT contain tokens, passwords,
+  secrets, secret refs, raw invite codes, full prompts/messages/commands,
+  secret-bearing paths, provider response bodies or unnecessary personal
+  data. Use identifiers and paths only when needed for the decision, plus
+  counts, lengths, presence booleans, masked values and bounded non-sensitive
+  previews.
 - `--execute` MUST be the last declared option of the operation.
 - Existing equivalent confirmation contracts (`--apply`, explicit `--dry-run`
   or confirmation token) may remain when documented; do not rename them only
@@ -188,7 +233,11 @@ Conditional effects are classified per invocation. For example,
 - Per-operation help stays compact. Every skill, runtime hint, smoke fixture
   and documentation example that invokes a braked operation includes the
   confirmation flag.
-- Every migrated Commander root is registered in `AGENT_CONTRACT_DOMAINS`.
+- Consumer checks MUST also reject obsolete `--execute` flags on operations
+  that now execute immediately; safety and low friction are both contract
+  properties.
+- Every migrated Commander root is registered in `AGENT_CONTRACT_DOMAINS` in
+  `src/cli/index.ts`.
 
 ## SDK return contracts
 
@@ -224,5 +273,9 @@ Any cross-domain contract change follows this order:
    checks.
 5. Run the repository quality gate and compare failures by test identity, not
    only by count.
-6. Update the migration ledger with observed evidence; never call a regression
-   pre-existing solely because its test file was unchanged.
+6. Update [`MIGRACAO-LEDGER.md`](../../../MIGRACAO-LEDGER.md) with observed
+   evidence; never call a regression pre-existing solely because its test file
+   was unchanged.
+7. Keep the spec `draft` and the PR unapproved until the current head passes
+   the global checks and CI. Evidence from an older head does not satisfy this
+   gate.
