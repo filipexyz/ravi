@@ -7,12 +7,14 @@ import { getOrCreateSession } from "../router/index.js";
 import { dbCreateTagDefinition, dbUpsertTagBinding } from "../tags/index.js";
 import {
   createObservationEvent,
+  dbGetObserverRule,
   dbListObserverBindings,
   dbUpsertObserverRule,
   deliverObservationEvents,
   ensureObserverBindingsForSession,
   explainObserverRulesForSession,
   getObservationDebounceMs,
+  migrateObservationCommandAccessGrants,
   reconcileObserverBindingsForSession,
   setObservationPromptPublisherForTests,
   validateObserverRules,
@@ -52,6 +54,42 @@ function writeObserverProfile(profileId: string, files: Record<string, string>):
 }
 
 describe("Observation Plane", () => {
+  it("migrates exact legacy CLI read grants in rules and durable bindings", () => {
+    const session = getOrCreateSession("grant-migration-source", "worker", "/tmp/worker", {
+      name: "grant-migration-source",
+    });
+    dbUpsertObserverRule({
+      id: "grant-migration",
+      scope: "session",
+      sourceSession: "grant-migration-source",
+      observerAgentId: "observer",
+      observerMode: "report",
+      permissionGrants: ["read:agents:debounce", "read:agents:*"],
+    });
+    ensureObserverBindingsForSession({ sessionName: "grant-migration-source", session });
+
+    expect(migrateObservationCommandAccessGrants()).toEqual({
+      changedRules: 1,
+      changedBindings: 1,
+      addedGrants: 2,
+      ambiguousGrants: 2,
+    });
+    const expectedGrants = ["read:agents:debounce", "read:agents:*", "mutate:agents:debounce"];
+    const ruleGrants = dbGetObserverRule("grant-migration")?.permissionGrants;
+    const bindingGrants = dbListObserverBindings({ sourceSessionKey: session.sessionKey })[0]?.permissionGrants;
+    expect(ruleGrants).toHaveLength(expectedGrants.length);
+    expect(ruleGrants).toEqual(expect.arrayContaining(expectedGrants));
+    expect(bindingGrants).toHaveLength(expectedGrants.length);
+    expect(bindingGrants).toEqual(expect.arrayContaining(expectedGrants));
+
+    expect(migrateObservationCommandAccessGrants()).toEqual({
+      changedRules: 0,
+      changedBindings: 0,
+      addedGrants: 0,
+      ambiguousGrants: 2,
+    });
+  });
+
   it("creates one idempotent observer binding for a matched agent rule", () => {
     const session = getOrCreateSession("source-session", "worker", "/tmp/worker", { name: "source-session" });
     dbUpsertObserverRule({
