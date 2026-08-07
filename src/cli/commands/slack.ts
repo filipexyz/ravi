@@ -40,6 +40,7 @@ import {
   createArtifactVersion,
   getArtifactDetails,
   getArtifactVersion,
+  inspectArtifactPublishStateReadOnly,
   listArtifacts,
   updateArtifact,
   type ArtifactRecord,
@@ -134,6 +135,34 @@ interface SlackOpsContext {
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function summarizeSlackDryRunRequest(request: Record<string, unknown>): Record<string, unknown> {
+  const text = typeof request.text === "string" ? request.text : undefined;
+  const markdown = typeof request.markdown === "string" ? request.markdown : undefined;
+  const blocks = Array.isArray(request.blocks) ? request.blocks : undefined;
+  const changes = Array.isArray(request.changes) ? request.changes : undefined;
+  const destination = [request.channel, request.channelId, request.canvasId]
+    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+
+  return {
+    ...(destination ? { destination } : {}),
+    ...(typeof request.ts === "string" ? { ts: request.ts } : {}),
+    ...(typeof request.threadTs === "string" ? { threadTs: request.threadTs } : {}),
+    ...(typeof request.viewId === "string" ? { viewId: request.viewId } : {}),
+    ...(text !== undefined ? { textChars: text.length } : {}),
+    ...(markdown !== undefined ? { markdownChars: markdown.length } : {}),
+    ...(blocks ? { blockCount: blocks.length } : {}),
+    ...(changes ? { changeCount: changes.length } : {}),
+    ...(typeof request.file === "string" ? { fileProvided: true } : {}),
+    fieldCount: Object.keys(request).length,
+  };
+}
+
+function summarizeSlackDryRunItem(item: unknown): Record<string, unknown> {
+  if (Array.isArray(item)) return { itemCount: item.length };
+  if (!item || typeof item !== "object") return { provided: item !== undefined };
+  return { fieldCount: Object.keys(item as Record<string, unknown>).length };
 }
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
@@ -731,13 +760,19 @@ function slackArtifactSuggestions(query: string): string[] {
   return suggestSimilar(query, candidates);
 }
 
-function failSlackArtifactNotFound(artifactId: string, contract?: SlackContractContext): never {
+function failSlackArtifactNotFound(
+  artifactId: string,
+  contract?: SlackContractContext,
+  readOnlyCandidates?: string[],
+): never {
   if (!contract) fail(`Artifact not found: ${artifactId}`);
   contractFail(contract.op, "ARTIFACT_NOT_FOUND", `Artifact not found: ${artifactId}`, {
     asJson: contract.asJson,
     details: {
       suggestedAction: "List local artifacts with: ravi artifacts list --json",
-      suggestions: slackArtifactSuggestions(artifactId),
+      suggestions: readOnlyCandidates
+        ? suggestSimilar(artifactId, readOnlyCandidates)
+        : slackArtifactSuggestions(artifactId),
     },
   });
 }
@@ -770,10 +805,10 @@ function resolveSlackCanvasArtifactSource(input: {
     };
   }
 
-  const details = getArtifactDetails(value);
-  if (!details) failSlackArtifactNotFound(value, input.contract);
-  let artifact = details.artifact;
-  let version = getArtifactVersion(artifact.id);
+  const inspection = inspectArtifactPublishStateReadOnly(value);
+  if (!inspection.artifact) failSlackArtifactNotFound(value, input.contract, inspection.candidates);
+  let artifact = inspection.artifact;
+  let version = inspection.version;
   let refreshed = false;
   const liveFileSha256 = artifact.filePath ? hashFileContent(artifact.filePath) : undefined;
   const sourceFileChanged = Boolean(liveFileSha256 && artifact.sha256 && liveFileSha256 !== artifact.sha256);
@@ -3018,8 +3053,8 @@ export class SlackCommands {
   /**
    * Write brake (Manual v2 7.8): every externally visible Slack mutation is a
    * dry-run by default and exits 3 (WRITE_REQUIRES_EXECUTE) BEFORE any Slack
-   * Web API call. The plan carries the Slack method and the exact request that
-   * `--execute` would perform.
+   * Web API call. The plan carries safe request metadata only; message text,
+   * Block Kit payloads and other request bodies are never serialized.
    */
   private brakeDryRun(
     op: string,
@@ -3035,8 +3070,8 @@ export class SlackCommands {
         connection: connectionLabel(config),
         source: config.source,
         method,
-        request,
-        ...(item !== undefined ? { item } : {}),
+        request: summarizeSlackDryRunRequest(request),
+        ...(item !== undefined ? { item: summarizeSlackDryRunItem(item) } : {}),
       },
       { asJson },
     );

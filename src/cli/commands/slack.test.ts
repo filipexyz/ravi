@@ -30,6 +30,7 @@ const clientCalls: Array<{ method: string; args: unknown }> = [];
 const replayEnvelopes: Array<Record<string, unknown>> = [];
 const interactionResponses: Array<Record<string, unknown>> = [];
 const createdArtifacts: Array<Record<string, unknown>> = [];
+const schemaInitializingArtifactCalls: string[] = [];
 
 let conversationsListResult: Record<string, unknown> = { ok: true, channels: [] };
 let conversationsHistoryResult: Record<string, unknown> = { ok: true, messages: [] };
@@ -262,8 +263,37 @@ mock.module("../../router/router-db.js", () => ({
 }));
 
 mock.module("../../artifacts/store.js", () => ({
-  getArtifactDetails: () => null,
-  getArtifactVersion: () => null,
+  getArtifactDetails: () => {
+    schemaInitializingArtifactCalls.push("getArtifactDetails");
+    return null;
+  },
+  getArtifactVersion: () => {
+    schemaInitializingArtifactCalls.push("getArtifactVersion");
+    return null;
+  },
+  inspectArtifactPublishStateReadOnly: (id: string) => {
+    const known = id === "art_canvas_runbook";
+    const artifact = known
+      ? {
+          id,
+          kind: "slack.canvas.markdown",
+          title: "Runbook",
+          status: "active",
+          output: "# Canvas runbook",
+          tags: [],
+          createdAt: 1,
+          updatedAt: 1,
+        }
+      : null;
+    return {
+      artifactExists: known,
+      versionExists: null,
+      artifact,
+      version: null,
+      publishedEvents: [],
+      candidates: ["art_canvas_runbook", "art_canvas_status"],
+    };
+  },
   listArtifacts: () => [
     { id: "art_canvas_runbook", kind: "slack.canvas.markdown" },
     { id: "art_canvas_status", kind: "slack.canvas.markdown" },
@@ -344,6 +374,7 @@ beforeEach(() => {
   conversationsHistoryResult = { ok: true, messages: [] };
   filesListResult = { ok: true, files: [] };
   credentialsAvailable = true;
+  schemaInitializingArtifactCalls.length = 0;
 });
 
 // ---------------------------------------------------------------------------
@@ -551,7 +582,7 @@ describe("Slack CLI Canvas helpers", () => {
 // ---------------------------------------------------------------------------
 
 describe("slack agent-first contract", () => {
-  it("messages-send without --execute is a dry-run: exit 3 and NO Slack Web API call", async () => {
+  it("messages-send without --execute summarizes content without exposing request text", async () => {
     const commands = new SlackCommands();
     const error = await expectContractError(
       () => commands.messagesSend("C123", "olá time", "ravi-slack", undefined, undefined, true, undefined),
@@ -563,8 +594,11 @@ describe("slack agent-first contract", () => {
     expect(error.details.plan).toMatchObject({
       connection: "ravi-slack",
       method: "chat.postMessage",
-      request: { channel: "C123", text: "olá time" },
+      request: { destination: "C123", textChars: "olá time".length },
     });
+    const plan = JSON.stringify(error.details.plan);
+    expect(plan).not.toContain("olá time");
+    expect(plan).not.toContain('\"text\":\"');
     expect(clientCalls).toHaveLength(0);
   });
 
@@ -599,6 +633,23 @@ describe("slack agent-first contract", () => {
     );
 
     expect(error.details.plan).toMatchObject({ method: "chat.postMessage" });
+    const plan = JSON.stringify(error.details.plan);
+    expect(plan).not.toContain("fallback text");
+    expect(plan).not.toContain('\"blocks\":[');
+    expect(clientCalls).toHaveLength(0);
+  });
+
+  it("dry-run plans never serialize a Slack message sentinel", async () => {
+    const commands = new SlackCommands();
+    const sentinel = "SENTINEL_SLACK_MESSAGE_DO_NOT_LEAK";
+    const error = await expectContractError(
+      () => commands.messagesSend("C123", sentinel, "ravi-slack", undefined, undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toMatchObject({ request: { destination: "C123", textChars: sentinel.length } });
+    expect(JSON.stringify(error.envelope())).not.toContain(sentinel);
     expect(clientCalls).toHaveLength(0);
   });
 
@@ -684,6 +735,29 @@ describe("slack agent-first contract", () => {
     expect(error.details.plan).toMatchObject({ method: "canvases.create" });
     expect(clientCalls).toHaveLength(0);
     expect(createdArtifacts).toHaveLength(0);
+  });
+
+  it("canvas artifact dry-run resolves local content without schema initialization", async () => {
+    const commands = new SlackCommands();
+    const error = await expectContractError(
+      () =>
+        commands.canvasArtifactPublish(
+          "art_canvas_runbook",
+          "ravi-slack",
+          "F123",
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toMatchObject({ method: "slack.canvas.artifact.publish" });
+    expect(schemaInitializingArtifactCalls).toEqual([]);
+    expect(clientCalls).toHaveLength(0);
   });
 
   it("canvas-create with --execute calls canvases.create", async () => {
