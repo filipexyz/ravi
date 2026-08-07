@@ -69,6 +69,12 @@ import {
 } from "../../prox/calls/index.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 
+const DEFAULT_CALL_PROFILE_PROVIDERS = new Map([
+  ["checkin", "elevenlabs"],
+  ["followup", "elevenlabs"],
+  ["urgent-approval", "elevenlabs"],
+]);
+
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
@@ -405,7 +411,13 @@ export class ProxCallsProfileCommands {
   }
 
   @Command({ name: "configure", description: "Configure a call profile's provider settings" })
-  @CommandAccess({ kind: "mutate", resource: "prox.calls.profiles", action: "configure", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "prox.calls.profiles",
+    action: "configure",
+    risk: "high",
+    redactions: ["prompt", "firstMessage", "systemPromptPath", "dynamicPlaceholder"],
+  })
   @Returns(proxProfileConfigureReturnSchema)
   async configure(
     @Arg("profile_id") profileId: string,
@@ -443,12 +455,11 @@ export class ProxCallsProfileCommands {
     })
     execute?: boolean,
   ) {
-    initCallsDefaults();
-
     if (!profileId) fail("profile_id is required");
 
     const existing = getCallProfile(profileId);
-    if (!existing) {
+    const persistedOrDefaultProvider = existing?.provider ?? DEFAULT_CALL_PROFILE_PROVIDERS.get(profileId);
+    if (!persistedOrDefaultProvider) {
       failCallProfileNotFound("prox calls profiles configure", profileId, asJson);
     }
 
@@ -463,17 +474,11 @@ export class ProxCallsProfileCommands {
     const promptFile = systemPromptPath !== undefined ? loadSystemPromptPath(systemPromptPath) : null;
     const nextPrompt = promptFile?.prompt ?? prompt;
     const dynamicPlaceholders = parseDynamicVariableOptions(dynamicPlaceholderOptions);
-    const nextDynamicVariables = dynamicPlaceholders
-      ? {
-          ...(existing.dynamic_variables_json ?? {}),
-          ...dynamicPlaceholders,
-        }
-      : undefined;
 
-    const effectiveProvider = provider ?? existing.provider;
-    const effectiveProviderAgentId = agentId ?? existing.provider_agent_id;
+    const effectiveProvider = provider ?? persistedOrDefaultProvider;
+    const effectiveProviderAgentId = agentId ?? existing?.provider_agent_id ?? "";
     const hasProviderSyncChanges =
-      firstMessage !== undefined || nextPrompt !== undefined || nextDynamicVariables !== undefined;
+      firstMessage !== undefined || nextPrompt !== undefined || dynamicPlaceholders !== null;
     const willSyncExternalProvider =
       !skipProviderSync &&
       hasProviderSyncChanges &&
@@ -489,11 +494,23 @@ export class ProxCallsProfileCommands {
           providerAgentConfigured: true,
           firstMessageChanged: firstMessage !== undefined,
           systemPromptChanged: nextPrompt !== undefined,
-          dynamicVariableKeys: dynamicPlaceholders ? Object.keys(dynamicPlaceholders).sort() : [],
+          dynamicVariableCount: dynamicPlaceholders ? Object.keys(dynamicPlaceholders).length : 0,
         },
         { asJson },
       );
     }
+
+    initCallsDefaults();
+    const persisted = existing ?? getCallProfile(profileId);
+    if (!persisted) {
+      failCallProfileNotFound("prox calls profiles configure", profileId, asJson);
+    }
+    const nextDynamicVariables = dynamicPlaceholders
+      ? {
+          ...(persisted.dynamic_variables_json ?? {}),
+          ...dynamicPlaceholders,
+        }
+      : undefined;
 
     const updated = updateCallProfile(profileId, {
       ...(provider !== undefined ? { provider } : {}),
@@ -604,7 +621,13 @@ export class ProxCallsCommands {
   }
 
   @Command({ name: "request", description: "Request a call to a person" })
-  @CommandAccess({ kind: "mutate", resource: "prox.calls", action: "request", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "prox.calls",
+    action: "request",
+    risk: "high",
+    redactions: ["phone", "reason", "var"],
+  })
   @Returns(proxCallRequestReturnSchema)
   async request(
     @Option({ flags: "--profile <profile_id>", description: "Call profile ID" }) profileId: string,
@@ -669,10 +692,11 @@ export class ProxCallsCommands {
           profileId,
           profileProvider: profile.provider,
           personId,
-          phone: phone ?? null,
-          reason,
+          phoneProvided: Boolean(phone),
+          reasonProvided: true,
           priority: priority ?? "normal",
-          dynamicVariables: dynamicVariables ?? null,
+          dynamicVariableCount: dynamicVariables ? Object.keys(dynamicVariables).length : 0,
+          skipOriginNotify: Boolean(skipOriginNotify),
           force: Boolean(force),
           providerMode: usingStub ? "stub" : "live",
         },
