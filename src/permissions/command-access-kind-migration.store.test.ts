@@ -32,7 +32,7 @@ describe("CLI command access durable grant migration", () => {
     stateDir = null;
   });
 
-  it("migrates agent defaults on reopen without rewriting context snapshots", () => {
+  it("migrates agent defaults and active context snapshots on reopen", () => {
     dbCreateAgent({ id: "least-privilege", cwd: "/tmp/least-privilege" });
     dbUpdateAgent("least-privilege", {
       defaults: {
@@ -46,9 +46,21 @@ describe("CLI command access durable grant migration", () => {
       contextKey: "rctx_legacy_read",
       kind: "turn-runtime",
       agentId: "least-privilege",
-      capabilities: [{ permission: "read", objectType: "agents", objectId: "debounce" }],
+      capabilities: [
+        { permission: "read", objectType: "agents", objectId: "debounce" },
+        { permission: "read", objectType: "agents", objectId: "*" },
+      ],
     });
-    const contextBefore = dbGetContext("ctx_legacy_read");
+    dbCreateContext({
+      contextId: "ctx_expired_legacy_read",
+      contextKey: "rctx_expired_legacy_read",
+      kind: "turn-runtime",
+      agentId: "least-privilege",
+      capabilities: [{ permission: "read", objectType: "agents", objectId: "*" }],
+      expiresAt: 1,
+    });
+    const contextBefore = dbGetContext("ctx_legacy_read")!;
+    const expiredContextBefore = dbGetContext("ctx_expired_legacy_read");
 
     closeRouterDb();
     const migrated = dbGetAgent("least-privilege");
@@ -61,7 +73,18 @@ describe("CLI command access durable grant migration", () => {
         capabilities: ["read:agents:debounce", "read:agents:*", "mutate:agents:debounce", "mutate:agents:spec-mode"],
       },
     });
-    expect(dbGetContext("ctx_legacy_read")).toEqual(contextBefore);
+    expect(dbGetContext("ctx_legacy_read")).toEqual({
+      ...contextBefore,
+      capabilities: [
+        { permission: "read", objectType: "agents", objectId: "debounce" },
+        { permission: "read", objectType: "agents", objectId: "*" },
+        { permission: "mutate", objectType: "agents", objectId: "debounce" },
+        { permission: "mutate", objectType: "agents", objectId: "spec-mode" },
+      ],
+    });
+    expect(dbGetContext("ctx_expired_legacy_read")).toEqual(expiredContextBefore);
+
+    const contextAfterMigration = dbGetContext("ctx_legacy_read");
 
     closeRouterDb();
     dbGetAgent("least-privilege");
@@ -69,6 +92,7 @@ describe("CLI command access durable grant migration", () => {
       getDb().prepare("SELECT updated_at FROM agents WHERE id = ?").get("least-privilege") as { updated_at: number }
     ).updated_at;
     expect(updatedAtAfterSecondOpen).toBe(updatedAtAfterMigration);
+    expect(dbGetContext("ctx_legacy_read")).toEqual(contextAfterMigration);
   });
 
   it("migrates provider-owned permission tags and audits only changed definitions", () => {

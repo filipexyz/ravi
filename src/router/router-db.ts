@@ -19,7 +19,10 @@ import { normalizePhone } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
-import { migrateAgentDefaultsRecord } from "../permissions/command-access-kind-migration.js";
+import {
+  migrateAgentDefaultsRecord,
+  migrateLegacyReadCapabilityInputs,
+} from "../permissions/command-access-kind-migration.js";
 import { RUNTIME_EFFORT_LEVELS } from "../runtime/effort.js";
 import type { AgentConfig, AgentUpdateInput, RouteConfig, DmScope } from "./types.js";
 
@@ -3649,9 +3652,21 @@ function ensureCliCommandAccessKindGrantMigration(database: Database): void {
     defaults: string;
   }>;
   let changedAgents = 0;
+  let changedContexts = 0;
   let addedGrants = 0;
   let ambiguousGrants = 0;
+  const affectedAgentIds = new Set<string>();
   const update = database.prepare("UPDATE agents SET defaults = ?, updated_at = ? WHERE id = ?");
+  const now = Date.now();
+  const contextRows = database
+    .prepare(
+      `SELECT context_id, agent_id, capabilities_json
+       FROM contexts
+       WHERE (revoked_at IS NULL OR revoked_at = 0 OR revoked_at > ?)
+         AND (expires_at IS NULL OR expires_at = 0 OR expires_at > ?)`,
+    )
+    .all(now, now) as Array<{ context_id: string; agent_id: string | null; capabilities_json: string }>;
+  const updateContext = database.prepare("UPDATE contexts SET capabilities_json = ? WHERE context_id = ?");
 
   database.transaction(() => {
     for (const row of rows) {
@@ -3661,15 +3676,27 @@ function ensureCliCommandAccessKindGrantMigration(database: Database): void {
       update.run(JSON.stringify(migration.defaults), Date.now(), row.id);
       changedAgents += 1;
       addedGrants += migration.added;
+      affectedAgentIds.add(row.id);
+    }
+    for (const row of contextRows) {
+      const migration = migrateLegacyReadCapabilityInputs(parseJsonArray(row.capabilities_json));
+      ambiguousGrants += migration.ambiguous;
+      if (!migration.changed) continue;
+      updateContext.run(JSON.stringify(migration.capabilities), row.context_id);
+      changedContexts += 1;
+      addedGrants += migration.added;
+      if (row.agent_id) affectedAgentIds.add(row.agent_id);
     }
   })();
 
-  if (changedAgents > 0) {
+  if (changedAgents > 0 || changedContexts > 0) {
     log.info("Migrated CLI read grants for reclassified commands", {
-      store: "agent-defaults",
+      stores: ["agent-defaults", "active-contexts"],
       changedAgents,
+      changedContexts,
       addedGrants,
       ambiguousGrants,
+      affectedAgentIds: Array.from(affectedAgentIds).sort(),
     });
   } else if (ambiguousGrants > 0) {
     log.debug("Found broad agent-default read grants requiring manual review", { ambiguousGrants });
