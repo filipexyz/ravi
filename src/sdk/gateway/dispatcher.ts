@@ -27,7 +27,12 @@ import { emitCliAuditEvent, type CliAuditOutcome } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
 import { RaviAppError } from "../../apps/types.js";
-import { ContractError, CONTRACT_EXIT_USAGE, contractFailureOutcome } from "../../cli/agent-contract.js";
+import {
+  ContractError,
+  CONTRACT_EXIT_USAGE,
+  contractFailureOutcome,
+  expectedErrorToContractError,
+} from "../../cli/agent-contract.js";
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
 import {
@@ -169,7 +174,7 @@ export async function dispatch(
         ? err
         : isCloudAuthError(err)
           ? cloudErrorToContractError(commandOperation(group, cmd.command), err)
-          : null;
+          : expectedErrorToContractError(commandOperation(group, cmd.command), err);
     if (contractError) {
       outcome = contractFailureOutcome(contractError);
       auditExitCode = contractError.exitCode;

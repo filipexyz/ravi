@@ -71,7 +71,7 @@ discipline and `--fields`, not `--execute`.
 |---|---|---|
 | agent not found | `AGENT_NOT_FOUND` + suggestions | 1 |
 | invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
-| invalid `set` property/value | legacy `fail` text (exit 1) | 1 |
+| invalid `set` property/value | `COMMAND_FAILED` in JSON; concise text otherwise | 1 |
 
 ## Internal consumers
 

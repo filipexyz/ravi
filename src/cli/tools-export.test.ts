@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import type { ContextRecord } from "../router/router-db.js";
 import { ContractError, contractDryRun, contractFail } from "./agent-contract.js";
-import { runWithContext } from "./context.js";
+import { fail, runWithContext } from "./context.js";
 import { CliOnly, Command, CommandAccess, Group, Option } from "./decorators.js";
 import { extractTools } from "./tools-export.js";
 
@@ -41,6 +41,12 @@ class MediaAuthorizationCommands {
 
 @Group({ name: "contract", description: "Contract error fixture", scope: "open" })
 class ContractToolCommands {
+  @Command({ name: "legacy", description: "Throw a legacy expected failure" })
+  @CommandAccess({ kind: "read", resource: "contract", action: "legacy", risk: "low" })
+  legacy() {
+    fail("legacy validation failed");
+  }
+
   @Command({ name: "emitted", description: "Emit then throw a contract envelope" })
   @CommandAccess({ kind: "read", resource: "contract", action: "emitted", risk: "low" })
   emitted() {
@@ -98,6 +104,7 @@ const contractContext: ContextRecord = {
   agentId: "contract-test",
   capabilities: [
     { permission: "read", objectType: "contract", objectId: "emitted", source: "test" },
+    { permission: "read", objectType: "contract", objectId: "legacy", source: "test" },
     { permission: "read", objectType: "contract", objectId: "silent", source: "test" },
     { permission: "mutate", objectType: "contract", objectId: "dry-run", source: "test" },
   ],
@@ -149,6 +156,22 @@ describe("tools export provider-runtime authorization", () => {
 });
 
 describe("tools export contract errors", () => {
+  it("converts a legacy expected failure into one canonical envelope", async () => {
+    const tool = extractTools([ContractToolCommands]).find((candidate) => candidate.name === "contract_legacy");
+    expect(tool).toBeDefined();
+
+    const result = await runWithContext({ agentId: contractContext.agentId, context: contractContext }, () =>
+      tool!.handler({}),
+    );
+
+    expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
+    expect(JSON.parse(result.content[0]?.text ?? "{}")).toMatchObject({
+      success: false,
+      op: "contract legacy",
+      error: { code: "COMMAND_FAILED", message: "legacy validation failed" },
+    });
+  });
+
   it("keeps an emitted contract envelope without a duplicate Error line", async () => {
     const tool = extractTools([ContractToolCommands]).find((candidate) => candidate.name === "contract_emitted");
     expect(tool).toBeDefined();

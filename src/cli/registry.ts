@@ -17,11 +17,17 @@ import {
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName } from "./utils.js";
-import { ContractError, contractFailureOutcome } from "./agent-contract.js";
+import {
+  ContractError,
+  contractFailureOutcome,
+  expectedErrorToContractError,
+  renderContractError,
+} from "./agent-contract.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation, renderCloudContractError } from "./cloud-error-contract.js";
 import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./command-access.js";
 import { emitCliAuditEvent } from "./audit.js";
+import { getContext, runWithContext } from "./context.js";
 import {
   dispatchRemote,
   getRemoteGatewayConfig,
@@ -260,17 +266,19 @@ function registerCommand(
 
     try {
       const method = (instance as Record<string, Function>)[cmdMeta.method];
-      const result = method.apply(instance, finalArgs);
+      const result = runWithContext(getContext() ?? {}, () => method.apply(instance, finalArgs));
       if (result instanceof Promise) await result;
     } catch (err) {
+      const op = commandOperation(groupName, cmdMeta.name);
       const contractError =
         err instanceof ContractError
           ? err
           : isCloudAuthError(err)
-            ? cloudErrorToContractError(commandOperation(groupName, cmdMeta.name), err)
-            : null;
+            ? cloudErrorToContractError(op, err)
+            : expectedErrorToContractError(op, err);
       if (contractError) {
-        if (!(err instanceof ContractError)) renderCloudContractError(contractError, input.json === true);
+        if (isCloudAuthError(err)) renderCloudContractError(contractError, input.json === true);
+        else if (!(err instanceof ContractError)) renderContractError(contractError, input.json === true);
         // contractFail/contractDryRun already emitted the envelope (or the
         // legacy text); preserve the Manual v2 exit taxonomy (1 error ·
         // 2 usage · 3 policy brake) instead of the generic error path.

@@ -67,7 +67,7 @@ its NATS publish triggers downstream generation and playback.
 | case | code | exit |
 |---|---|---|
 | missing text and `--text-file` | `USAGE_ERROR` + accepted inputs | 2 |
-| other invalid text/`--text-file` combinations | legacy text (validation) | 1 |
+| other invalid text/`--text-file` combinations | `COMMAND_FAILED` compatibility envelope | 1 |
 | generate `--send` or tts without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 
 Missing input is a usage error in both modes: JSON mode writes the envelope to

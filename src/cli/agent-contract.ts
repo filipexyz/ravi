@@ -19,6 +19,7 @@
  */
 import type { Command as CommanderCommand, CommanderError } from "commander";
 import { getContext } from "./context.js";
+import { CliExpectedError } from "./expected-error.js";
 
 export const CONTRACT_EXIT_ERROR = 1;
 export const CONTRACT_EXIT_USAGE = 2;
@@ -71,6 +72,22 @@ export function contractFailureOutcome(error: Pick<ContractError, "exitCode">): 
   return "failed";
 }
 
+export function expectedErrorToContractError(op: string, error: unknown): ContractError | null {
+  if (!(error instanceof CliExpectedError)) return null;
+  return new ContractError(op, error.code, error.message, error.exitCode, {
+    suggestedAction: `Inspect the command input and retry '${op}'`,
+  });
+}
+
+export function renderContractError(error: ContractError, asJson: boolean | undefined): void {
+  if (getContext()?.suppressCliOutput === true) return;
+  if (asJson) {
+    console.log(JSON.stringify(error.envelope(), null, 2));
+  } else {
+    console.error(error.message);
+  }
+}
+
 export interface ContractFailOptions {
   asJson?: boolean;
   exitCode?: number;
@@ -85,13 +102,7 @@ export interface ContractFailOptions {
 export function contractFail(op: string, code: string, message: string, options: ContractFailOptions = {}): never {
   const exitCode = options.exitCode ?? CONTRACT_EXIT_ERROR;
   const error = new ContractError(op, code, message, exitCode, options.details ?? {});
-  if (getContext()?.suppressCliOutput !== true) {
-    if (options.asJson) {
-      console.log(JSON.stringify(error.envelope(), null, 2));
-    } else {
-      console.error(message);
-    }
-  }
+  renderContractError(error, options.asJson);
   throw error;
 }
 

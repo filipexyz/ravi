@@ -36,7 +36,7 @@ immediately.
    `--force-analyze`) MUST run without `--execute`.
 2. `--strategy subtitles` MUST continue to prevent Gemini fallback.
 3. Strategy validation (`Invalid video analysis strategy`) MUST fail before the
-   analysis call (exit 1).
+   analysis call with `USAGE_ERROR` (exit 2).
 
 ## Write classification (brake decision per op)
 
@@ -49,7 +49,7 @@ immediately.
 
 | case | code | exit |
 |---|---|---|
-| invalid strategy | legacy text (validation) | 1 |
+| invalid strategy | `USAGE_ERROR` + accepted values | 2 |
 
 ## Internal consumers
 

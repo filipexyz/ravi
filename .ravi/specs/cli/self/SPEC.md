@@ -56,7 +56,7 @@ contract here is compact discovery, not brakes.
 
 | case | code | exit |
 |---|---|---|
-| missing/unresolvable context | legacy text failure | 1 |
+| missing/unresolvable context | `COMMAND_FAILED` in JSON; concise text otherwise | 1 |
 
 ## Internal consumers
 

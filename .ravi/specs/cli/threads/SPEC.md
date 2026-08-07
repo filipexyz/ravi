@@ -41,9 +41,9 @@ the value of the migration here is the envelope, the exit taxonomy and
    listing) — even though the underlying `resolveThread` throws on unknown
    refs.
 4. `threads list` MUST accept `--fields a,b,c` for compact output.
-5. Ambiguous slugs across scopes and invalid pointers keep the legacy `fail()`
-   path (exit 1, no NOT_FOUND code): those are resolution conflicts, not
-   missing entities.
+5. Ambiguous slugs across scopes and invalid pointers keep the compatibility
+   `fail()` path (`COMMAND_FAILED`, exit 1, no NOT_FOUND code): those are
+   resolution conflicts, not missing entities.
 6. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry
    dispatcher.

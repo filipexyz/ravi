@@ -72,7 +72,7 @@ ZERO braked ops — that absence is a decision of this spec, not an omission.
 | case | code | exit |
 |---|---|---|
 | tag not found (show / set / attach / detach) | `TAG_NOT_FOUND` + suggestions | 1 |
-| binding not found on detach (tag exists) | legacy text `Binding not found ...` (declared) | 1 |
+| binding not found on detach (tag exists) | `COMMAND_FAILED` with `Binding not found ...` | 1 |
 | invalid flag/arg (parser level) | pending — see Known Failure Modes | — |
 
 ## Internal consumers

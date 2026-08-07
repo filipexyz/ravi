@@ -33,8 +33,9 @@ cost limit or reliable preflight estimate, so the command runs immediately.
 ## Invariants
 
 1. `transcribe file` MUST call the transcription service without `--execute`.
-2. An unsupported audio format MUST fail with the legacy message (exit 1)
-   before the provider call.
+2. An unsupported audio format MUST fail with `COMMAND_FAILED` in JSON mode
+   and the concise legacy message in text mode (exit 1), before the provider
+   call.
 3. A missing local file MUST exit 1 with `FILE_NOT_FOUND` before the provider.
 4. Provider failures MUST exit 1 with `TRANSCRIBE_FAILED`
    (`retryable: true`).
@@ -51,7 +52,7 @@ cost limit or reliable preflight estimate, so the command runs immediately.
 
 | case | code | exit |
 |---|---|---|
-| unsupported format | legacy text (validation) | 1 |
+| unsupported format | `COMMAND_FAILED` compatibility envelope | 1 |
 | local file missing | `FILE_NOT_FOUND` | 1 |
 | provider failure | `TRANSCRIBE_FAILED` (retryable) | 1 |
 

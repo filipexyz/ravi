@@ -46,8 +46,9 @@ by an origin chat on `image generate`.
 4. Provider resolution/validation (no provider configured, `--async`+`--sync`
    conflict, reserved `--artifact-id`), local source/input validation and
    delivery-target resolution MUST fail BEFORE the brake. A missing provider
-   MUST use the canonical JSON envelope in JSON mode; remaining legacy
-   validation paths keep their current text messages and exit 1.
+   MUST use the canonical JSON envelope in JSON mode; remaining compatibility
+   validation paths use `COMMAND_FAILED` in JSON mode, retain their concise
+   text messages in text mode and exit 1.
 5. `image atlas split` without `--send` keeps immediate execution. With
    `--send`, it MUST require `--execute` before splitting, artifact creation or
    media delivery; the plan exposes `captionPresent`, never the caption body.
@@ -70,7 +71,7 @@ by an origin chat on `image generate`.
 | case | code | exit |
 |---|---|---|
 | no provider configured | `IMAGE_PROVIDER_NOT_CONFIGURED` | 1 |
-| flag conflicts | legacy text (validation) | 1 |
+| flag conflicts | `COMMAND_FAILED` compatibility envelope | 1 |
 | generate delivery or atlas `--send` without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 
 ## Internal consumers

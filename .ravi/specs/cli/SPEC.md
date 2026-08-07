@@ -69,6 +69,12 @@ The canonical failure value is a `ContractError` and its envelope:
   invalid usage; `3` blocked by confirmation policy. Exit `3` is a safe block,
   not an execution failure.
 - Parser, handler and bootstrap paths MUST preserve this taxonomy.
+- Expected handler failures that still use the compatibility `fail()` helper
+  are normalized at the shared transport boundary as `COMMAND_FAILED`, exit
+  `1`. JSON CLI, tools and gateway MUST receive one canonical envelope; text
+  CLI keeps the concise message. This fallback is not a substitute for a
+  domain-specific code or `USAGE_ERROR` when the handler can classify the
+  failure more precisely.
 
 ## Transport equivalence
 

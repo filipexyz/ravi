@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
 import { contractFail } from "../../cli/agent-contract.js";
-import { getContext } from "../../cli/context.js";
+import { fail, getContext } from "../../cli/context.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import type { ContextCapability, ContextRecord } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -99,6 +99,12 @@ class GatewayDemoCommands {
   @CommandAccess({ kind: "read", resource: "demo", action: "boom", risk: "low" })
   boom() {
     throw new Error("kaboom");
+  }
+
+  @Command({ name: "legacy", description: "Throws a legacy expected failure" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "legacy", risk: "low" })
+  legacy() {
+    fail("legacy validation failed");
   }
 
   @Command({ name: "contract", description: "Throws a structured contract error" })
@@ -434,6 +440,29 @@ describe("dispatch — validation", () => {
 });
 
 describe("dispatch — error path", () => {
+  it("preserves a legacy expected failure as a non-500 contract response", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.legacy"),
+      {},
+      {},
+      {
+        contextRecord: demoContext,
+        emitAudit: audits.emit,
+      },
+    );
+
+    expect(result.response.status).toBe(422);
+    expect(await result.response.json()).toMatchObject({
+      success: false,
+      op: "demo legacy",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "COMMAND_FAILED", message: "legacy validation failed" },
+    });
+    expect(audits.events[0]).toMatchObject({ outcome: "failed", exitCode: 1, errorCode: "COMMAND_FAILED" });
+  });
+
   it("returns 500 InternalError when handler throws", async () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.boom"), {}, {}, { contextRecord: demoContext, emitAudit: audits.emit });

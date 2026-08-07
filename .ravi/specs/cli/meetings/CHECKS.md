@@ -16,6 +16,6 @@
 - The unbraked ops (`login`, `finalize`, `profiles init`) MUST keep their
   immediate behavior and their declared rationale comments in code.
 - A resolve error on a profile that DOES exist in the catalog MUST keep the
-  legacy text failure, never the not-found envelope.
+  `COMMAND_FAILED` compatibility error, never the not-found envelope.
 - `bun test src/cli/commands/meetings.test.ts` SHOULD pass after any change to
   the meetings contract surface (login spawn test may skip on Windows).

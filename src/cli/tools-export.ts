@@ -20,7 +20,7 @@ import { nats } from "../nats.js";
 import { getContext, runWithContext } from "./context.js";
 import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./command-access.js";
 import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
-import { ContractError, contractFailureOutcome } from "./agent-contract.js";
+import { ContractError, contractFailureOutcome, expectedErrorToContractError } from "./agent-contract.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "./cloud-error-contract.js";
 import { sanitizeCliAuditValue } from "./audit.js";
@@ -297,7 +297,7 @@ function buildHandler(
           ? err
           : isCloudAuthError(err)
             ? cloudErrorToContractError(commandOperation(group, command), err)
-            : null;
+            : expectedErrorToContractError(commandOperation(group, command), err);
       if (contractError) {
         contractExitCode = contractError.exitCode;
         contractErrorCode = contractError.code;

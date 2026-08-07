@@ -7,9 +7,9 @@
   even though `resolveThread` throws on unknown refs.
 - `threads comment|note|link|entries|brief|close` on an unknown ref MUST exit
   1 with `THREAD_NOT_FOUND` and MUST NOT write anything.
-- An ambiguous slug across scopes MUST keep the legacy failure (exit 1, no
-  `THREAD_NOT_FOUND` code) instead of suggesting threads for a ref that
-  matches more than one.
+- An ambiguous slug across scopes MUST keep the `COMMAND_FAILED`
+  compatibility envelope (exit 1, no `THREAD_NOT_FOUND` code) instead of
+  suggesting threads for a ref that matches more than one.
 - `threads list --fields a,b,c --json` MUST return items containing only the
   requested fields.
 - Every threads write (`create`, `comment`, `note`, `link`, `close`) MUST

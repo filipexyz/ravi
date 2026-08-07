@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
+import { CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
 import { analyzeVideo, type VideoAnalyzeStrategy } from "../../video/gemini.js";
 import { videoAnalyzeReturnSchema } from "./operational-return-schemas.js";
 
@@ -17,10 +18,17 @@ function slugify(text: string): string {
     .slice(0, 60);
 }
 
-function parseStrategy(value?: string): VideoAnalyzeStrategy {
+function parseStrategy(value: string | undefined, asJson?: boolean): VideoAnalyzeStrategy {
   if (!value) return "auto";
   if (value === "auto" || value === "subtitles" || value === "gemini") return value;
-  throw new Error(`Invalid video analysis strategy: ${value}. Use auto, subtitles, or gemini.`);
+  contractFail("video analyze", "USAGE_ERROR", `Invalid video analysis strategy: ${value}.`, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: {
+      suggestedAction: "Use --strategy auto, subtitles, or gemini",
+      acceptedValues: ["auto", "subtitles", "gemini"],
+    },
+  });
 }
 
 @Group({
@@ -48,7 +56,7 @@ export class VideoCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     // Validate the strategy before analysis.
-    const requestedStrategy = forceAnalyze ? "gemini" : parseStrategy(strategy);
+    const requestedStrategy = forceAnalyze ? "gemini" : parseStrategy(strategy, asJson);
 
     if (!asJson) {
       console.log("Analyzing video...");

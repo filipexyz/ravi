@@ -93,6 +93,12 @@ describe("usage exit taxonomy smoke", () => {
         code: "IMAGE_PROVIDER_NOT_CONFIGURED",
         exitCode: 1,
       },
+      {
+        args: ["video", "analyze", "contract-probe", "--strategy", "invalid", "--json"],
+        op: "video analyze",
+        code: "USAGE_ERROR",
+        exitCode: 2,
+      },
     ] as const;
 
     for (const testCase of cases) {
@@ -120,5 +126,22 @@ describe("usage exit taxonomy smoke", () => {
     expect(result.status).toBe(2);
     expect(result.stdout).toBe("");
     expect(result.stderr).toBe("Provide text or --text-file.\n");
+  });
+
+  it("renders legacy handler failures as one canonical JSON envelope", () => {
+    const result = runCli(["audio", "generate", "--text-file", "../outside.txt", "--json"], {
+      RAVI_AGENT_ID: undefined,
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      success: false,
+      op: "audio generate",
+      error: {
+        code: "COMMAND_FAILED",
+        message: "--text-file must not contain '..' path segments.",
+      },
+    });
   });
 });
