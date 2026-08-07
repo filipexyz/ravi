@@ -16,15 +16,15 @@ Analisa vídeos do YouTube usando legendas/captions via `yt-dlp` como caminho pa
 
 Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, ...}}`.
 
-Taxonomia de saída: `0` sucesso · `1` erro de execução (ex.: strategy inválida) · `2` erro de uso · `3` freio de escrita — não é erro: nada foi cobrado; o envelope traz `dryRun:true`, o `plan` com o modelo Gemini que seria faturado e o campo `freeAlternative` com o caminho grátis.
+Taxonomia de saída: `0` sucesso · `1` erro de execução · `2` erro de uso · `3` bloqueio por política. `video analyze` não usa o bloqueio de confirmação: valida a entrada e inicia a análise diretamente.
 
-Onde o freio existe: qualquer análise que PODE cair no Gemini pago é dry-run por default — `--strategy gemini`, `--force-analyze`, o default `auto` (fallback possível) e arquivos locais exigem `--execute`. O único caminho garantidamente grátis/local é `--strategy subtitles`, que roda direto, sem `--execute`.
+Onde o freio existe: não há `--execute` em `video analyze`. O caminho de legendas e o Gemini rodam diretamente; custo externo sem estimativa e limite configurado não cria confirmação por si só. `--strategy subtitles` proíbe o fallback para Gemini e é a opção previsível quando a chamada paga não é desejada.
 
 Checklist antes de responder sobre vídeo:
 
 - Se um transcript resolve, tentei primeiro o caminho grátis `--strategy subtitles`?
-- Tratei exit 3 como freio (revisei o `plan` e o `freeAlternative`) e não como falha?
-- Confirmei que o gasto Gemini é intencional antes de repetir com `--execute`?
+- Escolhi `--strategy subtitles` quando a tarefa não autorizava fallback para Gemini?
+- Tratei falha de legendas como erro de execução, sem retry automático para um provider pago?
 
 ## Como usar
 
@@ -37,35 +37,35 @@ Só legendas: grátis, local, roda sem `--execute`. Se o vídeo não tiver legen
 
 ### Analisar com fallback automático (pode faturar Gemini)
 ```bash
-ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --execute
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID"
 ```
 
-Sem `--execute`, o modo `auto` é dry-run (exit 3): o plano mostra o modelo Gemini que seria cobrado.
+O modo `auto` tenta legendas e pode usar Gemini como fallback, sem uma segunda chamada de confirmação.
 
 Por padrão, URLs do YouTube tentam `pt-BR`, `pt` e `en` em legendas manuais/automáticas antes de chamar Gemini.
 
 ### Analisar com output específico
 ```bash
-ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -o ./video-analysis.md --execute
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -o ./video-analysis.md
 ```
 
 ### Analisar com prompt custom
 ```bash
-ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -p "Foque nos argumentos técnicos apresentados" --execute
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" -p "Foque nos argumentos técnicos apresentados"
 ```
 
 Prompt custom é aplicado no caminho Gemini. Se precisar garantir resumo, tópicos ou descrição visual, force Gemini:
 
 ```bash
-ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --strategy gemini --execute
+ravi video analyze "https://www.youtube.com/watch?v=VIDEO_ID" --strategy gemini
 ```
 
 ### Analisar arquivo local
 ```bash
-ravi video analyze /path/to/video.mp4 --execute
+ravi video analyze /path/to/video.mp4
 ```
 
-Arquivo local sempre passa pelo Gemini (pago) — por isso exige `--execute`.
+Arquivo local passa pelo Gemini e roda diretamente.
 
 ## O que é extraído
 
@@ -82,7 +82,7 @@ No caminho por legendas, o comando não gera resumo/tópicos/descrição visual 
 
 ## Fluxo recomendado
 
-1. Rode `ravi video analyze <url> --strategy subtitles` (grátis) ou `ravi video analyze <url> --execute` (pode faturar Gemini) — gera o `.md`
+1. Rode `ravi video analyze <url> --strategy subtitles` (sem fallback) ou `ravi video analyze <url>` (pode usar Gemini) — gera o `.md`
 2. Leia o arquivo gerado com a tool Read
 3. Interprete e responda ao usuário baseado no conteúdo
 
