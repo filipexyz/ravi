@@ -33,18 +33,49 @@ describe("CLI command access kind migration", () => {
     ]);
   });
 
-  it("preserves unrelated and malformed inputs without promoting broad read wildcards", () => {
-    const inputs = [
-      "read:agents:*",
-      "read:agents:spec-*",
-      "read:unrelated:show",
-      "not-a-capability",
-      { permission: "read", objectType: "agents", objectId: "*", note: "manual-review" },
-    ];
+  it("expands read wildcards only into exact grants for reclassified operations", () => {
+    const result = migrateLegacyReadCapabilityInputs(["read:agents:*"]);
+
+    expect(result).toEqual({
+      capabilities: ["read:agents:*", "mutate:agents:debounce", "mutate:agents:spec-mode"],
+      changed: true,
+      added: 2,
+      ambiguous: 0,
+    });
+
+    expect(migrateLegacyReadCapabilityInputs(["read:agents:spec-*"])).toEqual({
+      capabilities: ["read:agents:spec-*", "mutate:agents:spec-mode"],
+      changed: true,
+      added: 1,
+      ambiguous: 0,
+    });
+  });
+
+  it("preserves object grant metadata while making wildcard counterparts exact", () => {
+    const source = {
+      permission: "read",
+      objectType: "prox.calls.tools",
+      objectId: "*",
+      source: "fixture",
+    };
+
+    const result = migrateLegacyReadCapabilityInputs([source]);
+
+    expect(result).toMatchObject({ changed: true, added: 3, ambiguous: 0 });
+    expect(result.capabilities).toEqual([
+      source,
+      { ...source, permission: "mutate", objectId: "configure" },
+      { ...source, permission: "mutate", objectId: "bind" },
+      { ...source, permission: "mutate", objectId: "unbind" },
+    ]);
+  });
+
+  it("preserves unrelated and malformed inputs", () => {
+    const inputs = ["read:unrelated:*", "not-a-capability", { permission: "read", objectType: "agents" }];
 
     const result = migrateLegacyReadCapabilityInputs(inputs);
 
-    expect(result).toEqual({ capabilities: inputs, changed: false, added: 0, ambiguous: 3 });
+    expect(result).toEqual({ capabilities: inputs, changed: false, added: 0, ambiguous: 0 });
   });
 
   it("does not duplicate existing mutate coverage and is idempotent", () => {
@@ -69,12 +100,12 @@ describe("CLI command access kind migration", () => {
       },
     });
 
-    expect(result).toMatchObject({ changed: true, added: 1, ambiguous: 1 });
+    expect(result).toMatchObject({ changed: true, added: 2, ambiguous: 0 });
     expect(result.defaults).toEqual({
       model: "sonnet",
       runtimePermissions: {
         profile: "bootstrap",
-        capabilities: ["read:agents:debounce", "read:agents:*", "mutate:agents:debounce"],
+        capabilities: ["read:agents:debounce", "read:agents:*", "mutate:agents:debounce", "mutate:agents:spec-mode"],
       },
     });
   });

@@ -27,4 +27,5 @@ path.
 
 Authorization is separate: `request`, transcript sync and effectful config
 operations are declared `mutate`. Exact legacy read grants receive matching
-mutate grants; broad read wildcards are not expanded automatically.
+mutate grants under the [global authorization
+policy](../SPEC.md#authorization-and-confirmation-are-different-controls).

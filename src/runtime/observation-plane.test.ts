@@ -71,10 +71,15 @@ describe("Observation Plane", () => {
     expect(migrateObservationCommandAccessGrants()).toEqual({
       changedRules: 1,
       changedBindings: 1,
-      addedGrants: 2,
-      ambiguousGrants: 2,
+      addedGrants: 4,
+      ambiguousGrants: 0,
     });
-    const expectedGrants = ["read:agents:debounce", "read:agents:*", "mutate:agents:debounce"];
+    const expectedGrants = [
+      "read:agents:debounce",
+      "read:agents:*",
+      "mutate:agents:debounce",
+      "mutate:agents:spec-mode",
+    ];
     const ruleGrants = dbGetObserverRule("grant-migration")?.permissionGrants;
     const bindingGrants = dbListObserverBindings({ sourceSessionKey: session.sessionKey })[0]?.permissionGrants;
     expect(ruleGrants).toHaveLength(expectedGrants.length);
@@ -86,7 +91,7 @@ describe("Observation Plane", () => {
       changedRules: 0,
       changedBindings: 0,
       addedGrants: 0,
-      ambiguousGrants: 2,
+      ambiguousGrants: 0,
     });
   });
 

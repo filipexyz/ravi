@@ -81,8 +81,8 @@ subset.
 
 `join`, `leave`, `description`, `settings` and `dm read` are authorized as
 `mutate` because they can produce external effects. Exact legacy read grants
-are migrated to matching mutate grants; broad read wildcards remain unchanged
-for explicit review.
+follow the [global compatibility
+migration](../SPEC.md#authorization-and-confirmation-are-different-controls).
 
 ## Official error cases
 

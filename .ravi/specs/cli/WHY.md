@@ -34,6 +34,6 @@ execution.
 Correcting an authorization label must not silently strand existing
 least-privilege agents. The compatibility migration therefore adds only exact
 mutate counterparts in the stores that remain authoritative across runs. It
-does not rewrite historical runtime contexts and does not infer authority from
-broad read wildcards; those cases need a human permission review because an
-automatic expansion would grant more than the original command-level intent.
+does not rewrite historical runtime contexts. A broad or prefix read wildcard
+is expanded only across the finite versioned inventory of operations it already
+authorized, producing exact mutate grants instead of a broader mutate wildcard.

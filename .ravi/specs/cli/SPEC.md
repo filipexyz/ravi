@@ -111,10 +111,11 @@ When this migration corrects an existing `read` operation to `mutate`, Ravi
 preserves exact least-privilege grants by appending the corresponding mutate
 grant in provider-owned agent defaults, system permission tags, observer rules
 and durable observer bindings. The migration MUST preserve the original read
-grant, be idempotent and leave runtime context snapshots unchanged. Broad read
-wildcards are ambiguous and MUST NOT be promoted automatically; they are
-reported for explicit review. The versioned compatibility inventory MUST stay
-mechanically aligned with the live `CommandAccess` metadata.
+grant, be idempotent and leave runtime context snapshots unchanged. A legacy
+read wildcard MUST expand only to exact mutate grants for reclassified
+operations that it already authorized; it MUST NOT become a broad mutate
+wildcard. The versioned compatibility inventory MUST stay mechanically aligned
+with the live `CommandAccess` metadata.
 
 ## Risk-based confirmation policy
 

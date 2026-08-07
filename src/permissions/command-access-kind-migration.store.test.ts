@@ -58,7 +58,7 @@ describe("CLI command access durable grant migration", () => {
 
     expect(migrated?.defaults).toEqual({
       runtimePermissions: {
-        capabilities: ["read:agents:debounce", "read:agents:*", "mutate:agents:debounce"],
+        capabilities: ["read:agents:debounce", "read:agents:*", "mutate:agents:debounce", "mutate:agents:spec-mode"],
       },
     });
     expect(dbGetContext("ctx_legacy_read")).toEqual(contextBefore);
@@ -165,18 +165,20 @@ describe("CLI command access durable grant migration", () => {
     expect(migrateObservationCommandAccessGrants()).toEqual({
       changedRules: 1,
       changedBindings: 1,
-      addedGrants: 2,
-      ambiguousGrants: 2,
+      addedGrants: 4,
+      ambiguousGrants: 0,
     });
     expect(dbGetObserverRule("legacy-grants")?.permissionGrants).toEqual([
       "read:agents:*",
       "read:agents:debounce",
       "mutate:agents:debounce",
+      "mutate:agents:spec-mode",
     ]);
     expect(dbListObserverBindings({ sourceSessionKey: "grant-source" })[0]?.permissionGrants).toEqual([
       "read:agents:*",
       "read:agents:debounce",
       "mutate:agents:debounce",
+      "mutate:agents:spec-mode",
     ]);
 
     const after = {
@@ -198,7 +200,7 @@ describe("CLI command access durable grant migration", () => {
       changedRules: 0,
       changedBindings: 0,
       addedGrants: 0,
-      ambiguousGrants: 2,
+      ambiguousGrants: 0,
     });
   });
 });

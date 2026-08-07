@@ -112,7 +112,7 @@ export interface SerializedCapabilityMigrationResult extends Omit<CapabilityInpu
 export function migrateLegacyReadCapabilityInputs(capabilities: readonly unknown[]): CapabilityInputMigrationResult {
   const originals = [...capabilities];
   const additions: unknown[] = [];
-  let ambiguous = 0;
+  const ambiguous = 0;
 
   for (const raw of originals) {
     const capability = normalizeCapability(raw);
@@ -126,8 +126,11 @@ export function migrateLegacyReadCapabilityInputs(capabilities: readonly unknown
       continue;
     }
 
-    if (CLI_READ_TO_MUTATE_MIGRATIONS.some((migration) => ambiguouslyCovers(capability, migration))) {
-      ambiguous += 1;
+    const wildcardMatches = CLI_READ_TO_MUTATE_MIGRATIONS.filter((migration) => wildcardCovers(capability, migration));
+    for (const migration of wildcardMatches) {
+      if (!hasMutateCoverage([...originals, ...additions], migration)) {
+        additions.push(buildExactMutateCounterpart(capability, migration));
+      }
     }
   }
 
@@ -242,7 +245,7 @@ function isExactLegacyGrant(capability: NormalizedCapability, migration: CliRead
   );
 }
 
-function ambiguouslyCovers(capability: NormalizedCapability, migration: CliReadToMutateMigration): boolean {
+function wildcardCovers(capability: NormalizedCapability, migration: CliReadToMutateMigration): boolean {
   if (capability.objectType !== migration.resource) return false;
   return wildcardMatches(capability.objectId, migration.action);
 }
@@ -267,6 +270,18 @@ function buildMutateCounterpart(capability: NormalizedCapability): unknown {
     return `mutate:${capability.objectType}:${capability.objectId}`;
   }
   return { ...(capability.raw as Record<string, unknown>), permission: "mutate" };
+}
+
+function buildExactMutateCounterpart(capability: NormalizedCapability, migration: CliReadToMutateMigration): unknown {
+  if (capability.shape === "string") {
+    return `mutate:${migration.resource}:${migration.action}`;
+  }
+  return {
+    ...(capability.raw as Record<string, unknown>),
+    permission: "mutate",
+    objectType: migration.resource,
+    objectId: migration.action,
+  };
 }
 
 function wildcardMatches(pattern: string, value: string): boolean {

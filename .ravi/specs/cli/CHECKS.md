@@ -17,7 +17,8 @@
 - The read-to-mutate compatibility inventory exactly matches the corrected
   live authorization metadata. Exact legacy grants migrate idempotently in
   agent defaults, permission tags, observer rules and observer bindings;
-  broad wildcards and runtime context snapshots remain unchanged.
+  matching read wildcards produce only exact mutate grants, while runtime
+  context snapshots remain unchanged.
 - Every braked operation matches at least one confirmation-policy row; local
   reversible writes and cost-only operations below/no threshold are not
   braked.

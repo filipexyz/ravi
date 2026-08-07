@@ -111,8 +111,8 @@ tagging.
 
 - `tick` and `evaluate` are authorized as `mutate` for every invocation,
   because `CommandAccess` is operation-scoped. Exact legacy read grants are
-  migrated to matching mutate grants; broad read wildcards require manual
-  review and are never silently escalated.
+  handled by the [global compatibility
+  migration](../SPEC.md#authorization-and-confirmation-are-different-controls).
 - Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
   `acceptedFlags`.
 - The `CONTACT_NOT_FOUND` mapping depends on the engine throwing the literal

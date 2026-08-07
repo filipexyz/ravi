@@ -16,7 +16,8 @@ decision the ledger records for `--apply`/`--confirm` domains). The decorator
 uses `kind: "mutate"` for `pricing`, because authorization is operation-scoped
 and the `--recompute` branch writes. To preserve existing least-privilege
 agents, exact legacy read grants are migrated to the corresponding mutate
-capability; broad read wildcards are not escalated automatically.
+capability under the [global authorization
+policy](../SPEC.md#authorization-and-confirmation-are-different-controls).
 
 Not-found here needed a sharper definition than "resolver returned null".
 Cost history legitimately outlives both agent config entries and session

@@ -71,9 +71,8 @@ documented equivalent of the write brake.
 | pricing --recompute | rewrites derived pricing metadata on cost_events (recomputable) | pre-existing `--dry-run` documented as equivalent; not renamed |
 
 `pricing` is declared `kind: "mutate"` because `CommandAccess` is static for
-the operation. Exact legacy read grants are migrated to the matching mutate
-capability; broad read wildcards are reported for manual review rather than
-silently escalated.
+the operation. Grant compatibility follows the
+[global authorization policy](../SPEC.md#authorization-and-confirmation-are-different-controls).
 
 ## Official error cases
 

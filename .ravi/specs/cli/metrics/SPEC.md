@@ -69,8 +69,8 @@ the row report) and a clean usage taxonomy. No op is braked: the only write,
 
 `rollup` is declared `kind: "mutate"` because authorization describes the
 actual effect, not whether confirmation is useful. Exact legacy read grants
-are migrated to matching mutate grants; broad read wildcards are left for
-explicit review.
+follow the [global compatibility
+migration](../SPEC.md#authorization-and-confirmation-are-different-controls).
 
 ## Official error cases
 

@@ -16,8 +16,9 @@ equivalent — the same decision `cli/chats` took for
 static authorization contract must represent their real `--apply` effect.
 This does not add a second confirmation flag: authorization and confirmation
 remain separate. Exact legacy read grants are migrated to matching mutate
-grants so least-privilege agents keep the access they had; broad read
-wildcards remain unchanged and require explicit review.
+grants so least-privilege agents keep the access they had; the details remain
+owned by the [global authorization
+policy](../SPEC.md#authorization-and-confirmation-are-different-controls).
 
 Suggestion scoping follows the chats precedent: rule ids are local files, so
 `TAG_RULE_NOT_FOUND` suggests freely from the loaded registry; contact ids are
