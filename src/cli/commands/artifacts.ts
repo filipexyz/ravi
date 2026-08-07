@@ -585,7 +585,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "snapshot", description: "Create an immutable version snapshot for an artifact" })
-  @CommandAccess({ kind: "read", resource: "artifacts", action: "snapshot", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "snapshot", risk: "medium" })
   @Returns(artifactSnapshotReturnSchema)
   snapshot(
     @Arg("id", { description: "Artifact id" }) id: string,
@@ -822,7 +822,7 @@ export class ArtifactsCommands {
   }
 
   @Command({ name: "event", description: "Append an artifact lifecycle event" })
-  @CommandAccess({ kind: "read", resource: "artifacts", action: "event", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "event", risk: "medium" })
   @Returns(artifactEventReturnSchema)
   event(
     @Arg("id", { description: "Artifact id" }) id: string,

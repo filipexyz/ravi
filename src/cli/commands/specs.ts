@@ -178,7 +178,7 @@ export class SpecsCommands {
   }
 
   @Command({ name: "new", description: "Create a new spec under .ravi/specs" })
-  @CommandAccess({ kind: "read", resource: "specs", action: "new", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "specs", action: "new", risk: "medium" })
   @Returns(specCreateReturnSchema)
   new(
     @Arg("id", { description: "Spec id: domain[/capability[/feature]]" }) id: string,

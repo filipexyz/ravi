@@ -293,7 +293,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "note", description: "Append a note to a thread" })
-  @CommandAccess({ kind: "read", resource: "threads", action: "note", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "threads", action: "note", risk: "medium" })
   @Returns(threadEntryReturnSchema)
   note(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,
@@ -389,7 +389,7 @@ export class ThreadCommands {
   }
 
   @Command({ name: "close", description: "Close a thread" })
-  @CommandAccess({ kind: "read", resource: "threads", action: "close", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "threads", action: "close", risk: "medium" })
   @Returns(threadActionReturnSchema)
   close(
     @Arg("thread", { description: "Thread id or slug" }) threadRef: string,

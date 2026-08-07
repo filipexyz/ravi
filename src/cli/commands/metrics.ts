@@ -143,7 +143,7 @@ export class MetricsCommands {
     name: "rollup",
     description: "Aggregate cost_events + session_events into daily_metrics for a date range",
   })
-  @CommandAccess({ kind: "read", resource: "metrics", action: "rollup", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "metrics", action: "rollup", risk: "medium" })
   async rollup(
     @Option({ flags: "--since <date|days>", description: "Start date YYYY-MM-DD or N days ago" })
     sinceRaw?: string,

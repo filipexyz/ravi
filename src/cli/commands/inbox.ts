@@ -245,7 +245,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "snooze", description: "Snooze a local inbox item until a timestamp" })
-  @CommandAccess({ kind: "read", resource: "inbox", action: "snooze", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "inbox", action: "snooze", risk: "medium" })
   @Returns(inboxItemEnvelopeReturnSchema)
   snooze(
     @Arg("item", { description: "Local inbox item id" }) itemId: string,
