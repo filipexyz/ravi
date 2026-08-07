@@ -795,7 +795,7 @@ function printNextSteps(task: TaskRecord): void {
       console.log("  2. refine the profile process/artifacts before dispatch");
     }
     console.log("  3. review with the task owner");
-    console.log(`  4. dispatch only after that: ravi tasks dispatch ${task.id} --agent <agent>`);
+    console.log(`  4. dispatch only after that: ravi tasks dispatch ${task.id} --agent <agent> --execute`);
     return;
   }
 

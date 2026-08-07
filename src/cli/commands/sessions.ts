@@ -516,7 +516,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "Do not expose internal message IDs to users unless debugging requires it.",
       ],
       promptHint:
-        'After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions edit-message <message-id> "novo texto"`.',
+        'After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions edit-message <message-id> "novo texto" --execute` (without --execute it is a dry-run, exit 3).',
     },
     reactMessage: {
       id: "message.react",
@@ -6156,7 +6156,7 @@ export class SessionCommands {
     const ref = messageRef?.trim() || sessionOrMessage.trim();
     if (!target) {
       fail(
-        "No current session context found. Use ravi sessions delete-message <message-id> inside a session, or ravi sessions delete-message <session> <message-id> outside one.",
+        "No current session context found. Use ravi sessions delete-message <message-id> --execute inside a session, or ravi sessions delete-message <session> <message-id> --execute outside one.",
       );
       return;
     }
@@ -6332,7 +6332,7 @@ export class SessionCommands {
 
     if (!target) {
       fail(
-        'No current session context found. Use ravi sessions edit-message <message-id> "new text" inside a session, or ravi sessions edit-message <session> <message-id> "new text" outside one.',
+        'No current session context found. Use ravi sessions edit-message <message-id> "new text" --execute inside a session, or ravi sessions edit-message <session> <message-id> "new text" --execute outside one.',
       );
       return;
     }

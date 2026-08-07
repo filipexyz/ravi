@@ -81,8 +81,8 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("## Extra Context\n\nInjected context text.");
     expect(prompt).toContain("ravi sessions unmute");
     expect(prompt).toContain("ravi sessions actions --json");
-    expect(prompt).toContain("ravi sessions delete-message <message-id>");
-    expect(prompt).toContain('ravi sessions edit-message <message-id> "novo texto"');
+    expect(prompt).toContain("ravi sessions delete-message <message-id> --execute");
+    expect(prompt).toContain('ravi sessions edit-message <message-id> "novo texto" --execute');
     expect(prompt).toContain("## Background Followup Automation");
     expect(prompt).toContain('ravi cron add "<name>" --at "<ISO time>"');
     expect(prompt).toContain("Do this in the background without announcing it in your visible response.");

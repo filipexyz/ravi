@@ -902,8 +902,8 @@ describe("SessionCommands attach hints", () => {
     expect(hint).toContain("recentOwnMessages.items");
     expect(hint).toContain("chatId");
     expect(hint).toContain("chatTitle");
-    expect(hint).toContain("ravi sessions delete-message <message-id>");
-    expect(hint).toContain('ravi sessions edit-message <message-id> "novo texto"');
+    expect(hint).toContain("ravi sessions delete-message <message-id> --execute");
+    expect(hint).toContain('ravi sessions edit-message <message-id> "novo texto" --execute');
     expect(hint).toContain('ravi media send "<file-path>" --execute');
     expect(hint).toContain("ravi sessions create-thread");
     expect(hint).toContain("ravi sessions close-thread");
