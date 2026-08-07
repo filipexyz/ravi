@@ -745,6 +745,20 @@ export class ObserverRuleCommands {
     asJson?: boolean,
   ) {
     const result = validateObserverRules();
+    if (!result.ok) {
+      contractFail(
+        "observers rules validate",
+        "OBSERVER_RULE_VALIDATION_FAILED",
+        `Observer rule validation failed with ${result.errors.length} error(s).`,
+        {
+          asJson,
+          details: {
+            errors: result.errors,
+            suggestedAction: "Correct the reported observer rules, then run validation again",
+          },
+        },
+      );
+    }
     if (asJson) {
       printJson(result);
     } else if (result.ok) {
@@ -753,7 +767,6 @@ export class ObserverRuleCommands {
       console.log("\nObserver rule errors:\n");
       for (const error of result.errors) console.log(`- ${error.ruleId}: ${error.message}`);
     }
-    if (!result.ok) process.exitCode = 1;
     return result;
   }
 
@@ -914,6 +927,20 @@ export class ObserverProfileCommands {
     asJson?: boolean,
   ) {
     const result = validateObserverProfiles(profileId);
+    if (!result.ok) {
+      contractFail(
+        "observers profiles validate",
+        "OBSERVER_PROFILE_VALIDATION_FAILED",
+        `Observer profile validation failed with ${result.errors.length} error(s).`,
+        {
+          asJson,
+          details: {
+            errors: result.errors.map(({ profileId: id, message }) => ({ profileId: id, message })),
+            suggestedAction: "Correct the reported observer profiles, then run validation again",
+          },
+        },
+      );
+    }
     if (asJson) {
       printJson(result);
     } else if (result.ok) {
@@ -923,7 +950,6 @@ export class ObserverProfileCommands {
       for (const error of result.errors) {
         console.log(`- ${error.profileId}: ${error.message}`);
       }
-      process.exitCode = 1;
     }
     return result;
   }

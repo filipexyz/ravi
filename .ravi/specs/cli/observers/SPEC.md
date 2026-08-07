@@ -75,6 +75,8 @@ and compact discovery. Observer rules are durable coordination config — a stra
 |---|---|---|
 | binding / rule / profile not found | `OBSERVER_NOT_FOUND` + suggestions | 1 |
 | session not found | `SESSION_NOT_FOUND` (no suggestions) | 1 |
+| observer rule validation fails | `OBSERVER_RULE_VALIDATION_FAILED` + rule issues | 1 |
+| observer profile validation fails | `OBSERVER_PROFILE_VALIDATION_FAILED` + path-free profile issues | 1 |
 | invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 

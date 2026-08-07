@@ -140,6 +140,21 @@ describe("tag-rules agent-first contract", () => {
     }
   });
 
+  it("emits TAG_RULE_VALIDATION_FAILED with file names but no absolute paths", () => {
+    if (!stateDir) throw new Error("missing state dir");
+    const rulesDir = join(stateDir, "tag-rules");
+    mkdirSync(rulesDir, { recursive: true });
+    writeFileSync(join(rulesDir, "broken.json"), "{", "utf8");
+
+    const contractError = expectContractError(() => new TagRulesCommands().validate(true));
+    expect(contractError.code).toBe("TAG_RULE_VALIDATION_FAILED");
+    expect(contractError.exitCode).toBe(1);
+    expect(contractError.details.errors).toEqual([
+      { source: "broken.json", code: "INVALID_JSON", message: "Rule file is not valid JSON" },
+    ]);
+    expect(JSON.stringify(contractError.envelope())).not.toContain(stateDir);
+  });
+
   it("tag-rules tick WITHOUT --apply reports the would-apply plan but writes no tags", async () => {
     upsertContact("5511990001111", "Tick Dry", "allowed", "manual");
     addContactTag("5511990001111", "lifecycle:new");

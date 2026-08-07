@@ -18,6 +18,10 @@
   documented brake equivalent and MUST NOT be renamed to `--execute`.
 - `tag-rules list --fields id,scope --json` MUST return rules containing only
   the requested fields.
+- Invalid rule files MUST make `tag-rules validate` emit
+  `TAG_RULE_VALIDATION_FAILED` with exit 1 in text and JSON. Details MUST name
+  only the basename and stable error category, never an absolute path or file
+  contents.
 - `tick` and `evaluate` MUST declare `CommandAccess.kind: "mutate"`; a
   read-only capability MUST be denied before the handler and an exact mutate
   capability allowed.

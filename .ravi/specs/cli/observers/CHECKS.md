@@ -17,6 +17,9 @@
 - `observers refresh <unknown-session> --json` (and `rules explain`, and
   `observers list --session`) MUST exit 1 with `SESSION_NOT_FOUND` and MUST NOT
   carry suggestions.
+- Invalid rule/profile validation MUST exit 1 with the matching
+  `OBSERVER_*_VALIDATION_FAILED` envelope in text and JSON. Profile error
+  details MUST omit filesystem paths and profile sources.
 - `observers list`, `observers rules list` and `observers profiles list` with
   `--fields a,b --json` MUST return items containing only the requested fields.
 - Unbraked writes (`refresh`, `rules set`, `rules enable|disable`,

@@ -83,7 +83,8 @@ default to preview, which is the exact protection the brake exists to provide.
 |---|---|---|
 | rule not found (show / evaluate registry) | `TAG_RULE_NOT_FOUND` + suggestions from the loaded registry | 1 |
 | unknown contact target (explain / evaluate) | `CONTACT_NOT_FOUND` (no suggestions, scoped) | 1 |
-| invalid flag/arg (parser level) | pending — see Known Failure Modes | — |
+| invalid rule files | `TAG_RULE_VALIDATION_FAILED` + path-free file summaries | 1 |
+| invalid flag/arg (parser level) | `USAGE_ERROR` + acceptedFlags | 2 |
 
 ## Internal consumers
 

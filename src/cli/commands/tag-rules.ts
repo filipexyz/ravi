@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { readFileSync, statSync } from "node:fs";
+import { basename } from "node:path";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
@@ -24,6 +25,18 @@ import {
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function summarizeTagRuleValidationErrors(errors: Array<{ source: string; error: string }>) {
+  return errors.map(({ source, error }) => {
+    if (error.startsWith("Invalid JSON:")) {
+      return { source: basename(source), code: "INVALID_JSON", message: "Rule file is not valid JSON" };
+    }
+    if (error.startsWith("Duplicate rule id:")) {
+      return { source: basename(source), code: "DUPLICATE_RULE_ID", message: error };
+    }
+    return { source: basename(source), code: "SCHEMA_INVALID", message: "Rule schema validation failed" };
+  });
 }
 
 function resolveContactRef(target: string): string {
@@ -191,6 +204,21 @@ export class TagRulesCommands {
       ruleCount: loaded.rules.length,
       errors: loaded.errors,
     };
+    if (!ok) {
+      contractFail(
+        "tag-rules validate",
+        "TAG_RULE_VALIDATION_FAILED",
+        `Tag-rule validation failed with ${loaded.errors.length} error(s).`,
+        {
+          asJson,
+          details: {
+            ruleCount: loaded.rules.length,
+            errors: summarizeTagRuleValidationErrors(loaded.errors),
+            suggestedAction: "Correct the named rule files, then run: ravi tag-rules validate --json",
+          },
+        },
+      );
+    }
     if (asJson) {
       printJson(payload);
     } else {
@@ -199,7 +227,6 @@ export class TagRulesCommands {
         console.log(`  ! ${error.source}: ${error.error}`);
       }
     }
-    if (!ok) process.exitCode = 1;
     return payload;
   }
 

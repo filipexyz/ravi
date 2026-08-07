@@ -10,6 +10,15 @@ const actualObservationProfilesModule = await import("../../runtime/observation-
 
 const deleteRuleCalls: string[] = [];
 const setEnabledCalls: Array<{ id: string; enabled: boolean }> = [];
+let ruleValidationResult: { ok: boolean; errors: Array<{ ruleId: string; message: string }> } = {
+  ok: true,
+  errors: [],
+};
+let profileValidationResult: {
+  ok: boolean;
+  errors: Array<{ profileId: string; source?: string; path?: string; message: string }>;
+  profiles: Array<Record<string, unknown>>;
+} = { ok: true, errors: [], profiles: [] };
 
 const sampleSession = { sessionKey: "agent:main:main", name: "main", agentId: "main" };
 
@@ -120,7 +129,7 @@ mock.module("../../runtime/observation-plane.js", () => ({
     mode: "attach-missing",
     skipped: [],
   }),
-  validateObserverRules: () => ({ ok: true, errors: [] }),
+  validateObserverRules: () => ruleValidationResult,
 }));
 
 mock.module("../../runtime/observation-profiles.js", () => ({
@@ -137,7 +146,7 @@ mock.module("../../runtime/observation-profiles.js", () => ({
     }
     return { profile: sampleProfile, eventType: "message.user", eventMarkdown: "md", prompt: "prompt" };
   },
-  validateObserverProfiles: () => ({ ok: true, errors: [], profiles: [] }),
+  validateObserverProfiles: () => profileValidationResult,
 }));
 
 mock.module("../context.js", () => ({
@@ -215,6 +224,8 @@ describe("observers agent-first contract", () => {
   beforeEach(() => {
     deleteRuleCalls.length = 0;
     setEnabledCalls.length = 0;
+    ruleValidationResult = { ok: true, errors: [] };
+    profileValidationResult = { ok: true, errors: [], profiles: [] };
   });
 
   it("blocks observers rules rm without --execute (dry-run, exit 3, no delete)", () => {
@@ -257,6 +268,49 @@ describe("observers agent-first contract", () => {
     expect(thrown).toBeInstanceOf(ContractError);
     expect((thrown as InstanceType<typeof ContractError>).exitCode).toBe(1);
     expect(setEnabledCalls).toHaveLength(0);
+  });
+
+  it("emits OBSERVER_RULE_VALIDATION_FAILED for invalid rules", () => {
+    ruleValidationResult = {
+      ok: false,
+      errors: [{ ruleId: "rule-review", message: "selector is invalid" }],
+    };
+
+    const { thrown, logs } = capture(() => new ObserverRuleCommands().validate(true));
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.code).toBe("OBSERVER_RULE_VALIDATION_FAILED");
+    expect(contractError.exitCode).toBe(1);
+    expect(contractError.details.errors).toEqual(ruleValidationResult.errors);
+    expect(logs).toHaveLength(1);
+    expect(JSON.parse(logs[0])).toMatchObject({
+      success: false,
+      op: "observers rules validate",
+      error: { code: "OBSERVER_RULE_VALIDATION_FAILED" },
+    });
+  });
+
+  it("emits OBSERVER_PROFILE_VALIDATION_FAILED without exposing profile paths", () => {
+    profileValidationResult = {
+      ok: false,
+      profiles: [],
+      errors: [
+        {
+          profileId: "tasks",
+          source: "workspace",
+          path: "C:/Users/private/.ravi/profiles/tasks/PROFILE.md",
+          message: "missing delivery template",
+        },
+      ],
+    };
+
+    const { thrown } = capture(() => new ObserverProfileCommands().validate(undefined, true));
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.code).toBe("OBSERVER_PROFILE_VALIDATION_FAILED");
+    expect(contractError.exitCode).toBe(1);
+    expect(contractError.details.errors).toEqual([{ profileId: "tasks", message: "missing delivery template" }]);
+    expect(JSON.stringify(contractError.envelope())).not.toContain("C:/Users/private");
   });
 
   it("emits OBSERVER_NOT_FOUND with binding suggestions on observers show (exit 1)", () => {
