@@ -28,7 +28,7 @@ applies_to:
   - src/sdk/gateway
 owners:
   - ravi-dev
-status: draft
+status: active
 normative: true
 ---
 

@@ -934,8 +934,19 @@ Specs, skills, hints e exemplos que invocam operações freadas devem carregar a
 confirmação correta. OpenAPI e SDKs TypeScript/Swift são regenerados a partir
 do registry vivo; arquivos gerados nunca são editados à mão.
 
-Evidência focada já observada nesta fase: 4 testes de processo real, 35 testes
-de tools/gateway e 12 testes de autorização/migração passaram. O CI verde do
-commit `9822fa12` é apenas histórico e **não valida** os commits desta fase.
-Typecheck, lint, build, quality gate e o CI do novo head permanecem pendentes
-até serem registrados abaixo com SHA e run verificáveis.
+Evidência focada observada nesta fase: 4 testes de processo real, 35 testes de
+tools/gateway, 12 testes de autorização/migração, 21 testes do observation
+plane e 84 testes de SDK/OpenAPI passaram. Build, typecheck, checks de drift
+dos artefatos gerados, lint/formatter dos arquivos alterados e o quality gate
+completo baseado no diff também passaram localmente.
+
+O primeiro CI do head expandido (`31149330318`, SHA `7e20e378`) detectou uma
+regressão real de isolamento de testes: o mock de `src/nats.ts` em
+`rtk-rewrite.test.ts` preservava apenas `publish` e removia o export `nats` no
+Bun 1.3.11, causando 29 erros de importação no mesmo processo. O mock passou a
+preservar todos os exports não substituídos e ganhou um teste de regressão.
+
+O CI Linux `31149690976` do head publicado `a7d668d1` passou Build, Typecheck,
+Test e Quality Gate (specs + coverage). PR Description e GitGuardian também
+passaram. Com os checks globais observados, a spec normativa
+`.ravi/specs/cli/SPEC.md` foi promovida de `draft` para `active`.
