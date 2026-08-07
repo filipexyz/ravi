@@ -225,7 +225,9 @@ function failUsage(command: CommanderCommand, error: CommanderError): never {
 
 /** Commander may echo an unknown option's inline value verbatim. */
 function sanitizeUsageErrorMessage(message: string): string {
-  return message.replace(/(-{1,2}[A-Za-z0-9][A-Za-z0-9-]*)=([^\s'"]+)/g, "$1=[REDACTED]");
+  return message
+    .replace(/(['"])(-{1,2}[A-Za-z0-9][A-Za-z0-9-]*)=([\s\S]*?)\1/g, "$1$2=[REDACTED]$1")
+    .replace(/(-{1,2}[A-Za-z0-9][A-Za-z0-9-]*)=([^\s'"]+)/g, "$1=[REDACTED]");
 }
 
 /** Operation path without the binary name, e.g. `crm opportunity show`. */

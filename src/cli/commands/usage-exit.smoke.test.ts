@@ -88,6 +88,24 @@ describe("usage exit taxonomy smoke", () => {
     });
   });
 
+  it("redacts the complete quoted inline value when it contains spaces", () => {
+    const secret = "usage secret with a private suffix";
+    const result = runCli(["tasks", "list", `--token=${secret}`, "--json"], { RAVI_AGENT_ID: undefined });
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).not.toContain("usage secret");
+    expect(result.stdout).not.toContain("private suffix");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      success: false,
+      op: "tasks list",
+      error: {
+        code: "USAGE_ERROR",
+        message: "error: unknown option '--token=[REDACTED]'",
+      },
+    });
+  });
+
   it("renders migrated handler failures as canonical JSON at the real process boundary", () => {
     const cases = [
       {
