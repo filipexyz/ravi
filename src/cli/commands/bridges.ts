@@ -3,7 +3,7 @@ import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { ContractError, contractDryRun, pickFields } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
-import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import {
   createMcpBridge,
@@ -16,7 +16,6 @@ import {
   type McpBridgeRevokeResult,
   type McpBridgesClientDeps,
 } from "../../bridges/client.js";
-import { hasContext } from "../context.js";
 import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
@@ -167,7 +166,7 @@ declareCommandReturns(BridgesCommands, {
   }),
 });
 
-async function runBridgesCommand<T>(asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
+async function runBridgesCommand<T>(_asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
@@ -175,17 +174,7 @@ async function runBridgesCommand<T>(asJson: boolean | undefined, run: () => Prom
     // envelope and carry the exit taxonomy (1/2/3). Never let the legacy
     // CloudAuthError funnel swallow them.
     if (error instanceof ContractError) throw error;
-    const cloudError = cloudAuthErrorFromUnknown(error);
-    if (asJson) {
-      printJson(formatCloudAuthError(cloudError));
-    } else {
-      console.error(`${cloudError.code}: ${cloudError.message}`);
-      if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    if (hasContext()) throw cloudError;
-    process.exit(cloudError.exitCode);
+    throw cloudAuthErrorFromUnknown(error);
   }
 }
 

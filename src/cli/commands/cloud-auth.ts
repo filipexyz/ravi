@@ -7,12 +7,7 @@ import {
   normalizeConsoleUrl,
   refreshCredentialsForStore,
 } from "../../cloud-auth/client.js";
-import {
-  CloudAuthError,
-  cloudAuthErrorFromUnknown,
-  formatCloudAuthError,
-  isCloudAuthError,
-} from "../../cloud-auth/errors.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown, isCloudAuthError } from "../../cloud-auth/errors.js";
 import { redactCloudAuthPayload } from "../../cloud-auth/redaction.js";
 import {
   deleteCloudCredentials,
@@ -215,21 +210,8 @@ export async function runLogout(options: CloudLogoutOptions = {}, deps: CloudAut
   return payload;
 }
 
-export async function runCloudAuthRootCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<void> {
-  try {
-    await fn();
-  } catch (error) {
-    const cloudError = cloudAuthErrorFromUnknown(error);
-    if (asJson) {
-      console.log(JSON.stringify(formatCloudAuthError(cloudError), null, 2));
-    } else {
-      console.error(`${cloudError.code}: ${cloudError.message}`);
-      if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    process.exit(cloudError.exitCode);
-  }
+export async function runCloudAuthRootCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T> {
+  return fn();
 }
 
 function requireStoredCredentials(credentials: CloudCredentials | null, consoleUrl?: string): CloudCredentials {

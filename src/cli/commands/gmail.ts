@@ -4,10 +4,9 @@ import { createInterface } from "node:readline/promises";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { ContractError, contractDryRun } from "../agent-contract.js";
-import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import { LinkStepUpRequiredError } from "../../link/client.js";
 import { execCapability, listConnectors } from "../../link/connectors.js";
-import { hasContext } from "../context.js";
 import { jsonValueSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
@@ -331,23 +330,13 @@ function gmailBodyPreview(body: string | undefined): string | null {
     : normalized;
 }
 
-async function runGmailCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<T | undefined> {
+async function runGmailCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T | undefined> {
   try {
     return await fn();
   } catch (error) {
     // Manual v2 contract: contractDryRun/contractFail already emitted their
     // envelope and carry the exit taxonomy; never wrap them as cloud errors.
     if (error instanceof ContractError) throw error;
-    const cloudError = cloudAuthErrorFromUnknown(error);
-    if (asJson) {
-      console.log(JSON.stringify(formatCloudAuthError(cloudError), null, 2));
-    } else {
-      console.error(`${cloudError.code}: ${cloudError.message}`);
-      if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    if (hasContext()) throw cloudError;
-    process.exit(cloudError.exitCode);
+    throw cloudAuthErrorFromUnknown(error);
   }
 }

@@ -23,7 +23,7 @@ import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
 import { runUpdate } from "./commands/update.js";
 import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
-import { emitCliAuditEvent, runWithCliAudit } from "./audit.js";
+import { emitCliAuditEvent, runWithCliAudit, wasContractErrorAudited } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
 import { maybeRunAppAliasRoute } from "../apps/router.js";
@@ -312,17 +312,19 @@ void bootstrapCli().catch(async (error: unknown) => {
   if (error instanceof ContractError) {
     // Contract helpers render once and throw. Audit the semantic outcome before
     // preserving the process taxonomy (1 failure · 2 usage · 3 blocked).
-    const [group = "cli", ...operationParts] = error.op.trim().split(/\s+/);
-    await emitCliAuditEvent({
-      group,
-      name: operationParts.join("_") || "root",
-      tool: error.op.replace(/\s+/g, "_"),
-      outcome: contractFailureOutcome(error),
-      exitCode: error.exitCode,
-      errorCode: error.code,
-      status: "completed",
-      closeLazyConnection: true,
-    });
+    if (!wasContractErrorAudited(error)) {
+      const [group = "cli", ...operationParts] = error.op.trim().split(/\s+/);
+      await emitCliAuditEvent({
+        group,
+        name: operationParts.join("_") || "root",
+        tool: error.op.replace(/\s+/g, "_"),
+        outcome: contractFailureOutcome(error),
+        exitCode: error.exitCode,
+        errorCode: error.code,
+        status: "completed",
+        closeLazyConnection: true,
+      });
+    }
     process.exitCode = error.exitCode;
     return;
   }
@@ -348,7 +350,7 @@ async function bootstrapCli(): Promise<void> {
     process.exit(process.exitCode ?? 0);
   }
 
-  program.parse();
+  await program.parseAsync();
 }
 
 function maybeSuggestKnownRootCommand(args: string[], command: Command): void {

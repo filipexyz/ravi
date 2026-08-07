@@ -28,6 +28,8 @@ import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
 import { RaviAppError } from "../../apps/types.js";
 import { ContractError, contractFailureOutcome } from "../../cli/agent-contract.js";
+import { isCloudAuthError } from "../../cloud-auth/errors.js";
+import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
 import {
   contractErrorResponse,
   errorResponse,
@@ -163,11 +165,17 @@ export async function dispatch(
         }),
     );
   } catch (err) {
-    if (err instanceof ContractError) {
-      outcome = contractFailureOutcome(err);
-      auditExitCode = err.exitCode;
-      auditErrorCode = err.code;
-      response = contractErrorResponse(err);
+    const contractError =
+      err instanceof ContractError
+        ? err
+        : isCloudAuthError(err)
+          ? cloudErrorToContractError(commandOperation(group, cmd.command), err)
+          : null;
+    if (contractError) {
+      outcome = contractFailureOutcome(contractError);
+      auditExitCode = contractError.exitCode;
+      auditErrorCode = contractError.code;
+      response = contractErrorResponse(contractError);
     } else if (err instanceof RaviAppError) {
       outcome = "failed";
       auditExitCode = 1;

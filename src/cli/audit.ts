@@ -1,5 +1,7 @@
 import { isExplicitConnect, nats } from "../nats.js";
 import { ContractError, contractFailureOutcome } from "./agent-contract.js";
+import { isCloudAuthError } from "../cloud-auth/errors.js";
+import { cloudErrorToContractError, commandOperation, renderCloudContractError } from "./cloud-error-contract.js";
 import { buildCliInvocationMetadata } from "./provenance.js";
 
 const MAX_INPUT_LENGTH = 500;
@@ -20,6 +22,11 @@ const SECRET_KEYS = new Set([
   "secretref",
   "token",
 ]);
+const auditedContractErrors = new WeakSet<ContractError>();
+
+export function wasContractErrorAudited(error: ContractError): boolean {
+  return auditedContractErrors.has(error);
+}
 
 export type CliAuditOutcome = "succeeded" | "blocked" | "usage_error" | "denied" | "failed";
 
@@ -104,14 +111,27 @@ export async function runWithCliAudit<T>(
   let outcome: CliAuditOutcome = "succeeded";
   let exitCode = options.exitCode;
   let errorCode = options.errorCode;
+  let caughtContractError: ContractError | null = null;
 
   try {
     return await fn();
   } catch (error) {
-    if (error instanceof ContractError) {
-      outcome = contractFailureOutcome(error);
-      exitCode = error.exitCode;
-      errorCode = error.code;
+    const contractError =
+      error instanceof ContractError
+        ? error
+        : isCloudAuthError(error)
+          ? cloudErrorToContractError(commandOperation(options.group, options.name), error)
+          : null;
+    if (contractError) {
+      if (!(error instanceof ContractError)) {
+        const asJson = options.input?.json === true;
+        renderCloudContractError(contractError, asJson);
+      }
+      outcome = contractFailureOutcome(contractError);
+      exitCode = contractError.exitCode;
+      errorCode = contractError.code;
+      caughtContractError = contractError;
+      throw contractError;
     } else {
       outcome = "failed";
       exitCode ??= 1;
@@ -126,6 +146,7 @@ export async function runWithCliAudit<T>(
       errorCode,
       durationMs: Date.now() - startTime,
     });
+    if (caughtContractError) auditedContractErrors.add(caughtContractError);
   }
 }
 

@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
-import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../../cloud-auth/storage.js";
 import {
@@ -52,7 +52,6 @@ import {
 } from "../../mailbox/index.js";
 import { projectMailMessageToInbox } from "../../inbox/index.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
-import { hasContext } from "../context.js";
 import { jsonObjectSchema, jsonValueSchema, stringNumberRecordSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
@@ -1135,7 +1134,7 @@ declareCommandReturns(MailRaviMailCommands, {
   send: remoteMailResponseSchema,
 });
 
-async function runMailCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<T> {
+async function runMailCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (error) {
@@ -1149,17 +1148,7 @@ async function runMailCommand<T>(asJson: boolean | undefined, fn: () => Promise<
         : new CloudAuthError("PAYLOAD_INVALID", error instanceof Error ? error.message : String(error), {
             cause: error,
           });
-    const formatted = cloudAuthErrorFromUnknown(cloudError);
-    if (asJson) {
-      printJson(formatCloudAuthError(formatted));
-    } else {
-      console.error(`${formatted.code}: ${formatted.message}`);
-      if (formatted.code === "AUTH_REQUIRED" || formatted.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    if (hasContext()) throw formatted;
-    process.exit(formatted.exitCode);
+    throw cloudAuthErrorFromUnknown(cloudError);
   }
 }
 

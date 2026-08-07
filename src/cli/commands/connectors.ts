@@ -4,7 +4,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { ContractError, contractDryRun, pickFields } from "../agent-contract.js";
-import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import {
   execCapability,
   getConnectStatus,
@@ -15,7 +15,6 @@ import {
   type ConnectorDetail,
   type ConnectorListItem,
 } from "../../link/connectors.js";
-import { hasContext } from "../context.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
 const POLL_INTERVAL_MS = 2_000;
@@ -247,7 +246,7 @@ function printConnectorDetail(conn: ConnectorDetail): void {
   }
 }
 
-async function runConnectorCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<T | undefined> {
+async function runConnectorCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T | undefined> {
   try {
     return await fn();
   } catch (error) {
@@ -255,17 +254,7 @@ async function runConnectorCommand<T>(asJson: boolean | undefined, fn: () => Pro
     // envelope and carry the exit taxonomy (1/2/3). Never let the legacy
     // CloudAuthError funnel swallow them.
     if (error instanceof ContractError) throw error;
-    const cloudError = cloudAuthErrorFromUnknown(error);
-    if (asJson) {
-      console.log(JSON.stringify(formatCloudAuthError(cloudError), null, 2));
-    } else {
-      console.error(`${cloudError.code}: ${cloudError.message}`);
-      if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    if (hasContext()) throw cloudError;
-    process.exit(cloudError.exitCode);
+    throw cloudAuthErrorFromUnknown(error);
   }
 }
 

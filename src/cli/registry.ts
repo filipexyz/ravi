@@ -18,6 +18,8 @@ import {
 } from "./decorators.js";
 import { extractOptionName } from "./utils.js";
 import { ContractError, contractFailureOutcome } from "./agent-contract.js";
+import { isCloudAuthError } from "../cloud-auth/errors.js";
+import { cloudErrorToContractError, commandOperation, renderCloudContractError } from "./cloud-error-contract.js";
 import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./command-access.js";
 import { emitCliAuditEvent } from "./audit.js";
 import {
@@ -261,13 +263,20 @@ function registerCommand(
       const result = method.apply(instance, finalArgs);
       if (result instanceof Promise) await result;
     } catch (err) {
-      if (err instanceof ContractError) {
+      const contractError =
+        err instanceof ContractError
+          ? err
+          : isCloudAuthError(err)
+            ? cloudErrorToContractError(commandOperation(groupName, cmdMeta.name), err)
+            : null;
+      if (contractError) {
+        if (!(err instanceof ContractError)) renderCloudContractError(contractError, input.json === true);
         // contractFail/contractDryRun already emitted the envelope (or the
         // legacy text); preserve the Manual v2 exit taxonomy (1 error ·
         // 2 usage · 3 policy brake) instead of the generic error path.
-        contractExitCode = err.exitCode;
-        contractErrorCode = err.code;
-        outcome = contractFailureOutcome(err);
+        contractExitCode = contractError.exitCode;
+        contractErrorCode = contractError.code;
+        outcome = contractFailureOutcome(contractError);
       } else {
         contractExitCode = 1;
         outcome = "failed";

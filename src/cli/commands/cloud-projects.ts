@@ -3,7 +3,7 @@ import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { ContractError, contractDryRun, pickFields } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
-import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import {
   createCloudProject,
@@ -14,7 +14,6 @@ import {
   type CloudProjectPayload,
   type CloudProjectsClientDeps,
 } from "../../cloud-projects/client.js";
-import { hasContext } from "../context.js";
 import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
@@ -145,7 +144,7 @@ declareCommandReturns(CloudProjectsCommands, {
   }),
 });
 
-async function runCloudProjectsCommand<T>(asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
+async function runCloudProjectsCommand<T>(_asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
@@ -153,17 +152,7 @@ async function runCloudProjectsCommand<T>(asJson: boolean | undefined, run: () =
     // envelope and carry the exit taxonomy (1/2/3). Never let the legacy
     // CloudAuthError funnel swallow them.
     if (error instanceof ContractError) throw error;
-    const cloudError = cloudAuthErrorFromUnknown(error);
-    if (asJson) {
-      printJson(formatCloudAuthError(cloudError));
-    } else {
-      console.error(`${cloudError.code}: ${cloudError.message}`);
-      if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    if (hasContext()) throw cloudError;
-    process.exit(cloudError.exitCode);
+    throw cloudAuthErrorFromUnknown(error);
   }
 }
 

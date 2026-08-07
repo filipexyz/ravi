@@ -1,9 +1,8 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
-import { hasContext } from "../context.js";
 import { ContractError, contractDryRun } from "../agent-contract.js";
-import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import {
   normalizeFeedbackKind,
@@ -131,24 +130,14 @@ function normalizeTagOption(value: string | string[] | undefined): string[] {
   return Array.isArray(value) ? value : [value];
 }
 
-async function runFeedbackCommand<T>(asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
+async function runFeedbackCommand<T>(_asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
     // The write brake is not a failure: let ContractError (exit 3) bubble to the
     // dispatcher untouched instead of wrapping it as SERVER_UNAVAILABLE.
     if (error instanceof ContractError) throw error;
-    const cloudError = cloudAuthErrorFromUnknown(error);
-    if (asJson) {
-      printJson(formatCloudAuthError(cloudError));
-    } else {
-      console.error(`${cloudError.code}: ${cloudError.message}`);
-      if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    if (hasContext()) throw cloudError;
-    process.exit(cloudError.exitCode);
+    throw cloudAuthErrorFromUnknown(error);
   }
 }
 

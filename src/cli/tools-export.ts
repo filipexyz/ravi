@@ -21,6 +21,8 @@ import { getContext, runWithContext } from "./context.js";
 import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./command-access.js";
 import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
 import { ContractError, contractFailureOutcome } from "./agent-contract.js";
+import { isCloudAuthError } from "../cloud-auth/errors.js";
+import { cloudErrorToContractError, commandOperation } from "./cloud-error-contract.js";
 import { sanitizeCliAuditValue } from "./audit.js";
 
 // ============================================================================
@@ -290,16 +292,22 @@ function buildHandler(
       }
     } catch (err) {
       isError = true;
-      if (err instanceof ContractError) {
-        contractExitCode = err.exitCode;
-        contractErrorCode = err.code;
-        outcome = contractFailureOutcome(err);
+      const contractError =
+        err instanceof ContractError
+          ? err
+          : isCloudAuthError(err)
+            ? cloudErrorToContractError(commandOperation(group, command), err)
+            : null;
+      if (contractError) {
+        contractExitCode = contractError.exitCode;
+        contractErrorCode = contractError.code;
+        outcome = contractFailureOutcome(contractError);
         isError = outcome !== "blocked";
         // Contract helpers emit their structured envelope before throwing in a
         // tool context. Preserve that envelope without appending a second,
         // lossy `Error: ...` line. A directly-thrown ContractError may not have
         // emitted anything, so synthesize the envelope only when it is absent.
-        const envelope = err.envelope();
+        const envelope = contractError.envelope();
         if (!output.some((line) => isSameContractEnvelope(line, envelope))) {
           output.push(JSON.stringify(envelope));
         }

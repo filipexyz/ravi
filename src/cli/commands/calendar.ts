@@ -1,6 +1,6 @@
 import "reflect-metadata";
 import { z } from "zod";
-import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import {
   addCalendarMember,
   calendarAccessLevel,
@@ -39,7 +39,6 @@ import {
   type CalendarVisibility,
 } from "../../calendar/index.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
-import { hasContext } from "../context.js";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { jsonObjectSchema, stringNumberRecordSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
@@ -883,7 +882,7 @@ declareCommandReturns(CalendarCommands, {
   }),
 });
 
-async function runCalendarCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<T> {
+async function runCalendarCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (error) {
@@ -898,14 +897,7 @@ async function runCalendarCommand<T>(asJson: boolean | undefined, fn: () => Prom
         : new CloudAuthError("PAYLOAD_INVALID", error instanceof Error ? error.message : String(error), {
             cause: error,
           });
-    const formatted = cloudAuthErrorFromUnknown(cloudError);
-    if (asJson) {
-      printJson(formatCloudAuthError(formatted));
-    } else {
-      console.error(`${formatted.code}: ${formatted.message}`);
-    }
-    if (hasContext()) throw formatted;
-    process.exit(formatted.exitCode);
+    throw cloudAuthErrorFromUnknown(cloudError);
   }
 }
 

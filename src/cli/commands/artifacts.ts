@@ -8,7 +8,7 @@ import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
-import { fail, getContext, hasContext } from "../context.js";
+import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import {
   artifactCreateReturnSchema,
@@ -47,7 +47,7 @@ import {
   normalizeLifecycle,
   resolveArtifactBlob,
 } from "../../whatsapp-overlay/artifacts.js";
-import { cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import { activateArtifactReleaseInConsole, publishArtifactToConsole } from "../../artifacts/publish-client.js";
 
 function printJson(payload: unknown): void {
@@ -981,19 +981,7 @@ export class ArtifactsCommands {
       // and carry the exit taxonomy — never let the CloudAuthError funnel
       // swallow them (model: mail.ts).
       if (error instanceof ContractError) throw error;
-      const cloudError = cloudAuthErrorFromUnknown(error);
-      // Tools and gateway execute in-process. Let their transport adapter map
-      // the provider failure instead of terminating the daemon.
-      if (hasContext()) throw cloudError;
-      if (asJson) {
-        printJson(formatCloudAuthError(cloudError));
-      } else {
-        console.error(`${cloudError.code}: ${cloudError.message}`);
-        if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-          console.error("Next: run `ravi login`.");
-        }
-      }
-      process.exit(cloudError.exitCode);
+      throw cloudAuthErrorFromUnknown(error);
     }
   }
 
@@ -1080,19 +1068,7 @@ export class ArtifactReleaseCommands {
       // and carry the exit taxonomy — never let the CloudAuthError funnel
       // swallow them (model: mail.ts).
       if (error instanceof ContractError) throw error;
-      const cloudError = cloudAuthErrorFromUnknown(error);
-      // Tools and gateway execute in-process. Let their transport adapter map
-      // the provider failure instead of terminating the daemon.
-      if (hasContext()) throw cloudError;
-      if (asJson) {
-        printJson(formatCloudAuthError(cloudError));
-      } else {
-        console.error(`${cloudError.code}: ${cloudError.message}`);
-        if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-          console.error("Next: run `ravi login`.");
-        }
-      }
-      process.exit(cloudError.exitCode);
+      throw cloudAuthErrorFromUnknown(error);
     }
   }
 }
