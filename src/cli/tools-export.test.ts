@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
+import { AppsCommands } from "./commands/apps.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { ContractError, contractDryRun, contractFail } from "./agent-contract.js";
 import { fail, runWithContext } from "./context.js";
@@ -118,6 +119,15 @@ const contractContext: ContextRecord = {
   createdAt: Date.now(),
 };
 
+const appsContext: ContextRecord = {
+  contextId: "ctx_apps_transport_test",
+  contextKey: "rctx_apps_transport_test",
+  kind: "test-runtime",
+  agentId: "apps-test",
+  capabilities: [{ permission: "read", objectType: "apps", objectId: "show", source: "test" }],
+  createdAt: Date.now(),
+};
+
 describe("tools export negated options", () => {
   it("uses one semantic grant and the same no-prefixed logical contract as CLI and gateway calls", async () => {
     const tool = extractTools([NegatedToolCommands]).find((candidate) => candidate.name === "negated_run");
@@ -163,6 +173,24 @@ describe("tools export provider-runtime authorization", () => {
 });
 
 describe("tools export contract errors", () => {
+  it("preserves a real AppsCommands failure as one redacted contract envelope", async () => {
+    const tool = extractTools([AppsCommands]).find((candidate) => candidate.name === "apps_show");
+    expect(tool).toBeDefined();
+
+    const result = await runWithContext({ agentId: appsContext.agentId, context: appsContext }, () =>
+      tool!.handler({ id: "__contract_missing_app__" }),
+    );
+
+    expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
+    const body = JSON.parse(result.content[0]?.text ?? "{}");
+    expect(body).toMatchObject({
+      success: false,
+      op: "apps show",
+      error: { code: "not_found", message: "Ravi app was not found." },
+    });
+    expect(JSON.stringify(body)).not.toContain("evidence");
+  });
+
   it("returns a redacted canonical envelope for an unexpected error", async () => {
     const tool = extractTools([ContractToolCommands]).find((candidate) => candidate.name === "contract_boom");
     expect(tool).toBeDefined();

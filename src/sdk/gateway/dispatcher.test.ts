@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
 import { RaviAppError } from "../../apps/types.js";
+import { AppsCommands } from "../../cli/commands/apps.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
 import { contractFail } from "../../cli/agent-contract.js";
 import { fail, getContext } from "../../cli/context.js";
@@ -231,10 +232,17 @@ const registry = buildRegistry([
   GatewayTasksCommands,
   GatewayGatedCommands,
 ]);
+const appsRegistry = buildRegistry([AppsCommands]);
 
 function findCmd(fullName: string) {
   const cmd = registry.commands.find((c) => c.fullName === fullName);
   if (!cmd) throw new Error(`fixture missing: ${fullName}`);
+  return cmd;
+}
+
+function findAppCmd(fullName: string) {
+  const cmd = appsRegistry.commands.find((candidate) => candidate.fullName === fullName);
+  if (!cmd) throw new Error(`app fixture missing: ${fullName}`);
   return cmd;
 }
 
@@ -271,6 +279,7 @@ function adminSystem(): ContextCapability {
 }
 
 const demoContext = gatewayContext([executeGroup("demo")]);
+const appsContext = gatewayContext([semanticCap("read", "apps", "show")], "gateway-apps");
 const sessionsContext = gatewayContext([executeGroup("sessions")]);
 const tasksContext = gatewayContext([executeGroup("tasks")]);
 const secretContext = gatewayContext([executeGroup("secret"), adminSystem()]);
@@ -476,6 +485,28 @@ describe("dispatch — validation", () => {
 });
 
 describe("dispatch — error path", () => {
+  it("preserves a real AppsCommands failure as a redacted canonical response", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findAppCmd("apps.show"),
+      { id: "__contract_missing_app__" },
+      {},
+      { contextRecord: appsContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(422);
+    const body = await result.response.json();
+    expect(body).toMatchObject({
+      success: false,
+      op: "apps show",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "not_found", message: "Ravi app was not found." },
+    });
+    expect(JSON.stringify(body)).not.toContain("evidence");
+    expect(audits.events[0]).toMatchObject({ outcome: "failed", exitCode: 1, errorCode: "not_found" });
+  });
+
   it("normalizes RaviAppError as a redacted canonical contract and audit", async () => {
     const audits = captureAudits();
     const result = await dispatch(

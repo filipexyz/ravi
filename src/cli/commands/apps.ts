@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { throwRaviAppContractError } from "../../apps/error-contract.js";
 import {
   buildAppsGuide,
   checkAppManifests,
@@ -23,6 +24,11 @@ import {
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function failAppsCommand(op: string, error: unknown, asJson?: boolean): never {
+  if (error instanceof RaviAppError) throwRaviAppContractError(op, error, asJson);
+  fail(error instanceof Error ? error.message : String(error));
 }
 
 const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
@@ -359,7 +365,7 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps list", error, asJson);
     }
   }
 
@@ -396,12 +402,7 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
-      if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
-        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
-        return;
-      }
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps show", error, asJson);
     }
   }
 
@@ -448,12 +449,7 @@ export class AppsCommands {
       if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
       return payload;
     } catch (error) {
-      if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
-        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
-        return;
-      }
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps check", error, asJson);
     }
   }
 
@@ -528,12 +524,7 @@ export class AppsCommands {
       for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
       return payload;
     } catch (error) {
-      if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
-        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
-        return;
-      }
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps scaffold", error, asJson);
     }
   }
 
@@ -566,12 +557,7 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
-      if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
-        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
-        return;
-      }
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps delete", error, asJson);
     }
   }
 
@@ -628,7 +614,7 @@ export class AppsCommands {
       for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps import-cli", error, asJson);
     }
   }
 
@@ -679,7 +665,7 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps prompts", error, asJson);
     }
   }
 }

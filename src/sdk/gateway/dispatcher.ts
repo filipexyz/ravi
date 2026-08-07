@@ -27,9 +27,9 @@ import { emitCliAuditEvent, type CliAuditOutcome } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
 import { RaviAppError } from "../../apps/types.js";
+import { raviAppErrorToContractError } from "../../apps/error-contract.js";
 import {
   ContractError,
-  CONTRACT_EXIT_ERROR,
   CONTRACT_EXIT_USAGE,
   contractFailureOutcome,
   expectedErrorToContractError,
@@ -246,15 +246,6 @@ export async function dispatch(
   const audit = buildAuditEvent(cmd, tool, auditInput, "succeeded", startedAt, lineage);
   const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
   return { response, audit: auditEmitted ? audit : null };
-}
-
-function raviAppErrorToContractError(op: string, error: RaviAppError): ContractError {
-  const message = error.code === "not_found" ? "Ravi app was not found." : "Ravi app already exists.";
-  const suggestedAction =
-    error.code === "not_found"
-      ? "Verify the app identifier and retry"
-      : "Inspect the existing app before retrying with a different identifier";
-  return new ContractError(op, error.code, message, CONTRACT_EXIT_ERROR, { suggestedAction });
 }
 
 function binaryResponseToContractError(op: string, status: number): ContractError {
