@@ -45,7 +45,8 @@ The `slack` domain follows the shared agent-first contract implemented in
 - Write brake (7.8): every externally visible Slack mutation is dry-run by
   default. Without `--execute` the command exits `3` with the
   `WRITE_REQUIRES_EXECUTE` envelope BEFORE any Slack Web API call. The dry-run
-  plan carries the Slack method and the exact request `--execute` would send.
+  plan carries the Slack method and a safe summary of the material request
+  effect; it never serializes Slack IDs or payload/content values.
 - `--execute` MUST be the LAST option of every braked command, and all local
   validation (payload files, access levels, artifact resolution) MUST run
   BEFORE the brake so the plan never promises an impossible write.
@@ -148,7 +149,8 @@ Braked dry-runs exit `3` and emit the `WRITE_REQUIRES_EXECUTE` envelope whose
 
 - the resolved connection and credential source;
 - the Slack method that would be called;
-- the exact request payload `--execute` would send;
+- a safe request summary that preserves material effects without exposing IDs,
+  message text, Markdown, file paths, Block Kit, or payload bodies;
 - extra planning context (`item`) when useful (e.g. canvas markdown stats).
 
 ## Known Failure Modes

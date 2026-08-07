@@ -36,8 +36,9 @@ dry-run and require `--execute` for the real write.
 
 The dry-run is not a silent success: it exits `3` with the
 `WRITE_REQUIRES_EXECUTE` envelope so the calling agent explicitly sees "nothing
-was written yet" and receives the exact plan `--execute` would perform. An
-earlier draft used `--dry-run`/`--apply` with exit 0; that was superseded by
+was written yet" and receives a safe summary of the material effect that
+`--execute` would perform. The summary never serializes Slack IDs or payload
+content. An earlier draft used `--dry-run`/`--apply` with exit 0; that was superseded by
 the shared agent-first contract (`src/cli/agent-contract.ts`) so all 30+
 migrated domains behave identically.
 

@@ -142,19 +142,39 @@ function summarizeSlackDryRunRequest(request: Record<string, unknown>): Record<s
   const markdown = typeof request.markdown === "string" ? request.markdown : undefined;
   const blocks = Array.isArray(request.blocks) ? request.blocks : undefined;
   const changes = Array.isArray(request.changes) ? request.changes : undefined;
-  const destination = [request.channel, request.channelId, request.canvasId]
-    .find((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const name = typeof request.name === "string" ? request.name : undefined;
+  const userIds = Array.isArray(request.userIds) ? request.userIds : undefined;
+  const accessTargetIds = Array.isArray(request.userIds)
+    ? { kind: "users" as const, count: request.userIds.length }
+    : Array.isArray(request.channelIds)
+      ? { kind: "channels" as const, count: request.channelIds.length }
+      : undefined;
+  const destinationProvided = [request.channel, request.channelId, request.canvasId].some(
+    (value) => typeof value === "string" && value.trim().length > 0,
+  );
 
   return {
-    ...(destination ? { destination } : {}),
-    ...(typeof request.ts === "string" ? { ts: request.ts } : {}),
-    ...(typeof request.threadTs === "string" ? { threadTs: request.threadTs } : {}),
-    ...(typeof request.viewId === "string" ? { viewId: request.viewId } : {}),
+    ...(destinationProvided ? { destinationProvided: true } : {}),
+    ...(typeof request.ts === "string" ? { tsProvided: true } : {}),
+    ...(typeof request.threadTs === "string" ? { threadProvided: true } : {}),
+    ...(typeof request.viewId === "string" || typeof request.externalId === "string" ? { viewProvided: true } : {}),
     ...(text !== undefined ? { textChars: text.length } : {}),
     ...(markdown !== undefined ? { markdownChars: markdown.length } : {}),
     ...(blocks ? { blockCount: blocks.length } : {}),
     ...(changes ? { changeCount: changes.length } : {}),
     ...(typeof request.file === "string" ? { fileProvided: true } : {}),
+    ...(name !== undefined
+      ? typeof request.channel === "string"
+        ? { newNameChars: name.length }
+        : { channelNameChars: name.length }
+      : {}),
+    ...(typeof request.isPrivate === "boolean" ? { isPrivate: request.isPrivate } : {}),
+    ...(userIds && typeof request.canvasId !== "string" ? { userCount: userIds.length } : {}),
+    ...(typeof request.accessLevel === "string" ? { accessLevel: request.accessLevel } : {}),
+    ...(typeof request.canvasId === "string" && accessTargetIds
+      ? { accessTargetKind: accessTargetIds.kind, accessTargetCount: accessTargetIds.count }
+      : {}),
+    ...(request.payload && typeof request.payload === "object" ? { payloadProvided: true } : {}),
     fieldCount: Object.keys(request).length,
   };
 }
@@ -1242,7 +1262,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "channels-list", description: "List Slack conversations visible to the configured bot" })
-  @CommandAccess({ kind: "read", resource: "slack.channels", action: "list", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.channels",
+    action: "list",
+    risk: "low",
+    redactions: ["raviChannel", "cursor"],
+  })
   @Returns(slackListReturnSchema)
   async channelsList(
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
@@ -1295,6 +1321,7 @@ export class SlackCommands {
     resource: "slack.messages",
     action: "send",
     risk: "high",
+    redactions: ["channel", "text", "raviChannel", "threadTs", "ephemeralUser"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1330,7 +1357,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "blocks-validate", description: "Validate Slack Block Kit JSON with Slack blocks.validate" })
-  @CommandAccess({ kind: "read", resource: "slack.block-kit", action: "validate", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.block-kit",
+    action: "validate",
+    risk: "medium",
+    redactions: ["file", "raviChannel"],
+  })
   @Returns(slackObjectReturnSchema)
   async blocksValidate(
     @Arg("file", { description: "Path to a Block Kit JSON file" }) file: string,
@@ -1368,6 +1401,7 @@ export class SlackCommands {
     resource: "slack.block-kit",
     action: "send",
     risk: "high",
+    redactions: ["channel", "file", "raviChannel", "connection", "text", "blocks", "threadTs", "ephemeralUser"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1434,6 +1468,7 @@ export class SlackCommands {
     resource: "slack.block-kit",
     action: "update",
     risk: "high",
+    redactions: ["channel", "ts", "file", "raviChannel", "text", "blocks"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1477,6 +1512,7 @@ export class SlackCommands {
     resource: "slack.interactions",
     action: "respond",
     risk: "high",
+    redactions: ["responseUrlId", "file", "payload", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1518,6 +1554,7 @@ export class SlackCommands {
     resource: "slack.modals",
     action: "open",
     risk: "high",
+    redactions: ["triggerId", "file", "view", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1555,6 +1592,7 @@ export class SlackCommands {
     resource: "slack.modals",
     action: "update",
     risk: "high",
+    redactions: ["view", "file", "raviChannel", "externalId", "hash"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1606,6 +1644,7 @@ export class SlackCommands {
     resource: "slack.modals",
     action: "push",
     risk: "high",
+    redactions: ["triggerId", "file", "view", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1640,6 +1679,7 @@ export class SlackCommands {
     resource: "slack.block-kit",
     action: "showcase",
     risk: "high",
+    redactions: ["channel", "raviChannel", "threadTs"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1672,7 +1712,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "work-objects-validate", description: "Validate Slack native Work Object metadata JSON" })
-  @CommandAccess({ kind: "read", resource: "slack.work-objects", action: "validate", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.work-objects",
+    action: "validate",
+    risk: "low",
+    redactions: ["file"],
+  })
   @Returns(slackWorkObjectReturnSchema)
   async workObjectsValidate(
     @Arg("file", { description: "Path to Slack native Work Object metadata JSON" }) file: string,
@@ -1716,6 +1762,7 @@ export class SlackCommands {
     resource: "slack.work-objects",
     action: "send",
     risk: "high",
+    redactions: ["channel", "file", "raviChannel", "connection", "text", "metadata", "threadTs"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1773,6 +1820,7 @@ export class SlackCommands {
     resource: "slack.work-objects",
     action: "unfurl",
     risk: "high",
+    redactions: ["channel", "ts", "url", "file", "metadata", "unfurls", "raviChannel", "connection"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1831,6 +1879,7 @@ export class SlackCommands {
     resource: "slack.work-objects",
     action: "present-details",
     risk: "high",
+    redactions: ["triggerId", "file", "metadata", "raviChannel", "connection"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1865,7 +1914,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "channels-info", description: "Show Slack conversation metadata" })
-  @CommandAccess({ kind: "read", resource: "slack.channels", action: "info", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.channels",
+    action: "info",
+    risk: "low",
+    redactions: ["channel", "raviChannel"],
+  })
   @Returns(slackObjectReturnSchema)
   async channelsInfo(
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
@@ -1891,7 +1946,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "channels-history", description: "Read Slack conversation history" })
-  @CommandAccess({ kind: "read", resource: "slack.channels", action: "history", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.channels",
+    action: "history",
+    risk: "medium",
+    redactions: ["channel", "raviChannel", "cursor", "latest", "oldest"],
+  })
   @Returns(slackListReturnSchema)
   async channelsHistory(
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
@@ -1930,7 +1991,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "messages-inspect", description: "Inspect whether a Slack message exists in Slack and Ravi" })
-  @CommandAccess({ kind: "read", resource: "slack.messages", action: "inspect", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.messages",
+    action: "inspect",
+    risk: "medium",
+    redactions: ["channel", "ts", "raviChannel"],
+  })
   @Returns(slackObjectReturnSchema)
   async messagesInspect(
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
@@ -1969,6 +2036,7 @@ export class SlackCommands {
     resource: "slack.messages",
     action: "replay",
     risk: "high",
+    redactions: ["channel", "ts", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2045,7 +2113,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "members-list", description: "List Slack conversation members" })
-  @CommandAccess({ kind: "read", resource: "slack.members", action: "list", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.members",
+    action: "list",
+    risk: "medium",
+    redactions: ["channel", "raviChannel", "cursor"],
+  })
   @Returns(slackListReturnSchema)
   async membersList(
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
@@ -2078,7 +2152,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "files-list", description: "List Slack files visible to the configured bot" })
-  @CommandAccess({ kind: "read", resource: "slack.files", action: "list", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.files",
+    action: "list",
+    risk: "medium",
+    redactions: ["raviChannel", "channel", "user", "cursor"],
+  })
   @Returns(slackListReturnSchema)
   async filesList(
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
@@ -2116,7 +2196,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "topology", description: "Show Slack channels and Ravi route/session ownership" })
-  @CommandAccess({ kind: "read", resource: "slack.topology", action: "read", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.topology",
+    action: "read",
+    risk: "medium",
+    redactions: ["raviChannel", "cursor"],
+  })
   @Returns(slackTopologyReturnSchema)
   async topology(
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
@@ -2167,6 +2253,7 @@ export class SlackCommands {
     resource: "slack.channels",
     action: "create",
     risk: "high",
+    redactions: ["name", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2198,6 +2285,7 @@ export class SlackCommands {
     resource: "slack.channels",
     action: "rename",
     risk: "high",
+    redactions: ["channel", "name", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2229,6 +2317,7 @@ export class SlackCommands {
     resource: "slack.channels",
     action: "invite",
     risk: "high",
+    redactions: ["channel", "users", "raviChannel", "connection"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2265,6 +2354,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "create",
     risk: "high",
+    redactions: ["raviChannel", "title", "markdown", "markdownFile", "artifact", "channelId"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2354,6 +2444,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "create",
     risk: "high",
+    redactions: ["channel", "raviChannel", "title", "markdown", "markdownFile", "artifact"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2467,6 +2558,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "showcase",
     risk: "high",
+    redactions: ["canvas", "raviChannel", "channelId", "title"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2512,6 +2604,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "showcase",
     risk: "high",
+    redactions: ["channel", "raviChannel", "title"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2594,6 +2687,13 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "publish-artifact",
     risk: "high",
+    redactions: [
+      "artifactOrFile",
+      "raviChannel",
+      "canvasId",
+      "channelId",
+      "title",
+    ],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2706,7 +2806,13 @@ export class SlackCommands {
     name: "canvas-artifact-status",
     description: "Show local Slack Canvas publish status for a Ravi artifact",
   })
-  @CommandAccess({ kind: "read", resource: "slack.canvas", action: "artifact-status", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.canvas",
+    action: "artifact-status",
+    risk: "low",
+    redactions: ["artifact"],
+  })
   @Returns(slackCanvasArtifactStatusReturnSchema)
   canvasArtifactStatus(
     @Arg("artifact", { description: "Ravi artifact id" }) artifactId: string,
@@ -2737,6 +2843,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "edit",
     risk: "high",
+    redactions: ["canvas", "operation", "raviChannel", "sectionId", "markdown", "markdownFile", "artifact", "title"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2815,7 +2922,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "canvas-sections-lookup", description: "Lookup Slack canvas section IDs" })
-  @CommandAccess({ kind: "read", resource: "slack.canvas", action: "lookup", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.canvas",
+    action: "lookup",
+    risk: "medium",
+    redactions: ["canvas", "raviChannel", "cursor"],
+  })
   @Returns(slackListReturnSchema)
   async canvasSectionsLookup(
     @Arg("canvas", { description: "Slack canvas ID" }) canvasId: string,
@@ -2870,6 +2983,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "share",
     risk: "high",
+    redactions: ["canvas", "access", "raviChannel", "users", "channels"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2913,6 +3027,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "unshare",
     risk: "high",
+    redactions: ["canvas", "raviChannel", "users", "channels"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2948,6 +3063,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "delete",
     risk: "high",
+    redactions: ["canvas", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)

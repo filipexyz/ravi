@@ -39,10 +39,14 @@ Expected behavior:
   `WRITE_REQUIRES_EXECUTE` envelope and MUST NOT perform any Slack Web API
   call — including reads (`messages-replay` must not fetch history in
   dry-run).
-- The dry-run envelope's `plan` MUST include the Slack method and the exact
-  request that `--execute` would send.
-- The same braked command with `--execute` MUST perform exactly the planned
-  Slack call and return `dryRun: false`.
+- The dry-run envelope's `plan` MUST include the Slack method and a safe,
+  material-effect summary of the request that `--execute` would send. It MUST
+  include the channel-create visibility and name length, rename name length,
+  invite user count, and Canvas access level plus target kind/count when
+  applicable; it MUST NOT serialize Slack IDs, message text, Markdown, files,
+  Block Kit, or other request payload bodies.
+- The same braked command with `--execute` MUST perform the Slack call whose
+  material effect was described by the plan and return `dryRun: false`.
 - An unresolved Ravi channel config MUST exit `1` with `CHANNEL_NOT_FOUND` and
   suggestions computed only from the local config store.
 - A missing replay target MUST exit `1` with `MESSAGE_NOT_FOUND`; a missing

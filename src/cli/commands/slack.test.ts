@@ -31,6 +31,7 @@ const replayEnvelopes: Array<Record<string, unknown>> = [];
 const interactionResponses: Array<Record<string, unknown>> = [];
 const createdArtifacts: Array<Record<string, unknown>> = [];
 const schemaInitializingArtifactCalls: string[] = [];
+const commandAccessMetadata = new Map<string, { redactions?: string[] }>();
 
 let conversationsListResult: Record<string, unknown> = { ok: true, channels: [] };
 let conversationsHistoryResult: Record<string, unknown> = { ok: true, messages: [] };
@@ -53,7 +54,9 @@ function callsTo(method: string): Array<{ method: string; args: unknown }> {
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
   Command: () => () => {},
-  CommandAccess: () => () => {},
+  CommandAccess: (options: { redactions?: string[] }) => (_target: object, propertyKey: string) => {
+    commandAccessMetadata.set(propertyKey, options);
+  },
   Scope: () => () => {},
   CliOnly: () => () => {},
   Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
@@ -325,6 +328,7 @@ const {
   validateSlackCanvasAccessLevelTargets,
 } = slackModule;
 const { ContractError } = await import("../agent-contract.js");
+const { redactCommandAccessInput } = await import("../command-access.js");
 
 type ContractErrorInstance = InstanceType<typeof ContractError>;
 
@@ -582,6 +586,64 @@ describe("Slack CLI Canvas helpers", () => {
 // ---------------------------------------------------------------------------
 
 describe("slack agent-first contract", () => {
+  it("declares redactions for actual Slack content, payload-file and identifier inputs", () => {
+    const sentinel = "SENTINEL_SLACK_PRIVATE_INPUT_DO_NOT_LEAK";
+    const cases = [
+      {
+        method: "messagesSend",
+        input: { channel: sentinel, text: sentinel, threadTs: sentinel, ephemeralUser: sentinel },
+      },
+      {
+        method: "blocksSend",
+        input: {
+          channel: sentinel,
+          file: sentinel,
+          text: sentinel,
+          blocks: sentinel,
+          threadTs: sentinel,
+          ephemeralUser: sentinel,
+        },
+      },
+      {
+        method: "interactionsRespond",
+        input: { responseUrlId: sentinel, file: sentinel, payload: sentinel },
+      },
+      {
+        method: "canvasCreate",
+        input: {
+          title: sentinel,
+          markdown: sentinel,
+          markdownFile: sentinel,
+          artifact: sentinel,
+          channelId: sentinel,
+        },
+      },
+      {
+        method: "canvasEdit",
+        input: {
+          canvas: sentinel,
+          sectionId: sentinel,
+          markdown: sentinel,
+          markdownFile: sentinel,
+          artifact: sentinel,
+          title: sentinel,
+        },
+      },
+      {
+        method: "canvasAccessSet",
+        input: { canvas: sentinel, users: sentinel, channels: sentinel },
+      },
+    ];
+
+    for (const { method, input } of cases) {
+      const access = commandAccessMetadata.get(method);
+      expect(access?.redactions).toEqual(expect.arrayContaining(Object.keys(input)));
+      const auditInput = redactCommandAccessInput(access, input);
+      expect(Object.values(auditInput)).toEqual(Object.keys(input).map(() => "[REDACTED]"));
+      expect(JSON.stringify(auditInput)).not.toContain(sentinel);
+    }
+  });
+
   it("messages-send without --execute summarizes content without exposing request text", async () => {
     const commands = new SlackCommands();
     const error = await expectContractError(
@@ -594,9 +656,10 @@ describe("slack agent-first contract", () => {
     expect(error.details.plan).toMatchObject({
       connection: "ravi-slack",
       method: "chat.postMessage",
-      request: { destination: "C123", textChars: "olá time".length },
+      request: { destinationProvided: true, textChars: "olá time".length },
     });
     const plan = JSON.stringify(error.details.plan);
+    expect(plan).not.toContain("C123");
     expect(plan).not.toContain("olá time");
     expect(plan).not.toContain('\"text\":\"');
     expect(clientCalls).toHaveLength(0);
@@ -648,7 +711,8 @@ describe("slack agent-first contract", () => {
       3,
     );
 
-    expect(error.details.plan).toMatchObject({ request: { destination: "C123", textChars: sentinel.length } });
+    expect(error.details.plan).toMatchObject({ request: { destinationProvided: true, textChars: sentinel.length } });
+    expect(JSON.stringify(error.envelope())).not.toContain("C123");
     expect(JSON.stringify(error.envelope())).not.toContain(sentinel);
     expect(clientCalls).toHaveLength(0);
   });
@@ -711,6 +775,62 @@ describe("slack agent-first contract", () => {
     await silenced(() => commands.channelsCreate("novo-canal", "ravi-slack", undefined, true, true));
     expect(callsTo("conversationsCreate")).toHaveLength(1);
     expect(callsTo("conversationsCreate")[0]?.args).toMatchObject({ name: "novo-canal" });
+  });
+
+  it("channel and Canvas access dry-runs describe the material effect without serializing identifiers", async () => {
+    const commands = new SlackCommands();
+    const sentinel = "SENTINEL_SLACK_ID_OR_CONTENT_DO_NOT_LEAK";
+    const createError = await expectContractError(
+      () => commands.channelsCreate(sentinel, "ravi-slack", true, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    const renameError = await expectContractError(
+      () => commands.channelsRename(sentinel, sentinel, "ravi-slack", true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    const inviteError = await expectContractError(
+      () =>
+        commands.channelsInvite(
+          sentinel,
+          `${sentinel},${sentinel}`,
+          "ravi-slack",
+          undefined,
+          true,
+          undefined,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    const accessError = await expectContractError(
+      () =>
+        commands.canvasAccessSet(
+          sentinel,
+          "write",
+          "ravi-slack",
+          `${sentinel},${sentinel}`,
+          undefined,
+          true,
+          undefined,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(createError.details.plan).toMatchObject({
+      request: { channelNameChars: sentinel.length, isPrivate: true },
+    });
+    expect(renameError.details.plan).toMatchObject({ request: { newNameChars: sentinel.length } });
+    expect(inviteError.details.plan).toMatchObject({ request: { userCount: 2 } });
+    expect(accessError.details.plan).toMatchObject({
+      request: { accessLevel: "write", accessTargetKind: "users", accessTargetCount: 2 },
+    });
+
+    for (const error of [createError, renameError, inviteError, accessError]) {
+      expect(JSON.stringify(error.envelope())).not.toContain(sentinel);
+    }
+    expect(clientCalls).toHaveLength(0);
   });
 
   it("canvas-create without --execute is a dry-run: exit 3, no Web API call, no artifact created", async () => {
