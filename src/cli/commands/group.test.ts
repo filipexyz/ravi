@@ -437,9 +437,10 @@ describe("whatsapp group write brake", () => {
     );
 
     expect(error.details.plan).toMatchObject({
-      groupId: "120363000000000001@g.us",
-      participants: ["5511999999999"],
+      target: "***0001@g.us",
+      participantCount: 1,
     });
+    expect(JSON.stringify(error.details.plan)).not.toContain("5511999999999");
     expect(addParticipantCalls).toHaveLength(0);
   });
 
@@ -521,9 +522,10 @@ describe("whatsapp group write brake", () => {
 
     expect(error.details.plan).toMatchObject({
       subject: "Equipe Teste",
-      participants: ["5511999999999"],
+      participantCount: 1,
       agent: null,
     });
+    expect(JSON.stringify(error.details.plan)).not.toContain("5511999999999");
     expect(createGroupCalls).toHaveLength(0);
     expect(createAgentCalls).toHaveLength(0);
     expect(upsertChatCalls).toHaveLength(0);
@@ -600,6 +602,35 @@ describe("whatsapp group write brake", () => {
     for (const testCase of cases) {
       await expectContractError(testCase.run, "WRITE_REQUIRES_EXECUTE", 3);
       expect(testCase.spy).toHaveLength(0);
+    }
+  });
+
+  it("group mutation plans mask the group id while preserving the material effect", async () => {
+    const commands = new GroupCommands();
+    const sensitiveGroupId = "120363000000000001";
+    const cases: Array<{ run: () => Promise<unknown>; effect: Record<string, unknown> }> = [
+      {
+        run: () => commands.revokeInvite(sensitiveGroupId, undefined, true, undefined),
+        effect: { effect: "revoke-invite" },
+      },
+      {
+        run: () => commands.leave(sensitiveGroupId, undefined, true, undefined),
+        effect: { effect: "leave-group" },
+      },
+      {
+        run: () => commands.rename(sensitiveGroupId, "Novo Nome", undefined, true, undefined),
+        effect: { effect: "rename-group", subject: "Novo Nome" },
+      },
+      {
+        run: () => commands.settings(sensitiveGroupId, "announcement", undefined, true, undefined),
+        effect: { effect: "update-settings", setting: "announcement" },
+      },
+    ];
+
+    for (const testCase of cases) {
+      const error = await expectContractError(testCase.run, "WRITE_REQUIRES_EXECUTE", 3);
+      expect(error.details.plan).toMatchObject({ target: "***0001@g.us", ...testCase.effect });
+      expect(JSON.stringify(error.details.plan)).not.toContain(sensitiveGroupId);
     }
   });
 

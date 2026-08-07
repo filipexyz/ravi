@@ -973,6 +973,7 @@ export class GroupCommands {
     resource: "whatsapp.group",
     action: "send",
     risk: "high",
+    requiresConfirmation: true,
     redactions: ["groupId", "message", "mention"],
   })
   @Scope("open")
@@ -1077,7 +1078,14 @@ export class GroupCommands {
   }
 
   @Command({ name: "create", description: "Create a new group" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "create", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.group",
+    action: "create",
+    risk: "high",
+    requiresConfirmation: true,
+    redactions: ["participants", "admin", "admins", "agentCwd"],
+  })
   async create(
     @Arg("name", { description: "Group name/subject" }) name: string,
     @Arg("participants", {
@@ -1143,9 +1151,9 @@ export class GroupCommands {
         {
           subject: name,
           accountId: resolveGroupAccount(account) || null,
-          participants,
-          requestedAdmins: explicitAdmins,
-          actorAdmins,
+          participantCount: participants.length,
+          requestedAdminCount: explicitAdmins.length,
+          actorAdminCount: actorAdmins.length,
           agent: agent ?? null,
           createAgent: createAgentIfMissing === true,
         },
@@ -1381,7 +1389,14 @@ export class GroupCommands {
   }
 
   @Command({ name: "add", description: "Add participants to a group" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "add", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.group",
+    action: "add",
+    risk: "high",
+    requiresConfirmation: true,
+    redactions: ["groupId", "participants"],
+  })
   async add(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("participants", { description: "Phone numbers to add (comma-separated)" }) participantsStr: string,
@@ -1407,8 +1422,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group add",
         {
-          groupId: normalizeGroupJid(groupId),
-          participants,
+          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          participantCount: participants.length,
           accountId: resolveGroupAccount(account) || null,
         },
         { asJson },
@@ -1425,7 +1440,14 @@ export class GroupCommands {
   }
 
   @Command({ name: "remove", description: "Remove participants from a group" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "remove", risk: "destructive" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.group",
+    action: "remove",
+    risk: "destructive",
+    requiresConfirmation: true,
+    redactions: ["groupId", "participants"],
+  })
   async remove(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("participants", { description: "Phone numbers to remove (comma-separated)" }) participantsStr: string,
@@ -1449,8 +1471,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group remove",
         {
-          groupId: normalizeGroupJid(groupId),
-          participants,
+          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          participantCount: participants.length,
           accountId: resolveGroupAccount(account) || null,
         },
         { asJson },
@@ -1473,7 +1495,14 @@ export class GroupCommands {
   }
 
   @Command({ name: "promote", description: "Promote participants to admin" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "promote", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.group",
+    action: "promote",
+    risk: "high",
+    requiresConfirmation: true,
+    redactions: ["groupId", "participants"],
+  })
   async promote(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("participants", { description: "Phone numbers to promote (comma-separated)" }) participantsStr: string,
@@ -1496,8 +1525,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group promote",
         {
-          groupId: normalizeGroupJid(groupId),
-          participants,
+          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          participantCount: participants.length,
           accountId: resolveGroupAccount(account) || null,
         },
         { asJson },
@@ -1520,7 +1549,14 @@ export class GroupCommands {
   }
 
   @Command({ name: "demote", description: "Demote participants from admin" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "demote", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.group",
+    action: "demote",
+    risk: "high",
+    requiresConfirmation: true,
+    redactions: ["groupId", "participants"],
+  })
   async demote(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("participants", { description: "Phone numbers to demote (comma-separated)" }) participantsStr: string,
@@ -1544,8 +1580,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group demote",
         {
-          groupId: normalizeGroupJid(groupId),
-          participants,
+          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          participantCount: participants.length,
           accountId: resolveGroupAccount(account) || null,
         },
         { asJson },
@@ -1585,7 +1621,14 @@ export class GroupCommands {
   }
 
   @Command({ name: "revoke-invite", description: "Revoke current invite link" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "revoke-invite", risk: "destructive" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.group",
+    action: "revoke-invite",
+    risk: "destructive",
+    requiresConfirmation: true,
+    redactions: ["groupId"],
+  })
   async revokeInvite(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
@@ -1603,7 +1646,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group revoke-invite",
         {
-          groupId: normalizeGroupJid(groupId),
+          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          effect: "revoke-invite",
           accountId: resolveGroupAccount(account) || null,
         },
         { asJson },
@@ -1664,7 +1708,14 @@ export class GroupCommands {
   }
 
   @Command({ name: "leave", description: "Leave a group" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "leave", risk: "destructive" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.group",
+    action: "leave",
+    risk: "destructive",
+    requiresConfirmation: true,
+    redactions: ["groupId"],
+  })
   async leave(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
@@ -1683,7 +1734,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group leave",
         {
-          groupId: normalizeGroupJid(groupId),
+          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          effect: "leave-group",
           accountId: resolveGroupAccount(account) || null,
         },
         { asJson },
@@ -1700,7 +1752,14 @@ export class GroupCommands {
   }
 
   @Command({ name: "rename", description: "Rename a group" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "rename", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.group",
+    action: "rename",
+    risk: "high",
+    requiresConfirmation: true,
+    redactions: ["groupId"],
+  })
   async rename(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("name", { description: "New group name" }) name: string,
@@ -1718,7 +1777,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group rename",
         {
-          groupId: normalizeGroupJid(groupId),
+          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          effect: "rename-group",
           subject: name,
           accountId: resolveGroupAccount(account) || null,
         },
@@ -1741,6 +1801,7 @@ export class GroupCommands {
     resource: "whatsapp.group",
     action: "description",
     risk: "high",
+    requiresConfirmation: true,
     redactions: ["groupId", "text"],
   })
   async description(
@@ -1783,7 +1844,14 @@ export class GroupCommands {
     name: "settings",
     description: "Update group settings (announcement, not_announcement, locked, unlocked)",
   })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "settings", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.group",
+    action: "settings",
+    risk: "high",
+    requiresConfirmation: true,
+    redactions: ["groupId"],
+  })
   async settings(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("setting", { description: "Setting: announcement, not_announcement, locked, unlocked" }) setting: string,
@@ -1808,7 +1876,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group settings",
         {
-          groupId: normalizeGroupJid(groupId),
+          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          effect: "update-settings",
           setting,
           accountId: resolveGroupAccount(account) || null,
         },
