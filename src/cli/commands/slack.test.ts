@@ -258,6 +258,7 @@ mock.module("../../channels/slack/work-objects.js", () => ({
 
 mock.module("../../contacts.js", () => ({
   getContact: () => null,
+  getContactDetails: () => null,
 }));
 
 mock.module("../../router/router-db.js", () => ({
