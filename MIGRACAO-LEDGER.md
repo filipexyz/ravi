@@ -993,7 +993,31 @@ nesta fase. Cada commit foi verificado por diff estático, arquivos staged
 explícitos e `git diff --check`; testes, build, typecheck e quality gate só
 contam quando a CI Linux da PR 399 terminar no mesmo SHA.
 
-**Veredito vigente: DO NOT APPROVE enquanto a CI do head atual não estiver
-verde e a spec continuar `draft`.** Depois do run verde, este ledger deve
-registrar SHA, run, checks por identidade e a spec pode voltar a `active` em um
-commit final separado.
+### Evidência final do head de implementação
+
+O CI Linux [`31209185258`](https://github.com/filipexyz/ravi/actions/runs/31209185258)
+do SHA `652662ab96df85f5d13f84c23d6d643ddc29ad38` passou, por identidade:
+
+- PR Description;
+- Build;
+- Typecheck;
+- Test, incluindo taxonomia de processo, CLI, tools, gateway/SDK, REBAC,
+  auditoria, redaction e consumidores;
+- Quality Gate (specs + coverage), com spec gate e coverage gate verdes;
+- checks de drift dos snapshots TypeScript SDK, OpenAPI e Swift executados pela
+  suíte oficial, sem diferenças geradas pendentes.
+
+As falhas observadas nas rodadas anteriores foram corrigidas em commits
+isolados: estado compartilhado em `prox-calls`, mocks incompletos de Slack,
+fixtures de app sintaticamente inválidos ou sem o grant necessário e ausência
+de um teste focado para a orientação sentinel do Omni. Nenhuma dessas falhas
+foi reclassificada como preexistente apenas pelo caminho do arquivo.
+
+A spec global foi promovida novamente para `active` neste commit documental.
+Como qualquer commit muda o head da PR, a promoção só sustenta o veredito final
+se a CI deste commit também ficar verde. O resultado exato desse último run
+deve constar no corpo da PR e no relatório final, sem criar um ciclo de commits
+apenas para registrar o próprio SHA.
+
+**Veredito do head de implementação: APPROVE. Veredito final da PR: condicionado
+à CI verde do commit documental de promoção.**

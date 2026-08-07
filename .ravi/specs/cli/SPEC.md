@@ -28,7 +28,7 @@ applies_to:
   - src/sdk/gateway
 owners:
   - ravi-dev
-status: draft
+status: active
 normative: true
 ---
 
@@ -44,10 +44,11 @@ checks. They MUST NOT redefine the global envelope, exit taxonomy,
 confirmation policy, authorization semantics or transport behavior. If a
 domain spec conflicts with this file, this file wins.
 
-The rules in this document are normative for the migration while its status is
-`draft`. `draft` means that implementation evidence is still pending for the
-current PR head; it MUST change to `active` only after every required check in
-[`CHECKS.md`](./CHECKS.md) and the pull-request CI pass on that same head.
+The rules in this document are normative. `draft` means that implementation
+evidence is still pending for the current pull-request head. `active` means
+that every required check in [`CHECKS.md`](./CHECKS.md) and the pull-request CI
+passed before promotion, with the evidence recorded in
+[`MIGRACAO-LEDGER.md`](../../../MIGRACAO-LEDGER.md).
 
 ## Canonical failure contract
 
