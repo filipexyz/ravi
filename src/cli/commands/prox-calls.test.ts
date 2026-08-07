@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -16,12 +16,17 @@ import {
 const testDir = join(tmpdir(), `ravi-prox-calls-cli-test-${Date.now()}`);
 mkdirSync(testDir, { recursive: true });
 process.env.RAVI_STATE_DIR = testDir;
+const originalFetch = globalThis.fetch;
 
 afterAll(() => {
   mock.restore();
   try {
     rmSync(testDir, { recursive: true, force: true });
   } catch {}
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
 });
 
 import {
@@ -1006,6 +1011,49 @@ async function withoutLogsAsync<T>(run: () => Promise<T> | T): Promise<T> {
   }
 }
 
+function installElevenLabsProfileFetch(): Array<{ method?: string; url: string }> {
+  const calls: Array<{ method?: string; url: string }> = [];
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    calls.push({ method: init?.method, url: String(input) });
+    if (init?.method === "GET") {
+      return new Response(
+        JSON.stringify({
+          conversation_config: {
+            agent: {
+              first_message: "old provider greeting",
+              prompt: { prompt: "old provider prompt" },
+            },
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+  return calls;
+}
+
+function configureCheckinProfile(options: { firstMessage: string; skipProviderSync?: boolean; execute?: boolean }) {
+  return new ProxCallsProfileCommands().configure(
+    "checkin",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    options.firstMessage,
+    undefined,
+    undefined,
+    options.skipProviderSync,
+    undefined,
+    true,
+    options.execute,
+  );
+}
+
 describe("prox calls agent-first contract", () => {
   it("request without --execute is a dry-run: exit 3 and NO call request persisted", async () => {
     initCallsDefaultsForDialing();
@@ -1067,6 +1115,78 @@ describe("prox calls agent-first contract", () => {
 
     expect(payload.request.target_person_id).toBe("person_brake_2");
     expect(getCallRequest(payload.request.id as string)).not.toBeNull();
+  });
+
+  it("profiles configure dry-run blocks before local persistence and provider I/O", async () => {
+    initCallsDefaults();
+    updateCallProfile("checkin", {
+      provider: "elevenlabs",
+      provider_agent_id: "agent_contract_dry_run",
+      first_message: "local greeting before dry-run",
+    });
+    process.env.ELEVENLABS_API_KEY = "test-key";
+    const providerCalls = installElevenLabsProfileFetch();
+
+    let caught: unknown;
+    try {
+      await withoutLogsAsync(() => configureCheckinProfile({ firstMessage: "must not be persisted without execute" }));
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(providerCalls).toHaveLength(0);
+    expect(getCallProfile("checkin")?.first_message).toBe("local greeting before dry-run");
+    expect(caught).toBeInstanceOf(ContractError);
+    const contractError = caught as InstanceType<typeof ContractError>;
+    expect(contractError.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(contractError.exitCode).toBe(3);
+    expect(contractError.details.plan).toMatchObject({
+      profileId: "checkin",
+      provider: "elevenlabs",
+      providerAgentConfigured: true,
+      firstMessageChanged: true,
+    });
+  });
+
+  it("profiles configure with --execute persists and synchronizes the external provider", async () => {
+    initCallsDefaults();
+    updateCallProfile("checkin", {
+      provider: "elevenlabs",
+      provider_agent_id: "agent_contract_execute",
+      first_message: "local greeting before execute",
+    });
+    process.env.ELEVENLABS_API_KEY = "test-key";
+    const providerCalls = installElevenLabsProfileFetch();
+
+    const payload = await withoutLogsAsync(() =>
+      configureCheckinProfile({ firstMessage: "persisted with execute", execute: true }),
+    );
+
+    expect(providerCalls.map((call) => call.method)).toEqual(["GET", "PATCH"]);
+    expect(getCallProfile("checkin")?.first_message).toBe("persisted with execute");
+    expect(payload.provider_sync).toMatchObject({
+      agentId: "agent_contract_execute",
+      firstMessageSynced: true,
+    });
+  });
+
+  it("profiles configure --skip-provider-sync remains an unbraked local write", async () => {
+    initCallsDefaults();
+    updateCallProfile("checkin", {
+      provider: "elevenlabs",
+      provider_agent_id: "agent_contract_skip",
+      first_message: "local greeting before skip",
+    });
+    process.env.ELEVENLABS_API_KEY = "test-key";
+    const providerCalls = installElevenLabsProfileFetch();
+
+    const payload = await withoutLogsAsync(() =>
+      configureCheckinProfile({ firstMessage: "persisted without provider sync", skipProviderSync: true }),
+    );
+
+    expect(providerCalls).toHaveLength(0);
+    expect(getCallProfile("checkin")?.first_message).toBe("persisted without provider sync");
+    expect(payload.provider_sync).toBeNull();
   });
 
   it("request on an unknown profile exits 1 with CALL_PROFILE_NOT_FOUND before the brake", async () => {

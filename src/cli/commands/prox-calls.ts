@@ -437,6 +437,11 @@ export class ProxCallsProfileCommands {
     @Option({ flags: "--voicemail-policy <policy>", description: "Voicemail policy: leave_message, hangup, skip" })
     voicemailPolicy?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Confirm provider synchronization; local-only updates run immediately",
+    })
+    execute?: boolean,
   ) {
     initCallsDefaults();
 
@@ -464,6 +469,31 @@ export class ProxCallsProfileCommands {
           ...dynamicPlaceholders,
         }
       : undefined;
+
+    const effectiveProvider = provider ?? existing.provider;
+    const effectiveProviderAgentId = agentId ?? existing.provider_agent_id;
+    const hasProviderSyncChanges =
+      firstMessage !== undefined || nextPrompt !== undefined || nextDynamicVariables !== undefined;
+    const willSyncExternalProvider =
+      !skipProviderSync &&
+      hasProviderSyncChanges &&
+      (effectiveProvider === "elevenlabs" || effectiveProvider === "elevenlabs_twilio") &&
+      Boolean(effectiveProviderAgentId);
+
+    if (willSyncExternalProvider && execute !== true) {
+      contractDryRun(
+        "prox calls profiles configure",
+        {
+          profileId,
+          provider: effectiveProvider,
+          providerAgentConfigured: true,
+          firstMessageChanged: firstMessage !== undefined,
+          systemPromptChanged: nextPrompt !== undefined,
+          dynamicVariableKeys: dynamicPlaceholders ? Object.keys(dynamicPlaceholders).sort() : [],
+        },
+        { asJson },
+      );
+    }
 
     const updated = updateCallProfile(profileId, {
       ...(provider !== undefined ? { provider } : {}),
