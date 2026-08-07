@@ -122,5 +122,6 @@ tagging.
 - `evaluate --file <path>` keeps legacy behavior: unreadable files go through
   `fail()`, and an invalid rule body surfaces as a raw Zod parse error
   (declared pending).
-- `validate` reports broken rule files via `process.exitCode = 1` with plain
-  text, not an envelope — pre-existing surface, declared.
+- `validate` reports broken rule files with the
+  `TAG_RULE_VALIDATION_FAILED` envelope; details expose only basenames and
+  stable categories, never absolute paths or file contents.

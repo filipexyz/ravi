@@ -73,7 +73,7 @@ ZERO braked ops — that absence is a decision of this spec, not an omission.
 |---|---|---|
 | tag not found (show / set / attach / detach) | `TAG_NOT_FOUND` + suggestions | 1 |
 | binding not found on detach (tag exists) | `COMMAND_FAILED` with `Binding not found ...` | 1 |
-| invalid flag/arg (parser level) | pending — see Known Failure Modes | — |
+| invalid flag/arg (parser level) | `USAGE_ERROR` + acceptedFlags | 2 |
 
 ## Internal consumers
 
@@ -104,8 +104,8 @@ but not edited here because that skill belongs to the contacts wave.
   `dbGetTagDefinition` after the failed delete. Removing that check regresses
   the unknown-tag path to the generic legacy text.
 - `dbCreateTagDefinition` throws `Tag already exists: <slug>` on duplicates;
-  `tags create` does not map it to an envelope yet (declared pending — the
-  error surfaces through the legacy error path).
+  the shared handler boundary returns canonical `COMMAND_FAILED`, but there is
+  no domain-specific duplicate-tag code yet.
 - Tag suggestions are built from the global definition list: tags carry no
   per-agent visibility scope today (unlike contacts). If tags ever become
   scoped, the suggestion source must be filtered like `cli/contacts` does.

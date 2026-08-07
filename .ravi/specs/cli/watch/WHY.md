@@ -33,8 +33,8 @@ three got the dry-run + `--execute` brake; `create` stays immediate because it
 is the domain's entry point with an obvious inverse, and `enable`/`disable`
 are a reversible pair — braking them would only add exit-3 friction.
 
-One wrapper subtlety found in this wave: `runWatchCommand` catches every error
-to build the legacy `WATCH_COMMAND_FAILED` payload, which would swallow the
-`ContractError` thrown by the brake/not-found helpers in agent context. The
-wrapper now rethrows `ContractError` so the 1/2/3 taxonomy survives the
-dispatcher.
+One wrapper subtlety found in this wave: `runWatchCommand` catches every error.
+It now rethrows existing `ContractError` values, converts expected local
+failures, preserves stable provider codes with allowlisted details, and maps
+unknown failures to redacted `UNHANDLED_ERROR`; the 1/2/3 taxonomy therefore
+survives the dispatcher without exposing raw provider text.
