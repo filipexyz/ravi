@@ -81,7 +81,7 @@ If ffmpeg is not available, the original MP3 is sent as a regular audio attachme
 Generating audio...
 
 ✓ Audio saved: /tmp/ravi-audio-1709123456789.mp3
-  Send to chat: ravi media send "/tmp/ravi-audio-1709123456789.mp3"
+  Send to chat: ravi media send "/tmp/ravi-audio-1709123456789.mp3" --execute
 
 Text: Hello, this is a test message
 ```
@@ -267,7 +267,7 @@ The source image is sent to the selected provider alongside the text prompt, all
 Generating image (fast)...
 
 ✓ Image saved: /tmp/ravi-image-1709123456789.png
-  Send to chat: ravi media send "/tmp/ravi-image-1709123456789.png"
+  Send to chat: ravi media send "/tmp/ravi-image-1709123456789.png" --execute
 
 Prompt: a purple cat floating in space
 Mode: fast | Aspect: auto | Size: 1K
@@ -360,24 +360,26 @@ Send any media file (image, video, audio, document) through a connected channel.
 
 ```bash
 # Send from a chat context (channel auto-detected)
-ravi media send "/tmp/ravi-image-123.png"
+ravi media send "/tmp/ravi-image-123.png" --execute
 
 # With caption
-ravi media send "/tmp/photo.jpg" --caption "Check this out"
+ravi media send "/tmp/photo.jpg" --caption "Check this out" --execute
 
 # Send as voice note (audio only)
-ravi media send "/tmp/recording.ogg" --ptt
+ravi media send "/tmp/recording.ogg" --ptt --execute
 
 # Explicit target (when not in a chat context)
 ravi media send "/tmp/report.pdf" \
   --account default \
-  --to "5511999999999@s.whatsapp.net"
+  --to "5511999999999@s.whatsapp.net" \
+  --execute
 
 # Preserve forum/thread context explicitly
 ravi media send "/tmp/report.pdf" \
   --account telegram-bot \
   --to "chat_123" \
-  --thread-id "topic-55"
+  --thread-id "topic-55" \
+  --execute
 ```
 
 ### Options
@@ -435,7 +437,7 @@ ravi stickers add wave "/path/to/wave.webp" \
 
 ravi stickers list --json
 ravi stickers show wave --json
-ravi stickers remove wave --json
+ravi stickers remove wave --json --execute
 ```
 
 Catalog fields:
@@ -456,7 +458,7 @@ Catalog fields:
 From a routed WhatsApp session:
 
 ```bash
-ravi stickers send wave --json
+ravi stickers send wave --json --execute
 ```
 
 With an explicit target:
@@ -466,7 +468,8 @@ ravi stickers send wave \
   --channel whatsapp \
   --account main \
   --to "5511999999999@s.whatsapp.net" \
-  --json
+  --json \
+  --execute
 ```
 
 Sticker sending uses the omni media path with sticker media type. Non-WhatsApp channels are rejected before enqueueing.

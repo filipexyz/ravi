@@ -164,8 +164,8 @@ ravi contacts approve abc123def456 --agent main,vendas
 ### Block a Contact
 
 ```bash
-# Without --execute the command is a dry-run: it prints the plan and exits 3.
-ravi contacts block abc123def456 --execute
+# Blocks the contact immediately.
+ravi contacts block abc123def456
 ```
 
 ### Allow a Previously Blocked Contact
@@ -310,7 +310,7 @@ ravi contacts remove abc123def456 --execute
 ravi contacts approve abc123def456
 ravi contacts approve abc123def456 mention --agent vendas
 ravi contacts allow abc123def456
-ravi contacts block abc123def456 --execute   # without --execute it is a dry-run (exit 3)
+ravi contacts block abc123def456             # blocks immediately
 ```
 
 ### Tags

@@ -124,8 +124,8 @@ ravi instances routes add <name> <pattern> <agent> [--priority N] [--policy open
 #   ravi instances routes add main "thread:*" agent-suporte --policy closed
 #   ravi instances routes add main "*" agent-main --policy open
 
-ravi instances routes remove <name> <pattern> --execute
-# Sem --execute é dry-run: mostra o plano e sai com exit 3
+ravi instances routes remove <name> <pattern>
+# Soft-delete local imediato; use restore para recuperar a rota
 
 ravi instances routes set <name> <pattern> <key> <value>
 # ravi instances routes set main "group:120363*" policy open

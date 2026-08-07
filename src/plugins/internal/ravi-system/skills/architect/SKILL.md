@@ -159,8 +159,8 @@ Cria uma ponte conversacional dedicada entre Ravi e um contato específico. Úti
 **Inverso**:
 
 ```
-1. sessions delete <session_name> (opcional)
-2. instances routes remove <instance> <phone> --execute (sem --execute é dry-run exit 3)
+1. sessions delete <session_name> --execute (opcional)
+2. instances routes remove <instance> <phone> (soft-delete imediato)
 3. agents delete <agent_id> --execute (sem --execute é dry-run exit 3; com confirmação dupla — irreversível)
 ```
 

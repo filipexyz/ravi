@@ -549,7 +549,7 @@ ravi sessions inform <session> "info"   # Send context info
 
 # Tasks
 ravi tasks create "Title" --instructions "..."  # Create tracked work
-ravi tasks dispatch <task-id> --agent <id>      # Dispatch to an agent/session
+ravi tasks dispatch <task-id> --agent <id> --execute # Dispatch to an agent/session
 ravi tasks watch [task-id]                      # Watch live task events
 ravi tasks report <task-id>                     # Read progress + progress_note from TASK.md
 ravi tasks report <task-id> --progress 30 --message "..."  # Report concrete progress

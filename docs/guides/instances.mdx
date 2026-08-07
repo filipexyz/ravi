@@ -150,8 +150,8 @@ ravi instances routes show main "group:120363123456@g.us"
 ravi instances routes set main "5511*" agent new-agent
 ravi instances routes set main "5511*" priority 10
 
-# Remove a route (soft-delete; without --execute it is a dry-run, exit 3)
-ravi instances routes remove main "5511*" --execute
+# Remove a route immediately (soft-delete)
+ravi instances routes remove main "5511*"
 
 # Restore a removed route
 ravi instances routes restore main "5511*"
@@ -212,8 +212,8 @@ Instances follow a lifecycle that supports recovery:
 6. **Restore** — `ravi instances restore` recovers a soft-deleted instance
 
 ```bash
-# Soft-delete an instance (without --execute it is a dry-run, exit 3)
-ravi instances delete vendas --execute
+# Soft-delete an instance immediately
+ravi instances delete vendas
 
 # List deleted instances
 ravi instances deleted

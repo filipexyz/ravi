@@ -134,7 +134,7 @@ O runtime:
 ### 3. Dispatch
 
 ```bash
-ravi tasks dispatch <task-id> --agent <agent> [--model <model>] [--effort <level>] [--thinking <mode>]
+ravi tasks dispatch <task-id> --agent <agent> [--model <model>] [--effort <level>] [--thinking <mode>] --execute
 ```
 
 O runtime:

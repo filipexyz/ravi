@@ -144,7 +144,7 @@ Pra aprovar e rotear:
 ```bash
 ravi contacts approve <phone> <agent>   # Aprova e associa ao agent
 ravi contacts approve <phone>           # Aprova sem associar (usa rota ou default)
-ravi contacts block <phone> --execute   # Bloqueia (sem --execute é dry-run, exit 3)
+ravi contacts block <phone>             # Bloqueia imediatamente
 ```
 
 ### Prioridade de roteamento

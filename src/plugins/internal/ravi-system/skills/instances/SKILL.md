@@ -25,7 +25,7 @@ Taxonomia de saída:
 - `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
 - `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
 
-Onde o freio existe hoje: `instances delete`, `instances routes remove` e `instances pending reject` são dry-run por default e exigem `--execute`. Todas as demais escritas gravam na hora, sem dry-run: `create`, `set`, `enable`, `disable`, `restore`, `disconnect`, `connect` (interativo com QR — humano no loop), `routes add`, `routes set`, `routes restore`, `pending approve`. Nessas o freio é você: confira o alvo antes de rodar.
+Onde o freio existe hoje: `instances pending reject` é dry-run por default e exige `--execute`. As demais escritas gravam na hora, sem dry-run: `create`, `set`, `enable`, `disable`, `restore`, `delete`, `disconnect`, `connect` (interativo com QR — humano no loop), `routes add`, `routes set`, `routes remove`, `routes restore`, `pending approve`. Nessas o freio é você: confira o alvo antes de rodar.
 
 Compact mode: `instances list` e `routes list` aceitam `--fields a,b,c` (ex.: `--fields name,channel,agent`) — use em varredura para não arrastar o objeto inteiro de cada instância/rota.
 
@@ -87,8 +87,7 @@ Keys disponíveis:
 
 ### Remover instância
 ```bash
-ravi instances delete <name>            # dry-run: mostra o plano e sai com exit 3
-ravi instances delete <name> --execute  # remove de verdade (soft-delete, recuperável com restore)
+ravi instances delete <name>            # soft-delete imediato, recuperável com restore
 ```
 
 ## Conexão de Canal
@@ -156,7 +155,7 @@ Contact intake não aprova rotas, não responde por si só e não grava análise
 ravi instances routes list <name>
 ravi instances routes show <name> <pattern>
 ravi instances routes add <name> <pattern> <agent>
-ravi instances routes remove <name> <pattern> --execute   # sem --execute é dry-run (exit 3)
+ravi instances routes remove <name> <pattern>             # soft-delete imediato, recuperável com restore
 ravi instances routes set <name> <pattern> <key> <value>
 ```
 

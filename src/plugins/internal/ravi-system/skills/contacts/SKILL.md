@@ -28,7 +28,7 @@ Taxonomia de saída:
 - `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
 - `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
 
-Onde o freio existe hoje: `contacts remove`, `contacts block` e `contacts merge` são dry-run por default e exigem `--execute`. `contacts backfill` já tem freio próprio equivalente: sem `--apply` é sempre preview (a flag histórica é `--apply`, não `--execute`). Todas as demais escritas gravam na hora, sem dry-run: `add`, `allow`, `approve`, `set`, `tag`, `untag`, `link`, `unlink`, `note`, `metadata set`, `metadata remove`. Nessas o freio é você: confira o alvo antes de rodar.
+Onde o freio existe hoje: `contacts remove` e `contacts merge` são dry-run por default e exigem `--execute`. `contacts backfill` já tem freio próprio equivalente: sem `--apply` é sempre preview (a flag histórica é `--apply`, não `--execute`). Todas as demais escritas gravam na hora, sem dry-run: `add`, `allow`, `approve`, `block`, `set`, `tag`, `untag`, `link`, `unlink`, `note`, `metadata set`, `metadata remove`. Nessas o freio é você: confira o alvo antes de rodar.
 
 Compact mode: `contacts list` e `contacts find` aceitam `--fields a,b,c` (ex.: `--fields id,name,status`) — use em varredura para não arrastar o objeto inteiro de cada contato.
 
@@ -166,7 +166,7 @@ ravi contacts approve <phone> [agent] [mode]
 
 ### Bloquear/Permitir
 ```bash
-ravi contacts block <phone> --execute   # sem --execute é dry-run (exit 3): mostra o plano e não grava
+ravi contacts block <phone>             # bloqueia imediatamente
 ravi contacts allow <phone>
 ```
 

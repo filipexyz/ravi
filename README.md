@@ -104,7 +104,7 @@ Sessions are the durable runtime state for one agent working inside a chat, task
 ravi agents list
 ravi sessions send main "Check what needs attention today" --wait
 ravi sessions trace main --json
-ravi sessions reset main
+ravi sessions reset main --execute
 ```
 
 ### Track Work With Tasks

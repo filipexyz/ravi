@@ -74,7 +74,7 @@ ravi instances create <name>                  # Create instance
   --group-policy <open|allowlist|closed>      #   Group policy (default: open)
 ravi instances get <name> <key>               # Get instance property
 ravi instances set <name> <key> <value>       # Set instance property (agent, dmPolicy, groupPolicy, dmScope, instanceId, channel)
-ravi instances delete <name> --execute        # Soft-delete instance (without --execute: dry-run, exit 3)
+ravi instances delete <name>                  # Soft-delete instance immediately
 ravi instances restore <name>                 # Restore soft-deleted instance
 ravi instances deleted                        # List soft-deleted instances
 ravi instances connect <name>                 # Connect to omni (QR code for WhatsApp)
@@ -110,7 +110,7 @@ ravi instances routes add <name> <pattern> <agent>  # Add route
   --session <name>                            #   Force session name
   --dm-scope <scope>                          #   DM scope override
   --channel <channel>                         #   Limit to specific channel
-ravi instances routes remove <name> <pattern> --execute  # Soft-delete route (without --execute: dry-run, exit 3)
+ravi instances routes remove <name> <pattern>            # Soft-delete route immediately
 ravi instances routes restore <name> <pattern># Restore soft-deleted route
 ravi instances routes deleted [name]          # List soft-deleted routes
 ravi instances routes set <name> <pattern> <key> <value>  # Set route property (agent, priority, dmScope, session, policy, channel)
@@ -139,7 +139,7 @@ ravi contacts approve <contact> [mode]        # Approve pending contact (mode: a
   --agent <ids>                               #   Restrict to agent(s)
 ravi contacts remove <contact> --execute      # Remove a contact (without --execute it is a dry-run, exit 3)
 ravi contacts allow <contact>                 # Allow a contact
-ravi contacts block <contact> --execute       # Block a contact (without --execute it is a dry-run, exit 3)
+ravi contacts block <contact>                 # Block a contact immediately
 ravi contacts info <contact>                  # Show contact details with all identities
 ravi contacts check <contact>                 # Alias for info
 ravi contacts find <query> [--tag]            # Search by name/phone or by tag
@@ -164,8 +164,8 @@ ravi sessions rename <nameOrKey> <displayName>    # Set display name
 ravi sessions set-model <nameOrKey> <model>       # Set model override (sonnet, opus, haiku, clear)
 ravi sessions set-effort <nameOrKey> <level>      # Set effort (none..ultra, clear)
 ravi sessions set-thinking <nameOrKey> <level>    # Set thinking level (off, normal, verbose, clear)
-ravi sessions reset <nameOrKey>                   # Reset session (fresh start)
-ravi sessions delete <nameOrKey>                  # Delete session permanently
+ravi sessions reset <nameOrKey> --execute         # Reset session (fresh start)
+ravi sessions delete <nameOrKey> --execute        # Delete session permanently
 ravi sessions read <nameOrKey> [-n count]         # Read message history (default: 20)
 ```
 
@@ -338,7 +338,7 @@ The default `dm read` only requires `--execute` when the selected history contai
 Send media files through connected channels.
 
 ```bash
-ravi media send <filePath>                    # Send media file (image, video, audio, document)
+ravi media send <filePath> --execute          # Send media file (image, video, audio, document)
   --caption <text>                            #   Caption for media
   --channel <channel>                         #   Target channel
   --to <chatId>                               #   Target chat ID

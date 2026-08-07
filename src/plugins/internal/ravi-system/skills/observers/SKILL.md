@@ -164,7 +164,7 @@ Depois:
 
 ```bash
 ravi tasks create "..." --profile observed-task
-ravi tasks dispatch <task-id> --agent <worker-agent>
+ravi tasks dispatch <task-id> --agent <worker-agent> --execute
 ```
 
 O worker faz o trabalho e deixa sinais claros. O observer recebe Markdown do
