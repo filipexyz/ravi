@@ -1,20 +1,14 @@
 # Video agent-first CLI contract / WHY
 
-The interesting decision here was WHERE to draw the brake line on a command
-whose cost depends on a runtime fallback. `analyzeVideo` picks the path
-internally: captions when available (free), Gemini otherwise (paid). Braking
-everything would punish the common "watch this YouTube video" flow that
-resolves to free captions; braking only `--strategy gemini` would leak money
-through the `auto` default every time captions are missing or a local file is
-passed.
+`analyzeVideo` picks its processing path internally: captions when available,
+Gemini otherwise. The CLI cannot produce a reliable price before that decision
+and has no configured cost threshold to compare against. An unconditional
+confirmation therefore creates a second call without enforcing a real limit.
 
-The rule that survived: brake anything NOT GUARANTEED free at invocation time.
-Only `--strategy subtitles` carries that guarantee, so only it runs without
-`--execute`. The dry-run plan then does two jobs at once — it shows the Gemini
-model that would be billed AND teaches the `freeAlternative` command, so an
-agent blocked on exit 3 learns the zero-cost path instead of just retrying with
-`--execute`.
+All strategies now run immediately because analysis has no external delivery
+or destructive effect. `--strategy subtitles` remains an explicit cost-control
+choice: it prohibits Gemini fallback rather than merely confirming it.
 
-This makes `auto` slightly more annoying (one extra confirmation even when
-captions exist), which is the accepted trade: a wasted confirmation is cheaper
-than an unplanned Gemini video-analysis bill on a long video.
+If Ravi later gains a configured spend threshold and trustworthy estimate,
+cost-based confirmation can be reintroduced against that policy instead of an
+arbitrary hard-coded amount.

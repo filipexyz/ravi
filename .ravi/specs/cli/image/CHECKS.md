@@ -2,15 +2,18 @@
 
 ## Checks
 
-- `image generate "<prompt>" --json` without `--execute` MUST exit 3 with
-  `dryRun: true` and a `plan` showing the resolved provider/model/mode/size,
-  and MUST NOT create an artifact, spawn a worker or call any provider.
-- `image generate "<prompt>" --json --execute` MUST run (async by default,
-  returning `artifact_id`; with `--sync` it calls the provider inline).
-- The internal worker args spawned by the async path MUST include `--execute`.
+- `image generate "<prompt>" --json` without a delivery target MUST run without
+  `--execute` (async by default; `--sync` calls the provider inline).
+- A generate run that will deliver MUST exit 3 without `--execute` before
+  artifact, worker, provider and sender side effects.
+- Generate and atlas delivery plans MUST NOT contain prompt/caption bytes;
+  secret markers at the beginning or end MUST be absent from the envelope.
+- Internal worker args MUST include `--execute` only for approved delivery.
 - Provider-resolution failures (`No image provider configured`) and the
-  `--async`+`--sync` conflict MUST fail with exit 1 BEFORE the brake.
-- `image atlas split` MUST keep immediate (unbraked) execution as declared.
+  `--async`+`--sync` conflict, missing local input/source and missing delivery
+  target MUST fail with exit 1 BEFORE the brake.
+- `image atlas split` MUST run immediately without `--send`; with `--send`, it
+  MUST require `--execute` before splitting, artifacts and delivery.
 - The `sendCommand` field of each generated image MUST read
   `ravi media send "<path>" --execute`.
 - `bun test src/cli/commands/image-contract.test.ts` SHOULD pass after any

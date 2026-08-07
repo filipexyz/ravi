@@ -1,8 +1,8 @@
 /**
  * Agent-first contract tests for the `transcribe` CLI domain (Manual v2):
- * transcription spends EXTERNAL API money (OpenAI Whisper), so `transcribe
- * file` is braked — dry-run + exit 3 by default, `--execute` performs the paid
- * call. Format/file validation happens BEFORE the brake (exit 1). Follows the
+ * transcription is routine processing and runs immediately; no cost threshold
+ * or estimate contract exists, so the CLI does not require `--execute`.
+ * Format/file validation still happens before the provider call. Follows the
  * group.test.ts pattern: no-op decorator mocks + service mocks with spies +
  * `hasContext: () => true` so the contract helpers throw ContractError instead
  * of exiting the process.
@@ -110,32 +110,10 @@ function seedAudioFile(name = "voz.mp3"): string {
 }
 
 describe("transcribe file contract", () => {
-  it("without --execute is a dry-run: exit 3 and NO paid provider call", async () => {
+  it("runs the transcription provider directly without --execute", async () => {
     const filePath = seedAudioFile();
     try {
-      const error = await expectContractError(
-        () => new TranscribeCommands().file(filePath, "pt", true),
-        "WRITE_REQUIRES_EXECUTE",
-        3,
-      );
-
-      expect(error.details.dryRun).toBe(true);
-      expect(error.details.plan).toMatchObject({
-        mimeType: "audio/mpeg",
-        lang: "pt",
-        provider: "openai-whisper",
-        sizeBytes: 3,
-      });
-      expect(transcribeCalls).toHaveLength(0);
-    } finally {
-      rmSync(audioDir, { recursive: true, force: true });
-    }
-  });
-
-  it("with --execute calls the transcription provider and returns the typed payload", async () => {
-    const filePath = seedAudioFile();
-    try {
-      const { result } = await captureConsole(() => new TranscribeCommands().file(filePath, "pt", true, true));
+      const { result } = await captureConsole(() => new TranscribeCommands().file(filePath, "pt", true));
 
       expect(transcribeCalls).toHaveLength(1);
       expect(transcribeCalls[0]).toMatchObject({ mimeType: "audio/mpeg", language: "pt" });
@@ -149,7 +127,7 @@ describe("transcribe file contract", () => {
     }
   });
 
-  it("rejects unsupported formats BEFORE the brake", async () => {
+  it("rejects unsupported formats before the provider call", async () => {
     await expect(new TranscribeCommands().file("/tmp/nota.xyz", "pt", true)).rejects.toThrow(
       "Unsupported audio format",
     );

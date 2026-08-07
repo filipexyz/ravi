@@ -27,26 +27,29 @@ normative: true
 ## Intent
 
 Make `ravi image` reliable for agent consumers under the agent-first contract
-defined by `cli`. `image generate` spends EXTERNAL API money (OpenAI /
-Gemini image models) on every call, so it is the braked op: dry-run by default
-showing exactly which provider/model/size would be billed. `image atlas split`
-is a local ImageMagick operation and stays unbraked.
+defined by `cli`. Generation and local atlas splitting run immediately because
+the CLI has no configured cost limit or reliable preflight estimate. Delivery
+to a live chat is braked, whether requested explicitly with `--send` or implied
+by an origin chat on `image generate`.
 
 ## Invariants
 
-1. `image generate` MUST default to dry-run and require `--execute`; the
-   dry-run MUST exit 3 with `dryRun: true` and a `plan` carrying the RESOLVED
-   provider, model, mode, aspect, size, quality, format, compression,
-   background, source, outputDir, async and send — the money-relevant facts.
-2. The brake MUST run BEFORE any side effect: no artifact record is created, no
-   background worker is spawned and no provider is called on exit 3.
-3. The internal async worker re-invocation MUST carry `--execute` (workers are
-   spawned only after an approved run; they never re-hit the brake).
+1. `image generate` without delivery MUST run without `--execute`. When
+   delivery is explicit or implied by an origin chat, it MUST require
+   `--execute` and show resolved generation/delivery facts in the plan. The
+   plan MUST expose only `promptChars` and `captionPresent`, never prompt or
+   caption bytes.
+2. A delivery brake MUST run BEFORE any side effect: no artifact record is
+   created, no background worker is spawned and no provider is called on exit 3.
+3. An internal async worker MUST carry `--execute` only when it inherits an
+   approved delivery; generation-only workers do not need the flag.
 4. Provider resolution/validation (no provider configured, `--async`+`--sync`
-   conflict, reserved `--artifact-id`) MUST fail BEFORE the brake with the
-   legacy messages (exit 1).
-5. `image atlas split` keeps immediate execution (local read/derive op,
-   declared unbraked); its optional `--send` remains an explicit opt-in flag.
+   conflict, reserved `--artifact-id`), local source/input validation and
+   delivery-target resolution MUST fail BEFORE the brake with the legacy
+   messages (exit 1).
+5. `image atlas split` without `--send` keeps immediate execution. With
+   `--send`, it MUST require `--execute` before splitting, artifact creation or
+   media delivery; the plan exposes `captionPresent`, never the caption body.
 6. The `sendCommand` field in the generate payload MUST teach
    `ravi media send "<path>" --execute`.
 7. When invoked from an agent context (`RAVI_*` envs present), a thrown
@@ -56,20 +59,22 @@ is a local ImageMagick operation and stays unbraked.
 
 | op | class | brake |
 |---|---|---|
-| generate | external API money (high) | dry-run + `--execute` |
-| atlas split | local derive/read; `--send` is explicit opt-in | not braked (declared) |
+| generate without delivery | generation + local artifact persistence | not braked |
+| generate with explicit/implicit delivery | external chat delivery | dry-run + `--execute` |
+| atlas split without `--send` | local derive/artifact persistence | not braked |
+| atlas split with `--send` | external chat delivery | dry-run + `--execute` |
 
 ## Official error cases
 
 | case | code | exit |
 |---|---|---|
 | no provider configured / flag conflicts | legacy text (validation) | 1 |
-| braked generate without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
+| generate delivery or atlas `--send` without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 
 ## Internal consumers
 
 - The `image` skill (`src/plugins/internal/ravi-system/skills/image/SKILL.md`)
-  MUST document `--execute` on every generate example.
+  MUST document `--execute` only on examples that deliver externally.
 - The generate payload's `sendCommand` and text hint teach `ravi media send`
   and MUST carry `--execute` (see `cli/media`).
 
@@ -82,15 +87,13 @@ is a local ImageMagick operation and stays unbraked.
 
 - `bun test src/cli/commands/image-contract.test.ts` and
   `bun test src/cli/commands/image.test.ts` green.
-- Live checks: `ravi image generate "gato" --json` → exit 3 + plan with
-  provider/model; `--execute` queues the async artifact; `ravi artifacts events
-  <id>` shows the worker started.
+- Live checks: `ravi image generate "gato" --json` queues immediately when no
+  origin chat exists; `--send` without `--execute` exits 3 before provider and
+  artifacts; `ravi artifacts events <id>` shows the worker lifecycle.
 
 ## Known Failure Modes
 
-- The async path creates the artifact and spawns the worker BEFORE any
-  provider call — a brake placed after `createArtifact` would leak pending
-  artifact records on every dry-run. The brake sits before both.
-- The spawned worker re-enters `image generate`; without `--execute` appended
-  to `workerArgs` the worker itself would exit 3 and the artifact would hang in
-  `pending` forever.
+- The async path creates the artifact and spawns the worker before any provider
+  call. For delivery runs, the conditional brake must remain before both.
+- The spawned worker re-enters `image generate`; approved delivery workers must
+  inherit `--execute`, while generation-only workers must not depend on it.

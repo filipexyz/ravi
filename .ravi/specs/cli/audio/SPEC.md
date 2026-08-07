@@ -28,23 +28,24 @@ normative: true
 ## Intent
 
 Make `ravi audio` reliable for agent consumers under the agent-first contract
-defined by `cli`. `audio generate` and `audio tts` spend EXTERNAL API money
-(ElevenLabs) on every call, so both are braked: dry-run by default showing the
-resolved voice/model/speed that would be billed. `voices`, `pending` and `blob`
-are reads and stay immediate.
+defined by `cli`. Routine generation runs immediately because the CLI has no
+configured cost limit or trustworthy cost estimate. `audio generate --send`
+is braked because it delivers to a live chat; `audio tts` remains braked because
+its NATS publish triggers downstream generation and playback.
 
 ## Invariants
 
-1. `audio generate` MUST default to dry-run and require `--execute`; the
-   dry-run MUST exit 3 with `dryRun: true` and a `plan` carrying the RESOLVED
-   voice, model, speed, lang, format, outputDir, send flag and a text preview
-   plus character count.
+1. `audio generate` without `--send` MUST run immediately without `--execute`.
+   When `--send` is present, the command MUST require `--execute` and the
+   dry-run plan MUST carry the resolved generation options, `textChars`,
+   `captionPresent` and `send: true`; it MUST NOT contain text or caption bytes.
 2. `audio tts` MUST default to dry-run and require `--execute`; the dry-run
    MUST exit 3 BEFORE the `ravi.tts` NATS emit (the emit is what triggers the
    paid ElevenLabs generation downstream) and MUST show the resolved voice
-   config, target and playback in the `plan`.
+   config, target, playback and `textChars` in the plan, never the text itself.
 3. Text/`--text-file` validation (both given, neither given, unsafe paths)
-   MUST fail BEFORE the brake with the legacy messages (exit 1).
+   and delivery-target resolution MUST fail before generation or conditional
+   delivery confirmation.
 4. `audio voices` and `audio pending` MUST accept `--fields a,b,c` for compact
    output (narrowing `voices`/`items` respectively).
 5. `audio blob` keeps its binary Response behavior untouched (it is on the
@@ -56,8 +57,9 @@ are reads and stay immediate.
 
 | op | class | brake |
 |---|---|---|
-| generate | external API money (high) | dry-run + `--execute` |
-| tts | external API money via ravi.tts pipeline (high) | dry-run + `--execute` |
+| generate without `--send` | routine generation/local file | not braked |
+| generate with `--send` | external chat delivery | dry-run + `--execute` |
+| tts | triggered generation/playback via `ravi.tts` | dry-run + `--execute` |
 | voices / pending / blob | reads | not braked (declared) |
 
 ## Official error cases
@@ -65,12 +67,13 @@ are reads and stay immediate.
 | case | code | exit |
 |---|---|---|
 | invalid text/--text-file combinations | legacy text (validation) | 1 |
-| braked generate/tts without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
+| generate `--send` or tts without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 
 ## Internal consumers
 
 - The `audio` skill (`src/plugins/internal/ravi-system/skills/audio/SKILL.md`)
-  MUST document `--execute` on every generate/tts example.
+  MUST document `--execute` on `generate --send` and `tts`, but not on pure
+  generation examples.
 - The generate payload's `sendCommand` teaches `ravi media send` and MUST carry
   `--execute` (see `cli/media`).
 
@@ -83,14 +86,15 @@ are reads and stay immediate.
 
 - `bun test src/cli/commands/media-json.test.ts` green (the `audio contract`
   block included).
-- Live checks: `ravi audio generate "oi" --json` → exit 3 + plan with
-  voice/model; adding `--execute` bills and saves the file; `ravi audio voices
-  --json --fields voiceId,name` narrows.
+- Live checks: `ravi audio generate "oi" --json` generates immediately;
+  adding `--send` without `--execute` exits 3 before provider/delivery;
+  `ravi audio voices --json --fields voiceId,name` narrows.
 
 ## Known Failure Modes
 
 - The daemon-side TTS pipeline (`ravi.tts` consumer) generates audio without
   the CLI, so the brake protects only CLI-initiated spends — automation-driven
   TTS is governed by agent `tts_auto` defaults, not by this contract.
-- `--send` on generate delivers through the media surface AFTER generation;
-  braking generate is what prevents the paid step, not the delivery step.
+- The conditional `--send` brake MUST stay before `generateAudio`; otherwise a
+  confirmation pass would incur cost and create a file before delivery is
+  approved.

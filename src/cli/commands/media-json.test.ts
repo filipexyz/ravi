@@ -125,6 +125,12 @@ mock.module("../../router/router-db.js", () => ({
 mock.module("../media-send.js", () => ({
   inferMediaMimeType: (filePath: string) => (filePath.endsWith(".png") ? "image/png" : "application/octet-stream"),
   inferMediaType: (mime: string) => (mime.startsWith("image/") ? "image" : "document"),
+  resolveMediaSendTarget: () => ({
+    channel: "whatsapp",
+    accountId: "main",
+    instanceId: "inst-1",
+    chatId: "chat-1",
+  }),
   sendMediaWithOmniCli: mock(async (input: Record<string, unknown>) => {
     mediaSendCalls.push(input);
     const filePath = String(input.filePath ?? "/tmp/unknown.bin");
@@ -226,7 +232,6 @@ describe("media/audio/react JSON output", () => {
         undefined,
         true,
         undefined,
-        true,
       ),
     );
     const payload = JSON.parse(output);
@@ -262,7 +267,6 @@ describe("media/audio/react JSON output", () => {
           undefined,
           true,
           textFile,
-          true,
         ),
       );
       const payload = JSON.parse(output);
@@ -545,23 +549,52 @@ describe("media send contract", () => {
 });
 
 // ---------------------------------------------------------------------------
-// audio generate / tts — agent-first contract (external API money brake)
+// audio generate / tts — risk-based confirmation contract
 // ---------------------------------------------------------------------------
 
 describe("audio contract", () => {
-  it("generate without --execute is a dry-run: exit 3 and NO provider call", async () => {
+  it("generate without --send runs immediately without --execute", async () => {
+    const { result } = await captureConsole(() =>
+      new AudioCommands().generate(
+        "hello world",
+        "voice-1",
+        "eleven_turbo_v2_5",
+        "1.5",
+        undefined,
+        undefined,
+        undefined,
+        false,
+        undefined,
+        true,
+      ),
+    );
+
+    expect(generateAudioCalls).toHaveLength(1);
+    expect(generateAudioCalls[0]).toMatchObject({
+      text: "hello world",
+      voice: "voice-1",
+      model: "eleven_turbo_v2_5",
+      speed: 1.5,
+    });
+    expect((result as { success: boolean }).success).toBe(true);
+    expect(mediaSendCalls).toHaveLength(0);
+  });
+
+  it("generate with --send but without --execute is a dry-run before provider and delivery", async () => {
+    const text = "SECRET_AT_START hello world SECRET_AT_END";
+    const caption = "CAPTION_SECRET_AT_START caption CAPTION_SECRET_AT_END";
     const error = await expectContractError(
       () =>
         new AudioCommands().generate(
-          "hello world",
+          text,
           "voice-1",
           "eleven_turbo_v2_5",
           "1.5",
           undefined,
           undefined,
           undefined,
-          false,
-          undefined,
+          true,
+          caption,
           true,
         ),
       "WRITE_REQUIRES_EXECUTE",
@@ -570,13 +603,19 @@ describe("audio contract", () => {
 
     expect(error.details.dryRun).toBe(true);
     expect(error.details.plan).toMatchObject({
-      textPreview: "hello world",
-      textChars: 11,
+      textChars: text.length,
       voice: "voice-1",
       model: "eleven_turbo_v2_5",
       speed: 1.5,
       lang: "en",
+      send: true,
+      captionPresent: true,
     });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain("SECRET_AT_START");
+    expect(serializedPlan).not.toContain("SECRET_AT_END");
+    expect(serializedPlan).not.toContain("CAPTION_SECRET_AT_START");
+    expect(serializedPlan).not.toContain("CAPTION_SECRET_AT_END");
     expect(generateAudioCalls).toHaveLength(0);
     expect(mediaSendCalls).toHaveLength(0);
   });
@@ -600,10 +639,11 @@ describe("audio contract", () => {
   });
 
   it("tts without --execute is a dry-run: exit 3 and NO ravi.tts emit", async () => {
+    const text = "TTS_SECRET_AT_START fala comigo TTS_SECRET_AT_END";
     const error = await expectContractError(
       () =>
         new AudioCommands().tts(
-          "fala comigo",
+          text,
           undefined,
           undefined,
           undefined,
@@ -628,10 +668,12 @@ describe("audio contract", () => {
 
     expect(error.details.dryRun).toBe(true);
     expect(error.details.plan).toMatchObject({
-      textPreview: "fala comigo",
-      textChars: 11,
+      textChars: text.length,
       topic: "ravi.tts",
     });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain("TTS_SECRET_AT_START");
+    expect(serializedPlan).not.toContain("TTS_SECRET_AT_END");
     expect(emittedEvents).toHaveLength(0);
   });
 

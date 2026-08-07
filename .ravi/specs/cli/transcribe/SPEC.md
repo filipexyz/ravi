@@ -11,7 +11,6 @@ tags:
   - agent-first
   - error-envelope
   - exit-taxonomy
-  - write-brake
   - external-api-cost
 applies_to:
   - src/cli/commands/transcribe.ts
@@ -27,21 +26,17 @@ normative: true
 ## Intent
 
 Make `ravi transcribe` reliable for agent consumers under the agent-first
-contract defined by `cli`. `transcribe file` always calls a PAID external
-API (OpenAI Whisper) — there is no free local path — so the single op is
-braked: dry-run by default showing the file, size and language that would be
-billed.
+contract defined by `cli`. `transcribe file` is routine processing with no
+external delivery. Although the provider may bill, the CLI has no configured
+cost limit or reliable preflight estimate, so the command runs immediately.
 
 ## Invariants
 
-1. `transcribe file` MUST default to dry-run and require `--execute`; the
-   dry-run MUST exit 3 with `dryRun: true` and a `plan` carrying the absolute
-   file path, mimeType, sizeBytes/sizeMB (the billing driver), lang and
-   provider (`openai-whisper`), and MUST NOT call the transcription service.
+1. `transcribe file` MUST call the transcription service without `--execute`.
 2. An unsupported audio format MUST fail with the legacy message (exit 1)
-   BEFORE the brake.
-3. A missing local file MUST exit 1 with `FILE_NOT_FOUND` BEFORE the brake.
-4. Provider failures after `--execute` MUST exit 1 with `TRANSCRIBE_FAILED`
+   before the provider call.
+3. A missing local file MUST exit 1 with `FILE_NOT_FOUND` before the provider.
+4. Provider failures MUST exit 1 with `TRANSCRIBE_FAILED`
    (`retryable: true`).
 5. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.
@@ -50,7 +45,7 @@ billed.
 
 | op | class | brake |
 |---|---|---|
-| file | external API money (Whisper) | dry-run + `--execute` |
+| file | routine processing; no delivery or configured cost threshold | not braked |
 
 ## Official error cases
 
@@ -59,13 +54,12 @@ billed.
 | unsupported format | legacy text (validation) | 1 |
 | local file missing | `FILE_NOT_FOUND` | 1 |
 | provider failure | `TRANSCRIBE_FAILED` (retryable) | 1 |
-| braked run without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 
 ## Internal consumers
 
 Inbound voice messages are transcribed automatically by the daemon through the
-service layer (`transcribeFile`), not through this CLI — the brake governs
-CLI-initiated spends only and does not affect message-flow transcription.
+service layer (`transcribeFile`), not through this CLI. Both paths remain
+immediate.
 
 ## Known gaps
 
@@ -79,14 +73,11 @@ CLI-initiated spends only and does not affect message-flow transcription.
 ## Validation
 
 - `bun test src/cli/commands/transcribe.test.ts` green.
-- Live checks: `ravi transcribe file /tmp/audio.mp3 --json` → exit 3 + plan
-  with sizeMB; adding `--execute` bills Whisper; a `.xyz` file → exit 1
-  unsupported format; a missing `.mp3` → `FILE_NOT_FOUND`.
+- Live checks: `ravi transcribe file /tmp/audio.mp3 --json` transcribes
+  immediately; a `.xyz` file exits 1 unsupported format; a missing `.mp3`
+  returns `FILE_NOT_FOUND`.
 
 ## Known Failure Modes
 
 - The extension check (`inferAudioMimeType`) passes for a path that does not
-  exist; without the explicit `existsSync` gate the brake would show a plan
-  for a file Whisper could never receive.
-- `statSync` in the plan runs only after the existence check — reordering
-  those two turns a clean `FILE_NOT_FOUND` into an uncaught ENOENT throw.
+  exist; keep the explicit `existsSync` gate before the provider call.

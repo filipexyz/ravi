@@ -10,7 +10,7 @@ import { fail, getContext } from "../context.js";
 import { contractDryRun, pickFields } from "../agent-contract.js";
 import { generateAudio, listElevenLabsVoices } from "../../audio/generator.js";
 import { getAgent } from "../../router/config.js";
-import { sendMediaWithOmniCli } from "../media-send.js";
+import { resolveMediaSendTarget, sendMediaWithOmniCli } from "../media-send.js";
 import { nats } from "../../nats.js";
 import {
   getTtsPlaybackItem,
@@ -112,7 +112,7 @@ export class AudioCommands {
     textFile?: string,
     @Option({
       flags: "--execute",
-      description: "Actually call the paid TTS API; default is a dry-run that only shows the plan (exit 3)",
+      description: "Confirm delivery when --send is used; local generation runs immediately",
     })
     execute?: boolean,
   ) {
@@ -133,14 +133,14 @@ export class AudioCommands {
     const resolvedSpeed = speed ? Number.parseFloat(speed) : (defaults?.tts_speed as number | undefined);
     const resolvedLang = lang ?? (defaults?.tts_lang as string) ?? "pt-br";
 
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): TTS spends EXTERNAL API money
-      // (ElevenLabs) — dry-run by default, exit 3 BEFORE any provider call.
-      // The plan shows the resolved voice/model/speed that would be billed.
+    if (send === true && execute !== true) {
+      const target = resolveMediaSendTarget();
+      // The paid generation itself is routine processing and runs directly.
+      // Only the externally visible delivery is braked, before both the
+      // provider call and the media sender so a dry-run has no side effects.
       contractDryRun(
         "audio generate",
         {
-          textPreview: resolvedText.slice(0, 120),
           textChars: resolvedText.length,
           voice: resolvedVoice ?? null,
           model: resolvedModel ?? null,
@@ -148,8 +148,9 @@ export class AudioCommands {
           lang: resolvedLang,
           format: format ?? null,
           outputDir: output ? resolve(output) : null,
-          send: send === true,
-          caption: caption ?? null,
+          send: true,
+          target,
+          captionPresent: Boolean(caption),
         },
         { asJson },
       );
@@ -305,7 +306,7 @@ export class AudioCommands {
     asJson?: boolean,
     @Option({
       flags: "--execute",
-      description: "Actually publish the paid TTS request; default is a dry-run that only shows the plan (exit 3)",
+      description: "Confirm publishing work that triggers downstream TTS generation and playback",
     })
     execute?: boolean,
   ) {
@@ -350,13 +351,11 @@ export class AudioCommands {
       metadata: { origin: "cli.audio.tts" },
     };
     if (execute !== true) {
-      // Write brake (Manual v2 7.8): the ravi.tts request triggers a paid
-      // ElevenLabs generation downstream — dry-run by default, exit 3 BEFORE
-      // the NATS emit. The plan shows the resolved voice config to be billed.
+      // The ravi.tts request triggers downstream generation and playback.
+      // Confirm before the NATS emit; cost alone is not the brake criterion.
       contractDryRun(
         "audio tts",
         {
-          textPreview: text.slice(0, 120),
           textChars: text.length,
           agentId: resolvedAgentId ?? null,
           target: request.target ?? null,

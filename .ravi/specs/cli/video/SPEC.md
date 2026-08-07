@@ -11,11 +11,9 @@ tags:
   - agent-first
   - error-envelope
   - exit-taxonomy
-  - write-brake
   - external-api-cost
 applies_to:
   - src/cli/commands/video.ts
-  - src/cli/agent-contract.ts
   - src/plugins/internal/ravi-system/skills/video/SKILL.md
 owners:
   - ravi-dev
@@ -27,46 +25,37 @@ normative: true
 ## Intent
 
 Make `ravi video` reliable for agent consumers under the agent-first contract
-defined by `cli`. `video analyze` has a split personality: the subtitles
-path (yt-dlp captions) is free and local, while the Gemini path is paid
-EXTERNAL API money. The brake follows the money: any run that may reach Gemini
-(`--strategy gemini`, `--force-analyze`, the `auto` default and local files) is
-braked; the explicit `--strategy subtitles` run is guaranteed free and stays
-immediate.
+defined by `cli`. The subtitles path is free while Gemini may be billed, but
+the CLI has no configured cost limit or reliable preflight estimate. Analysis
+has no external delivery or destructive effect, so every strategy runs
+immediately.
 
 ## Invariants
 
-1. `video analyze` with strategy `auto` or `gemini` (including
-   `--force-analyze`) MUST default to dry-run and require `--execute`; the
-   dry-run MUST exit 3 with `dryRun: true` and a `plan` showing the url,
-   strategy, `paidPath` (`gemini` or `gemini-fallback-possible`), the Gemini
-   model that would be billed, and the `freeAlternative` command.
-2. `video analyze --strategy subtitles` MUST run WITHOUT `--execute` — it is
-   the free/local path and never calls Gemini.
-3. Strategy validation (`Invalid video analysis strategy`) MUST fail BEFORE the
-   brake (exit 1).
-4. When invoked from an agent context (`RAVI_*` envs present), a thrown
-   `ContractError` MUST preserve its exit code through the registry dispatcher.
+1. `video analyze` with `auto`, `subtitles` or `gemini` (including
+   `--force-analyze`) MUST run without `--execute`.
+2. `--strategy subtitles` MUST continue to prevent Gemini fallback.
+3. Strategy validation (`Invalid video analysis strategy`) MUST fail before the
+   analysis call (exit 1).
 
 ## Write classification (brake decision per op)
 
 | op | class | brake |
 |---|---|---|
-| analyze (auto / gemini / --force-analyze) | may bill external Gemini API | dry-run + `--execute` |
-| analyze --strategy subtitles | free local captions path | not braked (declared) |
+| analyze (auto / gemini / --force-analyze) | routine processing; may use Gemini | not braked |
+| analyze --strategy subtitles | free captions path | not braked |
 
 ## Official error cases
 
 | case | code | exit |
 |---|---|---|
 | invalid strategy | legacy text (validation) | 1 |
-| braked analyze without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 
 ## Internal consumers
 
 - The `video` skill (`src/plugins/internal/ravi-system/skills/video/SKILL.md`)
-  MUST document the free `--strategy subtitles` path and `--execute` on the
-  paid examples.
+  MUST document the free `--strategy subtitles` path and MUST NOT require
+  `--execute` for analysis examples.
 
 ## Known gaps
 
@@ -76,16 +65,11 @@ immediate.
 ## Validation
 
 - `bun test src/cli/commands/video.test.ts` green.
-- Live checks: `ravi video analyze <url> --json` → exit 3 + plan with
-  `freeAlternative`; `--strategy subtitles` runs directly; `--force-analyze
-  --execute` bills Gemini.
+- Live checks: `ravi video analyze <url> --json`, `--strategy subtitles` and
+  `--force-analyze` all run directly; invalid strategy exits 1.
 
 ## Known Failure Modes
 
-- `analyzeVideo` decides the Gemini fallback INTERNALLY (no subtitles found,
-  extraction failure, local file), so a CLI-level brake keyed only on
-  `--strategy gemini` would leak paid calls through `auto`. The brake keys on
-  "not guaranteed free" instead.
-- `auto` on a YouTube video WITH subtitles is free in practice but still braked
-  — the CLI cannot know before running. The plan's `freeAlternative` teaches
-  the zero-cost escape hatch.
+- `analyzeVideo` decides the Gemini fallback internally. `--strategy subtitles`
+  remains the explicit way to prohibit that fallback when cost avoidance is
+  more important than completing the analysis.

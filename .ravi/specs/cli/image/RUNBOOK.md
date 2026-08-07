@@ -4,16 +4,14 @@
 
 1. Read the rules: `ravi specs get cli/image --mode rules --json`.
 2. Reproduce with `--json` and read `error.code` first.
-3. Exit `3`: read `error.plan` — provider/model/size are what would be billed.
-   Confirm and re-run with `--execute`.
+3. Exit `3`: the command plans external delivery. Review the target and
+   generation facts, then re-run with `--execute` if approved.
 4. Exit `1` with `No image provider configured`: pass `--provider openai|gemini`
    or set `image_provider` on the agent/instance/default settings.
-5. Artifact stuck in `pending` after `--execute`: check the worker args include
-   `--execute` (see `worker_started` event payload pid, then daemon logs) — a
-   worker without the flag exits 3 silently.
-6. If a generate billed without `--execute`, the brake regressed: check that
-   `contractDryRun` runs before `createArtifact`/`spawnDetachedCli` in
-   `src/cli/commands/image.ts`.
+5. Artifact stuck in `pending` on an approved delivery: check that the worker
+   args inherited `--execute` (see `worker_started`, then daemon logs).
+6. If a delivery proceeds without `--execute`, check the conditional
+   `contractDryRun` before artifact/split/provider/sender work.
 
 ## Validation
 
@@ -25,7 +23,8 @@ bun test src/cli/commands/image.test.ts
 Live checks:
 
 ```bash
-ravi image generate "gato roxo" --json               # expect exit 3 + plan
-ravi image generate "gato roxo" --json --execute     # queues artifact (bills!)
+ravi image generate "gato roxo" --json               # queues generation directly
+ravi image generate "gato roxo" --send --json        # expect exit 3 + delivery plan
+ravi image generate "gato roxo" --send --json --execute # queues and sends
 ravi image atlas split /tmp/atlas.png --cols 3 --rows 2 --json   # unbraked local op
 ```

@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { resolve, basename } from "node:path";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { getContext, fail, type ToolContext } from "../context.js";
@@ -20,8 +21,8 @@ import {
   updateArtifact,
   type ArtifactRecord,
 } from "../../artifacts/store.js";
-import { splitImageAtlas, type AtlasSplitFit, type AtlasSplitMode } from "../../image/atlas.js";
-import { sendMediaWithOmniCli, type MediaSendTargetInput } from "../media-send.js";
+import { sanitizeAtlasCellName, splitImageAtlas, type AtlasSplitFit, type AtlasSplitMode } from "../../image/atlas.js";
+import { resolveMediaSendTarget, sendMediaWithOmniCli, type MediaSendTargetInput } from "../media-send.js";
 import { imageAtlasSplitReturnSchema, imageGenerateReturnSchema } from "./operational-return-schemas.js";
 
 function stringDefault(defaults: Record<string, unknown> | undefined, key: string): string | undefined {
@@ -237,7 +238,7 @@ export class ImageCommands {
     asJson?: boolean,
     @Option({
       flags: "--execute",
-      description: "Actually call the paid image API; default is a dry-run that only shows the plan (exit 3)",
+      description: "Confirm delivery when the generated image will be sent; generation alone runs immediately",
     })
     execute?: boolean,
   ) {
@@ -316,6 +317,7 @@ export class ImageCommands {
       undefined;
 
     const sourcePath = source ? resolve(source) : undefined;
+    if (sourcePath && !existsSync(sourcePath)) fail(`Source image not found: ${sourcePath}`);
     const outputDir = output ? resolve(output) : undefined;
     const compressionValue = parseCompression(compressionDefault);
     const artifactContext = contextArtifactFields(ctx);
@@ -382,16 +384,15 @@ export class ImageCommands {
       fail("--artifact-id is reserved for internal image async workers.");
     }
 
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): image generation spends EXTERNAL API money
-      // — dry-run by default, exit 3 BEFORE creating any artifact record,
-      // spawning the async worker or calling the provider. The plan shows the
-      // resolved provider/model/size that would be billed. Internal async
-      // workers are always spawned with --execute already applied.
+    if (shouldSend && execute !== true) {
+      const target = resolveMediaSendTarget();
+      // Generation and local artifact persistence run directly. Externally
+      // visible delivery is braked before any artifact, worker, provider, or
+      // sender side effect so the confirmation pass remains a true dry-run.
       contractDryRun(
         "image generate",
         {
-          prompt,
+          promptChars: prompt.length,
           provider: normalizedProvider,
           model: resolvedModel ?? null,
           mode: resolvedMode,
@@ -405,6 +406,8 @@ export class ImageCommands {
           outputDir: outputDir ?? null,
           async: shouldRunAsync,
           send: shouldSend,
+          target,
+          captionPresent: Boolean(caption),
         },
         { asJson },
       );
@@ -433,7 +436,8 @@ export class ImageCommands {
       pushOption(workerArgs, "--background", resolvedBackground);
       if (shouldSend) workerArgs.push("--send");
       pushOption(workerArgs, "--caption", caption);
-      workerArgs.push("--artifact-id", artifact.id, "--async-worker", "--json", "--execute");
+      workerArgs.push("--artifact-id", artifact.id, "--async-worker", "--json");
+      if (shouldSend) workerArgs.push("--execute");
 
       const pid = spawnDetachedCli(workerArgs);
       appendArtifactEvent(artifact.id, {
@@ -858,28 +862,67 @@ export class ImageAtlasCommands {
     threadId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Confirm delivery when --send is used; local atlas splitting runs immediately",
+    })
+    execute?: boolean,
   ) {
     const ctx = getContext();
     const artifactContext = contextArtifactFields(ctx);
     const resolvedCols = parsePositiveInteger(cols, "--cols", 3);
     const resolvedRows = parsePositiveInteger(rows, "--rows", 2);
     const resolvedMode = parseAtlasMode(mode);
+    const inputPath = resolve(input);
+    if (!existsSync(inputPath)) fail(`Input image not found: ${inputPath}`);
     const outputDir = output ? resolve(output) : resolve(`/tmp/ravi-image-atlas-${Date.now()}`);
     const parentArtifact = parentArtifactId ? getArtifact(parentArtifactId) : null;
     if (parentArtifactId && !parentArtifact) fail(`Parent artifact not found: ${parentArtifactId}`);
+    const resolvedNames = parseAtlasNames(names);
+    if (resolvedNames && resolvedNames.length !== resolvedCols * resolvedRows) {
+      fail(`--names must include exactly ${resolvedCols * resolvedRows} values.`);
+    }
+    const sanitizedNames = resolvedNames?.map(sanitizeAtlasCellName);
+    if (sanitizedNames && new Set(sanitizedNames).size !== sanitizedNames.length) {
+      fail("--names must be unique after sanitization.");
+    }
+    const resolvedSize = parsePositiveInteger(size, "--size", 512);
+    const resolvedFuzz = Number(fuzz ?? "3");
+    if (!Number.isFinite(resolvedFuzz) || resolvedFuzz < 0) fail("--fuzz must be a number >= 0.");
+    const resolvedPad = parseNonNegativeInteger(pad, "--pad", 0);
+    const resolvedFit = parseAtlasFit(fit);
+    const resolvedBackground = background ?? "auto";
+
+    if (send === true && execute !== true) {
+      const target = resolveMediaSendTarget({ channel, accountId, chatId, threadId });
+      contractDryRun(
+        "image atlas split",
+        {
+          input: inputPath,
+          outputDir,
+          cols: resolvedCols,
+          rows: resolvedRows,
+          mode: resolvedMode,
+          send: true,
+          target,
+          captionPresent: Boolean(caption),
+        },
+        { asJson },
+      );
+    }
 
     const manifest = splitImageAtlas({
-      input,
+      input: inputPath,
       outputDir,
       cols: resolvedCols,
       rows: resolvedRows,
-      names: parseAtlasNames(names),
+      names: resolvedNames,
       mode: resolvedMode,
-      size: parsePositiveInteger(size, "--size", 512),
-      fuzz: Number(fuzz ?? "3"),
-      pad: parseNonNegativeInteger(pad, "--pad", 0),
-      fit: parseAtlasFit(fit),
-      background: background ?? "auto",
+      size: resolvedSize,
+      fuzz: resolvedFuzz,
+      pad: resolvedPad,
+      fit: resolvedFit,
+      background: resolvedBackground,
     });
 
     const splitArtifact = createArtifact({
