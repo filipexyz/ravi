@@ -312,6 +312,17 @@ describe("devin sessions agent-first contract", () => {
     });
   });
 
+  it("send redacts message and impersonation inputs from audit", () => {
+    const access = getCommandAccessMetadata(DevinSessionCommands).get("send");
+    expect(access?.requiresConfirmation).toBe(true);
+    expect(
+      redactCommandAccessInput(access!, {
+        message: "SENTINEL_DEVIN_MESSAGE_DO_NOT_LEAK",
+        messageAsUserId: "SENTINEL_DEVIN_USER_DO_NOT_LEAK",
+      }),
+    ).toEqual({ message: "[REDACTED]", messageAsUserId: "[REDACTED]" });
+  });
+
   it("create without --execute is a dry-run: exit 3 and NO remote session created", async () => {
     const commands = new DevinSessionCommands();
     const error = await expectContractError(
@@ -323,6 +334,8 @@ describe("devin sessions agent-first contract", () => {
     expect(error.details.dryRun).toBe(true);
     expect(error.details.plan).toMatchObject({
       promptChars: 11,
+      titleChars: 0,
+      idempotencyKeyProvided: false,
       maxAcuLimit: 10,
       maxAcuLimitSource: "explicit",
       sessionSecretCount: 0,
@@ -389,8 +402,10 @@ describe("devin sessions agent-first contract", () => {
 
     expect(error.details.plan).toMatchObject({
       devinId: "devin-abc123",
-      messagePreview: "continua a task",
+      messageChars: "continua a task".length,
+      messageAsUserProvided: false,
     });
+    expect(JSON.stringify(error.envelope())).not.toContain("continua a task");
     expect(sendMessageCalls).toHaveLength(0);
   });
 

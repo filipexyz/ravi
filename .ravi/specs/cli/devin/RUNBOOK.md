@@ -7,7 +7,7 @@
 3. Exit `1` + `DEVIN_SESSION_NOT_FOUND`: read `error.suggestions` (local
    cache); refresh with `ravi devin sessions list --remote --json` if the
    session was created outside this machine.
-4. Exit `3`: read `error.plan` (promptPreview, maxAcuLimit, secret COUNT),
+4. Exit `3`: read `error.plan` (prompt/message length, maxAcuLimit, secret COUNT),
    confirm the spend is intended, then re-run adding `--execute`.
 5. Dry-run failing with a config error: the brake regressed — it must fire
    BEFORE `createDevinClientFromEnv`, so inspection works without DEVIN_* env.

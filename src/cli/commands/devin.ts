@@ -531,17 +531,16 @@ export class DevinSessionCommands {
         "devin sessions create",
         {
           promptChars: text.length,
-          promptPreview: text.slice(0, 200),
-          title: title?.trim() || null,
-          tags: tagList,
-          repos: resolvedRepos.value ?? null,
+          titleChars: title?.trim().length ?? 0,
+          tagCount: tagList.length,
+          repoCount: resolvedRepos.value?.length ?? 0,
           devinMode: resolvedMode.value ?? null,
           platform: resolvedPlatform.value ?? null,
           resumable: resolvedResumable.value ?? null,
           maxAcuLimit: acu.maxAcuLimit ?? null,
           maxAcuLimitSource: acu.source,
-          playbookId: playbookId?.trim() || null,
-          idempotencyKey: devinId?.trim() || null,
+          playbookProvided: Boolean(playbookId?.trim()),
+          idempotencyKeyProvided: Boolean(devinId?.trim()),
           sessionSecretCount: sessionSecrets.length,
           origin: resolveOrigin({ taskId, projectId, proxRunId }),
         },
@@ -738,7 +737,14 @@ export class DevinSessionCommands {
   }
 
   @Command({ name: "send", description: "Send a message to a Devin session" })
-  @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "send", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "devin.sessions",
+    action: "send",
+    risk: "high",
+    requiresConfirmation: true,
+    redactions: ["message", "asUser", "messageAsUserId"],
+  })
   async send(
     @Arg("session", { description: "Local id or devin-* id" }) identifier: string,
     @Arg("message", { description: "Message text" }) message: string,
@@ -764,8 +770,7 @@ export class DevinSessionCommands {
           session: identifier,
           devinId,
           messageChars: message.length,
-          messagePreview: message.slice(0, 200),
-          messageAsUserId: messageAsUserId?.trim() || null,
+          messageAsUserProvided: Boolean(messageAsUserId?.trim()),
         },
         { asJson },
       );

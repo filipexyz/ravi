@@ -43,9 +43,8 @@ runtime is out of scope.
    and require `--execute`; the dry-run MUST report `dryRun: true` and the
    `plan`, and MUST NOT construct the Devin client (the brake fires before
    `createDevinClientFromEnv`, so no credentials are needed to inspect).
-4. The create plan MUST NEVER echo session-secret VALUES — only
-   `sessionSecretCount`; the prompt is reported as `promptChars` +
-   `promptPreview` (200 chars).
+4. Create/send plans MUST NEVER echo prompts, messages, session-secret values
+   or idempotency keys. They expose lengths, counts and presence booleans only.
 5. `--execute` MUST be the LAST declared option of every braked op.
 6. Every op that resolves a session identifier (`show`, `messages`, `send`,
    `attachments`, `insights`, `sync`, `terminate`, `archive`) MUST exit 1 with
