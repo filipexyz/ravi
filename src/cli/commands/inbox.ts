@@ -434,7 +434,7 @@ export class InboxCommands {
   }
 
   @Command({ name: "replay", description: "Republish a locally stored inbox item to NATS" })
-  @CommandAccess({ kind: "mutate", resource: "inbox", action: "replay", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "inbox", action: "replay", risk: "medium", requiresConfirmation: true })
   @Returns(inboxReplayReturnSchema)
   async replay(
     @Arg("ref", { description: "Local row id (number) or remote item id (uuid)" }) ref: string,

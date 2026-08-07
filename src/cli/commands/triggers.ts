@@ -868,7 +868,7 @@ export class TriggersCommands {
     description: "Delete a trigger",
     aliases: ["delete", "remove"],
   })
-  @CommandAccess({ kind: "mutate", resource: "triggers", action: "rm", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "triggers", action: "rm", risk: "destructive", requiresConfirmation: true })
   @Returns(triggerMutationReturnSchema)
   async rm(
     @Arg("id", { description: "Trigger ID" }) id: string,

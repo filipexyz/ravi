@@ -917,7 +917,7 @@ export class CronCommands {
   }
 
   @Command({ name: "rm", description: "Delete a job", aliases: ["delete", "remove"] })
-  @CommandAccess({ kind: "mutate", resource: "cron", action: "rm", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "cron", action: "rm", risk: "destructive", requiresConfirmation: true })
   @Returns(cronMutationReturnSchema)
   async rm(
     @Arg("id", { description: "Job ID" }) id: string,

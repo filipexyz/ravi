@@ -204,6 +204,7 @@ export class WorkObjectCommands {
     resource: "work-objects",
     action: "action",
     risk: "medium",
+    requiresConfirmation: true,
     input: ["type", "id", "actionId"],
   })
   @Returns(workObjectActionReturnSchema)

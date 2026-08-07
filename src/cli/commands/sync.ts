@@ -41,7 +41,7 @@ export class SyncCommands {
   }
 
   @Command({ name: "push", description: "Upload a bounded outbox batch to Console" })
-  @CommandAccess({ kind: "mutate", resource: "sync", action: "push", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "sync", action: "push", risk: "high", requiresConfirmation: true })
   async push(
     @Option({ flags: "--domain <domain>", description: "Filter one sync domain" }) domain?: string,
     @Option({ flags: "--project <project>", description: "Alias for --project-ref" }) project?: string,
@@ -109,7 +109,7 @@ export class SyncCommands {
   }
 
   @Command({ name: "pull", description: "Download a bounded remote event batch from Console" })
-  @CommandAccess({ kind: "mutate", resource: "sync", action: "pull", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "sync", action: "pull", risk: "high", requiresConfirmation: true })
   async pull(
     @Option({ flags: "--domain <domain>", description: "Filter one sync domain" }) domain?: string,
     @Option({ flags: "--project <project>", description: "Alias for --project-ref" }) project?: string,

@@ -423,7 +423,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "revoke", description: "Revoke a runtime context by context ID" })
-  @CommandAccess({ kind: "mutate", resource: "context", action: "revoke", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "context", action: "revoke", risk: "destructive", requiresConfirmation: true })
   revoke(
     @Arg("contextId", { description: "Context ID to revoke" }) contextId: string,
     @Option({
@@ -1130,7 +1130,7 @@ export class ContextCredentialsCommands {
   }
 
   @Command({ name: "remove", description: "Remove a stored context-key from the credentials store" })
-  @CommandAccess({ kind: "mutate", resource: "context.credentials", action: "remove", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "context.credentials", action: "remove", risk: "destructive", requiresConfirmation: true })
   remove(
     @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,

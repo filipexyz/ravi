@@ -223,7 +223,7 @@ export class CalendarCalendarsCommands {
   }
 
   @Command({ name: "share", description: "Grant a calendar relation to an agent/contact/system subject" })
-  @CommandAccess({ kind: "mutate", resource: "calendar.calendars", action: "share", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.calendars", action: "share", risk: "medium", requiresConfirmation: true })
   async share(
     @Arg("calendar", { description: "Local calendar id or name" }) calendarRef: string,
     @Option({ flags: "--with <subject>", description: "Subject, e.g. agent:main" }) subject?: string,
@@ -436,7 +436,7 @@ export class CalendarEventsCommands {
   }
 
   @Command({ name: "cancel", description: "Cancel a local calendar event" })
-  @CommandAccess({ kind: "mutate", resource: "calendar.events", action: "cancel", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.events", action: "cancel", risk: "high", requiresConfirmation: true })
   async cancel(
     @Arg("event", { description: "Local event id" }) eventId: string,
     @Option({ flags: "--idempotency-key <key>", description: "Local write idempotency key" }) idempotencyKey?: string,
@@ -479,7 +479,7 @@ export class CalendarEventsCommands {
   }
 
   @Command({ name: "respond", description: "Record an attendee response and enqueue provider delivery" })
-  @CommandAccess({ kind: "mutate", resource: "calendar.events", action: "respond", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "calendar.events", action: "respond", risk: "high", requiresConfirmation: true })
   async respond(
     @Arg("event", { description: "Local event id" }) eventId: string,
     @Option({ flags: "--status <status>", description: "accepted, declined, tentative, needs_action, or unknown" })

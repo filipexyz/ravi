@@ -647,7 +647,7 @@ export class SkillsCommands {
       "Install Ravi catalog skills or skills from an explicit source. Dry-run by default; pass --execute to write.",
     helpAfter: SKILLS_INSTALL_HELP_AFTER,
   })
-  @CommandAccess({ kind: "mutate", resource: "skills", action: "install", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "install", risk: "high", requiresConfirmation: true })
   @Returns(skillsInstallReturnSchema)
   install(
     @Arg("name", {

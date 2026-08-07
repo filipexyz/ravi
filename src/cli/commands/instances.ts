@@ -2165,7 +2165,7 @@ export class InstancesPendingCommands {
   }
 
   @Command({ name: "reject", description: "Reject and remove a pending contact or chat" })
-  @CommandAccess({ kind: "mutate", resource: "instances.pending", action: "reject", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "instances.pending", action: "reject", risk: "destructive", requiresConfirmation: true })
   reject(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("contact", { description: "Contact identity or chat route pattern" }) contact: string,

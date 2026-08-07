@@ -122,6 +122,7 @@ export class GmailCommands {
     resource: "gmail",
     action: "send",
     risk: "high",
+    requiresConfirmation: true,
     input: ["to", "cc", "bcc", "subject", "body", "html", "connector"],
     redactions: ["body", "html"],
   })

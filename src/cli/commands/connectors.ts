@@ -173,7 +173,7 @@ export class ConnectorsCommands {
   }
 
   @Command({ name: "revoke", description: "Revoke a connector and delete its stored credentials" })
-  @CommandAccess({ kind: "mutate", resource: "connectors", action: "revoke", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "connectors", action: "revoke", risk: "destructive", requiresConfirmation: true })
   async revoke(
     @Arg("id", { description: "Connector id" }) id: string,
     @Option({ flags: "--yes", description: "Skip confirmation (pre-existing equivalent of --execute)" }) yes?: boolean,

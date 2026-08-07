@@ -64,7 +64,7 @@ export class CloudProjectsCommands {
   }
 
   @Command({ name: "create", description: "Create a Ravi Cloud project in Console" })
-  @CommandAccess({ kind: "mutate", resource: "cloud.projects", action: "create", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "cloud.projects", action: "create", risk: "high", requiresConfirmation: true })
   async create(
     @Arg("slug", { description: "Console project slug" }) slug: string,
     @Option({ flags: "--name <name>", description: "Project display name; defaults to the slug" }) name?: string,

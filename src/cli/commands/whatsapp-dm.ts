@@ -90,6 +90,7 @@ export class WhatsAppDmCommands {
     resource: "whatsapp.dm",
     action: "send",
     risk: "high",
+    requiresConfirmation: true,
     redactions: ["contact", "message"],
   })
   async send(
@@ -158,6 +159,7 @@ export class WhatsAppDmCommands {
     resource: "whatsapp.dm",
     action: "read",
     risk: "medium",
+    requiresConfirmation: true,
     redactions: ["contact"],
   })
   async read(
@@ -268,6 +270,7 @@ export class WhatsAppDmCommands {
     resource: "whatsapp.dm",
     action: "ack",
     risk: "high",
+    requiresConfirmation: true,
     redactions: ["contact", "messageId"],
   })
   async ack(

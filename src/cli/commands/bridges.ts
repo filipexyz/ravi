@@ -107,7 +107,7 @@ export class BridgesCommands {
   }
 
   @Command({ name: "revoke", description: "Revoke a Ravi MCP bridge and its client tokens" })
-  @CommandAccess({ kind: "mutate", resource: "bridges", action: "revoke", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "bridges", action: "revoke", risk: "destructive", requiresConfirmation: true })
   async revoke(
     @Arg("id", { description: "Bridge id" }) id: string,
     @Option({ flags: "--yes", description: "Skip confirmation (pre-existing equivalent of --execute)" }) yes?: boolean,

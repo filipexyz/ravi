@@ -463,7 +463,7 @@ export class HooksCommands {
     description: "Delete a hook",
     aliases: ["delete", "remove"],
   })
-  @CommandAccess({ kind: "mutate", resource: "hooks", action: "rm", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "hooks", action: "rm", risk: "destructive", requiresConfirmation: true })
   @Returns(hookMutationReturnSchema)
   async remove(
     @Arg("id", { description: "Hook ID" }) id: string,
@@ -509,7 +509,7 @@ export class HooksCommands {
   }
 
   @Command({ name: "test", description: "Execute a hook once with a synthetic event" })
-  @CommandAccess({ kind: "mutate", resource: "hooks", action: "test", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "hooks", action: "test", risk: "high", requiresConfirmation: true })
   @Returns(hookTestReturnSchema)
   async test(
     @Arg("id", { description: "Hook ID" }) id: string,

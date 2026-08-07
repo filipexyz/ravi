@@ -1768,7 +1768,7 @@ export class TaskCommands {
     name: "dispatch",
     description: "Dispatch a task now, or arm a launch plan if dependencies still gate start",
   })
-  @CommandAccess({ kind: "mutate", resource: "tasks", action: "dispatch", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "tasks", action: "dispatch", risk: "high", requiresConfirmation: true })
   @Returns(taskDispatchReturnSchema)
   async dispatch(
     @Arg("taskId", { description: "Task ID" }) taskId: string,

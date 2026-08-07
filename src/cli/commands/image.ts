@@ -195,7 +195,7 @@ export class ImageCommands {
     name: "generate",
     description: "Generate an image from a text prompt",
   })
-  @CommandAccess({ kind: "mutate", resource: "image", action: "generate", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "image", action: "generate", risk: "high", requiresConfirmation: true })
   @Returns(imageGenerateReturnSchema)
   async generate(
     @Arg("prompt", { description: "Text prompt describing the image to generate" })
@@ -831,7 +831,7 @@ export class ImageAtlasCommands {
     name: "split",
     description: "Split an image atlas/contact sheet into deterministic crop artifacts",
   })
-  @CommandAccess({ kind: "mutate", resource: "image.atlas", action: "split", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "image.atlas", action: "split", risk: "medium", requiresConfirmation: true })
   @Returns(imageAtlasSplitReturnSchema)
   async split(
     @Arg("input", { description: "Atlas/contact sheet image path" })

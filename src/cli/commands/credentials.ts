@@ -301,7 +301,7 @@ export class CredentialConnectionsCommands {
   }
 
   @Command({ name: "remove", description: "Remove provider credential connection metadata" })
-  @CommandAccess({ kind: "mutate", resource: "credentials.connections", action: "remove", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "credentials.connections", action: "remove", risk: "destructive", requiresConfirmation: true })
   @CliOnly()
   @Returns(credentialRemoveReturnSchema)
   async remove(
@@ -434,7 +434,7 @@ export class CredentialPolicyCommands {
 })
 export class CredentialBrokerCommands {
   @Command({ name: "exec", description: "Resolve a provider credential inside broker boundary" })
-  @CommandAccess({ kind: "mutate", resource: "credentials.broker", action: "exec", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "credentials.broker", action: "exec", risk: "high", requiresConfirmation: true })
   @CliOnly()
   @Returns(credentialBrokerReturnSchema)
   async exec(

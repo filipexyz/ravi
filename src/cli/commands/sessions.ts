@@ -3482,6 +3482,7 @@ export class SessionCommands {
     resource: "sessions",
     action: "reset",
     risk: "medium",
+    requiresConfirmation: true,
   })
   async reset(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -3576,6 +3577,7 @@ export class SessionCommands {
     resource: "sessions",
     action: "delete",
     risk: "destructive",
+    requiresConfirmation: true,
   })
   async delete(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -3670,6 +3672,7 @@ export class SessionCommands {
     resource: "sessions",
     action: "prune",
     risk: "destructive",
+    requiresConfirmation: true,
   })
   async prune(
     @Option({
@@ -6132,6 +6135,7 @@ export class SessionCommands {
     resource: "sessions",
     action: "delete-message",
     risk: "destructive",
+    requiresConfirmation: true,
   })
   async deleteMessage(
     @Arg("sessionOrMessage", {
@@ -6298,6 +6302,7 @@ export class SessionCommands {
     resource: "sessions",
     action: "edit-message",
     risk: "high",
+    requiresConfirmation: true,
   })
   async editMessage(
     @Arg("sessionOrMessage", {

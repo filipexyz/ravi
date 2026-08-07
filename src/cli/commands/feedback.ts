@@ -32,7 +32,7 @@ export class FeedbackCommands {
     aliases: ["create"],
     description: "Submit structured feedback to Ravi Console (dry-run by default; requires --execute)",
   })
-  @CommandAccess({ kind: "mutate", resource: "feedback", action: "send", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "feedback", action: "send", risk: "low", requiresConfirmation: true })
   async send(
     @Arg("message", { variadic: true, description: "Feedback message" }) messageParts: string[],
     @Option({ flags: "--kind <kind>", description: "bug|idea|ux|docs|performance|security|other" }) kind?: string,

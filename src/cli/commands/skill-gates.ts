@@ -423,7 +423,7 @@ export class SkillGatesCommands {
     name: "rm",
     description: "Remove a custom gate or disable a default gate. Dry-run by default; pass --execute to write.",
   })
-  @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "rm", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "rm", risk: "destructive", requiresConfirmation: true })
   @Returns(skillGateRemoveReturnSchema)
   rm(
     @Arg("id", { description: "Rule id" }) id: string,
@@ -476,7 +476,7 @@ export class SkillGatesCommands {
     description:
       "Delete a configured override and restore the default behavior. Dry-run by default; pass --execute to write.",
   })
-  @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "reset", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "reset", risk: "medium", requiresConfirmation: true })
   @Returns(skillGateResetReturnSchema)
   reset(
     @Arg("id", { description: "Rule id" }) id: string,

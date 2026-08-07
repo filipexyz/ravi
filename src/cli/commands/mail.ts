@@ -481,7 +481,7 @@ export class MailProvidersCommands {
 })
 export class MailCommands {
   @Command({ name: "send", description: "Queue mail in the local outbox" })
-  @CommandAccess({ kind: "mutate", resource: "mail", action: "send", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "mail", action: "send", risk: "high", requiresConfirmation: true })
   async send(
     @Option({ flags: "--to <email>", description: "Recipient email or comma-separated recipients" }) to?: string,
     @Option({ flags: "--subject <subject>", description: "Message subject" }) subject?: string,
@@ -536,7 +536,7 @@ export class MailCommands {
   }
 
   @Command({ name: "reply", description: "Queue a local reply in the outbox" })
-  @CommandAccess({ kind: "mutate", resource: "mail", action: "reply", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "mail", action: "reply", risk: "high", requiresConfirmation: true })
   async reply(
     @Arg("message", { description: "Local message id to reply to" }) messageId: string,
     @Option({ flags: "--body <text>", description: "Reply body" }) body?: string,
@@ -857,7 +857,7 @@ export class MailRaviMailCommands {
   constructor(private readonly deps: MailCommandDeps = defaultMailDeps()) {}
 
   @Command({ name: "send", description: "Send mail directly through Console Ravi Mail" })
-  @CommandAccess({ kind: "mutate", resource: "mail.providers.ravi-mail", action: "send", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "mail.providers.ravi-mail", action: "send", risk: "high", requiresConfirmation: true })
   async send(
     @Option({ flags: "--to <email>", description: "Recipient email or comma-separated recipients" }) to?: string,
     @Option({ flags: "--subject <subject>", description: "Message subject" }) subject?: string,

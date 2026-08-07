@@ -423,6 +423,7 @@ export class ProxCallsProfileCommands {
     resource: "prox.calls.profiles",
     action: "configure",
     risk: "high",
+    requiresConfirmation: true,
     redactions: ["prompt", "firstMessage", "systemPromptPath", "dynamicPlaceholder"],
   })
   @Returns(proxProfileConfigureReturnSchema)

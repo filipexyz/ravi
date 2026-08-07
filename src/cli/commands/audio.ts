@@ -79,7 +79,7 @@ export class AudioCommands {
     name: "generate",
     description: "Generate speech from text using ElevenLabs TTS",
   })
-  @CommandAccess({ kind: "mutate", resource: "audio", action: "generate", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "audio", action: "generate", risk: "high", requiresConfirmation: true })
   @Returns(audioGenerateReturnSchema)
   async generate(
     @Arg("text", { required: false, description: "Text to convert to speech" })
@@ -275,7 +275,7 @@ export class AudioCommands {
     name: "tts",
     description: "Publish a ravi.tts request for ElevenLabs generation and extension playback",
   })
-  @CommandAccess({ kind: "mutate", resource: "audio", action: "tts", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "audio", action: "tts", risk: "high", requiresConfirmation: true })
   @Returns(audioTtsReturnSchema)
   async tts(
     @Arg("text", { description: "Text to convert to speech" })

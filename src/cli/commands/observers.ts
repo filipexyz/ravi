@@ -698,7 +698,7 @@ export class ObserverRuleCommands {
   }
 
   @Command({ name: "rm", description: "Delete an observer rule" })
-  @CommandAccess({ kind: "mutate", resource: "observers.rules", action: "rm", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "observers.rules", action: "rm", risk: "destructive", requiresConfirmation: true })
   rm(
     @Arg("id", { description: "Observer rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })

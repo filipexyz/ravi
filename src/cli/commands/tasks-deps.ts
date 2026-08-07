@@ -86,7 +86,7 @@ export class TaskDependencyCommands {
     description: "Remove one gating dependency from a task (dry-run by default; --execute writes)",
     aliases: ["remove"],
   })
-  @CommandAccess({ kind: "mutate", resource: "tasks.deps", action: "rm", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "tasks.deps", action: "rm", risk: "destructive", requiresConfirmation: true })
   @Returns(taskMutationReturnSchema)
   async rm(
     @Arg("taskId", { description: "Downstream task id" }) taskId: string,

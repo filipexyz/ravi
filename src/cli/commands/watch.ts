@@ -256,7 +256,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "rm", description: "Remove a watch" })
-  @CommandAccess({ kind: "mutate", resource: "watch", action: "rm", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "watch", action: "rm", risk: "destructive", requiresConfirmation: true })
   @Returns(watchRemoveReturnSchema)
   async rm(
     @Arg("id", { description: "Watch id" }) id: string,
@@ -318,7 +318,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "trigger", description: "Create a trigger for a watch event in the current chat" })
-  @CommandAccess({ kind: "mutate", resource: "watch", action: "trigger", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "watch", action: "trigger", risk: "high", requiresConfirmation: true })
   @Returns(watchTriggerReturnSchema)
   async trigger(
     @Arg("id", { description: "Watch id" }) id: string,
@@ -418,7 +418,7 @@ export class WatchCommands {
   }
 
   @Command({ name: "run", description: "Run a local watch once (debug)" })
-  @CommandAccess({ kind: "mutate", resource: "watch", action: "run", risk: "high", input: ["id"] })
+  @CommandAccess({ kind: "mutate", resource: "watch", action: "run", risk: "high", input: ["id"], requiresConfirmation: true })
   @CliOnly()
   run(
     @Arg("id", { description: "Watch id" }) id: string,

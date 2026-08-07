@@ -871,6 +871,7 @@ export class AgentsCommands {
     resource: "agents",
     action: "delete",
     risk: "destructive",
+    requiresConfirmation: true,
   })
   delete(
     @Arg("id", { description: "Agent ID" }) id: string,
@@ -1203,6 +1204,7 @@ export class AgentsCommands {
     resource: "agents",
     action: "permissions",
     risk: "high",
+    requiresConfirmation: true,
   })
   permissions(
     @Arg("id", { description: "Agent ID" }) id: string,
@@ -1559,6 +1561,7 @@ export class AgentsCommands {
     resource: "agents",
     action: "reset",
     risk: "medium",
+    requiresConfirmation: true,
   })
   async reset(
     @Arg("id", { description: "Agent ID" }) id: string,

@@ -1256,7 +1256,7 @@ export class ProjectCommands {
 })
 export class ProjectWorkflowCommands {
   @Command({ name: "start", description: "Start one workflow run from a project and link it in one step" })
-  @CommandAccess({ kind: "mutate", resource: "projects.workflows", action: "start", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "projects.workflows", action: "start", risk: "high", requiresConfirmation: true })
   @Returns(projectWorkflowOperationReturnSchema)
   start(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
@@ -1468,7 +1468,7 @@ export class ProjectTaskCommands {
   }
 
   @Command({ name: "dispatch", description: "Dispatch a task using project owner/session defaults" })
-  @CommandAccess({ kind: "mutate", resource: "projects.tasks", action: "dispatch", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "projects.tasks", action: "dispatch", risk: "high", requiresConfirmation: true })
   @Returns(projectTaskOperationReturnSchema)
   async dispatch(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
@@ -1747,7 +1747,7 @@ export class ProjectResourceCommands {
 })
 export class ProjectFixtureCommands {
   @Command({ name: "seed", description: "Reset and seed the canonical project fixtures used in demos and smoke tests" })
-  @CommandAccess({ kind: "mutate", resource: "projects.fixtures", action: "seed", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "projects.fixtures", action: "seed", risk: "destructive", requiresConfirmation: true })
   @Returns(projectFixturesSeedReturnSchema)
   async seed(
     @Option({ flags: "--owner-agent <id>", description: "Owner agent for the seeded projects" }) ownerAgentId?: string,

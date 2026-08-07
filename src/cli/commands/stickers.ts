@@ -352,7 +352,7 @@ export class StickerCommands {
   }
 
   @Command({ name: "remove", description: "Remove a sticker catalog entry" })
-  @CommandAccess({ kind: "mutate", resource: "stickers", action: "remove", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "stickers", action: "remove", risk: "destructive", requiresConfirmation: true })
   @Returns(stickerRemoveReturnSchema)
   remove(
     @Arg("id", { description: "Sticker id" }) id: string,
@@ -403,7 +403,7 @@ export class StickerCommands {
   }
 
   @Command({ name: "send", description: "Send a sticker to the current WhatsApp chat" })
-  @CommandAccess({ kind: "mutate", resource: "stickers", action: "send", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "stickers", action: "send", risk: "high", requiresConfirmation: true })
   @Returns(stickerSendReturnSchema)
   async send(
     @Arg("id", { description: "Sticker id" }) id: string,

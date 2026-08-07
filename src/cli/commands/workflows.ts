@@ -312,7 +312,7 @@ export class WorkflowSpecCommands {
 })
 export class WorkflowRunCommands {
   @Command({ name: "start", description: "Instantiate one workflow run from a spec" })
-  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "start", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "start", risk: "high", requiresConfirmation: true })
   @Returns(workflowRunDetailsReturnSchema)
   start(
     @Arg("specId", { description: "Workflow spec id" }) specId: string,
@@ -502,7 +502,7 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "archive-node", description: "Archive one node run from workflow aggregate state" })
-  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "archive-node", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "archive-node", risk: "medium", requiresConfirmation: true })
   @Returns(workflowRunMutationReturnSchema)
   archiveNode(
     @Arg("runId", { description: "Workflow run id" }) runId: string,

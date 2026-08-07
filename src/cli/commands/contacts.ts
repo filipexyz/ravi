@@ -793,7 +793,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "remove", description: "Remove a contact" })
-  @CommandAccess({ kind: "mutate", resource: "contacts", action: "remove", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "remove", risk: "destructive", requiresConfirmation: true })
   remove(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1738,7 +1738,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "merge", description: "Merge two contacts (move identities from source to target)" })
-  @CommandAccess({ kind: "mutate", resource: "contacts", action: "merge", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "merge", risk: "medium", requiresConfirmation: true })
   merge(
     @Arg("source", { description: "Source contact ID (will be deleted)" }) sourceRef: string,
     @Arg("target", { description: "Target contact ID" }) targetRef: string,

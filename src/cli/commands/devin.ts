@@ -813,7 +813,13 @@ export class DevinSessionCommands {
   }
 
   @Command({ name: "insights", description: "Show Devin session insights/activity summary" })
-  @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "insights", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "devin.sessions",
+    action: "insights",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   async insights(
     @Arg("session", { description: "Local id or devin-* id" }) identifier: string,
     @Option({ flags: "--generate", description: "Ask Devin to generate/update insights before reading" })
@@ -925,7 +931,13 @@ export class DevinSessionCommands {
   // Archiving mutates the external Devin service and has no inverse on this
   // CLI surface, so confirmation applies even though it starts no new work.
   @Command({ name: "archive", description: "Archive a Devin session" })
-  @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "archive", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "devin.sessions",
+    action: "archive",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   async archive(
     @Arg("session", { description: "Local id or devin-* id" }) identifier: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

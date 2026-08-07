@@ -173,7 +173,7 @@ export class PagesCommands {
   }
 
   @Command({ name: "publish", description: "Publish a directory, file, or local artifact to a project Pages host" })
-  @CommandAccess({ kind: "mutate", resource: "pages", action: "publish", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "publish", risk: "high", requiresConfirmation: true })
   async publish(
     @Arg("args", {
       variadic: true,
@@ -275,7 +275,7 @@ export class PagesCommands {
   }
 
   @Command({ name: "update", description: "Update a Ravi Pages site in a Console project" })
-  @CommandAccess({ kind: "mutate", resource: "pages", action: "update", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "update", risk: "medium", requiresConfirmation: true })
   async update(
     @Arg("args", { variadic: true, description: "[project] <site>; project defaults to Ravi Console scope" })
     args: string[],
@@ -312,7 +312,7 @@ export class PagesCommands {
   }
 
   @Command({ name: "visibility", description: "Set a Ravi Pages site default visibility" })
-  @CommandAccess({ kind: "mutate", resource: "pages", action: "visibility", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "visibility", risk: "medium", requiresConfirmation: true })
   async visibility(
     @Arg("args", {
       variadic: true,
@@ -425,7 +425,7 @@ export class PagesPasswordCommands {
     helpAfter: PAGES_PASSWORD_SET_HELP,
   })
   @CliOnly()
-  @CommandAccess({ kind: "mutate", resource: "pages", action: "password", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "password", risk: "high", requiresConfirmation: true })
   async set(
     @Arg("args", { variadic: true, description: "[project] <site>; project defaults to Ravi Console scope" })
     args: string[],
@@ -520,7 +520,7 @@ export class PagesPasswordCommands {
     description: "Remove a route password after activating an explicit replacement visibility",
     helpAfter: PAGES_PASSWORD_REMOVE_HELP,
   })
-  @CommandAccess({ kind: "mutate", resource: "pages", action: "password", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "pages", action: "password", risk: "high", requiresConfirmation: true })
   async remove(
     @Arg("args", { variadic: true, description: "[project] <site>; project defaults to Ravi Console scope" })
     args: string[],
