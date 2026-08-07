@@ -575,13 +575,22 @@ describe("dispatch — scope and superadmin gating", () => {
 
       expect(result.response.status).toBe(403);
       const body = (await result.response.json()) as {
-        error: string;
-        reason: string;
+        success: boolean;
+        op: string;
+        exitCode: number;
+        outcome: string;
+        error: { code: string; message: string };
       };
-      expect(body.error).toBe("PermissionDenied");
-      expect(body.reason).toContain("cannot execute");
+      expect(body).toMatchObject({
+        success: false,
+        op: "gated ping",
+        exitCode: 1,
+        outcome: "denied",
+        error: { code: "PERMISSION_DENIED" },
+      });
+      expect(body.error.message).toContain("cannot execute");
       expect(audits.events).toHaveLength(1);
-      expect(audits.events[0]?.tool).toBe("gated_ping");
+      expect(audits.events[0]).toMatchObject({ tool: "gated_ping", outcome: "denied", errorCode: "PERMISSION_DENIED" });
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

@@ -32,6 +32,15 @@ const runtimeContext: ContextRecord = {
   createdAt: Date.now(),
 };
 
+const deniedContext: ContextRecord = {
+  contextId: "ctx_transport_denied_test",
+  contextKey: "rctx_transport_denied_test",
+  kind: "test-runtime",
+  agentId: "transport-denied-test",
+  capabilities: [],
+  createdAt: Date.now(),
+};
+
 describe("global cloud failure contract", () => {
   it("preserves the same op, code, envelope and exit taxonomy in CLI, tool and gateway", async () => {
     const previousSuppressAudit = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
@@ -115,5 +124,74 @@ describe("global cloud failure contract", () => {
     }
 
     expect(wasContractErrorAudited(failure)).toBe(true);
+  });
+
+  it("preserves one PERMISSION_DENIED envelope across CLI, tool and gateway", async () => {
+    const previousSuppressAudit = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const previousContextKey = process.env.RAVI_CONTEXT_KEY;
+    const originalExit = process.exit;
+    const originalLog = console.log;
+    const originalError = console.error;
+    const cliOutput: string[] = [];
+    const cliError: string[] = [];
+    let cliExitCode: number | undefined;
+    process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+    process.env.RAVI_CONTEXT_KEY = deniedContext.contextKey;
+    console.log = (...args: unknown[]) => cliOutput.push(args.map(String).join(" "));
+    console.error = (...args: unknown[]) => cliError.push(args.map(String).join(" "));
+    process.exit = ((code?: number) => {
+      cliExitCode = code;
+      throw new Error("__permission_exit__");
+    }) as typeof process.exit;
+
+    try {
+      const program = new CommanderCommand();
+      program.exitOverride();
+      registerCommands(program, [CloudFailureCommands]);
+      await expect(
+        runWithContext({ agentId: deniedContext.agentId, context: deniedContext }, () =>
+          program.parseAsync(["node", "test", "cloud", "fixture", "fail", "--json"]),
+        ),
+      ).rejects.toThrow("__permission_exit__");
+    } finally {
+      process.exit = originalExit;
+      console.log = originalLog;
+      console.error = originalError;
+      if (previousSuppressAudit === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousSuppressAudit;
+      if (previousContextKey === undefined) delete process.env.RAVI_CONTEXT_KEY;
+      else process.env.RAVI_CONTEXT_KEY = previousContextKey;
+    }
+
+    expect(cliExitCode).toBe(1);
+    expect(cliError).toEqual([]);
+    expect(cliOutput).toHaveLength(1);
+    const cliEnvelope = JSON.parse(cliOutput[0] ?? "{}");
+
+    const tool = extractTools([CloudFailureCommands]).find((candidate) => candidate.name === "cloud_fixture_fail");
+    expect(tool).toBeDefined();
+    const toolResult = await runWithContext({ agentId: deniedContext.agentId, context: deniedContext }, () =>
+      tool!.handler({ json: true }),
+    );
+    const toolEnvelope = JSON.parse(toolResult.content[0]?.text ?? "{}");
+
+    const registry = buildRegistry([CloudFailureCommands]);
+    const command = registry.commands.find((candidate) => candidate.fullName === "cloud.fixture.fail");
+    expect(command).toBeDefined();
+    const gatewayResult = await dispatch(command!, {}, {}, { contextRecord: deniedContext, emitAudit: () => {} });
+    expect(gatewayResult.response.status).toBe(403);
+    const gatewayBody = (await gatewayResult.response.json()) as Record<string, unknown>;
+    const { exitCode, outcome, ...gatewayEnvelope } = gatewayBody;
+
+    expect(exitCode).toBe(1);
+    expect(outcome).toBe("denied");
+    expect(toolResult).toMatchObject({ isError: true, outcome: "denied", exitCode: 1 });
+    expect(toolEnvelope).toEqual(cliEnvelope);
+    expect(gatewayEnvelope).toEqual(cliEnvelope);
+    expect(cliEnvelope).toMatchObject({
+      success: false,
+      op: "cloud fixture fail",
+      error: { code: "PERMISSION_DENIED" },
+    });
   });
 });

@@ -99,6 +99,10 @@ details and policy outcome:
 - Audit: records the same operation and outcome as `succeeded`, `blocked`,
   `usage_error`, `denied` or `failed`. A policy block MUST NOT be recorded as
   an executed mutation or generic failure.
+- Permission denial is `PERMISSION_DENIED`, exit `1`, outcome `denied` across
+  CLI, tool, gateway and audit. Remote CLI mode MUST normalize legacy gateway
+  bodies and transport failures into the same safe envelope; it MUST NOT print
+  raw URLs, provider responses or exception text.
 
 ## Authorization and confirmation are different controls
 

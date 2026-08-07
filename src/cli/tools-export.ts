@@ -24,6 +24,7 @@ import {
   ContractError,
   contractFailureOutcome,
   expectedErrorToContractError,
+  permissionDeniedToContractError,
   unexpectedErrorToContractError,
 } from "./agent-contract.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
@@ -229,6 +230,11 @@ function buildHandler(
       scope,
     });
     if (!accessResult.allowed) {
+      const contractError = permissionDeniedToContractError(
+        commandOperation(group, command),
+        accessResult.errorMessage,
+      );
+      const envelope = JSON.stringify(contractError.envelope());
       nats
         .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
           tool: toolName,
@@ -245,10 +251,10 @@ function buildHandler(
         })
         .catch(() => {});
       return {
-        content: [{ type: "text", text: accessResult.errorMessage }],
+        content: [{ type: "text", text: envelope }],
         isError: true,
         outcome: "denied",
-        exitCode: 1,
+        exitCode: contractError.exitCode,
       };
     }
 

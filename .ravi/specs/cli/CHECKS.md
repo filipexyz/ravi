@@ -13,6 +13,9 @@
   blocks are not recorded as execution failures.
 - CLI, tool and gateway authorize the same semantic operation and produce the
   same stable code for the same failure.
+- A denied operation produces one `PERMISSION_DENIED` envelope, exit `1` and
+  outcome `denied` on every transport. Remote context/transport failures are
+  canonical and redact raw endpoint/provider details.
 - A handler using the compatibility `fail()` helper produces one parseable
   `COMMAND_FAILED` envelope in JSON CLI, tool and gateway calls, while an
   unexpected raw exception produces one redacted `UNHANDLED_ERROR` envelope,

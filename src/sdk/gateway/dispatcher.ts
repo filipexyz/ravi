@@ -32,18 +32,12 @@ import {
   CONTRACT_EXIT_USAGE,
   contractFailureOutcome,
   expectedErrorToContractError,
+  permissionDeniedToContractError,
   unexpectedErrorToContractError,
 } from "../../cli/agent-contract.js";
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
-import {
-  contractErrorResponse,
-  errorResponse,
-  json,
-  permissionDenied,
-  returnShapeError,
-  type JsonIssue,
-} from "./errors.js";
+import { contractErrorResponse, errorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
 
 const QUIET_SUCCESS_AUDIT_TOOLS = new Set(["sessions_list", "tasks_list", "tasks_show"]);
 
@@ -137,7 +131,8 @@ export async function dispatch(
     }),
   );
   if (!accessResult.allowed) {
-    const response = permissionDenied(accessResult.errorMessage);
+    const error = permissionDeniedToContractError(commandOperation(group, cmd.command), accessResult.errorMessage);
+    const response = contractErrorResponse(error, 403, "denied");
     const audit = buildAuditEvent(cmd, tool, auditInput, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit: auditEmitted ? audit : null };

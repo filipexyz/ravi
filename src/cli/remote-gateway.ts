@@ -17,6 +17,7 @@
 
 import { resolveRuntimeContext } from "../runtime/context-registry.js";
 import { readCredentialsFile, selectDefaultCredentialsKey } from "../runtime/credentials-store.js";
+import { ContractError, permissionDeniedToContractError } from "./agent-contract.js";
 
 export const REMOTE_GATEWAY_URL_ENV = "RAVI_GATEWAY_URL";
 export const REMOTE_GATEWAY_DEFAULT_TIMEOUT_MS = 30_000;
@@ -84,6 +85,43 @@ export function remoteGatewayExitCode(result: RemoteDispatchResult): 0 | 1 | 2 |
     }
   }
   return 1;
+}
+
+/** Normalize legacy/non-contract gateway failures before the CLI renders them. */
+export function remoteGatewayErrorToContractError(op: string, result: RemoteDispatchResult): ContractError | null {
+  if (result.ok) return null;
+  if (result.contentType?.includes("application/json")) {
+    try {
+      const body = JSON.parse(result.body) as Record<string, unknown>;
+      if (body.success === false && typeof body.op === "string" && isContractErrorBody(body.error)) return null;
+      if (body.error === "PermissionDenied") {
+        const reason = typeof body.reason === "string" ? body.reason : "Permission denied.";
+        return permissionDeniedToContractError(op, reason);
+      }
+      if (body.error === "Unauthorized") {
+        return new ContractError(op, "AUTH_REQUIRED", "Remote gateway authentication failed.", 1, {
+          suggestedAction: "Refresh the runtime context credential and retry",
+        });
+      }
+      if (body.error === "ValidationError" || body.error === "BadRequest") {
+        return new ContractError(op, "USAGE_ERROR", "Remote gateway rejected the command input.", 2, {
+          suggestedAction: `Inspect '${op} --help' and retry with valid input`,
+        });
+      }
+    } catch {
+      // Fall through to a redacted transport failure.
+    }
+  }
+  return new ContractError(op, "SERVER_UNAVAILABLE", "Remote gateway request failed.", 1, {
+    retryable: result.status >= 500,
+    suggestedAction: "Check gateway availability and retry",
+  });
+}
+
+function isContractErrorBody(value: unknown): boolean {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const error = value as Record<string, unknown>;
+  return typeof error.code === "string" && typeof error.message === "string";
 }
 
 export async function dispatchRemote(input: RemoteDispatchInput): Promise<RemoteDispatchResult> {

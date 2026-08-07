@@ -21,6 +21,7 @@ import {
   ContractError,
   contractFailureOutcome,
   expectedErrorToContractError,
+  permissionDeniedToContractError,
   renderContractError,
   unexpectedErrorToContractError,
 } from "./agent-contract.js";
@@ -32,6 +33,7 @@ import { getContext, runWithContext } from "./context.js";
 import {
   dispatchRemote,
   getRemoteGatewayConfig,
+  remoteGatewayErrorToContractError,
   remoteGatewayExitCode,
   resolveContextKeyForRemote,
   type RemoteGatewayConfig,
@@ -229,7 +231,11 @@ function registerCommand(
     });
     const auditInput = redactCommandAccessInput(access, input);
     if (!accessResult.allowed) {
-      console.error(accessResult.errorMessage);
+      const contractError = permissionDeniedToContractError(
+        commandOperation(groupName, cmdMeta.name),
+        accessResult.errorMessage,
+      );
+      renderContractError(contractError, input.json === true);
       await emitCliAuditEvent({
         group: groupName,
         name: cmdMeta.name,
@@ -344,13 +350,20 @@ interface DispatchRemoteCommandInput {
 }
 
 async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise<void> {
+  const op = commandOperation(input.groupName, input.command);
   const contextKey = resolveContextKeyForRemote();
   if (!contextKey) {
-    console.error(
-      `Remote gateway mode is enabled (RAVI_GATEWAY_URL=${input.config.url}) but no runtime context-key is available. ` +
-        "Set RAVI_CONTEXT_KEY or run 'ravi daemon init-admin-key' on the gateway host and 'ravi context credentials add <rctx>' locally.",
+    const error = new ContractError(
+      op,
+      "REMOTE_CONTEXT_REQUIRED",
+      "Remote gateway mode requires a runtime context key.",
+      1,
+      {
+        suggestedAction: "Set RAVI_CONTEXT_KEY or add a local Ravi context credential issued by the target gateway",
+      },
     );
-    process.exit(1);
+    renderContractError(error, input.input.json === true);
+    process.exit(error.exitCode);
   }
 
   let result;
@@ -362,12 +375,20 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
       config: input.config,
       contextKey,
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`Remote gateway request failed: ${message}`);
-    process.exit(1);
+  } catch {
+    const error = new ContractError(op, "SERVER_UNAVAILABLE", "Remote gateway request failed.", 1, {
+      retryable: true,
+      suggestedAction: "Check gateway availability and retry",
+    });
+    renderContractError(error, input.input.json === true);
+    process.exit(error.exitCode);
   }
 
+  const remoteError = remoteGatewayErrorToContractError(op, result);
+  if (remoteError) {
+    renderContractError(remoteError, input.input.json === true);
+    process.exit(remoteError.exitCode);
+  }
   printRemoteResponse(result);
   if (!result.ok) {
     process.exit(remoteGatewayExitCode(result));

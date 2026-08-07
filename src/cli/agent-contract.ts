@@ -85,6 +85,12 @@ export function unexpectedErrorToContractError(op: string): ContractError {
   });
 }
 
+export function permissionDeniedToContractError(op: string, reason: string): ContractError {
+  return new ContractError(op, "PERMISSION_DENIED", reason, CONTRACT_EXIT_ERROR, {
+    suggestedAction: "Request the required provider-owned permission and retry",
+  });
+}
+
 export function renderContractError(error: ContractError, asJson: boolean | undefined): void {
   if (getContext()?.suppressCliOutput === true) return;
   if (asJson) {

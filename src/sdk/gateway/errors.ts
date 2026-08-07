@@ -25,7 +25,7 @@ export interface ErrorBody {
 export interface GatewayContractErrorBody extends ContractErrorEnvelope {
   /** CLI-compatible exit taxonomy, retained for non-CLI consumers. */
   exitCode: number;
-  outcome: ContractFailureOutcome;
+  outcome: ContractFailureOutcome | "denied";
 }
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" } as const;
@@ -68,12 +68,16 @@ export function internalError(message: string): Response {
  * HTTP status communicates the broad class; the body remains the canonical
  * contract envelope and carries the original CLI exit code losslessly.
  */
-export function contractErrorResponse(error: ContractError, statusOverride?: number): Response {
+export function contractErrorResponse(
+  error: ContractError,
+  statusOverride?: number,
+  outcomeOverride?: GatewayContractErrorBody["outcome"],
+): Response {
   const status = statusOverride ?? (error.exitCode === 2 ? 400 : error.exitCode === 3 ? 409 : 422);
   const body: GatewayContractErrorBody = {
     ...error.envelope(),
     exitCode: error.exitCode,
-    outcome: contractFailureOutcome(error),
+    outcome: outcomeOverride ?? contractFailureOutcome(error),
   };
   return json(status, body);
 }
