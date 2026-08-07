@@ -22,12 +22,12 @@
 import { ZodError, type ZodTypeAny, type ZodIssue } from "zod";
 import type { CommandRegistryEntry } from "../../cli/registry-snapshot.js";
 import { runWithContext, type ToolContext } from "../../cli/context.js";
-import { enforceCliCommandAuthorization } from "../../cli/command-access.js";
-import { emitCliAuditEvent } from "../../cli/audit.js";
+import { enforceCliCommandAuthorization, redactCommandAccessInput } from "../../cli/command-access.js";
+import { emitCliAuditEvent, type CliAuditOutcome } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
 import { RaviAppError } from "../../apps/types.js";
-import { ContractError } from "../../cli/agent-contract.js";
+import { ContractError, contractFailureOutcome } from "../../cli/agent-contract.js";
 import {
   contractErrorResponse,
   errorResponse,
@@ -56,6 +56,9 @@ export interface AuditEvent {
   tool: string;
   input: Record<string, unknown>;
   isError: boolean;
+  outcome: CliAuditOutcome;
+  exitCode?: number;
+  errorCode?: string;
   durationMs: number;
   contextId: string | null;
   parentContextId: string | null;
@@ -112,7 +115,7 @@ export async function dispatch(
   if (!validation.ok) {
     return { response: validationError(validation.issues), audit: null };
   }
-  const auditInput = redactCommandInput(cmd, validation.inputForAudit);
+  const auditInput = redactCommandAccessInput(cmd.access, validation.inputForAudit);
 
   const startedAt = Date.now();
   const toolContext = asToolContext(scopeContext, opts.contextRecord ?? null);
@@ -129,12 +132,14 @@ export async function dispatch(
   );
   if (!accessResult.allowed) {
     const response = permissionDenied(accessResult.errorMessage);
-    const audit = buildAuditEvent(cmd, tool, auditInput, true, startedAt, lineage);
+    const audit = buildAuditEvent(cmd, tool, auditInput, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit: auditEmitted ? audit : null };
   }
 
-  let isError = false;
+  let outcome: CliAuditOutcome = "succeeded";
+  let auditExitCode: number | undefined;
+  let auditErrorCode: string | undefined;
   let response: Response;
   let returnValue: unknown;
 
@@ -158,19 +163,27 @@ export async function dispatch(
         }),
     );
   } catch (err) {
-    isError = true;
     if (err instanceof ContractError) {
+      outcome = contractFailureOutcome(err);
+      auditExitCode = err.exitCode;
+      auditErrorCode = err.code;
       response = contractErrorResponse(err);
     } else if (err instanceof RaviAppError) {
+      outcome = "failed";
+      auditExitCode = 1;
+      auditErrorCode = err.code;
       response = errorResponse(err.status, err.code, {
         message: err.message,
         evidence: err.evidence,
       });
     } else {
+      outcome = "failed";
+      auditExitCode = 1;
+      auditErrorCode = "INTERNAL_ERROR";
       const message = err instanceof Error ? err.message : String(err);
       response = internalError(message);
     }
-    const audit = buildAuditEvent(cmd, tool, auditInput, isError, startedAt, lineage);
+    const audit = buildAuditEvent(cmd, tool, auditInput, outcome, startedAt, lineage, auditExitCode, auditErrorCode);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit: auditEmitted ? audit : null };
   }
@@ -184,11 +197,11 @@ export async function dispatch(
           message: `Command "${cmd.fullName}" is declared @Returns.binary() but handler returned ${describeReturnValue(returnValue)} instead of a Response.`,
         },
       ]);
-      const audit = buildAuditEvent(cmd, tool, auditInput, true, startedAt, lineage);
+      const audit = buildAuditEvent(cmd, tool, auditInput, "failed", startedAt, lineage, 1, "RETURN_SHAPE_ERROR");
       const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
       return { response, audit: auditEmitted ? audit : null };
     }
-    const audit = buildAuditEvent(cmd, tool, auditInput, isError, startedAt, lineage);
+    const audit = buildAuditEvent(cmd, tool, auditInput, "succeeded", startedAt, lineage);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response: returnValue, audit: auditEmitted ? audit : null };
   }
@@ -199,14 +212,14 @@ export async function dispatch(
     const returnIssues = checkReturnShape(cmd.returns, responseValue);
     if (returnIssues) {
       response = returnShapeError(returnIssues);
-      const audit = buildAuditEvent(cmd, tool, auditInput, true, startedAt, lineage);
+      const audit = buildAuditEvent(cmd, tool, auditInput, "failed", startedAt, lineage, 1, "RETURN_SHAPE_ERROR");
       const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
       return { response, audit: auditEmitted ? audit : null };
     }
   }
 
   response = json(200, responseValue);
-  const audit = buildAuditEvent(cmd, tool, auditInput, isError, startedAt, lineage);
+  const audit = buildAuditEvent(cmd, tool, auditInput, "succeeded", startedAt, lineage);
   const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
   return { response, audit: auditEmitted ? audit : null };
 }
@@ -234,30 +247,25 @@ function extractLineage(record: ContextRecord | null | undefined): AuditLineage 
   };
 }
 
-function redactCommandInput(cmd: CommandRegistryEntry, input: Record<string, unknown>): Record<string, unknown> {
-  const redactions = new Set(cmd.access?.redactions ?? []);
-  if (redactions.size === 0) return input;
-  const redacted = { ...input };
-  for (const field of redactions) {
-    if (field in redacted) redacted[field] = "[REDACTED]";
-  }
-  return redacted;
-}
-
 function buildAuditEvent(
   cmd: CommandRegistryEntry,
   tool: string,
   input: Record<string, unknown>,
-  isError: boolean,
+  outcome: CliAuditOutcome,
   startedAt: number,
   lineage: AuditLineage,
+  exitCode?: number,
+  errorCode?: string,
 ): AuditEvent {
   return {
     group: cmd.groupSegments.join("_"),
     name: cmd.command,
     tool,
     input,
-    isError,
+    isError: outcome !== "succeeded" && outcome !== "blocked",
+    outcome,
+    ...(exitCode !== undefined ? { exitCode } : {}),
+    ...(errorCode !== undefined ? { errorCode } : {}),
     durationMs: Date.now() - startedAt,
     contextId: lineage.contextId,
     parentContextId: lineage.parentContextId,
@@ -415,7 +423,7 @@ function asToolContext(scope: ScopeContext, record: ContextRecord | null): ToolC
 }
 
 async function emitDispatchAudit(event: AuditEvent, override: DispatchOptions["emitAudit"]): Promise<boolean> {
-  if (!event.isError && QUIET_SUCCESS_AUDIT_TOOLS.has(event.tool)) return false;
+  if (event.outcome === "succeeded" && QUIET_SUCCESS_AUDIT_TOOLS.has(event.tool)) return false;
   if (override) {
     await override(event);
     return true;
@@ -426,6 +434,9 @@ async function emitDispatchAudit(event: AuditEvent, override: DispatchOptions["e
     tool: event.tool,
     input: event.input,
     isError: event.isError,
+    outcome: event.outcome,
+    exitCode: event.exitCode,
+    errorCode: event.errorCode,
     status: "completed",
     durationMs: event.durationMs,
     contextId: event.contextId,

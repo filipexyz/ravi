@@ -106,12 +106,14 @@ describe("tools export provider-runtime authorization", () => {
       send!.handler({}),
     );
     expect(allowed.isError).not.toBe(true);
+    expect(allowed.outcome).toBe("succeeded");
     expect(JSON.parse(allowed.content[0]?.text ?? "{}")).toEqual({ sent: true });
 
     const denied = await runWithContext({ agentId: mediaContext.agentId, context: mediaContext }, () =>
       remove!.handler({}),
     );
     expect(denied.isError).toBe(true);
+    expect(denied).toMatchObject({ outcome: "denied", exitCode: 1 });
     expect(denied.content[0]?.text).toContain("Missing capability: mutate:media:remove");
     expect(denied.content[0]?.text).not.toContain("execute:group:media_remove");
   });
@@ -127,6 +129,7 @@ describe("tools export contract errors", () => {
     );
 
     expect(result.isError).toBe(true);
+    expect(result.outcome).toBe("usage_error");
     expect(result.exitCode).toBe(2);
     expect(result.content[0]?.text).not.toContain("Error: invalid tool input");
     const envelope = JSON.parse(result.content[0]?.text ?? "{}") as {
@@ -148,7 +151,7 @@ describe("tools export contract errors", () => {
       tool!.handler({}),
     );
 
-    expect(result.exitCode).toBe(3);
+    expect(result).toMatchObject({ isError: false, outcome: "blocked", exitCode: 3 });
     expect(result.content[0]?.text).not.toContain("Error: confirmation required");
     const envelope = JSON.parse(result.content[0]?.text ?? "{}") as {
       success: boolean;

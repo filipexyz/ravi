@@ -2,7 +2,12 @@
  * Shared JSON response helpers for the gateway.
  */
 
-import type { ContractError, ContractErrorEnvelope } from "../../cli/agent-contract.js";
+import {
+  contractFailureOutcome,
+  type ContractError,
+  type ContractErrorEnvelope,
+  type ContractFailureOutcome,
+} from "../../cli/agent-contract.js";
 
 export interface JsonIssue {
   path: (string | number)[];
@@ -20,6 +25,7 @@ export interface ErrorBody {
 export interface GatewayContractErrorBody extends ContractErrorEnvelope {
   /** CLI-compatible exit taxonomy, retained for non-CLI consumers. */
   exitCode: number;
+  outcome: ContractFailureOutcome;
 }
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8" } as const;
@@ -67,6 +73,7 @@ export function contractErrorResponse(error: ContractError): Response {
   const body: GatewayContractErrorBody = {
     ...error.envelope(),
     exitCode: error.exitCode,
+    outcome: contractFailureOutcome(error),
   };
   return json(status, body);
 }

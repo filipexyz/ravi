@@ -8,20 +8,23 @@
  *  - Exit taxonomy (official): 0 success · 1 execution/not-found/provider error ·
  *    2 usage error (invalid flag/arg, carries `acceptedFlags`) · 3 blocked by
  *    policy (write brake / dry-run). 3 is NOT an error — it is the system working.
- *  - Write brake (7.8): mutating ops are dry-run by default; `--execute` performs
- *    the real write (model: `ravi sessions prune`).
+ *  - Risk brake: only externally consequential, irreversible, triggered or
+ *    above-threshold operations dry-run by default; local reversible writes do
+ *    not inherit a brake merely because they mutate.
  *  - Compact mode (7.9): listings accept `--fields a,b,c`.
  *
- * Behavior in tool/test context (`hasContext()` true, e.g. daemon or bun tests):
- * instead of printing + exiting, a `ContractError` is thrown carrying the same
- * envelope and exit code, so callers can assert without killing the process.
+ * A `ContractError` is always thrown after rendering. Process, tool and gateway
+ * adapters own exit/status/audit translation so they can flush one consistent
+ * outcome before the process ends.
  */
 import type { Command as CommanderCommand, CommanderError } from "commander";
-import { fail, hasContext } from "./context.js";
+import { getContext } from "./context.js";
 
 export const CONTRACT_EXIT_ERROR = 1;
 export const CONTRACT_EXIT_USAGE = 2;
 export const CONTRACT_EXIT_POLICY = 3;
+
+export type ContractFailureOutcome = "blocked" | "usage_error" | "failed";
 
 export interface ContractErrorDetails {
   retryable?: boolean;
@@ -62,6 +65,12 @@ export class ContractError extends Error {
   }
 }
 
+export function contractFailureOutcome(error: Pick<ContractError, "exitCode">): ContractFailureOutcome {
+  if (error.exitCode === CONTRACT_EXIT_POLICY) return "blocked";
+  if (error.exitCode === CONTRACT_EXIT_USAGE) return "usage_error";
+  return "failed";
+}
+
 export interface ContractFailOptions {
   asJson?: boolean;
   exitCode?: number;
@@ -70,22 +79,20 @@ export interface ContractFailOptions {
 
 /**
  * Fail a command under the Manual v2 contract.
- * The legacy text path (non-JSON, exit 1) still delegates to `fail()` so
- * existing behavior and test mocks keep working unchanged.
+ * Rendering happens here exactly once; the active transport catches the
+ * structured error and owns process exit / protocol status / audit flushing.
  */
 export function contractFail(op: string, code: string, message: string, options: ContractFailOptions = {}): never {
   const exitCode = options.exitCode ?? CONTRACT_EXIT_ERROR;
-  if (!options.asJson && exitCode === CONTRACT_EXIT_ERROR) {
-    fail(message);
-  }
   const error = new ContractError(op, code, message, exitCode, options.details ?? {});
-  if (options.asJson) {
-    console.log(JSON.stringify(error.envelope(), null, 2));
-  } else {
-    console.error(message);
+  if (getContext()?.suppressCliOutput !== true) {
+    if (options.asJson) {
+      console.log(JSON.stringify(error.envelope(), null, 2));
+    } else {
+      console.error(message);
+    }
   }
-  if (hasContext()) throw error;
-  process.exit(exitCode);
+  throw error;
 }
 
 /**
@@ -105,16 +112,17 @@ export function contractDryRun(op: string, plan: Record<string, unknown>, option
       plan,
     },
   );
-  if (options.asJson) {
-    console.log(JSON.stringify(error.envelope(), null, 2));
-  } else {
-    console.log(`[dry-run] ${op}: nothing was written.`);
-    console.log(`Planned input:`);
-    console.log(JSON.stringify(plan, null, 2));
-    console.log(`Re-run with --execute to perform the write.`);
+  if (getContext()?.suppressCliOutput !== true) {
+    if (options.asJson) {
+      console.log(JSON.stringify(error.envelope(), null, 2));
+    } else {
+      console.log(`[dry-run] ${op}: nothing was written.`);
+      console.log(`Planned input:`);
+      console.log(JSON.stringify(plan, null, 2));
+      console.log(`Re-run with --execute to perform the write.`);
+    }
   }
-  if (hasContext()) throw error;
-  process.exit(CONTRACT_EXIT_POLICY);
+  throw error;
 }
 
 /**

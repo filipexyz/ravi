@@ -72,6 +72,20 @@ export interface RemoteDispatchResult {
   contentType: string | null;
 }
 
+/** Preserve the process CLI taxonomy when a remote gateway returns a contract envelope. */
+export function remoteGatewayExitCode(result: RemoteDispatchResult): 0 | 1 | 2 | 3 {
+  if (result.ok) return 0;
+  if (result.contentType?.includes("application/json")) {
+    try {
+      const body = JSON.parse(result.body) as { exitCode?: unknown };
+      if (body.exitCode === 1 || body.exitCode === 2 || body.exitCode === 3) return body.exitCode;
+    } catch {
+      // A malformed or legacy error response remains a generic execution failure.
+    }
+  }
+  return 1;
+}
+
 export async function dispatchRemote(input: RemoteDispatchInput): Promise<RemoteDispatchResult> {
   const path = `/api/v1/${[...input.groupSegments, input.command].join("/")}`;
   const url = `${input.config.url}${path}`;

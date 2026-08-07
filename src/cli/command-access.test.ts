@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { runWithContext } from "./context.js";
-import { buildCliCommandOperation, enforceCliCommandAccess, enforceCliCommandAuthorization } from "./command-access.js";
+import {
+  buildCliCommandOperation,
+  enforceCliCommandAccess,
+  enforceCliCommandAuthorization,
+  redactCommandAccessInput,
+} from "./command-access.js";
 import type { CommandAccessOptions } from "./decorators.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { emptyCredentialsFile, upsertCredentialsEntry, writeCredentialsFile } from "../runtime/credentials-store.js";
@@ -48,6 +53,13 @@ function context(capabilities: ContextRecord["capabilities"]): ContextRecord {
 }
 
 describe("CLI command access enforcement", () => {
+  it("redacts command-declared audit fields without changing the original input", () => {
+    const input = { id: "item-1", secret: "provider-private-value" };
+
+    expect(redactCommandAccessInput(ACCESS, input)).toEqual({ id: "item-1", secret: "[REDACTED]" });
+    expect(input.secret).toBe("provider-private-value");
+  });
+
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-cli-command-access-test-");
     previousEnv = {};

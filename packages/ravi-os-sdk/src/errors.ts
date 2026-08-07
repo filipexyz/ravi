@@ -31,21 +31,64 @@ export interface RaviErrorBody {
   [key: string]: unknown;
 }
 
+export type RaviContractOutcome = "blocked" | "usage_error" | "failed";
+
+export interface RaviContractErrorPayload {
+  code: string;
+  message: string;
+  retryable: boolean;
+  [key: string]: unknown;
+}
+
+/** Canonical command-contract failure returned by the Ravi gateway. */
+export interface RaviContractErrorBody {
+  success: false;
+  op: string;
+  error: RaviContractErrorPayload;
+  exitCode: 1 | 2 | 3;
+  outcome: RaviContractOutcome;
+  [key: string]: unknown;
+}
+
+/** Legacy gateway errors and the canonical command-contract envelope. */
+export type RaviGatewayErrorBody = RaviErrorBody | RaviContractErrorBody;
+
 /** Base class for every error raised by SDK transports. */
 export class RaviError extends Error {
   /** Numeric HTTP status code if the error came from the gateway. */
   public readonly status: number;
   /** Raw body of the gateway response (parsed JSON, when available). */
-  public readonly body: RaviErrorBody | null;
+  public readonly body: RaviGatewayErrorBody | null;
   /** Logical command path that triggered the error, e.g. `"artifacts.show"`. */
   public readonly command: string | null;
 
-  constructor(message: string, status: number, body: RaviErrorBody | null = null, command: string | null = null) {
+  constructor(message: string, status: number, body: RaviGatewayErrorBody | null = null, command: string | null = null) {
     super(message);
     this.name = "RaviError";
     this.status = status;
     this.body = body;
     this.command = command;
+  }
+}
+
+/** Structured CLI-contract failure preserved by both SDK transports. */
+export class RaviContractError extends RaviError {
+  public readonly op: string;
+  public readonly code: string;
+  public readonly retryable: boolean;
+  public readonly exitCode: 1 | 2 | 3;
+  public readonly outcome: RaviContractOutcome;
+  public readonly contractBody: RaviContractErrorBody;
+
+  constructor(status: number, body: RaviContractErrorBody, command: string | null = null) {
+    super(body.error.message, status, body, command);
+    this.name = "RaviContractError";
+    this.op = body.op;
+    this.code = body.error.code;
+    this.retryable = body.error.retryable;
+    this.exitCode = body.exitCode;
+    this.outcome = body.outcome;
+    this.contractBody = body;
   }
 }
 
@@ -123,9 +166,10 @@ function mapReason(value: string | null): AuthFailureReason {
  */
 export function buildErrorFromGateway(
   status: number,
-  body: RaviErrorBody | null,
+  body: RaviGatewayErrorBody | null,
   command: string | null,
 ): RaviError {
+  if (isRaviContractErrorBody(body)) return new RaviContractError(status, body, command);
   const message = pickMessage(body) ?? `Ravi gateway returned status ${status}`;
   if (status === 401) return new RaviAuthError(message, body, command);
   if (status === 403) return new RaviPermissionError(message, body, command);
@@ -135,6 +179,19 @@ export function buildErrorFromGateway(
   }
   if (status >= 500) return new RaviInternalError(message, body, status, command);
   return new RaviError(message, status, body, command);
+}
+
+/** Runtime guard for consumers that inspect raw SDK error bodies. */
+export function isRaviContractErrorBody(body: RaviGatewayErrorBody | null): body is RaviContractErrorBody {
+  if (!body || body.success !== false || typeof body.op !== "string") return false;
+  if (body.exitCode !== 1 && body.exitCode !== 2 && body.exitCode !== 3) return false;
+  if (body.outcome !== "blocked" && body.outcome !== "usage_error" && body.outcome !== "failed") return false;
+  if (typeof body.error !== "object" || body.error === null) return false;
+  return (
+    typeof body.error.code === "string" &&
+    typeof body.error.message === "string" &&
+    typeof body.error.retryable === "boolean"
+  );
 }
 
 function pickMessage(body: RaviErrorBody | null): string | null {

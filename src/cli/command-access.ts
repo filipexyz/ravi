@@ -38,6 +38,20 @@ export interface CliCommandAuthorizationInput extends CliCommandAccessInput {
   scope: ScopeType;
 }
 
+/** Apply command-declared audit redactions without mutating the invocation. */
+export function redactCommandAccessInput(
+  access: Pick<CommandAccessOptions, "redactions"> | undefined,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const redactions = new Set(access?.redactions ?? []);
+  if (redactions.size === 0) return input;
+  const redacted = { ...input };
+  for (const field of redactions) {
+    if (field in redacted) redacted[field] = "[REDACTED]";
+  }
+  return redacted;
+}
+
 export function enforceCliCommandAuthorization(input: CliCommandAuthorizationInput): CliCommandAccessResult {
   const accessResult = enforceCliCommandAccess(input);
   if (!accessResult.allowed || input.scope !== "superadmin") return accessResult;

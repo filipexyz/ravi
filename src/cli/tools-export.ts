@@ -17,9 +17,10 @@ import {
 import { extractOptionName, inferOptionType } from "./utils.js";
 import { nats } from "../nats.js";
 import { getContext } from "./context.js";
-import { enforceCliCommandAuthorization } from "./command-access.js";
+import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./command-access.js";
 import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
-import { ContractError } from "./agent-contract.js";
+import { ContractError, contractFailureOutcome } from "./agent-contract.js";
+import { sanitizeCliAuditValue } from "./audit.js";
 
 // ============================================================================
 // Types
@@ -48,6 +49,7 @@ export interface ExportedTool {
 export interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
+  outcome?: "succeeded" | "blocked" | "usage_error" | "denied" | "failed";
   /** CLI-compatible exit taxonomy for structured contract failures. */
   exitCode?: number;
 }
@@ -203,6 +205,11 @@ function buildHandler(
   access: CommandAccessOptions | undefined,
 ): (args: Record<string, unknown>) => Promise<ToolResult> {
   return async (toolArgs: Record<string, unknown>): Promise<ToolResult> => {
+    const ctx = getContext();
+    const sessionKey = ctx?.sessionKey ?? "_cli";
+    const agentId = ctx?.agentId;
+    const startTime = Date.now();
+    const auditInput = redactCommandAccessInput(access, toolArgs);
     const accessResult = enforceCliCommandAuthorization({
       group,
       command,
@@ -212,17 +219,28 @@ function buildHandler(
       scope,
     });
     if (!accessResult.allowed) {
+      nats
+        .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
+          tool: toolName,
+          input: truncateForEvent(sanitizeCliAuditValue(auditInput)),
+          output: sanitizeCliAuditValue(accessResult.errorMessage, "output"),
+          isError: true,
+          outcome: "denied",
+          exitCode: 1,
+          errorCode: "PERMISSION_DENIED",
+          durationMs: Date.now() - startTime,
+          timestamp: new Date().toISOString(),
+          sessionKey,
+          agentId,
+        })
+        .catch(() => {});
       return {
         content: [{ type: "text", text: accessResult.errorMessage }],
         isError: true,
+        outcome: "denied",
+        exitCode: 1,
       };
     }
-
-    const ctx = getContext();
-    const sessionKey = ctx?.sessionKey ?? "_cli";
-    const agentId = ctx?.agentId;
-
-    const startTime = Date.now();
 
     // Capture console output
     const output: string[] = [];
@@ -237,7 +255,9 @@ function buildHandler(
     };
 
     let isError = false;
+    let outcome: "succeeded" | "blocked" | "usage_error" | "failed" = "succeeded";
     let contractExitCode: number | undefined;
+    let contractErrorCode: string | undefined;
 
     try {
       // Build args array in parameter order
@@ -269,6 +289,9 @@ function buildHandler(
       isError = true;
       if (err instanceof ContractError) {
         contractExitCode = err.exitCode;
+        contractErrorCode = err.code;
+        outcome = contractFailureOutcome(err);
+        isError = outcome !== "blocked";
         // Contract helpers emit their structured envelope before throwing in a
         // tool context. Preserve that envelope without appending a second,
         // lossy `Error: ...` line. A directly-thrown ContractError may not have
@@ -278,6 +301,8 @@ function buildHandler(
           output.push(JSON.stringify(envelope));
         }
       } else {
+        contractExitCode = 1;
+        outcome = "failed";
         output.push(`Error: ${err instanceof Error ? err.message : String(err)}`);
       }
     } finally {
@@ -290,9 +315,14 @@ function buildHandler(
     nats
       .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
         tool: toolName,
-        input: truncateForEvent(toolArgs),
-        output: truncateForEvent(text),
+        input: truncateForEvent(sanitizeCliAuditValue(auditInput)),
+        // Tool output may contain message bodies or provider payloads. Audit
+        // the semantic outcome, never the full returned content.
+        output: truncateForEvent(sanitizeCliAuditValue(text, "output")),
         isError,
+        outcome,
+        ...(contractExitCode !== undefined ? { exitCode: contractExitCode } : {}),
+        ...(contractErrorCode !== undefined ? { errorCode: contractErrorCode } : {}),
         durationMs: Date.now() - startTime,
         timestamp: new Date().toISOString(),
         sessionKey,
@@ -303,6 +333,7 @@ function buildHandler(
     return {
       content: [{ type: "text", text }],
       isError,
+      outcome,
       ...(contractExitCode !== undefined ? { exitCode: contractExitCode } : {}),
     };
   };

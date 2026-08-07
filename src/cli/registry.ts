@@ -17,12 +17,13 @@ import {
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName } from "./utils.js";
-import { ContractError } from "./agent-contract.js";
-import { enforceCliCommandAuthorization } from "./command-access.js";
+import { ContractError, contractFailureOutcome } from "./agent-contract.js";
+import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./command-access.js";
 import { emitCliAuditEvent } from "./audit.js";
 import {
   dispatchRemote,
   getRemoteGatewayConfig,
+  remoteGatewayExitCode,
   resolveContextKeyForRemote,
   type RemoteGatewayConfig,
 } from "./remote-gateway.js";
@@ -217,8 +218,20 @@ function registerCommand(
       source: "cli",
       scope,
     });
+    const auditInput = redactCommandAccessInput(access, input);
     if (!accessResult.allowed) {
       console.error(accessResult.errorMessage);
+      await emitCliAuditEvent({
+        group: groupName,
+        name: cmdMeta.name,
+        tool: toolName,
+        input: auditInput,
+        outcome: "denied",
+        exitCode: 1,
+        errorCode: "PERMISSION_DENIED",
+        status: "completed",
+        closeLazyConnection: false,
+      });
       const { flushAuditAndExit } = await import("../permissions/scope.js");
       await flushAuditAndExit(1);
     }
@@ -239,21 +252,25 @@ function registerCommand(
 
     // Execute and emit single event with input + output
     const startTime = Date.now();
-    let isError = false;
+    let outcome: "succeeded" | "blocked" | "usage_error" | "failed" = "succeeded";
     let contractExitCode: number | null = null;
+    let contractErrorCode: string | undefined;
 
     try {
       const method = (instance as Record<string, Function>)[cmdMeta.method];
       const result = method.apply(instance, finalArgs);
       if (result instanceof Promise) await result;
     } catch (err) {
-      isError = true;
       if (err instanceof ContractError) {
         // contractFail/contractDryRun already emitted the envelope (or the
         // legacy text); preserve the Manual v2 exit taxonomy (1 error ·
         // 2 usage · 3 policy brake) instead of the generic error path.
         contractExitCode = err.exitCode;
+        contractErrorCode = err.code;
+        outcome = contractFailureOutcome(err);
       } else {
+        contractExitCode = 1;
+        outcome = "failed";
         console.error(`Error: ${err instanceof Error ? err.message : err}`);
       }
     }
@@ -262,14 +279,16 @@ function registerCommand(
       group: groupName,
       name: cmdMeta.name,
       tool: toolName,
-      input,
-      isError,
+      input: auditInput,
+      outcome,
+      exitCode: contractExitCode ?? undefined,
+      errorCode: contractErrorCode,
       status: "completed",
       durationMs: Date.now() - startTime,
       closeLazyConnection: true,
     });
 
-    if (isError) process.exit(contractExitCode ?? 1);
+    if (contractExitCode !== null) process.exit(contractExitCode);
   });
 }
 
@@ -337,7 +356,7 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
 
   printRemoteResponse(result);
   if (!result.ok) {
-    process.exit(1);
+    process.exit(remoteGatewayExitCode(result));
   }
 }
 
