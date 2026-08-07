@@ -396,6 +396,46 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
+  it("includes the required execution confirmation in sentinel reply guidance", async () => {
+    routeResult = defaultRouteResult();
+    (routeResult.agent as Record<string, unknown>).mode = "sentinel";
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-sentinel-guidance",
+      type: "message.received",
+      payload: {
+        externalId: "msg-sentinel-guidance",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        content: { type: "text", text: "observe" },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    expect(promptCalls[0]?.[1].prompt).toContain("whatsapp dm send --execute to reply if instructed");
+    expect(sender.sendTyping).not.toHaveBeenCalled();
+    expect(sender.send).not.toHaveBeenCalled();
+  });
+
   it("passes the provider message identifier to intercepted slash commands", async () => {
     handleSlashCommandMock.mockImplementation(async () => true);
     const sender = {
