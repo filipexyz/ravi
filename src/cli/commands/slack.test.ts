@@ -262,10 +262,18 @@ mock.module("../../contacts.js", () => ({
 }));
 
 mock.module("../../router/router-db.js", () => ({
+  dbCreateContext: () => null,
   dbFindChat: () => null,
   dbFindChatMessage: () => null,
   dbGetAgent: () => null,
+  dbGetContext: () => null,
+  dbGetContextByKey: () => null,
+  dbGetContextByKeyReadOnly: () => null,
+  dbListContexts: () => [],
+  dbRevokeContextCascade: () => null,
+  dbTouchContext: () => null,
   dbUpdateAgent: () => null,
+  dbUpdateContextRuntimeState: () => null,
   getDb: () => {
     throw new Error("router DB is not available in Slack command unit tests");
   },
