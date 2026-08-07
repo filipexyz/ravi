@@ -489,7 +489,7 @@ describe("dispatch — error path", () => {
     const audits = captureAudits();
     const result = await dispatch(
       findAppCmd("apps.show"),
-      { id: "__contract_missing_app__" },
+      { id: "contract-missing-app" },
       {},
       { contextRecord: appsContext, emitAudit: audits.emit },
     );

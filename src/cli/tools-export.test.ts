@@ -206,7 +206,7 @@ describe("tools export contract errors", () => {
     expect(tool).toBeDefined();
 
     const result = await runWithContext({ agentId: appsContext.agentId, context: appsContext }, () =>
-      tool!.handler({ id: "__contract_missing_app__" }),
+      tool!.handler({ id: "contract-missing-app" }),
     );
 
     expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
