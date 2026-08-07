@@ -1072,7 +1072,7 @@ export function listArtifactVersions(artifactIdValue: string): ArtifactVersion[]
     getDb()
       .prepare("SELECT * FROM artifact_versions WHERE artifact_id = ? ORDER BY version_number ASC")
       .all(artifactIdValue) as ArtifactVersionRow[]
-  ).map(rowToVersion);
+  ).map((row) => rowToVersion(row));
 }
 
 export function getArtifactVersion(artifactIdValue: string, versionNumber?: number): ArtifactVersion | null {

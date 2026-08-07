@@ -55,6 +55,10 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+function parseRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+}
+
 function parseJsonObject(value: string | undefined, label: string): Record<string, unknown> | undefined {
   if (!value?.trim()) return undefined;
   try {

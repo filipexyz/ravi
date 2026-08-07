@@ -53,6 +53,7 @@ mock.module("../../permissions/scope.js", () => ({
 
 const { SessionRuntimeCommands } = await import("./sessions-runtime.js");
 const { ContractError } = await import("../agent-contract.js");
+type SessionRuntimeCommandsInstance = InstanceType<typeof SessionRuntimeCommands>;
 
 async function captureLogs<T>(run: () => Promise<T>): Promise<{ result: T; output: string }> {
   const lines: string[] = [];
@@ -191,8 +192,8 @@ describe("SessionRuntimeCommands", () => {
   });
 
   it.each([
-    ["rollback", (commands: SessionRuntimeCommands) => commands.rollback("dev-main", "1", undefined, true)],
-    ["fork", (commands: SessionRuntimeCommands) => commands.fork("dev-main", undefined, undefined, undefined, true)],
+    ["rollback", (commands: SessionRuntimeCommandsInstance) => commands.rollback("dev-main", "1", undefined, true)],
+    ["fork", (commands: SessionRuntimeCommandsInstance) => commands.fork("dev-main", undefined, undefined, undefined, true)],
   ])("brakes %s before requesting runtime control when --execute is absent", async (operation, run) => {
     const originalLog = console.log;
     console.log = () => {};
@@ -214,12 +215,12 @@ describe("SessionRuntimeCommands", () => {
   it.each([
     [
       "rollback",
-      (commands: SessionRuntimeCommands) => commands.rollback("dev-main", "1", undefined, true, true),
+      (commands: SessionRuntimeCommandsInstance) => commands.rollback("dev-main", "1", undefined, true, true),
       "thread.rollback",
     ],
     [
       "fork",
-      (commands: SessionRuntimeCommands) => commands.fork("dev-main", undefined, undefined, undefined, true, true),
+      (commands: SessionRuntimeCommandsInstance) => commands.fork("dev-main", undefined, undefined, undefined, true, true),
       "thread.fork",
     ],
   ])("sends %s to runtime control with --execute", async (_operation, run, runtimeOperation) => {

@@ -332,7 +332,7 @@ function expandsRuntimePermissionAuthority(
     return false;
   }
 
-  if (after?.profile === "full-access" && before?.profile !== "full-access") {
+  if (after?.profile === "full-access") {
     return true;
   }
 
