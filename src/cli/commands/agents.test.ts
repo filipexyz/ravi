@@ -1269,6 +1269,70 @@ describe("agents agent-first contract", () => {
     expect(updateAgentCalls).toHaveLength(0);
   });
 
+  it("applies a full-access to none authority reduction without --execute", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      defaults: { runtimePermissions: { profile: "full-access" } },
+    };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const payload = commands.permissions("dev", "none", undefined, true);
+      expect(payload).toMatchObject({ changed: true, before: { profile: "full-access" }, after: null });
+    } finally {
+      console.log = originalLog;
+    }
+    expect(updateAgentCalls).toEqual([{ id: "dev", partial: { defaults: null } }]);
+  });
+
+  it("removes explicit capabilities without --execute", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      defaults: {
+        runtimePermissions: { profile: "bootstrap", capabilities: ["execute:executable:omni"] },
+      },
+    };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const payload = commands.permissions("dev", undefined, undefined, true, true);
+      expect(payload).toMatchObject({ changed: true, after: { profile: "bootstrap" } });
+    } finally {
+      console.log = originalLog;
+    }
+    expect(updateAgentCalls).toEqual([
+      { id: "dev", partial: { defaults: { runtimePermissions: { profile: "bootstrap" } } } },
+    ]);
+  });
+
+  it("allows a no-op permissions request without --execute", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      defaults: { runtimePermissions: { profile: "full-access" } },
+    };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const payload = commands.permissions("dev", "full-access", undefined, true);
+      expect(payload).toMatchObject({
+        changed: true,
+        before: { profile: "full-access" },
+        after: { profile: "full-access" },
+      });
+    } finally {
+      console.log = originalLog;
+    }
+    expect(updateAgentCalls).toEqual([
+      { id: "dev", partial: { defaults: { runtimePermissions: { profile: "full-access" } } } },
+    ]);
+  });
+
   it("keeps the read-only permissions form unbraked (no --execute needed)", () => {
     const commands = new AgentsCommands();
     const originalLog = console.log;

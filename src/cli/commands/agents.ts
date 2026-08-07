@@ -313,6 +313,33 @@ function parseRuntimePermissionCapabilities(value: string | undefined): AgentRun
   });
 }
 
+function runtimePermissionCapabilityKey(capability: unknown): string {
+  if (typeof capability === "string") return capability.trim();
+  if (typeof capability === "object" && capability !== null) {
+    const value = capability as Record<string, unknown>;
+    return `${String(value.permission ?? "")}:${String(value.objectType ?? "")}:${String(value.objectId ?? "")}`;
+  }
+  return String(capability);
+}
+
+function expandsRuntimePermissionAuthority(
+  before: AgentRuntimePermissionsConfig | null,
+  after: AgentRuntimePermissionsConfig | null,
+): boolean {
+  // full-access already materializes admin system:*; any later profile or
+  // explicit-capability edit can only preserve or reduce effective authority.
+  if (before?.profile === "full-access") {
+    return false;
+  }
+
+  if (after?.profile === "full-access" && before?.profile !== "full-access") {
+    return true;
+  }
+
+  const beforeCapabilities = new Set((before?.capabilities ?? []).map(runtimePermissionCapabilityKey));
+  return (after?.capabilities ?? []).some((capability) => !beforeCapabilities.has(runtimePermissionCapabilityKey(capability)));
+}
+
 function describeRuntimePermissionConfig(config: AgentRuntimePermissionsConfig | null): string {
   if (!config) return "bootstrap";
   const parts = [config.profile ?? "custom"];
@@ -1263,11 +1290,9 @@ export class AgentsCommands {
     const after: AgentRuntimePermissionsConfig | null =
       nextConfig && Object.keys(nextConfig).length > 0 ? nextConfig : null;
 
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): changing the runtime permission profile
-      // changes the agent's runtime authority, so dry-run by default and exit 3
-      // before any state change. The read-only form (no profile/capabilities)
-      // returned above and is never braked.
+    if (execute !== true && expandsRuntimePermissionAuthority(before, after)) {
+      // A brake protects only authority expansion. Revocation, capability
+      // removal, and no-op updates execute immediately to reduce exposure.
       contractDryRun(
         "agents permissions",
         {
