@@ -1190,6 +1190,25 @@ export class CrmPipelineCommands {
       },
       { runtimeStageKeys: pipeline.stages.map((s) => s.key) },
     );
+    if (report.highSeverityGaps > 0) {
+      contractFail(
+        "crm pipeline review",
+        "PIPELINE_REVIEW_FAILED",
+        `Pipeline review found ${report.highSeverityGaps} high-severity gap(s).`,
+        {
+          asJson,
+          details: {
+            pipelineId: report.pipelineId,
+            totalGaps: report.totalGaps,
+            highSeverityGaps: report.highSeverityGaps,
+            gaps: report.fields
+              .filter((field) => field.present !== "present")
+              .map(({ group, field, present, suggestion }) => ({ group, field, present, suggestion })),
+            suggestedAction: `Complete the missing pipeline metadata, then run: ravi crm pipeline review ${report.pipelineId} --json`,
+          },
+        },
+      );
+    }
     if (asJson) {
       printJson(report);
       return report;
@@ -1207,9 +1226,6 @@ export class CrmPipelineCommands {
         if (f.suggestion) console.log(`    → ${f.suggestion}`);
       }
       console.log("");
-    }
-    if (report.highSeverityGaps > 0) {
-      process.exitCode = 1;
     }
     return report;
   }
@@ -1257,9 +1273,24 @@ export class CrmPipelineCommands {
       errors: result.errors,
       warnings: result.warnings,
     };
+    if (!result.ok) {
+      contractFail(
+        "crm pipeline validate",
+        "PIPELINE_VALIDATION_FAILED",
+        `Pipeline metadata validation failed with ${result.errors.length} error(s).`,
+        {
+          asJson,
+          details: {
+            pipelineId: pipeline.pipeline.id,
+            errors: result.errors,
+            warnings: result.warnings,
+            suggestedAction: `Correct the reported metadata fields, then run: ravi crm pipeline validate ${pipeline.pipeline.id} --json`,
+          },
+        },
+      );
+    }
     if (asJson) {
       printJson(payload);
-      if (!result.ok) process.exitCode = 1;
       return payload;
     }
     console.log(`\nValidate: ${pipeline.pipeline.name} (${pipeline.pipeline.id})`);
@@ -1279,7 +1310,6 @@ export class CrmPipelineCommands {
     if (result.ok && result.warnings.length === 0) {
       console.log("\nNo issues found.");
     }
-    if (!result.ok) process.exitCode = 1;
     return payload;
   }
 

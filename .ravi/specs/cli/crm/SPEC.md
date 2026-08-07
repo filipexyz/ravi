@@ -74,6 +74,8 @@ migrated `cli/<domain>` spec.
 |---|---|---|
 | pipeline/opportunity not found | `PIPELINE_NOT_FOUND` / `OPPORTUNITY_NOT_FOUND` + suggestions | 1 |
 | contact/task not found on `show` | `CONTACT_NOT_FOUND` / `CRM_TASK_NOT_FOUND` | 1 |
+| pipeline review finds high-severity gaps | `PIPELINE_REVIEW_FAILED` + redacted gap summary | 1 |
+| pipeline metadata is invalid | `PIPELINE_VALIDATION_FAILED` + validation issues | 1 |
 | invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
 
 ## Delivery scope
@@ -85,9 +87,8 @@ not-found envelope at the real process boundary. Listings carry `--fields` and
 actionable pagination; per-op help for app aliases ships in the apps router
 builtin.
 
-Other CRM operations retain their existing error paths until they are migrated
-under the same global contract; they are not evidence that the whole CRM error
-surface is complete.
+Other expected CRM handler failures are normalized by the shared CLI boundary;
+domain-specific failures listed above retain their stable codes and details.
 
 ## Internal consumers
 

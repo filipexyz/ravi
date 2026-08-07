@@ -997,6 +997,50 @@ describe("CRM commands", () => {
     }
   });
 
+  it("emits PIPELINE_REVIEW_FAILED when review finds high-severity gaps", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    try {
+      const { payload, error } = captureJsonError(() => {
+        new CrmPipelineCommands().review("crm_pipeline_default", true);
+      });
+      expect(error).toBeInstanceOf(CrmContractError);
+      const contractError = error as InstanceType<typeof CrmContractError>;
+      expect(contractError.code).toBe("PIPELINE_REVIEW_FAILED");
+      expect(contractError.exitCode).toBe(1);
+      expect(payload.success).toBe(false);
+      expect(payload.op).toBe("crm pipeline review");
+      const errorPayload = payload.error as Record<string, unknown>;
+      expect(errorPayload.code).toBe("PIPELINE_REVIEW_FAILED");
+      expect(errorPayload.pipelineId).toBe("crm_pipeline_default");
+      expect(Number(errorPayload.highSeverityGaps)).toBeGreaterThan(0);
+      expect((errorPayload.gaps as Array<Record<string, unknown>>)[0]).not.toHaveProperty("detail");
+    } finally {
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
+  it("emits PIPELINE_VALIDATION_FAILED when pipeline metadata is invalid", () => {
+    process.env.RAVI_AGENT_ID = "crm-contract-test";
+    pipelineRecords[0] = { ...pipelineRecords[0], metadata: { priority_global: 99 } };
+    try {
+      const { payload, error } = captureJsonError(() => {
+        new CrmPipelineCommands().validate("crm_pipeline_default", true);
+      });
+      expect(error).toBeInstanceOf(CrmContractError);
+      const contractError = error as InstanceType<typeof CrmContractError>;
+      expect(contractError.code).toBe("PIPELINE_VALIDATION_FAILED");
+      expect(contractError.exitCode).toBe(1);
+      expect(payload.success).toBe(false);
+      expect(payload.op).toBe("crm pipeline validate");
+      const errorPayload = payload.error as Record<string, unknown>;
+      expect(errorPayload.code).toBe("PIPELINE_VALIDATION_FAILED");
+      expect(errorPayload.pipelineId).toBe("crm_pipeline_default");
+      expect((errorPayload.errors as unknown[]).length).toBeGreaterThan(0);
+    } finally {
+      delete process.env.RAVI_AGENT_ID;
+    }
+  });
+
   it("emits OPPORTUNITY_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
     process.env.RAVI_AGENT_ID = "crm-contract-test";
     crmOpportunity = null;
