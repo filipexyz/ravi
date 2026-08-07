@@ -173,6 +173,17 @@ describe("usage exit taxonomy smoke", () => {
     }
   });
 
+  it("exits 1 for a missing binary resource instead of reporting empty success", () => {
+    const result = runCli(["audio", "blob", "__contract_missing_audio_blob__"], {
+      RAVI_AGENT_ID: undefined,
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stdout).toBe("");
+    expect(result.stderr).toBe("Binary resource was not found.\n");
+    expect(result.stderr).not.toContain("__contract_missing_audio_blob__");
+  });
+
   it("keeps the audio missing-input text while preserving usage exit 2", () => {
     const result = runCli(["audio", "generate"], { RAVI_AGENT_ID: undefined });
     expect(result.status).toBe(2);

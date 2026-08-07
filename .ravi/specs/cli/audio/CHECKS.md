@@ -18,7 +18,8 @@
   confirmation output.
 - `audio voices --json --fields a,b` MUST narrow each voice object to the
   requested fields; `audio pending --json --fields a,b` MUST narrow each item.
-- `audio blob <id>` MUST keep returning the raw binary Response (allowlisted;
-  never migrated to JSON envelopes).
+- `audio blob <id>` MUST keep returning raw bytes on success; a missing blob
+  MUST exit 1 as `RESOURCE_NOT_FOUND` in every transport without forwarding
+  the binary response body.
 - `bun test src/cli/commands/media-json.test.ts` SHOULD pass after any change
   to the audio contract surface.

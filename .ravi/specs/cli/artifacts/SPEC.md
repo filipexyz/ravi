@@ -58,8 +58,9 @@ immediate — the brake sits exactly where bytes leave the machine: `publish`
 7. A thrown `ContractError` MUST pass through the legacy CloudAuthError funnel
    of `publish`/`release activate` and the legacy try/catch of `events`
    untouched (rethrow-first, model: mail.ts / agents.ts).
-8. `blob` is `@Returns.binary` and stays entirely OUTSIDE this contract — no
-   envelope, no brake, byte-stream semantics unchanged.
+8. `blob` is `@Returns.binary`: successful bytes stay unchanged, while a
+   non-success `Response` is normalized to the shared redacted error envelope
+   across CLI, tool and gateway.
 
 ## Write classification (brake decision per op)
 

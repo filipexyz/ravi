@@ -22,6 +22,7 @@ import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./comm
 import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
 import {
   ContractError,
+  binaryResponseToContractError,
   contractFailureOutcome,
   expectedErrorToContractError,
   permissionDeniedToContractError,
@@ -297,9 +298,22 @@ function buildHandler(
       // Call the method
       const method = (instance as Record<string, Function>)[methodName];
       const result = runWithContext({ ...(ctx ?? {}), transport: "tool" }, () => method.apply(instance, finalArgs));
-
-      if (result instanceof Promise) {
-        await result;
+      const returnValue = result instanceof Promise ? await result : result;
+      if (returnValue instanceof Response) {
+        if (!returnValue.ok) {
+          throw binaryResponseToContractError(commandOperation(group, command), returnValue.status);
+        }
+        output.push(
+          JSON.stringify({
+            success: true,
+            op: commandOperation(group, command),
+            binary: true,
+            status: returnValue.status,
+            contentType: returnValue.headers.get("content-type"),
+            contentLength: returnValue.headers.get("content-length"),
+            suggestedAction: "Use the SDK or gateway binary response to consume the bytes",
+          }),
+        );
       }
     } catch (err) {
       isError = true;

@@ -30,6 +30,7 @@ import { RaviAppError } from "../../apps/types.js";
 import { raviAppErrorToContractError } from "../../apps/error-contract.js";
 import {
   ContractError,
+  binaryResponseToContractError,
   CONTRACT_EXIT_USAGE,
   contractFailureOutcome,
   expectedErrorToContractError,
@@ -246,35 +247,6 @@ export async function dispatch(
   const audit = buildAuditEvent(cmd, tool, auditInput, "succeeded", startedAt, lineage);
   const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
   return { response, audit: auditEmitted ? audit : null };
-}
-
-function binaryResponseToContractError(op: string, status: number): ContractError {
-  const details = { status, suggestedAction: "Inspect the binary resource identifier and retry" };
-  if (status === 400) {
-    return new ContractError(op, "USAGE_ERROR", "Binary resource request was invalid.", CONTRACT_EXIT_USAGE, details);
-  }
-  if (status === 401) {
-    return new ContractError(op, "AUTH_REQUIRED", "Binary resource authentication failed.", 1, details);
-  }
-  if (status === 403) {
-    return new ContractError(op, "PERMISSION_DENIED", "Binary resource access was denied.", 1, details);
-  }
-  if (status === 404) {
-    return new ContractError(op, "RESOURCE_NOT_FOUND", "Binary resource was not found.", 1, details);
-  }
-  if (status === 429) {
-    return new ContractError(op, "RATE_LIMITED", "Binary resource request was rate limited.", 1, {
-      ...details,
-      retryable: true,
-    });
-  }
-  if (status >= 500) {
-    return new ContractError(op, "SERVER_UNAVAILABLE", "Binary resource provider is unavailable.", 1, {
-      ...details,
-      retryable: true,
-    });
-  }
-  return new ContractError(op, "COMMAND_FAILED", "Binary resource request failed.", 1, details);
 }
 
 function describeReturnValue(value: unknown): string {

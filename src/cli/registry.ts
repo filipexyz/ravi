@@ -19,6 +19,7 @@ import {
 import { extractOptionName } from "./utils.js";
 import {
   ContractError,
+  binaryResponseToContractError,
   contractFailureOutcome,
   expectedErrorToContractError,
   permissionDeniedToContractError,
@@ -283,7 +284,15 @@ function registerCommand(
     try {
       const method = (instance as Record<string, Function>)[cmdMeta.method];
       const result = runWithContext(getContext() ?? {}, () => method.apply(instance, finalArgs));
-      if (result instanceof Promise) await result;
+      const returnValue = result instanceof Promise ? await result : result;
+      if (returnValue instanceof Response) {
+        if (!returnValue.ok) {
+          const error = binaryResponseToContractError(commandOperation(groupName, cmdMeta.name), returnValue.status);
+          renderContractError(error, input.json === true);
+          throw error;
+        }
+        process.stdout.write(new Uint8Array(await returnValue.arrayBuffer()));
+      }
     } catch (err) {
       const op = commandOperation(groupName, cmdMeta.name);
       const contractError =

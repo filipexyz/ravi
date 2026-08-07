@@ -25,7 +25,7 @@
 - Unbraked writes (`create`, `update`, `attach`, `event`, `snapshot`,
   `archive`, `restore`) MUST keep immediate-write behavior, and the shipped
   `artifacts` skill MUST list them explicitly as unbraked.
-- The `blob` op MUST stay outside the contract: raw byte streaming, no
-  envelope, no brake.
+- The `blob` op MUST stream raw bytes on success and normalize non-success
+  responses to the shared contract without exposing the response body.
 - `bun test src/cli/commands/artifacts.test.ts` SHOULD pass after any change to
   the artifacts contract surface.

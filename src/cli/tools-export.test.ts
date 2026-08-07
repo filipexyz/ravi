@@ -4,7 +4,7 @@ import { AppsCommands } from "./commands/apps.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { ContractError, contractDryRun, contractFail } from "./agent-contract.js";
 import { fail, runWithContext } from "./context.js";
-import { CliOnly, Command, CommandAccess, Group, Option } from "./decorators.js";
+import { CliOnly, Command, CommandAccess, Group, Option, Returns } from "./decorators.js";
 import { extractTools } from "./tools-export.js";
 
 @Group({ name: "negated", description: "Negated option fixture", scope: "open" })
@@ -77,6 +77,13 @@ class ContractToolCommands {
   dryRun(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     contractDryRun("contract dry-run", { target: "fixture" }, { asJson });
   }
+
+  @Command({ name: "missing-binary", description: "Return a missing binary response" })
+  @CommandAccess({ kind: "read", resource: "contract", action: "missing-binary", risk: "low" })
+  @Returns.binary()
+  missingBinary() {
+    return Response.json({ detail: "private binary provider detail" }, { status: 404 });
+  }
 }
 
 @Group({ name: "terminal", description: "CLI-only fixture", scope: "open" })
@@ -115,6 +122,7 @@ const contractContext: ContextRecord = {
     { permission: "read", objectType: "contract", objectId: "legacy", source: "test" },
     { permission: "read", objectType: "contract", objectId: "silent", source: "test" },
     { permission: "mutate", objectType: "contract", objectId: "dry-run", source: "test" },
+    { permission: "read", objectType: "contract", objectId: "missing-binary", source: "test" },
   ],
   createdAt: Date.now(),
 };
@@ -173,6 +181,26 @@ describe("tools export provider-runtime authorization", () => {
 });
 
 describe("tools export contract errors", () => {
+  it("normalizes a non-success binary Response instead of returning empty success", async () => {
+    const tool = extractTools([ContractToolCommands]).find(
+      (candidate) => candidate.name === "contract_missing-binary",
+    );
+    expect(tool).toBeDefined();
+
+    const result = await runWithContext({ agentId: contractContext.agentId, context: contractContext }, () =>
+      tool!.handler({}),
+    );
+
+    expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
+    const text = result.content[0]?.text ?? "{}";
+    expect(text).not.toContain("private binary provider detail");
+    expect(JSON.parse(text)).toMatchObject({
+      success: false,
+      op: "contract missing-binary",
+      error: { code: "RESOURCE_NOT_FOUND", message: "Binary resource was not found." },
+    });
+  });
+
   it("preserves a real AppsCommands failure as one redacted contract envelope", async () => {
     const tool = extractTools([AppsCommands]).find((candidate) => candidate.name === "apps_show");
     expect(tool).toBeDefined();

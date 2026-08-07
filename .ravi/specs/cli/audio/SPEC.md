@@ -48,8 +48,9 @@ its NATS publish triggers downstream generation and playback.
    delivery confirmation.
 4. `audio voices` and `audio pending` MUST accept `--fields a,b,c` for compact
    output (narrowing `voices`/`items` respectively).
-5. `audio blob` keeps its binary Response behavior untouched (it is on the
-   binary returns allowlist and MUST NOT be migrated to JSON envelopes).
+5. `audio blob` keeps raw bytes on success. A non-success binary `Response`
+   MUST become the same safe contract failure in CLI, tool and gateway; raw
+   provider bodies and resource ids MUST NOT leak.
 6. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.
 
