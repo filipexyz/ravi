@@ -28,6 +28,15 @@ const createSessionCalls: Array<Record<string, unknown>> = [];
 const sendMessageCalls: Array<{ devinId: string; message: string; asUser?: string }> = [];
 const archiveSessionCalls: string[] = [];
 const getSessionCalls: string[] = [];
+const getInsightsCalls: string[] = [];
+const generateInsightsCalls: string[] = [];
+const upsertSessionCalls: string[] = [];
+let clientCreationCount = 0;
+
+function recordClientCreation<T>(client: T): T {
+  clientCreationCount += 1;
+  return client;
+}
 
 interface RemoteSession {
   session_id: string;
@@ -91,7 +100,7 @@ function seedSession(devinId: string, extra: Record<string, unknown> = {}): void
 
 mock.module("../../devin/client.js", () => ({
   createDevinClientFromEnv: () => ({
-    baseUrl: "https://api.devin.test",
+    baseUrl: recordClientCreation("https://api.devin.test"),
     orgId: "org_test",
     createSession: async (input: Record<string, unknown>, options?: Record<string, unknown>) => {
       createSessionCalls.push({ ...input, ...(options ?? {}) });
@@ -111,18 +120,24 @@ mock.module("../../devin/client.js", () => ({
     listSessions: async () => ({ items: [], total: 0, has_next_page: false }),
     listAllMessages: async () => [],
     listAttachments: async () => [],
-    getSessionInsights: async (devinId: string) => ({
-      session_id: devinId,
-      status: "running",
-      url: `https://app.devin.ai/sessions/${devinId}`,
-      updated_at: Date.now(),
-    }),
-    generateSessionInsights: async (devinId: string) => ({
-      session_id: devinId,
-      status: "running",
-      url: `https://app.devin.ai/sessions/${devinId}`,
-      updated_at: Date.now(),
-    }),
+    getSessionInsights: async (devinId: string) => {
+      getInsightsCalls.push(devinId);
+      return {
+        session_id: devinId,
+        status: "running",
+        url: `https://app.devin.ai/sessions/${devinId}`,
+        updated_at: Date.now(),
+      };
+    },
+    generateSessionInsights: async (devinId: string) => {
+      generateInsightsCalls.push(devinId);
+      return {
+        session_id: devinId,
+        status: "running",
+        url: `https://app.devin.ai/sessions/${devinId}`,
+        updated_at: Date.now(),
+      };
+    },
     terminateSession: async (devinId: string) => remoteFor(devinId, { status: "terminated" }),
     archiveSession: async (devinId: string) => {
       archiveSessionCalls.push(devinId);
@@ -153,6 +168,7 @@ mock.module("../../devin/store.js", () => ({
     return typeof options.limit === "number" ? sessions.slice(0, options.limit) : sessions;
   },
   upsertDevinSession: (remote: RemoteSession, extra: Record<string, unknown> = {}) => {
+    upsertSessionCalls.push(remote.session_id);
     const record = recordFor(remote, {
       status: remote.status,
       ...(typeof extra.lastSyncedAt === "number" ? { lastSyncedAt: extra.lastSyncedAt } : {}),
@@ -230,6 +246,10 @@ beforeEach(() => {
   sendMessageCalls.length = 0;
   archiveSessionCalls.length = 0;
   getSessionCalls.length = 0;
+  getInsightsCalls.length = 0;
+  generateInsightsCalls.length = 0;
+  upsertSessionCalls.length = 0;
+  clientCreationCount = 0;
   storeSessions.clear();
 });
 
@@ -382,5 +402,56 @@ describe("devin sessions agent-first contract", () => {
 
     expect(getSessionCalls).toEqual(["devin-abc123"]);
     expect(payload).toMatchObject({ messages: 0, attachments: 0, insights: null, artifacts: [] });
+  });
+
+  it("insights --generate without --execute is blocked before client, provider, or cache effects", async () => {
+    seedSession("devin-abc123");
+    const commands = new DevinSessionCommands();
+
+    const error = await expectContractError(
+      () => commands.insights("devin-abc123", true, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.envelope()).toMatchObject({
+      success: false,
+      op: "devin sessions insights",
+      error: {
+        code: "WRITE_REQUIRES_EXECUTE",
+        dryRun: true,
+        plan: { action: "generate-insights", devinId: "devin-abc123" },
+      },
+    });
+    expect(clientCreationCount).toBe(0);
+    expect(getInsightsCalls).toEqual([]);
+    expect(generateInsightsCalls).toEqual([]);
+    expect(upsertSessionCalls).toEqual([]);
+  });
+
+  it("insights reads and refreshes the local cache without --execute when --generate is absent", async () => {
+    seedSession("devin-abc123");
+    const commands = new DevinSessionCommands();
+
+    const payload = await silenced(() => commands.insights("devin-abc123", undefined, true, undefined));
+
+    expect(payload).toMatchObject({ session: { devinId: "devin-abc123" }, insights: { session_id: "devin-abc123" } });
+    expect(clientCreationCount).toBe(1);
+    expect(getInsightsCalls).toEqual(["devin-abc123"]);
+    expect(generateInsightsCalls).toEqual([]);
+    expect(upsertSessionCalls).toEqual(["devin-abc123"]);
+  });
+
+  it("insights --generate with --execute calls the provider and updates the local cache", async () => {
+    seedSession("devin-abc123");
+    const commands = new DevinSessionCommands();
+
+    const payload = await silenced(() => commands.insights("devin-abc123", true, true, true));
+
+    expect(payload).toMatchObject({ session: { devinId: "devin-abc123" }, insights: { session_id: "devin-abc123" } });
+    expect(clientCreationCount).toBe(1);
+    expect(getInsightsCalls).toEqual([]);
+    expect(generateInsightsCalls).toEqual(["devin-abc123"]);
+    expect(upsertSessionCalls).toEqual(["devin-abc123"]);
   });
 });

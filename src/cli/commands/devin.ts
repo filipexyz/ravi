@@ -794,9 +794,26 @@ export class DevinSessionCommands {
     @Option({ flags: "--generate", description: "Ask Devin to generate/update insights before reading" })
     generate?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually ask Devin to generate/update insights; ordinary insight reads run directly",
+    })
+    execute?: boolean,
   ) {
-    const client = createDevinClientFromEnv();
     const devinId = resolveDevinId("devin sessions insights", identifier, asJson);
+    if (generate && execute !== true) {
+      contractDryRun(
+        "devin sessions insights",
+        {
+          action: "generate-insights",
+          session: identifier,
+          devinId,
+        },
+        { asJson },
+      );
+    }
+
+    const client = createDevinClientFromEnv();
     const insights = generate
       ? await client.generateSessionInsights(devinId)
       : await client.getSessionInsights(devinId);
