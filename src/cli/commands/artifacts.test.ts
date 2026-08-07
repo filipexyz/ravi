@@ -8,6 +8,7 @@
  * ContractError instead of exiting the process.
  */
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { CloudAuthError } from "../../cloud-auth/errors.js";
 
 afterAll(() => {
   mock.restore();
@@ -179,6 +180,7 @@ mock.module("../../whatsapp-overlay/artifacts.js", () => ({
 mock.module("../../artifacts/publish-client.js", () => ({
   publishArtifactToConsole: async (target: string, options: Record<string, unknown>) => {
     publishCalls.push({ target, options });
+    if (target === "auth-error") throw new CloudAuthError("AUTH_REQUIRED", "login required");
     return {
       artifact: { id: "cloud_art_1" },
       artifactVersion: { id: "cloud_ver_1" },
@@ -191,6 +193,7 @@ mock.module("../../artifacts/publish-client.js", () => ({
   },
   activateArtifactReleaseInConsole: async (id: string, options: Record<string, unknown>) => {
     activateCalls.push({ id, options });
+    if (id === "auth-error") throw new CloudAuthError("AUTH_REQUIRED", "login required");
     return { release: { id: "rel_1" }, site: { id: "site_1" }, routes: [], url: "https://demo.ravi.page/" };
   },
 }));
@@ -360,6 +363,43 @@ describe("artifacts write brake", () => {
     expect(activateCalls).toHaveLength(1);
     expect(activateCalls[0]).toMatchObject({ id: "art_aaa111" });
     expect(activateCalls[0]?.options).toMatchObject({ release: "rel_1", site: "demo" });
+  });
+
+  it("never exits the host process when publish fails in a tool or gateway context", async () => {
+    await expect(
+      silenced(() =>
+        new ArtifactsCommands().publish(
+          "auth-error",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          true,
+        ),
+      ),
+    ).rejects.toMatchObject({ code: "AUTH_REQUIRED" });
+  });
+
+  it("never exits the host process when release activation fails in a tool or gateway context", async () => {
+    await expect(
+      silenced(() =>
+        new ArtifactReleaseCommands().activate("auth-error", undefined, "rel_1", "demo", undefined, true, true),
+      ),
+    ).rejects.toMatchObject({ code: "AUTH_REQUIRED" });
   });
 
   it("archive is declared UNBRAKED: the soft-delete happens without --execute", async () => {

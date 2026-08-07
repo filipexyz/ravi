@@ -8,7 +8,7 @@ import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
-import { fail, getContext } from "../context.js";
+import { fail, getContext, hasContext } from "../context.js";
 import { buildCliOffsetPagination, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import {
   artifactCreateReturnSchema,
@@ -982,6 +982,9 @@ export class ArtifactsCommands {
       // swallow them (model: mail.ts).
       if (error instanceof ContractError) throw error;
       const cloudError = cloudAuthErrorFromUnknown(error);
+      // Tools and gateway execute in-process. Let their transport adapter map
+      // the provider failure instead of terminating the daemon.
+      if (hasContext()) throw cloudError;
       if (asJson) {
         printJson(formatCloudAuthError(cloudError));
       } else {
@@ -1078,6 +1081,9 @@ export class ArtifactReleaseCommands {
       // swallow them (model: mail.ts).
       if (error instanceof ContractError) throw error;
       const cloudError = cloudAuthErrorFromUnknown(error);
+      // Tools and gateway execute in-process. Let their transport adapter map
+      // the provider failure instead of terminating the daemon.
+      if (hasContext()) throw cloudError;
       if (asJson) {
         printJson(formatCloudAuthError(cloudError));
       } else {
