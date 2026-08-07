@@ -27,7 +27,7 @@ import { emitCliAuditEvent, type CliAuditOutcome } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
 import { RaviAppError } from "../../apps/types.js";
-import { ContractError, contractFailureOutcome } from "../../cli/agent-contract.js";
+import { ContractError, CONTRACT_EXIT_USAGE, contractFailureOutcome } from "../../cli/agent-contract.js";
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
 import {
@@ -37,7 +37,6 @@ import {
   json,
   permissionDenied,
   returnShapeError,
-  validationError,
   type JsonIssue,
 } from "./errors.js";
 
@@ -69,7 +68,7 @@ export interface AuditEvent {
 
 export interface DispatchResult {
   response: Response;
-  /** Audit event emitted for this dispatch, or null when validation/quiet-success policy suppressed it. */
+  /** Audit event emitted for this dispatch, or null when exposure gating/quiet-success policy suppressed it. */
   audit: AuditEvent | null;
 }
 
@@ -85,7 +84,7 @@ interface NormalizeOk {
 
 interface NormalizeErr {
   ok: false;
-  response: Response;
+  issues: JsonIssue[];
 }
 
 type NormalizeResult = NormalizeOk | NormalizeErr;
@@ -97,6 +96,7 @@ export async function dispatch(
   opts: DispatchOptions = {},
 ): Promise<DispatchResult> {
   const tool = `${cmd.groupSegments.join("_")}_${cmd.command}`;
+  const group = cmd.groupSegments.join("_");
   const lineage = extractLineage(opts.contextRecord);
 
   if (cmd.scope === "superadmin" && !opts.allowSuperadmin) {
@@ -108,20 +108,19 @@ export async function dispatch(
     };
   }
 
+  const startedAt = Date.now();
   const normalized = normalizeBody(cmd, body);
   if (!normalized.ok) {
-    return { response: normalized.response, audit: null };
+    return usageErrorResult(cmd, tool, group, normalized.issues, startedAt, lineage, opts.emitAudit);
   }
 
   const validation = validateAndPack(cmd, normalized.input);
   if (!validation.ok) {
-    return { response: validationError(validation.issues), audit: null };
+    return usageErrorResult(cmd, tool, group, validation.issues, startedAt, lineage, opts.emitAudit);
   }
   const auditInput = redactCommandAccessInput(cmd.access, validation.inputForAudit);
 
-  const startedAt = Date.now();
   const toolContext = asToolContext(scopeContext, opts.contextRecord ?? null);
-  const group = cmd.groupSegments.join("_");
   const accessResult = runWithContext(toolContext, () =>
     enforceCliCommandAuthorization({
       group,
@@ -281,6 +280,39 @@ function buildAuditEvent(
   };
 }
 
+async function usageErrorResult(
+  cmd: CommandRegistryEntry,
+  tool: string,
+  group: string,
+  issues: JsonIssue[],
+  startedAt: number,
+  lineage: AuditLineage,
+  emitAudit: DispatchOptions["emitAudit"],
+): Promise<DispatchResult> {
+  const op = commandOperation(group, cmd.command);
+  const error = new ContractError(op, "USAGE_ERROR", `Invalid input for ${op}.`, CONTRACT_EXIT_USAGE, {
+    suggestedAction: `Correct the request body and retry ${op}`,
+    issues: redactValidationIssues(cmd, issues),
+  });
+  const outcome = contractFailureOutcome(error);
+  const audit = buildAuditEvent(cmd, tool, {}, outcome, startedAt, lineage, error.exitCode, error.code);
+  const auditEmitted = await emitDispatchAudit(audit, emitAudit);
+  return {
+    response: contractErrorResponse(error),
+    audit: auditEmitted ? audit : null,
+  };
+}
+
+function redactValidationIssues(cmd: CommandRegistryEntry, issues: JsonIssue[]): JsonIssue[] {
+  const redactions = new Set(cmd.access?.redactions ?? []);
+  if (redactions.size === 0) return issues;
+  return issues.map((issue) =>
+    typeof issue.path[0] === "string" && redactions.has(issue.path[0])
+      ? { ...issue, message: "Invalid redacted value." }
+      : issue,
+  );
+}
+
 function normalizeBody(cmd: CommandRegistryEntry, body: unknown): NormalizeResult {
   if (body === undefined || body === null) {
     return { ok: true, input: { positional: [], named: {} } };
@@ -288,9 +320,13 @@ function normalizeBody(cmd: CommandRegistryEntry, body: unknown): NormalizeResul
   if (typeof body !== "object" || Array.isArray(body)) {
     return {
       ok: false,
-      response: errorResponse(400, "BadRequest", {
-        message: "Request body must be a JSON object.",
-      }),
+      issues: [
+        {
+          path: [],
+          code: "invalid_type",
+          message: "Request body must be a JSON object.",
+        },
+      ],
     };
   }
   const obj = body as Record<string, unknown>;
@@ -316,7 +352,7 @@ function normalizeBody(cmd: CommandRegistryEntry, body: unknown): NormalizeResul
       code: "unrecognized_keys",
       message: `Unknown field "${k}" for ${cmd.fullName}.`,
     }));
-    return { ok: false, response: validationError(issues) };
+    return { ok: false, issues };
   }
 
   for (const arg of cmd.args) {

@@ -10,6 +10,10 @@ import type { ContextCapability, ContextRecord } from "../../router/router-db.js
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { dispatch, type AuditEvent } from "./dispatcher.js";
 
+const rejectedSensitiveInput = z.string().superRefine((value, ctx) => {
+  ctx.addIssue({ code: "custom", message: `Rejected sensitive input: ${value}` });
+});
+
 @Group({ name: "demo", description: "Gateway demo commands", scope: "open" })
 class GatewayDemoCommands {
   @Command({ name: "negated", description: "Expose negated flag presence" })
@@ -56,6 +60,19 @@ class GatewayDemoCommands {
   redacted(@Arg("content") content: string) {
     void content;
     return { ok: true as const };
+  }
+
+  @Command({ name: "redacted-invalid", description: "Reject sensitive command input" })
+  @CommandAccess({
+    kind: "read",
+    resource: "demo",
+    action: "redacted-invalid",
+    risk: "low",
+    input: ["content"],
+    redactions: ["content"],
+  })
+  redactedInvalid(@Arg("content", { schema: rejectedSensitiveInput }) content: string) {
+    void content;
   }
 
   @Command({ name: "void", description: "Returns nothing" })
@@ -285,22 +302,23 @@ describe("dispatch — body shape (flat-only)", () => {
     );
     expect(result.response.status).toBe(400);
     const body = (await result.response.json()) as {
-      error: string;
-      issues: { path: string[]; code: string }[];
+      error: { code: string; issues: { path: string[]; code: string }[] };
     };
-    expect(body.error).toBe("ValidationError");
-    expect(body.issues.some((i) => i.path[0] === "args" && i.code === "unrecognized_keys")).toBe(true);
-    expect(body.issues.some((i) => i.path[0] === "options" && i.code === "unrecognized_keys")).toBe(true);
-    expect(audits.events).toHaveLength(0);
+    expect(body.error.code).toBe("USAGE_ERROR");
+    expect(body.error.issues.some((i) => i.path[0] === "args" && i.code === "unrecognized_keys")).toBe(true);
+    expect(body.error.issues.some((i) => i.path[0] === "options" && i.code === "unrecognized_keys")).toBe(true);
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]?.outcome).toBe("usage_error");
   });
 
   it("rejects bodies that are JSON arrays", async () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.echo"), [1, 2, 3], {}, { emitAudit: audits.emit });
     expect(result.response.status).toBe(400);
-    expect(audits.events).toHaveLength(0);
-    const body = (await result.response.json()) as { error: string };
-    expect(body.error).toBe("BadRequest");
+    expect(audits.events).toHaveLength(1);
+    const body = (await result.response.json()) as { error: { code: string; issues: { path: string[] }[] } };
+    expect(body.error.code).toBe("USAGE_ERROR");
+    expect(body.error.issues[0]?.path).toEqual([]);
   });
 
   it("rejects unknown flat keys with structured issues", async () => {
@@ -308,12 +326,11 @@ describe("dispatch — body shape (flat-only)", () => {
     const result = await dispatch(findCmd("demo.echo"), { name: "luis", bogus: true }, {}, { emitAudit: audits.emit });
     expect(result.response.status).toBe(400);
     const body = (await result.response.json()) as {
-      error: string;
-      issues: { path: string[]; code: string }[];
+      error: { code: string; issues: { path: string[]; code: string }[] };
     };
-    expect(body.error).toBe("ValidationError");
-    expect(body.issues.some((i) => i.path[0] === "bogus" && i.code === "unrecognized_keys")).toBe(true);
-    expect(audits.events).toHaveLength(0);
+    expect(body.error.code).toBe("USAGE_ERROR");
+    expect(body.error.issues.some((i) => i.path[0] === "bogus" && i.code === "unrecognized_keys")).toBe(true);
+    expect(audits.events).toHaveLength(1);
   });
 });
 
@@ -346,17 +363,58 @@ describe("dispatch — validation", () => {
     expect(await disabledResult.response.json()).toEqual({ noCache: true });
   });
 
-  it("returns 400 ValidationError when required arg is missing", async () => {
+  it("preserves early validation as a usage-error contract and audit", async () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.echo"), {}, {}, { emitAudit: audits.emit });
+
     expect(result.response.status).toBe(400);
-    const body = (await result.response.json()) as {
-      error: string;
-      issues: { path: string[] }[];
-    };
-    expect(body.error).toBe("ValidationError");
-    expect(body.issues[0]?.path[0]).toBe("name");
-    expect(audits.events).toHaveLength(0);
+    expect(await result.response.json()).toMatchObject({
+      success: false,
+      op: "demo echo",
+      exitCode: 2,
+      outcome: "usage_error",
+      error: {
+        code: "USAGE_ERROR",
+        message: "Invalid input for demo echo.",
+        retryable: false,
+        suggestedAction: "Correct the request body and retry demo echo",
+        issues: [{ path: ["name"], code: "invalid_type" }],
+      },
+    });
+    expect(result.audit).not.toBeNull();
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]).toMatchObject({
+      group: "demo",
+      name: "echo",
+      tool: "demo_echo",
+      input: {},
+      isError: true,
+      outcome: "usage_error",
+      exitCode: 2,
+      errorCode: "USAGE_ERROR",
+    });
+  });
+
+  it("redacts sensitive values from validation errors and their audit", async () => {
+    const secret = "token-private-value";
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.redacted-invalid"),
+      { content: secret },
+      {},
+      { emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(400);
+    const body = await result.response.json();
+    expect(body).toMatchObject({
+      error: {
+        code: "USAGE_ERROR",
+        issues: [{ path: ["content"], code: "custom", message: "Invalid redacted value." }],
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain(secret);
+    expect(JSON.stringify(audits.events)).not.toContain(secret);
   });
 
   it("returns 500 ReturnShapeError when handler return shape is wrong", async () => {
@@ -546,10 +604,12 @@ describe("dispatch — audit", () => {
     expect(audits.events).toHaveLength(1);
   });
 
-  it("does not emit audit for validation errors (request never reached the handler)", async () => {
+  it("emits one usage_error audit when input validation rejects before the handler", async () => {
     const audits = captureAudits();
-    await dispatch(findCmd("demo.echo"), {}, {}, { emitAudit: audits.emit });
-    expect(audits.events).toHaveLength(0);
+    const result = await dispatch(findCmd("demo.echo"), {}, {}, { emitAudit: audits.emit });
+    expect(audits.events).toHaveLength(1);
+    expect(result.audit).toEqual(audits.events[0]);
+    expect(audits.events[0]).toMatchObject({ outcome: "usage_error", exitCode: 2, errorCode: "USAGE_ERROR" });
   });
 
   it("suppresses successful high-frequency read audits", async () => {
