@@ -35865,6 +35865,10 @@ export const HooksShowReturnSchema = {
 export const HooksTestInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually run a session-delivery hook; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Hook ID",
       "type": "string"
@@ -57230,6 +57234,10 @@ export const SessionsResetReturnSchema = {
 export const SessionsRuntimeFollowUpInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually queue the follow-up; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "expectedTurn": {
       "description": "Expected active runtime turn id",
       "type": "string"
@@ -57286,6 +57294,10 @@ export const SessionsRuntimeForkInputSchema = {
     "cwd": {
       "description": "Working directory for the fork",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually fork the runtime thread; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
     },
     "path": {
       "description": "Runtime fork path",
@@ -57475,6 +57487,10 @@ export const SessionsRuntimeReadReturnSchema = {
 export const SessionsRuntimeRollbackInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually roll back runtime turns; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "session": {
       "description": "Ravi session name or key",
       "type": "string"
@@ -72959,6 +72975,10 @@ export const TriggersShowReturnSchema = {
 export const TriggersTestInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually emit the synthetic trigger event; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "id": {
       "description": "Trigger ID",
       "type": "string"

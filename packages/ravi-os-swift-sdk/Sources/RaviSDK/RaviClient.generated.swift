@@ -2381,9 +2381,10 @@ public struct HooksNamespace: Sendable {
     return try await transport.call(groupSegments: ["hooks"], command: "show", body: requestBody, as: HooksShowReturn.self)
   }
 
-  public func test(_ id: String) async throws -> HooksTestReturn {
+  public func test(_ id: String, _ options: HooksTestOptions = .init()) async throws -> HooksTestReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["hooks"], command: "test", body: requestBody, as: HooksTestReturn.self)
   }
 }
@@ -5630,9 +5631,10 @@ public struct TriggersNamespace: Sendable {
     return try await transport.call(groupSegments: ["triggers"], command: "show", body: requestBody, as: TriggersShowReturn.self)
   }
 
-  public func test(_ id: String) async throws -> TriggersTestReturn {
+  public func test(_ id: String, _ options: TriggersTestOptions = .init()) async throws -> TriggersTestReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["triggers"], command: "test", body: requestBody, as: TriggersTestReturn.self)
   }
 

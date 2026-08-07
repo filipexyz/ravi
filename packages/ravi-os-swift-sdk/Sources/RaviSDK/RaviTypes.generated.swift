@@ -10702,6 +10702,24 @@ public struct HooksShowReturn: Codable, Sendable {
   }
 }
 
+public struct HooksTestOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
 public typealias HooksTestReturn = [String: RaviJSON]
 
 public struct ImageAtlasSplitOptions: Codable, Sendable {
@@ -19296,23 +19314,29 @@ public struct SessionsResetOptions: Codable, Sendable {
 public typealias SessionsResetReturn = [String: RaviJSON]
 
 public struct SessionsRuntimeFollowUpOptions: Codable, Sendable {
+  public var execute: Bool?
   public var expectedTurn: String?
   public var thread: String?
   public var turn: String?
 
-  public init(expectedTurn: String? = nil, thread: String? = nil, turn: String? = nil) {
+  public init(execute: Bool? = nil, expectedTurn: String? = nil, thread: String? = nil, turn: String? = nil) {
+    self.execute = execute
     self.expectedTurn = expectedTurn
     self.thread = thread
     self.turn = turn
   }
 
   enum CodingKeys: String, CodingKey {
+    case execute = "execute"
     case expectedTurn = "expectedTurn"
     case thread = "thread"
     case turn = "turn"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.expectedTurn {
       body["expectedTurn"] = try RaviJSON.fromEncodable(value)
     }
@@ -19348,21 +19372,27 @@ public struct SessionsRuntimeFollowUpReturn: Codable, Sendable {
 
 public struct SessionsRuntimeForkOptions: Codable, Sendable {
   public var cwd: String?
+  public var execute: Bool?
   public var path: String?
 
-  public init(cwd: String? = nil, path: String? = nil) {
+  public init(cwd: String? = nil, execute: Bool? = nil, path: String? = nil) {
     self.cwd = cwd
+    self.execute = execute
     self.path = path
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
+    case execute = "execute"
     case path = "path"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.cwd {
       body["cwd"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.path {
       body["path"] = try RaviJSON.fromEncodable(value)
@@ -19539,17 +19569,23 @@ public struct SessionsRuntimeReadReturn: Codable, Sendable {
 }
 
 public struct SessionsRuntimeRollbackOptions: Codable, Sendable {
+  public var execute: Bool?
   public var thread: String?
 
-  public init(thread: String? = nil) {
+  public init(execute: Bool? = nil, thread: String? = nil) {
+    self.execute = execute
     self.thread = thread
   }
 
   enum CodingKeys: String, CodingKey {
+    case execute = "execute"
     case thread = "thread"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.thread {
       body["thread"] = try RaviJSON.fromEncodable(value)
     }
@@ -27076,6 +27112,24 @@ public struct TriggersShowReturn: Codable, Sendable {
 
   enum CodingKeys: String, CodingKey {
     case trigger = "trigger"
+  }
+}
+
+public struct TriggersTestOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
   }
 }
 

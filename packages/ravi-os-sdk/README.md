@@ -225,7 +225,7 @@ await ravi.sessions.answer("support", "Build OK em 12s.", "agent:main");
 // Steer / interrupt / rollback the active runtime turn
 await ravi.sessions.runtime.interrupt("support");
 await ravi.sessions.runtime.steer("support", "Mais conciso, por favor.");
-await ravi.sessions.runtime.rollback("support", "1"); // undo last turn
+await ravi.sessions.runtime.rollback("support", "1", { execute: true }); // undo last turn
 
 // Lifecycle
 await ravi.sessions.reset("support");

@@ -3016,11 +3016,13 @@ export class RaviClient {
       });
     },
     /** Execute a hook once with a synthetic event */
-    test: async (id: string): Promise<HooksTestReturn> => {
+    test: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<HooksTestReturn> => {
       return this.transport.call({
         groupSegments: ["hooks"],
         command: "test",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     }
   };
@@ -5703,6 +5705,7 @@ export class RaviClient {
     runtime: {
       /** Queue a follow-up after the active runtime turn */
       followUp: async (session: string, text: string, options?: {
+        execute?: boolean;
         expectedTurn?: string;
         thread?: string;
         turn?: string;
@@ -5716,6 +5719,7 @@ export class RaviClient {
       /** Fork a runtime thread if the provider supports it */
       fork: async (session: string, threadId?: string, options?: {
         cwd?: string;
+        execute?: boolean;
         path?: string;
       }): Promise<SessionsRuntimeForkReturn> => {
         return this.transport.call({
@@ -5761,6 +5765,7 @@ export class RaviClient {
       },
       /** Rollback completed runtime turns */
       rollback: async (session: string, turns?: string, options?: {
+        execute?: boolean;
         thread?: string;
       }): Promise<SessionsRuntimeRollbackReturn> => {
         return this.transport.call({
@@ -7578,11 +7583,13 @@ export class RaviClient {
       });
     },
     /** Test trigger with fake event data */
-    test: async (id: string): Promise<TriggersTestReturn> => {
+    test: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<TriggersTestReturn> => {
       return this.transport.call({
         groupSegments: ["triggers"],
         command: "test",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     },
     /** List trigger-ready NATS topics */

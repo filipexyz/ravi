@@ -7177,6 +7177,7 @@ export type HooksShowReturn = {
 
 /** Input shape for `hooks.test`. */
 export type HooksTestInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -11769,6 +11770,7 @@ export type SessionsResetReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.runtime.follow-up`. */
 export type SessionsRuntimeFollowUpInput = {
+  execute?: boolean;
   expectedTurn?: string;
   session: string;
   text: string;
@@ -11788,6 +11790,7 @@ export type SessionsRuntimeFollowUpReturn = {
 /** Input shape for `sessions.runtime.fork`. */
 export type SessionsRuntimeForkInput = {
   cwd?: string;
+  execute?: boolean;
   path?: string;
   session: string;
   threadId?: string;
@@ -11855,6 +11858,7 @@ export type SessionsRuntimeReadReturn = {
 
 /** Input shape for `sessions.runtime.rollback`. */
 export type SessionsRuntimeRollbackInput = {
+  execute?: boolean;
   session: string;
   thread?: string;
   turns?: string;
@@ -15207,6 +15211,7 @@ export type TriggersShowReturn = {
 
 /** Input shape for `triggers.test`. */
 export type TriggersTestInput = {
+  execute?: boolean;
   id: string;
 };
 

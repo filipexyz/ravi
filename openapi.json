@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "03d13b1810793b06"
+    "version": "32a3b5161409d360"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -43516,6 +43516,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "execute": {
+                    "description": "Actually run a session-delivery hook; default is a dry-run that only shows the plan (exit 3)",
+                    "type": "boolean"
+                  },
                   "id": {
                     "description": "Hook ID",
                     "type": "string"
@@ -71765,6 +71769,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "execute": {
+                    "description": "Actually queue the follow-up; default is a dry-run that only shows the plan (exit 3)",
+                    "type": "boolean"
+                  },
                   "expectedTurn": {
                     "description": "Expected active runtime turn id",
                     "type": "string"
@@ -71859,6 +71867,10 @@
                   "cwd": {
                     "description": "Working directory for the fork",
                     "type": "string"
+                  },
+                  "execute": {
+                    "description": "Actually fork the runtime thread; default is a dry-run that only shows the plan (exit 3)",
+                    "type": "boolean"
                   },
                   "path": {
                     "description": "Runtime fork path",
@@ -72200,6 +72212,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "execute": {
+                    "description": "Actually roll back runtime turns; default is a dry-run that only shows the plan (exit 3)",
+                    "type": "boolean"
+                  },
                   "session": {
                     "description": "Ravi session name or key",
                     "type": "string"
@@ -92390,6 +92406,10 @@
               "schema": {
                 "additionalProperties": false,
                 "properties": {
+                  "execute": {
+                    "description": "Actually emit the synthetic trigger event; default is a dry-run that only shows the plan (exit 3)",
+                    "type": "boolean"
+                  },
                   "id": {
                     "description": "Trigger ID",
                     "type": "string"
