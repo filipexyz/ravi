@@ -1,5 +1,11 @@
 import { isExplicitConnect, nats } from "../nats.js";
-import { ContractError, contractFailureOutcome } from "./agent-contract.js";
+import {
+  ContractError,
+  contractFailureOutcome,
+  expectedErrorToContractError,
+  renderContractError,
+  unexpectedErrorToContractError,
+} from "./agent-contract.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation, renderCloudContractError } from "./cloud-error-contract.js";
 import { buildCliInvocationMetadata } from "./provenance.js";
@@ -116,27 +122,23 @@ export async function runWithCliAudit<T>(
   try {
     return await fn();
   } catch (error) {
+    const op = commandOperation(options.group, options.name);
     const contractError =
       error instanceof ContractError
         ? error
         : isCloudAuthError(error)
-          ? cloudErrorToContractError(commandOperation(options.group, options.name), error)
-          : null;
-    if (contractError) {
-      if (!(error instanceof ContractError)) {
-        const asJson = options.input?.json === true;
-        renderCloudContractError(contractError, asJson);
-      }
-      outcome = contractFailureOutcome(contractError);
-      exitCode = contractError.exitCode;
-      errorCode = contractError.code;
-      caughtContractError = contractError;
-      throw contractError;
-    } else {
-      outcome = "failed";
-      exitCode ??= 1;
+          ? cloudErrorToContractError(op, error)
+          : (expectedErrorToContractError(op, error) ?? unexpectedErrorToContractError(op));
+    if (!(error instanceof ContractError)) {
+      const asJson = options.input?.json === true;
+      if (isCloudAuthError(error)) renderCloudContractError(contractError, asJson);
+      else renderContractError(contractError, asJson);
     }
-    throw error;
+    outcome = contractFailureOutcome(contractError);
+    exitCode = contractError.exitCode;
+    errorCode = contractError.code;
+    caughtContractError = contractError;
+    throw contractError;
   } finally {
     await emitCliAuditEvent({
       ...options,

@@ -463,18 +463,25 @@ describe("dispatch — error path", () => {
     expect(audits.events[0]).toMatchObject({ outcome: "failed", exitCode: 1, errorCode: "COMMAND_FAILED" });
   });
 
-  it("returns 500 InternalError when handler throws", async () => {
+  it("returns a redacted canonical envelope with HTTP 500 when handler throws", async () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.boom"), {}, {}, { contextRecord: demoContext, emitAudit: audits.emit });
     expect(result.response.status).toBe(500);
     const body = (await result.response.json()) as {
-      error: string;
-      message: string;
+      success: boolean;
+      op: string;
+      exitCode: number;
+      error: { code: string; message: string };
     };
-    expect(body.error).toBe("InternalError");
-    expect(body.message).toContain("kaboom");
+    expect(body).toMatchObject({
+      success: false,
+      op: "demo boom",
+      exitCode: 1,
+      error: { code: "UNHANDLED_ERROR", message: "Command failed unexpectedly." },
+    });
+    expect(JSON.stringify(body)).not.toContain("kaboom");
     expect(audits.events).toHaveLength(1);
-    expect(audits.events[0]?.isError).toBe(true);
+    expect(audits.events[0]).toMatchObject({ isError: true, errorCode: "UNHANDLED_ERROR", exitCode: 1 });
   });
 
   it.each([

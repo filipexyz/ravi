@@ -41,6 +41,12 @@ class MediaAuthorizationCommands {
 
 @Group({ name: "contract", description: "Contract error fixture", scope: "open" })
 class ContractToolCommands {
+  @Command({ name: "boom", description: "Throw an unexpected internal error" })
+  @CommandAccess({ kind: "read", resource: "contract", action: "boom", risk: "low" })
+  boom() {
+    throw new Error("private provider detail");
+  }
+
   @Command({ name: "legacy", description: "Throw a legacy expected failure" })
   @CommandAccess({ kind: "read", resource: "contract", action: "legacy", risk: "low" })
   legacy() {
@@ -103,6 +109,7 @@ const contractContext: ContextRecord = {
   kind: "test-runtime",
   agentId: "contract-test",
   capabilities: [
+    { permission: "read", objectType: "contract", objectId: "boom", source: "test" },
     { permission: "read", objectType: "contract", objectId: "emitted", source: "test" },
     { permission: "read", objectType: "contract", objectId: "legacy", source: "test" },
     { permission: "read", objectType: "contract", objectId: "silent", source: "test" },
@@ -156,6 +163,24 @@ describe("tools export provider-runtime authorization", () => {
 });
 
 describe("tools export contract errors", () => {
+  it("returns a redacted canonical envelope for an unexpected error", async () => {
+    const tool = extractTools([ContractToolCommands]).find((candidate) => candidate.name === "contract_boom");
+    expect(tool).toBeDefined();
+
+    const result = await runWithContext({ agentId: contractContext.agentId, context: contractContext }, () =>
+      tool!.handler({}),
+    );
+
+    expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
+    const text = result.content[0]?.text ?? "{}";
+    expect(text).not.toContain("private provider detail");
+    expect(JSON.parse(text)).toMatchObject({
+      success: false,
+      op: "contract boom",
+      error: { code: "UNHANDLED_ERROR", message: "Command failed unexpectedly." },
+    });
+  });
+
   it("converts a legacy expected failure into one canonical envelope", async () => {
     const tool = extractTools([ContractToolCommands]).find((candidate) => candidate.name === "contract_legacy");
     expect(tool).toBeDefined();

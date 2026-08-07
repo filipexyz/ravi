@@ -75,6 +75,11 @@ The canonical failure value is a `ContractError` and its envelope:
   CLI keeps the concise message. This fallback is not a substitute for a
   domain-specific code or `USAGE_ERROR` when the handler can classify the
   failure more precisely.
+- An unexpected exception is normalized as `UNHANDLED_ERROR`, exit `1`, with
+  the real operation path and a safe generic message. Process CLI, exported
+  tools, gateway and audit MUST NOT expose the raw exception, provider detail
+  or stack. The gateway MAY retain HTTP `500` for this internal-fault class,
+  but its body remains the canonical contract envelope.
 
 ## Transport equivalence
 
@@ -88,7 +93,7 @@ details and policy outcome:
   execution failure.
 - Gateway/SDK: returns the canonical envelope plus `exitCode`. HTTP status MAY
   communicate the broad class, but a `ContractError` MUST NOT become a generic
-  HTTP 500.
+  HTTP 500 body.
 - Audit: records the same operation and outcome as `succeeded`, `blocked`,
   `usage_error`, `denied` or `failed`. A policy block MUST NOT be recorded as
   an executed mutation or generic failure.

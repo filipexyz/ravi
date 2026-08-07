@@ -68,8 +68,8 @@ export function internalError(message: string): Response {
  * HTTP status communicates the broad class; the body remains the canonical
  * contract envelope and carries the original CLI exit code losslessly.
  */
-export function contractErrorResponse(error: ContractError): Response {
-  const status = error.exitCode === 2 ? 400 : error.exitCode === 3 ? 409 : 422;
+export function contractErrorResponse(error: ContractError, statusOverride?: number): Response {
+  const status = statusOverride ?? (error.exitCode === 2 ? 400 : error.exitCode === 3 ? 409 : 422);
   const body: GatewayContractErrorBody = {
     ...error.envelope(),
     exitCode: error.exitCode,

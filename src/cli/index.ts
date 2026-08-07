@@ -18,7 +18,13 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { registerCommands } from "./registry.js";
 import * as allCommands from "./commands/index.js";
-import { ContractError, contractFailureOutcome, installUsageContract } from "./agent-contract.js";
+import {
+  ContractError,
+  contractFailureOutcome,
+  installUsageContract,
+  renderContractError,
+  unexpectedErrorToContractError,
+} from "./agent-contract.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
 import { runUpdate } from "./commands/update.js";
@@ -328,18 +334,19 @@ void bootstrapCli().catch(async (error: unknown) => {
     process.exitCode = error.exitCode;
     return;
   }
+  const contractError = unexpectedErrorToContractError("cli bootstrap");
+  renderContractError(contractError, process.argv.includes("--json"));
   await emitCliAuditEvent({
     group: "cli",
     name: "bootstrap",
     tool: "cli_bootstrap",
-    outcome: "failed",
-    exitCode: 1,
-    errorCode: "UNHANDLED_ERROR",
+    outcome: contractFailureOutcome(contractError),
+    exitCode: contractError.exitCode,
+    errorCode: contractError.code,
     status: "completed",
     closeLazyConnection: true,
   });
-  console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
+  process.exitCode = contractError.exitCode;
 });
 
 async function bootstrapCli(): Promise<void> {

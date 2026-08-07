@@ -20,7 +20,12 @@ import { nats } from "../nats.js";
 import { getContext, runWithContext } from "./context.js";
 import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./command-access.js";
 import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
-import { ContractError, contractFailureOutcome, expectedErrorToContractError } from "./agent-contract.js";
+import {
+  ContractError,
+  contractFailureOutcome,
+  expectedErrorToContractError,
+  unexpectedErrorToContractError,
+} from "./agent-contract.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "./cloud-error-contract.js";
 import { sanitizeCliAuditValue } from "./audit.js";
@@ -297,7 +302,8 @@ function buildHandler(
           ? err
           : isCloudAuthError(err)
             ? cloudErrorToContractError(commandOperation(group, command), err)
-            : expectedErrorToContractError(commandOperation(group, command), err);
+            : (expectedErrorToContractError(commandOperation(group, command), err) ??
+              unexpectedErrorToContractError(commandOperation(group, command)));
       if (contractError) {
         contractExitCode = contractError.exitCode;
         contractErrorCode = contractError.code;
@@ -309,10 +315,6 @@ function buildHandler(
         const envelope = contractError.envelope();
         const renderedEnvelope = output.find((line) => isSameContractEnvelope(line, envelope));
         output.splice(0, output.length, renderedEnvelope ?? JSON.stringify(envelope));
-      } else {
-        contractExitCode = 1;
-        outcome = "failed";
-        output.push(`Error: ${err instanceof Error ? err.message : String(err)}`);
       }
     } finally {
       console.log = originalLog;

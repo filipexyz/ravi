@@ -79,6 +79,12 @@ export function expectedErrorToContractError(op: string, error: unknown): Contra
   });
 }
 
+export function unexpectedErrorToContractError(op: string): ContractError {
+  return new ContractError(op, "UNHANDLED_ERROR", "Command failed unexpectedly.", CONTRACT_EXIT_ERROR, {
+    suggestedAction: "Inspect redacted runtime logs and retry when the underlying cause is resolved",
+  });
+}
+
 export function renderContractError(error: ContractError, asJson: boolean | undefined): void {
   if (getContext()?.suppressCliOutput === true) return;
   if (asJson) {

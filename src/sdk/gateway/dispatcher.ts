@@ -32,13 +32,13 @@ import {
   CONTRACT_EXIT_USAGE,
   contractFailureOutcome,
   expectedErrorToContractError,
+  unexpectedErrorToContractError,
 } from "../../cli/agent-contract.js";
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
 import {
   contractErrorResponse,
   errorResponse,
-  internalError,
   json,
   permissionDenied,
   returnShapeError,
@@ -169,17 +169,17 @@ export async function dispatch(
         }),
     );
   } catch (err) {
-    const contractError =
+    const knownContractError =
       err instanceof ContractError
         ? err
         : isCloudAuthError(err)
           ? cloudErrorToContractError(commandOperation(group, cmd.command), err)
           : expectedErrorToContractError(commandOperation(group, cmd.command), err);
-    if (contractError) {
-      outcome = contractFailureOutcome(contractError);
-      auditExitCode = contractError.exitCode;
-      auditErrorCode = contractError.code;
-      response = contractErrorResponse(contractError);
+    if (knownContractError) {
+      outcome = contractFailureOutcome(knownContractError);
+      auditExitCode = knownContractError.exitCode;
+      auditErrorCode = knownContractError.code;
+      response = contractErrorResponse(knownContractError);
     } else if (err instanceof RaviAppError) {
       outcome = "failed";
       auditExitCode = 1;
@@ -189,11 +189,11 @@ export async function dispatch(
         evidence: err.evidence,
       });
     } else {
-      outcome = "failed";
-      auditExitCode = 1;
-      auditErrorCode = "INTERNAL_ERROR";
-      const message = err instanceof Error ? err.message : String(err);
-      response = internalError(message);
+      const unexpectedError = unexpectedErrorToContractError(commandOperation(group, cmd.command));
+      outcome = contractFailureOutcome(unexpectedError);
+      auditExitCode = unexpectedError.exitCode;
+      auditErrorCode = unexpectedError.code;
+      response = contractErrorResponse(unexpectedError, 500);
     }
     const audit = buildAuditEvent(cmd, tool, auditInput, outcome, startedAt, lineage, auditExitCode, auditErrorCode);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);

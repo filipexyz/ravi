@@ -22,6 +22,7 @@ import {
   contractFailureOutcome,
   expectedErrorToContractError,
   renderContractError,
+  unexpectedErrorToContractError,
 } from "./agent-contract.js";
 import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation, renderCloudContractError } from "./cloud-error-contract.js";
@@ -275,7 +276,7 @@ function registerCommand(
           ? err
           : isCloudAuthError(err)
             ? cloudErrorToContractError(op, err)
-            : expectedErrorToContractError(op, err);
+            : (expectedErrorToContractError(op, err) ?? unexpectedErrorToContractError(op));
       if (contractError) {
         if (isCloudAuthError(err)) renderCloudContractError(contractError, input.json === true);
         else if (!(err instanceof ContractError)) renderContractError(contractError, input.json === true);
@@ -285,10 +286,6 @@ function registerCommand(
         contractExitCode = contractError.exitCode;
         contractErrorCode = contractError.code;
         outcome = contractFailureOutcome(contractError);
-      } else {
-        contractExitCode = 1;
-        outcome = "failed";
-        console.error(`Error: ${err instanceof Error ? err.message : err}`);
       }
     }
 

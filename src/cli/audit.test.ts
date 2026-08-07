@@ -1,5 +1,6 @@
-import { describe, expect, it } from "bun:test";
-import { buildCliAuditPayload, sanitizeCliAuditValue } from "./audit.js";
+import { describe, expect, it, spyOn } from "bun:test";
+import { ContractError } from "./agent-contract.js";
+import { buildCliAuditPayload, runWithCliAudit, sanitizeCliAuditValue, wasContractErrorAudited } from "./audit.js";
 
 describe("CLI audit outcomes", () => {
   it("records a policy brake as blocked rather than an execution error", () => {
@@ -32,6 +33,37 @@ describe("CLI audit outcomes", () => {
     });
 
     expect(payload).toMatchObject({ isError: true, outcome: "usage_error", exitCode: 2 });
+  });
+
+  it("normalizes and redacts an unexpected top-level command failure", async () => {
+    const previousSuppressAudit = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+    const output: string[] = [];
+    const log = spyOn(console, "log").mockImplementation((value: unknown) => output.push(String(value)));
+
+    let failure: unknown;
+    try {
+      await runWithCliAudit({ group: "demo", name: "boom", input: { json: true } }, () => {
+        throw new Error("private provider detail");
+      });
+    } catch (error) {
+      failure = error;
+    } finally {
+      log.mockRestore();
+      if (previousSuppressAudit === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousSuppressAudit;
+    }
+
+    expect(failure).toBeInstanceOf(ContractError);
+    expect(failure).toMatchObject({ op: "demo boom", code: "UNHANDLED_ERROR", exitCode: 1 });
+    expect(wasContractErrorAudited(failure as ContractError)).toBe(true);
+    expect(output).toHaveLength(1);
+    expect(output[0]).not.toContain("private provider detail");
+    expect(JSON.parse(output[0] ?? "{}")).toMatchObject({
+      success: false,
+      op: "demo boom",
+      error: { code: "UNHANDLED_ERROR", message: "Command failed unexpectedly." },
+    });
   });
 });
 

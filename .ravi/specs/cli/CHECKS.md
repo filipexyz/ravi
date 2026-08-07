@@ -13,7 +13,9 @@
   same stable code for the same failure.
 - A handler using the compatibility `fail()` helper produces one parseable
   `COMMAND_FAILED` envelope in JSON CLI, tool and gateway calls, while an
-  unexpected raw exception remains an internal failure.
+  unexpected raw exception produces one redacted `UNHANDLED_ERROR` envelope,
+  exit `1`, and the same operation/error code in audit. Gateway HTTP status may
+  remain `500`, but its response body must not expose the raw exception.
 - Every implementation with persistent mutation, outbound effect, paid
   generation, provider mutation or triggered execution uses
   `@CommandAccess({ kind: "mutate" })`.
