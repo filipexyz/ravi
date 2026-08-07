@@ -38,7 +38,7 @@ describe("global confirmation policy metadata", () => {
     expect(invalid).toEqual([]);
   });
 
-  it("backs unconditional confirmation metadata with an executable mutation brake", () => {
+  it("backs every confirmation declaration with an executable mutation brake", () => {
     const invalid = commands
       .filter((command) => command.access?.requiresConfirmation === true)
       .filter(
@@ -46,6 +46,23 @@ describe("global confirmation policy metadata", () => {
           command.access?.kind !== "mutate" || executeOption(command) === undefined,
       )
       .map((command) => command.fullName);
+
+    expect(invalid).toEqual([]);
+  });
+
+  it("declares every executable mutation brake in confirmation metadata", () => {
+    const invalid = commands
+      .filter((command) => executeOption(command) !== undefined)
+      .filter(
+        (command) =>
+          command.access?.kind !== "mutate" || command.access.requiresConfirmation !== true,
+      )
+      .map((command) => ({
+        command: command.fullName,
+        kind: command.access?.kind ?? null,
+        risk: command.access?.risk ?? null,
+        requiresConfirmation: command.access?.requiresConfirmation ?? null,
+      }));
 
     expect(invalid).toEqual([]);
   });
