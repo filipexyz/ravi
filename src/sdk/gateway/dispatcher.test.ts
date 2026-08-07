@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
+import { RaviAppError } from "../../apps/types.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
 import { contractFail } from "../../cli/agent-contract.js";
 import { fail, getContext } from "../../cli/context.js";
@@ -99,6 +100,14 @@ class GatewayDemoCommands {
   @CommandAccess({ kind: "read", resource: "demo", action: "boom", risk: "low" })
   boom() {
     throw new Error("kaboom");
+  }
+
+  @Command({ name: "app-error", description: "Throws an app-domain expected error" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "app-error", risk: "low" })
+  appError() {
+    throw new RaviAppError("not_found", "Missing app at private-path/app-secret", [
+      { kind: "manifest", detail: "private-path/app-secret" },
+    ]);
   }
 
   @Command({ name: "legacy", description: "Throws a legacy expected failure" })
@@ -467,6 +476,29 @@ describe("dispatch — validation", () => {
 });
 
 describe("dispatch — error path", () => {
+  it("normalizes RaviAppError as a redacted canonical contract and audit", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.app-error"),
+      {},
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(404);
+    const body = await result.response.json();
+    expect(body).toMatchObject({
+      success: false,
+      op: "demo app-error",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "not_found", message: "Ravi app was not found." },
+    });
+    expect(JSON.stringify(body)).not.toContain("private-path");
+    expect(JSON.stringify(body)).not.toContain("app-secret");
+    expect(audits.events[0]).toMatchObject({ outcome: "failed", exitCode: 1, errorCode: "not_found" });
+  });
+
   it("preserves a legacy expected failure as a non-500 contract response", async () => {
     const audits = captureAudits();
     const result = await dispatch(
