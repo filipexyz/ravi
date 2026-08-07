@@ -1115,52 +1115,54 @@ describe("prox calls agent-first contract", () => {
   });
 
   it("request dry-run exposes only safe indicators and persists no call request", async () => {
-    const phoneSentinel = "+5511987654321";
-    const reasonSentinel = "REASON_PLAN_SENTINEL";
-    const dynamicValueSentinels = ["DYNAMIC_VALUE_Z_SENTINEL", "DYNAMIC_VALUE_A_SENTINEL"];
+    await withFreshCallsState("virgin-request-safe-plan", async () => {
+      const phoneSentinel = "+5511987654321";
+      const reasonSentinel = "REASON_PLAN_SENTINEL";
+      const dynamicValueSentinels = ["DYNAMIC_VALUE_Z_SENTINEL", "DYNAMIC_VALUE_A_SENTINEL"];
 
-    const error = await expectContractError(
-      () =>
-        new ProxCallsCommands().request(
-          "checkin",
-          "person_brake_1",
-          reasonSentinel,
-          phoneSentinel,
-          "normal",
-          [`zeta=${dynamicValueSentinels[0]}`, `alpha=${dynamicValueSentinels[1]}`],
-          undefined,
-          undefined,
-          true,
-          undefined,
-        ),
-      "WRITE_REQUIRES_EXECUTE",
-      3,
-    );
+      const error = await expectContractError(
+        () =>
+          new ProxCallsCommands().request(
+            "checkin",
+            "person_brake_1",
+            reasonSentinel,
+            phoneSentinel,
+            "normal",
+            [`zeta=${dynamicValueSentinels[0]}`, `alpha=${dynamicValueSentinels[1]}`],
+            undefined,
+            undefined,
+            true,
+            undefined,
+          ),
+        "WRITE_REQUIRES_EXECUTE",
+        3,
+      );
 
-    expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toEqual({
-      profileId: "checkin",
-      profileProvider: "elevenlabs",
-      personId: "person_brake_1",
-      phoneProvided: true,
-      reasonProvided: true,
-      priority: "normal",
-      dynamicVariableCount: 2,
-      skipOriginNotify: false,
-      force: false,
-      profileResolution: "built-in-default",
-      providerMode: "stub",
+      expect(error.details.dryRun).toBe(true);
+      expect(error.details.plan).toEqual({
+        profileId: "checkin",
+        profileProvider: "elevenlabs",
+        personId: "person_brake_1",
+        phoneProvided: true,
+        reasonProvided: true,
+        priority: "normal",
+        dynamicVariableCount: 2,
+        skipOriginNotify: false,
+        force: false,
+        profileResolution: "built-in-default",
+        providerMode: "stub",
+      });
+      const serializedPlan = JSON.stringify(error.details.plan);
+      expect(serializedPlan).not.toContain(phoneSentinel);
+      expect(serializedPlan).not.toContain(reasonSentinel);
+      for (const sentinel of dynamicValueSentinels) expect(serializedPlan).not.toContain(sentinel);
+      expect(serializedPlan).not.toContain("alpha");
+      expect(serializedPlan).not.toContain("zeta");
+      const tables = getDb()
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'call_requests'")
+        .all();
+      expect(tables).toEqual([]);
     });
-    const serializedPlan = JSON.stringify(error.details.plan);
-    expect(serializedPlan).not.toContain(phoneSentinel);
-    expect(serializedPlan).not.toContain(reasonSentinel);
-    for (const sentinel of dynamicValueSentinels) expect(serializedPlan).not.toContain(sentinel);
-    expect(serializedPlan).not.toContain("alpha");
-    expect(serializedPlan).not.toContain("zeta");
-    const row = getDb()
-      .prepare("SELECT COUNT(*) AS c FROM call_requests WHERE target_person_id = ?")
-      .get("person_brake_1") as { c: number };
-    expect(row.c).toBe(0);
   });
 
   it("request dry-run does not initialize call schema or seed defaults", async () => {
@@ -1228,25 +1230,29 @@ describe("prox calls agent-first contract", () => {
     initCallsDefaultsForDialing();
     updateCallProfile("checkin", { enabled: false });
 
-    const error = await expectContractError(
-      () =>
-        new ProxCallsCommands().request(
-          "checkin",
-          "person_disabled_profile",
-          "reason",
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          true,
-          undefined,
-        ),
-      "CALL_PROFILE_DISABLED",
-      1,
-    );
+    try {
+      const error = await expectContractError(
+        () =>
+          new ProxCallsCommands().request(
+            "checkin",
+            "person_disabled_profile",
+            "reason",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            undefined,
+          ),
+        "CALL_PROFILE_DISABLED",
+        1,
+      );
 
-    expect(error.details.suggestedAction).toContain("Enable 'checkin'");
+      expect(error.details.suggestedAction).toContain("Enable 'checkin'");
+    } finally {
+      updateCallProfile("checkin", { enabled: true });
+    }
   });
 
   it("request rejects an invalid dynamic variable without echoing its value", async () => {
