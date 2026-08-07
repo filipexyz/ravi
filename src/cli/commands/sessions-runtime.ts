@@ -152,7 +152,7 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "steer", description: "Steer the active runtime turn" })
-  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "steer", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.runtime", action: "steer", risk: "high" })
   async steer(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("text", { description: "Steering text to append to the active turn" }) text: string,
@@ -174,7 +174,7 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "follow-up", description: "Queue a follow-up after the active runtime turn" })
-  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "follow-up", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.runtime", action: "follow-up", risk: "high" })
   async followUp(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("text", { description: "Follow-up text to run after the active turn" }) text: string,
@@ -196,7 +196,7 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "interrupt", description: "Interrupt the active runtime turn" })
-  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "interrupt", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.runtime", action: "interrupt", risk: "high" })
   async interrupt(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Option({ flags: "--thread <id>", description: "Expected runtime thread id" }) threadId?: string,
@@ -214,7 +214,7 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "rollback", description: "Rollback completed runtime turns" })
-  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "rollback", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.runtime", action: "rollback", risk: "destructive" })
   async rollback(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("turns", { description: "Number of completed turns to rollback", required: false }) turns?: string,
@@ -232,7 +232,7 @@ export class SessionRuntimeCommands {
   }
 
   @Command({ name: "fork", description: "Fork a runtime thread if the provider supports it" })
-  @CommandAccess({ kind: "read", resource: "sessions.runtime", action: "fork", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "sessions.runtime", action: "fork", risk: "high" })
   async fork(
     @Arg("session", { description: "Ravi session name or key" }) nameOrKey: string,
     @Arg("threadId", { description: "Runtime thread id; defaults to current thread", required: false })

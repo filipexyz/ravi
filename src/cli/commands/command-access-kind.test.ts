@@ -25,6 +25,8 @@ import { MetricsCommands } from "./metrics.js";
 import { PagesCommands } from "./pages.js";
 import { ProxCallsCommands } from "./prox-calls.js";
 import { SessionFollowupCommands } from "./session-followups.js";
+import { SessionRuntimeCommands } from "./sessions-runtime.js";
+import { SessionCommands } from "./sessions.js";
 import { SpecsCommands } from "./specs.js";
 import { ThreadCommands } from "./threads.js";
 import { TranscribeCommands } from "./transcribe.js";
@@ -98,7 +100,7 @@ const ACCESS_CASES: AccessCase[] = [
     command: "move",
     target: CrmOpportunityCommands,
     method: "move",
-    risk: "high",
+    risk: "medium",
   },
   {
     label: "crm fact propose",
@@ -205,12 +207,100 @@ const ACCESS_CASES: AccessCase[] = [
     risk: "high",
   },
   {
+    label: "sessions goal",
+    group: "sessions",
+    command: "goal",
+    target: SessionCommands,
+    method: "goal",
+    risk: "medium",
+  },
+  {
+    label: "sessions extend",
+    group: "sessions",
+    command: "extend",
+    target: SessionCommands,
+    method: "extend",
+    risk: "medium",
+  },
+  {
+    label: "sessions keep",
+    group: "sessions",
+    command: "keep",
+    target: SessionCommands,
+    method: "keep",
+    risk: "medium",
+  },
+  {
+    label: "sessions ask",
+    group: "sessions",
+    command: "ask",
+    target: SessionCommands,
+    method: "ask",
+    risk: "high",
+  },
+  {
+    label: "sessions answer",
+    group: "sessions",
+    command: "answer",
+    target: SessionCommands,
+    method: "answer",
+    risk: "high",
+  },
+  {
+    label: "sessions inform",
+    group: "sessions",
+    command: "inform",
+    target: SessionCommands,
+    method: "inform",
+    risk: "high",
+  },
+  {
     label: "sessions followups snooze",
     group: "sessions_followups",
     command: "snooze",
     target: SessionFollowupCommands,
     method: "snooze",
     risk: "medium",
+  },
+  {
+    label: "sessions runtime steer",
+    group: "sessions.runtime",
+    command: "steer",
+    target: SessionRuntimeCommands,
+    method: "steer",
+    risk: "high",
+  },
+  {
+    label: "sessions runtime follow-up",
+    group: "sessions.runtime",
+    command: "follow-up",
+    target: SessionRuntimeCommands,
+    method: "followUp",
+    risk: "high",
+  },
+  {
+    label: "sessions runtime interrupt",
+    group: "sessions.runtime",
+    command: "interrupt",
+    target: SessionRuntimeCommands,
+    method: "interrupt",
+    risk: "high",
+  },
+  {
+    label: "sessions runtime rollback",
+    group: "sessions.runtime",
+    command: "rollback",
+    target: SessionRuntimeCommands,
+    method: "rollback",
+    risk: "destructive",
+  },
+  {
+    label: "sessions runtime fork",
+    group: "sessions.runtime",
+    command: "fork",
+    target: SessionRuntimeCommands,
+    method: "fork",
+    risk: "high",
   },
   {
     label: "threads note",

@@ -2848,10 +2848,10 @@ export class SessionCommands {
     description: "Inspect or mutate persisted session goal state",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "goal",
-    risk: "low",
+    risk: "medium",
   })
   goal(
     @Arg("action", {
@@ -3908,10 +3908,10 @@ export class SessionCommands {
 
   @Command({ name: "extend", description: "Extend an ephemeral session's TTL" })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "extend",
-    risk: "low",
+    risk: "medium",
   })
   extend(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -3972,10 +3972,10 @@ export class SessionCommands {
 
   @Command({ name: "keep", description: "Make an ephemeral session permanent" })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "keep",
-    risk: "low",
+    risk: "medium",
   })
   keep(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -4313,10 +4313,10 @@ export class SessionCommands {
     description: "Ask a question to another session (fire-and-forget)",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "ask",
-    risk: "low",
+    risk: "high",
   })
   async ask(
     @Arg("target", { description: "Target session name" }) target: string,
@@ -4394,10 +4394,10 @@ export class SessionCommands {
     description: "Answer a question from another session (fire-and-forget)",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "answer",
-    risk: "low",
+    risk: "high",
   })
   async answer(
     @Arg("target", { description: "Target session name (the one that asked)" })
@@ -4549,10 +4549,10 @@ export class SessionCommands {
     description: "Send an informational message to another session (fire-and-forget)",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "inform",
-    risk: "low",
+    risk: "high",
   })
   async inform(
     @Arg("target", { description: "Target session name" }) target: string,
