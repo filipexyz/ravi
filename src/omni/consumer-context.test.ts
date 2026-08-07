@@ -47,6 +47,7 @@ let stateDir: string | null = null;
 let agentCwd = "/tmp/ravi-agent";
 let contactIntakeMode: "off" | "discovered" | "pending" = "off";
 let routeResult: Record<string, unknown> | null = null;
+let configuredAgentMode: "active" | "sentinel" = "active";
 
 function defaultRouteResult(): Record<string, unknown> {
   return {
@@ -57,7 +58,7 @@ function defaultRouteResult(): Record<string, unknown> {
     agent: {
       id: "main",
       cwd: agentCwd,
-      mode: "active",
+      mode: configuredAgentMode,
     },
   };
 }
@@ -124,7 +125,7 @@ mock.module("../config-store.js", () => ({
           id: "main",
           cwd: agentCwd,
           dmScope: "main",
-          mode: "active",
+          mode: configuredAgentMode,
         },
       },
       defaultAgent: "main",
@@ -295,6 +296,7 @@ describe("OmniConsumer channel context", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-omni-consumer-context-");
     agentCwd = join(stateDir, "agent");
+    configuredAgentMode = "active";
     routeResult = defaultRouteResult();
     contactIntakeMode = "off";
     actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", agentCwd);
@@ -397,8 +399,8 @@ describe("OmniConsumer channel context", () => {
   });
 
   it("includes the required execution confirmation in sentinel reply guidance", async () => {
+    configuredAgentMode = "sentinel";
     routeResult = defaultRouteResult();
-    (routeResult.agent as Record<string, unknown>).mode = "sentinel";
     const sender = {
       send: mock(async () => {}),
       sendTyping: mock(async () => {}),
