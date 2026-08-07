@@ -7,7 +7,7 @@ piloto `crm` validado por benchmark de 270 execuções.
 > históricos da execução. Afirmações posteriormente invalidadas não são a
 > verdade vigente. A fonte normativa é `.ravi/specs/cli/SPEC.md`; o estado
 > atual, as regressões reconhecidas e a nota de compatibilidade estão na
-> **FASE 3** ao final deste arquivo.
+> **FASE 4** ao final deste arquivo.
 
 **Contrato aplicado por domínio migrado:**
 1. Envelope de erro em `--json`: `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
@@ -899,10 +899,11 @@ Na abertura dos stores, grants `read` exatos de menor privilégio recebem o
 grant `mutate` correspondente em quatro superfícies duráveis: defaults de
 agente, permission tags do sistema/provider, observer rules e observer
 bindings. O grant `read` original é preservado, a migração é idempotente e
-admin/full/group grants permanecem inalterados. Contextos runtime ativos não
-são reescritos. Wildcards `read` amplos são ambíguos e **não** são promovidos
-automaticamente para evitar escalada de privilégio; eles são contabilizados
-para revisão manual.
+admin/full/group grants permanecem inalterados. Contextos runtime ativos e não
+revogados recebem os mesmos grants exatos; contextos expirados ou revogados
+permanecem intactos. Wildcards `read` expandem somente para os grants `mutate`
+exatos das operações reclassificadas que já autorizavam; nunca viram um
+wildcard `mutate`. O log identifica os agentes afetados.
 
 Rollback exige cuidado: reverter o código da migração não remove grants
 `mutate` já anexados. Qualquer remoção deve ser uma auditoria explícita dos
@@ -931,8 +932,10 @@ quatro stores, não um rollback destrutivo automático.
 CLI, tools e gateway/SDK preservam `op`, envelope, `error.code` e a taxonomia
 0/1/2/3. Auditoria distingue `blocked`, `usage_error`, `denied` e `failed`.
 Specs, skills, hints e exemplos que invocam operações freadas devem carregar a
-confirmação correta. OpenAPI e SDKs TypeScript/Swift são regenerados a partir
-do registry vivo; arquivos gerados nunca são editados à mão.
+confirmação correta. OpenAPI e SDKs TypeScript/Swift são derivados do registry
+vivo. Neste follow-up, como a execução local de Bun foi desabilitada por
+decisão do operador, hashes e snapshots foram reproduzidos estaticamente; os
+checks de drift executados pela CI são a autoridade sobre essa reprodução.
 
 Evidência focada observada nesta fase: 4 testes de processo real, 35 testes de
 tools/gateway, 12 testes de autorização/migração, 21 testes do observation
@@ -950,3 +953,47 @@ O CI Linux `31149690976` do head publicado `a7d668d1` passou Build, Typecheck,
 Test e Quality Gate (specs + coverage). PR Description e GitGuardian também
 passaram. Com os checks globais observados, a spec normativa
 `.ravi/specs/cli/SPEC.md` foi promovida de `draft` para `active`.
+
+---
+
+## FASE 4 — fechamento adversarial da PR 399 (2026-08-07)
+
+Esta fase substitui o veredito final da FASE 3. A spec voltou para `draft`
+porque novos commits corrigiram lacunas encontradas depois daquele CI; o run
+verde de `a7d668d1` é evidência histórica, não aprovação do head atual.
+
+### Correções adicionais integradas
+
+- `RaviAppError` dos handlers reais de Apps passou a preservar o contrato em
+  CLI, tool e gateway, em vez de virar erro genérico ou HTTP 500 semântico.
+- Contextos runtime ativos passaram a receber os grants exatos de
+  compatibilidade descritos acima, inclusive quando o grant legado era um
+  wildcard `read`; contextos expirados/revogados continuam inalterados.
+- Responses binárias não-success agora viram falha contratual nos três
+  transportes; sucesso binário deixa de ser apresentado como output vazio.
+- Planos e audit inputs de Devin, grupos e Slack foram minimizados: conteúdo,
+  telefones, IDs e refs sensíveis deram lugar a tamanhos, contagens, presença,
+  valores mascarados e descrição do efeito material.
+- A inspeção read-only de artifacts preserva o artifact existente quando o
+  banco possui schema parcial; tabelas posteriores ausentes não transformam o
+  estado inteiro em vazio e nenhuma tabela é criada no dry-run.
+- Todo comando que expõe `--execute` agora é `mutate` e declara
+  `requiresConfirmation: true`. Em comandos condicionais, essa metadata indica
+  que existe um caminho confirmável; a invocação segura continua imediata.
+- O gate global passou a verificar a relação nos dois sentidos, e a seleção da
+  CI inclui taxonomia de processo, paridade de transportes, cloud errors,
+  schema inference, artifacts e drift TypeScript/OpenAPI/Swift.
+- A spec global foi consolidada como fonte normativa; specs de domínio ficam
+  responsáveis somente pelas classificações, exceções e checks locais.
+
+### Estado de verificação
+
+Por decisão explícita do operador, nenhum Bun/Bunx foi executado localmente
+nesta fase. Cada commit foi verificado por diff estático, arquivos staged
+explícitos e `git diff --check`; testes, build, typecheck e quality gate só
+contam quando a CI Linux da PR 399 terminar no mesmo SHA.
+
+**Veredito vigente: DO NOT APPROVE enquanto a CI do head atual não estiver
+verde e a spec continuar `draft`.** Depois do run verde, este ledger deve
+registrar SHA, run, checks por identidade e a spec pode voltar a `active` em um
+commit final separado.
