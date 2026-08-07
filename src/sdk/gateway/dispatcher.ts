@@ -411,7 +411,7 @@ function checkReturnShape(schema: ZodTypeAny, value: unknown): JsonIssue[] | nul
 }
 
 function asToolContext(scope: ScopeContext, record: ContextRecord | null): ToolContext {
-  const ctx: ToolContext = { suppressCliOutput: true };
+  const ctx: ToolContext = { suppressCliOutput: true, transport: "gateway" };
   if (scope.agentId ?? record?.agentId) ctx.agentId = scope.agentId ?? record?.agentId;
   if (scope.sessionKey ?? record?.sessionKey) ctx.sessionKey = scope.sessionKey ?? record?.sessionKey;
   if (scope.sessionName ?? record?.sessionName) ctx.sessionName = scope.sessionName ?? record?.sessionName;

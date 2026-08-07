@@ -13,6 +13,8 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { ContractError } from "../agent-contract.js";
+import { runWithContext } from "../context.js";
 import { DaemonCommands, findSourceProjectRoot, resolveDaemonRuntimeTarget } from "./daemon.js";
 
 const tempDirs: string[] = [];
@@ -217,6 +219,22 @@ describe("DaemonCommands --json", () => {
   });
 });
 
+describe("DaemonCommands log transport", () => {
+  it("rejects an unbounded follow stream before spawning it through a tool transport", () => {
+    let failure: unknown;
+    try {
+      runWithContext({ transport: "tool", suppressCliOutput: true }, () =>
+        new DaemonCommands().logs(true, "50", false, false, true),
+      );
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(ContractError);
+    expect(failure).toMatchObject({ code: "INTERACTIVE_ONLY", exitCode: 2, op: "daemon logs" });
+  });
+});
+
 describe("DaemonCommands init-admin-key negated storage", () => {
   let stateDir: string | null = null;
   let previousCredentialsPath: string | undefined;
@@ -262,5 +280,21 @@ describe("DaemonCommands init-admin-key negated storage", () => {
     expect(result.persisted).toBe(false);
     expect(result.credentialsPath).toBeNull();
     expect(existsSync(process.env.RAVI_CREDENTIALS_PATH!)).toBe(false);
+  });
+
+  it("reports an existing admin context as a policy block", async () => {
+    await issueAdminKey(true);
+
+    let failure: unknown;
+    try {
+      runWithContext({ suppressCliOutput: true }, () =>
+        new DaemonCommands().initAdminKey("test", false, true, false, true),
+      );
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(ContractError);
+    expect(failure).toMatchObject({ code: "ADMIN_CONTEXT_EXISTS", exitCode: 3, op: "daemon init-admin-key" });
   });
 });

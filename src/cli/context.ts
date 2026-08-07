@@ -15,6 +15,8 @@ import { readCredentialsFile, selectDefaultCredentialsKey } from "../runtime/cre
  * Context available to CLI tools during execution
  */
 export interface ToolContext {
+  /** Execution surface for commands that have transport-specific interaction constraints. */
+  transport?: "tool" | "gateway";
   /** Current runtime context ID */
   contextId?: string;
   /** Resolved context registry record */

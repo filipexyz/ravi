@@ -17,7 +17,7 @@ import {
 } from "./decorators.js";
 import { extractOptionName, inferOptionType } from "./utils.js";
 import { nats } from "../nats.js";
-import { getContext } from "./context.js";
+import { getContext, runWithContext } from "./context.js";
 import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./command-access.js";
 import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
 import { ContractError, contractFailureOutcome } from "./agent-contract.js";
@@ -283,7 +283,7 @@ function buildHandler(
 
       // Call the method
       const method = (instance as Record<string, Function>)[methodName];
-      const result = method.apply(instance, finalArgs);
+      const result = runWithContext({ ...(ctx ?? {}), transport: "tool" }, () => method.apply(instance, finalArgs));
 
       if (result instanceof Promise) {
         await result;
