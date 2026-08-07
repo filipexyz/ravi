@@ -279,7 +279,10 @@ function adminSystem(): ContextCapability {
 }
 
 const demoContext = gatewayContext([executeGroup("demo")]);
-const appsContext = gatewayContext([semanticCap("read", "apps", "show")], "gateway-apps");
+const appsContext = gatewayContext(
+  [semanticCap("read", "apps", "show"), semanticCap("use", "app", "contract-missing-app")],
+  "gateway-apps",
+);
 const sessionsContext = gatewayContext([executeGroup("sessions")]);
 const tasksContext = gatewayContext([executeGroup("tasks")]);
 const secretContext = gatewayContext([executeGroup("secret"), adminSystem()]);

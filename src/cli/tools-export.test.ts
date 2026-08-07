@@ -132,7 +132,10 @@ const appsContext: ContextRecord = {
   contextKey: "rctx_apps_transport_test",
   kind: "test-runtime",
   agentId: "apps-test",
-  capabilities: [{ permission: "read", objectType: "apps", objectId: "show", source: "test" }],
+  capabilities: [
+    { permission: "read", objectType: "apps", objectId: "show", source: "test" },
+    { permission: "use", objectType: "app", objectId: "contract-missing-app", source: "test" },
+  ],
   createdAt: Date.now(),
 };
 
