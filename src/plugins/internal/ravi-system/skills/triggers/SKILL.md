@@ -23,14 +23,16 @@ Taxonomia de saída:
 - `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
 - `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
 
-Onde o freio existe hoje: `triggers rm` (deletar é destrutivo — a assinatura do tópico e a config somem sem undo) é dry-run por default e exige `--execute`:
+Onde o freio existe hoje: `triggers rm` (deletar é destrutivo — a assinatura do tópico e a config somem sem undo) e `triggers test` (o evento sintético pode ativar agent ou shell) são dry-run por default e exigem `--execute`:
 
 ```bash
 ravi triggers rm trg_1 --json      # exit 3: plan mostra id, name e topic do trigger que seria deletado
 ravi triggers rm trg_1 --execute   # deleta de verdade
+ravi triggers test trg_1 --json    # exit 3: nenhum evento emitido
+ravi triggers test trg_1 --execute # emite o evento sintético
 ```
 
-Sem freio (declaradas): `add`, `set`, `enable`, `disable` — todas têm comando inverso — e `triggers test`, que dispara com dados FAKE (`_test: true`): é a ferramenta de debug projetada exatamente para pré-visualizar um trigger com segurança antes do tráfego real, e não grava nada (`changedCount: 0`). Frear o `test` tiraria o ensaio barato que você já tem.
+Sem freio (declaradas): `add`, `set`, `enable`, `disable` — todas têm comando inverso.
 
 Compact mode: `triggers list --fields id,name,topic,enabled` devolve só esses campos por item — use em varredura para não arrastar o objeto inteiro de cada trigger.
 
@@ -93,10 +95,10 @@ Keys: name, message, shell, exec, timeout, env-file, on-error, topic, agent, ses
 
 ### Testar trigger
 
-Dispara com dados FAKE, sem freio — é o ensaio seguro antes do tráfego real:
+Mostra o plano sem emitir; `--execute` dispara dados FAKE e pode ativar o agent ou shell:
 
 ```bash
-ravi triggers test <id>
+ravi triggers test <id> --execute
 ```
 
 ### Deletar

@@ -13,12 +13,10 @@ friction inside every setup flow.
 Two decisions specific to this wave:
 
 - `agents permissions` is one op with two personalities: `permissions <id>` is
-  a read and must keep exit 0, while `permissions <id> <profile>` (or
-  `--capabilities`/`--clear-capabilities`) mutates runtime authority. The brake
-  sits after the read-only early return and after profile validation, so a bad
-  profile is still a plain validation failure and only real profile changes hit
-  exit 3 — with `before`/`after` in the plan so the caller reviews the actual
-  authority delta.
+  a read and must keep exit 0. A mutation is braked only when its `before`/`after`
+  delta adds authority. Reductions such as `none` or `--clear-capabilities`
+  apply immediately because delaying containment would increase risk. Profile
+  validation still happens before this decision.
 - `AGENT_NOT_FOUND` suggestions are built from the same
   `filterVisibleAgents(getScopeContext(), ...)` filter that `agents list` uses.
   Agent ids are public through `agents list`, so suggesting them leaks nothing

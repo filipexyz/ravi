@@ -27,8 +27,8 @@ normative: true
 ## Intent
 
 Make `ravi hooks` reliable for agent consumers under the agent-first contract
-defined by `cli`: typed error envelopes, the 0/1/2/3 exit taxonomy, a write
-brake on the only destructive op (`rm`), and compact discovery. Hooks are
+defined by `.ravi/specs/cli`: typed error envelopes, the 0/1/2/3 exit taxonomy,
+risk-based brakes, and compact discovery. Hooks are
 durable runtime automations (event → action), so deleting one silently removes
 behavior the daemon depends on — that is the op that gets the brake.
 
@@ -44,13 +44,17 @@ behavior the daemon depends on — that is the op that gets the brake.
 4. `hooks rm` MUST default to dry-run and require `--execute`; the dry-run MUST
    report `dryRun: true` and the `plan` (hook id, name, event, scope, action),
    and MUST NOT delete the hook nor emit a hook refresh.
-5. `hooks list` MUST accept `--fields a,b,c` for compact output.
-6. When invoked from an agent context (`RAVI_*` envs present), a thrown
+5. `hooks test` MUST require `--execute` only for `inject_context` and
+   `send_session_event`, because those actions deliver into a live session.
+   Other synthetic hook actions remain immediate. Unknown ids MUST fail before
+   either path.
+6. `hooks list` MUST accept `--fields a,b,c` for compact output.
+7. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.
-7. Unbraked writes (`create`, `enable`, `disable`) keep their current
+8. Unbraked writes (`create`, `enable`, `disable`) keep their current
    immediate-write behavior (declared): `create` has an obvious inverse (`rm`)
    and `enable`/`disable` are a reversible pair.
-8. Without `--json`, error output keeps the legacy text path (exit 1), except
+9. Without `--json`, error output keeps the legacy text path (exit 1), except
    usage errors which exit 2 and teach the correct syntax inline.
 
 ## Write classification (brake decision per op)
@@ -60,7 +64,8 @@ behavior the daemon depends on — that is the op that gets the brake.
 | rm | destructive (config + fire counters deleted) | dry-run + `--execute` |
 | create | reversible entry point (`rm` undoes it) | not braked (declared) |
 | enable / disable | reversible pair | not braked (declared) |
-| test | executes the hook once with a synthetic event (declared read/debug) | not braked (declared) |
+| test (`inject_context` / `send_session_event`) | delivers into a live session | dry-run + `--execute` |
+| test (other action types) | synthetic local/reversible action | not braked (declared) |
 
 ## Official error cases
 
@@ -72,7 +77,8 @@ behavior the daemon depends on — that is the op that gets the brake.
 
 ## Internal consumers
 
-The `hooks list` human output teaches `ravi hooks rm <id> --execute`. There is
+The `hooks list` human output teaches `ravi hooks rm <id> --execute`; the
+generated SDK/OpenAPI surfaces expose optional `execute` for conditional tests. There is
 no shipped `hooks` skill teaching this surface — registered as a gap for a
 future wave; until then this spec and the list output are the teaching
 surfaces.
@@ -83,7 +89,8 @@ surfaces.
 - Live checks on the local CLI (isolated `RAVI_STATE_DIR`): `hooks show
   <bad-id> --json` → `HOOK_NOT_FOUND`, exit 1; `hooks list --no-such-flag
   --json` → `USAGE_ERROR`, exit 2; `hooks rm <id> --json` → exit 3 and the
-  hook still listed; with `--execute` → deleted and refresh emitted; `hooks
+  hook still listed; with `--execute` → deleted and refresh emitted; a
+  session-delivery `hooks test` without `--execute` → exit 3 with no delivery; `hooks
   list --json --fields id,name,enabled` narrows items.
 
 ## Known Failure Modes

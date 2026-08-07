@@ -9,6 +9,9 @@
   `dryRun: true` and the `plan`, and MUST NOT reset or delete anything.
 - `sessions delete-message` and `sessions edit-message` without `--execute`
   MUST exit 3 and MUST NOT queue any provider action.
+- Runtime `follow-up`, `rollback` and `fork` without `--execute` MUST exit 3
+  before any runtime request; their execute paths MUST forward the option.
+- Runtime `interrupt` and `steer` MUST remain immediate.
 - With `--execute`, `sessions delete` MUST report `changed: true` and the
   session MUST stop resolving.
 - `sessions prune` keeps its native dry-run payload (candidates, exit 0) — the

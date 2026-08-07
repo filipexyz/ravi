@@ -5,13 +5,12 @@ someone depends on silently stops reacting — there is no undo, the topic,
 filter, cooldown and message template are gone. That makes `rm` the one braked
 op in this domain.
 
-`triggers test` deliberately stays unbraked. It fires the trigger with FAKE
-event data (`_test: true`), mutates nothing (`changedCount: 0`), and exists
-precisely so an agent can preview what a trigger would do BEFORE real events
-hit it. Braking the preview tool would invert the safety model: agents would
-lose the cheap dry-run they already have and be pushed toward validating
-triggers with real traffic. The brake protects against irreversible effects;
-`test` is the reversible rehearsal.
+`triggers test` uses synthetic event data (`_test: true`) and does not mutate
+trigger configuration, but it is still triggered execution: the emitted event
+can wake an agent or start a shell action. Its confirmation is therefore based
+on the external execution effect, not on the command name or a database write.
+Without `--execute`, the command exposes the target and execution type and
+emits nothing.
 
 `add`, `set`, `enable` and `disable` also stay immediate: each has an inverse,
 and the CLI already rejects invalid filters/topics before persisting, so the

@@ -10,9 +10,8 @@
 - `triggers rm` without `--execute` MUST exit 3, MUST report `dryRun: true`
   with the trigger `plan` (id, name, topic), and MUST NOT delete anything nor
   emit `ravi.triggers.refresh`; with `--execute` the delete MUST happen.
-- `triggers test` MUST keep firing its FAKE event without `--execute` — it is
-  declared unbraked as the designed debug tool and MUST report
-  `changedCount: 0`.
+- `triggers test` without `--execute` MUST exit 3 and MUST NOT emit to NATS;
+  with `--execute` it emits the synthetic event and reports `changedCount: 0`.
 - A braked op invoked with `RAVI_*` envs present (agent context) MUST still
   exit 3 with the envelope — the registry dispatcher MUST preserve
   `ContractError.exitCode` instead of the generic exit 1.
@@ -20,7 +19,7 @@
   containing only the requested fields.
 - Unbraked writes (`add`, `set`, `enable`, `disable`) MUST keep
   immediate-write behavior, and the shipped `triggers` skill MUST list them
-  explicitly as unbraked together with the `test` rationale.
+  explicitly as unbraked.
 - Changes under this contract MUST NOT touch the trigger runtime
   (`src/triggers/`); only `src/cli/commands/triggers.ts` is in scope.
 - `bun test src/cli/commands/triggers.test.ts` SHOULD pass after any change to

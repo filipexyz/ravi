@@ -273,7 +273,7 @@ ravi triggers set <id> session main          # main or isolated
 ravi triggers set <id> cooldown 30s          # supports: 5s, 30s, 1m, 5m, 1h
 
 # Test trigger (fires with fake event data)
-ravi triggers test <id>
+ravi triggers test <id> --execute
 
 # Delete
 ravi triggers rm <id> --execute
@@ -372,7 +372,7 @@ defaults:
 ```bash
 ravi agents permissions dev             # Show runtime profile
 ravi agents permissions dev full-access --execute # Full Ravi permissions (sem --execute e dry-run, exit 3)
-ravi agents permissions dev none --execute        # Return to bootstrap defaults (dry-run sem --execute)
+ravi agents permissions dev none                  # Reduce to bootstrap defaults immediately
 ```
 
 The legacy relation ledger remains available for audit/migration:
@@ -586,7 +586,7 @@ ravi triggers show <id>              # Show trigger details
 ravi triggers enable <id>            # Enable trigger
 ravi triggers disable <id>           # Disable trigger
 ravi triggers set <id> <key> <value> # Set property
-ravi triggers test <id>              # Test with fake event
+ravi triggers test <id> --execute    # Test with fake event (dry-run without --execute)
 ravi triggers rm <id> --execute      # Delete trigger (dry-run sem --execute)
 
 # Permissions (REBAC)

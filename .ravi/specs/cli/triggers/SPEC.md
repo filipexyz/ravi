@@ -26,8 +26,8 @@ normative: true
 ## Intent
 
 Make `ravi triggers` reliable for agent consumers under the agent-first
-contract defined by `cli`: typed error envelopes, the 0/1/2/3 exit
-taxonomy, a write brake on the destructive mutation, and compact discovery.
+contract defined by `.ravi/specs/cli`: typed error envelopes, the 0/1/2/3 exit
+taxonomy, risk-based brakes, and compact discovery.
 Only the CLI surface (`src/cli/commands/triggers.ts`) is in scope — the trigger
 RUNTIME (`src/triggers/`) is a separate, untouched contract.
 
@@ -45,10 +45,10 @@ RUNTIME (`src/triggers/`) is a separate, untouched contract.
 4. `triggers rm` MUST default to dry-run and require `--execute`; the dry-run
    MUST report `dryRun: true` and the `plan` (id, name, topic, executionType,
    enabled), and MUST NOT delete anything or emit `ravi.triggers.refresh`.
-5. `triggers test` MUST stay unbraked (declared): it fires the trigger with
-   FAKE event data (`_test: true`), mutates no state (`changedCount: 0`), and
-   is the debug tool designed for safely previewing a trigger — braking it
-   would remove the escape hatch agents use before enabling real traffic.
+5. `triggers test` MUST default to dry-run and require `--execute`. Although
+   its event data is synthetic (`_test: true`) and it does not mutate trigger
+   configuration, emitting the event can activate an agent or shell action.
+   The dry-run MUST happen before the NATS emission.
 6. `triggers list` MUST accept `--fields a,b,c` for compact output (applied to
    both `items` and `triggers`).
 7. When invoked from an agent context (`RAVI_*` envs present), a thrown
@@ -56,7 +56,7 @@ RUNTIME (`src/triggers/`) is a separate, untouched contract.
    dispatcher — the brake exits 3, never a generic `Error: ...` with exit 1.
 8. Unbraked writes (`add`, `set`, `enable`, `disable`) keep their current
    immediate-write behavior and MUST be listed as unbraked in the shipped
-   `triggers` skill, together with the `test` rationale.
+   `triggers` skill.
 9. Without `--json`, error output keeps the legacy text path (exit 1), except
    usage errors which exit 2.
 
@@ -66,7 +66,7 @@ RUNTIME (`src/triggers/`) is a separate, untouched contract.
 |---|---|---|
 | rm | destructive (subscription + config deleted) | dry-run + `--execute` |
 | add / set / enable / disable | reversible config (inverse command exists) | not braked (declared) |
-| test | fires with FAKE data; designed debug tool; mutates nothing | not braked (declared) |
+| test | emits a synthetic event that can activate an agent or shell | dry-run + `--execute` |
 
 ## Official error cases
 
@@ -79,11 +79,9 @@ RUNTIME (`src/triggers/`) is a separate, untouched contract.
 ## Internal consumers
 
 `src/plugins/internal/ravi-system/skills/triggers/SKILL.md` teaches this
-surface and MUST document `--execute` on `triggers rm` and the unbraked `test`
-rationale. The docs pages (`docs/cli/overview.mdx`,
-`docs/features/overview.mdx`, `docs/guides/triggers.mdx`) teach the same flag.
-`AGENTS.md` still lists the bare `ravi triggers rm <id>` form; that root
-instruction file is managed separately from this wave. The trigger runner
+surface and MUST document `--execute` on `triggers rm` and `triggers test`.
+The docs pages (`docs/cli/overview.mdx`, `docs/features/overview.mdx`,
+`docs/guides/triggers.mdx`) and `AGENTS.md` teach the same flag. The trigger runner
 (`src/triggers/`) subscribes and fires through the service layer, never through
 the CLI, so the brake does not affect event-driven firings.
 
@@ -94,14 +92,15 @@ the CLI, so the brake does not affect event-driven firings.
 - Live checks on the local CLI (isolated `RAVI_STATE_DIR`): `triggers show
   <bad-id> --json` → `TRIGGER_NOT_FOUND`, exit 1; `triggers rm <id> --json` →
   exit 3 and the trigger still listed; with `--execute` → deleted; `triggers
-  test <id> --json` → fires the fake event without `--execute`; `triggers list
+  test <id> --json` → exit 3 without emitting; with `--execute` → emits the
+  synthetic event; `triggers list
   --json --fields id,name` narrows items.
 
 ## Known Failure Modes
 
 - `triggers.test.ts` mocks `../context.js` without spreading the real module;
   the mock MUST export `hasContext` or the contract helpers crash in tests.
-- `--execute` MUST stay the LAST `@Option` parameter of `rm`; inserting options
+- `--execute` MUST stay the LAST `@Option` parameter of `test` and `rm`; inserting options
   after it silently shifts positional test call sites.
 - The rm brake must sit before the legacy `try { dbDeleteTrigger(...) }` block;
   inside it, the catch-all `fail("Error: ...")` would flatten the

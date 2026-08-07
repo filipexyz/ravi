@@ -15,6 +15,9 @@
   `HOOK_NOT_FOUND` and MUST NOT write anything.
 - `hooks test <unknown-id> --json` MUST return the `HOOK_NOT_FOUND` envelope
   instead of an unhandled `runHookById` throw.
+- `hooks test` for `inject_context` or `send_session_event` MUST exit 3 without
+  `--execute` and MUST NOT deliver to a session; other action types MUST remain
+  immediate. Both branches MUST be covered.
 - `hooks list --fields a,b,c --json` MUST return items containing only the
   requested fields.
 - Unbraked writes (`create`, `enable`, `disable`) MUST keep immediate-write

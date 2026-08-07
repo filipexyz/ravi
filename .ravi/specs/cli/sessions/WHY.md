@@ -6,7 +6,10 @@ brake there would add an exit-3 round-trip to every coordination step, so the
 contract deliberately leaves messaging unbraked and brakes only the four ops
 that destroy something that cannot be rebuilt: `reset` (the conversation
 context), `delete` (the session itself), and `delete-message`/`edit-message`
-(messages already delivered to a real channel).
+(messages already delivered to a real channel). Runtime `follow-up`,
+`rollback` and `fork` are also braked because they queue triggered work or
+alter runtime history. `interrupt` remains immediate as an emergency stop;
+`steer` remains immediate for correction of work already running.
 
 `SESSION_NOT_FOUND` carries no suggestions, unlike the crm/tasks envelopes.
 This is a security decision, not an omission: scope isolation intentionally

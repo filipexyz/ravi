@@ -1262,7 +1262,7 @@ export class AgentsCommands {
         console.log(
           `  Least privilege:   ravi agents permissions ${id} bootstrap --capabilities <permission>:<objectType>:<objectId> --execute`,
         );
-        console.log(`  Clear:             ravi agents permissions ${id} none --execute`);
+        console.log(`  Clear:             ravi agents permissions ${id} none`);
         console.log(`  Break-glass only:  ravi agents permissions ${id} full-access --execute`);
       }
       return payload;

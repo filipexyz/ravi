@@ -87,6 +87,16 @@ const executeInstructions = [
     path: "src/cli/commands/daemon.ts",
     instruction: "ravi context revoke <id> --execute",
   },
+  {
+    name: "trigger test root instructions",
+    path: "AGENTS.md",
+    instruction: "ravi triggers test <id> --execute",
+  },
+  {
+    name: "trigger test skill",
+    path: "src/plugins/internal/ravi-system/skills/triggers/SKILL.md",
+    instruction: "ravi triggers test <id> --execute",
+  },
 ] as const;
 
 const obsoleteExecuteConsumers = [
@@ -113,6 +123,18 @@ const obsoleteExecuteConsumers = [
     path: "docs/cli/overview.mdx",
     obsolete: "ravi instances routes remove <name> <pattern> --execute",
     current: "ravi instances routes remove <name> <pattern>",
+  },
+  {
+    name: "agent permission containment hint",
+    path: "src/cli/commands/agents.ts",
+    obsolete: "ravi agents permissions ${id} none --execute",
+    current: "ravi agents permissions ${id} none",
+  },
+  {
+    name: "agent permission containment instructions",
+    path: "AGENTS.md",
+    obsolete: "ravi agents permissions dev none --execute",
+    current: "ravi agents permissions dev none",
   },
 ] as const;
 

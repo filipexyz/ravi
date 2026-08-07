@@ -17,6 +17,8 @@
 7. If an agent keeps hitting exit 3 in a loop, check the hint surfaces
    (`sessions actions --json` promptHints, ephemeral TTL warning,
    prompt-builder) still teach `--execute`.
+8. For runtime control, require `--execute` on `follow-up`, `rollback` and
+   `fork`; do not add a confirmation loop to `interrupt` or `steer`.
 
 ## Validation
 
@@ -31,5 +33,8 @@ Live checks against the local CLI (read-only or dry-run; use an isolated
 ravi sessions info ghost --json                 # expect exit 1, no suggestions
 ravi sessions list --no-such-flag --json        # expect exit 2 + acceptedFlags
 ravi sessions delete <name> --json              # expect exit 3 + dryRun plan
+ravi sessions runtime follow-up <name> "next" --json # expect exit 3, nothing queued
+ravi sessions runtime rollback <name> 1 --json  # expect exit 3, history unchanged
+ravi sessions runtime fork <name> --json        # expect exit 3, no branch created
 ravi sessions list --fields name,agentId --json # expect compact items
 ```

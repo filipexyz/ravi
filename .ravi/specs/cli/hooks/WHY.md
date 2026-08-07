@@ -5,14 +5,15 @@ Hooks are durable runtime automations: an event (`SessionStart`, `PostToolUse`,
 `comment_task`, ...). They keep acting long after they are created, so the risk
 profile is asymmetric: creating a hook is easy to undo (`rm`), but deleting one
 destroys configuration, cooldown state and fire counters with no inverse — and
-the daemon silently stops doing whatever that hook did. That is why `rm` is the
-only braked op in this domain.
+the daemon silently stops doing whatever that hook did. That is why `rm` is
+unconditionally braked.
 
 `enable`/`disable` stay immediate because they are the reversible pair agents
 use constantly to pause/resume behavior; braking them would put exit-3 friction
-in the routine path without protecting anything destructive. `test` executes
-the hook once with a synthetic event — it is the debug loop for hook authors
-and is declared unbraked; its side effect is a single, intentional action run.
+in the routine path without protecting anything destructive. `test` is
+conditional: `inject_context` and `send_session_event` deliver into live
+sessions and need confirmation, while action types without session delivery
+keep the fast synthetic debug loop.
 
 `hooks rm` also carries aliases (`delete`, `remove`); the brake lives in the
 single command body, so every alias inherits it — there is no alias that

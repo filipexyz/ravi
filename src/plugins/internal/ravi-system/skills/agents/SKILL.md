@@ -27,7 +27,7 @@ Taxonomia de saída:
 - `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
 - `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
 
-Onde o freio existe hoje: `agents delete` (destrutivo), `agents reset` (inclusive `reset <id> all` — o contexto da sessão é irrecuperável) e `agents permissions` quando muda perfil/capabilities (muda a autoridade de runtime do agent) são dry-run por default e exigem `--execute`. A forma só-leitura `agents permissions <id>` (sem perfil) continua exit 0, sem freio. Todas as demais escritas gravam na hora, sem dry-run: `create`, `set`, `sync-instructions`, `debounce`, `spec-mode`. Nessas o freio é você: confira o alvo antes de rodar.
+Onde o freio existe hoje: `agents delete` (destrutivo), `agents reset` (inclusive `reset <id> all` — o contexto da sessão é irrecuperável) e `agents permissions` somente quando a mudança expande autoridade são dry-run por default e exigem `--execute`. Leitura, no-op e reduções (`none`, `--clear-capabilities`) continuam sem freio para não atrasar contenção. Todas as demais escritas gravam na hora: `create`, `set`, `sync-instructions`, `debounce`, `spec-mode`.
 
 Compact mode: `agents list` aceita `--fields a,b,c` (ex.: `--fields id,cwd,tags`) — use em varredura para não arrastar o objeto inteiro de cada agent.
 
@@ -240,13 +240,13 @@ ravi agents permissions <id>
 ravi permissions materialize --subject-type agent --subject-id <id> --json
 
 # Voltar ao bootstrap mínimo
-ravi agents permissions <id> none --execute
+ravi agents permissions <id> none
 
 # Capability explícita de bootstrap quando ainda não existe profile agent-only
 ravi agents permissions <id> bootstrap --capabilities execute:executable:omni --execute
 ```
 
-Mudar perfil/capabilities sem `--execute` é dry-run (exit 3): o `plan` mostra `before`/`after` e nada é gravado. A forma só-leitura `ravi agents permissions <id>` não precisa de `--execute`.
+Expandir autoridade sem `--execute` é dry-run (exit 3): o `plan` mostra `before`/`after` e nada é gravado. Leitura, no-op e redução não precisam de `--execute`.
 
 Para acesso recorrente, prefira criar/aplicar um permission profile ou tag
 provider-owned com `ravi permissions allow/resolve`. Capability solta é

@@ -10,8 +10,9 @@
 4. Exit `2`: read `error.acceptedFlags`; the list is authoritative for that op.
 5. Exit `3`: read `error.plan` (id, name, topic), confirm the delete is
    intended, then re-run the same command adding `--execute`.
-6. Need to see what a trigger would do? Use `triggers test <id>` — it fires
-   with FAKE data and needs no `--execute`; check `ravi daemon logs -f`.
+6. Need to see what a trigger would do? Run `triggers test <id>` to inspect
+   the plan, then add `--execute` only when activating the agent or shell with
+   the synthetic event is intended; check `ravi daemon logs -f`.
 7. If a delete executed without `--execute`, the brake regressed: check `rm`
    still calls `contractDryRun` before `dbDeleteTrigger`, and that the registry
    dispatcher still maps `ContractError.exitCode`.
@@ -32,6 +33,7 @@ Live checks against the local CLI (read-only or dry-run; use an isolated
 ravi triggers show trg_nope --json           # expect exit 1 + suggestions
 ravi triggers list --no-such-flag --json     # expect exit 2 + acceptedFlags
 ravi triggers rm <trigger-id> --json         # expect exit 3 + dryRun plan
-ravi triggers test <trigger-id> --json       # fires fake event, no --execute
+ravi triggers test <trigger-id> --json       # expect exit 3, no event emitted
+ravi triggers test <trigger-id> --json --execute # emits synthetic event
 ravi triggers list --fields id,name --json   # expect compact items
 ```

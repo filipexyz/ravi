@@ -14,6 +14,8 @@
    registry dispatcher still maps `ContractError.exitCode`.
 6. Remember `rm` aliases (`delete`, `remove`) share the same body — the brake
    MUST hold for all of them.
+7. For `hooks test`, inspect `actionType`: session-delivery actions return a
+   plan and need `--execute`; other action types run immediately.
 
 ## Common Operations
 
@@ -21,6 +23,8 @@
 ravi hooks list --json --fields id,name,enabled     # compact discovery
 ravi hooks show <id> --json                          # inspect one hook
 ravi hooks disable <id>                              # pause (reversible, unbraked)
+ravi hooks test <session-delivery-id>                # dry-run: exit 3 + plan
+ravi hooks test <session-delivery-id> --execute      # deliver synthetic event
 ravi hooks rm <id>                                   # dry-run: exit 3 + plan
 ravi hooks rm <id> --execute                         # actually deletes + refresh
 ```
@@ -38,5 +42,6 @@ Live checks against the local CLI (read-only or dry-run; use an isolated
 ravi hooks show nope --json                  # expect exit 1 + suggestions
 ravi hooks list --no-such-flag --json        # expect exit 2 + acceptedFlags
 ravi hooks rm <hook-id> --json               # expect exit 3 + dryRun plan
+ravi hooks test <session-delivery-id> --json # expect exit 3, no delivery
 ravi hooks list --fields id,name --json      # expect compact items
 ```

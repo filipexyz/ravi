@@ -17,10 +17,10 @@
 - `agents reset` (main, specific session, and `reset <id> all`) without
   `--execute` MUST exit 3 and MUST NOT abort or delete any session; with
   `--execute` the reset MUST happen.
-- `agents permissions <id> <profile>` (or `--capabilities` /
-  `--clear-capabilities`) without `--execute` MUST exit 3 with a plan carrying
-  `before`/`after` and MUST NOT write agent defaults; with `--execute` the
-  write MUST happen.
+- A permission delta that expands authority without `--execute` MUST exit 3
+  with a `before`/`after` plan and MUST NOT write agent defaults.
+- Authority reduction, `none`, `--clear-capabilities` and no-op requests MUST
+  apply without `--execute`; the brake must not delay containment.
 - The read-only form `agents permissions <id>` MUST keep exiting 0 without the
   brake.
 - A braked op invoked with `RAVI_*` envs present (agent context) MUST still
@@ -32,8 +32,7 @@
   `spec-mode`) MUST keep immediate-write behavior, and the shipped `agents`
   skill MUST list them explicitly as unbraked.
 - Hint strings that teach mutating permission invocations
-  (`leastPrivilegeExample`, `breakGlassCommand`, the `Clear:` line and the
-  reset usage hints) MUST carry `--execute`; the read-only `permissionsCommand`
-  hint MUST NOT.
+  (`leastPrivilegeExample`, `breakGlassCommand` and reset usage hints) MUST
+  carry `--execute`; `Clear:` and the read-only `permissionsCommand` MUST NOT.
 - `bun test src/cli/commands/agents.test.ts` SHOULD pass after any change to
   the agents contract surface.

@@ -45,13 +45,13 @@ those three carry the brake.
    same visibility filter as `agents list` (ids and names), so scope isolation
    is preserved while agent ids stay discoverable.
 4. `agents delete`, `agents reset` (including `reset <id> all`) and
-   `agents permissions` when a profile or capabilities change is requested MUST
+   `agents permissions` when the requested delta expands authority MUST
    default to dry-run and require `--execute`; the dry-run MUST report
    `dryRun: true` and the `plan`, and MUST NOT delete, abort, reset or write
    anything. `--execute` is always the LAST declared parameter of each braked
    op.
-5. The read-only form `agents permissions <id>` (no profile, no capabilities,
-   no `--clear-capabilities`) MUST keep exiting 0 without the brake.
+5. The read-only form, no-op changes and authority reductions (including
+   `none` and `--clear-capabilities`) MUST execute without the brake.
 6. `agents list` MUST accept `--fields a,b,c` for compact output.
 7. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher —
@@ -68,7 +68,8 @@ those three carry the brake.
 |---|---|---|
 | delete | destructive (agent removal) | dry-run + `--execute` |
 | reset / reset all | discards irrecoverable session context | dry-run + `--execute` |
-| permissions (profile/capabilities change) | high risk (changes runtime authority) | dry-run + `--execute` |
+| permissions (authority expansion) | high risk (adds runtime authority) | dry-run + `--execute` |
+| permissions (reduction / no-op) | containment or no added authority | not braked |
 | permissions (read-only, no profile args) | read | not braked (exit 0) |
 | create / set / sync-instructions | reversible config | not braked (declared) |
 | debounce / spec-mode | reversible toggles | not braked (declared) |
@@ -90,8 +91,8 @@ permissions examples carry the flag). The `architect` skill teaches
 `docs/cli/overview.mdx` carries `--execute` on the delete/reset lines. The
 permission hint strings emitted by `agents create`, `agents show` and the
 read-only `agents permissions` output (`leastPrivilegeExample`,
-`breakGlassCommand`, `Clear:`) MUST include `--execute` because they teach
-mutating invocations; the read-only `permissionsCommand` hint stays without it.
+`breakGlassCommand`) MUST include `--execute` when they teach expansion;
+`Clear:` and the read-only `permissionsCommand` stay without it.
 
 ## Validation
 

@@ -30,10 +30,9 @@ normative: true
 ## Intent
 
 Make `ravi sessions` reliable for agent consumers under the agent-first contract
-defined by `cli`. Sessions are the communication surface between agents, so
-the brake lands only on the irrecoverable ops (`reset`, `delete`,
-`delete-message`, `edit-message`) and never on the messaging loop
-(`send`/`ask`/`answer`/`inform`/`execute`), which must stay friction-free.
+defined by `.ravi/specs/cli`. Sessions are the communication surface between
+agents, so routine messaging stays friction-free while destruction and
+triggered runtime execution use risk-based confirmation.
 
 ## Invariants
 
@@ -55,9 +54,13 @@ the brake lands only on the irrecoverable ops (`reset`, `delete`,
 6. `sessions list` MUST accept `--fields a,b,c` for compact output.
 7. Every surface that teaches a braked command (skill, session action hints,
    ephemeral TTL warning, prompt-builder guidance) MUST show `--execute`.
-8. Unbraked writes (send/ask/answer/inform/execute, rename, set-*, ttl ops,
-   attach/detach, mute/unmute, threads, followups, runtime ops) keep immediate
-   behavior and MUST be listed as unbraked in the shipped skill.
+8. Runtime `follow-up`, `rollback` and `fork` MUST default to dry-run and
+   require `--execute`: they queue work, alter history or create a new runtime
+   branch. `interrupt` and `steer` remain immediate because delaying emergency
+   containment or active correction can increase harm.
+9. Unbraked writes (send/ask/answer/inform/execute, rename, set-*, ttl ops,
+   attach/detach, mute/unmute and threads) keep immediate behavior and MUST be
+   listed as unbraked in the shipped skill.
 
 ## Write classification (brake decision per op)
 
@@ -69,7 +72,11 @@ the brake lands only on the irrecoverable ops (`reset`, `delete`,
 | prune | bulk permanent removal | native dry-run + `--execute` (pre-existing) |
 | send / ask / answer / inform / execute | core messaging loop | not braked (declared) |
 | rename / set-* / extend / keep / set-ttl | reversible config | not braked (declared) |
-| attach / detach / mute / unmute / threads / followups / runtime | reversible state | not braked (declared) |
+| attach / detach / mute / unmute / threads / followups | reversible state | not braked (declared) |
+| runtime follow-up | queues triggered work | dry-run + `--execute` |
+| runtime rollback | changes completed history | dry-run + `--execute` |
+| runtime fork | creates a provider/runtime branch | dry-run + `--execute` |
+| runtime interrupt / steer | containment or active correction | not braked (declared) |
 
 ## Official error cases
 

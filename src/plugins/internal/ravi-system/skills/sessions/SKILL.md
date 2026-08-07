@@ -32,7 +32,7 @@ Taxonomia de saída:
 - `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
 - `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan`. Revise e repita com `--execute`.
 
-Onde o freio existe hoje: `reset` (contexto é irrecuperável), `delete` (permanente), `delete-message` e `edit-message` (mutação irreversível no canal) são dry-run por default e exigem `--execute`. `prune` já era dry-run nativo com `--execute` e mantém seu payload rico de candidatos (exit 0 no preview). Todas as demais escritas gravam na hora, sem dry-run: `send`, `ask`, `answer`, `inform`, `execute`, `rename`, `set-display`, `set-provider|model|effort|thinking`, `set-ttl`, `extend`, `keep`, `attach`, `detach`, `mute`, `unmute`, `create-thread`, `close-thread`, followups e runtime. Nessas o freio é você: confira o alvo (sessão certa!) antes de rodar.
+Onde o freio existe hoje: `reset` (contexto é irrecuperável), `delete` (permanente), `delete-message`, `edit-message` (mutação irreversível no canal) e runtime `follow-up`/`rollback`/`fork` (disparam trabalho ou alteram histórico) são dry-run por default e exigem `--execute`. `prune` já era dry-run nativo com `--execute` e mantém seu payload rico de candidatos (exit 0 no preview). Mensagens rotineiras, configurações reversíveis e runtime `interrupt`/`steer` continuam imediatos; o stop de emergência não ganha uma confirmação que aumentaria o dano.
 
 Compact mode: `sessions list` aceita `--fields a,b,c` (ex.: `--fields name,agentId,updatedAt`).
 
