@@ -10,8 +10,8 @@
 - `metrics rollup` MUST stay unbraked: no `--execute` flag exists and the
   derived write happens immediately; re-running the same range MUST be
   idempotent.
-- The `rollup` CommandAccess kind stays `read` in this wave; any flip to
-  `mutate` MUST be a deliberate permission-surface change, not a drive-by.
+- The `rollup` CommandAccess kind MUST be `mutate`; a read-only capability
+  MUST be denied before the handler and an exact mutate capability allowed.
 - An empty `metrics show` result MUST NOT be treated as not-found; the domain
   declares no `*_NOT_FOUND` envelope.
 - `metrics dates` keeps its scalar string-array payload; `--fields` is

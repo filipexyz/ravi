@@ -30,3 +30,10 @@ Keeping those four concerns separate prevents a `kind: "read"` label from
 authorizing a mutation, prevents a local reversible write from gaining useless
 friction, and prevents an exit-3 policy block from being recorded as a failed
 execution.
+
+Correcting an authorization label must not silently strand existing
+least-privilege agents. The compatibility migration therefore adds only exact
+mutate counterparts in the stores that remain authoritative across runs. It
+does not rewrite historical runtime contexts and does not infer authority from
+broad read wildcards; those cases need a human permission review because an
+automatic expansion would grant more than the original command-level intent.

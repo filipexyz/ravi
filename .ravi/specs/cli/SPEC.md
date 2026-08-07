@@ -32,8 +32,6 @@ status: draft
 normative: true
 ---
 
-# Global CLI Contract
-
 ## Intent and precedence
 
 This is the global source of truth for the agent-first CLI contract. It binds
@@ -109,6 +107,15 @@ Changing `kind` is a permission-surface change. It requires a consumer scan,
 focused REBAC tests and explicit release notes; it MUST NOT be deferred as
 documentation debt when the implementation already performs the effect.
 
+When this migration corrects an existing `read` operation to `mutate`, Ravi
+preserves exact least-privilege grants by appending the corresponding mutate
+grant in provider-owned agent defaults, system permission tags, observer rules
+and durable observer bindings. The migration MUST preserve the original read
+grant, be idempotent and leave runtime context snapshots unchanged. Broad read
+wildcards are ambiguous and MUST NOT be promoted automatically; they are
+reported for explicit review. The versioned compatibility inventory MUST stay
+mechanically aligned with the live `CommandAccess` metadata.
+
 ## Risk-based confirmation policy
 
 `--execute` exists only when a second call adds material safety. Classify the
@@ -118,6 +125,7 @@ actual effect, not the command verb.
 | --- | --- |
 | Reversible local persistence or local file creation | Execute immediately |
 | Public/outbound communication, publication or sharing | Require `--execute` |
+| Relevant state change in an external service or provider | Require `--execute` |
 | Irreversible destruction, secret rotation or authority escalation | Require `--execute` |
 | Starting, dispatching or replaying work that continues independently | Require `--execute` |
 | Emergency stop that reduces active damage or spend | Execute immediately |

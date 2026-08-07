@@ -20,13 +20,11 @@ owners:
 status: active
 normative: true
 ---
-# Costs agent-first CLI contract
-
 ## Intent
 
 Make `ravi costs` reliable for agent consumers under the agent-first contract
 defined by `cli`: typed error envelopes, the 0/1/2/3 exit taxonomy and
-compact discovery. Costs is a read domain — its value for agents is CHEAP
+compact discovery. Costs is mostly a read domain — its value for agents is CHEAP
 reads: `--fields` on every array payload so a budget check does not cost more
 tokens than the tokens it audits. The single mutating path
 (`pricing --recompute`) keeps its pre-existing `--dry-run` preview flag as the
@@ -60,6 +58,9 @@ documented equivalent of the write brake.
 8. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry
    dispatcher.
+9. `costs pricing` MUST declare `CommandAccess.kind: "mutate"`, because its
+   `--recompute` option writes derived pricing metadata. Authorization is
+   operation-scoped even though the default invocation only reads.
 
 ## Write classification (brake decision per op)
 
@@ -69,9 +70,10 @@ documented equivalent of the write brake.
 | pricing (without --recompute) | pure read | none |
 | pricing --recompute | rewrites derived pricing metadata on cost_events (recomputable) | pre-existing `--dry-run` documented as equivalent; not renamed |
 
-`pricing` is declared `kind: "read"` in `CommandAccess` although the
-`--recompute` path mutates — registered here as MISDECLARED and deliberately
-NOT flipped in this wave to avoid changing the permission surface.
+`pricing` is declared `kind: "mutate"` because `CommandAccess` is static for
+the operation. Exact legacy read grants are migrated to the matching mutate
+capability; broad read wildcards are reported for manual review rather than
+silently escalated.
 
 ## Official error cases
 

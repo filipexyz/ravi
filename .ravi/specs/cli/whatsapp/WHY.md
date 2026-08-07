@@ -11,20 +11,15 @@ ENTIRE mutation surface — 12 group ops plus `dm send` — instead of only the
 
 Decisions that shaped this wave:
 
-- **Braking beyond the declared metadata.** `group join`, `leave`,
-  `description` and `settings` are declared `kind: "read", risk: "low"` in
-  their CommandAccess metadata, but each one mutates live group state that
-  every member sees. The brake follows the RUNTIME behavior, not the legacy
-  metadata. The metadata itself was left untouched: `access.kind` is consumed
-  by the permission layer (`enforceCliCommandAuthorization` uses it as the
-  permission name), so flipping read→mutate would silently change
-  authorization outcomes for existing agents — a permission-model change that
-  does not belong in a contract migration. Reported instead.
-- **Unbraked ops are the ones with no new external content.** `group list`,
-  `group info` and `group invite` only read. `dm ack` (and the implicit ack in
-  `dm read`) sends blue ticks — it confirms reading but produces no content
-  addressed to the peer, and braking it would add exit-3 friction to every
-  read loop; `dm read --no-ack` already exists for silent reading.
+- **Authorization follows the effect.** `group join`, `leave`, `description`,
+  `settings` and `dm read` are `mutate` because they can change live WhatsApp
+  state. Exact legacy grants are migrated so least-privilege callers do not
+  lose their prior command-level access.
+- **Confirmation follows the invocation.** `group list`, `group info` and
+  `group invite` only read. `dm read --no-ack` is also a local read and stays
+  immediate. A blue-tick receipt is still an observable outbound signal, so
+  the implicit receipt in `dm read` and explicit `dm ack` require confirmation
+  before NATS emission. This avoids taxing silent read loops.
 - **Suggestions only from sources already in hand.** `GROUP_NOT_FOUND` in
   `group info` enriches the envelope from the group list that the resolution
   path had ALREADY fetched (omni REST with local chat-model fallback) — zero

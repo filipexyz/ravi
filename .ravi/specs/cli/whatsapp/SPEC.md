@@ -23,8 +23,6 @@ owners:
 status: active
 normative: true
 ---
-# WhatsApp agent-first CLI contract
-
 ## Intent
 
 Make `ravi whatsapp group` and `ravi whatsapp dm` reliable for agent consumers
@@ -60,11 +58,9 @@ subset.
 8. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher —
    the brake exits 3, never a generic `Error: ...` with exit 1.
-9. Unbraked ops keep immediate behavior and MUST be listed as unbraked in the
-   shipped `whatsapp` skill: `group list`, `group info`, `group invite`
-   (reads) and `dm read`, `dm ack` (an ack only confirms reading — blue ticks —
-   and produces no new content for the peer; `dm read` acks by default, use
-   `--no-ack` to avoid it).
+9. Pure reads keep immediate behavior. `dm read --no-ack` reads local history
+   directly; the default read path requires `--execute` only when it finds a
+   message id and would send a receipt. `dm ack` always requires `--execute`.
 
 ## Write classification (brake decision per op)
 
@@ -80,14 +76,13 @@ subset.
 | group join / leave | membership changes visible to all members (high) | dry-run + `--execute` |
 | dm send | message reaches a real person (high) | dry-run + `--execute` |
 | group list / info / invite | reads | not braked (declared) |
-| dm read / dm ack | read + read-receipt only | not braked (declared) |
+| dm read --no-ack, or no receipt candidate | local history read | not braked |
+| dm read with a receipt candidate / dm ack | external read-receipt emission | conditional dry-run + `--execute` |
 
-Note: `join`, `leave`, `description` and `settings` carry legacy CommandAccess
-metadata `kind: "read", risk: "low"`, but they perform external mutations, so
-the brake applies to them regardless. The metadata itself was intentionally NOT
-changed in this wave because `access.kind` feeds the permission layer
-(`enforceCliCommandAuthorization`) and flipping it would change runtime
-authorization for existing agents.
+`join`, `leave`, `description`, `settings` and `dm read` are authorized as
+`mutate` because they can produce external effects. Exact legacy read grants
+are migrated to matching mutate grants; broad read wildcards remain unchanged
+for explicit review.
 
 ## Official error cases
 
@@ -96,7 +91,7 @@ authorization for existing agents.
 | group not found (info resolution) | `GROUP_NOT_FOUND` + suggestions from the already-fetched list | 1 |
 | unknown participant / unresolvable DM target | `CONTACT_NOT_FOUND` + local-DB suggestions | 1 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
-| invalid flag/arg (parser level) | pending — see Known Failure Modes | — |
+| invalid flag/arg (parser level) | `USAGE_ERROR` + acceptedFlags | 2 |
 
 ## Internal consumers
 
@@ -105,18 +100,16 @@ and MUST document `--execute` on every braked op and list the unbraked ops
 explicitly. Other teaching surfaces updated with `--execute`: the `agents` and
 `architect` skills, `src/prompt-builder.ts` (group-create suggestion + sentinel
 DM instructions), `docs/guides/whatsapp-groups.mdx` and `docs/cli/overview.mdx`.
-The sentinel hint inside `src/omni/consumer.ts` also names `whatsapp dm send`
-but lives in a path this wave must not edit — tracked as a reported consumer.
+The sentinel prompt teaches `dm read --no-ack` for silent local inspection and
+`dm ack ... --execute` for an intentional external receipt.
 Daemon-side outbound delivery publishes to NATS directly (channel senders), not
 through this CLI, so the brake does not affect runtime message routing.
 
 ## Validation
 
-- `bun test src/cli/commands/group.test.ts` green (22 tests: brake dry-run vs
-  `--execute` for send/create/add/remove/promote/demote and the
-  rename/revoke-invite/join/leave/description/settings sweep; GROUP_NOT_FOUND
-  and CONTACT_NOT_FOUND envelopes; `--fields` on `group list` and `dm read`;
-  `dm ack` unbraked).
+- `bun test src/cli/commands/group.test.ts src/cli/commands/channels-json.test.ts`
+  covers group writes plus conditional DM receipts, including zero NATS emits
+  in dry-run and `--no-ack` compact reads.
 - `bun tsc --noEmit` clean.
 - Live checks (isolated `RAVI_STATE_DIR`, daemon running): `whatsapp group send
   <jid> "test" --json` → exit 3 and NO message delivered; adding `--execute`

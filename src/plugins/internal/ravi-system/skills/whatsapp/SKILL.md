@@ -34,11 +34,11 @@ Taxonomia de saída:
 - `0` sucesso.
 - `1` erro de execução (ex.: `GROUP_NOT_FOUND`, `CONTACT_NOT_FOUND`). O envelope traz `suggestions` com grupos/contatos reais parecidos — consulte antes de concluir "não existe".
 - `2` erro de uso (flag/argumento inválido): corrija a chamada, não insista na mesma sintaxe.
-- `3` freio de escrita — não é erro. Nada foi enviado/alterado no WhatsApp; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
+- `3` freio de escrita — não é erro. Nada foi enviado/alterado no WhatsApp; o envelope traz `dryRun:true` e um plano sanitizado com alvo e efeito material, nunca o corpo integral da mensagem. Revise o plano e repita com `--execute`.
 
-Onde o freio existe: TODA mutação externa é dry-run por default e exige `--execute` — `group send`, `group create`, `group add`, `group remove`, `group promote`, `group demote`, `group revoke-invite`, `group join`, `group leave`, `group rename`, `group description`, `group settings` e `dm send`. Essas operações agem sobre grupos e pessoas REAIS no WhatsApp (socialmente irreversível): o freio existe para você revisar o plano antes do efeito.
+Onde o freio existe: TODA mutação externa é dry-run por default e exige `--execute` — `group send`, `group create`, `group add`, `group remove`, `group promote`, `group demote`, `group revoke-invite`, `group join`, `group leave`, `group rename`, `group description`, `group settings`, `dm send`, `dm ack` e o recibo implícito de `dm read`. Essas operações alteram estado que pessoas reais observam; revise o plano antes do efeito.
 
-Sem freio (executam na hora, declaradas): `group list`, `group info` e `group invite` (leituras), e `dm read` / `dm ack` (o ack só confirma leitura — ticks azuis — sem gerar conteúdo novo para o contato; `dm read` envia ack por padrão, use `--no-ack` para evitar).
+Sem freio: `group list`, `group info` e `group invite` são leituras. Para ler DMs sem produzir efeito externo, use `ravi whatsapp dm read <contact> --no-ack`; se não houver um identificador de mensagem (MID) para confirmar, a leitura padrão também retorna direto. Use `--execute` somente quando quiser enviar o recibo.
 
 Compact mode: `group list` e `dm read` aceitam `--fields a,b,c` (ex.: `--fields id,subject`) — use em varredura para não arrastar o objeto inteiro de cada item.
 

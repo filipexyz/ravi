@@ -67,10 +67,10 @@ domínio — veja abaixo). Com `--json`, falhas retornam o envelope
 **Compact mode:** `ravi tag-rules list --json --fields id,scope` retorna só os
 campos pedidos em cada rule.
 
-**Mau-declarado conhecido:** `tick` e `evaluate` declaram
-`@CommandAccess kind:"read"` mas ESCREVEM tags quando `--apply` é passado. O
-kind não foi corrigido porque alimenta a autorização runtime (mesmo precedente
-de whatsapp join/leave); pendência registrada em `.ravi/specs/cli/tag-rules`.
+**Autorização:** `tick` e `evaluate` declaram `@CommandAccess kind:"mutate"`
+porque podem escrever tags com `--apply`. Isso não adiciona `--execute`:
+autorização e confirmação são controles separados, e o preview sem `--apply`
+continua sem efeitos.
 
 **Checklist antes de aplicar em massa:**
 
@@ -225,4 +225,4 @@ NATS: assine `ravi.tags.rule.applied` para reagir em outros sistemas.
 Specs normativas em `.ravi/specs`:
 
 - `tags/auto-tagging` — invariants do engine, performance, audit, e convergência futura com observer rules compostas.
-- `cli/tag-rules` — contrato agent-first do CLI (envelopes, exit taxonomy, equivalência do `--apply`, mau-declarado de CommandAccess).
+- `cli/tag-rules` — contrato agent-first do CLI (envelopes, exit taxonomy, equivalência do `--apply`, autorização mutate).

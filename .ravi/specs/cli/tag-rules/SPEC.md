@@ -23,8 +23,6 @@ owners:
 status: active
 normative: true
 ---
-# Tag-rules agent-first CLI contract
-
 ## Intent
 
 Make `ravi tag-rules` reliable for agent consumers under the agent-first
@@ -64,6 +62,9 @@ brake and the `--apply` flag MUST NOT be renamed.
    dispatcher.
 8. Reads (`list`, `show`, `validate`, `explain`) keep immediate behavior and
    are declared unbraked.
+9. `tick` and `evaluate` MUST declare `CommandAccess.kind: "mutate"`, because
+   their `--apply` branches write tags. This authorization classification is
+   independent from the existing default-preview confirmation behavior.
 
 ## Write classification (brake decision per op)
 
@@ -88,7 +89,7 @@ default to preview, which is the exact protection the brake exists to provide.
 
 `src/plugins/internal/ravi-system/skills/tag-rules/SKILL.md` teaches this
 surface and carries the contract section (`## Contrato Do CLI`): error codes,
-the `--apply` equivalence and the known kind mis-declaration. The `contacts`
+the `--apply` equivalence and the mutate authorization classification. The `contacts`
 and `observers` skills only show `tag-rules list --json` (read-only, no flag
 changed). The cron example `tick --apply --json` in the tag-rules skill stays
 valid — `--apply` was intentionally not renamed. Daemon-side reactive
@@ -108,14 +109,10 @@ tagging.
 
 ## Known Failure Modes
 
-- KNOWN MIS-DECLARATION: `tick` and `evaluate` are declared
-  `@CommandAccess kind:"read", risk:"low"` but they WRITE tags when `--apply`
-  is passed. The kind was intentionally NOT flipped in this wave because
-  `access.kind` feeds the permission layer (`enforceCliCommandAuthorization`)
-  and flipping it would change runtime authorization for existing agents —
-  the same precedent as `cli/whatsapp` (`join`/`leave` with kind read). The
-  correction is tracked as an authorization-wave follow-up, not a contract
-  change.
+- `tick` and `evaluate` are authorized as `mutate` for every invocation,
+  because `CommandAccess` is operation-scoped. Exact legacy read grants are
+  migrated to matching mutate grants; broad read wildcards require manual
+  review and are never silently escalated.
 - Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
   `acceptedFlags`.
 - The `CONTACT_NOT_FOUND` mapping depends on the engine throwing the literal

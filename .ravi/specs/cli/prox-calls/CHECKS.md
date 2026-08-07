@@ -11,6 +11,10 @@
   `CALL_PROFILE_NOT_FOUND` and local suggestions, BEFORE the brake fires.
 - `prox calls cancel` MUST cancel a pending request WITHOUT `--execute` — the
   damage-stop rationale is declared in code and skill.
+- `profiles configure` with a real ElevenLabs synchronization MUST exit 3
+  without `--execute`, before local persistence or HTTP. With `--execute` it
+  MUST persist and synchronize; `--skip-provider-sync` MUST persist locally
+  without confirmation or HTTP.
 - `prox calls show|events|transcript` on an unknown request MUST exit 1 with
   `CALL_REQUEST_NOT_FOUND`; a request without transcript MUST exit 1 with
   `TRANSCRIPT_NOT_FOUND` (retryable).

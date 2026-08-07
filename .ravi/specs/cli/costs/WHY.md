@@ -13,9 +13,10 @@ already shipped `--dry-run` as its preview flag before this wave. Renaming it
 to `--execute` would break the public surface for zero safety gain, so the
 pre-existing flag is documented as the brake equivalent instead (the same
 decision the ledger records for `--apply`/`--confirm` domains). The decorator
-still says `kind: "read"` for `pricing`; that misdeclaration is registered in
-the SPEC and deliberately not flipped, because changing the declared kind
-flips the permission surface — a different wave's decision.
+uses `kind: "mutate"` for `pricing`, because authorization is operation-scoped
+and the `--recompute` branch writes. To preserve existing least-privilege
+agents, exact legacy read grants are migrated to the corresponding mutate
+capability; broad read wildcards are not escalated automatically.
 
 Not-found here needed a sharper definition than "resolver returned null".
 Cost history legitimately outlives both agent config entries and session

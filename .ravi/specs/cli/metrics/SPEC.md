@@ -21,8 +21,6 @@ owners:
 status: active
 normative: true
 ---
-# Metrics agent-first CLI contract
-
 ## Intent
 
 Make `ravi metrics` reliable for agent consumers under the agent-first
@@ -58,6 +56,9 @@ the row report) and a clean usage taxonomy. No op is braked: the only write,
 8. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry
    dispatcher.
+9. `metrics rollup` MUST declare `CommandAccess.kind: "mutate"`, because it
+   persists derived rows even though the write is local, idempotent and
+   intentionally unbraked.
 
 ## Write classification (brake decision per op)
 
@@ -66,9 +67,10 @@ the row report) and a clean usage taxonomy. No op is braked: the only write,
 | show / dates | pure reads | none |
 | rollup | derived-data upsert, idempotent, recomputable; daemon-owned in practice | not braked (declared) |
 
-`rollup` is declared `kind: "read"` in `CommandAccess` although it upserts
-derived rows — registered here as MISDECLARED and deliberately NOT flipped in
-this wave to avoid changing the permission surface.
+`rollup` is declared `kind: "mutate"` because authorization describes the
+actual effect, not whether confirmation is useful. Exact legacy read grants
+are migrated to matching mutate grants; broad read wildcards are left for
+explicit review.
 
 ## Official error cases
 

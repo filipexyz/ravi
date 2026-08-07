@@ -109,10 +109,8 @@ function resolveSinceArg(daysOrDate: string | undefined): string | undefined {
 // cost_events/session_events — an obvious reverse path, so no `--execute`.
 // The daemon also calls rollupDailyMetrics() directly through the service
 // layer (src/ephemeral/runner.ts), so a CLI brake would not gate the write
-// anyway. Note: `rollup` is declared `kind: "read"` in CommandAccess even
-// though it upserts derived rows — registered as misdeclared in
-// .ravi/specs/cli/metrics (kept as-is in this wave to avoid flipping the
-// permission surface).
+// anyway. `rollup` is still authorized as mutate because it persists derived
+// rows; authorization and confirmation are independent controls.
 //
 // No op resolves an entity by id (`--agent` is a filter; an empty window is
 // a legitimate empty result), so no *_NOT_FOUND envelope applies — declared.

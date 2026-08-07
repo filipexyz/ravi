@@ -14,10 +14,11 @@ dimension used to silently coerce to `agent-model`, so a typo like
 `--by agents` produced a plausible report grouped the wrong way — the most
 dangerous kind of wrong answer for an agent consumer, because nothing signals
 the coercion. That is now a `USAGE_ERROR` with `acceptedValues`, fired before
-any query. Second, the decorator claims `rollup` is `kind: "read"` while it
-upserts rows; the spec registers the misdeclaration instead of flipping it,
-because the declared kind feeds the permission surface and flipping it is a
-policy decision, not a migration detail.
+any query. Second, `rollup` is authorized as `mutate` because it persists
+derived rows. It remains unbraked because that persistence is local,
+idempotent and recomputable. Exact legacy read grants receive the matching
+mutate capability so authorization becomes honest without silently breaking
+least-privilege callers.
 
 `--fields` lands on `show` because that is the payload agents actually read
 in loops (16 numeric columns per agent×model×day adds up fast). `dates`

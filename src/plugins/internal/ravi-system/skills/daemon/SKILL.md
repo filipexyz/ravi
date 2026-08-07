@@ -39,9 +39,13 @@ ravi daemon restart --message "Motivo do restart"
 ravi daemon logs              # Últimas linhas
 ravi daemon logs --tail 50    # Últimas 50 linhas
 ravi daemon logs --follow     # Acompanhar em tempo real
-ravi daemon logs --clear      # Limpar logs
+ravi daemon logs --clear --execute # Limpar logs (dry-run sem --execute)
 ravi daemon logs --path       # Mostrar caminho do arquivo
 ```
+
+As leituras de log executam imediatamente. A limpeza é destrutiva: sem
+`--execute`, `logs --clear` retorna o plano com exit 3 e não chama o gerenciador
+de processos; repita com `--execute` somente depois de revisar o alvo.
 
 ### Modo Dev
 ```bash

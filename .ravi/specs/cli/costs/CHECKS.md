@@ -18,7 +18,7 @@
   `dbUpdateCostEventPricing`.
 - The `--dry-run` flag on recompute MUST NOT be renamed to `--execute`; it is
   the documented pre-existing brake equivalent.
-- The `pricing` CommandAccess kind stays `read` in this wave; any flip to
-  `mutate` MUST be a deliberate permission-surface change, not a drive-by.
+- The `pricing` CommandAccess kind MUST be `mutate`; a read-only capability
+  MUST be denied before the handler and an exact mutate capability allowed.
 - `bun test src/cli/commands/costs.test.ts` SHOULD pass after any change to
   the costs contract surface.

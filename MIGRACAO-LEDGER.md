@@ -3,20 +3,33 @@
 Registro por domínio da migração do contrato agent-first (Manual v2), portado do
 piloto `crm` validado por benchmark de 270 execuções.
 
+> **Leitura atual:** as entradas detalhadas e a FASE 2 abaixo são snapshots
+> históricos da execução. Afirmações posteriormente invalidadas não são a
+> verdade vigente. A fonte normativa é `.ravi/specs/cli/SPEC.md`; o estado
+> atual, as regressões reconhecidas e a nota de compatibilidade estão na
+> **FASE 3** ao final deste arquivo.
+
 **Contrato aplicado por domínio migrado:**
 1. Envelope de erro em `--json`: `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
 2. Taxonomia de exit codes: `0` ok · `1` erro de execução/not-found/provider · `2` usage error · `3` bloqueado por política (freio de escrita — não é erro).
 3. Freio de escrita nas mutações de maior risco: dry-run por default + `--execute` (helpers em `src/cli/agent-contract.ts`). Ops com freio pré-existente (`--apply` default-dry-run, `--dry-run`, `--confirm`) são documentadas como equivalentes, não renomeadas.
 4. `--fields a,b,c` nas listagens migradas.
 5. Usage errors do parser commander → exit 2 + envelope, via `installUsageContract(program, "<dominio>")` (escopado ao subtree; domínios não migrados intactos).
-6. SPEC normativa em `.ravi/specs/cli/<dominio>/` (SPEC + WHY + RUNBOOK + CHECKS) e SKILL atualizada no mesmo commit (análise bidirecional CLI↔SKILL).
+6. SPEC global normativa em `.ravi/specs/cli/SPEC.md`; specs por domínio em `.ravi/specs/cli/<dominio>/` classificam operações, exceções e checks próprios sem redefinir o contrato global.
 
-**Régua de testes:** zero falhas novas vs baseline virgem (145 pass / 110 fail
-de fábrica, todos Slack/channels, Windows 2026-08-06).
+**Régua histórica:** comparação por identidade com a baseline virgem (145 pass
+/ 110 fail de fábrica, todos Slack/channels, Windows 2026-08-06). A conclusão
+provisória de "zero falhas novas" da FASE 2 foi invalidada pela CI e pela
+revisão de processo; a FASE 3 registra as regressões e os gates atuais.
 
 ---
 
 ## Status por domínio
+
+Nesta tabela, **MIGRADO** significa que o escopo descrito na entrada da entrega
+foi migrado; não significa que todo handler legado do domínio já satisfaz o
+contrato. Limitações explícitas na spec do domínio continuam válidas até seus
+checks passarem.
 
 | # | Domínio | Arquivos CLI | Skill | Status | Spec |
 |---|---------|--------------|-------|--------|------|
@@ -72,14 +85,14 @@ de fábrica, todos Slack/channels, Windows 2026-08-06).
 |---------|---------------|
 | setup | Wizard interativo humano (prompts); sem `--json`; agente nunca invoca |
 | update | Auto-update do binário + restart de processos; infra humana |
-| daemon | Ciclo de vida de processo/serviço de SO; `run`/`dev` são foreground sem payload |
+| daemon (parcial) | Ciclo de vida de processo/serviço continua operator-facing; `logs --clear` é uma exceção agent-first e exige confirmação destrutiva |
 | service | Sobe processos/TUI em foreground; `--json` declara `supported:false` |
 | doctor | Diagnóstico humano/CI com semântica própria de exit (pass/warn/fail) já estabelecida |
 | cloud-auth (login/whoami/logout) | Fluxo OAuth interativo de browser + polling |
-| sdk + sdk-returns | Dev tooling de build-time (codegen, ledger de schemas); não é runtime de agente |
+| comandos `ravi sdk` + `sdk-returns` | Dev tooling de build-time; o transporte gateway/SDK continua vinculado ao contrato global |
 | adapters | Snapshot de debug read-only para desenvolvimento |
 | events | Stream ao vivo ilimitado; não é payload delimitado |
-| tools | Introspecção do próprio registry (dev) |
+| comando `ravi tools` | Introspecção do registry; as tools exportadas para agentes continuam vinculadas ao contrato global |
 | db | Infra de locks/WAL do SQLite local; `prune` já tem `--dry-run` |
 | apps | Scaffolding/dev tooling; o help-por-op do router builtin foi entregue no commit do crm |
 | eval | Harness de avaliação (dev) |
@@ -323,18 +336,19 @@ de accounts create → USAGE_ERROR exit 2 (o contrato ensinou a correção).
 ### 7. whatsapp — MIGRADO (subagente, verificado e integrado)
 
 **Escopo (domínio de maior risco externo — pessoas/grupos REAIS):** freio
-(`--execute`) em 13 ops: `group send/create/add/remove/promote/demote/
-revoke-invite/rename` + 4 descobertas mal-declaradas como `kind:"read"` mas
-mutantes na prática (`join/leave/description/settings` — freadas SEM flipar o
-CommandAccess, que alimenta autorização de agentes existentes; pendência
-registrada na spec) + `dm send`. Freio ANTES de qualquer chamada de
-provider/NATS: em `group send` antes até da leitura de metadata; em
-`group create` antes do `ensureGroupAgent` (dry-run com `--create-agent` não
-cria agent nem diretório), com pré-validação de agent para o plan nunca
-prometer rota a agent inexistente. Sem freio (declaradas): `group list/info/
-invite` (leituras), `dm read/ack`. `GROUP_NOT_FOUND` (suggestions da própria
-listagem já resolvida — zero chamadas extras) e `CONTACT_NOT_FOUND` (DB local).
-`--fields` em `group list` e `dm read`. Usage contract no subtree `whatsapp`.
+(`--execute`) nas mutações externas de grupo (`send/create/add/remove/promote/
+demote/revoke-invite/rename/join/leave/description/settings`) e em `dm send`.
+Todas essas operações são autorizadas como `mutate`; os grants exatos legados
+foram preservados pela migração de compatibilidade. O freio acontece ANTES de
+qualquer chamada de provider/NATS: em `group send` antes até da leitura de
+metadata; em `group create` antes do `ensureGroupAgent` (dry-run com
+`--create-agent` não cria agent nem diretório), com pré-validação de agent para
+o plan nunca prometer rota a agent inexistente. `dm ack` também exige
+confirmação. `dm read --no-ack` é leitura direta; o read padrão só bloqueia
+quando há recibo real a emitir. `group list/info/invite` são leituras.
+`GROUP_NOT_FOUND` (suggestions da própria listagem já resolvida — zero chamadas
+extras) e `CONTACT_NOT_FOUND` (DB local). `--fields` em `group list` e
+`dm read`. Usage contract no subtree `whatsapp`.
 
 **Consumidores atualizados neste commit:** skill whatsapp (Contrato Do CLI),
 skills agents/architect (hunks mistos com instances entram aqui),
@@ -343,9 +357,9 @@ prompt-builder (hints de group create/dm send), docs/guides/whatsapp-groups.mdx
 (path de coverage-gate): hint sentinel em `src/omni/consumer.ts:1551` ensina
 `whatsapp dm send` sem `--execute` — registrado como pendência na spec.
 
-**Testes criados do zero:** `group.test.ts` 22/22 (dry-run sem chamada ao spy
-nas 13 ops; execute chamando; not-founds; --fields; ack sem freio; validações
-pré-freio). Typecheck limpo. **Rotina Y (estado isolado):** `dm send` sem
+**Testes criados do zero:** `group.test.ts` (dry-run sem chamada ao spy nas
+operações freadas; execute chamando; not-founds; --fields; recibo condicional;
+validações pré-freio). Typecheck limpo. **Rotina Y (estado isolado):** `dm send` sem
 `--execute` → exit 3 + plan com JID resolvido · `group send` → validação
 pré-freio correta ("No WhatsApp account configured", exit 1 — sem conta no
 estado isolado; freio provado nos testes) · usage → exit 2. Nota de
@@ -474,9 +488,10 @@ Codes: `ARTIFACT_NOT_FOUND` (store LANÇA; suggestions do SQLite local),
 `ARTIFACT_VERSION_NOT_FOUND` (sem suggestions — números densos),
 `SITE/ROUTE_NOT_FOUND` (Console-only, sem fonte local — suggestedAction de
 listagem). `--fields` em artifacts list e pages list/published. Usage contract
-nos subtrees. `pages visibility` tem kind:"read" mal-declarado (não flipado —
-pendência registrada, mesmo precedente do whatsapp). Não existe op de remoção
-de rota hoje; spec registra que, se criada, nasce freada.
+nos subtrees. `pages update` e `pages visibility` são autorizadas como
+`mutate`; os grants exatos legados foram preservados pela migração de
+compatibilidade. Não existe op de remoção de rota hoje; spec registra que, se
+criada, nasce freada.
 
 **Consumidores:** skill artifacts, README.md, `src/pages/client.ts`
 (contentPublishCommand retornado pelo `pages create` agora ensina --execute),
@@ -521,8 +536,8 @@ Codes: OBSERVER_NOT_FOUND (1 code, mensagem nomeia o recurso; pre-check onde a
 DB lança), SESSION_NOT_FOUND sem suggestions (racional cli/sessions),
 WORKFLOW_SPEC/RUN/NODE_NOT_FOUND (+TASK) com pré-resolução do run para
 desambiguar o throw do service. `--fields` em 5 listagens (aliases legados
-projetados juntos). `archive-node` mantém `risk:"medium"` no CommandAccess
-(flipar geraria drift de SDK; freio é comportamental — pendência registrada).
+projetados juntos). `archive-node` é autorizado como `mutate`; risco,
+autorização e confirmação são dimensões distintas do contrato.
 
 **Rotina X:** `observers.test.ts` 12/12 · `workflows.test.ts` 13/13 · spec gate
 PASSED (cli/observers + cli/workflows) · consumidor docs/workflow-substrate-v0
@@ -540,9 +555,10 @@ mapeados; detach desambigua tag×binding), `TAG_RULE_NOT_FOUND`,
 `CONTACT_NOT_FOUND` sem suggestions (precedente chats). Prova de equivalência
 do freio nos testes: `evaluate` SEM `--apply` não escreve (leitura do DB real
 após execução) e COM `--apply` escreve. `--fields` em tags list/search e
-tag-rules list. Usage contract nos subtrees. Pendências registradas:
-kind:"read" mau-declarado em tick/evaluate (não flipado — precedente whatsapp);
-bug pré-existente na skill contacts que ensina `ravi tags define` (comando
+tag-rules list. Usage contract nos subtrees. `tick` e `evaluate` são
+autorizados como `mutate`, com grants exatos legados preservados pela migração
+de compatibilidade. Permanece registrado apenas o bug pré-existente na skill
+contacts que ensina `ravi tags define` (comando
 inexistente; real é `tags create`) — registrado na spec cli/tags.
 
 **Rotina X:** `tags.test.ts` 7/7 · `tag-rules.test.ts` (novo, estado real
@@ -652,9 +668,10 @@ Contrato Do CLI.
 ### 40. costs + metrics + insights — MIGRADOS (lote de leitura; subagente, verificado e integrado)
 
 **Escopo:** NENHUM freio novo, confirmado por inspeção: `costs pricing
---recompute` mantém `--dry-run` equivalente (kind:"read" mau-declarado
-registrado sem flipar); `metrics rollup` grava só derivados idempotentes (o
-daemon chama a service layer direto — freio no CLI não bloquearia nada);
+--recompute` mantém `--dry-run` equivalente; `metrics rollup` grava só
+derivados idempotentes (o daemon chama a service layer direto — freio no CLI
+não bloquearia nada). Ambos são autorizados como `mutate`, com grants exatos
+legados preservados pela migração de compatibilidade;
 `insights create` grava linhas locais reversíveis (teste prova escrita
 imediata). Codes com semântica cuidadosa: `AGENT_NOT_FOUND` em `costs agent`
 só quando sem config E sem histórico all-time (agente deletado com histórico
@@ -672,17 +689,14 @@ repo limpo · spec gate PASSED (3 specs).
 ### 31+32+39. mídia (media/image/audio/video/transcribe) + stickers + react — MIGRADOS (lote; subagente, verificado e integrado)
 
 **Freados:** `media send` e `stickers send` (canal vivo), `stickers remove`
-(destrutivo), `image generate` (API paga; freio ANTES de criar artifact e
-spawnar worker — e o worker async recebe `--execute` nos args, senão ficaria
-preso no próprio freio com artifact eterno em pending), `audio generate` E
-`audio tts` (frear só generate deixaria tts como bypass da fatura ElevenLabs),
-`video` com **freio condicional** (tudo que PODE cair no Gemini pago —
-auto/gemini/--force-analyze/arquivo local; `--strategy subtitles` grátis roda
-sem freio; plan traz `freeAlternative`), `transcribe file` (Whisper pago
-sempre). **react: SEM freio por veredito** — reação é trivialmente reversível
-(WhatsApp substitui/remove; Slack tem remove explícito) e é a superfície de
-ack mais barata; freio contradiria os próprios hints de sessão. Ordem
-validação→freio garante que exit 3 só aparece para envios que funcionariam.
+(destrutivo), a entrega externa de `audio generate --send` e `image generate
+--send`, e `audio tts` (geração e envio disparados). Geração de áudio/imagem sem
+envio, vídeo e transcrição executam diretamente: não há estimativa confiável
+nem limite configurado que justifique um freio só por custo. **react: SEM freio
+por veredito** — reação é trivialmente reversível (WhatsApp substitui/remove;
+Slack tem remove explícito) e é a superfície de ack mais barata; freio
+contradiria os próprios hints de sessão. Ordem validação→freio garante que
+exit 3 só aparece para envios que funcionariam.
 Codes: FILE/STICKER/STICKER_MEDIA/MESSAGE_NOT_FOUND (react com not-found
 best-effort FAIL-OPEN: só rejeita quando o chat existe no ledger local — gap
 de ledger nunca vira falso not-found), MEDIA_SEND/TRANSCRIBE_FAILED retryable.
@@ -714,22 +728,27 @@ reversibilidade — racional do mail send). 21 leituras sem freio.
 rethrow de ContractError. `mutationHelp` reescrito ("No dry-run is available"
 → ensina o freio). `--fields` em 7 listagens.
 **prox-calls (`prox`):** `request` freada (LIGAÇÃO real; validação de profile
-ANTES do freio; plan com pessoa/telefone/motivo/providerMode). `cancel` sem
+ANTES do freio; plan minimizado sem telefone, motivo ou valores dinâmicos).
+`profiles configure` só bloqueia quando haverá sincronização real com
+ElevenLabs; update local e `--skip-provider-sync` são diretos. `cancel` sem
 freio (parada de dano). Equivalentes documentados: voice-agents sync (dry-run
 default) e tools run --dry-run (live hard-block). 6 codes not-found; freio
 verificado contra o sqlite real (0 linhas sem --execute). `--fields` em 3
-listagens. Mislabel kind:"read" em `request` reportado sem flipar.
+listagens. Operações com efeito são autorizadas como `mutate`, com grants
+exatos legados preservados pela migração de compatibilidade.
 **meetings:** NENHUM freio novo — `join --dry-run` pré-existente documentado
 como equivalente; login (interativo humano), finalize e profiles init
 declaradas. `MEETING_PROFILE_NOT_FOUND` com guarda para não mascarar erro de
 config como not-found. Correção cross-platform da suíte que já MORRIA no
 Windows (stub bash + PATH `:`): env do recorder no beforeEach + skipIf(win32)
 só no teste de spawn; CI POSIX roda tudo.
-**devin:** create e send freadas (serviço PAGO/ACUs; freio ANTES do client —
-dry-run sem credenciais; plan sem segredos: sessionSecretCount +
-promptPreview 200 chars). terminate sem freio (parada de custo). sync/archive
-declaradas. `DEVIN_SESSION_NOT_FOUND` em 8 ops com suggestions do cache local.
-Mislabel kind:"read" em terminate reportado. Mock de artifacts/store com
+**devin:** create e send freadas (serviço externo; freio ANTES do client e plan
+sem segredos). `sessions archive` e `sessions insights --generate` também
+confirmam alteração externa. `terminate` permanece direto por ser parada de
+dano/custo; `sync` e leitura simples de insights também são diretos.
+`DEVIN_SESSION_NOT_FOUND` em 8 ops com suggestions do cache local. Todas as
+operações com efeito são autorizadas como `mutate`, com grants exatos legados
+preservados pela migração de compatibilidade. Mock de artifacts/store com
 spread do real (vazamento entre arquivos corrigido).
 
 **Consumidores:** skills prox-calls/meetings com Contrato Do CLI; skill tasks
@@ -808,9 +827,9 @@ re-despacho; nada foi perdido nem revertido.
 
 ---
 
-## FASE 2 — Integração final (2026-08-06)
+## FASE 2 — Integração final (snapshot provisório, 2026-08-06)
 
-**Veredito da suíte: ZERO falhas novas vs baseline.**
+**Veredito histórico, invalidado pela FASE 3: "zero falhas novas".**
 
 - `bun test src/channels/`: **254 pass / 1 fail** (baseline: 145/110). A única
   falha restante consta na lista da baseline; **109 falhas da baseline foram
@@ -841,3 +860,82 @@ usage-contract em ordem alfabética), 13 domínios dispensados com justificativa
 (tabela acima), 54 specs `cli/*` novas/atualizadas + 3 specs root com
 companheiros criados (mail) ou corrigidos (watch CHECKS), ~30 skills/docs/
 hints/prompts de agente ensinando o contrato.
+
+---
+
+## FASE 3 — Revisao adversarial e compatibilidade (2026-08-07)
+
+Esta fase substitui os vereditos provisórios anteriores. A migração só pode
+ser aprovada pelo comportamento do head publicado, nunca pela quantidade de
+testes nem por um CI executado em um commit anterior.
+
+### Regressoes detectadas e corrigidas
+
+- O smoke oficial de `projects fixtures seed` invocava uma operação destrutiva
+  sem `--execute`. Era uma regressão da migração mesmo sem alteração no arquivo
+  do teste, pois o consumidor spawna o CLI global alterado.
+- O bootstrap do processo real convertia `ContractError` de uso em exit 1 e
+  reimprimia `Error:` quando havia contexto de agente. O processo agora
+  preserva o envelope único e exit 2 com e sem contexto.
+- `crm contact show`, `crm task show`, `audio generate` sem texto e
+  `image generate` sem provider ainda escapavam por handlers legados. Esses
+  caminhos agora retornam JSON canônico, sem stderr textual concorrente.
+- A superfície de tools concatenava output humano do dry-run ao envelope e
+  produzia conteúdo que não passava em `JSON.parse`. Agora retorna exatamente
+  um envelope canônico.
+- A skill oficial `cli-creator` ainda ensinava exit 0/1 e proibia exit 2. Ela
+  agora aponta para a spec global e ensina 0/1/2/3, `ContractError`, paridade
+  de transportes e confirmação baseada em risco.
+- Consumers de teste e mocks que atravessam o CLI global foram atualizados em
+  vez de serem classificados como falhas preexistentes apenas pelo path.
+
+### Release note — autorizacao e grants
+
+A migração mantém um inventário versionado de **69 operações reclassificadas
+de `read` para `mutate` ao longo da branch**. O inventário deve corresponder
+exatamente ao `CommandAccess` vivo e é validado pelo gate central de REBAC.
+
+Na abertura dos stores, grants `read` exatos de menor privilégio recebem o
+grant `mutate` correspondente em quatro superfícies duráveis: defaults de
+agente, permission tags do sistema/provider, observer rules e observer
+bindings. O grant `read` original é preservado, a migração é idempotente e
+admin/full/group grants permanecem inalterados. Contextos runtime ativos não
+são reescritos. Wildcards `read` amplos são ambíguos e **não** são promovidos
+automaticamente para evitar escalada de privilégio; eles são contabilizados
+para revisão manual.
+
+Rollback exige cuidado: reverter o código da migração não remove grants
+`mutate` já anexados. Qualquer remoção deve ser uma auditoria explícita dos
+quatro stores, não um rollback destrutivo automático.
+
+### Politica de confirmacao recalibrada
+
+- Geração local de áudio/imagem executa diretamente; somente entrega externa
+  (`--send`) e TTS disparado exigem confirmação. Vídeo/transcrição não alegam
+  um freio monetário sem estimativa confiável e limite configurado.
+- `whatsapp dm read --no-ack` é leitura direta. O read padrão só bloqueia
+  quando há recibo real a emitir; `dm ack` exige confirmação.
+- `prox calls profiles configure` só bloqueia quando haverá sincronização real
+  com ElevenLabs. `--skip-provider-sync` e updates locais continuam diretos.
+- `daemon logs --clear` bloqueia antes do flush destrutivo; leituras de log
+  continuam diretas.
+- `devin sessions insights --generate` e `sessions archive` confirmam a
+  alteração externa; leitura de insights, sync e o damage-stop `terminate`
+  continuam diretos.
+- Planos e audit inputs desses fluxos são minimizados/redigidos: corpos,
+  telefone, motivo, valores dinâmicos, message ids e caminhos de prompt não
+  podem ser copiados para envelopes ou auditoria.
+
+### Transportes, consumidores e gates
+
+CLI, tools e gateway/SDK preservam `op`, envelope, `error.code` e a taxonomia
+0/1/2/3. Auditoria distingue `blocked`, `usage_error`, `denied` e `failed`.
+Specs, skills, hints e exemplos que invocam operações freadas devem carregar a
+confirmação correta. OpenAPI e SDKs TypeScript/Swift são regenerados a partir
+do registry vivo; arquivos gerados nunca são editados à mão.
+
+Evidência focada já observada nesta fase: 4 testes de processo real, 35 testes
+de tools/gateway e 12 testes de autorização/migração passaram. O CI verde do
+commit `9822fa12` é apenas histórico e **não valida** os commits desta fase.
+Typecheck, lint, build, quality gate e o CI do novo head permanecem pendentes
+até serem registrados abaixo com SHA e run verificáveis.

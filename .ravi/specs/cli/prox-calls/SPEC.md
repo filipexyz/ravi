@@ -21,8 +21,6 @@ owners:
 status: active
 normative: true
 ---
-# Prox Calls agent-first CLI contract
-
 ## Intent
 
 Make `ravi prox calls` (and its `profiles`, `voice-agents`, `tools` groups)
@@ -56,6 +54,10 @@ primary braked op. `cancel` is deliberately unbraked (damage stop).
    and MUST NOT be renamed: `voice-agents sync` (dry-run by DEFAULT; live push
    still reported `would_push`/`skipped`) and `tools run --dry-run` (live
    execution additionally hard-blocked with `execution_not_implemented`).
+9. `profiles configure` MUST require `--execute` only when the effective
+   ElevenLabs profile, provider agent and changed fields cause a real provider
+   synchronization. The dry-run MUST precede both local persistence and HTTP.
+   `--skip-provider-sync` and local-only updates remain immediate.
 
 ## Write classification (brake decision per op)
 
@@ -63,7 +65,8 @@ primary braked op. `cancel` is deliberately unbraked (damage stop).
 |---|---|---|
 | request | schedules a REAL phone call (external, human-facing) | dry-run + `--execute` |
 | cancel | damage stop for a real call | not braked (declared) |
-| profiles configure | local config write; optional ElevenLabs prompt sync (mitigation: `--skip-provider-sync`) | not braked (declared) |
+| profiles configure, local-only / `--skip-provider-sync` | reversible local config | not braked |
+| profiles configure with effective ElevenLabs sync | external provider mutation | conditional dry-run + `--execute` |
 | voice-agents create/configure/bind-tool/unbind-tool | reversible local config | not braked (declared) |
 | tools create/configure/bind/unbind | reversible local config | not braked (declared) |
 | voice-agents sync | provider push | `--dry-run` default (equivalent, flag kept) |
@@ -86,9 +89,9 @@ primary braked op. `cancel` is deliberately unbraked (damage stop).
 `src/plugins/internal/ravi-system/skills/prox-calls/SKILL.md` teaches this
 surface: its `## Contrato Do CLI` section documents the brake on `request`
 (examples carry `--execute`), the unbraked/equivalent ops with rationale, and
-the `--fields` compact mode. Known mislabel (reported, not changed in this
-wave): `request` is still declared `@CommandAccess kind:"read"` although it
-mutates — fixing it may change REBAC enforcement and needs its own pass.
+the `--fields` compact mode. `request`, transcript sync and configuration
+operations that can persist or call providers are authorized as `mutate`;
+exact legacy read grants are migrated to matching mutate grants.
 
 ## Validation
 

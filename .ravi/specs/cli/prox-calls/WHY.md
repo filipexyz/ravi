@@ -2,9 +2,10 @@
 
 A misfired `prox calls request` is not a local mistake: a real phone rings in
 a real person's pocket, with a voice agent speaking on the operator's behalf.
-That is the single most human-facing write in the CLI, so it got the brake
-with the plan exposing exactly who would be called, why, and through which
-provider mode (stub vs live).
+That is the single most human-facing write in the CLI, so it got the brake.
+The plan identifies the semantic person/profile and provider mode, but exposes
+only whether a phone/reason was supplied and the dynamic-variable keys; it
+never copies the phone, reason or variable values into an error or audit path.
 
 `cancel` went the OPPOSITE way on purpose. Cancel is how you stop a call that
 should not happen — quiet hours misjudged, person already replied, wrong
@@ -17,11 +18,13 @@ re-braked, because renaming shipped flags breaks callers for zero safety gain:
 push today), and `tools run` pairs `--dry-run` with a hard
 `execution_not_implemented` block on the live path.
 
-`profiles configure` stays unbraked by the enumerated mandate, but it is the
-one unbraked op that can touch a provider (ElevenLabs prompt/first-message
-sync). The spec records `--skip-provider-sync` as the mitigation and flags the
-op for the next wave if the principle hardens.
+`profiles configure` has two materially different paths. A local config update
+is reversible and executes immediately. When the effective provider is
+ElevenLabs, a provider agent exists and prompt/first-message/dynamic fields
+would be synchronized, the command requires confirmation before either local
+persistence or HTTP. `--skip-provider-sync` is the explicit low-friction local
+path.
 
-Also reported, untouched: `request` is mislabeled `kind:"read"` in
-`@CommandAccess`. Changing it flows into REBAC command authorization, which is
-out of scope for a contract wave.
+Authorization is separate: `request`, transcript sync and effectful config
+operations are declared `mutate`. Exact legacy read grants receive matching
+mutate grants; broad read wildcards are not expanded automatically.

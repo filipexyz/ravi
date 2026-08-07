@@ -14,6 +14,10 @@
 - Every implementation with persistent mutation, outbound effect, paid
   generation, provider mutation or triggered execution uses
   `@CommandAccess({ kind: "mutate" })`.
+- The read-to-mutate compatibility inventory exactly matches the corrected
+  live authorization metadata. Exact legacy grants migrate idempotently in
+  agent defaults, permission tags, observer rules and observer bindings;
+  broad wildcards and runtime context snapshots remain unchanged.
 - Every braked operation matches at least one confirmation-policy row; local
   reversible writes and cost-only operations below/no threshold are not
   braked.
@@ -39,6 +43,8 @@
 bun test src/cli/commands/usage-exit.smoke.test.ts
 bun test src/cli/tools-export.test.ts src/sdk/gateway/dispatcher.test.ts
 bun test src/cli/command-access.test.ts src/cli/registry.test.ts
+bun test src/cli/commands/command-access-kind.test.ts
+bun test src/permissions/command-access-kind-migration.test.ts src/permissions/command-access-kind-migration.store.test.ts
 bun test src/cli/schema-inference.test.ts src/sdk/client-codegen/codegen.test.ts
 bun run typecheck
 ```

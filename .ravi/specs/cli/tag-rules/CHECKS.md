@@ -18,9 +18,9 @@
   documented brake equivalent and MUST NOT be renamed to `--execute`.
 - `tag-rules list --fields id,scope --json` MUST return rules containing only
   the requested fields.
-- The `@CommandAccess kind:"read"` on `tick`/`evaluate` is a registered
-  mis-declaration and MUST NOT be flipped as part of contract work — it feeds
-  runtime authorization (whatsapp join/leave precedent).
+- `tick` and `evaluate` MUST declare `CommandAccess.kind: "mutate"`; a
+  read-only capability MUST be denied before the handler and an exact mutate
+  capability allowed.
 - A `ContractError` thrown with `RAVI_*` envs present MUST preserve its exit
   code through the registry dispatcher.
 - `bun test src/cli/commands/tag-rules.test.ts` SHOULD pass after any change

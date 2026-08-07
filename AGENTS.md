@@ -501,7 +501,7 @@ ravi daemon status     # Show status
 ravi daemon logs       # Show last 50 lines
 ravi daemon logs -f    # Follow mode (tail -f)
 ravi daemon logs -t 100  # Show last 100 lines
-ravi daemon logs --clear # Clear log file
+ravi daemon logs --clear --execute # Clear logs (dry-run without --execute)
 ravi daemon env        # Edit ~/.ravi/.env
 
 # WhatsApp
