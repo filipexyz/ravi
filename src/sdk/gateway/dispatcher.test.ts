@@ -135,6 +135,16 @@ class GatewayDemoCommands {
     });
   }
 
+  @Command({ name: "missing-blob", description: "Returns a non-success binary response" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "missing-blob", risk: "low" })
+  @Returns.binary()
+  missingBlob() {
+    return Response.json(
+      { error: "NotFound", detail: "private storage path and provider response" },
+      { status: 404 },
+    );
+  }
+
   @Command({
     name: "wrong-blob",
     description: "Marked binary but returns plain object",
@@ -423,7 +433,7 @@ describe("dispatch — validation", () => {
     expect(JSON.stringify(audits.events)).not.toContain(secret);
   });
 
-  it("returns 500 ReturnShapeError when handler return shape is wrong", async () => {
+  it("returns a canonical HTTP 500 contract when handler return shape is wrong", async () => {
     const audits = captureAudits();
     const result = await dispatch(
       findCmd("demo.broken"),
@@ -432,10 +442,27 @@ describe("dispatch — validation", () => {
       { contextRecord: demoContext, emitAudit: audits.emit },
     );
     expect(result.response.status).toBe(500);
-    const body = (await result.response.json()) as { error: string };
-    expect(body.error).toBe("ReturnShapeError");
+    const body = (await result.response.json()) as {
+      success: boolean;
+      op: string;
+      exitCode: number;
+      outcome: string;
+      error: { code: string; message: string };
+    };
+    expect(body).toMatchObject({
+      success: false,
+      op: "demo broken",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "RETURN_SHAPE_ERROR", message: "Command returned an invalid response shape." },
+    });
     expect(audits.events).toHaveLength(1);
-    expect(audits.events[0]?.isError).toBe(true);
+    expect(audits.events[0]).toMatchObject({
+      isError: true,
+      outcome: "failed",
+      exitCode: 1,
+      errorCode: "RETURN_SHAPE_ERROR",
+    });
   });
 });
 
@@ -761,14 +788,62 @@ describe("dispatch — @Returns.binary() escape hatch", () => {
 
     expect(result.response.status).toBe(500);
     const body = (await result.response.json()) as {
-      error: string;
-      issues: { message: string }[];
+      success: boolean;
+      op: string;
+      exitCode: number;
+      outcome: string;
+      error: { code: string; message: string; issues: { message: string }[] };
     };
-    expect(body.error).toBe("ReturnShapeError");
-    expect(body.issues[0]?.message).toContain("@Returns.binary()");
-    expect(body.issues[0]?.message).toContain("instead of a Response");
+    expect(body).toMatchObject({
+      success: false,
+      op: "demo wrong-blob",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "RETURN_SHAPE_ERROR", message: "Command returned an invalid response shape." },
+    });
+    expect(body.error.issues[0]?.message).toContain("@Returns.binary()");
+    expect(body.error.issues[0]?.message).toContain("instead of a Response");
 
     expect(audits.events).toHaveLength(1);
-    expect(audits.events[0]?.isError).toBe(true);
+    expect(audits.events[0]).toMatchObject({
+      isError: true,
+      outcome: "failed",
+      exitCode: 1,
+      errorCode: "RETURN_SHAPE_ERROR",
+    });
+  });
+
+  it("normalizes non-2xx binary responses and audits them as failed", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.missing-blob"),
+      {},
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(404);
+    const body = (await result.response.json()) as {
+      success: boolean;
+      op: string;
+      exitCode: number;
+      outcome: string;
+      error: { code: string; message: string };
+    };
+    expect(body).toMatchObject({
+      success: false,
+      op: "demo missing-blob",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "RESOURCE_NOT_FOUND", message: "Binary resource was not found." },
+    });
+    expect(JSON.stringify(body)).not.toContain("private storage path");
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]).toMatchObject({
+      isError: true,
+      outcome: "failed",
+      exitCode: 1,
+      errorCode: "RESOURCE_NOT_FOUND",
+    });
   });
 });

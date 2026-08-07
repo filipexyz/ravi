@@ -3,8 +3,9 @@
  */
 
 import {
+  ContractError,
+  CONTRACT_EXIT_ERROR,
   contractFailureOutcome,
-  type ContractError,
   type ContractErrorEnvelope,
   type ContractFailureOutcome,
 } from "../../cli/agent-contract.js";
@@ -82,8 +83,14 @@ export function contractErrorResponse(
   return json(status, body);
 }
 
-export function returnShapeError(issues: JsonIssue[]): Response {
-  return errorResponse(500, "ReturnShapeError", { issues });
+export function returnShapeError(op: string, issues: JsonIssue[]): Response {
+  return contractErrorResponse(
+    new ContractError(op, "RETURN_SHAPE_ERROR", "Command returned an invalid response shape.", CONTRACT_EXIT_ERROR, {
+      suggestedAction: "Report the invalid SDK return contract to the command owner",
+      issues,
+    }),
+    500,
+  );
 }
 
 export function badRequest(message: string): Response {

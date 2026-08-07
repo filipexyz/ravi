@@ -197,7 +197,7 @@ export async function dispatch(
 
   if (cmd.binary) {
     if (!(returnValue instanceof Response)) {
-      response = returnShapeError([
+      response = returnShapeError(commandOperation(group, cmd.command), [
         {
           path: [],
           code: "invalid_type",
@@ -205,6 +205,24 @@ export async function dispatch(
         },
       ]);
       const audit = buildAuditEvent(cmd, tool, auditInput, "failed", startedAt, lineage, 1, "RETURN_SHAPE_ERROR");
+      const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+      return { response, audit: auditEmitted ? audit : null };
+    }
+    if (!returnValue.ok) {
+      const error = binaryResponseToContractError(commandOperation(group, cmd.command), returnValue.status);
+      const binaryOutcome = error.code === "PERMISSION_DENIED" ? "denied" : contractFailureOutcome(error);
+      const responseStatus = returnValue.status >= 400 ? returnValue.status : 502;
+      response = contractErrorResponse(error, responseStatus, binaryOutcome);
+      const audit = buildAuditEvent(
+        cmd,
+        tool,
+        auditInput,
+        binaryOutcome,
+        startedAt,
+        lineage,
+        error.exitCode,
+        error.code,
+      );
       const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
       return { response, audit: auditEmitted ? audit : null };
     }
@@ -218,7 +236,7 @@ export async function dispatch(
   if (cmd.returns) {
     const returnIssues = checkReturnShape(cmd.returns, responseValue);
     if (returnIssues) {
-      response = returnShapeError(returnIssues);
+      response = returnShapeError(commandOperation(group, cmd.command), returnIssues);
       const audit = buildAuditEvent(cmd, tool, auditInput, "failed", startedAt, lineage, 1, "RETURN_SHAPE_ERROR");
       const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
       return { response, audit: auditEmitted ? audit : null };
@@ -229,6 +247,35 @@ export async function dispatch(
   const audit = buildAuditEvent(cmd, tool, auditInput, "succeeded", startedAt, lineage);
   const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
   return { response, audit: auditEmitted ? audit : null };
+}
+
+function binaryResponseToContractError(op: string, status: number): ContractError {
+  const details = { status, suggestedAction: "Inspect the binary resource identifier and retry" };
+  if (status === 400) {
+    return new ContractError(op, "USAGE_ERROR", "Binary resource request was invalid.", CONTRACT_EXIT_USAGE, details);
+  }
+  if (status === 401) {
+    return new ContractError(op, "AUTH_REQUIRED", "Binary resource authentication failed.", 1, details);
+  }
+  if (status === 403) {
+    return new ContractError(op, "PERMISSION_DENIED", "Binary resource access was denied.", 1, details);
+  }
+  if (status === 404) {
+    return new ContractError(op, "RESOURCE_NOT_FOUND", "Binary resource was not found.", 1, details);
+  }
+  if (status === 429) {
+    return new ContractError(op, "RATE_LIMITED", "Binary resource request was rate limited.", 1, {
+      ...details,
+      retryable: true,
+    });
+  }
+  if (status >= 500) {
+    return new ContractError(op, "SERVER_UNAVAILABLE", "Binary resource provider is unavailable.", 1, {
+      ...details,
+      retryable: true,
+    });
+  }
+  return new ContractError(op, "COMMAND_FAILED", "Binary resource request failed.", 1, details);
 }
 
 function describeReturnValue(value: unknown): string {
