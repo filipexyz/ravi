@@ -91,6 +91,7 @@ bundle/database.
 |---|---|---|
 | instance not found | `INSTANCE_NOT_FOUND` + suggestions | 1 |
 | route pattern not found | `ROUTE_NOT_FOUND` + suggestions | 1 |
+| interactive connection does not complete within 120 seconds | `INSTANCE_CONNECT_TIMEOUT`, retryable | 1 |
 | invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
 | braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 

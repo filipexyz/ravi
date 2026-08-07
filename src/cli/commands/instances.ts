@@ -1375,12 +1375,18 @@ export class InstancesCommands {
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
-        if (asJson) {
-          reject(new Error("Timeout waiting for connection (120s)"));
-          return;
+        try {
+          contractFail("instances connect", "INSTANCE_CONNECT_TIMEOUT", "Timed out waiting for instance connection.", {
+            asJson,
+            details: {
+              retryable: true,
+              timeoutSeconds: TIMEOUT_MS / 1_000,
+              suggestedAction: `Check the provider connection, then retry: ravi instances connect ${name}`,
+            },
+          });
+        } catch (error) {
+          reject(error);
         }
-        console.error("\n✗ Timeout waiting for connection (120s)");
-        process.exit(1);
       }, TIMEOUT_MS);
 
       (async () => {

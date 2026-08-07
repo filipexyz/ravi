@@ -10,6 +10,9 @@
   from that instance's real patterns.
 - An invalid flag on any migrated op MUST exit 2 with `acceptedFlags` in the
   envelope.
+- A timed-out `instances connect` MUST reject with `INSTANCE_CONNECT_TIMEOUT`,
+  exit 1, and `retryable: true` in text and JSON; it MUST NOT fall through to
+  `UNHANDLED_ERROR` or call `process.exit` from the timer.
 - `instances delete` and `instances routes remove` MUST soft-delete immediately
   without `--execute`, remain `kind: "mutate"`, and be recoverable through
   their existing restore commands.

@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
 import type { SessionEntry } from "../../router/types.js";
 
 afterAll(() => mock.restore());
@@ -608,6 +608,38 @@ describe("instances/routes agent-first contract", () => {
     expect(payload.status).toBe("deleted");
     expect(deleteInstanceCalls).toEqual(["main"]);
     expect(instanceNames.has("main")).toBe(false);
+  });
+
+  it("emits INSTANCE_CONNECT_TIMEOUT when an instance connection times out", async () => {
+    jest.useFakeTimers();
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => lines.push(args.map(String).join(" "));
+    try {
+      const result = new InstancesCommands().connect("main", undefined, undefined, true).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      for (let index = 0; index < 5; index++) await Promise.resolve();
+      expect(jest.getTimerCount()).toBe(1);
+      jest.advanceTimersByTime(120_000);
+      const caught = await result;
+
+      expect(caught).toBeInstanceOf(ContractError);
+      const contractError = caught as InstanceType<typeof ContractError>;
+      expect(contractError.code).toBe("INSTANCE_CONNECT_TIMEOUT");
+      expect(contractError.exitCode).toBe(1);
+      expect(contractError.details.retryable).toBe(true);
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0])).toMatchObject({
+        success: false,
+        op: "instances connect",
+        error: { code: "INSTANCE_CONNECT_TIMEOUT", retryable: true },
+      });
+    } finally {
+      console.log = originalLog;
+      jest.useRealTimers();
+    }
   });
 
   it("emits INSTANCE_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
