@@ -7,7 +7,7 @@ import { Database } from "bun:sqlite";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { CLI_READ_TO_MUTATE_MIGRATIONS } from "../../permissions/command-access-kind-migration.js";
 import type { ContextRecord } from "../../router/router-db.js";
-import { enforceCliCommandAuthorization } from "../command-access.js";
+import { enforceCliCommandAuthorization, redactCommandAccessInput } from "../command-access.js";
 import { runWithContext } from "../context.js";
 import { getCommandAccessMetadata, type CommandAccessOptions } from "../decorators.js";
 import { AgentsCommands } from "./agents.js";
@@ -671,6 +671,55 @@ describe("corrected mutating command access", () => {
     const migrated = CLI_READ_TO_MUTATE_MIGRATIONS.map(({ resource, action }) => `${resource}:${action}`).sort();
 
     expect(migrated).toEqual(expected);
+  });
+
+  it("declares redaction for WhatsApp content and private identifiers in audit input", () => {
+    const dmAccess = getCommandAccessMetadata(WhatsAppDmCommands);
+    const dmSend = dmAccess.get("send");
+    const dmRead = dmAccess.get("read");
+    const dmAck = dmAccess.get("ack");
+    expect(dmSend?.redactions).toEqual(expect.arrayContaining(["contact", "message"]));
+    expect(dmRead?.redactions).toEqual(expect.arrayContaining(["contact"]));
+    expect(dmAck?.redactions).toEqual(expect.arrayContaining(["contact", "messageId"]));
+
+    const groupAccess = getCommandAccessMetadata(GroupCommands);
+    const groupSend = groupAccess.get("send");
+    const groupDescription = groupAccess.get("description");
+    expect(groupSend?.redactions).toEqual(expect.arrayContaining(["groupId", "message", "mention"]));
+    expect(groupDescription?.redactions).toEqual(expect.arrayContaining(["groupId", "text"]));
+
+    const sensitiveAuditInputs: Array<{
+      access: CommandAccessOptions | undefined;
+      input: Record<string, string>;
+    }> = [
+      {
+        access: dmSend,
+        input: { contact: "SENTINEL_PRIVATE_PHONE", message: "SENTINEL_PRIVATE_DM_MESSAGE" },
+      },
+      { access: dmRead, input: { contact: "SENTINEL_PRIVATE_DM_JID" } },
+      {
+        access: dmAck,
+        input: { contact: "SENTINEL_PRIVATE_ACK_JID", messageId: "SENTINEL_PRIVATE_MESSAGE_ID" },
+      },
+      {
+        access: groupSend,
+        input: {
+          groupId: "SENTINEL_PRIVATE_GROUP_JID",
+          message: "SENTINEL_PRIVATE_GROUP_MESSAGE",
+          mention: "SENTINEL_PRIVATE_MENTION_PHONE",
+        },
+      },
+      {
+        access: groupDescription,
+        input: { groupId: "SENTINEL_PRIVATE_DESCRIPTION_JID", text: "SENTINEL_PRIVATE_DESCRIPTION" },
+      },
+    ];
+
+    for (const { access, input } of sensitiveAuditInputs) {
+      const auditInput = redactCommandAccessInput(access, input);
+      expect(Object.values(auditInput)).toEqual(Object.keys(input).map(() => "[REDACTED]"));
+      expect(JSON.stringify(auditInput)).not.toContain("SENTINEL_PRIVATE");
+    }
   });
 
   it("denies read capabilities before DB/FS effects and allows mutate capabilities", () => {

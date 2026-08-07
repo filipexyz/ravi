@@ -32,7 +32,7 @@ ravi daemon status                            # Show daemon + infra status (ravi
 ravi daemon logs                              # Show last 50 lines
 ravi daemon logs -f                           # Follow log output
 ravi daemon logs -t 100                       # Show last 100 lines
-ravi daemon logs --clear                      # Flush PM2 logs
+ravi daemon logs --clear --execute            # Flush PM2 logs (without --execute it is a dry-run, exit 3)
 ravi daemon logs --path                       # Print PM2 log file path
 ravi daemon env                               # Edit ~/.ravi/.env in $EDITOR
 ravi daemon install                           # Save PM2 process list (pm2 save + startup hint)
@@ -323,13 +323,15 @@ Send direct messages and manage read receipts.
 ```bash
 ravi whatsapp.dm send <contact> <message> --execute  # Send a DM (resolves LID or phone; without --execute it is a dry-run, exit 3)
   --account <id>                              #   WhatsApp account
-ravi whatsapp.dm read <contact>               # Read recent messages
+ravi whatsapp.dm read <contact> --no-ack      # Read locally without sending a receipt
+ravi whatsapp.dm read <contact> --execute     # Read and send the default receipt when an inbound MID exists
   --last <n>                                  #   Number of messages (default: 10)
-  --no-ack                                    #   Don't send read receipt
   --account <id>                              #   WhatsApp account
-ravi whatsapp.dm ack <contact> <messageId>    # Send read receipt for specific message (unbraked: no --execute)
+ravi whatsapp.dm ack <contact> <messageId> --execute  # Send a receipt (without --execute it is a dry-run, exit 3)
   --account <id>                              #   WhatsApp account
 ```
+
+The default `dm read` only requires `--execute` when the selected history contains an inbound MID and would therefore emit a read receipt. Without `--execute`, that case returns the plan and exits 3; when no receipt can be emitted, the read returns directly. Use `--no-ack` for an always read-only path.
 
 ## Media
 

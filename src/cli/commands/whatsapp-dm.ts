@@ -16,6 +16,14 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+function maskWhatsAppTarget(jid: string): string {
+  const separator = jid.indexOf("@");
+  const local = separator >= 0 ? jid.slice(0, separator) : jid;
+  const domain = separator >= 0 ? jid.slice(separator) : "";
+  const visibleSuffix = local.length > 4 ? local.slice(-4) : local.slice(-1);
+  return `***${visibleSuffix}${domain}`;
+}
+
 /**
  * CONTACT_NOT_FOUND envelope (Manual v2): the target could not be resolved to
  * a WhatsApp JID. Suggestions come from the LOCAL contacts DB
@@ -77,7 +85,13 @@ function resolveWhatsAppJid(op: string, contactRef: string, asJson?: boolean): {
 })
 export class WhatsAppDmCommands {
   @Command({ name: "send", description: "Send a direct message to a contact" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.dm", action: "send", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.dm",
+    action: "send",
+    risk: "high",
+    redactions: ["contact", "message"],
+  })
   async send(
     @Arg("contact", { description: "Contact ID, phone, or WhatsApp identity" }) contactRef: string,
     @Arg("message", { description: "Message text" }) message: string,
@@ -104,10 +118,9 @@ export class WhatsAppDmCommands {
         {
           channel: "whatsapp",
           accountId,
-          contact: contactRef,
-          to: jid,
-          displayName,
-          text: cleanMessage,
+          target: maskWhatsAppTarget(jid),
+          effect: "send-message",
+          messageChars: cleanMessage.length,
         },
         { asJson },
       );
@@ -140,7 +153,13 @@ export class WhatsAppDmCommands {
   }
 
   @Command({ name: "read", description: "Read recent messages from a DM chat" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.dm", action: "read", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.dm",
+    action: "read",
+    risk: "medium",
+    redactions: ["contact"],
+  })
   async read(
     @Arg("contact", { description: "Contact ID, phone, or WhatsApp identity" }) contactRef: string,
     @Option({ flags: "--last <n>", description: "Number of messages to read (default: 10)" }) last?: string,
@@ -204,10 +223,10 @@ export class WhatsAppDmCommands {
               {
                 channel: "whatsapp",
                 accountId,
-                contact: contactRef,
-                to: jid,
-                displayName,
-                messageId: midMatch[1],
+                target: maskWhatsAppTarget(jid),
+                effect: "read-and-send-receipt",
+                messageCount: messages.length,
+                receiptCount: 1,
               },
               { asJson },
             );
@@ -244,7 +263,13 @@ export class WhatsAppDmCommands {
   }
 
   @Command({ name: "ack", description: "Send read receipt (blue ticks) for a specific message" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.dm", action: "ack", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.dm",
+    action: "ack",
+    risk: "high",
+    redactions: ["contact", "messageId"],
+  })
   async ack(
     @Arg("contact", { description: "Contact ID, phone, or WhatsApp identity" }) contactRef: string,
     @Arg("messageId", { description: "Message ID to mark as read" }) messageId: string,
@@ -265,10 +290,9 @@ export class WhatsAppDmCommands {
         {
           channel: "whatsapp",
           accountId,
-          contact: contactRef,
-          to: jid,
-          displayName,
-          messageId,
+          target: maskWhatsAppTarget(jid),
+          effect: "send-read-receipt",
+          receiptCount: 1,
         },
         { asJson },
       );

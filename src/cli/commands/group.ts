@@ -78,6 +78,14 @@ function normalizeGroupJid(groupId: string): string {
   return `${trimmed}@g.us`;
 }
 
+function maskWhatsAppTarget(jid: string): string {
+  const separator = jid.indexOf("@");
+  const local = separator >= 0 ? jid.slice(0, separator) : jid;
+  const domain = separator >= 0 ? jid.slice(separator) : "";
+  const visibleSuffix = local.length > 4 ? local.slice(-4) : local.slice(-1);
+  return `***${visibleSuffix}${domain}`;
+}
+
 function normalizeGroupLookupKey(groupId: string): string {
   return normalizeGroupJid(groupId).replace(/@g\.us$/, "");
 }
@@ -975,7 +983,13 @@ export class GroupCommands {
   }
 
   @Command({ name: "send", description: "Send a message to a WhatsApp group" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "send", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.group",
+    action: "send",
+    risk: "high",
+    redactions: ["groupId", "message", "mention"],
+  })
   @Scope("open")
   async send(
     @Arg("groupId", { description: "Group ID, JID, or 'here' for the current chat" }) groupId: string,
@@ -1017,10 +1031,10 @@ export class GroupCommands {
           channel: "whatsapp",
           accountId,
           instanceId,
-          groupId: rawGroupId,
-          to: groupJid,
-          text: cleanMessage,
-          mentionTargets,
+          target: maskWhatsAppTarget(groupJid),
+          effect: "send-message",
+          messageChars: cleanMessage.length,
+          mentionTargetCount: mentionTargets.length,
         },
         { asJson },
       );
@@ -1730,7 +1744,13 @@ export class GroupCommands {
   }
 
   @Command({ name: "description", description: "Update group description" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "description", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.group",
+    action: "description",
+    risk: "high",
+    redactions: ["groupId", "text"],
+  })
   async description(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("text", { description: "New description" }) text: string,
@@ -1749,9 +1769,10 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group description",
         {
-          groupId: normalizeGroupJid(groupId),
-          description: text,
+          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
           accountId: resolveGroupAccount(account) || null,
+          effect: "update-description",
+          descriptionChars: text.length,
         },
         { asJson },
       );

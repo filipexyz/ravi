@@ -65,6 +65,12 @@ const contactsMock: MockContact[] = [
     phone: "5511888888888",
     identities: [{ platform: "phone", value: "5511888888888" }],
   },
+  {
+    id: "c3",
+    name: "SENTINEL_PRIVATE_DISPLAY_NAME",
+    phone: "5511777666555",
+    identities: [{ platform: "whatsapp", value: "5511777666555" }],
+  },
 ];
 
 function findMockContact(ref: string): MockContact | null {
@@ -352,8 +358,11 @@ beforeEach(() => {
 describe("whatsapp group write brake", () => {
   it("send without --execute is a dry-run: exit 3 and NO provider call (not even the metadata read)", async () => {
     const commands = new GroupCommands();
+    const sensitiveMessage = "SENTINEL_GROUP_MESSAGE_DO_NOT_LEAK";
+    const sensitiveMentionTarget = "SENTINEL_MENTION_TARGET_DO_NOT_LEAK";
     const error = await expectContractError(
-      () => commands.send("120363000000000001@g.us", "olá pessoal", undefined, undefined, true, undefined),
+      () =>
+        commands.send("120363000000000001@g.us", sensitiveMessage, undefined, sensitiveMentionTarget, true, undefined),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );
@@ -363,9 +372,18 @@ describe("whatsapp group write brake", () => {
       channel: "whatsapp",
       accountId: "main",
       instanceId: "inst-1",
-      to: "120363000000000001@g.us",
-      text: "olá pessoal",
+      target: "***0001@g.us",
+      effect: "send-message",
+      messageChars: sensitiveMessage.length,
+      mentionTargetCount: 1,
     });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain(sensitiveMessage);
+    expect(serializedPlan).not.toContain(sensitiveMentionTarget);
+    expect(serializedPlan).not.toContain("120363000000000001@g.us");
+    expect((error.details.plan as Record<string, unknown>).text).toBeUndefined();
+    expect((error.details.plan as Record<string, unknown>).to).toBeUndefined();
+    expect((error.details.plan as Record<string, unknown>).mentionTargets).toBeUndefined();
     expect(senderSendCalls).toHaveLength(0);
     expect(metadataCalls).toHaveLength(0);
   });
@@ -572,6 +590,29 @@ describe("whatsapp group write brake", () => {
     }
   });
 
+  it("description dry-run exposes only the target, effect and description length", async () => {
+    const commands = new GroupCommands();
+    const sensitiveDescription = "SENTINEL_GROUP_DESCRIPTION_DO_NOT_LEAK";
+    const error = await expectContractError(
+      () => commands.description("123", sensitiveDescription, undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toMatchObject({
+      target: "***3@g.us",
+      accountId: "main",
+      effect: "update-description",
+      descriptionChars: sensitiveDescription.length,
+    });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain(sensitiveDescription);
+    expect(serializedPlan).not.toContain("123@g.us");
+    expect((error.details.plan as Record<string, unknown>).description).toBeUndefined();
+    expect((error.details.plan as Record<string, unknown>).groupId).toBeUndefined();
+    expect(setDescriptionCalls).toHaveLength(0);
+  });
+
   it("rename with --execute performs the provider call", async () => {
     const commands = new GroupCommands();
     await silenced(() => commands.rename("123", "Novo Nome", undefined, true, true));
@@ -631,8 +672,12 @@ describe("whatsapp group envelopes and compact mode", () => {
 describe("whatsapp dm contract", () => {
   it("send without --execute is a dry-run: exit 3 and NO NATS delivery", async () => {
     const commands = new WhatsAppDmCommands();
+    const sensitiveMessage = "SENTINEL_DM_MESSAGE_DO_NOT_LEAK";
+    const sensitivePhone = "5511777666555";
+    const sensitiveJid = `${sensitivePhone}@s.whatsapp.net`;
+    const sensitiveDisplayName = "SENTINEL_PRIVATE_DISPLAY_NAME";
     const error = await expectContractError(
-      () => commands.send("5511999999999", "oi", undefined, true, undefined),
+      () => commands.send(sensitivePhone, sensitiveMessage, undefined, true, undefined),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );
@@ -641,9 +686,18 @@ describe("whatsapp dm contract", () => {
     expect(error.details.plan).toMatchObject({
       channel: "whatsapp",
       accountId: "main",
-      to: "5511999999999@s.whatsapp.net",
-      text: "oi",
+      target: "***6555@s.whatsapp.net",
+      effect: "send-message",
+      messageChars: sensitiveMessage.length,
     });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain(sensitiveMessage);
+    expect(serializedPlan).not.toContain(sensitivePhone);
+    expect(serializedPlan).not.toContain(sensitiveJid);
+    expect(serializedPlan).not.toContain(sensitiveDisplayName);
+    expect((error.details.plan as Record<string, unknown>).text).toBeUndefined();
+    expect((error.details.plan as Record<string, unknown>).to).toBeUndefined();
+    expect((error.details.plan as Record<string, unknown>).displayName).toBeUndefined();
     expect(natsEmits).toHaveLength(0);
   });
 
@@ -675,8 +729,12 @@ describe("whatsapp dm contract", () => {
 
   it("ack without --execute is a dry-run before the receipt is emitted", async () => {
     const commands = new WhatsAppDmCommands();
+    const sensitivePhone = "5511777666555";
+    const sensitiveJid = `${sensitivePhone}@s.whatsapp.net`;
+    const sensitiveDisplayName = "SENTINEL_PRIVATE_DISPLAY_NAME";
+    const sensitiveMessageId = "SENTINEL_PRIVATE_MID";
     const error = await expectContractError(
-      () => commands.ack("5511999999999", "MID1", undefined, true, undefined),
+      () => commands.ack(sensitivePhone, sensitiveMessageId, undefined, true, undefined),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );
@@ -685,9 +743,16 @@ describe("whatsapp dm contract", () => {
     expect(error.details.plan).toMatchObject({
       channel: "whatsapp",
       accountId: "main",
-      to: "5511999999999@s.whatsapp.net",
-      messageId: "MID1",
+      target: "***6555@s.whatsapp.net",
+      effect: "send-read-receipt",
+      receiptCount: 1,
     });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain(sensitivePhone);
+    expect(serializedPlan).not.toContain(sensitiveJid);
+    expect(serializedPlan).not.toContain(sensitiveDisplayName);
+    expect(serializedPlan).not.toContain(sensitiveMessageId);
+    expect((error.details.plan as Record<string, unknown>).messageId).toBeUndefined();
     expect(natsEmits).toHaveLength(0);
   });
 
@@ -702,14 +767,18 @@ describe("whatsapp dm contract", () => {
   });
 
   it("read with an acknowledgement candidate requires --execute before emitting the receipt", async () => {
+    const sensitiveMessageId = "SENTINEL_READ_MID";
     historyMock = [
-      { role: "user", content: "[mid:ABC] oi", created_at: "2026-01-01T10:00:00" },
+      { role: "user", content: `[mid:${sensitiveMessageId}] oi`, created_at: "2026-01-01T10:00:00" },
       { role: "assistant", content: "olÃ¡!", created_at: "2026-01-01T10:01:00" },
     ];
 
     const commands = new WhatsAppDmCommands();
+    const sensitivePhone = "5511777666555";
+    const sensitiveJid = `${sensitivePhone}@s.whatsapp.net`;
+    const sensitiveDisplayName = "SENTINEL_PRIVATE_DISPLAY_NAME";
     const error = await expectContractError(
-      () => commands.read("5511999999999", undefined, false, undefined, true, undefined, undefined),
+      () => commands.read(sensitivePhone, undefined, false, undefined, true, undefined, undefined),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );
@@ -718,9 +787,17 @@ describe("whatsapp dm contract", () => {
     expect(error.details.plan).toMatchObject({
       channel: "whatsapp",
       accountId: "main",
-      to: "5511999999999@s.whatsapp.net",
-      messageId: "ABC",
+      target: "***6555@s.whatsapp.net",
+      effect: "read-and-send-receipt",
+      messageCount: 2,
+      receiptCount: 1,
     });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain(sensitivePhone);
+    expect(serializedPlan).not.toContain(sensitiveJid);
+    expect(serializedPlan).not.toContain(sensitiveDisplayName);
+    expect(serializedPlan).not.toContain(sensitiveMessageId);
+    expect((error.details.plan as Record<string, unknown>).messageId).toBeUndefined();
     expect(natsEmits).toHaveLength(0);
   });
 
