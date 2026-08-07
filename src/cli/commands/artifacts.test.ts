@@ -26,6 +26,8 @@ const attachCalls: Array<Record<string, unknown>> = [];
 const snapshotCalls: Array<{ id: string; input: Record<string, unknown> }> = [];
 const restoreCalls: Array<{ id: string; versionNumber: number }> = [];
 const eventCalls: Array<{ id: string; input: Record<string, unknown> }> = [];
+const schemaInitializingStoreCalls: string[] = [];
+const readOnlyArtifactInspectionCalls: Array<{ id: string; versionNumber?: number }> = [];
 
 const knownArtifacts: Array<Record<string, unknown>> = [
   {
@@ -122,14 +124,43 @@ mock.module("../../artifacts/store.js", () => ({
     return { ...versionFixture, artifactId: id };
   },
   getArtifactVersion: (id: string, versionNumber?: number) => {
+    schemaInitializingStoreCalls.push("getArtifactVersion");
     requireKnownArtifact(id);
     return versionNumber === undefined || versionNumber === 1 ? { ...versionFixture, artifactId: id } : null;
   },
   getArtifactDetails: (id: string) => {
+    schemaInitializingStoreCalls.push("getArtifactDetails");
     const artifact = knownArtifacts.find((entry) => entry.id === id);
     return artifact ? { artifact, links: [], events: [], versions: [] } : null;
   },
+  inspectArtifactPublishStateReadOnly: (id: string, versionNumber?: number) => {
+    readOnlyArtifactInspectionCalls.push({ id, ...(versionNumber !== undefined ? { versionNumber } : {}) });
+    const artifact = knownArtifacts.find((entry) => entry.id === id);
+    return {
+      artifactExists: Boolean(artifact),
+      versionExists: versionNumber === undefined ? null : Boolean(artifact) && versionNumber === 1,
+      artifact: artifact ?? null,
+      version: artifact ? { ...versionFixture, artifactId: id } : null,
+      publishedEvents: artifact
+        ? [
+            {
+              id: 1,
+              artifactId: id,
+              eventType: "published",
+              payload: {
+                local: { versionNumber: 1 },
+                remote: { releaseId: "rel_1" },
+                site: { ref: "demo" },
+              },
+              createdAt: 1,
+            },
+          ]
+        : [],
+      candidates: knownArtifacts.map((entry) => String(entry.id)),
+    };
+  },
   listArtifactEvents: (id: string) => {
+    schemaInitializingStoreCalls.push("listArtifactEvents");
     requireKnownArtifact(id);
     return [];
   },
@@ -180,7 +211,7 @@ mock.module("../../whatsapp-overlay/artifacts.js", () => ({
 mock.module("../../artifacts/publish-client.js", () => ({
   publishArtifactToConsole: async (target: string, options: Record<string, unknown>) => {
     publishCalls.push({ target, options });
-    if (target === "auth-error") throw new CloudAuthError("AUTH_REQUIRED", "login required");
+    if (options.project === "auth-error") throw new CloudAuthError("AUTH_REQUIRED", "login required");
     return {
       artifact: { id: "cloud_art_1" },
       artifactVersion: { id: "cloud_ver_1" },
@@ -193,7 +224,7 @@ mock.module("../../artifacts/publish-client.js", () => ({
   },
   activateArtifactReleaseInConsole: async (id: string, options: Record<string, unknown>) => {
     activateCalls.push({ id, options });
-    if (id === "auth-error") throw new CloudAuthError("AUTH_REQUIRED", "login required");
+    if (options.release === "rel_auth_error") throw new CloudAuthError("AUTH_REQUIRED", "login required");
     return { release: { id: "rel_1" }, site: { id: "site_1" }, routes: [], url: "https://demo.ravi.page/" };
   },
 }));
@@ -249,6 +280,8 @@ beforeEach(() => {
   snapshotCalls.length = 0;
   restoreCalls.length = 0;
   eventCalls.length = 0;
+  schemaInitializingStoreCalls.length = 0;
+  readOnlyArtifactInspectionCalls.length = 0;
 });
 
 // ---------------------------------------------------------------------------
@@ -261,7 +294,7 @@ describe("artifacts write brake", () => {
     const error = await expectContractError(
       () =>
         commands.publish(
-          "./site",
+          "art_aaa111",
           "proj",
           "demo",
           "/",
@@ -287,7 +320,7 @@ describe("artifacts write brake", () => {
 
     expect(error.details.dryRun).toBe(true);
     expect(error.details.plan).toMatchObject({
-      target: "./site",
+      target: { kind: "artifact", artifactId: "art_aaa111" },
       project: "proj",
       site: "demo",
       route: "/",
@@ -298,6 +331,98 @@ describe("artifacts write brake", () => {
     });
     expect(publishCalls).toHaveLength(0);
   });
+
+  it("publish rejects a missing filesystem target before the dry-run brake", async () => {
+    const commands = new ArtifactsCommands();
+    await expectContractError(
+      () =>
+        commands.publish(
+          "./missing-local-target",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      "USAGE_ERROR",
+      2,
+    );
+    expect(publishCalls).toHaveLength(0);
+  });
+
+  it(
+    "publish resolves missing artifact ids and versions before the dry-run brake without schema initialization",
+    async () => {
+      const commands = new ArtifactsCommands();
+      await expectContractError(
+        () =>
+          commands.publish(
+            "art_missing_target",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+          ),
+        "ARTIFACT_NOT_FOUND",
+        1,
+      );
+      await expectContractError(
+        () =>
+          commands.publish(
+            "art_aaa111",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            "2",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+          ),
+        "ARTIFACT_VERSION_NOT_FOUND",
+        1,
+      );
+      expect(schemaInitializingStoreCalls).toEqual([]);
+      expect(publishCalls).toHaveLength(0);
+    },
+  );
 
   it("publish with --execute uploads through the publish client", async () => {
     const commands = new ArtifactsCommands();
@@ -356,6 +481,73 @@ describe("artifacts write brake", () => {
     expect(activateCalls).toHaveLength(0);
   });
 
+  it("release activate validates required selectors before the dry-run brake", async () => {
+    const commands = new ArtifactReleaseCommands();
+    await expectContractError(() => commands.activate("", "1", "rel_1", "demo", undefined, true), "USAGE_ERROR", 2);
+    await expect(commands.activate("art_aaa111", undefined, undefined, undefined, undefined, true)).rejects.toThrow(
+      "Missing release selector",
+    );
+    expect(activateCalls).toHaveLength(0);
+  });
+
+  it("release activate resolves the artifact and recorded release before the brake using read-only state", async () => {
+    const commands = new ArtifactReleaseCommands();
+    await expectContractError(
+      () => commands.activate("art_missing_target", "1", undefined, undefined, undefined, true),
+      "ARTIFACT_NOT_FOUND",
+      1,
+    );
+    const dryRun = await expectContractError(
+      () => commands.activate("art_aaa111", "1", undefined, undefined, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(dryRun.details.plan).toMatchObject({ artifactId: "art_aaa111", artifactVersion: 1 });
+    expect(schemaInitializingStoreCalls).toEqual([]);
+    expect(readOnlyArtifactInspectionCalls).toContainEqual({ id: "art_aaa111", versionNumber: 1 });
+  });
+
+  it("virgin dry-runs never call artifact ledger helpers that initialize schema", async () => {
+    const publish = new ArtifactsCommands();
+    const activate = new ArtifactReleaseCommands();
+
+    await expectContractError(
+      () =>
+        publish.publish(
+          "art_aaa111",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    await expectContractError(
+      () => activate.activate("art_aaa111", "1", "rel_1", "site_1", undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(schemaInitializingStoreCalls).toEqual([]);
+    expect(publishCalls).toHaveLength(0);
+    expect(activateCalls).toHaveLength(0);
+  });
+
   it("release activate with --execute calls the publish client", async () => {
     const commands = new ArtifactReleaseCommands();
     await silenced(() => commands.activate("art_aaa111", undefined, "rel_1", "demo", undefined, true, true));
@@ -369,8 +561,8 @@ describe("artifacts write brake", () => {
     await expect(
       silenced(() =>
         new ArtifactsCommands().publish(
+          "art_aaa111",
           "auth-error",
-          undefined,
           undefined,
           undefined,
           undefined,
@@ -397,7 +589,15 @@ describe("artifacts write brake", () => {
   it("never exits the host process when release activation fails in a tool or gateway context", async () => {
     await expect(
       silenced(() =>
-        new ArtifactReleaseCommands().activate("auth-error", undefined, "rel_1", "demo", undefined, true, true),
+        new ArtifactReleaseCommands().activate(
+          "art_aaa111",
+          undefined,
+          "rel_auth_error",
+          "demo",
+          undefined,
+          true,
+          true,
+        ),
       ),
     ).rejects.toMatchObject({ code: "AUTH_REQUIRED" });
   });

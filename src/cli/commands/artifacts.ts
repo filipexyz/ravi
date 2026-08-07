@@ -33,6 +33,7 @@ import {
   createArtifactVersion,
   getArtifactVersion,
   getArtifactDetails,
+  inspectArtifactPublishStateReadOnly,
   listArtifactEvents,
   listArtifactVersions,
   listArtifactsPage,
@@ -267,6 +268,85 @@ function isDirectoryPath(path: string): boolean {
   }
 }
 
+function failArtifactUsage(op: string, message: string, asJson?: boolean): never {
+  contractFail(op, "USAGE_ERROR", message, {
+    asJson,
+    exitCode: 2,
+    details: { suggestedAction: `Inspect the command input and retry '${op}'.` },
+  });
+}
+
+function validateLocalPublishTarget(
+  target: string,
+  artifactVersion: number | undefined,
+  asJson?: boolean,
+): { kind: "artifact"; artifactId: string } | { kind: "file" | "directory" } {
+  const reference = target.trim();
+  if (!reference) failArtifactUsage("artifacts publish", "target is required.", asJson);
+
+  if (reference.startsWith("art_")) {
+    const inspection = inspectArtifactPublishStateReadOnly(reference, artifactVersion);
+    if (!inspection.artifactExists) {
+      failArtifactNotFound("artifacts publish", reference, asJson, inspection.candidates);
+    }
+    if (artifactVersion !== undefined && inspection.versionExists !== true) {
+      failArtifactVersionNotFound("artifacts publish", reference, artifactVersion, asJson);
+    }
+    return { kind: "artifact", artifactId: reference };
+  }
+
+  let stat: ReturnType<typeof statSync>;
+  try {
+    stat = statSync(resolve(reference));
+  } catch {
+    failArtifactUsage("artifacts publish", "Local publish target was not found.", asJson);
+  }
+  if (!stat.isFile() && !stat.isDirectory()) {
+    failArtifactUsage("artifacts publish", "Publish target must be a file, directory, or local artifact id.", asJson);
+  }
+  return { kind: stat.isDirectory() ? "directory" : "file" };
+}
+
+function validateLocalReleaseActivation(
+  id: string,
+  artifactVersion: number | undefined,
+  release: string | undefined,
+  site: string | undefined,
+  asJson?: boolean,
+): void {
+  if (!id.trim()) failArtifactUsage("artifacts release activate", "id is required.", asJson);
+  const inspection = inspectArtifactPublishStateReadOnly(id, artifactVersion);
+  if (!inspection.artifactExists) {
+    failArtifactNotFound("artifacts release activate", id, asJson, inspection.candidates);
+  }
+  if (artifactVersion !== undefined && inspection.versionExists !== true) {
+    failArtifactVersionNotFound("artifacts release activate", id, artifactVersion, asJson);
+  }
+  if (artifactVersion === undefined && !release?.trim()) {
+    failArtifactUsage(
+      "artifacts release activate",
+      "Missing release selector. Use --version <n> or --release <id> to activate an existing Pages release.",
+      asJson,
+    );
+  }
+  const releaseId = release?.trim() || undefined;
+  const publishedEvent = [...inspection.publishedEvents].reverse().find((event) => {
+    const payload = parseRecord(event.payload);
+    const local = parseRecord(payload.local);
+    const remote = parseRecord(payload.remote);
+    const versionMatches = artifactVersion === undefined || Number(local.versionNumber) === artifactVersion;
+    const releaseMatches = !releaseId || String(remote.releaseId ?? "") === releaseId;
+    return versionMatches && releaseMatches;
+  });
+  if (!publishedEvent && (!releaseId || !site?.trim())) {
+    const message =
+      artifactVersion !== undefined
+        ? `No Pages release is recorded for ${id} v${artifactVersion}. Publish that version first.`
+        : "Activating an explicit release not recorded locally requires --site.";
+    failArtifactUsage("artifacts release activate", message, asJson);
+  }
+}
+
 // ============================================================
 // Manual v2 contract helpers (error envelope + suggestions).
 // Text mode keeps the legacy `fail()` behavior; `--json` emits the
@@ -274,9 +354,16 @@ function isDirectoryPath(path: string): boolean {
 // 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
 // ============================================================
 
-function failArtifactNotFound(op: string, artifactRef: string, asJson?: boolean): never {
-  // Artifacts live in the cheap local SQLite ledger, so real ids/titles feed suggestions.
-  const candidates = listArtifactsPage({ limit: 40 }).items.flatMap((artifact) => [artifact.id, artifact.title]);
+function failArtifactNotFound(
+  op: string,
+  artifactRef: string,
+  asJson?: boolean,
+  readOnlyCandidates?: string[],
+): never {
+  // Artifact ids from the cheap local SQLite ledger feed suggestions without
+  // exposing artifact titles or content.
+  const candidates =
+    readOnlyCandidates ?? listArtifactsPage({ limit: 40 }).items.map((artifact) => artifact.id);
   contractFail(op, "ARTIFACT_NOT_FOUND", `Artifact not found: ${artifactRef}`, {
     asJson,
     details: {
@@ -890,7 +977,14 @@ export class ArtifactsCommands {
     name: "publish",
     description: "Upload a local artifact/file/directory to Console and optionally release it to Ravi Pages",
   })
-  @CommandAccess({ kind: "mutate", resource: "artifacts", action: "publish", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "artifacts",
+    action: "publish",
+    risk: "high",
+    redactions: ["target", "description", "idempotencyKey", "reason"],
+    requiresConfirmation: true,
+  })
   @Returns(artifactPublishReturnSchema)
   async publish(
     @Arg("target", { description: "Local artifact id, file, or directory; use a directory with index.html for Pages" })
@@ -926,6 +1020,7 @@ export class ArtifactsCommands {
     execute?: boolean,
   ) {
     const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--artifact-version") : undefined;
+    const targetPlan = validateLocalPublishTarget(target, parsedArtifactVersion, asJson);
     if (execute !== true) {
       // Write brake (Manual v2 7.8): publish uploads local bytes to Console
       // and (unless --no-activate) exposes them on a hosted Pages URL —
@@ -934,7 +1029,7 @@ export class ArtifactsCommands {
       contractDryRun(
         "artifacts publish",
         {
-          target,
+          target: targetPlan,
           project: project ?? null,
           site: site ?? null,
           route: route ?? null,
@@ -1009,7 +1104,13 @@ export class ArtifactsCommands {
 })
 export class ArtifactReleaseCommands {
   @Command({ name: "activate", description: "Activate an existing Pages release for a local artifact" })
-  @CommandAccess({ kind: "mutate", resource: "artifacts.release", action: "activate", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "artifacts.release",
+    action: "activate",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   @Returns(artifactReleaseActivateReturnSchema)
   async activate(
     @Arg("id", { description: "Local artifact id" }) id: string,
@@ -1034,6 +1135,7 @@ export class ArtifactReleaseCommands {
     execute?: boolean,
   ) {
     const parsedArtifactVersion = artifactVersion ? parseInteger(artifactVersion, "--version") : undefined;
+    validateLocalReleaseActivation(id, parsedArtifactVersion, release, site, asJson);
     if (execute !== true) {
       // Write brake (Manual v2 7.8): activating a release flips which content
       // is live on the hosted site — external exposure. Dry-run by default and

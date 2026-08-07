@@ -12,6 +12,7 @@ import {
   createArtifactVersion,
   getArtifactDetails,
   getArtifactVersion,
+  inspectArtifactPublishStateReadOnly,
   listArtifactEvents,
   listArtifactVersions,
   listArtifacts,
@@ -31,6 +32,20 @@ describe("artifact store", () => {
     setArtifactLifecycleEventPublisherForTests();
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("inspects publish state without creating the artifact schema", () => {
+    const dbPath = join(stateDir!, "ravi.db");
+
+    expect(inspectArtifactPublishStateReadOnly("art_missing_target")).toEqual({
+      artifactExists: false,
+      versionExists: null,
+      artifact: null,
+      version: null,
+      publishedEvents: [],
+      candidates: [],
+    });
+    expect(existsSync(dbPath)).toBe(false);
   });
 
   it("creates a generic artifact, stores file blob metadata and indexes lineage", () => {
