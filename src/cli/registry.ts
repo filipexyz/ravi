@@ -221,6 +221,29 @@ function registerCommand(
       }
     }
 
+    let remoteConfig: RemoteGatewayConfig | null;
+    try {
+      remoteConfig = getRemoteGatewayConfig(process.env, commandOperation(groupName, cmdMeta.name));
+    } catch (error) {
+      if (!(error instanceof ContractError)) throw error;
+      renderContractError(error, input.json === true);
+      process.exit(error.exitCode);
+    }
+
+    // The target gateway owns authorization for its context key. Performing a
+    // local authorization first can reject a valid remote-only credential or
+    // authorize a different local default principal.
+    if (remoteConfig) {
+      await dispatchRemoteCommand({
+        config: remoteConfig,
+        groupName,
+        command: cmdMeta.name,
+        groupSegments: groupName.split("_"),
+        input,
+      });
+      return;
+    }
+
     const accessResult = enforceCliCommandAuthorization({
       group: groupName,
       command: cmdMeta.name,
@@ -249,20 +272,6 @@ function registerCommand(
       });
       const { flushAuditAndExit } = await import("../permissions/scope.js");
       await flushAuditAndExit(1);
-    }
-
-    // Remote gateway mode: forward the invocation to the configured gateway
-    // instead of executing in-process. Local mode is unchanged.
-    const remoteConfig = getRemoteGatewayConfig();
-    if (remoteConfig) {
-      await dispatchRemoteCommand({
-        config: remoteConfig,
-        groupName,
-        command: cmdMeta.name,
-        groupSegments: groupName.split("_"),
-        input,
-      });
-      return;
     }
 
     // Execute and emit single event with input + output

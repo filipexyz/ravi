@@ -17,7 +17,7 @@
 
 import { resolveRuntimeContext } from "../runtime/context-registry.js";
 import { readCredentialsFile, selectDefaultCredentialsKey } from "../runtime/credentials-store.js";
-import { ContractError, permissionDeniedToContractError } from "./agent-contract.js";
+import { ContractError, CONTRACT_EXIT_USAGE, permissionDeniedToContractError } from "./agent-contract.js";
 
 export const REMOTE_GATEWAY_URL_ENV = "RAVI_GATEWAY_URL";
 export const REMOTE_GATEWAY_DEFAULT_TIMEOUT_MS = 30_000;
@@ -28,15 +28,30 @@ export interface RemoteGatewayConfig {
   source: "env";
 }
 
-export function getRemoteGatewayConfig(env: NodeJS.ProcessEnv = process.env): RemoteGatewayConfig | null {
+export function getRemoteGatewayConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  op = "cli",
+): RemoteGatewayConfig | null {
   const raw = env[REMOTE_GATEWAY_URL_ENV]?.trim();
   if (!raw) return null;
+  let parsed: URL;
   try {
-    new URL(raw);
+    parsed = new URL(raw);
   } catch {
-    return null;
+    throw invalidRemoteGatewayError(op);
   }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") throw invalidRemoteGatewayError(op);
   return { url: raw.replace(/\/+$/, ""), source: "env" };
+}
+
+function invalidRemoteGatewayError(op: string): ContractError {
+  return new ContractError(
+    op,
+    "REMOTE_GATEWAY_INVALID",
+    `${REMOTE_GATEWAY_URL_ENV} must be a valid HTTP(S) URL.`,
+    CONTRACT_EXIT_USAGE,
+    { suggestedAction: `Correct or unset ${REMOTE_GATEWAY_URL_ENV} before retrying` },
+  );
 }
 
 /**
@@ -78,8 +93,8 @@ export function remoteGatewayExitCode(result: RemoteDispatchResult): 0 | 1 | 2 |
   if (result.ok) return 0;
   if (result.contentType?.includes("application/json")) {
     try {
-      const body = JSON.parse(result.body) as { exitCode?: unknown };
-      if (body.exitCode === 1 || body.exitCode === 2 || body.exitCode === 3) return body.exitCode;
+      const body = JSON.parse(result.body) as unknown;
+      if (isCompleteContractErrorBody(body)) return body.exitCode;
     } catch {
       // A malformed or legacy error response remains a generic execution failure.
     }
@@ -93,7 +108,7 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
   if (result.contentType?.includes("application/json")) {
     try {
       const body = JSON.parse(result.body) as Record<string, unknown>;
-      if (body.success === false && typeof body.op === "string" && isContractErrorBody(body.error)) return null;
+      if (isCompleteContractErrorBody(body, op)) return null;
       if (body.error === "PermissionDenied") {
         const reason = typeof body.reason === "string" ? body.reason : "Permission denied.";
         return permissionDeniedToContractError(op, reason);
@@ -118,10 +133,27 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
   });
 }
 
-function isContractErrorBody(value: unknown): boolean {
+interface CompleteContractErrorBody {
+  success: false;
+  op: string;
+  exitCode: 1 | 2 | 3;
+  outcome: "failed" | "usage_error" | "blocked" | "denied";
+  error: { code: string; message: string; retryable: boolean };
+}
+
+function isCompleteContractErrorBody(value: unknown, expectedOp?: string): value is CompleteContractErrorBody {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const error = value as Record<string, unknown>;
-  return typeof error.code === "string" && typeof error.message === "string";
+  const body = value as Record<string, unknown>;
+  if (body.success !== false || typeof body.op !== "string" || (expectedOp !== undefined && body.op !== expectedOp)) {
+    return false;
+  }
+  if (body.exitCode !== 1 && body.exitCode !== 2 && body.exitCode !== 3) return false;
+  const expectedOutcomes =
+    body.exitCode === 1 ? ["failed", "denied"] : body.exitCode === 2 ? ["usage_error"] : ["blocked"];
+  if (typeof body.outcome !== "string" || !expectedOutcomes.includes(body.outcome)) return false;
+  if (!body.error || typeof body.error !== "object" || Array.isArray(body.error)) return false;
+  const error = body.error as Record<string, unknown>;
+  return typeof error.code === "string" && typeof error.message === "string" && typeof error.retryable === "boolean";
 }
 
 export async function dispatchRemote(input: RemoteDispatchInput): Promise<RemoteDispatchResult> {

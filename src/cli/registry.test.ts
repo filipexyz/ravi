@@ -157,6 +157,57 @@ describe("registerCommands", () => {
     expect(capturedNegated).toEqual([false]);
   });
 
+  it("lets the remote gateway authorize a context key that is not registered locally", async () => {
+    capturedNegated.length = 0;
+    const program = new CommanderCommand();
+    program.exitOverride();
+    registerCommands(program, [NegatedOptionCommands]);
+
+    const previousGatewayUrl = process.env.RAVI_GATEWAY_URL;
+    const previousContextKey = process.env.RAVI_CONTEXT_KEY;
+    const previousSuppressAudit = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const originalFetch = globalThis.fetch;
+    const originalLog = console.log;
+    const originalExit = process.exit;
+    const requests: Array<{ url: string; authorization: string | null }> = [];
+    process.env.RAVI_GATEWAY_URL = "https://gateway.example.test";
+    process.env.RAVI_CONTEXT_KEY = "rctx_remote_only";
+    process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+    globalThis.fetch = (async (input, init) => {
+      requests.push({
+        url: String(input),
+        authorization: new Headers(init?.headers).get("authorization"),
+      });
+      return Response.json({ ok: true });
+    }) as typeof fetch;
+    console.log = () => {};
+    process.exit = ((code?: number) => {
+      throw new Error(`unexpected process.exit(${code})`);
+    }) as typeof process.exit;
+
+    try {
+      await runWithContext({}, () => program.parseAsync(["node", "test", "negative", "run"]));
+    } finally {
+      globalThis.fetch = originalFetch;
+      console.log = originalLog;
+      process.exit = originalExit;
+      if (previousGatewayUrl === undefined) delete process.env.RAVI_GATEWAY_URL;
+      else process.env.RAVI_GATEWAY_URL = previousGatewayUrl;
+      if (previousContextKey === undefined) delete process.env.RAVI_CONTEXT_KEY;
+      else process.env.RAVI_CONTEXT_KEY = previousContextKey;
+      if (previousSuppressAudit === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousSuppressAudit;
+    }
+
+    expect(capturedNegated).toEqual([]);
+    expect(requests).toEqual([
+      {
+        url: "https://gateway.example.test/api/v1/negative/run",
+        authorization: "Bearer rctx_remote_only",
+      },
+    ]);
+  });
+
   it("reuses existing nested command nodes for direct commands with subcommands", () => {
     const program = new CommanderCommand();
 
