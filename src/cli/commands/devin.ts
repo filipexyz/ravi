@@ -859,7 +859,7 @@ export class DevinSessionCommands {
   // Devin session. Gating it behind --execute would delay exactly the action
   // that stops spend — same rationale as prox calls cancel.
   @Command({ name: "terminate", description: "Terminate a Devin session" })
-  @CommandAccess({ kind: "read", resource: "devin.sessions", action: "terminate", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "terminate", risk: "high" })
   async terminate(
     @Arg("session", { description: "Local id or devin-* id" }) identifier: string,
     @Option({ flags: "--archive", description: "Archive after terminating" }) archive?: boolean,

@@ -821,7 +821,7 @@ export class ImageAtlasCommands {
     name: "split",
     description: "Split an image atlas/contact sheet into deterministic crop artifacts",
   })
-  @CommandAccess({ kind: "read", resource: "image.atlas", action: "split", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "image.atlas", action: "split", risk: "medium" })
   @Returns(imageAtlasSplitReturnSchema)
   async split(
     @Arg("input", { description: "Atlas/contact sheet image path" })

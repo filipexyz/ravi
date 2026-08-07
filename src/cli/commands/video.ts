@@ -30,7 +30,7 @@ function parseStrategy(value?: string): VideoAnalyzeStrategy {
 })
 export class VideoCommands {
   @Command({ name: "analyze", description: "Analyze a video (YouTube URL or local file) and save to markdown" })
-  @CommandAccess({ kind: "read", resource: "video", action: "analyze", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "video", action: "analyze", risk: "high" })
   @Returns(videoAnalyzeReturnSchema)
   async analyze(
     @Arg("url", { description: "YouTube URL or local file path" }) url: string,

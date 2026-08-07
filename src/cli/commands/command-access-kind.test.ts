@@ -15,15 +15,21 @@ import { ContactsCommands } from "./contacts.js";
 import { ContextCommands } from "./context.js";
 import { CrmFactCommands, CrmOpportunityCommands, CrmTaskCommands } from "./crm.js";
 import { DaemonCommands } from "./daemon.js";
+import { DevinSessionCommands } from "./devin.js";
+import { GroupCommands } from "./group.js";
 import { HooksCommands } from "./hooks.js";
+import { ImageAtlasCommands } from "./image.js";
 import { InboxCommands } from "./inbox.js";
 import { InstancesCommands } from "./instances.js";
 import { MetricsCommands } from "./metrics.js";
 import { PagesCommands } from "./pages.js";
+import { ProxCallsCommands } from "./prox-calls.js";
 import { SessionFollowupCommands } from "./session-followups.js";
 import { SpecsCommands } from "./specs.js";
 import { ThreadCommands } from "./threads.js";
+import { TranscribeCommands } from "./transcribe.js";
 import { TriggersCommands } from "./triggers.js";
+import { VideoCommands } from "./video.js";
 import { WorkflowRunCommands } from "./workflows.js";
 
 setDefaultTimeout(90_000);
@@ -135,12 +141,28 @@ const ACCESS_CASES: AccessCase[] = [
     risk: "medium",
   },
   {
+    label: "devin sessions terminate",
+    group: "devin.sessions",
+    command: "terminate",
+    target: DevinSessionCommands,
+    method: "terminate",
+    risk: "high",
+  },
+  {
     label: "hooks test",
     group: "hooks",
     command: "test",
     target: HooksCommands,
     method: "test",
     risk: "high",
+  },
+  {
+    label: "image atlas split",
+    group: "image.atlas",
+    command: "split",
+    target: ImageAtlasCommands,
+    method: "split",
+    risk: "medium",
   },
   {
     label: "inbox snooze",
@@ -175,6 +197,14 @@ const ACCESS_CASES: AccessCase[] = [
     risk: "medium",
   },
   {
+    label: "prox calls request",
+    group: "prox.calls",
+    command: "request",
+    target: ProxCallsCommands,
+    method: "request",
+    risk: "high",
+  },
+  {
     label: "sessions followups snooze",
     group: "sessions_followups",
     command: "snooze",
@@ -199,6 +229,14 @@ const ACCESS_CASES: AccessCase[] = [
     risk: "medium",
   },
   {
+    label: "transcribe file",
+    group: "transcribe",
+    command: "file",
+    target: TranscribeCommands,
+    method: "file",
+    risk: "high",
+  },
+  {
     label: "specs new",
     group: "specs",
     command: "new",
@@ -220,6 +258,46 @@ const ACCESS_CASES: AccessCase[] = [
     command: "test",
     target: TriggersCommands,
     method: "test",
+    risk: "high",
+  },
+  {
+    label: "video analyze",
+    group: "video",
+    command: "analyze",
+    target: VideoCommands,
+    method: "analyze",
+    risk: "high",
+  },
+  {
+    label: "whatsapp group join",
+    group: "whatsapp.group",
+    command: "join",
+    target: GroupCommands,
+    method: "join",
+    risk: "high",
+  },
+  {
+    label: "whatsapp group leave",
+    group: "whatsapp.group",
+    command: "leave",
+    target: GroupCommands,
+    method: "leave",
+    risk: "destructive",
+  },
+  {
+    label: "whatsapp group description",
+    group: "whatsapp.group",
+    command: "description",
+    target: GroupCommands,
+    method: "description",
+    risk: "high",
+  },
+  {
+    label: "whatsapp group settings",
+    group: "whatsapp.group",
+    command: "settings",
+    target: GroupCommands,
+    method: "settings",
     risk: "high",
   },
   {

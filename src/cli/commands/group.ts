@@ -1622,7 +1622,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "join", description: "Join a group via invite link/code" })
-  @CommandAccess({ kind: "read", resource: "whatsapp.group", action: "join", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "join", risk: "high" })
   async join(
     @Arg("code", { description: "Invite code or full link" }) code: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
@@ -1658,7 +1658,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "leave", description: "Leave a group" })
-  @CommandAccess({ kind: "read", resource: "whatsapp.group", action: "leave", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "leave", risk: "destructive" })
   async leave(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
@@ -1730,7 +1730,7 @@ export class GroupCommands {
   }
 
   @Command({ name: "description", description: "Update group description" })
-  @CommandAccess({ kind: "read", resource: "whatsapp.group", action: "description", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "description", risk: "high" })
   async description(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("text", { description: "New description" }) text: string,
@@ -1770,7 +1770,7 @@ export class GroupCommands {
     name: "settings",
     description: "Update group settings (announcement, not_announcement, locked, unlocked)",
   })
-  @CommandAccess({ kind: "read", resource: "whatsapp.group", action: "settings", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "settings", risk: "high" })
   async settings(
     @Arg("groupId", { description: "Group ID or JID" }) groupId: string,
     @Arg("setting", { description: "Setting: announcement, not_announcement, locked, unlocked" }) setting: string,

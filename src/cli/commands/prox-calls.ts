@@ -574,7 +574,7 @@ export class ProxCallsCommands {
   }
 
   @Command({ name: "request", description: "Request a call to a person" })
-  @CommandAccess({ kind: "read", resource: "prox.calls", action: "request", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "prox.calls", action: "request", risk: "high" })
   @Returns(proxCallRequestReturnSchema)
   async request(
     @Option({ flags: "--profile <profile_id>", description: "Call profile ID" }) profileId: string,

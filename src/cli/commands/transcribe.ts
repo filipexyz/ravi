@@ -41,7 +41,7 @@ const transcribeFileReturnSchema = z.object({
 })
 export class TranscribeCommands {
   @Command({ name: "file", description: "Transcribe a local audio file" })
-  @CommandAccess({ kind: "read", resource: "transcribe", action: "file", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "transcribe", action: "file", risk: "high" })
   @Returns(transcribeFileReturnSchema)
   async file(
     @Arg("path", { description: "Path to audio file" }) filePath: string,
