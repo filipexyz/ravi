@@ -108,6 +108,24 @@ function failOpportunityNotFound(op: string, opportunityId: string, asJson?: boo
   });
 }
 
+function failCrmContactNotFound(op: string, contactRef: string, asJson?: boolean): never {
+  contractFail(op, "CONTACT_NOT_FOUND", `Contact not found: ${contactRef}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the contact id or identity with: ravi crm contacts --json",
+    },
+  });
+}
+
+function failCrmTaskNotFound(op: string, taskId: string, asJson?: boolean): never {
+  contractFail(op, "CRM_TASK_NOT_FOUND", `CRM task not found: ${taskId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the CRM task id with: ravi crm task list --json",
+    },
+  });
+}
+
 // ============================================================
 // Structured-flag helpers for `crm pipeline create / set` (V2+ hybrid).
 // Maps user-facing flags onto pipeline.metadata canonical schema fields.
@@ -478,9 +496,9 @@ function canReadCrmContact(contactRef: string): boolean {
   );
 }
 
-function assertCanReadCrmContact(contactRef: string): void {
+function assertCanReadCrmContact(op: string, contactRef: string, asJson?: boolean): void {
   if (canReadCrmContact(contactRef)) return;
-  fail(`Contact not found: ${contactRef}`);
+  failCrmContactNotFound(op, contactRef, asJson);
 }
 
 function canReadCrmContactRecord(
@@ -535,9 +553,10 @@ function filterCrmRecordsByContact<T extends object>(records: T[]): T[] {
 }
 
 function showCrmContactProfile(contactRef: string, asJson?: boolean) {
-  assertCanReadCrmContact(contactRef);
+  const op = "crm contact show";
+  assertCanReadCrmContact(op, contactRef, asJson);
   const profile = getCrmContactProfile(contactRef);
-  if (!profile) fail(`Contact not found: ${contactRef}`);
+  if (!profile) failCrmContactNotFound(op, contactRef, asJson);
   const payload = { target: contactRef, crm: profile };
   if (asJson) {
     printJson(payload);
@@ -864,7 +883,7 @@ export class ACrmCommands {
     fields?: string,
   ) {
     const ownerFilter = parseOwner(owner);
-    if (contact) assertCanReadCrmContact(contact);
+    if (contact) assertCanReadCrmContact("crm next", contact, asJson);
     const page = listCrmNextActions({
       ...ownerFilter,
       contactRef: contact,
@@ -2307,7 +2326,7 @@ export class CrmFactCommands {
     @Option({ flags: "--offset <n>", description: "Number of matching facts to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    if (contactRef) assertCanReadCrmContact(contactRef);
+    if (contactRef) assertCanReadCrmContact("crm fact list", contactRef, asJson);
     const page = listCrmFacts({
       entityType,
       entityId,
@@ -2451,8 +2470,10 @@ export class CrmTaskCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const task = getCrmTask(taskId);
-    if (!task) fail(`CRM task not found: ${taskId}`);
-    if (task.contactId && !canReadCrmContact(task.contactId)) fail(`CRM task not found: ${taskId}`);
+    if (!task) failCrmTaskNotFound("crm task show", taskId, asJson);
+    if (task.contactId && !canReadCrmContact(task.contactId)) {
+      failCrmTaskNotFound("crm task show", taskId, asJson);
+    }
     const payload = { target: taskId, task: formatCrmTaskForJson(task) };
     if (asJson) {
       printJson(payload);
@@ -2603,7 +2624,7 @@ export class CrmTaskCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const ownerFilter = parseOwner(owner);
-    if (contact) assertCanReadCrmContact(contact);
+    if (contact) assertCanReadCrmContact("crm task list", contact, asJson);
     const page = listCrmTasks({
       ...ownerFilter,
       contactRef: contact,

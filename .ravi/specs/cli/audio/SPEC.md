@@ -66,8 +66,12 @@ its NATS publish triggers downstream generation and playback.
 
 | case | code | exit |
 |---|---|---|
-| invalid text/--text-file combinations | legacy text (validation) | 1 |
+| missing text and `--text-file` | `USAGE_ERROR` + accepted inputs | 2 |
+| other invalid text/`--text-file` combinations | legacy text (validation) | 1 |
 | generate `--send` or tts without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
+
+Missing input is a usage error in both modes: JSON mode writes the envelope to
+stdout; text mode preserves the concise legacy message on stderr; both exit 2.
 
 ## Internal consumers
 

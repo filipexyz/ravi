@@ -9,7 +9,7 @@ import { existsSync } from "node:fs";
 import { resolve, basename } from "node:path";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { getContext, fail, type ToolContext } from "../context.js";
-import { contractDryRun } from "../agent-contract.js";
+import { contractDryRun, contractFail } from "../agent-contract.js";
 import { generateImage, normalizeImageProvider, type ImageMode } from "../../image/generator.js";
 import { getAgent } from "../../router/config.js";
 import { dbGetInstance, dbGetInstanceByInstanceId, dbGetSetting } from "../../router/router-db.js";
@@ -260,8 +260,18 @@ export class ImageCommands {
       process.env.RAVI_IMAGE_PROVIDER;
     const normalizedProvider = normalizeImageProvider(resolvedProvider);
     if (!normalizedProvider) {
-      fail(
+      contractFail(
+        "image generate",
+        "IMAGE_PROVIDER_NOT_CONFIGURED",
         "No image provider configured. Pass --provider openai|gemini or set image_provider on the agent/instance/default settings.",
+        {
+          asJson,
+          details: {
+            suggestedAction:
+              "Pass --provider openai|gemini or configure image_provider on the agent, instance or global settings",
+            acceptedValues: ["openai", "gemini"],
+          },
+        },
       );
     }
 

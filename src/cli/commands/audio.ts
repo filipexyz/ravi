@@ -7,7 +7,7 @@ import { readFileSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, normalize, relative, resolve } from "node:path";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
-import { contractDryRun, pickFields } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { generateAudio, listElevenLabsVoices } from "../../audio/generator.js";
 import { getAgent } from "../../router/config.js";
 import { resolveMediaSendTarget, sendMediaWithOmniCli } from "../media-send.js";
@@ -122,7 +122,17 @@ export class AudioCommands {
     const inlineText = text?.trim();
     if (fileText && inlineText) fail("Use either text or --text-file, not both.");
     const resolvedText = fileText ?? inlineText;
-    if (!resolvedText) fail("Provide text or --text-file.");
+    if (!resolvedText) {
+      contractFail("audio generate", "USAGE_ERROR", "Provide text or --text-file.", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Pass inline text or --text-file <relative .md/.txt path>",
+          acceptedFlags: ["--text-file", "--json"],
+          acceptedPositionals: ["[text]"],
+        },
+      });
+    }
 
     // Resolve agent defaults (CLI flags take precedence)
     const agentId = getContext()?.agentId;

@@ -35,7 +35,8 @@ migrated `cli/<domain>` spec.
 
 ## Invariants
 
-1. With `--json`, every failure MUST return the envelope
+1. For the operations declared migrated in Delivery scope, every `--json`
+   failure MUST return the envelope
    `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`
    — never plain text, never a stack trace.
 2. Exit codes MUST follow the taxonomy: `0` success · `1` error (not-found /
@@ -71,18 +72,22 @@ migrated `cli/<domain>` spec.
 
 | case | code | exit |
 |---|---|---|
-| entity not found | `PIPELINE_NOT_FOUND` / `OPPORTUNITY_NOT_FOUND` + suggestions | 1 |
+| pipeline/opportunity not found | `PIPELINE_NOT_FOUND` / `OPPORTUNITY_NOT_FOUND` + suggestions | 1 |
+| contact/task not found on `show` | `CONTACT_NOT_FOUND` / `CRM_TASK_NOT_FOUND` | 1 |
 | invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
 
 ## Delivery scope
 
-This change implements the contract on the surfaces measured by the benchmark:
-`pipeline` (show/list/create/review/validate) and `opportunity` (show/create/move)
-carry the envelope, taxonomy, suggestions and immediate local writes; listings carry
-`--fields` and actionable pagination; per-op help for app aliases ships in the
-apps router builtin. Remaining crm surfaces (`task`, `fact`, `contact`,
-`account`) keep their current behavior and are declared debt of this spec —
-they migrate in follow-up waves under the same invariants.
+The benchmark surfaces — `pipeline` (show/list/create/review/validate) and
+`opportunity` (show/create/move) — carry the envelope, taxonomy, suggestions
+and immediate local writes. `contact show` and `task show` preserve the same
+not-found envelope at the real process boundary. Listings carry `--fields` and
+actionable pagination; per-op help for app aliases ships in the apps router
+builtin.
+
+Other CRM operations retain their existing error paths until they are migrated
+under the same global contract; they are not evidence that the whole CRM error
+surface is complete.
 
 ## Internal consumers
 
