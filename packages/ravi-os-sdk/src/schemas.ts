@@ -31434,6 +31434,10 @@ export const DaemonLogsInputSchema = {
       "description": "Flush PM2 logs for ravi",
       "type": "boolean"
     },
+    "execute": {
+      "description": "Actually flush PM2 logs when --clear is set; ignored for read-only log requests",
+      "type": "boolean"
+    },
     "follow": {
       "description": "Follow log output",
       "type": "boolean"
@@ -31671,6 +31675,10 @@ export const DevinAuthCheckReturnSchema = {
 export const DevinSessionsArchiveInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually archive the external session; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "session": {
       "description": "Local id or devin-* id",
       "type": "string"
@@ -32405,6 +32413,10 @@ export const DevinSessionsCreateReturnSchema = {
 export const DevinSessionsInsightsInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Actually ask Devin to generate/update insights; ordinary insight reads run directly",
+      "type": "boolean"
+    },
     "generate": {
       "description": "Ask Devin to generate/update insights before reading",
       "type": "boolean"
@@ -51152,6 +51164,10 @@ export const ProxCallsProfilesConfigureInputSchema = {
         "type": "string"
       },
       "type": "array"
+    },
+    "execute": {
+      "description": "Confirm provider synchronization; local-only updates run immediately",
+      "type": "boolean"
     },
     "firstMessage": {
       "description": "Provider greeting/first message for this profile",
@@ -73641,6 +73657,10 @@ export const WhatsappDmAckInputSchema = {
       "description": "Contact ID, phone, or WhatsApp identity",
       "type": "string"
     },
+    "execute": {
+      "description": "Actually send the read receipt; default is a dry-run that only shows the plan (exit 3)",
+      "type": "boolean"
+    },
     "messageId": {
       "description": "Message ID to mark as read",
       "type": "string"
@@ -73671,6 +73691,10 @@ export const WhatsappDmReadInputSchema = {
     "contact": {
       "description": "Contact ID, phone, or WhatsApp identity",
       "type": "string"
+    },
+    "execute": {
+      "description": "Actually send the default read receipt; --no-ack reads locally without confirmation",
+      "type": "boolean"
     },
     "fields": {
       "description": "Compact mode: keep only these fields of each message",

@@ -2619,6 +2619,7 @@ export class RaviClient {
     /** Show daemon logs (PM2) */
     logs: async (options?: {
       clear?: boolean;
+      execute?: boolean;
       follow?: boolean;
       path?: boolean;
       tail?: string;
@@ -2687,11 +2688,13 @@ export class RaviClient {
     },
     sessions: {
       /** Archive a Devin session */
-      archive: async (session: string): Promise<DevinSessionsArchiveReturn> => {
+      archive: async (session: string, options?: {
+        execute?: boolean;
+      }): Promise<DevinSessionsArchiveReturn> => {
         return this.transport.call({
           groupSegments: ["devin","sessions"],
           command: "archive",
-          body: { session },
+          body: { session, ...(options ?? {}) },
         });
       },
       /** List and cache session attachments */
@@ -2743,6 +2746,7 @@ export class RaviClient {
       },
       /** Show Devin session insights/activity summary */
       insights: async (session: string, options?: {
+        execute?: boolean;
         generate?: boolean;
       }): Promise<DevinSessionsInsightsReturn> => {
         return this.transport.call({
@@ -4624,6 +4628,7 @@ export class RaviClient {
         configure: async (profile_id: string, options?: {
           agentId?: string;
           dynamicPlaceholder?: string[];
+          execute?: boolean;
           firstMessage?: string;
           language?: string;
           prompt?: string;
@@ -7711,6 +7716,7 @@ export class RaviClient {
       /** Send read receipt (blue ticks) for a specific message */
       ack: async (contact: string, messageId: string, options?: {
         account?: string;
+        execute?: boolean;
       }): Promise<WhatsappDmAckReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","dm"],
@@ -7721,6 +7727,7 @@ export class RaviClient {
       /** Read recent messages from a DM chat */
       read: async (contact: string, options?: {
         account?: string;
+        execute?: boolean;
         fields?: string;
         last?: string;
         noAck?: boolean;

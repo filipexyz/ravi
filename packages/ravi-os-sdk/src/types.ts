@@ -6270,6 +6270,7 @@ export type DaemonInstallReturn = {
 /** Input shape for `daemon.logs`. */
 export type DaemonLogsInput = {
   clear?: boolean;
+  execute?: boolean;
   follow?: boolean;
   path?: boolean;
   tail?: string;
@@ -6357,6 +6358,7 @@ export type DevinAuthCheckReturn = {
 
 /** Input shape for `devin.sessions.archive`. */
 export type DevinSessionsArchiveInput = {
+  execute?: boolean;
   session: string;
 };
 
@@ -6488,6 +6490,7 @@ export type DevinSessionsCreateReturn = {
 
 /** Input shape for `devin.sessions.insights`. */
 export type DevinSessionsInsightsInput = {
+  execute?: boolean;
   generate?: boolean;
   session: string;
 };
@@ -10119,6 +10122,7 @@ export type ProxCallsEventsReturn = {
 export type ProxCallsProfilesConfigureInput = {
   agentId?: string;
   dynamicPlaceholder?: string[];
+  execute?: boolean;
   firstMessage?: string;
   language?: string;
   profile_id: string;
@@ -15403,6 +15407,7 @@ export type WatchTriggerReturn = {
 export type WhatsappDmAckInput = {
   account?: string;
   contact: string;
+  execute?: boolean;
   messageId: string;
 };
 
@@ -15413,6 +15418,7 @@ export type WhatsappDmAckReturn = Record<string, unknown>;
 export type WhatsappDmReadInput = {
   account?: string;
   contact: string;
+  execute?: boolean;
   fields?: string;
   last?: string;
   noAck?: boolean;
