@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
-import { ContractError, contractDryRun, pickFields } from "../agent-contract.js";
+import { ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import {
   execCapability,
@@ -54,9 +54,12 @@ export class ConnectorsCommands {
             .filter(Boolean)
         : undefined;
       const start = await startConnect({ provider, project, scopes, displayName: name });
-      if (asJson) {
-        console.log(JSON.stringify({ status: "started", ...start }, null, 2));
-      } else {
+      const started = { status: "started" as const, ...start };
+      if (asJson && noOpen) {
+        console.log(JSON.stringify(started, null, 2));
+        return started;
+      }
+      if (!asJson) {
         console.log(`Open the following URL to finish connecting ${provider}:`);
         console.log(`  ${start.connectUrl}`);
         console.log(`Pending grant id: ${start.pendingGrantId}`);
@@ -71,28 +74,50 @@ export class ConnectorsCommands {
       }
 
       const final = await pollUntilTerminal(start.pendingGrantId);
-      if (asJson) {
-        console.log(JSON.stringify({ status: final.status, connectorId: final.connectorId }, null, 2));
-      } else {
-        switch (final.status) {
-          case "consumed":
+      switch (final.status) {
+        case "consumed":
+          if (asJson) {
+            console.log(
+              JSON.stringify(
+                { status: final.status, provider: final.provider, connectorId: final.connectorId },
+                null,
+                2,
+              ),
+            );
+          } else {
             console.log(`Connected ${final.provider}. Connector id: ${final.connectorId ?? "(pending)"}`);
-            break;
-          case "expired":
-            console.error("Authorization timed out before the user completed the flow.");
-            process.exit(2);
-            return undefined;
-          case "rejected":
-            console.error("Authorization rejected by Console.");
-            process.exit(2);
-            return undefined;
-          default:
-            console.error(`Polling ended in unexpected state: ${final.status}`);
-            process.exit(2);
-            return undefined;
-        }
+          }
+          return final;
+        case "expired":
+          contractFail("connectors connect", "CONNECTOR_AUTH_EXPIRED", "Authorization expired before completion.", {
+            asJson,
+            details: {
+              retryable: true,
+              suggestedAction: `Start a new authorization flow with: ravi connectors connect ${provider}`,
+            },
+          });
+        case "rejected":
+          contractFail("connectors connect", "CONNECTOR_AUTH_REJECTED", "Authorization was rejected by Console.", {
+            asJson,
+            details: {
+              retryable: false,
+              suggestedAction: "Verify connector access in Console before starting a new authorization flow",
+            },
+          });
+        default:
+          contractFail(
+            "connectors connect",
+            "CONNECTOR_AUTH_STATE_INVALID",
+            "Authorization ended in an invalid state.",
+            {
+              asJson,
+              details: {
+                retryable: false,
+                suggestedAction: "Inspect connector status in Console before retrying",
+              },
+            },
+          );
       }
-      return final;
     });
   }
 

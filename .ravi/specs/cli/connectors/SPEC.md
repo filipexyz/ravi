@@ -47,7 +47,9 @@ suggestions that would require extra remote calls.
 4. `connectors connect` is declared UNBRAKED: it is a human-in-the-loop
    browser OAuth flow — nothing is granted until the human consents in the
    provider page, so an exit-3 plan would add friction without preventing any
-   write.
+   write. `--no-open --json` returns one `started` document immediately so an
+   agent can surface the URL; a waiting flow emits exactly one terminal JSON
+   document.
 5. `connectors list` MUST accept `--fields a,b,c` for compact output.
 6. A `ContractError` thrown inside a command MUST pass through
    `runConnectorCommand` untouched — the legacy CloudAuthError funnel MUST NOT
@@ -68,6 +70,9 @@ suggestions that would require extra remote calls.
 | case | code | exit |
 |---|---|---|
 | braked revoke without `--yes`/`--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
+| authorization expires before completion | `CONNECTOR_AUTH_EXPIRED` | 1 |
+| authorization is rejected | `CONNECTOR_AUTH_REJECTED` | 1 |
+| terminal authorization state is invalid | `CONNECTOR_AUTH_STATE_INVALID` | 1 |
 | remote/provider errors | stable CloudAuthError code | `2` for `PAYLOAD_INVALID`; otherwise `1` |
 
 ## Internal consumers

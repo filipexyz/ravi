@@ -3,8 +3,8 @@
  * write brake (exit 3) on the destructive `revoke` — with the pre-existing
  * `--yes` flag kept as documented equivalent of `--execute` — compact
  * `--fields` mode on `list`, and ContractError passing through the legacy
- * CloudAuthError funnel untouched. `connect` is intentionally NOT covered:
- * it is a declared human-in-the-loop browser OAuth flow (unbraked).
+ * CloudAuthError funnel untouched. `connect` remains an unbraked
+ * human-in-the-loop browser OAuth flow, but its JSON states are canonical.
  * Follows the tasks.test.ts pattern: no-op decorator mocks + service mocks
  * with spies + `hasContext: () => true` so contract helpers throw instead of
  * exiting the process.
@@ -14,6 +14,20 @@ import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 const revokeCalls: string[] = [];
 let listResult: Array<Record<string, unknown>> = [];
 let listError: unknown = null;
+let connectStatus: "consumed" | "expired" | "rejected" = "consumed";
+
+mock.module("node:child_process", () => ({
+  spawn: () => {
+    const child = {
+      on(event: string, callback: () => void) {
+        if (event === "spawn") queueMicrotask(callback);
+        return child;
+      },
+      unref: () => {},
+    };
+    return child;
+  },
+}));
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -44,7 +58,7 @@ mock.module("./operational-return-schemas.js", () => ({
 mock.module("../../link/connectors.js", () => ({
   execCapability: async () => ({ result: null, capability: "", refreshed: false }),
   getConnectStatus: async () => ({
-    status: "consumed" as const,
+    status: connectStatus,
     provider: "google",
     connectorId: "conn_1",
     expiresAt: new Date().toISOString(),
@@ -89,6 +103,7 @@ beforeEach(() => {
     { id: "conn_2", projectId: "proj_1", provider: "google", displayName: "Calendar", status: "active" },
   ];
   listError = null;
+  connectStatus = "consumed";
 });
 
 async function silenced<T>(run: () => Promise<T> | T): Promise<T> {
@@ -153,6 +168,53 @@ describe("connectors revoke write brake", () => {
     expect(revokeCalls).toEqual(["conn_1"]);
     expect(payload).toMatchObject({ revoked: true, id: "conn_1" });
   });
+});
+
+describe("connectors connect contract", () => {
+  it("returns one started JSON document immediately in no-open mode", async () => {
+    const lines: string[] = [];
+    const originalLog = console.log;
+    console.log = (...args: unknown[]) => lines.push(args.map(String).join(" "));
+    try {
+      const payload = await new ConnectorsCommands().connect("google", undefined, undefined, undefined, true, true);
+      expect(payload).toMatchObject({ status: "started", pendingGrantId: "pg_1" });
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(lines).toHaveLength(1);
+    expect(JSON.parse(lines[0])).toMatchObject({ status: "started", pendingGrantId: "pg_1" });
+  });
+
+  for (const [status, code, retryable] of [
+    ["expired", "CONNECTOR_AUTH_EXPIRED", true],
+    ["rejected", "CONNECTOR_AUTH_REJECTED", false],
+  ] as const) {
+    it(`emits one ${code} envelope when OAuth ends as ${status}`, async () => {
+      connectStatus = status;
+      const lines: string[] = [];
+      const originalLog = console.log;
+      console.log = (...args: unknown[]) => lines.push(args.map(String).join(" "));
+      let caught: unknown;
+      try {
+        await new ConnectorsCommands().connect("google", undefined, undefined, undefined, undefined, true);
+      } catch (error) {
+        caught = error;
+      } finally {
+        console.log = originalLog;
+      }
+
+      expect(caught).toBeInstanceOf(ContractError);
+      const contractError = caught as InstanceType<typeof ContractError>;
+      expect(contractError.code).toBe(code);
+      expect(contractError.exitCode).toBe(1);
+      expect(contractError.details.retryable).toBe(retryable);
+      expect(lines).toHaveLength(1);
+      const envelope = JSON.parse(lines[0]) as Record<string, unknown>;
+      expect(envelope).toMatchObject({ success: false, op: "connectors connect" });
+      expect(envelope.error).toMatchObject({ code, retryable });
+    });
+  }
 });
 
 describe("connectors list contract", () => {

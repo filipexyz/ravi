@@ -10,6 +10,9 @@
   the flag is not renamed and not removed).
 - `connectors connect` is declared unbraked (human-in-the-loop browser OAuth)
   and MUST NOT gain an `--execute` requirement.
+- `connectors connect --no-open --json` MUST return one parseable `started`
+  document immediately. A waiting JSON flow MUST emit exactly one terminal
+  success or one canonical `CONNECTOR_AUTH_*` failure with exit 1.
 - `connectors list --fields a,b,c --json` MUST return connection items
   containing only the requested fields.
 - A `ContractError` thrown inside a connectors command MUST pass through
