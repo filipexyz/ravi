@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
+import { migratePermissionTagMetadata } from "../permissions/command-access-kind-migration.js";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
+import { logger } from "../utils/logger.js";
 import {
   TAG_ASSET_TYPES,
   TAG_KINDS,
@@ -77,6 +79,7 @@ export interface EnsureTagBindingInput extends UpsertTagBindingInput {
 
 let schemaReady = false;
 let schemaDbPath: string | null = null;
+const log = logger.child("tags:db");
 
 const TAG_SLUG_RE = /^[a-z0-9][a-z0-9._:-]*$/;
 const TAG_SOURCE_RE = /^[a-z0-9][a-z0-9._:-]*$/;
@@ -325,6 +328,51 @@ export function ensureTagSchema(): void {
   `);
   schemaReady = true;
   schemaDbPath = dbPath;
+  try {
+    migratePermissionTagCommandAccessGrants();
+  } catch (error) {
+    schemaReady = false;
+    schemaDbPath = null;
+    throw error;
+  }
+}
+
+function migratePermissionTagCommandAccessGrants(): void {
+  const db = getDb();
+  const rows = db
+    .prepare("SELECT slug, metadata_json FROM tag_definitions WHERE kind = 'system' AND source = 'permissions'")
+    .all() as Array<{ slug: string; metadata_json: string | null }>;
+  let changedDefinitions = 0;
+  let addedGrants = 0;
+  let ambiguousGrants = 0;
+
+  db.transaction(() => {
+    for (const row of rows) {
+      const metadata = parseRecord(row.metadata_json);
+      if (!metadata) continue;
+      const migration = migratePermissionTagMetadata(metadata);
+      ambiguousGrants += migration.ambiguous;
+      if (!migration.changed) continue;
+      dbUpdateTagDefinition({
+        slug: row.slug,
+        metadata: migration.metadata,
+        updatedBy: "migration:command-access-kind-v1",
+      });
+      changedDefinitions += 1;
+      addedGrants += migration.added;
+    }
+  })();
+
+  if (changedDefinitions > 0) {
+    log.info("Migrated CLI read grants for reclassified commands", {
+      store: "permission-tags",
+      changedDefinitions,
+      addedGrants,
+      ambiguousGrants,
+    });
+  } else if (ambiguousGrants > 0) {
+    log.debug("Found broad permission-tag read grants requiring manual review", { ambiguousGrants });
+  }
 }
 
 function getTagDefinitionRowBySlug(slug: string): TagDefinitionRow | undefined {

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { publishSessionPrompt } from "../omni/session-stream.js";
+import { migrateSerializedCapabilityArray } from "../permissions/command-access-kind-migration.js";
 import { getProjectSurfaceByWorkflowRunId } from "../projects/service.js";
 import { getSession, getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { dbGetAgent, dbListSessionParticipants, getDb, getRaviDbPath } from "../router/router-db.js";
@@ -355,8 +356,63 @@ export function ensureObservationSchema(): void {
   ensureObservationColumn("observer_bindings", "debounce_ms", "INTEGER");
   ensureObservationColumn("observer_rules", "selector", "TEXT");
   ensureObservationColumn("observer_bindings", "selector", "TEXT");
+  migrateObservationCommandAccessGrants();
   schemaReady = true;
   schemaDbPath = dbPath;
+}
+
+export interface ObservationCommandAccessGrantMigrationSummary {
+  changedRules: number;
+  changedBindings: number;
+  addedGrants: number;
+  ambiguousGrants: number;
+}
+
+/**
+ * Preserve least-privilege access after CLI operations move from read to mutate.
+ * Rules and binding snapshots are both authoritative; runtime contexts are
+ * intentionally immutable historical snapshots and are not touched here.
+ */
+export function migrateObservationCommandAccessGrants(): ObservationCommandAccessGrantMigrationSummary {
+  const db = getDb();
+  const summary: ObservationCommandAccessGrantMigrationSummary = {
+    changedRules: 0,
+    changedBindings: 0,
+    addedGrants: 0,
+    ambiguousGrants: 0,
+  };
+
+  db.transaction(() => {
+    for (const table of ["observer_rules", "observer_bindings"] as const) {
+      const rows = db.prepare(`SELECT id, permission_grants_json FROM ${table}`).all() as Array<{
+        id: string;
+        permission_grants_json: string;
+      }>;
+      const update = db.prepare(`UPDATE ${table} SET permission_grants_json = ? WHERE id = ?`);
+      for (const row of rows) {
+        const migration = migrateSerializedCapabilityArray(row.permission_grants_json);
+        summary.ambiguousGrants += migration.ambiguous;
+        if (!migration.changed) continue;
+        update.run(migration.serialized, row.id);
+        summary.addedGrants += migration.added;
+        if (table === "observer_rules") summary.changedRules += 1;
+        else summary.changedBindings += 1;
+      }
+    }
+  })();
+
+  if (summary.changedRules > 0 || summary.changedBindings > 0) {
+    log.info("Migrated CLI read grants for reclassified commands", {
+      store: "observation-plane",
+      ...summary,
+    });
+  } else if (summary.ambiguousGrants > 0) {
+    log.debug("Found broad observation read grants requiring manual review", {
+      ambiguousGrants: summary.ambiguousGrants,
+    });
+  }
+
+  return summary;
 }
 
 function parseJsonArray(raw: string | null | undefined, fallback: string[] = []): string[] {

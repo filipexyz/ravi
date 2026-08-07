@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "
 import { Database } from "bun:sqlite";
 
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { CLI_READ_TO_MUTATE_MIGRATIONS } from "../../permissions/command-access-kind-migration.js";
 import type { ContextRecord } from "../../router/router-db.js";
 import { enforceCliCommandAuthorization } from "../command-access.js";
 import { runWithContext } from "../context.js";
@@ -659,6 +660,17 @@ describe("corrected mutating command access", () => {
     previousSuppressAuditEvents = undefined;
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("keeps the compatibility migration inventory aligned with the authorization gate", () => {
+    const expected = ACCESS_CASES.map((testCase) => {
+      const access = getCommandAccessMetadata(testCase.target).get(testCase.method);
+      if (!access) throw new Error(`Missing command access metadata for ${testCase.label}`);
+      return `${access.resource}:${access.action}`;
+    }).sort();
+    const migrated = CLI_READ_TO_MUTATE_MIGRATIONS.map(({ resource, action }) => `${resource}:${action}`).sort();
+
+    expect(migrated).toEqual(expected);
   });
 
   it("denies read capabilities before DB/FS effects and allows mutate capabilities", () => {

@@ -19,6 +19,7 @@ import { normalizePhone } from "../utils/phone.js";
 import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js";
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
+import { migrateAgentDefaultsRecord } from "../permissions/command-access-kind-migration.js";
 import { RUNTIME_EFFORT_LEVELS } from "../runtime/effort.js";
 import type { AgentConfig, AgentUpdateInput, RouteConfig, DmScope } from "./types.js";
 
@@ -3269,6 +3270,7 @@ function getDb(): Database {
   ensureColumn(db, "channel_backend_ingress_receipts", "prompt_json", "TEXT");
   ensureIdentityChatMigrations(db);
   ensureAgentVisibilityMigration(db);
+  ensureCliCommandAccessKindGrantMigration(db);
   backfillChatModelOnce(db);
   ensureSessionGoalBlockedMigration(db);
 
@@ -3639,6 +3641,39 @@ function ensureAgentVisibilityMigration(database: Database): void {
     objectType: "agent",
     objectId: "*",
   });
+}
+
+function ensureCliCommandAccessKindGrantMigration(database: Database): void {
+  const rows = database.prepare("SELECT id, defaults FROM agents WHERE defaults IS NOT NULL").all() as Array<{
+    id: string;
+    defaults: string;
+  }>;
+  let changedAgents = 0;
+  let addedGrants = 0;
+  let ambiguousGrants = 0;
+  const update = database.prepare("UPDATE agents SET defaults = ?, updated_at = ? WHERE id = ?");
+
+  database.transaction(() => {
+    for (const row of rows) {
+      const migration = migrateAgentDefaultsRecord(parseAgentDefaultsRecord(row.defaults));
+      ambiguousGrants += migration.ambiguous;
+      if (!migration.changed) continue;
+      update.run(JSON.stringify(migration.defaults), Date.now(), row.id);
+      changedAgents += 1;
+      addedGrants += migration.added;
+    }
+  })();
+
+  if (changedAgents > 0) {
+    log.info("Migrated CLI read grants for reclassified commands", {
+      store: "agent-defaults",
+      changedAgents,
+      addedGrants,
+      ambiguousGrants,
+    });
+  } else if (ambiguousGrants > 0) {
+    log.debug("Found broad agent-default read grants requiring manual review", { ambiguousGrants });
+  }
 }
 
 function getDefaultAgentIdFromDatabase(database: Database): string {
