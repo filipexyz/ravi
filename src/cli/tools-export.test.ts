@@ -3,7 +3,7 @@ import { describe, expect, it } from "bun:test";
 import type { ContextRecord } from "../router/router-db.js";
 import { ContractError, contractFail } from "./agent-contract.js";
 import { runWithContext } from "./context.js";
-import { Command, CommandAccess, Group, Option } from "./decorators.js";
+import { CliOnly, Command, CommandAccess, Group, Option } from "./decorators.js";
 import { extractTools } from "./tools-export.js";
 
 @Group({ name: "negated", description: "Negated option fixture", scope: "open" })
@@ -60,6 +60,22 @@ class ContractToolCommands {
   }
 }
 
+@Group({ name: "terminal", description: "CLI-only fixture", scope: "open" })
+class CliOnlyToolCommands {
+  @Command({ name: "watch", description: "Owns a foreground process" })
+  @CommandAccess({ kind: "read", resource: "terminal", action: "watch", risk: "low" })
+  @CliOnly()
+  watch() {
+    process.exit(0);
+  }
+
+  @Command({ name: "status", description: "Safe request-response command" })
+  @CommandAccess({ kind: "read", resource: "terminal", action: "status", risk: "low" })
+  status() {
+    console.log(JSON.stringify({ ok: true }));
+  }
+}
+
 const mediaContext: ContextRecord = {
   contextId: "ctx_media_authorization_test",
   contextKey: "rctx_media_authorization_test",
@@ -91,6 +107,12 @@ describe("tools export negated options", () => {
 
     expect(JSON.parse(omitted.content[0]?.text ?? "{}")).toEqual({ noCache: false });
     expect(JSON.parse(present.content[0]?.text ?? "{}")).toEqual({ noCache: true });
+  });
+});
+
+describe("tools export surface", () => {
+  it("never exports commands marked @CliOnly", () => {
+    expect(extractTools([CliOnlyToolCommands]).map((tool) => tool.name)).toEqual(["terminal_status"]);
   });
 });
 

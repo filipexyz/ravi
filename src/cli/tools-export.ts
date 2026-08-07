@@ -6,6 +6,7 @@ import {
   getGroupMetadata,
   getCommandsMetadata,
   getCommandAccessMetadata,
+  getCliOnlyMetadata,
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
@@ -89,8 +90,10 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
     // Resolve scope: command-level > group-level > "admin" (fail-secure default)
     const scopeMap = getScopeMetadata(cls);
     const commandAccessMap = getCommandAccessMetadata(cls);
+    const cliOnlySet = getCliOnlyMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
+      if (cliOnlySet.has(cmdMeta.method)) continue;
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
       const optionsMeta = getOptionsMetadata(instance, cmdMeta.method);
 
