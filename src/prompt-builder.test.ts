@@ -129,6 +129,8 @@ describe("buildSystemPrompt", () => {
 
     expect(prompt).not.toContain("## Background Followup Automation");
     expect(prompt).not.toContain("ravi cron add");
+    expect(prompt).toContain("ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID --no-ack");
+    expect(prompt).toContain("ravi whatsapp dm ack <contact> <messageId> --account $RAVI_ACCOUNT_ID --execute");
   });
 
   it("keeps unprioritized legacy sections after typed sections when rendering mixed inputs", () => {

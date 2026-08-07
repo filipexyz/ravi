@@ -149,6 +149,11 @@ export class WhatsAppDmCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each message" })
     fields?: string,
+    @Option({
+      flags: "--execute",
+      description: "Actually send the default read receipt; --no-ack reads locally without confirmation",
+    })
+    execute?: boolean,
   ) {
     const { jid, displayName } = resolveWhatsAppJid("whatsapp dm read", contactRef, asJson);
     const sessionId = jidToSessionId(jid);
@@ -193,6 +198,20 @@ export class WhatsAppDmCommands {
       if (lastUserMsg) {
         const midMatch = lastUserMsg.content.match(/\[mid:([^\]]+)\]/);
         if (midMatch) {
+          if (execute !== true) {
+            contractDryRun(
+              "whatsapp dm read",
+              {
+                channel: "whatsapp",
+                accountId,
+                contact: contactRef,
+                to: jid,
+                displayName,
+                messageId: midMatch[1],
+              },
+              { asJson },
+            );
+          }
           await nats.emit("ravi.outbound.receipt", {
             channel: "whatsapp",
             accountId,
@@ -231,11 +250,29 @@ export class WhatsAppDmCommands {
     @Arg("messageId", { description: "Message ID to mark as read" }) messageId: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually send the read receipt; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
-    // Declared UNBRAKED: an ack only confirms reading (blue ticks) and does not
-    // produce new content for the peer — no --execute required.
     const { jid, displayName } = resolveWhatsAppJid("whatsapp dm ack", contactRef, asJson);
     const accountId = account ?? getFirstAccountName() ?? "";
+
+    if (execute !== true) {
+      contractDryRun(
+        "whatsapp dm ack",
+        {
+          channel: "whatsapp",
+          accountId,
+          contact: contactRef,
+          to: jid,
+          displayName,
+          messageId,
+        },
+        { asJson },
+      );
+    }
 
     await nats.emit("ravi.outbound.receipt", {
       channel: "whatsapp",

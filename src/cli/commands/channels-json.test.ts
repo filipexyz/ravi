@@ -697,7 +697,9 @@ describe("channel command --json output", () => {
   });
 
   it("prints WhatsApp DM reads and auto-ack metadata as typed JSON", async () => {
-    const payload = await captureJson(() => new WhatsAppDmCommands().read("5511999999999", "5", false, "main", true));
+    const payload = await captureJson(() =>
+      new WhatsAppDmCommands().read("5511999999999", "5", false, "main", true, undefined, true),
+    );
 
     expect(payload.total).toBe(2);
     expect(payload.ackedMessageId).toBe("msg-1");

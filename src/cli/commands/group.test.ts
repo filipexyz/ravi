@@ -673,14 +673,71 @@ describe("whatsapp dm contract", () => {
     expect(natsEmits).toHaveLength(0);
   });
 
-  it("ack is declared UNBRAKED: it emits the read receipt without --execute", async () => {
+  it("ack without --execute is a dry-run before the receipt is emitted", async () => {
     const commands = new WhatsAppDmCommands();
-    const payload = await silenced(() => commands.ack("5511999999999", "MID1", undefined, true));
+    const error = await expectContractError(
+      () => commands.ack("5511999999999", "MID1", undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toMatchObject({
+      channel: "whatsapp",
+      accountId: "main",
+      to: "5511999999999@s.whatsapp.net",
+      messageId: "MID1",
+    });
+    expect(natsEmits).toHaveLength(0);
+  });
+
+  it("ack with --execute emits the read receipt", async () => {
+    const commands = new WhatsAppDmCommands();
+    const payload = await silenced(() => commands.ack("5511999999999", "MID1", undefined, true, true));
 
     expect(natsEmits).toHaveLength(1);
     expect(natsEmits[0]?.topic).toBe("ravi.outbound.receipt");
     expect(natsEmits[0]?.payload).toMatchObject({ messageIds: ["MID1"] });
     expect(payload).toMatchObject({ status: "acknowledged" });
+  });
+
+  it("read with an acknowledgement candidate requires --execute before emitting the receipt", async () => {
+    historyMock = [
+      { role: "user", content: "[mid:ABC] oi", created_at: "2026-01-01T10:00:00" },
+      { role: "assistant", content: "olÃ¡!", created_at: "2026-01-01T10:01:00" },
+    ];
+
+    const commands = new WhatsAppDmCommands();
+    const error = await expectContractError(
+      () => commands.read("5511999999999", undefined, false, undefined, true, undefined, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toMatchObject({
+      channel: "whatsapp",
+      accountId: "main",
+      to: "5511999999999@s.whatsapp.net",
+      messageId: "ABC",
+    });
+    expect(natsEmits).toHaveLength(0);
+  });
+
+  it("read --execute emits the default read receipt", async () => {
+    historyMock = [
+      { role: "user", content: "[mid:ABC] oi", created_at: "2026-01-01T10:00:00" },
+      { role: "assistant", content: "olÃ¡!", created_at: "2026-01-01T10:01:00" },
+    ];
+
+    const commands = new WhatsAppDmCommands();
+    const payload = await silenced(() =>
+      commands.read("5511999999999", undefined, false, undefined, true, undefined, true),
+    );
+
+    expect(payload.ackedMessageId).toBe("ABC");
+    expect(natsEmits).toHaveLength(1);
+    expect(natsEmits[0]?.topic).toBe("ravi.outbound.receipt");
   });
 
   it("read --fields narrows each message to the requested fields", async () => {
