@@ -29,6 +29,7 @@ import {
 import {
   listCallProfiles,
   getCallProfile,
+  inspectCallProfileReadOnly,
   updateCallProfile,
   getCallRules,
   getCallRequest,
@@ -161,12 +162,12 @@ function parseDynamicVariableOptions(raw?: string | string[]): Record<string, st
   for (const entry of entries) {
     const separator = entry.indexOf("=");
     if (separator <= 0) {
-      fail(`Invalid dynamic variable: ${entry}. Use key=value.`);
+      fail("Invalid dynamic variable format. Use key=value.");
     }
     const key = entry.slice(0, separator).trim();
     const value = entry.slice(separator + 1);
     if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
-      fail(`Invalid dynamic variable key: ${key}. Use letters, numbers and underscores, starting with a letter or _.`);
+      fail("Invalid dynamic variable key. Use letters, numbers and underscores, starting with a letter or _.");
     }
     variables[key] = value;
   }
@@ -218,8 +219,14 @@ function serializeRules(rules: CallRulesType) {
 // suggestions sourced from the LOCAL calls DB (cheap reads, no provider call).
 // ---------------------------------------------------------------------------
 
-function failCallProfileNotFound(op: string, profileId: string, asJson?: boolean): never {
-  const candidates = listCallProfiles().flatMap((profile) => [profile.id, profile.name]);
+function failCallProfileNotFound(
+  op: string,
+  profileId: string,
+  asJson?: boolean,
+  readOnlyCandidates?: string[],
+): never {
+  const candidates =
+    readOnlyCandidates ?? listCallProfiles().flatMap((profile) => [profile.id, profile.name]);
   contractFail(op, "CALL_PROFILE_NOT_FOUND", `Call profile not found: ${profileId}`, {
     asJson,
     details: {
@@ -627,6 +634,7 @@ export class ProxCallsCommands {
     action: "request",
     risk: "high",
     redactions: ["phone", "reason", "var"],
+    requiresConfirmation: true,
   })
   @Returns(proxCallRequestReturnSchema)
   async request(
@@ -671,15 +679,27 @@ export class ProxCallsCommands {
       fail(`Invalid priority: ${priority}. Use low|normal|high|urgent.`);
     }
 
-    initCallsDefaults();
-
-    // Validation BEFORE the brake: an unknown profile is exit 1 (not-found
-    // envelope with local suggestions), never a wasted dry-run.
-    const profile = getCallProfile(profileId);
-    if (!profile) failCallProfileNotFound("prox calls request", profileId, asJson);
-
-    const ctx = getContext();
-    const usingStub = !hasRealProvider();
+    // Read-only resolution keeps validation before the brake without creating
+    // the calls schema or seeding defaults on a virgin installation.
+    const inspection = inspectCallProfileReadOnly(profileId);
+    const defaultProvider = DEFAULT_CALL_PROFILE_PROVIDERS.get(profileId);
+    const profileProvider = inspection.profile?.provider ?? defaultProvider;
+    if (!profileProvider) {
+      failCallProfileNotFound(
+        "prox calls request",
+        profileId,
+        asJson,
+        [...DEFAULT_CALL_PROFILE_PROVIDERS.keys(), ...inspection.candidates],
+      );
+    }
+    if (inspection.profile && !inspection.profile.enabled) {
+      contractFail("prox calls request", "CALL_PROFILE_DISABLED", `Call profile is disabled: ${profileId}`, {
+        asJson,
+        details: {
+          suggestedAction: `Enable '${profileId}' before requesting a call.`,
+        },
+      });
+    }
     const dynamicVariables = parseDynamicVariableOptions(dynamicVars);
 
     if (execute !== true) {
@@ -690,7 +710,7 @@ export class ProxCallsCommands {
         "prox calls request",
         {
           profileId,
-          profileProvider: profile.provider,
+          profileProvider,
           personId,
           phoneProvided: Boolean(phone),
           reasonProvided: true,
@@ -698,11 +718,22 @@ export class ProxCallsCommands {
           dynamicVariableCount: dynamicVariables ? Object.keys(dynamicVariables).length : 0,
           skipOriginNotify: Boolean(skipOriginNotify),
           force: Boolean(force),
-          providerMode: usingStub ? "stub" : "live",
+          profileResolution: inspection.profile ? "local-read-only" : "built-in-default",
+          providerMode: hasRealProvider() ? "live" : "stub",
         },
         { asJson },
       );
     }
+
+    initCallsDefaults();
+
+    // Initialize defaults only after confirmation. The read-only preflight
+    // above already established that the selector can resolve.
+    const profile = getCallProfile(profileId);
+    if (!profile) failCallProfileNotFound("prox calls request", profileId, asJson);
+
+    const ctx = getContext();
+    const usingStub = !hasRealProvider();
 
     const metadata: Record<string, unknown> = {};
     if (dynamicVariables) {

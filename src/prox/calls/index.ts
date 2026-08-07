@@ -52,6 +52,7 @@ export type {
 export {
   listCallProfiles,
   getCallProfile,
+  inspectCallProfileReadOnly,
   seedDefaultProfiles,
   getCallRules,
   getCallRulesById,

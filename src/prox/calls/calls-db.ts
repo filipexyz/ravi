@@ -6,7 +6,9 @@
  * CREATE TABLE IF NOT EXISTS + lazy migration pattern.
  */
 
+import { Database } from "bun:sqlite";
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
 import { getDb, getRaviDbPath } from "../../router/router-db.js";
 import type {
   CallProfile,
@@ -596,6 +598,29 @@ export function getCallProfile(id: string): CallProfile | null {
   ensureCallsSchema();
   const row = getDb().prepare("SELECT * FROM call_profiles WHERE id = ?").get(id) as CallProfileRow | undefined;
   return row ? rowToProfile(row) : null;
+}
+
+export function inspectCallProfileReadOnly(id: string): { profile: CallProfile | null; candidates: string[] } {
+  const dbPath = getRaviDbPath();
+  if (!existsSync(dbPath)) return { profile: null, candidates: [] };
+
+  const db = new Database(dbPath, { readonly: true, create: false });
+  try {
+    db.exec("PRAGMA busy_timeout = 1000");
+    const rows = db.prepare("SELECT * FROM call_profiles ORDER BY name ASC").all() as CallProfileRow[];
+    const profiles = rows.map(rowToProfile);
+    return {
+      profile: profiles.find((profile) => profile.id === id) ?? null,
+      candidates: profiles.filter((profile) => profile.enabled).flatMap((profile) => [profile.id, profile.name]),
+    };
+  } catch (error) {
+    if (error instanceof Error && /no such table: call_profiles/i.test(error.message)) {
+      return { profile: null, candidates: [] };
+    }
+    throw error;
+  } finally {
+    db.close();
+  }
 }
 
 export function seedDefaultProfiles(): void {

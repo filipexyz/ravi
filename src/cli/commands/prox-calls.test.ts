@@ -1115,9 +1115,6 @@ describe("prox calls agent-first contract", () => {
   });
 
   it("request dry-run exposes only safe indicators and persists no call request", async () => {
-    initCallsDefaultsForDialing();
-    updateCallProfile("checkin", { provider: "stub" });
-
     const phoneSentinel = "+5511987654321";
     const reasonSentinel = "REASON_PLAN_SENTINEL";
     const dynamicValueSentinels = ["DYNAMIC_VALUE_Z_SENTINEL", "DYNAMIC_VALUE_A_SENTINEL"];
@@ -1143,7 +1140,7 @@ describe("prox calls agent-first contract", () => {
     expect(error.details.dryRun).toBe(true);
     expect(error.details.plan).toEqual({
       profileId: "checkin",
-      profileProvider: "stub",
+      profileProvider: "elevenlabs",
       personId: "person_brake_1",
       phoneProvided: true,
       reasonProvided: true,
@@ -1151,6 +1148,7 @@ describe("prox calls agent-first contract", () => {
       dynamicVariableCount: 2,
       skipOriginNotify: false,
       force: false,
+      profileResolution: "built-in-default",
       providerMode: "stub",
     });
     const serializedPlan = JSON.stringify(error.details.plan);
@@ -1163,6 +1161,119 @@ describe("prox calls agent-first contract", () => {
       .prepare("SELECT COUNT(*) AS c FROM call_requests WHERE target_person_id = ?")
       .get("person_brake_1") as { c: number };
     expect(row.c).toBe(0);
+  });
+
+  it("request dry-run does not initialize call schema or seed defaults", async () => {
+    await withFreshCallsState("virgin-request-dry-run", async () => {
+      const error = await expectContractError(
+        () =>
+          new ProxCallsCommands().request(
+            "checkin",
+            "person_virgin_dry_run",
+            "SENTINEL_CALL_REASON_DO_NOT_LEAK",
+            "+5511999999999",
+            undefined,
+            ["token=SENTINEL_CALL_VARIABLE_DO_NOT_LEAK"],
+            undefined,
+            undefined,
+            true,
+            undefined,
+          ),
+        "WRITE_REQUIRES_EXECUTE",
+        3,
+      );
+
+      expect(JSON.stringify(error.details.plan)).not.toContain("SENTINEL_CALL_REASON_DO_NOT_LEAK");
+      expect(JSON.stringify(error.details.plan)).not.toContain("SENTINEL_CALL_VARIABLE_DO_NOT_LEAK");
+      const tables = getDb()
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table'
+             AND name IN ('call_profiles', 'call_rules', 'call_voice_agents', 'call_tools', 'call_requests')`,
+        )
+        .all() as Array<{ name: string }>;
+      expect(tables).toEqual([]);
+    });
+  });
+
+  it("request resolves an unknown profile before the brake without initializing call state", async () => {
+    await withFreshCallsState("virgin-request-unknown-profile", async () => {
+      const error = await expectContractError(
+        () =>
+          new ProxCallsCommands().request(
+            "missing-profile",
+            "person_virgin_dry_run",
+            "reason",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            undefined,
+          ),
+        "CALL_PROFILE_NOT_FOUND",
+        1,
+      );
+
+      expect(error.details.suggestions).toEqual(expect.arrayContaining(["checkin", "followup", "urgent-approval"]));
+      const tables = getDb()
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'call_profiles'")
+        .all();
+      expect(tables).toEqual([]);
+    });
+  });
+
+  it("request rejects a disabled profile before returning a confirmation plan", async () => {
+    initCallsDefaultsForDialing();
+    updateCallProfile("checkin", { enabled: false });
+
+    const error = await expectContractError(
+      () =>
+        new ProxCallsCommands().request(
+          "checkin",
+          "person_disabled_profile",
+          "reason",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      "CALL_PROFILE_DISABLED",
+      1,
+    );
+
+    expect(error.details.suggestedAction).toContain("Enable 'checkin'");
+  });
+
+  it("request rejects an invalid dynamic variable without echoing its value", async () => {
+    const secret = "SENTINEL_DYNAMIC_VARIABLE_DO_NOT_LEAK";
+    let caught: unknown;
+    await runWithContext({ sessionKey: "prox-test", sessionName: "prox-test", agentId: "prox-test" }, async () => {
+      try {
+        await new ProxCallsCommands().request(
+          "checkin",
+          "person_invalid_var",
+          "reason",
+          undefined,
+          undefined,
+          [secret],
+          undefined,
+          undefined,
+          true,
+          undefined,
+        );
+      } catch (error) {
+        caught = error;
+      }
+    });
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("Invalid dynamic variable format");
+    expect((caught as Error).message).not.toContain(secret);
   });
 
   it("request with --execute submits the call request (stub provider)", async () => {
