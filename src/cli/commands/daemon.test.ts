@@ -220,6 +220,29 @@ describe("DaemonCommands --json", () => {
 });
 
 describe("DaemonCommands log transport", () => {
+  it("blocks --clear before probing or flushing PM2 when --execute is absent", () => {
+    let failure: unknown;
+    try {
+      runWithContext({ transport: "tool", suppressCliOutput: true }, () =>
+        new DaemonCommands().logs(false, "50", true, false, true, undefined),
+      );
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(ContractError);
+    expect(failure).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3, op: "daemon logs" });
+    expect((failure as ContractError).envelope()).toMatchObject({
+      success: false,
+      op: "daemon logs",
+      error: {
+        code: "WRITE_REQUIRES_EXECUTE",
+        dryRun: true,
+        plan: { action: "flush-logs", process: "ravi" },
+      },
+    });
+  });
+
   it("rejects an unbounded follow stream before spawning it through a tool transport", () => {
     let failure: unknown;
     try {

@@ -10,7 +10,7 @@ import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { Group, Command, CommandAccess, CliOnly, Option, Returns } from "../decorators.js";
 import { getContext, hasContext, fail } from "../context.js";
-import { CONTRACT_EXIT_POLICY, CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
+import { CONTRACT_EXIT_POLICY, CONTRACT_EXIT_USAGE, contractDryRun, contractFail } from "../agent-contract.js";
 import {
   daemonEnvReturnSchema,
   daemonInitAdminKeyReturnSchema,
@@ -648,6 +648,11 @@ export class DaemonCommands {
     @Option({ flags: "--path", description: "Print PM2 log file path" }) path?: boolean,
     @Option({ flags: "--json", description: "Print structured log result; with --follow, print JSONL records" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually flush PM2 logs when --clear is set; ignored for read-only log requests",
+    })
+    execute?: boolean,
   ) {
     if (follow && getContext()?.transport) {
       contractFail("daemon logs", "INTERACTIVE_ONLY", "--follow requires an interactive CLI terminal.", {
@@ -658,6 +663,17 @@ export class DaemonCommands {
           suggestedAction: "Request a bounded log snapshot with --tail instead of --follow",
         },
       });
+    }
+
+    if (clear && !path && execute !== true) {
+      contractDryRun(
+        "daemon logs",
+        {
+          action: "flush-logs",
+          process: PM2_PROCESS_NAME,
+        },
+        { asJson },
+      );
     }
 
     requirePm2();
