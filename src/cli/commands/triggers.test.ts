@@ -616,8 +616,49 @@ describe("triggers agent-first contract", () => {
     expect(emitMock).toHaveBeenCalledWith("ravi.triggers.refresh", {});
   });
 
-  it("keeps triggers test unbraked (declared): fake-event debug tool fires without --execute", async () => {
-    const payload = await captureJson(() => new TriggersCommands().test("trg_1", true));
+  it("blocks triggers test without --execute after resolving the trigger (dry-run, exit 3, no NATS emission)", async () => {
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await new TriggersCommands().test("trg_1", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("triggers test");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect((envelope.error.plan as { triggerId?: string }).triggerId).toBe("trg_1");
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("validates the trigger before applying the triggers test brake", async () => {
+    triggerRecord = null;
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await new TriggersCommands().test("missing", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect((thrown as InstanceType<typeof ContractError>).exitCode).toBe(1);
+    expect((thrown as InstanceType<typeof ContractError>).code).toBe("TRIGGER_NOT_FOUND");
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("emits the synthetic trigger event with --execute", async () => {
+    const payload = await captureJson(() => new TriggersCommands().test("trg_1", true, true));
 
     expect(payload).toMatchObject({
       status: "test_emitted",

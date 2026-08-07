@@ -161,6 +161,10 @@ function buildActionPayload(
   }
 }
 
+function hookTestRequiresExecute(actionType: HookActionType): boolean {
+  return actionType === "inject_context" || actionType === "send_session_event";
+}
+
 function formatScope(hook: HookRecord): string {
   return hook.scopeValue ? `${hook.scopeType}:${hook.scopeValue}` : hook.scopeType;
 }
@@ -510,8 +514,26 @@ export class HooksCommands {
   async test(
     @Arg("id", { description: "Hook ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw execution result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually run a session-delivery hook; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
-    requireHook("hooks test", id, asJson);
+    const hook = requireHook("hooks test", id, asJson);
+    if (hookTestRequiresExecute(hook.actionType) && execute !== true) {
+      contractDryRun(
+        "hooks test",
+        {
+          hookId: hook.id,
+          name: hook.name,
+          eventName: hook.eventName,
+          actionType: hook.actionType,
+          scope: formatScope(hook),
+        },
+        { asJson },
+      );
+    }
     const result = await runHookById(id);
     if (asJson) {
       printJson(result);

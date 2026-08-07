@@ -27,6 +27,7 @@ mock.module("../decorators.js", () => ({
 }));
 
 mock.module("../context.js", () => ({
+  getContext: () => undefined,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -51,6 +52,7 @@ mock.module("../../permissions/scope.js", () => ({
 }));
 
 const { SessionRuntimeCommands } = await import("./sessions-runtime.js");
+const { ContractError } = await import("../agent-contract.js");
 
 async function captureLogs<T>(run: () => Promise<T>): Promise<{ result: T; output: string }> {
   const lines: string[] = [];
@@ -128,7 +130,7 @@ describe("SessionRuntimeCommands", () => {
     const commands = new SessionRuntimeCommands();
 
     const { result, output } = await captureLogs(() =>
-      commands.followUp("dev-main", "faz isso depois", "thread_1", "turn_1", "turn_1", true),
+      commands.followUp("dev-main", "faz isso depois", "thread_1", "turn_1", "turn_1", true, true),
     );
 
     expect(result.ok).toBe(true);
@@ -146,6 +148,94 @@ describe("SessionRuntimeCommands", () => {
         expectedTurnId: "turn_1",
       },
     });
+  });
+
+  it("brakes follow-up before requesting runtime control when --execute is absent", async () => {
+    const commands = new SessionRuntimeCommands();
+    const text = "segredo-nao-deve-aparecer";
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await commands.followUp("dev-main", text, "thread_1", "turn_1", "turn_1", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    expect(contractError.op).toBe("sessions runtime follow-up");
+    const envelope = contractError.envelope();
+    expect(JSON.stringify(envelope)).not.toContain(text);
+    expect(envelope.error.plan).toMatchObject({
+      operation: "turn.follow_up",
+      threadId: "thread_1",
+      turnId: "turn_1",
+      expectedTurnId: "turn_1",
+      textLength: text.length,
+    });
+    expect(requestReplyCalls).toHaveLength(0);
+  });
+
+  it("resolves the session before applying the follow-up brake", async () => {
+    resolvedSession = null;
+    const commands = new SessionRuntimeCommands();
+
+    await expect(
+      commands.followUp("missing", "faz isso depois", undefined, undefined, undefined, true),
+    ).rejects.toThrow("Session not found: missing");
+    expect(requestReplyCalls).toHaveLength(0);
+  });
+
+  it.each([
+    ["rollback", (commands: SessionRuntimeCommands) => commands.rollback("dev-main", "1", undefined, true)],
+    ["fork", (commands: SessionRuntimeCommands) => commands.fork("dev-main", undefined, undefined, undefined, true)],
+  ])("brakes %s before requesting runtime control when --execute is absent", async (operation, run) => {
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await run(new SessionRuntimeCommands());
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect((thrown as InstanceType<typeof ContractError>).exitCode).toBe(3);
+    expect((thrown as InstanceType<typeof ContractError>).op).toBe(`sessions runtime ${operation}`);
+    expect(requestReplyCalls).toHaveLength(0);
+  });
+
+  it.each([
+    [
+      "rollback",
+      (commands: SessionRuntimeCommands) => commands.rollback("dev-main", "1", undefined, true, true),
+      "thread.rollback",
+    ],
+    [
+      "fork",
+      (commands: SessionRuntimeCommands) => commands.fork("dev-main", undefined, undefined, undefined, true, true),
+      "thread.fork",
+    ],
+  ])("sends %s to runtime control with --execute", async (_operation, run, runtimeOperation) => {
+    requestReplyResult = {
+      result: {
+        ok: true,
+        operation: runtimeOperation,
+        data: { accepted: true },
+        state: { provider: "codex" },
+      },
+    };
+
+    await captureLogs(() => run(new SessionRuntimeCommands()));
+
+    expect(requestReplyCalls).toHaveLength(1);
+    expect(requestReplyCalls[0]?.data).toMatchObject({ request: { operation: runtimeOperation } });
   });
 
   it("maps list filters to thread.list without requiring modify access", async () => {
@@ -187,5 +277,22 @@ describe("SessionRuntimeCommands", () => {
 
     await expect(commands.rollback("dev-main", "1")).rejects.toThrow("Session not found: dev-main");
     expect(requestReplyCalls).toHaveLength(0);
+  });
+
+  it("keeps interrupt immediate without --execute", async () => {
+    requestReplyResult = {
+      result: {
+        ok: true,
+        operation: "turn.interrupt",
+        data: { accepted: true },
+        state: { provider: "codex", activeTurn: true },
+      },
+    };
+    const commands = new SessionRuntimeCommands();
+
+    await captureLogs(() => commands.interrupt("dev-main", undefined, undefined, true));
+
+    expect(requestReplyCalls).toHaveLength(1);
+    expect(requestReplyCalls[0]?.data).toMatchObject({ request: { operation: "turn.interrupt" } });
   });
 });

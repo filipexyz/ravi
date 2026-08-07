@@ -8,6 +8,12 @@ const updatedHooks: Array<{ id: string; patch: Record<string, unknown> }> = [];
 const refreshCalls: Array<Record<string, unknown>> = [];
 const deletedHooks: string[] = [];
 let listedHooks: Array<Record<string, unknown>> = [];
+let hookActionType = "inject_context";
+const runHookByIdMock = mock(async () => ({
+  hookId: "hook-1",
+  hookName: "bridge",
+  eventName: "FileChanged",
+}));
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -72,7 +78,7 @@ mock.module("../../hooks-runtime/index.js", () => ({
           eventName: "FileChanged",
           scopeType: "workspace",
           scopeValue: "/tmp/work",
-          actionType: "inject_context",
+          actionType: hookActionType,
           actionPayload: { message: "hello" },
           enabled: false,
           async: false,
@@ -91,7 +97,7 @@ mock.module("../../hooks-runtime/index.js", () => ({
       eventName: "FileChanged",
       scopeType: "workspace",
       scopeValue: "/tmp/work",
-      actionType: "inject_context",
+      actionType: hookActionType,
       actionPayload: { message: "hello" },
       enabled: false,
       async: false,
@@ -105,11 +111,7 @@ mock.module("../../hooks-runtime/index.js", () => ({
   emitHookRefresh: mock(async () => {
     refreshCalls.push({});
   }),
-  runHookById: mock(async () => ({
-    hookId: "hook-1",
-    hookName: "bridge",
-    eventName: "FileChanged",
-  })),
+  runHookById: runHookByIdMock,
 }));
 
 const { HooksCommands } = await import("./hooks.js");
@@ -173,6 +175,8 @@ describe("HooksCommands", () => {
     refreshCalls.length = 0;
     deletedHooks.length = 0;
     listedHooks = [];
+    hookActionType = "inject_context";
+    runHookByIdMock.mockClear();
   });
 
   it("creates a workspace-scoped hook and infers the action payload", async () => {
@@ -258,6 +262,8 @@ describe("HooksCommands agent-first contract", () => {
     refreshCalls.length = 0;
     deletedHooks.length = 0;
     listedHooks = [];
+    hookActionType = "inject_context";
+    runHookByIdMock.mockClear();
   });
 
   it("rm without --execute is a dry-run: exit 3, plan shown, NO delete and NO refresh", async () => {
@@ -292,6 +298,46 @@ describe("HooksCommands agent-first contract", () => {
     expect(deletedHooks).toEqual(["hook-1"]);
     expect(refreshCalls).toHaveLength(1);
   });
+
+  it.each(["inject_context", "send_session_event"])("blocks a %s hook test without --execute", async (actionType) => {
+    hookActionType = actionType;
+    const commands = new HooksCommands();
+    const error = await expectContractError(() => commands.test("hook-1", true), "WRITE_REQUIRES_EXECUTE", 3);
+
+    expect(error.details.plan).toMatchObject({
+      hookId: "hook-1",
+      actionType,
+    });
+    expect(runHookByIdMock).not.toHaveBeenCalled();
+  });
+
+  it("validates the hook before applying the external-session test brake", async () => {
+    const commands = new HooksCommands();
+    const error = await expectContractError(() => commands.test("missing", true), "HOOK_NOT_FOUND", 1);
+
+    expect(error.details.suggestedAction).toContain("ravi hooks list");
+    expect(runHookByIdMock).not.toHaveBeenCalled();
+  });
+
+  it("runs an external-session hook test with --execute", async () => {
+    const commands = new HooksCommands();
+    const payload = await captureJson(() => commands.test("hook-1", true, true));
+
+    expect(payload).toMatchObject({ hookId: "hook-1", eventName: "FileChanged" });
+    expect(runHookByIdMock).toHaveBeenCalledWith("hook-1");
+  });
+
+  it.each(["append_history", "comment_task"])(
+    "runs the internal %s hook test without --execute",
+    async (actionType) => {
+      hookActionType = actionType;
+      const commands = new HooksCommands();
+
+      await captureJson(() => commands.test("hook-1", true));
+
+      expect(runHookByIdMock).toHaveBeenCalledWith("hook-1");
+    },
+  );
 
   it("rm on an unknown hook exits 1 with HOOK_NOT_FOUND and suggestions from the local list, before the brake", async () => {
     listedHooks = [

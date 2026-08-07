@@ -799,21 +799,43 @@ export class TriggersCommands {
     }
   }
 
-  // No write brake here (declared): `triggers test` fires the trigger with FAKE
-  // event data (`_test: true`) — it is the debug tool designed to preview a
-  // trigger safely before real traffic, mutates no state (changedCount: 0), and
-  // braking it would remove the very escape hatch agents use to validate a
-  // trigger without waiting for a real event.
+  // Test execution uses fake event data (`_test: true`) to preview a trigger,
+  // but dispatch can still activate agent or shell execution.
+  // It therefore requires --execute before emitting to the runtime.
   @Command({ name: "test", description: "Test trigger with fake event data" })
-  @CommandAccess({ kind: "mutate", resource: "triggers", action: "test", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "triggers",
+    action: "test",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   @Returns(triggerMutationReturnSchema)
   async test(
     @Arg("id", { description: "Trigger ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually emit the synthetic trigger event; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const trigger = dbGetTrigger(id);
     if (!trigger || !canAccessResource(getScopeContext(), trigger.agentId)) {
       failTriggerNotFound("triggers test", id, asJson);
+    }
+
+    if (execute !== true) {
+      contractDryRun(
+        "triggers test",
+        {
+          triggerId: id,
+          name: trigger.name,
+          topic: trigger.topic,
+          executionType: trigger.executionType ?? "agent",
+        },
+        { asJson },
+      );
     }
 
     if (!asJson) {
