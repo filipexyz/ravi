@@ -9,6 +9,8 @@
 - Console-produced watch events are delivered through Console delivery and
   republished as normalized `ravi.watch...` subjects.
 - Trigger creation helpers create normal trigger records.
+- Examples that intend to create a trigger or run a poll cycle MUST include
+  `--execute`; dry-runs MUST exit `3` without creating or starting either.
 
 ## Event Contract Regression
 
