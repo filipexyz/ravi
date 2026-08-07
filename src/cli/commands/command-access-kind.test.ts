@@ -9,12 +9,16 @@ import type { ContextRecord } from "../../router/router-db.js";
 import { enforceCliCommandAuthorization } from "../command-access.js";
 import { runWithContext } from "../context.js";
 import { getCommandAccessMetadata, type CommandAccessOptions } from "../decorators.js";
+import { AgentsCommands } from "./agents.js";
 import { ArtifactsCommands } from "./artifacts.js";
 import { ChannelsCommands } from "./channels.js";
+import { ChatReadingListCommands } from "./chats.js";
 import { ContactsCommands } from "./contacts.js";
 import { ContextCommands } from "./context.js";
+import { CostCommands } from "./costs.js";
 import { CrmFactCommands, CrmOpportunityCommands, CrmTaskCommands } from "./crm.js";
 import { DaemonCommands } from "./daemon.js";
+import { DbCommands } from "./db.js";
 import { DevinSessionCommands } from "./devin.js";
 import { GroupCommands } from "./group.js";
 import { HooksCommands } from "./hooks.js";
@@ -23,15 +27,24 @@ import { InboxCommands } from "./inbox.js";
 import { InstancesCommands } from "./instances.js";
 import { MetricsCommands } from "./metrics.js";
 import { PagesCommands } from "./pages.js";
-import { ProxCallsCommands } from "./prox-calls.js";
+import {
+  ProxCallsCommands,
+  ProxCallsProfileCommands,
+  ProxCallsToolCommands,
+  ProxCallsVoiceAgentCommands,
+} from "./prox-calls.js";
+import { RuntimeCredentialsCommands } from "./runtime-credentials.js";
+import { SdkOpenApiCommands } from "./sdk.js";
 import { SessionFollowupCommands } from "./session-followups.js";
 import { SessionRuntimeCommands } from "./sessions-runtime.js";
 import { SessionCommands } from "./sessions.js";
 import { SpecsCommands } from "./specs.js";
+import { TagRulesCommands } from "./tag-rules.js";
 import { ThreadCommands } from "./threads.js";
 import { TranscribeCommands } from "./transcribe.js";
 import { TriggersCommands } from "./triggers.js";
 import { VideoCommands } from "./video.js";
+import { WhatsAppDmCommands } from "./whatsapp-dm.js";
 import { WorkflowRunCommands } from "./workflows.js";
 
 setDefaultTimeout(90_000);
@@ -46,6 +59,22 @@ interface AccessCase {
 }
 
 const ACCESS_CASES: AccessCase[] = [
+  {
+    label: "agents debounce",
+    group: "agents",
+    command: "debounce",
+    target: AgentsCommands,
+    method: "debounce",
+    risk: "low",
+  },
+  {
+    label: "agents spec-mode",
+    group: "agents",
+    command: "spec-mode",
+    target: AgentsCommands,
+    method: "specMode",
+    risk: "low",
+  },
   {
     label: "artifacts snapshot",
     group: "artifacts",
@@ -71,11 +100,27 @@ const ACCESS_CASES: AccessCase[] = [
     risk: "high",
   },
   {
+    label: "chats lists delta",
+    group: "chats.lists",
+    command: "delta",
+    target: ChatReadingListCommands,
+    method: "delta",
+    risk: "low",
+  },
+  {
     label: "contacts note",
     group: "contacts",
     command: "note",
     target: ContactsCommands,
     method: "note",
+    risk: "medium",
+  },
+  {
+    label: "costs pricing",
+    group: "costs",
+    command: "pricing",
+    target: CostCommands,
+    method: "pricing",
     risk: "medium",
   },
   {
@@ -143,6 +188,62 @@ const ACCESS_CASES: AccessCase[] = [
     risk: "medium",
   },
   {
+    label: "daemon logs",
+    group: "daemon",
+    command: "logs",
+    target: DaemonCommands,
+    method: "logs",
+    risk: "destructive",
+  },
+  {
+    label: "db locks",
+    group: "db",
+    command: "locks",
+    target: DbCommands,
+    method: "locks",
+    risk: "medium",
+  },
+  {
+    label: "devin sessions list",
+    group: "devin.sessions",
+    command: "list",
+    target: DevinSessionCommands,
+    method: "list",
+    risk: "low",
+  },
+  {
+    label: "devin sessions show",
+    group: "devin.sessions",
+    command: "show",
+    target: DevinSessionCommands,
+    method: "show",
+    risk: "low",
+  },
+  {
+    label: "devin sessions messages",
+    group: "devin.sessions",
+    command: "messages",
+    target: DevinSessionCommands,
+    method: "messages",
+    risk: "low",
+  },
+  {
+    label: "devin sessions attachments",
+    group: "devin.sessions",
+    command: "attachments",
+    target: DevinSessionCommands,
+    method: "attachments",
+    risk: "low",
+  },
+  {
+    label: "devin sessions insights",
+    group: "devin.sessions",
+    command: "insights",
+    target: DevinSessionCommands,
+    method: "insights",
+    risk: "high",
+  },
+  {
     label: "devin sessions terminate",
     group: "devin.sessions",
     command: "terminate",
@@ -205,6 +306,86 @@ const ACCESS_CASES: AccessCase[] = [
     target: ProxCallsCommands,
     method: "request",
     risk: "high",
+  },
+  {
+    label: "prox calls transcript",
+    group: "prox.calls",
+    command: "transcript",
+    target: ProxCallsCommands,
+    method: "transcript",
+    risk: "low",
+  },
+  {
+    label: "prox calls profiles configure",
+    group: "prox.calls.profiles",
+    command: "configure",
+    target: ProxCallsProfileCommands,
+    method: "configure",
+    risk: "high",
+  },
+  {
+    label: "prox calls voice-agents configure",
+    group: "prox.calls.voice-agents",
+    command: "configure",
+    target: ProxCallsVoiceAgentCommands,
+    method: "configure",
+    risk: "medium",
+  },
+  {
+    label: "prox calls voice-agents bind-tool",
+    group: "prox.calls.voice-agents",
+    command: "bind-tool",
+    target: ProxCallsVoiceAgentCommands,
+    method: "bindTool",
+    risk: "medium",
+  },
+  {
+    label: "prox calls voice-agents unbind-tool",
+    group: "prox.calls.voice-agents",
+    command: "unbind-tool",
+    target: ProxCallsVoiceAgentCommands,
+    method: "unbindTool",
+    risk: "medium",
+  },
+  {
+    label: "prox calls tools configure",
+    group: "prox.calls.tools",
+    command: "configure",
+    target: ProxCallsToolCommands,
+    method: "configure",
+    risk: "medium",
+  },
+  {
+    label: "prox calls tools bind",
+    group: "prox.calls.tools",
+    command: "bind",
+    target: ProxCallsToolCommands,
+    method: "bind",
+    risk: "medium",
+  },
+  {
+    label: "prox calls tools unbind",
+    group: "prox.calls.tools",
+    command: "unbind",
+    target: ProxCallsToolCommands,
+    method: "unbind",
+    risk: "medium",
+  },
+  {
+    label: "runtime credentials classify",
+    group: "runtime.credentials",
+    command: "classify",
+    target: RuntimeCredentialsCommands,
+    method: "classify",
+    risk: "medium",
+  },
+  {
+    label: "sdk openapi emit",
+    group: "sdk.openapi",
+    command: "emit",
+    target: SdkOpenApiCommands,
+    method: "emit",
+    risk: "low",
   },
   {
     label: "sessions goal",
@@ -335,6 +516,22 @@ const ACCESS_CASES: AccessCase[] = [
     risk: "medium",
   },
   {
+    label: "tag-rules tick",
+    group: "tag-rules",
+    command: "tick",
+    target: TagRulesCommands,
+    method: "tick",
+    risk: "high",
+  },
+  {
+    label: "tag-rules evaluate",
+    group: "tag-rules",
+    command: "evaluate",
+    target: TagRulesCommands,
+    method: "evaluate",
+    risk: "medium",
+  },
+  {
     label: "metrics rollup",
     group: "metrics",
     command: "rollup",
@@ -365,6 +562,14 @@ const ACCESS_CASES: AccessCase[] = [
     target: GroupCommands,
     method: "join",
     risk: "high",
+  },
+  {
+    label: "whatsapp dm read",
+    group: "whatsapp.dm",
+    command: "read",
+    target: WhatsAppDmCommands,
+    method: "read",
+    risk: "medium",
   },
   {
     label: "whatsapp group leave",

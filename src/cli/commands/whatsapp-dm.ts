@@ -140,7 +140,7 @@ export class WhatsAppDmCommands {
   }
 
   @Command({ name: "read", description: "Read recent messages from a DM chat" })
-  @CommandAccess({ kind: "read", resource: "whatsapp.dm", action: "read", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "whatsapp.dm", action: "read", risk: "medium" })
   async read(
     @Arg("contact", { description: "Contact ID, phone, or WhatsApp identity" }) contactRef: string,
     @Option({ flags: "--last <n>", description: "Number of messages to read (default: 10)" }) last?: string,

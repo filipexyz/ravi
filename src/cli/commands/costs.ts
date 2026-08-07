@@ -340,10 +340,9 @@ async function recomputePricingRows(input: {
 // metadata on cost_events. That path already ships `--dry-run` as its
 // pre-existing preview flag — the documented equivalent of the write brake
 // (preview with --dry-run, then re-run without it). The flag is NOT renamed
-// to `--execute` to keep the public surface stable. Note: `pricing` is
-// declared `kind: "read"` in CommandAccess even though `--recompute`
-// mutates — registered as misdeclared in .ravi/specs/cli/costs (kept as-is
-// in this wave to avoid flipping the permission surface).
+// to `--execute` to keep the public surface stable. Because CommandAccess is
+// operation-scoped, `pricing` is authorized as mutate even when invoked in
+// its read-only form; exact legacy read grants are migrated separately.
 //
 // Numeric flags (--hours, --limit) keep their lenient legacy normalization
 // (invalid values fall back to defaults) — declared, not a usage error.
@@ -596,7 +595,7 @@ export class CostCommands {
   }
 
   @Command({ name: "pricing", description: "Audit pricing coverage for recent cost events" })
-  @CommandAccess({ kind: "read", resource: "costs", action: "pricing", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "costs", action: "pricing", risk: "medium" })
   @Returns(costsPricingReturnSchema)
   async pricing(
     @Option({ flags: "--hours <n>", description: "Time window in hours (default: 24)" }) hours?: string,

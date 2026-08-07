@@ -1309,7 +1309,7 @@ export class AgentsCommands {
 
   @Command({ name: "debounce", description: "Set message debounce time" })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "agents",
     action: "debounce",
     risk: "low",
@@ -1392,7 +1392,7 @@ export class AgentsCommands {
     description: "Enable or disable spec mode for an agent",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "agents",
     action: "spec-mode",
     risk: "low",

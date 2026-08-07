@@ -260,7 +260,7 @@ export class TagRulesCommands {
   }
 
   @Command({ name: "tick", description: "Run all rules against all contacts (use for cron/periodic schedules)" })
-  @CommandAccess({ kind: "read", resource: "tag-rules", action: "tick", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "tag-rules", action: "tick", risk: "high" })
   async tick(
     @Option({ flags: "--apply", description: "Apply tag changes (default: dry-run)" }) applyChanges?: boolean,
     @Option({ flags: "--limit <n>", description: "Limit number of contacts processed" }) limit?: string,
@@ -289,7 +289,7 @@ export class TagRulesCommands {
   }
 
   @Command({ name: "evaluate", description: "Evaluate a rule against a target asset" })
-  @CommandAccess({ kind: "read", resource: "tag-rules", action: "evaluate", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "tag-rules", action: "evaluate", risk: "medium" })
   evaluate(
     @Arg("ruleId", { description: "Rule id to evaluate" }) ruleId: string,
     @Option({ flags: "--target <ref>", description: "Target (e.g. contact:<id>)" }) target?: string,

@@ -155,7 +155,7 @@ function detectGitSha(): string {
 })
 export class SdkOpenApiCommands {
   @Command({ name: "emit", description: "Emit OpenAPI 3.1 spec from the CLI registry" })
-  @CommandAccess({ kind: "read", resource: "sdk.openapi", action: "emit", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "sdk.openapi", action: "emit", risk: "low" })
   @Returns(openApiEmitReturnSchema)
   emit(
     @Option({

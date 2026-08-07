@@ -582,7 +582,7 @@ export class DevinSessionCommands {
   }
 
   @Command({ name: "list", description: "List local or remote Devin sessions" })
-  @CommandAccess({ kind: "read", resource: "devin.sessions", action: "list", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "list", risk: "low" })
   async list(
     @Option({ flags: "--remote", description: "Fetch remote sessions and update local cache" }) remote?: boolean,
     @Option({ flags: "--status <status>", description: "Filter local sessions by status" }) status?: string,
@@ -665,7 +665,7 @@ export class DevinSessionCommands {
   }
 
   @Command({ name: "show", description: "Show one Devin session" })
-  @CommandAccess({ kind: "read", resource: "devin.sessions", action: "show", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "show", risk: "low" })
   async show(
     @Arg("session", { description: "Local id or devin-* id" }) identifier: string,
     @Option({ flags: "--sync", description: "Fetch latest remote state first" }) sync?: boolean,
@@ -694,7 +694,7 @@ export class DevinSessionCommands {
   }
 
   @Command({ name: "messages", description: "List and cache session messages" })
-  @CommandAccess({ kind: "read", resource: "devin.sessions", action: "messages", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "messages", risk: "low" })
   async messages(
     @Arg("session", { description: "Local id or devin-* id" }) identifier: string,
     @Option({ flags: "--cached", description: "Use local cache only" }) cached?: boolean,
@@ -764,7 +764,7 @@ export class DevinSessionCommands {
   }
 
   @Command({ name: "attachments", description: "List and cache session attachments" })
-  @CommandAccess({ kind: "read", resource: "devin.sessions", action: "attachments", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "attachments", risk: "low" })
   async attachments(
     @Arg("session", { description: "Local id or devin-* id" }) identifier: string,
     @Option({ flags: "--cached", description: "Use local cache only" }) cached?: boolean,
@@ -788,7 +788,7 @@ export class DevinSessionCommands {
   }
 
   @Command({ name: "insights", description: "Show Devin session insights/activity summary" })
-  @CommandAccess({ kind: "read", resource: "devin.sessions", action: "insights", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "insights", risk: "high" })
   async insights(
     @Arg("session", { description: "Local id or devin-* id" }) identifier: string,
     @Option({ flags: "--generate", description: "Ask Devin to generate/update insights before reading" })

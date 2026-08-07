@@ -639,7 +639,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "logs", description: "Show daemon logs (PM2)" })
-  @CommandAccess({ kind: "read", resource: "daemon", action: "logs", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "logs", risk: "destructive" })
   @Returns(daemonLogsReturnSchema)
   logs(
     @Option({ flags: "-f, --follow", description: "Follow log output" }) follow?: boolean,

@@ -1303,7 +1303,7 @@ FONTES
 
   @Scope("admin")
   @Command({ name: "delta", description: "Read what changed in a chat since this list reader cursor" })
-  @CommandAccess({ kind: "read", resource: "chats.lists", action: "delta", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "delta", risk: "low" })
   delta(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Arg("chat", { description: "Chat id, phone, group id, or normalized chat id" }) chatRef: string,

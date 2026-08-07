@@ -527,7 +527,7 @@ export class RuntimeCredentialsCommands {
   }
 
   @Command({ name: "classify", description: "Classify a provider failure for credential fallback" })
-  @CommandAccess({ kind: "read", resource: "runtime.credentials", action: "classify", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "runtime.credentials", action: "classify", risk: "medium" })
   @Returns(runtimeCredentialClassifyReturnSchema)
   classify(
     @Option({ flags: "--provider <id>", description: "Runtime provider id" }) provider?: string,
