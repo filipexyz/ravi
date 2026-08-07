@@ -3475,7 +3475,6 @@ export type ChatsListsRecomputeReturn = {
 export type ChatsListsRemoveInput = {
   channel?: string;
   chat: string;
-  execute?: boolean;
   instance?: string;
   list: string;
   owner?: string;
@@ -4112,7 +4111,6 @@ export type ContactsBackfillReturn = Record<string, unknown>;
 /** Input shape for `contacts.block`. */
 export type ContactsBlockInput = {
   contact: string;
-  execute?: boolean;
 };
 
 /** Return shape for `contacts.block`. */
@@ -5539,7 +5537,6 @@ export type CrmOpportunityCreateInput = {
   account?: string;
   contact?: string;
   currency?: string;
-  execute?: boolean;
   idempotencyKey?: string;
   owner?: string;
   pipeline?: string;
@@ -5573,7 +5570,6 @@ export type CrmOpportunityLinkContactReturn = {
 
 /** Input shape for `crm.opportunity.move`. */
 export type CrmOpportunityMoveInput = {
-  execute?: boolean;
   lostReason?: string;
   opportunity: string;
   stage: string;
@@ -5606,7 +5602,6 @@ export type CrmPipelineCreateInput = {
   consumer?: string;
   default?: boolean;
   entityType?: string;
-  execute?: boolean;
   hitlRequiredWhen?: string;
   idempotencyKey?: string;
   messagePrefix?: string;
@@ -7192,6 +7187,7 @@ export type ImageAtlasSplitInput = {
   caption?: string;
   channel?: string;
   cols?: string;
+  execute?: boolean;
   fit?: string;
   fuzz?: string;
   input: string;
@@ -7537,7 +7533,6 @@ export type InstancesCreateReturn = Record<string, unknown>;
 
 /** Input shape for `instances.delete`. */
 export type InstancesDeleteInput = {
-  execute?: boolean;
   name: string;
 };
 
@@ -7670,7 +7665,6 @@ export type InstancesRoutesListReturn = Record<string, unknown>;
 /** Input shape for `instances.routes.remove`. */
 export type InstancesRoutesRemoveInput = {
   allowRuntimeMismatch?: boolean;
-  execute?: boolean;
   name: string;
   pattern: string;
 };
@@ -9921,7 +9915,6 @@ export type ProjectsResourcesAddReturn = Record<string, unknown>;
 
 /** Input shape for `projects.resources.import`. */
 export type ProjectsResourcesImportInput = {
-  execute?: boolean;
   group?: string[];
   meta?: string;
   project: string;
@@ -15043,7 +15036,6 @@ export type ToolsTestReturn = {
 
 /** Input shape for `transcribe.file`. */
 export type TranscribeFileInput = {
-  execute?: boolean;
   lang?: string;
   path: string;
 };
@@ -15237,7 +15229,6 @@ export type TriggersTopicsReturn = {
 
 /** Input shape for `video.analyze`. */
 export type VideoAnalyzeInput = {
-  execute?: boolean;
   forceAnalyze?: boolean;
   output?: string;
   prompt?: string;

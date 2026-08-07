@@ -7184,7 +7184,7 @@ export const AudioGenerateInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Actually call the paid TTS API; default is a dry-run that only shows the plan (exit 3)",
+      "description": "Confirm delivery when --send is used; local generation runs immediately",
       "type": "boolean"
     },
     "format": {
@@ -7726,7 +7726,7 @@ export const AudioTtsInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Actually publish the paid TTS request; default is a dry-run that only shows the plan (exit 3)",
+      "description": "Confirm publishing work that triggers downstream TTS generation and playback",
       "type": "boolean"
     },
     "format": {
@@ -18780,10 +18780,6 @@ export const ChatsListsRemoveInputSchema = {
       "description": "Chat id, phone, group id, or normalized chat id",
       "type": "string"
     },
-    "execute": {
-      "description": "Actually remove the chat from the list; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
-    },
     "instance": {
       "description": "Resolve chat within an instance",
       "type": "string"
@@ -21893,10 +21889,6 @@ export const ContactsBlockInputSchema = {
     "contact": {
       "description": "Contact ID or identity",
       "type": "string"
-    },
-    "execute": {
-      "description": "Actually block the contact; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
     }
   },
   "required": [
@@ -28808,10 +28800,6 @@ export const CrmOpportunityCreateInputSchema = {
       "description": "Currency (default: BRL)",
       "type": "string"
     },
-    "execute": {
-      "description": "Actually create the opportunity; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
-    },
     "idempotencyKey": {
       "description": "Deduplicate repeated opportunity creation",
       "type": "string"
@@ -28915,10 +28903,6 @@ export const CrmOpportunityLinkContactReturnSchema = {
 export const CrmOpportunityMoveInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "execute": {
-      "description": "Actually move the opportunity; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
-    },
     "lostReason": {
       "description": "Lost reason when moving to lost",
       "type": "string"
@@ -29019,10 +29003,6 @@ export const CrmPipelineCreateInputSchema = {
     "entityType": {
       "description": "CRM entity type (default: opportunity)",
       "type": "string"
-    },
-    "execute": {
-      "description": "Actually create the pipeline; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
     },
     "hitlRequiredWhen": {
       "description": "JSON {conditions:[...]}",
@@ -35915,6 +35895,10 @@ export const ImageAtlasSplitInputSchema = {
       "description": "Grid columns (default: 3)",
       "type": "string"
     },
+    "execute": {
+      "description": "Confirm delivery when --send is used; local atlas splitting runs immediately",
+      "type": "boolean"
+    },
     "fit": {
       "description": "Trim mode square fit: contain or cover (default: contain)",
       "type": "string"
@@ -36067,7 +36051,7 @@ export const ImageGenerateInputSchema = {
       "type": "string"
     },
     "execute": {
-      "description": "Actually call the paid image API; default is a dry-run that only shows the plan (exit 3)",
+      "description": "Confirm delivery when the generated image will be sent; generation alone runs immediately",
       "type": "boolean"
     },
     "format": {
@@ -37123,10 +37107,6 @@ export const InstancesCreateReturnSchema = {
 export const InstancesDeleteInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "execute": {
-      "description": "Actually delete the instance; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
-    },
     "name": {
       "description": "Instance name",
       "type": "string"
@@ -37512,10 +37492,6 @@ export const InstancesRoutesRemoveInputSchema = {
   "properties": {
     "allowRuntimeMismatch": {
       "description": "Allow mutation even when the CLI bundle differs from the live daemon runtime",
-      "type": "boolean"
-    },
-    "execute": {
-      "description": "Actually remove the route; default is a dry-run that only shows the plan (exit 3)",
       "type": "boolean"
     },
     "name": {
@@ -50458,10 +50434,6 @@ export const ProjectsResourcesAddReturnSchema = {
 export const ProjectsResourcesImportInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "execute": {
-      "description": "Actually import the resources; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
-    },
     "group": {
       "description": "One or more group:<id> or <id>@g.us locators",
       "items": {
@@ -72364,10 +72336,6 @@ export const ToolsTestReturnSchema = {
 export const TranscribeFileInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "execute": {
-      "description": "Actually call the paid transcription API; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
-    },
     "lang": {
       "default": "pt",
       "description": "Language code (default: pt)",
@@ -73060,10 +73028,6 @@ export const TriggersTopicsReturnSchema = {
 export const VideoAnalyzeInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "execute": {
-      "description": "Actually run an analysis that may call the paid Gemini API; the free subtitles-only path never needs it",
-      "type": "boolean"
-    },
     "forceAnalyze": {
       "description": "Force Gemini analysis even when YouTube subtitles exist",
       "type": "boolean"

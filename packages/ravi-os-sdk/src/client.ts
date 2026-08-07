@@ -1124,7 +1124,6 @@ export class RaviClient {
       /** Remove a chat from a reading list without deleting cursor history */
       remove: async (list: string, chat: string, options?: {
         channel?: string;
-        execute?: boolean;
         instance?: string;
         owner?: string;
       }): Promise<ChatsListsRemoveReturn> => {
@@ -1401,13 +1400,11 @@ export class RaviClient {
       });
     },
     /** Block a contact */
-    block: async (contact: string, options?: {
-      execute?: boolean;
-    }): Promise<ContactsBlockReturn> => {
+    block: async (contact: string): Promise<ContactsBlockReturn> => {
       return this.transport.call({
         groupSegments: ["contacts"],
         command: "block",
-        body: { contact, ...(options ?? {}) },
+        body: { contact },
       });
     },
     /** Check contact status (alias for info) */
@@ -2130,12 +2127,11 @@ export class RaviClient {
           body: { opportunity },
         });
       },
-      /** Create a CRM opportunity (dry-run by default; --execute writes) */
+      /** Create a CRM opportunity */
       create: async (title: string, options?: {
         account?: string;
         contact?: string;
         currency?: string;
-        execute?: boolean;
         idempotencyKey?: string;
         owner?: string;
         pipeline?: string;
@@ -2160,9 +2156,8 @@ export class RaviClient {
           body: { opportunity, contact, ...(options ?? {}) },
         });
       },
-      /** Move an opportunity to another stage (dry-run by default; --execute writes) */
+      /** Move an opportunity to another stage */
       move: async (opportunity: string, stage: string, options?: {
-        execute?: boolean;
         lostReason?: string;
       }): Promise<CrmOpportunityMoveReturn> => {
         return this.transport.call({
@@ -2189,7 +2184,7 @@ export class RaviClient {
       });
     },
     pipeline: {
-      /** Create a CRM pipeline (dry-run by default; --execute writes) */
+      /** Create a CRM pipeline */
       create: async (name: string, options?: {
         analystAvoid?: string;
         analystMentions?: string;
@@ -2197,7 +2192,6 @@ export class RaviClient {
         consumer?: string;
         default?: boolean;
         entityType?: string;
-        execute?: boolean;
         hitlRequiredWhen?: string;
         idempotencyKey?: string;
         messagePrefix?: string;
@@ -3036,6 +3030,7 @@ export class RaviClient {
         caption?: string;
         channel?: string;
         cols?: string;
+        execute?: boolean;
         fit?: string;
         fuzz?: string;
         mode?: string;
@@ -3283,13 +3278,11 @@ export class RaviClient {
       });
     },
     /** Delete an instance (soft-delete, recoverable) */
-    delete: async (name: string, options?: {
-      execute?: boolean;
-    }): Promise<InstancesDeleteReturn> => {
+    delete: async (name: string): Promise<InstancesDeleteReturn> => {
       return this.transport.call({
         groupSegments: ["instances"],
         command: "delete",
-        body: { name, ...(options ?? {}) },
+        body: { name },
       });
     },
     /** List soft-deleted instances */
@@ -3425,7 +3418,6 @@ export class RaviClient {
       /** Remove a route (soft-delete, recoverable) */
       remove: async (name: string, pattern: string, options?: {
         allowRuntimeMismatch?: boolean;
-        execute?: boolean;
       }): Promise<InstancesRoutesRemoveReturn> => {
         return this.transport.call({
           groupSegments: ["instances","routes"],
@@ -4469,7 +4461,6 @@ export class RaviClient {
       },
       /** Import multiple cheap resources into a project */
       import: async (project: string, options?: {
-        execute?: boolean;
         group?: string[];
         meta?: string;
         repo?: string[];
@@ -7493,7 +7484,6 @@ export class RaviClient {
   readonly transcribe = {
     /** Transcribe a local audio file */
     file: async (path: string, options?: {
-      execute?: boolean;
       lang?: string;
     }): Promise<TranscribeFileReturn> => {
       return this.transport.call({
@@ -7603,7 +7593,6 @@ export class RaviClient {
   readonly video = {
     /** Analyze a video (YouTube URL or local file) and save to markdown */
     analyze: async (url: string, options?: {
-      execute?: boolean;
       forceAnalyze?: boolean;
       output?: string;
       prompt?: string;
