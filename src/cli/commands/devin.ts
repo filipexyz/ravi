@@ -897,17 +897,26 @@ export class DevinSessionCommands {
     return payload;
   }
 
-  // Declared UNBRAKED: archive is a reversible organizational state change on
-  // an already-idle session — it consumes no ACUs and produces no new work on
-  // the external service, so no --execute gate is added.
+  // Archiving mutates the external Devin service and has no inverse on this
+  // CLI surface, so confirmation applies even though it starts no new work.
   @Command({ name: "archive", description: "Archive a Devin session" })
   @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "archive", risk: "medium" })
   async archive(
     @Arg("session", { description: "Local id or devin-* id" }) identifier: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually archive the external session; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const devinId = resolveDevinId("devin sessions archive", identifier, asJson);
+    if (execute !== true) {
+      contractDryRun("devin sessions archive", { action: "archive-session", devinId }, { asJson });
+    }
+
     const client = createDevinClientFromEnv();
-    const remote = await client.archiveSession(resolveDevinId("devin sessions archive", identifier, asJson));
+    const remote = await client.archiveSession(devinId);
     const session = upsertDevinSession(remote, { lastSyncedAt: Date.now() });
     const payload = { status: "archived", session: summarizeSession(session) };
     if (asJson) {

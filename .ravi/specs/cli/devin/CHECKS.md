@@ -22,7 +22,11 @@
   `DEVIN_SESSION_NOT_FOUND` and suggestions from the local cache.
 - `devin sessions list --fields a,b --json` MUST narrow `items` and keep the
   `sessions` alias identical to `items`.
-- `terminate`, `archive` and `sync` MUST keep working WITHOUT `--execute` —
-  their unbraked rationale is declared in code.
+- `terminate` and `sync` MUST keep working WITHOUT `--execute`; `archive`
+  without `--execute` MUST exit 3 before client, provider or cache effects,
+  and `archive --execute` MUST run.
+- `insights --generate` without `--execute` MUST exit 3 before client,
+  provider or cache effects; plain `insights` MUST keep reading and refreshing
+  the local cache without confirmation, and `--generate --execute` MUST run.
 - `bun test src/cli/commands/devin.test.ts` SHOULD pass after any change to
   the devin CLI contract surface.

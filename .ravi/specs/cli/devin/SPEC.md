@@ -26,9 +26,10 @@ normative: true
 
 Make `ravi devin sessions` (and `devin auth`) reliable for agent consumers
 under the agent-first contract defined by `cli`. Devin is a PAID external
-service: `create` starts a billable remote session and `send` steers billable
-work, so both are braked. `sync` and `archive` are declared unbraked, and
-`terminate` is unbraked as a cost/damage stop. Only
+service: `create` starts a billable remote session, `send` steers billable
+work, and `archive` changes remote state without a CLI inverse, so all three
+are braked. `sync` stays unbraked, and `terminate` is unbraked as a
+cost/damage stop. Only
 `src/cli/commands/devin.ts` implements this contract — the `src/devin/`
 runtime is out of scope.
 
@@ -45,7 +46,7 @@ runtime is out of scope.
 4. The create plan MUST NEVER echo session-secret VALUES — only
    `sessionSecretCount`; the prompt is reported as `promptChars` +
    `promptPreview` (200 chars).
-5. `--execute` MUST be the LAST declared option of both braked ops.
+5. `--execute` MUST be the LAST declared option of every braked op.
 6. Every op that resolves a session identifier (`show`, `messages`, `send`,
    `attachments`, `insights`, `sync`, `terminate`, `archive`) MUST exit 1 with
    `DEVIN_SESSION_NOT_FOUND` on unknown ids, carrying suggestions from the
@@ -53,8 +54,12 @@ runtime is out of scope.
    envelope. `send` performs this validation BEFORE its brake.
 7. `devin sessions list` MUST accept `--fields a,b,c`; `items` and the legacy
    `sessions` alias MUST carry the same projected rows.
-8. `sync`, `archive` and `terminate` stay unbraked with declared rationale
-   (see classification).
+8. `sync` and `terminate` stay unbraked with declared rationale (see
+   classification). `archive` MUST require `--execute` before client creation
+   or provider/cache effects.
+9. `insights --generate` MUST require `--execute` before client construction,
+   provider generation or cache persistence. Plain `insights` remains an
+   immediate provider read plus local cache refresh.
 
 ## Write classification (brake decision per op)
 
@@ -63,9 +68,11 @@ runtime is out of scope.
 | create | starts a billable session on the external paid service | dry-run + `--execute` |
 | send | steers/resumes billable work on the external service | dry-run + `--execute` |
 | terminate | cost/damage stop for a billable session (prox cancel precedent) | not braked (declared) |
-| archive | reversible organizational state on an idle session, no new work | not braked (declared) |
+| archive | external provider state change with no inverse in this CLI | dry-run + `--execute` |
 | sync | reads remote, refreshes LOCAL cache (+ optional local artifact) | not braked (declared) |
-| list/show/messages/attachments/insights/auth check | read-only | not braked |
+| insights | provider read + local cache refresh | not braked |
+| insights --generate | external generation/update + local cache refresh | conditional dry-run + `--execute` |
+| list/show/messages/attachments/auth check | reads | not braked |
 
 ## Official error cases
 
@@ -79,12 +86,12 @@ runtime is out of scope.
 
 `src/plugins/internal/ravi-system/skills/tasks/SKILL.md` (delegation protocol)
 and `docs/task-profiles-catalog-v1.md` reference `ravi devin sessions
-create|send` — both now sit behind the brake, so those flows must add
-`--execute` on the real dispatch (reported to the doc owner; this wave does
-not edit AGENTS.md/CLAUDE.md-level guidance). No dedicated `devin` skill
-ships yet — **skill gap registered**: when created it MUST teach the brake on
-create/send, the unbraked terminate/archive/sync rationale and the not-found
-envelope.
+create|send` — both sit behind the brake, so those flows add `--execute` on
+real dispatch. Plain insights examples remain valid; an example that adds
+`--generate` must also add `--execute`. No dedicated `devin` skill
+ships yet — **skill gap registered**: when created it MUST teach the brakes on
+create/send/archive/insights generation, the unbraked terminate/sync rationale
+and the not-found envelope.
 
 ## Validation
 

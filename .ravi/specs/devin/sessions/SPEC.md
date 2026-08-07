@@ -163,15 +163,15 @@ Artifact provenance MUST include:
 
 Initial commands:
 
-- `ravi devin sessions create --prompt <text> [--title <text>] [--tag <tag>] [--task <id>] [--project <id>] [--prox-run <id>] [--playbook <id>] [--max-acu <n>|--no-max-acu-limit] [--json]`
+- `ravi devin sessions create --prompt <text> [--title <text>] [--tag <tag>] [--task <id>] [--project <id>] [--prox-run <id>] [--playbook <id>] [--max-acu <n>|--no-max-acu-limit] --execute [--json]`
 - `ravi devin sessions list [--status <status>] [--tag <tag>] [--json]`
 - `ravi devin sessions show <local-id|devin-id> [--json]`
 - `ravi devin sessions messages <local-id|devin-id> [--sync] [--json]`
-- `ravi devin sessions send <local-id|devin-id> <message> [--as-user <id>] [--json]`
+- `ravi devin sessions send <local-id|devin-id> <message> [--as-user <id>] --execute [--json]`
 - `ravi devin sessions attachments <local-id|devin-id> [--download] [--json]`
 - `ravi devin sessions sync <local-id|devin-id> [--artifacts] [--json]`
 - `ravi devin sessions terminate <local-id|devin-id>`
-- `ravi devin sessions archive <local-id|devin-id>`
+- `ravi devin sessions archive <local-id|devin-id> --execute`
 - `ravi devin sessions unarchive <local-id|devin-id>`
 
 ## Safety

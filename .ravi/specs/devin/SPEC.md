@@ -109,7 +109,7 @@ The first namespace SHOULD be:
 - `ravi devin sessions attachments`
 - `ravi devin sessions sync`
 - `ravi devin sessions terminate`
-- `ravi devin sessions archive`
+- `ravi devin sessions archive --execute`
 - `ravi devin sessions unarchive`
 
 Later namespaces MAY include:

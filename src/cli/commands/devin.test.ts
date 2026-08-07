@@ -386,10 +386,26 @@ describe("devin sessions agent-first contract", () => {
     expect(payload.sessions).toEqual(payload.items);
   });
 
-  it("archive is declared UNBRAKED: it archives without --execute", async () => {
+  it("archive without --execute is blocked before client, provider, or cache effects", async () => {
     seedSession("devin-abc123");
     const commands = new DevinSessionCommands();
-    const payload = await silenced(() => commands.archive("devin-abc123", true));
+
+    const error = await expectContractError(
+      () => commands.archive("devin-abc123", true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({ action: "archive-session", devinId: "devin-abc123" });
+    expect(clientCreationCount).toBe(0);
+    expect(archiveSessionCalls).toEqual([]);
+    expect(upsertSessionCalls).toEqual([]);
+  });
+
+  it("archive with --execute updates the external session", async () => {
+    seedSession("devin-abc123");
+    const commands = new DevinSessionCommands();
+    const payload = await silenced(() => commands.archive("devin-abc123", true, true));
 
     expect(archiveSessionCalls).toEqual(["devin-abc123"]);
     expect(payload).toMatchObject({ status: "archived" });
