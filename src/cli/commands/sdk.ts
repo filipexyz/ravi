@@ -6,6 +6,7 @@ import { z } from "zod";
 import { Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { getRegistry } from "../registry-snapshot.js";
+import { ContractError, contractFail } from "../agent-contract.js";
 import { emitJson } from "../../sdk/openapi/index.js";
 import { emitAll, computeRegistryHash, compareSdkSource, type EmittedSdk } from "../../sdk/client-codegen/index.js";
 import {
@@ -24,6 +25,11 @@ function writeFileSafe(target: string, body: string): string {
   mkdirSync(dirname(absolute), { recursive: true });
   writeFileSync(absolute, body, "utf8");
   return absolute;
+}
+
+function failSdkCommand(error: unknown): never {
+  if (error instanceof ContractError) throw error;
+  fail(error instanceof Error ? error.message : String(error));
 }
 
 const DEFAULT_CLIENT_OUT_DIR = "packages/ravi-os-sdk/src";
@@ -210,19 +216,28 @@ export class SdkOpenApiCommands {
         liveBytes: live.length,
         storedBytes: stored.length,
       };
+      if (drift) {
+        contractFail(
+          "sdk openapi check",
+          "OPENAPI_DRIFT",
+          `OpenAPI drift detected: ${absolute} differs from the live registry.`,
+          {
+            asJson,
+            details: {
+              ...payload,
+              suggestedAction: "Re-run 'ravi sdk openapi emit --out <path>' to refresh the snapshot",
+            },
+          },
+        );
+      }
       if (asJson) {
         console.log(JSON.stringify(payload, null, 2));
         return payload;
       }
-      if (drift) {
-        console.error(`OpenAPI drift detected: ${absolute} differs from the live registry.`);
-        console.error("Re-run `ravi sdk openapi emit --out <path>` to refresh the snapshot.");
-        process.exit(1);
-      }
       console.log(`OpenAPI snapshot is current: ${absolute}`);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSdkCommand(error);
     }
   }
 }
@@ -320,21 +335,28 @@ export class SdkClientCommands {
         }
       }
       const payload = { dir, drift, files: GENERATED_FILES };
+      if (drift.length > 0) {
+        contractFail(
+          "sdk client check",
+          "SDK_CLIENT_DRIFT",
+          `${drift.length} TypeScript SDK artifact(s) differ from the live registry.`,
+          {
+            asJson,
+            details: {
+              ...payload,
+              suggestedAction: "Re-run 'ravi sdk client generate' to refresh the generated client",
+            },
+          },
+        );
+      }
       if (asJson) {
         console.log(JSON.stringify(payload, null, 2));
         return payload;
       }
-      if (drift.length > 0) {
-        for (const d of drift) {
-          console.error(`SDK drift: ${d.file} — ${d.reason}`);
-        }
-        console.error("Re-run `ravi sdk client generate` to refresh.");
-        process.exit(1);
-      }
       console.log(`SDK client artifacts are current at ${dir}.`);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSdkCommand(error);
     }
   }
 }
@@ -432,21 +454,28 @@ export class SdkSwiftCommands {
         }
       }
       const payload = { dir, drift, files: GENERATED_SWIFT_FILES };
+      if (drift.length > 0) {
+        contractFail(
+          "sdk swift check",
+          "SDK_SWIFT_DRIFT",
+          `${drift.length} Swift SDK artifact(s) differ from the live registry.`,
+          {
+            asJson,
+            details: {
+              ...payload,
+              suggestedAction: "Re-run 'ravi sdk swift generate' to refresh the generated client",
+            },
+          },
+        );
+      }
       if (asJson) {
         console.log(JSON.stringify(payload, null, 2));
         return payload;
       }
-      if (drift.length > 0) {
-        for (const d of drift) {
-          console.error(`Swift SDK drift: ${d.file} — ${d.reason}`);
-        }
-        console.error("Re-run `ravi sdk swift generate` to refresh.");
-        process.exit(1);
-      }
       console.log(`Swift SDK artifacts are current at ${dir}.`);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSdkCommand(error);
     }
   }
 }
