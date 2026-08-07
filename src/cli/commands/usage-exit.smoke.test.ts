@@ -42,6 +42,17 @@ function runCli(
 }
 
 describe("usage exit taxonomy smoke", () => {
+  it("exits 2 with one USAGE_ERROR envelope for an unknown root command", () => {
+    const result = runCli(["task", "list", "--json"], { RAVI_AGENT_ID: undefined });
+    expect(result.status).toBe(2);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      success: false,
+      op: "cli",
+      error: { code: "USAGE_ERROR" },
+    });
+  });
+
   it("exits 2 with the USAGE_ERROR envelope on an unknown flag without agent context", () => {
     const result = runCli(["tasks", "list", "--no-such-flag", "--json"], { RAVI_AGENT_ID: undefined });
     expect(result.status).toBe(2);

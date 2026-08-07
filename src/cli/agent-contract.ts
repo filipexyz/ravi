@@ -175,6 +175,12 @@ export function installUsageContract(program: CommanderCommand, domain: string):
   }
 }
 
+/** Install the same usage taxonomy for errors raised by the CLI root parser. */
+export function installRootUsageContract(program: CommanderCommand): void {
+  program.configureOutput({ outputError: () => {} });
+  program.exitOverride((error) => failUsage(program, error));
+}
+
 function commandTree(root: CommanderCommand): CommanderCommand[] {
   const nodes: CommanderCommand[] = [root];
   for (const child of root.commands) nodes.push(...commandTree(child));
@@ -183,8 +189,9 @@ function commandTree(root: CommanderCommand): CommanderCommand[] {
 
 function failUsage(command: CommanderCommand, error: CommanderError): never {
   if (COMMANDER_PASSTHROUGH_CODES.has(error.code)) process.exit(error.exitCode);
-  const op = opPath(command);
-  const usage = `ravi ${op} ${command.usage()}`.trim();
+  const commandPath = opPath(command);
+  const op = commandPath || "cli";
+  const usage = `ravi ${commandPath ? `${commandPath} ` : ""}${command.usage()}`.trim();
   const acceptedFlags = collectAcceptedFlags(command);
   const acceptedPositionals = collectAcceptedPositionals(command);
   const asJson = wantsJson(command);
@@ -243,7 +250,8 @@ function wantsJson(command: CommanderCommand): boolean {
   // The failing node may not declare --json itself (e.g. an unknown subcommand
   // under the domain root), so fall back to the operands commander already
   // classified.
-  return command.args.includes("--json");
+  if (command.args.includes("--json")) return true;
+  return command.parent === null && process.argv.slice(2).includes("--json");
 }
 
 function bigrams(value: string): string[] {

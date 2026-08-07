@@ -21,6 +21,7 @@ import * as allCommands from "./commands/index.js";
 import {
   ContractError,
   contractFailureOutcome,
+  installRootUsageContract,
   installUsageContract,
   renderContractError,
   unexpectedErrorToContractError,
@@ -311,8 +312,9 @@ program
     );
   });
 
-// Parse and execute
-maybeSuggestKnownRootCommand(process.argv.slice(2), program);
+// Parse and execute. Root parser failures use the same exit-2 contract as
+// migrated domain nodes, including unknown command suggestions.
+installRootUsageContract(program);
 
 void bootstrapCli().catch(async (error: unknown) => {
   if (error instanceof ContractError) {
@@ -358,34 +360,6 @@ async function bootstrapCli(): Promise<void> {
   }
 
   await program.parseAsync();
-}
-
-function maybeSuggestKnownRootCommand(args: string[], command: Command): void {
-  const requested = args[0];
-  if (!requested || requested.startsWith("-")) return;
-
-  const known = rootCommandNames(command);
-  if (known.has(requested)) return;
-
-  const suggestion = resolveKnownRootCommandSuggestion(requested, known);
-  if (!suggestion) return;
-
-  const suggestedArgs = [suggestion, ...args.slice(1)];
-  console.error(`Unknown command: ravi ${requested}`);
-  console.error(`Did you mean: ravi ${suggestedArgs.join(" ")}?`);
-  process.exit(1);
-}
-
-function resolveKnownRootCommandSuggestion(requested: string, known: Set<string>): string | undefined {
-  const explicit: Record<string, string> = {
-    task: "tasks",
-  };
-  const explicitSuggestion = explicit[requested];
-  if (explicitSuggestion && known.has(explicitSuggestion)) return explicitSuggestion;
-
-  const plural = `${requested}s`;
-  if (known.has(plural)) return plural;
-  return undefined;
 }
 
 function rootCommandNames(command: Command): Set<string> {

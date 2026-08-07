@@ -4,7 +4,8 @@
 
 - Every migrated JSON failure has one canonical envelope and the correct
   operation path.
-- Exit `0/1/2/3` survives handler, parser, bootstrap, tool and gateway paths.
+- Exit `0/1/2/3` survives handler, root/domain parser, bootstrap, tool and
+  gateway paths; an unknown root command is `USAGE_ERROR`, exit `2`.
 - Tool and gateway adapters preserve `ContractError`; neither appends a generic
   error nor maps it to HTTP 500.
 - Audit distinguishes `blocked`, `usage_error`, `denied` and `failed`; policy
