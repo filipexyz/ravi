@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -46,6 +47,28 @@ describe("artifact store", () => {
       candidates: [],
     });
     expect(existsSync(dbPath)).toBe(false);
+  });
+
+  it("keeps an existing artifact visible when later artifact tables are absent", () => {
+    const artifact = createArtifact({ kind: "report", title: "Partial schema report" });
+    const db = new Database(join(stateDir!, "ravi.db"));
+    db.exec(`
+      DROP TABLE artifact_version_assets;
+      DROP TABLE artifact_versions;
+      DROP TABLE artifact_events;
+    `);
+    db.close();
+
+    const inspection = inspectArtifactPublishStateReadOnly(artifact.id);
+
+    expect(inspection).toMatchObject({
+      artifactExists: true,
+      versionExists: null,
+      artifact: { id: artifact.id, kind: "report", title: "Partial schema report" },
+      version: null,
+      publishedEvents: [],
+    });
+    expect(inspection.candidates).toContain(artifact.id);
   });
 
   it("creates a generic artifact, stores file blob metadata and indexes lineage", () => {

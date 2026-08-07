@@ -356,6 +356,12 @@ export function inspectArtifactPublishStateReadOnly(
   const db = new Database(dbPath, { readonly: true, create: false });
   try {
     db.exec("PRAGMA busy_timeout = 1000");
+    const tableExists = (tableName: string): boolean =>
+      Boolean(
+        db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName),
+      );
+    if (!tableExists("artifacts")) return empty;
+
     const candidates = (
       db.prepare("SELECT id FROM artifacts ORDER BY updated_at DESC LIMIT 40").all() as Array<{ id: string }>
     ).map((artifact) => artifact.id);
@@ -364,15 +370,16 @@ export function inspectArtifactPublishStateReadOnly(
       | undefined;
     if (!artifactRow) return { ...empty, candidates };
 
-    const versionRow =
-      versionNumber === undefined
+    const versionRow = !tableExists("artifact_versions")
+      ? undefined
+      : versionNumber === undefined
         ? (db
             .prepare("SELECT * FROM artifact_versions WHERE artifact_id = ? ORDER BY version_number DESC LIMIT 1")
             .get(artifactIdValue) as ArtifactVersionRow | undefined)
         : (db
             .prepare("SELECT * FROM artifact_versions WHERE artifact_id = ? AND version_number = ?")
             .get(artifactIdValue, versionNumber) as ArtifactVersionRow | undefined);
-    const versionAssets = versionRow
+    const versionAssets = versionRow && tableExists("artifact_version_assets")
       ? (db
           .prepare(
             `SELECT * FROM artifact_version_assets
@@ -382,15 +389,17 @@ export function inspectArtifactPublishStateReadOnly(
           .all(versionRow.id) as ArtifactVersionAssetRow[]).map(rowToVersionAsset)
       : [];
     const versionExists = versionNumber === undefined ? null : Boolean(versionRow);
-    const publishedEvents = (
-      db
-        .prepare(
-          `SELECT * FROM artifact_events
-           WHERE artifact_id = ? AND event_type = 'published'
-           ORDER BY created_at ASC, id ASC`,
-        )
-        .all(artifactIdValue) as ArtifactEventRow[]
-    ).map(rowToEvent);
+    const publishedEvents = !tableExists("artifact_events")
+      ? []
+      : (
+          db
+            .prepare(
+              `SELECT * FROM artifact_events
+               WHERE artifact_id = ? AND event_type = 'published'
+               ORDER BY created_at ASC, id ASC`,
+            )
+            .all(artifactIdValue) as ArtifactEventRow[]
+        ).map(rowToEvent);
     return {
       artifactExists: true,
       versionExists,
@@ -399,14 +408,6 @@ export function inspectArtifactPublishStateReadOnly(
       publishedEvents,
       candidates,
     };
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      /no such table: (artifacts|artifact_versions|artifact_events)/i.test(error.message)
-    ) {
-      return empty;
-    }
-    throw error;
   } finally {
     db.close();
   }
