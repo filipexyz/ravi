@@ -689,11 +689,47 @@ describe("cron agent-first contract", () => {
     expect(envelope.op).toBe("cron run");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
-    // The plan must show the resolved job and the message that would fire.
+    // The plan identifies the job without exposing the message or shell command.
     const plan = envelope.error.plan as Record<string, unknown>;
     expect(plan.jobId).toBe("cron-1");
     expect(plan.name).toBe("Daily");
-    expect(plan.message).toBe("hello");
+    expect(plan.messageChars).toBe("hello".length);
+    expect(plan.message).toBeUndefined();
+    expect(JSON.stringify(plan)).not.toContain("hello");
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("cron run dry-run never exposes a shell command", async () => {
+    const sentinel = "SENTINEL_CRON_SHELL_COMMAND_DO_NOT_LEAK";
+    cronJob = {
+      id: "cron-shell",
+      name: "Shell job",
+      enabled: true,
+      schedule: { type: "every", every: 60_000 },
+      executionType: "shell",
+      shellCommand: sentinel,
+      message: "",
+      sessionTarget: "main",
+      deleteAfterRun: false,
+      fireCount: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await new CronCommands().run("cron-shell", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const plan = (thrown as InstanceType<typeof ContractError>).details.plan as Record<string, unknown>;
+    expect(plan).toMatchObject({ shellCommandPresent: true, shellCommandChars: sentinel.length });
+    expect(JSON.stringify(plan)).not.toContain(sentinel);
     expect(emitMock).not.toHaveBeenCalled();
   });
 

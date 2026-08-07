@@ -7,7 +7,9 @@
  */
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { ContractError } from "../agent-contract.js";
+import { redactCommandAccessInput } from "../command-access.js";
 import { runWithContext } from "../context.js";
+import { getCommandAccessMetadata } from "../decorators.js";
 
 const originalDefaultMaxAcuLimit = process.env.DEVIN_DEFAULT_MAX_ACU_LIMIT;
 
@@ -290,6 +292,26 @@ describe("Devin negated options", () => {
 // ---------------------------------------------------------------------------
 
 describe("devin sessions agent-first contract", () => {
+  it("create declares audit redactions for prompt and session-secret inputs", () => {
+    const access = getCommandAccessMetadata(DevinSessionCommands).get("create");
+    expect(access?.redactions).toEqual(
+      expect.arrayContaining(["prompt", "promptFile", "secretIds", "sessionSecretRefs", "sessionSecret"]),
+    );
+    expect(
+      redactCommandAccessInput(access!, {
+        prompt: "SENTINEL_DEVIN_PROMPT_DO_NOT_LEAK",
+        sessionSecret: "token=SENTINEL_DEVIN_SESSION_SECRET_DO_NOT_LEAK",
+        sessionSecretRefs: ["token=SENTINEL_DEVIN_SESSION_SECRET_DO_NOT_LEAK"],
+        secretIds: ["SENTINEL_DEVIN_SECRET_ID_DO_NOT_LEAK"],
+      }),
+    ).toEqual({
+      prompt: "[REDACTED]",
+      sessionSecret: "[REDACTED]",
+      sessionSecretRefs: "[REDACTED]",
+      secretIds: "[REDACTED]",
+    });
+  });
+
   it("create without --execute is a dry-run: exit 3 and NO remote session created", async () => {
     const commands = new DevinSessionCommands();
     const error = await expectContractError(
@@ -305,6 +327,30 @@ describe("devin sessions agent-first contract", () => {
       maxAcuLimitSource: "explicit",
       sessionSecretCount: 0,
     });
+    expect(createSessionCalls).toHaveLength(0);
+  });
+
+  it("create dry-run and session-secret format errors never expose session-secret values", async () => {
+    const commands = new DevinSessionCommands();
+    const secret = "SENTINEL_DEVIN_SESSION_SECRET_DO_NOT_LEAK";
+    const args = createArgs(undefined);
+    args[8] = [`token=${secret}`];
+    const dryRun = await expectContractError(() => commands.create(...args), "WRITE_REQUIRES_EXECUTE", 3);
+    expect(dryRun.details.plan).toMatchObject({ sessionSecretCount: 1 });
+    expect(JSON.stringify(dryRun.envelope())).not.toContain(secret);
+
+    const invalid = createArgs(undefined);
+    invalid[8] = [secret];
+    let invalidError: unknown;
+    try {
+      await runWithContext({ sessionKey: "devin-test", sessionName: "devin-test", agentId: "devin-test" }, () =>
+        commands.create(...invalid),
+      );
+    } catch (error) {
+      invalidError = error;
+    }
+    expect(invalidError).toBeInstanceOf(Error);
+    expect((invalidError as Error).message).not.toContain(secret);
     expect(createSessionCalls).toHaveLength(0);
   });
 

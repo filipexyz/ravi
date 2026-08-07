@@ -617,7 +617,11 @@ export class YouTubeCommands {
       // Write brake (Manual v2 7.8): a comment reply is a REAL, externally
       // visible write on YouTube, so dry-run by default and exit 3 before any
       // provider call.
-      contractDryRun("yt reply", { commentId, text, connection: connection ?? "default" }, { asJson });
+      contractDryRun(
+        "yt reply",
+        { commentId, textChars: text.length, connection: connection ?? "default" },
+        { asJson },
+      );
     }
     return this.execute(asJson, () => this.client(connection).replyToComment(commentId, text));
   }
@@ -1087,6 +1091,7 @@ export class YouTubeCommands {
     risk: "high",
     requiresConfirmation: true,
     input: ["id", "title", "description", "tags", "category", "privacy", "connection"],
+    redactions: ["title", "description", "tags"],
   })
   @Returns(videoUpdateReturnSchema)
   async videoUpdate(
@@ -1118,9 +1123,9 @@ export class YouTubeCommands {
         "yt video-update",
         {
           id,
-          title: title ?? null,
-          description: description ?? null,
-          tags: csv(tags) ?? null,
+          titleChars: title?.length ?? 0,
+          descriptionChars: description?.length ?? 0,
+          tagCount: csv(tags)?.length ?? 0,
           categoryId: categoryId ?? null,
           privacyStatus: privacyStatus ?? null,
           connection: connection ?? "default",
@@ -1199,6 +1204,7 @@ export class YouTubeCommands {
     risk: "high",
     requiresConfirmation: true,
     input: ["title", "description", "privacy", "connection"],
+    redactions: ["title", "description"],
   })
   @Returns(playlistCreateReturnSchema)
   async playlistCreate(
@@ -1228,8 +1234,8 @@ export class YouTubeCommands {
       contractDryRun(
         "yt playlist-create",
         {
-          title,
-          description: description ?? null,
+          titleChars: title.length,
+          descriptionChars: description?.length ?? 0,
           privacyStatus: privacyStatus ?? "private",
           connection: connection ?? "default",
         },

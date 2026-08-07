@@ -841,7 +841,13 @@ export class CronCommands {
   }
 
   @Command({ name: "run", description: "Manually run a job (ignores schedule)" })
-  @CommandAccess({ kind: "mutate", resource: "cron", action: "run", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "cron",
+    action: "run",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   @Returns(cronMutationReturnSchema)
   async run(
     @Arg("id", { description: "Job ID" }) id: string,
@@ -860,8 +866,9 @@ export class CronCommands {
     if (execute !== true) {
       // Write brake (Manual v2 7.8): `cron run` fires the REAL job right now,
       // outside its schedule — agent execution (or a shell command) with real
-      // side effects. Dry-run by default: show the resolved job and the
-      // message/command that would fire, exit 3 before emitting the trigger.
+      // side effects. Dry-run by default: show only safe job metadata, never
+      // the message or shell command that would fire, before emitting the
+      // trigger.
       contractDryRun(
         "cron run",
         {
@@ -870,9 +877,12 @@ export class CronCommands {
           executionType: job.executionType,
           schedule: describeSchedule(job.schedule),
           ...(job.executionType === "shell"
-            ? { shellCommand: job.shellCommand ?? null }
+            ? {
+                shellCommandPresent: Boolean(job.shellCommand?.trim()),
+                shellCommandChars: job.shellCommand?.length ?? 0,
+              }
             : {
-                message: job.message,
+                messageChars: job.message?.length ?? 0,
                 agentId: job.agentId ?? getDefaultAgentId(),
                 sessionTarget: job.sessionTarget,
               }),

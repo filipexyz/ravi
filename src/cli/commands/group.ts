@@ -1621,7 +1621,14 @@ export class GroupCommands {
   }
 
   @Command({ name: "join", description: "Join a group via invite link/code" })
-  @CommandAccess({ kind: "mutate", resource: "whatsapp.group", action: "join", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "whatsapp.group",
+    action: "join",
+    risk: "high",
+    redactions: ["code"],
+    requiresConfirmation: true,
+  })
   async join(
     @Arg("code", { description: "Invite code or full link" }) code: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
@@ -1640,7 +1647,7 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group join",
         {
-          code: normalizeGroupInviteCode(code),
+          inviteProvided: Boolean(code.trim()),
           accountId: resolveGroupAccount(account) || null,
         },
         { asJson },

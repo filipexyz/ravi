@@ -298,7 +298,7 @@ function parseSessionSecrets(refs?: string[]): Array<{ key: string; value: strin
   if (!refs?.length) return [];
   return parseStringList(refs).map((ref) => {
     const eqIdx = ref.indexOf("=");
-    if (eqIdx < 1) fail(`Invalid --session-secret format: "${ref}". Expected key=value`);
+    if (eqIdx < 1) fail("Invalid --session-secret format. Expected key=value.");
     return { key: ref.slice(0, eqIdx), value: ref.slice(eqIdx + 1), sensitive: true };
   });
 }
@@ -416,7 +416,27 @@ export class DevinAuthCommands {
 })
 export class DevinSessionCommands {
   @Command({ name: "create", description: "Create a Devin session" })
-  @CommandAccess({ kind: "mutate", resource: "devin.sessions", action: "create", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "devin.sessions",
+    action: "create",
+    risk: "medium",
+    requiresConfirmation: true,
+    redactions: [
+      "prompt",
+      "promptFile",
+      "attachmentUrls",
+      "attachmentUrl",
+      "secretIds",
+      "secret",
+      "sessionSecretRefs",
+      "sessionSecret",
+      "structuredOutputSchema",
+      "createAsUserId",
+      "devinId",
+      "asUser",
+    ],
+  })
   async create(
     @Option({ flags: "--prompt <text>", description: "Prompt for Devin" }) prompt?: string,
     @Option({ flags: "--prompt-file <path>", description: "Read prompt from file" }) promptFile?: string,

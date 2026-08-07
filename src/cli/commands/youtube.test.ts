@@ -73,6 +73,8 @@ describe("YouTubeCommands contract", () => {
         requiresConfirmation: true,
       });
     }
+    expect(byMethod.get("videoUpdate")?.redactions).toEqual(["title", "description", "tags"]);
+    expect(byMethod.get("playlistCreate")?.redactions).toEqual(["title", "description"]);
     for (const method of ["videoDelete", "playlistDelete", "playlistRemove"]) {
       expect(byMethod.get(method)).toMatchObject({
         kind: "mutate",
@@ -169,7 +171,7 @@ describe("YouTubeCommands contract", () => {
 });
 
 describe("yt agent-first contract", () => {
-  it("reply without --execute is a dry-run: exit 3 and NO provider call", async () => {
+  it("reply without --execute is a dry-run without exposing reply text", async () => {
     const replyToComment = mock(async () => ({ success: true as const, replyId: "r1" }));
     const commands = new YouTubeCommands(() => ({ replyToComment }) as unknown as YouTubeClient);
     spyOn(console, "log").mockImplementation(() => {});
@@ -183,10 +185,45 @@ describe("yt agent-first contract", () => {
     expect(error.details.dryRun).toBe(true);
     expect(error.details.plan).toMatchObject({
       commentId: "comment-1",
-      text: "Texto aprovado",
+      textChars: "Texto aprovado".length,
       connection: "brand",
     });
+    expect(JSON.stringify(error.details.plan)).not.toContain("Texto aprovado");
     expect(replyToComment).not.toHaveBeenCalled();
+  });
+
+  it("video-update and playlist-create dry-runs never expose text or descriptions", async () => {
+    const updateVideo = mock(async () => ({ success: true as const, video: {} }));
+    const createPlaylist = mock(async () => ({ success: true as const, playlist: {} }));
+    const commands = new YouTubeCommands(() => ({ updateVideo, createPlaylist }) as unknown as YouTubeClient);
+    const sentinel = "SENTINEL_YT_DESCRIPTION_DO_NOT_LEAK";
+    spyOn(console, "log").mockImplementation(() => {});
+
+    const update = await expectContractError(
+      () =>
+        commands.videoUpdate(
+          "v1",
+          sentinel,
+          sentinel,
+          "one,two",
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    const playlist = await expectContractError(
+      () => commands.playlistCreate(sentinel, sentinel, "private", undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(JSON.stringify(update.details.plan)).not.toContain(sentinel);
+    expect(JSON.stringify(playlist.details.plan)).not.toContain(sentinel);
+    expect(updateVideo).not.toHaveBeenCalled();
+    expect(createPlaylist).not.toHaveBeenCalled();
   });
 
   it("video-delete and playlist mutations are braked before any provider call", async () => {

@@ -603,6 +603,22 @@ describe("whatsapp group write brake", () => {
     }
   });
 
+  it("join dry-run never exposes an invite link or code", async () => {
+    const commands = new GroupCommands();
+    const invite = "https://chat.whatsapp.com/SENTINEL_INVITE_CODE_DO_NOT_LEAK";
+    const error = await expectContractError(
+      () => commands.join(invite, undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    const plan = error.details.plan as Record<string, unknown>;
+    expect(plan).toMatchObject({ inviteProvided: true, accountId: "main" });
+    expect(JSON.stringify(plan)).not.toContain("SENTINEL_INVITE_CODE_DO_NOT_LEAK");
+    expect(JSON.stringify(plan)).not.toContain(invite);
+    expect(joinCalls).toHaveLength(0);
+  });
+
   it("description dry-run exposes only the target, effect and description length", async () => {
     const commands = new GroupCommands();
     const sensitiveDescription = "SENTINEL_GROUP_DESCRIPTION_DO_NOT_LEAK";
