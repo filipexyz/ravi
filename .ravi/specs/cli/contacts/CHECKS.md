@@ -9,9 +9,11 @@
   MUST never be suggested.
 - An invalid flag on any `contacts` op MUST exit 2 with `acceptedFlags` in the
   envelope.
-- `contacts remove`, `contacts block` and `contacts merge` without `--execute`
-  MUST exit 3, MUST report `dryRun: true` with the `plan`, and MUST NOT delete,
-  block or merge anything; with `--execute` the write MUST happen.
+- `contacts remove` and `contacts merge` without `--execute` MUST exit 3,
+  MUST report `dryRun: true` with the `plan`, and MUST NOT delete or merge
+  anything; with `--execute` the write MUST happen.
+- `contacts block` MUST block immediately without `--execute`, remain
+  `kind: "mutate"`, and be reversible via `contacts allow`.
 - `contacts backfill` MUST stay preview-only without `--apply` and MUST keep
   that historical flag name (no rename to `--execute`).
 - A braked op invoked with `RAVI_*` envs present (agent context) MUST still

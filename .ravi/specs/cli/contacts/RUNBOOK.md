@@ -9,12 +9,12 @@
    names similar to what was asked, drawn only from the caller's visible scope.
    Retry with one of them, or widen with `ravi contacts list --json`.
 4. Exit `2`: read `error.acceptedFlags`; the list is authoritative for that op.
-5. Exit `3`: read `error.plan`, confirm the removal/block/merge is intended,
+5. Exit `3`: read `error.plan`, confirm the removal/merge is intended,
    then re-run the same command adding `--execute` (for `backfill`, the
    equivalent confirm flag is `--apply`).
-6. If a remove/block/merge executed without `--execute`, the brake regressed:
-   check the op still calls `contractDryRun` before the service call, and that
-   the registry dispatcher still maps `ContractError.exitCode`.
+6. If remove/merge executed without `--execute`, the brake regressed. If
+   `contacts block` returns exit 3, an obsolete brake was reintroduced; block
+   is immediate containment and reverses through `contacts allow`.
 7. If a not-found inside `timeline|messages|activity|sessions|profile|note|
    metadata` comes back as plain `Error: ...` text, the command's catch lost
    the `rethrowContactCommandError` mapping — see `src/cli/commands/contacts.ts`.
@@ -34,7 +34,7 @@ Live checks against the local CLI (read-only or dry-run; use an isolated
 ```bash
 ravi contacts get nope-999 --json                 # expect exit 1 + suggestions
 ravi contacts list --no-such-flag --json          # expect exit 2 + acceptedFlags
-ravi contacts block <contact-id> --json           # expect exit 3 + dryRun plan
+ravi contacts block <contact-id> --json           # expect exit 0 + immediate block
 ravi contacts merge <src> <dst> --json            # expect exit 3 + dryRun plan
 ravi contacts list --fields id,name --json        # expect compact items
 ```

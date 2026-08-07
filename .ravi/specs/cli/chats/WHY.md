@@ -4,10 +4,9 @@ Chats are the surface agents use to read conversations and to drive reading
 queues (`chats.lists`): observers, CRM enrichment, and human-review flows all
 consume it. Almost everything here is a read or a reversible cursor/config
 write, so braking broadly would put exit-3 friction inside every reading loop
-for no safety gain. The one op that silently mutilates a live queue is
-`chats lists remove` — a chat dropped from a reading list simply stops being
-processed by whoever consumes that queue, and nothing downstream notices. That
-is the op that got the write brake.
+for no safety gain. `chats lists remove` only stamps `removed_at` on the local
+membership, retains cursor history, and is reversed by `lists add`; it therefore
+runs immediately while remaining a `mutate` operation.
 
 Two ops already had their own dry-run discipline before this wave and were
 deliberately NOT renamed to `--execute`:

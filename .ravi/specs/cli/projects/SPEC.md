@@ -31,8 +31,8 @@ groups) reliable for agent consumers under the agent-first contract defined by
 the riskiest mutations, and compact discovery. Projects are the
 alignment/context substrate, but two of its ops launch real execution
 (`workflows start`, `tasks dispatch` — the direct analog of `tasks dispatch`),
-one resets state (`fixtures seed`) and one ingests in bulk
-(`resources import`); those four carry the brake.
+one resets state (`fixtures seed`); those three carry the brake. `resources
+import` only creates normalized local resource links and runs immediately.
 
 ## Invariants
 
@@ -51,19 +51,19 @@ one resets state (`fixtures seed`) and one ingests in bulk
    surface — point to `ravi tasks list`), and `RESOURCE_NOT_FOUND` on
    `resources show` (suggestions from the project's real resource
    ids/labels/locators).
-5. `projects tasks dispatch`, `projects workflows start`,
-   `projects fixtures seed` and `projects resources import` MUST default to
-   dry-run and require `--execute`; the dry-run MUST report `dryRun: true` and
-   the `plan`, and MUST NOT dispatch, start, seed or link anything. Validation
-   (project exists, role/locators parse) happens BEFORE the brake so the plan
-   is trustworthy.
+5. `projects tasks dispatch`, `projects workflows start`, and
+   `projects fixtures seed` MUST default to dry-run and require `--execute`;
+   the dry-run MUST report `dryRun: true` and the `plan`, and MUST NOT dispatch,
+   start, or seed anything. `projects resources import` MUST validate the
+   project and locators, then create its local links immediately without
+   `--execute` while remaining `kind: "mutate"`.
 6. `projects list`, `projects next` and `projects resources list` MUST accept
    `--fields a,b,c` for compact output.
 7. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher —
    the brake exits 3, never a generic `Error: ...` with exit 1.
 8. Unbraked writes (`init`, `create`, `update`, `link`, `workflows attach`,
-   `tasks create`, `tasks attach`, `resources add`) keep their current
+   `tasks create`, `tasks attach`, `resources add`, `resources import`) keep their current
    immediate-write behavior and MUST be listed as unbraked in the shipped
    `projects` skill.
 9. Without `--json`, error output keeps the legacy text path (exit 1), except
@@ -76,7 +76,7 @@ one resets state (`fixtures seed`) and one ingests in bulk
 | tasks dispatch | triggers real agent execution (high) | dry-run + `--execute` |
 | workflows start | starts a real coordinated workflow run (high) | dry-run + `--execute` |
 | fixtures seed | resets + reseeds canonical fixtures (destructive) | dry-run + `--execute` |
-| resources import | bulk ingestion (high-risk) | dry-run + `--execute` |
+| resources import | batch of normalized local links | not braked |
 | init / create / update / link | reversible substrate writes | not braked (declared) |
 | workflows attach / tasks create / tasks attach | reversible links (attach without `--dispatch` plans only) | not braked (declared) |
 | resources add | single reversible link | not braked (declared) |
@@ -104,9 +104,9 @@ suggestions come from `getWorkflowRunDetails(runId).nodes`.
 ## Internal consumers
 
 `src/plugins/internal/ravi-system/skills/projects/SKILL.md` teaches this surface
-and MUST document `--execute` on every braked op (its `workflows start`,
-`tasks dispatch`, `fixtures seed` and `resources import` examples carry the
-flag). `src/projects/fixtures.ts` proofCommands are read-only
+and MUST document `--execute` on every braked op (`workflows start`,
+`tasks dispatch`, and `fixtures seed`) while teaching `resources import`
+without the flag. `src/projects/fixtures.ts` proofCommands are read-only
 (`projects status|show`, `tasks show`) and are not affected by the brake.
 Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
 `acceptedFlags`.

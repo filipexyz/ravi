@@ -2,12 +2,14 @@
 
 Routes are where a config mistake becomes a live-conversation mistake: the
 resolver picks the winning route for every inbound message, so a stray
-`routes remove` does not just delete a row — it silently hands an active chat
-to a different agent (or to the instance default). `instances delete` unhooks a
-whole connected account, and `pending reject` discards a review entry that has
-no restore path. Those three got the write brake. Everything else stays
-immediate: `routes add`/`set` echo their live effect and clean conflicting
-sessions on purpose, `enable`/`disable`/`restore` are reversible pairs, and
+`routes remove` does not just delete a row — it can hand an active chat to a
+different agent (or to the instance default). The mutation remains high-impact,
+but both route and instance deletion are local soft-deletes with explicit
+restore commands, so a second identical call adds friction rather than safety.
+`pending reject` discards a review entry with no restore path and keeps the
+write brake. Everything else stays immediate: `routes add`/`set` echo their
+live effect and clean conflicting sessions on purpose, `enable`/`disable`/
+`restore` are reversible pairs, and
 `connect` is an interactive QR pairing with a human watching the terminal —
 braking it would only add friction to an already-supervised act.
 

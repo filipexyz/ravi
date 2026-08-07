@@ -12,11 +12,10 @@
   `CONTACT_NOT_FOUND` and MUST NOT carry suggestions — contacts are visibility-
   scoped in their own domain and the envelope only points to
   `ravi contacts list`.
-- `chats lists remove` without `--execute` MUST exit 3, MUST report
-  `dryRun: true` with the removal `plan` (list id, list name, chat id), and
-  MUST NOT deactivate the membership; with `--execute` the write MUST happen.
-- `chats lists remove` MUST resolve (and possibly fail on) the list and chat
-  refs BEFORE the brake, so a dry-run of a bad ref exits 1, not 3.
+- `chats lists remove` MUST deactivate the local membership immediately without
+  `--execute`, retain cursor history, and remain authorized as `kind: "mutate"`.
+- `chats lists remove` MUST resolve list and chat refs before writing, so a bad
+  ref exits 1 without changing membership state.
 - `chats backfill-provider-timestamps` without `--apply` MUST remain a dry-run
   that writes nothing, and its flag MUST NOT be renamed to `--execute`.
 - `chats lists recompute` MUST stay blocked by the selector safety gate for
@@ -26,8 +25,8 @@
   and `chats lists members <list> --fields a,b,c --json` MUST return items
   containing only the requested top-level fields.
 - Unbraked writes declared in the spec (`ensure`, `messages create`,
-  `lists create`, `lists add`, `lists mark-read`, `delta --mark-read`) MUST
-  keep immediate-write behavior.
+  `lists create`, `lists add`, `lists remove`, `lists mark-read`, `delta
+  --mark-read`) MUST keep immediate-write behavior.
 - A `ContractError` thrown inside `resolveReadingList`'s try/catch fallback
   MUST be rethrown untouched (never flattened into a legacy `fail()`).
 - `bun test src/cli/commands/chats.test.ts` SHOULD pass after any change to the

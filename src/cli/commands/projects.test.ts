@@ -1016,7 +1016,6 @@ describe("ProjectCommands", () => {
         "substrate",
         '{"lane":"core"}',
         true,
-        true,
       );
     } finally {
       console.log = originalLog;
@@ -1132,10 +1131,12 @@ describe("projects agent-first contract", () => {
     expect(seedFixtureCalls).toHaveLength(0);
   });
 
-  it("blocks projects resources import without --execute (dry-run, exit 3, no link writes)", async () => {
+  it("imports project resources immediately without --execute", () => {
     const commands = new ProjectResourceCommands();
-    const error = await expectContractError(() =>
-      commands.import(
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const payload = commands.import(
         "ops-cadence",
         undefined,
         undefined,
@@ -1144,14 +1145,17 @@ describe("projects agent-first contract", () => {
         undefined,
         undefined,
         true,
-      ),
-    );
-    expect(error.exitCode).toBe(3);
-    const envelope = error.envelope();
-    expect(envelope.op).toBe("projects resources import");
-    const plan = envelope.error.plan as Record<string, unknown>;
-    expect(plan.total).toBe(1);
-    expect(linkProjectCalls).toHaveLength(0);
+      );
+      expect(payload.total).toBe(1);
+    } finally {
+      console.log = originalLog;
+    }
+    expect(linkProjectCalls).toHaveLength(1);
+    expect(linkProjectCalls[0]).toMatchObject({
+      projectRef: "ops-cadence",
+      assetType: "resource",
+      assetId: "https://docs.example.com/runbook",
+    });
   });
 
   it("performs the dispatch when --execute is passed", async () => {

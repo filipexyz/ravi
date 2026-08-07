@@ -1,10 +1,10 @@
 # Contacts agent-first CLI contract / WHY
 
-Contacts are the gate between the outside world and the bot: `block` silences a
-real person on a live channel, `remove` deletes the canonical record, and
-`merge` collapses two identities and deletes the source — none of them have a
-clean reverse path once messages start routing differently. Those three got the
-write brake. The rest of the surface (`add`, `allow`, `approve`, `set`,
+Contacts are the gate between the outside world and the bot. `remove` deletes
+the canonical record and `merge` collapses two identities and deletes the
+source, so those two keep the write brake. `block` is a reversible containment
+action (`allow` is its inverse) and delaying it can prolong unwanted traffic,
+so it runs immediately. The rest of the surface (`add`, `allow`, `approve`, `set`,
 `tag`/`untag`, `link`/`unlink`, `note`, `metadata set/remove`) stays immediate:
 each is either additive or has an obvious inverse, and braking the intake loop
 would put exit-3 friction inside every approval flow. `backfill` already

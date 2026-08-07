@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns, Scope } from "../decorators.js";
 import { fail } from "../context.js";
-import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   changedEntityReturnSchema,
@@ -248,10 +248,6 @@ function assertValidPipelineMetadata(metadata: Record<string, unknown>, context:
 }
 
 const PIPELINE_CREATE_HELP_AFTER = `
-WRITE BRAKE (Manual v2): this command is DRY-RUN BY DEFAULT. Without --execute
-it prints the planned input and exits 3 (blocked by policy — nothing is
-written). Pass --execute to perform the real write (exit 0 on success).
-
 The structured flags below map onto pipeline.metadata canonical schema fields.
 All groups optional — pipelines without these fields keep working identically
 to legacy. Validate via: ravi crm pipeline validate <id>
@@ -1271,7 +1267,7 @@ export class CrmPipelineCommands {
   @Scope("writeContacts")
   @Command({
     name: "create",
-    description: "Create a CRM pipeline (dry-run by default; --execute writes)",
+    description: "Create a CRM pipeline",
     helpAfter: PIPELINE_CREATE_HELP_AFTER,
   })
   @CommandAccess({ kind: "mutate", resource: "crm.pipeline", action: "create", risk: "medium" })
@@ -1287,11 +1283,6 @@ export class CrmPipelineCommands {
     })
     metadataJson?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({
-      flags: "--execute",
-      description: "Actually create the pipeline; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
     @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated create attempts" })
     idempotencyKey?: string,
     @Option({ flags: "--objetivo <text>", description: "One-paragraph pipeline purpose" })
@@ -1369,20 +1360,6 @@ export class CrmPipelineCommands {
     });
     if (Object.keys(metadata).length > 0) {
       assertValidPipelineMetadata(metadata, "crm pipeline create");
-    }
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): dry-run by default, exit 3 before any write.
-      contractDryRun(
-        "crm pipeline create",
-        {
-          name,
-          entityType,
-          isDefault: isDefault === true,
-          metadata: Object.keys(metadata).length > 0 ? metadata : null,
-          idempotencyKey,
-        },
-        { asJson },
-      );
     }
     const pipeline = createCrmPipeline({
       name,
@@ -2167,7 +2144,7 @@ export class CrmOpportunityCommands {
   }
 
   @Scope("writeContacts")
-  @Command({ name: "create", description: "Create a CRM opportunity (dry-run by default; --execute writes)" })
+  @Command({ name: "create", description: "Create a CRM opportunity" })
   @CommandAccess({ kind: "mutate", resource: "crm.opportunity", action: "create", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   create(
@@ -2180,11 +2157,6 @@ export class CrmOpportunityCommands {
     @Option({ flags: "--currency <code>", description: "Currency (default: BRL)" }) currency?: string,
     @Option({ flags: "--owner <type:id>", description: "Owner, e.g. agent:main" }) owner?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({
-      flags: "--execute",
-      description: "Actually create the opportunity; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
     @Option({ flags: "--idempotency-key <key>", description: "Deduplicate repeated opportunity creation" })
     idempotencyKey?: string,
   ) {
@@ -2203,7 +2175,6 @@ export class CrmOpportunityCommands {
             "--currency",
             "--owner",
             "--json",
-            "--execute",
             "--idempotency-key",
           ],
         },
@@ -2220,10 +2191,6 @@ export class CrmOpportunityCommands {
       ...parseOwner(owner),
       idempotencyKey,
     };
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): dry-run by default, exit 3 before any write.
-      contractDryRun("crm opportunity create", createInput, { asJson });
-    }
     const opportunity = createCrmOpportunity({
       ...createInput,
       source: "cli",
@@ -2239,24 +2206,15 @@ export class CrmOpportunityCommands {
   }
 
   @Scope("writeContacts")
-  @Command({ name: "move", description: "Move an opportunity to another stage (dry-run by default; --execute writes)" })
-  @CommandAccess({ kind: "mutate", resource: "crm.opportunity", action: "move", risk: "high" })
+  @Command({ name: "move", description: "Move an opportunity to another stage" })
+  @CommandAccess({ kind: "mutate", resource: "crm.opportunity", action: "move", risk: "medium" })
   @Returns(changedEntityReturnSchema)
   move(
     @Arg("opportunity", { description: "CRM opportunity ID" }) opportunityId: string,
     @Arg("stage", { description: "Pipeline stage key or ID" }) stageRef: string,
     @Option({ flags: "--lost-reason <text>", description: "Lost reason when moving to lost" }) lostReason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({
-      flags: "--execute",
-      description: "Actually move the opportunity; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
   ) {
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): dry-run by default, exit 3 before any write.
-      contractDryRun("crm opportunity move", { opportunityId, stageRef, lostReason }, { asJson });
-    }
     const opportunity = moveCrmOpportunityStage({
       opportunityId,
       stageRef,

@@ -889,7 +889,7 @@ describe("chats agent-first contract", () => {
     expect(envelope.error.suggestedAction).toContain("ravi contacts list");
   });
 
-  it("blocks chats lists remove without --execute (dry-run, exit 3, no write)", () => {
+  it("removes a reading-list member immediately without --execute", () => {
     const chat = dbUpsertChat({
       channel: "whatsapp",
       instanceId: "instance-1",
@@ -907,21 +907,14 @@ describe("chats agent-first contract", () => {
     );
     expect(dbListChatReadingListMembers({ listId }).total).toBe(1);
 
-    const thrown = catchContractError(() =>
+    const payload = captureJson(() =>
       runWithContext({}, () => lists.remove("brake-queue", chat.id, undefined, undefined, true, "system:ravi")),
     );
-    expect(thrown).toBeInstanceOf(ContractError);
-    const contractError = thrown as InstanceType<typeof ContractError>;
-    expect(contractError.exitCode).toBe(3);
-    const envelope = contractError.envelope();
-    expect(envelope.op).toBe("chats lists remove");
-    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    expect(envelope.error.dryRun).toBe(true);
-    expect((envelope.error.plan as Record<string, unknown>).chat).toBe(chat.id);
-    expect(dbListChatReadingListMembers({ listId }).total).toBe(1);
+    expect(payload.removed).toBe(true);
+    expect(dbListChatReadingListMembers({ listId }).total).toBe(0);
   });
 
-  it("removes the member when chats lists remove carries --execute", () => {
+  it("reports an already inactive reading-list membership without a confirmation loop", () => {
     const chat = dbUpsertChat({
       channel: "whatsapp",
       instanceId: "instance-1",
@@ -937,10 +930,9 @@ describe("chats agent-first contract", () => {
     );
     expect(dbListChatReadingListMembers({ listId }).total).toBe(1);
 
-    const payload = captureJson(() =>
-      lists.remove("exec-queue", chat.id, undefined, undefined, true, "system:ravi", true),
-    );
-    expect(payload.removed).toBe(true);
+    captureJson(() => lists.remove("exec-queue", chat.id, undefined, undefined, true, "system:ravi"));
+    const payload = captureJson(() => lists.remove("exec-queue", chat.id, undefined, undefined, true, "system:ravi"));
+    expect(payload.removed).toBe(false);
     expect(dbListChatReadingListMembers({ listId }).total).toBe(0);
   });
 

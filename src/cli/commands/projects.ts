@@ -1657,7 +1657,7 @@ export class ProjectResourceCommands {
   }
 
   @Command({ name: "import", description: "Import multiple cheap resources into a project" })
-  @CommandAccess({ kind: "mutate", resource: "projects.resources", action: "import", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "projects.resources", action: "import", risk: "medium" })
   @Returns(projectResourcesImportReturnSchema)
   import(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
@@ -1672,11 +1672,6 @@ export class ProjectResourceCommands {
     @Option({ flags: "--meta <json>", description: "Common JSON metadata merged into every imported resource" })
     metadataJson?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({
-      flags: "--execute",
-      description: "Actually import the resources; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
   ) {
     try {
       const queue = [
@@ -1707,24 +1702,6 @@ export class ProjectResourceCommands {
         }
         seen.add(dedupeKey);
         resolvedEntries.push(resolved);
-      }
-
-      if (execute !== true) {
-        // Write brake (Manual v2 7.8): bulk ingestion is high-risk, so dry-run
-        // by default and exit 3 before any link is written.
-        contractDryRun(
-          "projects resources import",
-          {
-            projectRef: details.project.slug,
-            total: resolvedEntries.length,
-            resources: resolvedEntries.map((resolved) => ({
-              type: resolved.resourceType,
-              locator: resolved.assetId,
-            })),
-            role: role?.trim() || null,
-          },
-          { asJson },
-        );
       }
 
       const imported: ProjectResourceLink[] = [];

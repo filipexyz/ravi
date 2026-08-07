@@ -600,24 +600,9 @@ describe("instances/routes agent-first contract", () => {
     return thrown;
   }
 
-  it("blocks instances delete without --execute (dry-run, exit 3, no write)", () => {
-    const thrown = captureThrown(() => new InstancesCommands().delete("main", true));
-
-    expect(thrown).toBeInstanceOf(ContractError);
-    const contractError = thrown as InstanceType<typeof ContractError>;
-    expect(contractError.exitCode).toBe(3);
-    const envelope = contractError.envelope();
-    expect(envelope.op).toBe("instances delete");
-    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    expect(envelope.error.dryRun).toBe(true);
-    expect((envelope.error.plan as Record<string, unknown>).name).toBe("main");
-    expect(deleteInstanceCalls).toHaveLength(0);
-    expect(instanceNames.has("main")).toBe(true);
-  });
-
-  it("soft-deletes the instance with --execute", () => {
+  it("soft-deletes the instance immediately without --execute", () => {
     const payload = captureJson(() => {
-      new InstancesCommands().delete("main", true, true);
+      new InstancesCommands().delete("main", true);
     });
 
     expect(payload.status).toBe("deleted");
@@ -657,29 +642,11 @@ describe("instances/routes agent-first contract", () => {
     expect(routes).toHaveLength(1);
   });
 
-  it("blocks instances routes remove without --execute (dry-run, exit 3, no write)", () => {
+  it("soft-deletes an instance route immediately without --execute", () => {
     routes = [{ id: 1, accountId: "main", pattern: "5511*", agent: "sales", priority: 7, channel: "whatsapp" }];
 
-    const thrown = captureThrown(() => new InstancesRoutesCommands().remove("main", "5511*", undefined, true));
-
-    expect(thrown).toBeInstanceOf(ContractError);
-    const contractError = thrown as InstanceType<typeof ContractError>;
-    expect(contractError.exitCode).toBe(3);
-    const envelope = contractError.envelope();
-    expect(envelope.op).toBe("instances routes remove");
-    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    const plan = envelope.error.plan as Record<string, unknown>;
-    expect(plan.instance).toBe("main");
-    expect(plan.pattern).toBe("5511*");
-    expect(plan.agent).toBe("sales");
-    expect(routes).toHaveLength(1);
-  });
-
-  it("removes the route with --execute", () => {
-    routes = [{ id: 1, accountId: "main", pattern: "5511*", agent: "sales" }];
-
     const payload = captureJson(() => {
-      new InstancesRoutesCommands().remove("main", "5511*", undefined, true, true);
+      new InstancesRoutesCommands().remove("main", "5511*", undefined, true);
     });
 
     expect(payload.status).toBe("removed");

@@ -34,10 +34,10 @@ Make the instance/routing surface (`ravi instances`, `ravi routes`,
 `ravi instances routes`, `ravi instances pending` — all living in
 `src/cli/commands/instances.ts`) reliable for agent consumers under the
 agent-first contract defined by `cli`: typed error envelopes, the 0/1/2/3
-exit taxonomy, a write brake on the destructive-flagged mutations, and compact
-discovery. Routes decide which agent answers live traffic, so removing one
-silently reroutes real conversations — that is why `routes remove` is braked
-even though it is a recoverable soft-delete.
+exit taxonomy, risk-proportional confirmation, and compact discovery. Instance
+and route deletion are recoverable local soft-deletes, so they execute in one
+call; the runtime-target guard still prevents mutations against the wrong live
+bundle/database.
 
 ## Invariants
 
@@ -55,17 +55,16 @@ even though it is a recoverable soft-delete.
    MUST exit 1 with `ROUTE_NOT_FOUND` and up to 3 `suggestions` from that
    instance's real route patterns; `restore` variants suggest from the deleted
    records instead.
-5. `instances delete`, `instances routes remove` and `instances pending reject`
-   MUST default to dry-run and require `--execute`; the dry-run MUST report
-   `dryRun: true` and a `plan` showing the resolved target (instance for
-   delete; pattern + instance + agent for route remove; resolved pending entry
-   for reject), and MUST NOT write anything. Validation (instance/route
-   resolution and the runtime-mismatch check) runs BEFORE the brake; the brake
-   fires BEFORE any write or config-changed emission.
+5. `instances delete` and `instances routes remove` MUST execute immediately
+   without `--execute`: both are local soft-deletes with explicit restore
+   commands. Resolution and the runtime-mismatch check MUST still run before
+   the write. `instances pending reject` has no restore path and MUST retain
+   dry-run + `--execute`, with its resolved pending entry in the plan.
 6. Unbraked writes keep immediate-write behavior and MUST be listed as unbraked
    in the shipped skills: `create`, `set`, `enable`, `disable`, `restore`,
-   `disconnect`, `connect` (interactive QR pairing — human in the loop),
-   `routes add`, `routes set`, `routes restore`, `pending approve`.
+   `disconnect`, `delete`, `connect` (interactive QR pairing — human in the
+   loop), `routes add`, `routes set`, `routes remove`, `routes restore`,
+   `pending approve`.
 7. `instances list` and `routes list` MUST accept `--fields a,b,c`; the
    projection MUST apply to both duplicated payload arrays (`items` +
    `instances` / `items` + `routes`).
@@ -78,8 +77,8 @@ even though it is a recoverable soft-delete.
 
 | op | class | brake |
 |---|---|---|
-| instances delete | destructive-flagged (soft-delete, restorable) | dry-run + `--execute` |
-| instances routes remove | destructive-flagged; silently reroutes live traffic | dry-run + `--execute` |
+| instances delete | local soft-delete; `instances restore` is the inverse | not braked |
+| instances routes remove | local soft-delete; `routes restore` is the inverse; live impact remains high | not braked |
 | instances pending reject | destructive (discards pending entry, no restore path) | dry-run + `--execute` |
 | create / set / enable / disable / restore / disconnect | reversible config | not braked (declared) |
 | connect | interactive QR pairing, human in the loop | not braked (declared) |
@@ -99,9 +98,9 @@ even though it is a recoverable soft-delete.
 
 `src/plugins/internal/ravi-system/skills/instances/SKILL.md` and
 `.../skills/routes/SKILL.md` teach this surface and MUST document `--execute`
-on every braked op while keeping `instances routes add` examples brake-free.
-The `architect` skill's teardown recipe carries `--execute` on its
-`instances routes remove` step. `docs/cli/overview.mdx`,
+only on `instances pending reject`; delete/route-remove examples stay
+brake-free. The `architect` skill's teardown recipe must likewise remove the
+obsolete flag from `instances routes remove`. `docs/cli/overview.mdx`,
 `docs/guides/instances.mdx`, `docs/start/configuration.mdx` and
 `docs/plan-instances.md` teach the same flags. Runtime consumers resolve routes
 through `src/router` (`matchRoute`), not through the CLI, so the brake does not
@@ -115,8 +114,8 @@ affect live message routing.
   `instances show nope --json` → `INSTANCE_NOT_FOUND`, exit 1 with suggestions;
   `routes show main nope --json` → `ROUTE_NOT_FOUND`, exit 1;
   `instances list --no-such-flag --json` → `USAGE_ERROR`, exit 2;
-  `instances routes remove main "<pattern>" --json` → exit 3 and the route
-  still listed; with `--execute` → removed; `routes list --json --fields
+  `instances routes remove main "<pattern>" --json` → exit 0 and the route is
+  soft-deleted; `routes list --json --fields
   pattern,agent` narrows items.
 
 ## Known Failure Modes
@@ -129,9 +128,8 @@ affect live message routing.
 - `instances disable` with an unknown target is NOT a not-found: it registers
   the target as an ignored omni instanceId (by design). Mapping it to
   `INSTANCE_NOT_FOUND` would break the ignore workflow.
-- The brake in `routes remove` must fire after `assertInstanceMutationRuntime`;
-  braking before it hides a runtime split behind exit 3 and lets `--execute`
-  mutate the wrong database.
+- `routes remove` MUST run `assertInstanceMutationRuntime` before the local
+  soft-delete so a runtime split cannot mutate the wrong database.
 - `routes.test.ts` mocks `../context.js` spreading the real module; the mock
   MUST still override `hasContext: () => true` or the contract helpers call
   `process.exit` inside tests.

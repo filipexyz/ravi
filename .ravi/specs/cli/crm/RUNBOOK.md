@@ -6,16 +6,14 @@
 2. Reproduce the failing call with `--json` and read `error.code` before
    anything else; the code, not the message, is the branch point.
 3. Check the exit code against the taxonomy: `1` the entity or provider failed,
-   `2` the call itself was malformed, `3` the write brake stopped it.
+   `2` the call itself was malformed, `3` a global policy brake stopped it.
 4. On exit 1, read `error.suggestions` — the op already looked for similar
    entities, so a retry with a suggestion is usually the fix.
 5. On exit 2, read `error.acceptedFlags`; the flag set is authoritative for that
    op and is cheaper than re-reading help.
-6. On exit 3, read `error.plan` to confirm the write is the one intended, then
-   re-run the same command adding `--execute`.
-7. If a write executed without `--execute`, the brake regressed: check that the
-   op still calls `contractDryRun` (from `src/cli/agent-contract.ts`) before the
-   service call.
+6. `pipeline create`, `opportunity create`, and `opportunity move` are immediate
+   local mutations. If any returns exit 3, an obsolete domain brake was
+   reintroduced; verify the command no longer declares `--execute`.
 
 ## Validation
 
@@ -29,6 +27,6 @@ Live checks against the local CLI (read-only or dry-run; use an isolated
 ```bash
 ravi crm pipeline show unknown-id --json          # expect exit 1 + suggestions
 ravi crm board --no-such-flag --json              # expect exit 2 + acceptedFlags
-ravi crm pipeline create "X" --json               # expect exit 3 + dryRun plan
+ravi crm pipeline create "X" --json               # expect exit 0 + created pipeline
 ravi crm pipeline list --fields id,name --json    # expect compact items
 ```

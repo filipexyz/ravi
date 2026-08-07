@@ -6,11 +6,10 @@ missing entity from a bad flag without parsing prose; exit codes only said
 "worked" or "did not work"; and every write executed on the first try, so a
 misunderstood command mutated real records with no chance to review.
 
-The contract fixes the three at once: errors become a typed envelope the caller
-can branch on, exit codes separate not-found (1) from usage (2) from a policy
-brake (3), and braked writes default to a dry-run that prints the plan plus the
-literal instruction to re-run with `--execute`. Exit 3 is deliberately not an
-error — it is the system refusing to write until the caller confirms.
+The contract makes errors typed, separates not-found (1), usage (2), and policy
+blocks (3), and applies confirmation only when the actual effect warrants it.
+CRM pipeline/opportunity creation and stage movement are routine internal
+persistence, so they execute in one call and remain permissioned mutations.
 
 Measured on a 270-execution benchmark across three domains: unsafe writes went
 from 27/27 executed to 0/27, task completion held (86.1% to 86.7%), and
@@ -28,6 +27,5 @@ Decisions:
   (`contractFail`, `contractDryRun`, `installUsageContract(program, domain)`)
   instead of a per-domain copy, so sibling domains migrate without duplicating
   the contract layer.
-- `pipeline set` and the `task`/`fact`/`contact`/`account` writes stay unbraked
-  in this wave to keep the change minimal and reviewable; they are declared debt
-  in the spec and the skill lists them explicitly as unbraked.
+- `pipeline`, `opportunity`, `task`, `fact`, `contact`, and `account` writes are
+  local CRM persistence and stay unbraked under the global risk policy.

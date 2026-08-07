@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
-import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination } from "../pagination.js";
 import { jsonObjectSchema, strictCliOffsetPaginationSchema } from "../return-schemas.js";
@@ -1173,7 +1173,7 @@ FONTES
 
   @Scope("admin")
   @Command({ name: "remove", description: "Remove a chat from a reading list without deleting cursor history" })
-  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "remove", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "chats.lists", action: "remove", risk: "medium" })
   remove(
     @Arg("list", { description: "List id or name" }) listRef: string,
     @Arg("chat", { description: "Chat id, phone, group id, or normalized chat id" }) chatRef: string,
@@ -1181,27 +1181,9 @@ FONTES
     @Option({ flags: "--channel <channel>", description: "Resolve chat within a channel" }) channel?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--owner <type:id>", description: "Owner scope when resolving list by name" }) owner?: string,
-    @Option({
-      flags: "--execute",
-      description: "Actually remove the chat from the list; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
   ) {
     const list = resolveReadingList(listRef, owner, { op: "chats lists remove", asJson });
     const chatId = resolveChatId(chatRef, { instance, channel }, { op: "chats lists remove", asJson });
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): membership removal drops the chat from a
-      // live reading queue, so dry-run by default and exit 3 before any write.
-      contractDryRun(
-        "chats lists remove",
-        {
-          list: list.id,
-          listName: list.name,
-          chat: chatId,
-        },
-        { asJson },
-      );
-    }
     const removed = dbRemoveChatFromReadingList({ listId: list.id, chatId });
     const payload = { list, chatId, removed };
     if (asJson) {

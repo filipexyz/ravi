@@ -22,6 +22,7 @@ let scopeEnforced = false;
 let readableContactIds = new Set<string>();
 let lastAccountCreateInput: Record<string, unknown> | null = null;
 let lastOpportunityCreateInput: Record<string, unknown> | null = null;
+let lastOpportunityMoveInput: Record<string, unknown> | null = null;
 let lastTaskCreateInput: Record<string, unknown> | null = null;
 let lastProfileUpdateInput: Record<string, unknown> | null = null;
 let lastOpportunityContactInput: Record<string, unknown> | null = null;
@@ -271,12 +272,15 @@ mock.module("../../contacts.js", () => ({
     lastOpportunityCreateInput = input;
     return { id: "crm_opp_1", title: input.title, accountId: input.accountId ?? null };
   },
-  moveCrmOpportunityStage: (input: Record<string, unknown>) => ({
-    id: input.opportunityId,
-    title: "Pilot",
-    status: "open",
-    stageId: input.stageRef,
-  }),
+  moveCrmOpportunityStage: (input: Record<string, unknown>) => {
+    lastOpportunityMoveInput = input;
+    return {
+      id: input.opportunityId,
+      title: "Pilot",
+      status: "open",
+      stageId: input.stageRef,
+    };
+  },
   linkCrmOpportunityContact: (input: Record<string, unknown>) => {
     lastOpportunityContactInput = input;
     return {
@@ -533,6 +537,7 @@ describe("CRM commands", () => {
     ];
     lastAccountCreateInput = null;
     lastOpportunityCreateInput = null;
+    lastOpportunityMoveInput = null;
     lastTaskCreateInput = null;
     lastProfileUpdateInput = null;
     lastOpportunityContactInput = null;
@@ -762,7 +767,6 @@ describe("CRM commands", () => {
         true,
         '{"source":"test"}',
         true,
-        true,
         "idem-pipeline-cli",
       );
       new CrmPipelineCommands().set("crm_pipeline_default", "default", "false", true);
@@ -907,7 +911,6 @@ describe("CRM commands", () => {
         "BRL",
         "agent:dev",
         true,
-        true,
       );
       new CrmTaskCommands().create(
         "Follow up",
@@ -1014,10 +1017,10 @@ describe("CRM commands", () => {
     }
   });
 
-  it("blocks opportunity create without --execute (dry-run, exit 3, no write)", () => {
+  it("creates an opportunity immediately without --execute", () => {
     process.env.RAVI_AGENT_ID = "crm-contract-test";
     try {
-      const { payload, error } = captureJsonError(() => {
+      const payload = captureJson(() => {
         new CrmOpportunityCommands().create(
           "Pilot",
           "crm_acc_1",
@@ -1030,49 +1033,34 @@ describe("CRM commands", () => {
           true,
         );
       });
-      expect(error).toBeInstanceOf(CrmContractError);
-      const contractError = error as InstanceType<typeof CrmContractError>;
-      expect(contractError.code).toBe("WRITE_REQUIRES_EXECUTE");
-      expect(contractError.exitCode).toBe(3);
-      const errorPayload = payload.error as Record<string, unknown>;
-      expect(payload.success).toBe(false);
-      expect(errorPayload.dryRun).toBe(true);
-      expect((errorPayload.plan as Record<string, unknown>).title).toBe("Pilot");
-      expect(lastOpportunityCreateInput).toBeNull();
+      expect(payload.status).toBe("created");
+      expect(lastOpportunityCreateInput).toMatchObject({ title: "Pilot", stageKey: "qualified" });
     } finally {
       delete process.env.RAVI_AGENT_ID;
     }
   });
 
-  it("blocks pipeline create without --execute (dry-run, exit 3, no write)", () => {
+  it("creates a pipeline immediately without --execute", () => {
     process.env.RAVI_AGENT_ID = "crm-contract-test";
     try {
-      const { payload, error } = captureJsonError(() => {
+      const payload = captureJson(() => {
         new CrmPipelineCommands().create("Reativacao", "opportunity", true, undefined, true);
       });
-      expect(error).toBeInstanceOf(CrmContractError);
-      expect((error as InstanceType<typeof CrmContractError>).exitCode).toBe(3);
-      const errorPayload = payload.error as Record<string, unknown>;
-      expect(errorPayload.code).toBe("WRITE_REQUIRES_EXECUTE");
-      expect((errorPayload.plan as Record<string, unknown>).name).toBe("Reativacao");
-      expect(lastPipelineCreateInput).toBeNull();
+      expect(payload.status).toBe("created");
+      expect(lastPipelineCreateInput).toMatchObject({ name: "Reativacao", isDefault: true });
     } finally {
       delete process.env.RAVI_AGENT_ID;
     }
   });
 
-  it("blocks opportunity move without --execute (dry-run, exit 3)", () => {
+  it("moves an opportunity immediately without --execute", () => {
     process.env.RAVI_AGENT_ID = "crm-contract-test";
     try {
-      const { payload, error } = captureJsonError(() => {
+      const payload = captureJson(() => {
         new CrmOpportunityCommands().move("crm_opp_1", "won", undefined, true);
       });
-      expect(error).toBeInstanceOf(CrmContractError);
-      const contractError = error as InstanceType<typeof CrmContractError>;
-      expect(contractError.code).toBe("WRITE_REQUIRES_EXECUTE");
-      expect(contractError.exitCode).toBe(3);
-      const errorPayload = payload.error as Record<string, unknown>;
-      expect((errorPayload.plan as Record<string, unknown>).stageRef).toBe("won");
+      expect(payload.status).toBe("moved");
+      expect(lastOpportunityMoveInput).toMatchObject({ opportunityId: "crm_opp_1", stageRef: "won" });
     } finally {
       delete process.env.RAVI_AGENT_ID;
     }
@@ -1092,7 +1080,6 @@ describe("CRM commands", () => {
           undefined,
           undefined,
           true,
-          true,
         );
       });
       expect(error).toBeInstanceOf(CrmContractError);
@@ -1102,7 +1089,7 @@ describe("CRM commands", () => {
       const errorPayload = payload.error as Record<string, unknown>;
       expect(errorPayload.code).toBe("USAGE_ERROR");
       expect(errorPayload.acceptedFlags).toContain("--value");
-      expect(errorPayload.acceptedFlags).toContain("--execute");
+      expect(errorPayload.acceptedFlags).not.toContain("--execute");
       expect(lastOpportunityCreateInput).toBeNull();
     } finally {
       delete process.env.RAVI_AGENT_ID;

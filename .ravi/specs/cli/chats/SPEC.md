@@ -27,10 +27,10 @@ normative: true
 
 Make `ravi chats` (and its `chats.messages` and `chats.lists` groups) reliable
 for agent consumers under the agent-first contract defined by `cli`: typed
-error envelopes, the 0/1/2/3 exit taxonomy, a write brake on the destructive
-membership removal, and compact discovery. Chats are the canonical read surface
-for conversations and reading queues, so most ops stay read-only or reversible;
-the one destructive op — `chats lists remove` — is the braked op.
+error envelopes, the 0/1/2/3 exit taxonomy, risk-proportional confirmation,
+and compact discovery. Chats are the canonical read surface for conversations
+and reading queues, so local membership and cursor edits stay immediate while
+remaining authorized as mutations.
 
 ## Invariants
 
@@ -48,10 +48,9 @@ the one destructive op — `chats lists remove` — is the braked op.
    suggestions: contacts enforce contactScope inside their own domain and chats
    cannot reproduce that visibility filter, so the envelope only points to
    `ravi contacts list`.
-5. `chats lists remove` MUST default to dry-run and require `--execute`; the
-   dry-run MUST report `dryRun: true` and the `plan` (list id, list name, chat
-   id), MUST validate list and chat refs before braking, and MUST NOT remove
-   anything.
+5. `chats lists remove` MUST run immediately without `--execute`: it only
+   soft-deactivates a local membership, preserves cursor history, and can be
+   reversed with `chats lists add`. It MUST remain `kind: "mutate"`.
 6. Pre-existing default-dry-run ops keep their surface unchanged and count as
    brake equivalents: `chats backfill-provider-timestamps` only writes with
    `--apply` (its default run is the dry-run), and `chats lists recompute` is
@@ -63,8 +62,8 @@ the one destructive op — `chats lists remove` — is the braked op.
    describe the full (non-projected) payload; `--fields` is a projection on top.
 8. Unbraked writes (declared): `chats ensure` and `chats messages create` are
    idempotent by client id; `chats lists create`, `chats lists add`,
-   `chats lists mark-read`, and `chats lists delta --mark-read` are reversible.
-   They keep immediate-write behavior.
+   `chats lists remove`, `chats lists mark-read`, and `chats lists delta
+   --mark-read` are reversible. They keep immediate-write behavior.
 9. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.
 10. Without `--json`, error output keeps the legacy text path (exit 1), except
@@ -74,7 +73,7 @@ the one destructive op — `chats lists remove` — is the braked op.
 
 | op | class | brake |
 |---|---|---|
-| lists remove | destructive (drops a chat from a live reading queue) | dry-run + `--execute` |
+| lists remove | local soft-deactivation; cursor history retained; reversible by add | not braked |
 | backfill-provider-timestamps | bulk timestamp rewrite | pre-existing `--apply` default-dry-run (equivalent; not renamed) |
 | lists recompute | bulk membership materialization (can remove members) | pre-existing `preview` + selector safety gate (equivalent; not renamed) |
 | ensure / messages create | idempotent by clientRequestId/clientMessageId | not braked (declared) |
@@ -89,7 +88,6 @@ the one destructive op — `chats lists remove` — is the braked op.
 | reading list not found | `READING_LIST_NOT_FOUND` + suggestions | 1 |
 | contact filter not found | `CONTACT_NOT_FOUND` (no suggestions, scoped) | 1 |
 | invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
-| braked write without `--execute` | `WRITE_REQUIRES_EXECUTE` + plan | 3 |
 
 ## Internal consumers
 
@@ -98,7 +96,7 @@ There is NO dedicated `chats` skill in `src/plugins/internal/ravi-system/skills/
 by read-only examples in the `contacts`, `observers`, `instances`, and
 `tag-rules` skills (none teaches `lists remove`, so none needs `--execute`).
 `.ravi/specs/channels/chats/reading-lists/SPEC.md` documents the CLI shape and
-carries `--execute` on `lists remove`.
+must keep `lists remove` free of an `--execute` requirement.
 
 ## Known gaps
 
@@ -111,8 +109,8 @@ carries `--execute` on `lists remove`.
   new failures vs the `dev` baseline.
 - Live checks on the local CLI (isolated `RAVI_STATE_DIR`): `chats read
   chat_ffffffffffffffffffffffff --json` → `CHAT_NOT_FOUND`, exit 1 with
-  suggestions; `chats lists remove <list> <chat> --json` → exit 3 and the member
-  still active; with `--execute` → removed; `chats list --json --fields
+  suggestions; `chats lists remove <list> <chat> --json` → exit 0 and the member
+  inactive with cursor history retained; `chats list --json --fields
   messageCount` narrows items; `chats backfill-provider-timestamps --json`
   without `--apply` reports `dryRun: true` and writes nothing.
 

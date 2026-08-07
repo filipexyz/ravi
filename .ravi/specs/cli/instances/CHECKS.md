@@ -10,18 +10,15 @@
   from that instance's real patterns.
 - An invalid flag on any migrated op MUST exit 2 with `acceptedFlags` in the
   envelope.
-- `instances delete` without `--execute` MUST exit 3, MUST report
-  `dryRun: true` with the resolved instance in `plan`, and MUST NOT soft-delete
-  anything; with `--execute` the soft-delete MUST happen.
-- `instances routes remove` without `--execute` MUST exit 3 with pattern +
-  instance + agent in `plan` and MUST NOT delete the route; with `--execute`
-  the route MUST be removed.
+- `instances delete` and `instances routes remove` MUST soft-delete immediately
+  without `--execute`, remain `kind: "mutate"`, and be recoverable through
+  their existing restore commands.
 - `instances pending reject` without `--execute` MUST exit 3 with the resolved
   pending entry in `plan` and MUST NOT remove it; with `--execute` the entry
   MUST be removed.
-- The brake on any braked op MUST fire only after instance/route resolution and
-  the runtime-mismatch check, and MUST fire before any db write or
-  `ravi.config.changed` emission.
+- The `pending reject` brake MUST fire after instance/entry resolution and
+  before any DB write. Route removal MUST enforce the runtime-mismatch check
+  before its immediate DB write and `ravi.config.changed` emission.
 - `instances list --fields a,b,c --json` and `routes list --fields a,b,c
   --json` MUST return items containing only the requested fields in both
   duplicated payload arrays.

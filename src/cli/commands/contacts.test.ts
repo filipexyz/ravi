@@ -630,13 +630,10 @@ describe("contacts agent-first contract", () => {
     expect(deleteContactCalls).toHaveLength(0);
   });
 
-  it("blocks contacts block without --execute (dry-run, exit 3, no write)", () => {
-    const contractError = expectContractError(() => new ContactsCommands().block("contact-1", true));
-    expect(contractError.exitCode).toBe(3);
-    const envelope = contractError.envelope();
-    expect(envelope.op).toBe("contacts block");
-    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    expect(blockContactCalls).toHaveLength(0);
+  it("blocks contacts immediately without --execute", () => {
+    const payload = captureJson(() => new ContactsCommands().block("contact-1", true));
+    expect(payload.status).toBe("blocked");
+    expect(blockContactCalls).toEqual(["5511999999999"]);
   });
 
   it("blocks contacts merge without --execute (dry-run, exit 3, no merge)", () => {
@@ -660,14 +657,8 @@ describe("contacts agent-first contract", () => {
     expect(deleteContactCalls).toEqual(["contact-1"]);
   });
 
-  it("performs contacts block with --execute", () => {
-    const payload = captureJson(() => new ContactsCommands().block("contact-1", true, true));
-    expect(payload.status).toBe("blocked");
-    expect(blockContactCalls).toEqual(["5511999999999"]);
-  });
-
   it("emits CONTACT_NOT_FOUND envelope with scoped suggestions on mutations (exit 1)", () => {
-    const contractError = expectContractError(() => new ContactsCommands().block("contact-nope", true, true));
+    const contractError = expectContractError(() => new ContactsCommands().block("contact-nope", true));
     expect(contractError.exitCode).toBe(1);
     const envelope = contractError.envelope();
     expect(envelope.success).toBe(false);

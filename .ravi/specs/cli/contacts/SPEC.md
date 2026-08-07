@@ -29,9 +29,9 @@ normative: true
 Make `ravi contacts` (and its `metadata` group) reliable for agent consumers
 under the agent-first contract defined by `cli`: typed error envelopes, the
 0/1/2/3 exit taxonomy, a write brake on the riskiest mutations, and compact
-discovery. Contacts gate who can talk to the bot, so `remove`, `block` and
-`merge` — the ops that delete a record, silence a live channel peer, or
-irreversibly collapse two identities — are the braked ops.
+discovery. Contacts gate who can talk to the bot: destructive `remove` and
+irreversible `merge` are braked, while reversible `block` is an immediate
+containment action so confirmation cannot delay stopping unwanted traffic.
 
 ## Invariants
 
@@ -44,9 +44,10 @@ irreversibly collapse two identities — are the braked ops.
    from the caller-scope-filtered contact list (`filterVisibleContacts`, the
    same filter behind `contacts list`/`find`). Contacts cloaked by
    `contactScope` (own/tagged) MUST never appear as suggestions.
-4. `contacts remove`, `contacts block` and `contacts merge` MUST default to
-   dry-run and require `--execute`; the dry-run MUST report `dryRun: true` and
-   the `plan`, and MUST NOT delete, block or merge anything.
+4. `contacts remove` and `contacts merge` MUST default to dry-run and require
+   `--execute`; the dry-run MUST report `dryRun: true` and the `plan`, and MUST
+   NOT delete or merge anything. `contacts block` MUST execute immediately
+   without `--execute`, remain `kind: "mutate"`, and be reversible via `allow`.
 5. `contacts backfill` keeps its historical default-dry-run flag `--apply` —
    it is the brake equivalent for that op and MUST NOT be renamed to
    `--execute`.
@@ -56,7 +57,7 @@ irreversibly collapse two identities — are the braked ops.
 7. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry
    dispatcher — the brake exits 3, never a generic `Error: ...` with exit 1.
-8. Unbraked writes (`add`, `allow`, `approve`, `set`, `tag`, `untag`, `link`,
+8. Unbraked writes (`add`, `allow`, `approve`, `block`, `set`, `tag`, `untag`, `link`,
    `unlink`, `note`, `metadata set`, `metadata remove`) keep their current
    immediate-write behavior and MUST be listed as unbraked in the shipped
    `contacts` skill.
@@ -68,7 +69,7 @@ irreversibly collapse two identities — are the braked ops.
 | op | class | brake |
 |---|---|---|
 | remove | destructive (deletes the contact record) | dry-run + `--execute` |
-| block | destructive (silences a live channel peer) | dry-run + `--execute` |
+| block | reversible containment (`allow` is the inverse) | not braked |
 | merge | irreversible (moves identities, deletes source) | dry-run + `--execute` |
 | backfill | bulk canonical write | historical `--apply` (default dry-run, brake-equivalent) |
 | add / allow / approve / set / tag / untag / link / unlink / note | reversible record edits | not braked (declared) |
@@ -85,9 +86,9 @@ irreversibly collapse two identities — are the braked ops.
 ## Internal consumers
 
 `src/plugins/internal/ravi-system/skills/contacts/SKILL.md` teaches this
-surface and MUST document `--execute` on every braked op (its remove/block/
-merge examples carry the flag). The `agents` skill block hint and the
-`contacts pending` text hint also teach `block --execute`.
+surface and MUST document `--execute` on every braked op (`remove`/`merge`) and
+must teach `block` without the flag. The `agents` skill block hint and the
+`contacts pending` text hint also teach immediate `block`.
 `docs/cli/overview.mdx` and `docs/guides/contacts.mdx` mirror the same syntax.
 Daemon-side contact intake (runtime message flow) writes through the service
 layer (`upsertContact`/`linkContactIdentity`), not through the CLI, so the
@@ -100,7 +101,7 @@ brake does not affect automatic intake.
 - Live checks on the local CLI (isolated `RAVI_STATE_DIR`): `contacts get
   <bad-ref> --json` → `CONTACT_NOT_FOUND`, exit 1; `contacts list
   --no-such-flag --json` → `USAGE_ERROR`, exit 2; `contacts block <ref>
-  --json` → exit 3 and the contact still allowed; with `--execute` → blocked;
+  --json` → exit 0 and the contact is blocked immediately;
   `contacts list --json --fields id,name` narrows items; brake verified with
   `RAVI_AGENT_ID` set (agent-context env) still exits 3 with the envelope.
 

@@ -15,9 +15,11 @@
 - `projects tasks dispatch` without `--execute` MUST exit 3, MUST report
   `dryRun: true` with the dispatch `plan`, and MUST NOT dispatch anything —
   including the pre-resolved agent/session defaults in the plan.
-- `projects workflows start`, `projects fixtures seed` and
-  `projects resources import` without `--execute` MUST exit 3 and MUST NOT
-  start, reseed or link anything; with `--execute` the write MUST happen.
+- `projects workflows start` and `projects fixtures seed` without `--execute`
+  MUST exit 3 and MUST NOT start or reseed anything; with `--execute` the
+  effect MUST happen.
+- `projects resources import` MUST create validated local links immediately
+  without `--execute` and remain `kind: "mutate"`.
 - Validation MUST run before the brake: an unknown project ref on a braked op
   MUST exit 1 with `PROJECT_NOT_FOUND`, never exit 3 with a bogus plan.
 - A braked op invoked with `RAVI_*` envs present (agent context) MUST still
@@ -27,7 +29,7 @@
   `projects resources list <project> --fields a,b,c --json` MUST return items
   containing only the requested fields.
 - Unbraked writes listed in the spec (`init`, `create`, `update`, `link`,
-  `workflows attach`, `tasks create|attach`, `resources add`) MUST keep
+  `workflows attach`, `tasks create|attach`, `resources add|import`) MUST keep
   immediate-write behavior, and the shipped `projects` skill MUST list them
   explicitly as unbraked.
 - `bun test src/cli/commands/projects.test.ts` SHOULD pass after any change to

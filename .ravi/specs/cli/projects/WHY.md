@@ -6,10 +6,11 @@ runtime dispatch (same effect as `tasks dispatch`, which is already braked —
 an unbraked twin here would be a trivial brake bypass), and
 `projects workflows start` instantiates a live workflow run that the runtime
 then coordinates. `fixtures seed` goes further and RESETS the canonical demo
-fixtures before reseeding, and `resources import` writes an arbitrary batch of
-links in one call. Those four got the brake. The rest of the surface (`init`,
-`create`, `update`, `link`, `attach`, `resources add`) stays immediate: each is
-a single reversible substrate write, and `tasks create|attach` without
+fixtures before reseeding. Those three keep the brake. `resources import` only
+normalizes locators and creates local resource links; batching routine local
+persistence does not itself justify a confirmation loop. The rest of the
+surface (`init`, `create`, `update`, `link`, `attach`, `resources add/import`)
+stays immediate: each is a reversible substrate write, and `tasks create|attach` without
 `--dispatch` only records/plans — braking them would put exit-3 friction inside
 the normal alignment loop.
 

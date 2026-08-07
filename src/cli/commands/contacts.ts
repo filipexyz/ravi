@@ -542,7 +542,7 @@ export class ContactsCommands {
         console.log(`  ${id}  ${name}     ${identities}   ${since}`);
       }
       console.log("\nApprove: ravi contacts approve <id>");
-      console.log("Block:   ravi contacts block <id> --execute   (without --execute it is a dry-run)");
+      console.log("Block:   ravi contacts block <id>");
     }
 
     // Per-account pending contacts (DMs on accounts without matching routes)
@@ -869,15 +869,10 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "block", description: "Block a contact" })
-  @CommandAccess({ kind: "mutate", resource: "contacts", action: "block", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "block", risk: "medium" })
   block(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({
-      flags: "--execute",
-      description: "Actually block the contact; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
   ) {
     failIfChatContact(contactRef);
     const contact = getContact(contactRef);
@@ -885,20 +880,6 @@ export class ContactsCommands {
       failContactNotFound("contacts block", contactRef, asJson);
     }
     failIfChatContact(contactRef, contact);
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): blocking silences a live channel peer, so
-      // dry-run by default and exit 3 before any state change.
-      contractDryRun(
-        "contacts block",
-        {
-          contact: contact.id,
-          name: contact.name ?? null,
-          phone: contact.phone,
-          status: contact.status,
-        },
-        { asJson },
-      );
-    }
     blockContact(contact.phone);
     const updated = getUpdatedContact(contact);
     const payload = {

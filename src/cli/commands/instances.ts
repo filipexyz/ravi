@@ -1184,35 +1184,13 @@ export class InstancesCommands {
   // delete
   // --------------------------------------------------------------------------
   @Command({ name: "delete", description: "Delete an instance (soft-delete, recoverable)" })
-  @CommandAccess({ kind: "mutate", resource: "instances", action: "delete", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "instances", action: "delete", risk: "medium" })
   delete(
     @Arg("name", { description: "Instance name" }) name: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({
-      flags: "--execute",
-      description: "Actually delete the instance; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
   ) {
     const inst = dbGetInstance(name);
     if (!inst) failInstanceNotFound("instances delete", name, asJson);
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): soft-delete is recoverable but still
-      // flagged destructive, so dry-run by default and exit 3 before any
-      // state change. The plan shows the resolved instance being removed.
-      contractDryRun(
-        "instances delete",
-        {
-          name: inst.name,
-          channel: inst.channel,
-          instanceId: inst.instanceId ?? null,
-          agent: inst.agent ?? null,
-          enabled: inst.enabled !== false,
-          restoreCommand: `ravi instances restore ${inst.name}`,
-        },
-        { asJson },
-      );
-    }
     const deleted = dbDeleteInstance(name);
     if (deleted) {
       const payload = {
@@ -1798,7 +1776,7 @@ export class InstancesRoutesCommands {
   }
 
   @Command({ name: "remove", description: "Remove a route (soft-delete, recoverable)" })
-  @CommandAccess({ kind: "mutate", resource: "instances.routes", action: "remove", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "instances.routes", action: "remove", risk: "high" })
   remove(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
@@ -1808,33 +1786,11 @@ export class InstancesRoutesCommands {
     })
     allowRuntimeMismatch?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({
-      flags: "--execute",
-      description: "Actually remove the route; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
   ) {
     if (!dbGetInstance(name)) failInstanceNotFound("instances routes remove", name, asJson);
     const route = dbGetRoute(pattern, name);
     if (!route) failRouteNotFound("instances routes remove", name, pattern, asJson);
     assertInstanceMutationRuntime(name, allowRuntimeMismatch);
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): removing a route silently reroutes live
-      // traffic, so dry-run by default and exit 3 before any state change.
-      // The plan shows pattern + instance + agent of the resolved route.
-      contractDryRun(
-        "instances routes remove",
-        {
-          instance: name,
-          pattern: route.pattern,
-          agent: route.agent,
-          priority: route.priority ?? 0,
-          channel: route.channel ?? null,
-          restoreCommand: `ravi instances routes restore ${name} "${pattern}"`,
-        },
-        { asJson },
-      );
-    }
     const deleted = dbDeleteRoute(pattern, name);
     if (deleted) {
       const payload = {
