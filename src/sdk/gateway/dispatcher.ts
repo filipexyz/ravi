@@ -367,10 +367,10 @@ function normalizeBody(cmd: CommandRegistryEntry, body: unknown): NormalizeResul
   }
 
   if (unknownKeys.length > 0) {
-    const issues: JsonIssue[] = unknownKeys.map((k) => ({
-      path: [k],
+    const issues: JsonIssue[] = unknownKeys.map(() => ({
+      path: ["<unknown>"],
       code: "unrecognized_keys",
-      message: `Unknown field "${k}" for ${cmd.fullName}.`,
+      message: `Unknown field for ${cmd.fullName}.`,
     }));
     return { ok: false, issues };
   }

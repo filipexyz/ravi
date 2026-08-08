@@ -373,8 +373,10 @@ describe("dispatch — body shape (flat-only)", () => {
       error: { code: string; issues: { path: string[]; code: string }[] };
     };
     expect(body.error.code).toBe("USAGE_ERROR");
-    expect(body.error.issues.some((i) => i.path[0] === "args" && i.code === "unrecognized_keys")).toBe(true);
-    expect(body.error.issues.some((i) => i.path[0] === "options" && i.code === "unrecognized_keys")).toBe(true);
+    expect(body.error.issues).toHaveLength(2);
+    expect(body.error.issues.every((issue) => issue.path[0] === "<unknown>")).toBe(true);
+    expect(JSON.stringify(body)).not.toContain('"args"');
+    expect(JSON.stringify(body)).not.toContain('"options"');
     expect(audits.events).toHaveLength(1);
     expect(audits.events[0]?.outcome).toBe("usage_error");
   });
@@ -389,16 +391,24 @@ describe("dispatch — body shape (flat-only)", () => {
     expect(body.error.issues[0]?.path).toEqual([]);
   });
 
-  it("rejects unknown flat keys with structured issues", async () => {
+  it("rejects unknown flat keys without echoing their names", async () => {
     const audits = captureAudits();
-    const result = await dispatch(findCmd("demo.echo"), { name: "luis", bogus: true }, {}, { emitAudit: audits.emit });
+    const sentinel = "PRIVATE_EXTRA_FIELD_6JQ8";
+    const result = await dispatch(
+      findCmd("demo.echo"),
+      { name: "luis", [sentinel]: true },
+      {},
+      { emitAudit: audits.emit },
+    );
     expect(result.response.status).toBe(400);
     const body = (await result.response.json()) as {
       error: { code: string; issues: { path: string[]; code: string }[] };
     };
     expect(body.error.code).toBe("USAGE_ERROR");
-    expect(body.error.issues.some((i) => i.path[0] === "bogus" && i.code === "unrecognized_keys")).toBe(true);
+    expect(body.error.issues).toEqual([expect.objectContaining({ path: ["<unknown>"], code: "unrecognized_keys" })]);
+    expect(JSON.stringify(body)).not.toContain(sentinel);
     expect(audits.events).toHaveLength(1);
+    expect(JSON.stringify(audits.events)).not.toContain(sentinel);
   });
 });
 
