@@ -1131,3 +1131,11 @@ conteúdo privado. O commit `47ee78ea` renomeou o campo para `sourceLabel`,
 preservando somente `catalog` ou o basename local e mantendo caminho, nome de
 skill e conteúdo ausentes. Os 29 testes focados de skills passaram; Quality
 Gate permaneceu ignorado e a spec continua `draft`.
+
+O CI Linux [`31283228716`](https://github.com/filipexyz/ravi/actions/runs/31283228716)
+do SHA `8bd109aac24053072008f5f9c23a098215c1a6f4` passou Build e Typecheck e
+falhou em uma expectativa de `tag-rules validate`. Os detalhes já continham
+basename e categoria estável, mas mantinham um campo `message` redundante que a
+redação central mascarava. O commit `6bf93383` removeu esse texto dos detalhes,
+preservando o código canônico e a mensagem do envelope. Os 7 testes focados de
+tag-rules passaram; Quality Gate permaneceu ignorado e a spec continua `draft`.
