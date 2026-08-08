@@ -21,8 +21,9 @@ Everywhere else, suggestions echo entity ids and titles. Here, the natural
 "candidates" for a credentials-store miss would be the stored `rctx_*` keys —
 which must never enter an envelope that gets logged, relayed to models, or
 pasted into issues. So `CREDENTIAL_NOT_FOUND` suggests context IDs and labels
-instead, and when the user's own input is a key it is echoed masked (first 8
-chars). The same rule keeps `context revoke`'s dry-run plan to IDs only.
+instead, and when the user's own input is a key a not-found response echoes at
+most its masked prefix. Dry-run plans go further: revoke carries IDs/flags, and
+credential removal carries only IDs plus path/key/label presence flags.
 
 `issue`, `credentials add` and `set-default` stay unbraked: issuing a child
 context is revocable by definition, and the two local-store writes are

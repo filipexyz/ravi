@@ -35,7 +35,7 @@ ravi agents show ghost-agent --json           # expect exit 1 + suggestions
 ravi agents list --no-such-flag --json        # expect exit 2 + acceptedFlags
 ravi agents delete <id> --json                # expect exit 3 + dryRun plan
 ravi agents reset <id> all --json             # expect exit 3 + dryRun plan
-ravi agents permissions <id> full-access --json  # expect exit 3 + before/after plan
+ravi agents permissions <id> full-access --json  # expect exit 3 + profile/count summary
 ravi agents permissions <id> --json           # expect exit 0 (read-only, unbraked)
 ravi agents list --fields id,cwd --json       # expect compact items
 ```

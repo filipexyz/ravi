@@ -461,7 +461,7 @@ export class ContextCommands {
           kind: existing.kind,
           agentId: existing.agentId ?? null,
           cascade,
-          reason: reason ?? null,
+          reasonPresent: Boolean(reason),
         },
         { asJson },
       );
@@ -1148,17 +1148,17 @@ export class ContextCredentialsCommands {
     if (execute !== true) {
       // Write brake (Manual v2 7.8): removing a stored entry drops a working
       // local credential, so dry-run by default and exit 3 before any write.
-      // The plan identifies the entry by contextId/label and a masked key —
-      // the full rctx_* key never enters the plan.
+      // The plan identifies the entry with allowed IDs and presence flags;
+      // neither the store path, label nor any form of the rctx_* key enters it.
       const entry = file.contexts[contextKey];
       contractDryRun(
         "context credentials remove",
         {
-          path,
-          contextKey: maskContextKey(contextKey),
+          credentialsPathPresent: path.length > 0,
+          contextKeyPresent: contextKey.length > 0,
           contextId: entry?.context_id ?? null,
           agentId: entry?.agent_id || null,
-          label: entry?.label || null,
+          labelPresent: Boolean(entry?.label),
           kind: entry?.kind ?? null,
           wasDefault: file.default === contextKey,
         },

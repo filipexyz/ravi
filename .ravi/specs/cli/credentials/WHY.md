@@ -4,9 +4,10 @@ Credentials are the one CLI domain where a sloppy error message is itself an
 incident: an envelope that echoes a `secretRef` teaches every agent transcript
 where the secret lives, and a dry-run plan that includes the resolved secret
 defeats the entire broker boundary. So this migration adds a domain-specific
-invariant on top of the standard contract: plans, envelopes, and suggestions
-carry only `provider:connection` identity — never secret material. Suggestions
-are safe here precisely because the suggestion corpus is identity, not value.
+invariant on top of the standard contract: plans carry only necessary
+identifiers plus presence/boolean/count metadata, while envelopes and
+suggestions never carry secret material. Suggestions are safe here precisely
+because the suggestion corpus is identity, not value.
 
 The brake landed on the two ops that change the security posture:
 

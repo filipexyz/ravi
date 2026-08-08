@@ -12,13 +12,15 @@
 - An invalid flag on any `agents` op MUST exit 2 with `acceptedFlags` in the
   envelope.
 - `agents delete` without `--execute` MUST exit 3, MUST report `dryRun: true`
-  with the delete `plan`, and MUST NOT delete the agent; with `--execute` the
-  delete MUST happen.
+  with `{agentId,cwdPresent,namePresent}`, MUST NOT expose cwd/name, and MUST
+  NOT delete the agent; with `--execute` the delete MUST happen.
 - `agents reset` (main, specific session, and `reset <id> all`) without
   `--execute` MUST exit 3 and MUST NOT abort or delete any session; with
-  `--execute` the reset MUST happen.
+  `--execute` the reset MUST happen. The plan uses only count for `all`, or the
+  allowed `sessionKey` for one session; it MUST NOT carry session names.
 - A permission delta that expands authority without `--execute` MUST exit 3
-  with a `before`/`after` plan and MUST NOT write agent defaults.
+  with before/after presence, profile identifiers and capability counts; it
+  MUST NOT carry raw permission configs/capability entries or write defaults.
 - Authority reduction, `none`, `--clear-capabilities` and no-op requests MUST
   apply without `--execute`; the brake must not delay containment.
 - The read-only form `agents permissions <id>` MUST keep exiting 0 without the

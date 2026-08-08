@@ -17,7 +17,8 @@
   including the pre-resolved agent/session defaults in the plan.
 - `projects workflows start` and `projects fixtures seed` without `--execute`
   MUST exit 3 and MUST NOT start or reseed anything; with `--execute` the
-  effect MUST happen.
+  effect MUST happen. The fixture plan MUST use only `ownerAgentId` and
+  `resetsCanonicalFixtures:true`, never free-form effect text.
 - `projects resources import` MUST create validated local links immediately
   without `--execute` and remain `kind: "mutate"`.
 - Validation MUST run before the brake: an unknown project ref on a braked op

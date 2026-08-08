@@ -685,20 +685,20 @@ describe("instances/routes agent-first contract", () => {
     expect(routes).toHaveLength(0);
   });
 
-  it("blocks instances pending reject without --execute (dry-run, exit 3, no removal)", () => {
+  it("minimizes pending reject to instance, kind, and presence flags", () => {
     pendingEntries = [
       {
         accountId: "main",
-        phone: "5511999999999",
-        name: "Alice",
-        chatId: "5511999999999",
+        phone: "+5511999997777",
+        name: "PRIVATE_MESSAGE_8K2R",
+        chatId: "PRIVATE_MESSAGE_8K2R",
         isGroup: false,
         createdAt: 1,
         updatedAt: 2,
       },
     ];
 
-    const thrown = captureThrown(() => new InstancesPendingCommands().reject("main", "5511999999999", true));
+    const thrown = captureThrown(() => new InstancesPendingCommands().reject("main", "+5511999997777", true));
 
     expect(thrown).toBeInstanceOf(ContractError);
     const contractError = thrown as InstanceType<typeof ContractError>;
@@ -706,8 +706,18 @@ describe("instances/routes agent-first contract", () => {
     const envelope = contractError.envelope();
     expect(envelope.op).toBe("instances pending reject");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    const plan = envelope.error.plan as Record<string, unknown>;
-    expect((plan.resolvedPending as Record<string, unknown>).phone).toBe("5511999999999");
+    expect(envelope.error.plan).toEqual({
+      instance: "main",
+      contactPresent: true,
+      pendingFound: true,
+      kind: "contact",
+      phonePresent: true,
+      chatIdPresent: true,
+      namePresent: true,
+    });
+    const serialized = JSON.stringify(envelope.error.plan);
+    expect(serialized).not.toContain("+5511999997777");
+    expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
     expect(pendingEntries).toHaveLength(1);
   });
 

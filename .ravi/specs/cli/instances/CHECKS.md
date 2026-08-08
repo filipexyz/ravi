@@ -16,9 +16,10 @@
 - `instances delete` and `instances routes remove` MUST soft-delete immediately
   without `--execute`, remain `kind: "mutate"`, and be recoverable through
   their existing restore commands.
-- `instances pending reject` without `--execute` MUST exit 3 with the resolved
-  pending entry in `plan` and MUST NOT remove it; with `--execute` the entry
-  MUST be removed.
+- `instances pending reject` without `--execute` MUST exit 3 with instance,
+  pending kind and contact/phone/chat/name presence flags in `plan`; personal
+  data values MUST NOT appear and the entry MUST NOT be removed. With
+  `--execute` the entry MUST be removed.
 - The `pending reject` brake MUST fire after instance/entry resolution and
   before any DB write. Route removal MUST enforce the runtime-mismatch check
   before its immediate DB write and `ravi.config.changed` emission.

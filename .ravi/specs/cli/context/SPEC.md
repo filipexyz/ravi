@@ -48,10 +48,14 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
    context IDs and labels only.
 5. `context revoke` and `context credentials remove` MUST default to dry-run
    and require `--execute`; the dry-run MUST report `dryRun: true` and the
-   `plan`, and MUST NOT revoke or delete anything.
+   `plan`, and MUST NOT revoke or delete anything. Revoke uses
+   `{contextId,kind,agentId,cascade,reasonPresent}`. Credential removal uses
+   `{credentialsPathPresent,contextKeyPresent,contextId,agentId,labelPresent,kind,wasDefault}`.
+   Neither plan carries the reason, path, key, or label text.
 6. Secret hygiene: a full `rctx_*` context key MUST NEVER appear in an error
-   envelope, dry-run plan, or suggestion list. When the user input itself is a
-   key, only a masked prefix (first 8 characters + `...`) may be echoed.
+   envelope, dry-run plan, or suggestion list. A credential-removal plan uses
+   only `contextKeyPresent`; not-found envelopes may echo the user's queried
+   key only as a masked prefix (first 8 characters + `...`).
 7. `context list` and `context credentials list` MUST accept `--fields a,b,c`
    for compact JSON output; human output stays complete.
 8. `context prune` keeps its pre-existing, STRONGER equivalent brake
@@ -100,7 +104,7 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
   `CONTEXT_NOT_FOUND`, exit 1; `context revoke <id> --json` → exit 3 with plan
   and the context still active; with `--execute` → revoked; `context
   credentials remove <key> --json` → exit 3 and the entry still stored; the
-  dry-run plan shows the masked key only; `context list --json --fields
+  dry-run plan shows key/path/label presence only; `context list --json --fields
   contextId,kind` narrows items.
 
 ## Known Failure Modes

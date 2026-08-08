@@ -56,7 +56,10 @@ import` only creates normalized local resource links and runs immediately.
    the dry-run MUST report `dryRun: true` and the `plan`, and MUST NOT dispatch,
    start, or seed anything. `projects resources import` MUST validate the
    project and locators, then create its local links immediately without
-   `--execute` while remaining `kind: "mutate"`.
+   `--execute` while remaining `kind: "mutate"`. Workflow/task plans retain
+   only their allowed identifiers. Fixture seed uses
+   `{ownerAgentId,resetsCanonicalFixtures:true}` instead of free-form effect
+   text.
 6. `projects list`, `projects next` and `projects resources list` MUST accept
    `--fields a,b,c` for compact output.
 7. When invoked from an agent context (`RAVI_*` envs present), a thrown

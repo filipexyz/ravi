@@ -12,7 +12,7 @@
 5. If any envelope or plan contains a secret value or a raw `secretRef`, that
    is a contract regression — check `failCredentialConnectionNotFound` and the
    remove/exec plans in `src/cli/commands/credentials.ts` (they must build
-   plans from identity fields only).
+   plans from identifiers plus presence/boolean/count metadata only).
 6. If `broker exec` resolved a secret without `--execute`, check the brake
    ordering: connection lookup → brake → `execCredentialBroker`.
 

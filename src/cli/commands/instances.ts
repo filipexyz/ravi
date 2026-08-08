@@ -2186,15 +2186,12 @@ export class InstancesPendingCommands {
         "instances pending reject",
         {
           instance: name,
-          contact,
-          resolvedPending: pending
-            ? {
-                phone: pending.phone,
-                chatId: pending.chatId ?? null,
-                kind: pending.pendingKind,
-                name: pending.name ?? null,
-              }
-            : null,
+          contactPresent: contact.length > 0,
+          pendingFound: Boolean(pending),
+          kind: pending?.pendingKind ?? null,
+          phonePresent: Boolean(pending?.phone),
+          chatIdPresent: Boolean(pending?.chatId),
+          namePresent: Boolean(pending?.name),
         },
         { asJson },
       );

@@ -6,7 +6,9 @@ runtime dispatch (same effect as `tasks dispatch`, which is already braked —
 an unbraked twin here would be a trivial brake bypass), and
 `projects workflows start` instantiates a live workflow run that the runtime
 then coordinates. `fixtures seed` goes further and RESETS the canonical demo
-fixtures before reseeding. Those three keep the brake. `resources import` only
+fixtures before reseeding; its dry-run represents that fixed effect as a
+boolean flag rather than repeating free-form text. Those three keep the brake.
+`resources import` only
 normalizes locators and creates local resource links; batching routine local
 persistence does not itself justify a confirmation loop. The rest of the
 surface (`init`, `create`, `update`, `link`, `attach`, `resources add/import`)

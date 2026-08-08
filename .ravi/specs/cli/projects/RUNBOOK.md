@@ -35,7 +35,7 @@ state dir):
 ravi projects show nope-project --json                       # expect exit 1 + suggestions
 ravi projects tasks dispatch <slug> <task-id> --json         # expect exit 3 + dryRun plan
 ravi projects workflows start <slug> <spec-id> --json        # expect exit 3 + dryRun plan
-ravi projects fixtures seed --json                           # expect exit 3, nothing reseeded
+ravi projects fixtures seed --json                           # expect exit 3 + reset flag, nothing reseeded
 ravi projects resources import <slug> --url https://x.dev --json  # expect exit 0 + local link
 ravi projects list --fields slug,status --json               # expect compact items
 ```

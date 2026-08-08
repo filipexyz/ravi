@@ -32,9 +32,9 @@ Live checks against the local CLI (read-only or dry-run; use an isolated
 
 ```bash
 ravi context info ctx-nope --json                    # expect exit 1 + suggestions
-ravi context revoke <context-id> --json              # expect exit 3 + dryRun plan (IDs only)
+ravi context revoke <context-id> --json              # expect exit 3 + dryRun plan (IDs/flags)
 ravi context revoke <context-id> --json --execute    # expect real revoke
-ravi context credentials remove <key> --json         # expect exit 3 + masked key in plan
+ravi context credentials remove <key> --json         # expect exit 3 + key/path/label presence only
 ravi context list --fields contextId,kind --json     # expect compact items
 ravi context prune --json                            # expect planned counts (no delete)
 ```

@@ -9,6 +9,7 @@ const actualRouterSessionsModule = await import("../../router/sessions.js");
 type AgentLike = {
   id: string;
   cwd: string;
+  name?: string;
   model?: string | null;
   modelPresetId?: string | null;
   effort?: string;
@@ -1156,7 +1157,12 @@ describe("agents agent-first contract", () => {
     expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
   });
 
-  it("blocks agents delete without --execute (dry-run, exit 3, no delete)", () => {
+  it("minimizes the agents delete dry-run to identity and presence flags", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "C:/sentinel/private/file-9P3X.txt",
+      name: "PRIVATE_MESSAGE_8K2R",
+    };
     const commands = new AgentsCommands();
     const originalLog = console.log;
     console.log = () => {};
@@ -1175,7 +1181,13 @@ describe("agents agent-first contract", () => {
     expect(envelope.op).toBe("agents delete");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
-    expect((envelope.error.plan as Record<string, unknown>).agentId).toBe("dev");
+    expect(envelope.error.plan).toEqual({
+      agentId: "dev",
+      cwdPresent: true,
+      namePresent: true,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("C:/sentinel/private/file-9P3X.txt");
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
     expect(deleteAgentCalls).toHaveLength(0);
   });
 
@@ -1192,11 +1204,11 @@ describe("agents agent-first contract", () => {
     expect(deleteAgentCalls).toEqual(["dev"]);
   });
 
-  it("blocks agents reset all without --execute (dry-run, exit 3, no reset)", async () => {
+  it("minimizes agents reset all to the session count", async () => {
     sessionsByAgent = [
       {
         sessionKey: "agent:dev:main",
-        name: "dev-main",
+        name: "PRIVATE_MESSAGE_8K2R",
         agentId: "dev",
         agentCwd: "/tmp/dev",
         createdAt: 1,
@@ -1220,7 +1232,40 @@ describe("agents agent-first contract", () => {
     const envelope = contractError.envelope();
     expect(envelope.op).toBe("agents reset");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    expect((envelope.error.plan as { sessions?: string[] }).sessions).toEqual(["dev-main"]);
+    expect(envelope.error.plan).toEqual({ agentId: "dev", target: "all", count: 1 });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(deleteSessionCalls).toHaveLength(0);
+  });
+
+  it("minimizes a single-session reset to its allowed identifiers", async () => {
+    resolvedSession = {
+      sessionKey: "agent:dev:main",
+      name: "PRIVATE_MESSAGE_8K2R",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await commands.reset("dev", "session-alias", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    expect(contractError.envelope().error.plan).toEqual({
+      agentId: "dev",
+      target: "session-alias",
+      sessionKey: "agent:dev:main",
+    });
+    expect(JSON.stringify(contractError.envelope().error.plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
     expect(deleteSessionCalls).toHaveLength(0);
   });
 
@@ -1247,7 +1292,17 @@ describe("agents agent-first contract", () => {
     expect(deleteSessionCalls).toEqual(["agent:dev:main"]);
   });
 
-  it("blocks agents permissions profile change without --execute (dry-run, exit 3, no write)", () => {
+  it("minimizes an authority-expansion plan to profiles and capability counts", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      defaults: {
+        runtimePermissions: {
+          profile: "bootstrap",
+          capabilities: ["execute:provider:PRIVATE_MESSAGE_8K2R"],
+        },
+      },
+    };
     const commands = new AgentsCommands();
     const originalLog = console.log;
     console.log = () => {};
@@ -1265,7 +1320,16 @@ describe("agents agent-first contract", () => {
     const envelope = contractError.envelope();
     expect(envelope.op).toBe("agents permissions");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    expect((envelope.error.plan as { after?: { profile?: string } }).after?.profile).toBe("full-access");
+    expect(envelope.error.plan).toEqual({
+      agentId: "dev",
+      beforePresent: true,
+      beforeProfile: "bootstrap",
+      beforeCapabilitiesCount: 1,
+      afterPresent: true,
+      afterProfile: "full-access",
+      afterCapabilitiesCount: 1,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
     expect(updateAgentCalls).toHaveLength(0);
   });
 

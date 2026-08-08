@@ -22,6 +22,9 @@ Two decisions specific to this wave:
   Agent ids are public through `agents list`, so suggesting them leaks nothing
   new — but reusing the list filter (instead of `getAllAgents()` raw) keeps the
   scope cloak intact for agents the caller cannot see.
+- Dry-run plans preserve the allowed agent/session/profile identifiers needed
+  to confirm the target, but reduce cwd/name/session labels to presence or
+  count metadata and never enumerate explicit capabilities.
 
 One implementation finding: the legacy `delete` wrapped resolution, the service
 call and the success/not-found branches in a single try/catch that flattened

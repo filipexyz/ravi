@@ -49,7 +49,11 @@ those three carry the brake.
    default to dry-run and require `--execute`; the dry-run MUST report
    `dryRun: true` and the `plan`, and MUST NOT delete, abort, reset or write
    anything. `--execute` is always the LAST declared parameter of each braked
-   op.
+   op. Plan formats are minimal: delete uses
+   `{agentId,cwdPresent,namePresent}`; reset-all uses `{agentId,target,count}`;
+   one-session reset uses `{agentId,target,sessionKey}`; permission expansion
+   uses the before/after presence, profile identifiers, and capability counts.
+   Paths, display names, session names, and capability entries MUST NOT appear.
 5. The read-only form, no-op changes and authority reductions (including
    `none` and `--clear-capabilities`) MUST execute without the brake.
 6. `agents list` MUST accept `--fields a,b,c` for compact output.

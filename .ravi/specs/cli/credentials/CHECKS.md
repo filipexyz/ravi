@@ -7,11 +7,13 @@
   `CREDENTIAL_CONNECTION_NOT_FOUND` envelope and up to three `suggestions`
   built from local `provider:connection` pairs and ids.
 - `credentials connections remove` without `--execute` MUST exit 3 with
-  `dryRun: true` and the removal `plan`, and MUST NOT remove metadata nor
-  delete any backend secret; with `--execute` the write MUST happen, and
+  `dryRun: true` and an identifier/flag-only removal `plan`; labels MUST be
+  represented only by `labelPresent`. It MUST NOT remove metadata nor delete
+  any backend secret; with `--execute` the write MUST happen, and
   `--delete-secret` MUST additionally delete the backend secret.
 - `credentials broker exec` without `--dry-run` and without `--execute` MUST
-  exit 3 with a policy-only plan and MUST NOT resolve any backend secret; with
+  exit 3 with policy approval/capability-count metadata only and MUST NOT
+  expose policy reasons/capability entries or resolve any backend secret; with
   `--execute` the broker resolution MUST happen; with the legacy `--dry-run`
   the pre-existing exit-0 planned payload MUST be preserved.
 - Every plan, error envelope, and suggestion list in this domain MUST NOT

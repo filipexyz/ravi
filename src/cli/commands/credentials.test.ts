@@ -149,7 +149,7 @@ beforeEach(() => {
       id: "cc_slack_main",
       provider: "slack",
       connection: "main",
-      label: "Main Slack",
+      label: "PRIVATE_MESSAGE_8K2R",
       backend: "keychain",
       secretRef: SECRET_REF,
       scopes: ["chat:write"],
@@ -211,7 +211,7 @@ async function expectContractError(
 }
 
 describe("credentials connections write brake", () => {
-  it("remove without --execute is a dry-run: exit 3, nothing removed, and NO secret material in the plan", async () => {
+  it("minimizes the remove dry-run to identifiers and flags", async () => {
     const commands = new CredentialConnectionsCommands();
     const error = await expectContractError(
       () => commands.remove("slack", "main", undefined, true, undefined),
@@ -220,16 +220,19 @@ describe("credentials connections write brake", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       provider: "slack",
       connection: "main",
       id: "cc_slack_main",
+      labelPresent: true,
       backend: "keychain",
+      status: "active",
       deleteBackendSecret: false,
     });
     const serialized = JSON.stringify(error.envelope());
     expect(serialized).not.toContain(SECRET_VALUE);
     expect(serialized).not.toContain(SECRET_REF);
+    expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
     expect(removeCalls).toHaveLength(0);
     expect(deleteSecretCalls).toHaveLength(0);
   });
@@ -266,7 +269,7 @@ describe("credentials connections write brake", () => {
 });
 
 describe("credentials broker exec contract", () => {
-  it("exec without --execute is a dry-run: exit 3, no broker call, policy-only plan with NO secret material", async () => {
+  it("minimizes the broker policy to approval and capability metadata", async () => {
     const commands = new CredentialBrokerCommands();
     const error = await expectContractError(
       () => commands.exec("slack", "main", "messages.send", undefined, true, undefined),
@@ -274,15 +277,19 @@ describe("credentials broker exec contract", () => {
       3,
     );
 
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       provider: "slack",
       connection: "main",
       action: "messages.send",
-      policy: { approval: { required: true } },
+      policy: {
+        approvalRequired: true,
+        requiredCapabilitiesCount: 2,
+      },
     });
     const serialized = JSON.stringify(error.envelope());
     expect(serialized).not.toContain(SECRET_VALUE);
     expect(serialized).not.toContain(SECRET_REF);
+    expect(serialized).not.toContain("write_or_destructive_provider_action");
     expect(execCalls).toHaveLength(0);
   });
 

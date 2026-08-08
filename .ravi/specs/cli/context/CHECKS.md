@@ -6,13 +6,13 @@
   envelope and up to three `suggestions` built from real context IDs.
 - `context lineage <unknown-id> --json` MUST exit 1 with `CONTEXT_NOT_FOUND`.
 - `context revoke <id>` without `--execute` MUST exit 3, MUST report
-  `dryRun: true` with a plan carrying `contextId`, `cascade` and `reason`, and
-  MUST NOT revoke anything.
+  `dryRun: true` with allowed identifiers, `cascade`, and `reasonPresent`; the
+  reason text MUST NOT appear and the command MUST NOT revoke anything.
 - `context revoke <id> --execute` MUST perform the revoke (cascading unless
   `--no-cascade` was passed).
 - `context credentials remove <key>` without `--execute` MUST exit 3 and MUST
-  NOT write the store; the plan MUST identify the entry by `contextId`/`label`
-  and a masked key prefix only.
+  NOT write the store; the plan MUST identify the entry by allowed IDs plus
+  path/key/label presence flags, never path, label, full key, or masked key.
 - Any error envelope, dry-run plan or suggestion list in this domain MUST NOT
   contain a full `rctx_*` context key — this is the domain's security
   invariant and outranks every convenience concern.

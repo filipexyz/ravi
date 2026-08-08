@@ -1772,7 +1772,7 @@ export class ProjectFixtureCommands {
           "projects fixtures seed",
           {
             ownerAgentId: resolvedOwnerAgentId,
-            effect: "reset and reseed the canonical project/workflow/task fixtures",
+            resetsCanonicalFixtures: true,
           },
           { asJson },
         );

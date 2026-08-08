@@ -7,7 +7,9 @@ different agent (or to the instance default). The mutation remains high-impact,
 but both route and instance deletion are local soft-deletes with explicit
 restore commands, so a second identical call adds friction rather than safety.
 `pending reject` discards a review entry with no restore path and keeps the
-write brake. Everything else stays immediate: `routes add`/`set` echo their
+write brake. Its confirmation plan keeps only the instance, pending kind, and
+presence flags because phone, chat id, and name are personal data. Everything
+else stays immediate: `routes add`/`set` echo their
 live effect and clean conflicting sessions on purpose, `enable`/`disable`/
 `restore` are reversible pairs, and
 `connect` is an interactive QR pairing with a human watching the terminal —

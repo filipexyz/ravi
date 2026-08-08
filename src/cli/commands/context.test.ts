@@ -1150,9 +1150,11 @@ describe("ContextCommands", () => {
       expect(contractError.envelope().error.code).toBe("CONTEXT_NOT_FOUND");
     });
 
-    it("blocks context revoke without --execute (dry-run, exit 3, no revoke, no rctx keys in plan)", () => {
+    it("minimizes context revoke to identifiers and flags", () => {
       const command = new ContextCommands();
-      const { thrown } = captureContractCall(() => command.revoke("ctx_123", false, "rotation", true, undefined));
+      const { thrown } = captureContractCall(() =>
+        command.revoke("ctx_123", false, "PRIVATE_MESSAGE_8K2R", true, undefined),
+      );
       expect(thrown).toBeInstanceOf(ContractError);
       const contractError = thrown as InstanceType<typeof ContractError>;
       expect(contractError.exitCode).toBe(3);
@@ -1160,12 +1162,14 @@ describe("ContextCommands", () => {
       expect(envelope.op).toBe("context revoke");
       expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
       expect(envelope.error.dryRun).toBe(true);
-      expect(envelope.error.plan).toMatchObject({
+      expect(envelope.error.plan).toEqual({
         contextId: "ctx_123",
+        kind: "agent-runtime",
+        agentId: "dev",
         cascade: true,
-        reason: "rotation",
+        reasonPresent: true,
       });
-      // Anti-leak: the plan identifies the context by ID only.
+      expect(JSON.stringify(envelope)).not.toContain("PRIVATE_MESSAGE_8K2R");
       expect(JSON.stringify(envelope)).not.toContain("rctx_");
       expect(revokedCalls).toEqual([]);
     });
@@ -1238,7 +1242,8 @@ describe("ContextCredentialsCommands agent-first contract", () => {
     return { logs, thrown };
   }
 
-  it("blocks credentials remove without --execute (dry-run, exit 3, no write, masked key)", () => {
+  it("minimizes credentials remove to identifiers and presence flags", () => {
+    credentialsFileMock!.contexts[storedKey]!.label = "PRIVATE_MESSAGE_8K2R";
     const command = new ContextCredentialsCommands();
     const { thrown } = captureContractCall(() => command.remove(storedKey, true, undefined));
     expect(thrown).toBeInstanceOf(ContractError);
@@ -1247,15 +1252,20 @@ describe("ContextCredentialsCommands agent-first contract", () => {
     const envelope = contractError.envelope();
     expect(envelope.op).toBe("context credentials remove");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    expect(envelope.error.plan).toMatchObject({
+    expect(envelope.error.plan).toEqual({
+      credentialsPathPresent: true,
+      contextKeyPresent: true,
       contextId: "ctx_stored_1",
-      label: "laptop",
+      agentId: "dev",
+      labelPresent: true,
+      kind: "cli-runtime",
       wasDefault: true,
     });
-    // Anti-leak proof: the plan masks the key — the full stored rctx_* key
-    // never appears anywhere in the envelope.
+    // Anti-leak proof: the plan carries only key presence; neither full nor
+    // masked key material appears anywhere in the envelope.
     expect(JSON.stringify(envelope)).not.toContain(storedKey);
-    expect(JSON.stringify(envelope)).toContain("rctx_sto...");
+    expect(JSON.stringify(envelope)).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(JSON.stringify(envelope)).not.toContain("/tmp/ravi-test-credentials.json");
     expect(writtenCredentialsFiles).toEqual([]);
   });
 

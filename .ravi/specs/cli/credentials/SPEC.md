@@ -45,9 +45,13 @@ appear in any plan, envelope, or suggestion.
    up to 3 `suggestions` built from local `provider:connection` pairs and ids.
 4. `connections remove` and `broker exec` MUST default to dry-run and require
    `--execute`; the dry-run MUST report `dryRun: true` and the `plan`, and MUST
-   NOT remove metadata, delete secrets, or resolve any backend secret.
+   NOT remove metadata, delete secrets, or resolve any backend secret. Remove
+   uses `{provider,connection,id,labelPresent,backend,status,deleteBackendSecret}`.
+   Broker exec keeps provider/connection/action and summarizes policy as
+   `{approvalRequired,requiredCapabilitiesCount}`.
 5. Anti-leak: plans, envelopes, and suggestions MUST NOT contain secret values,
-   raw `secretRef` strings, or backend paths. Success payloads keep using
+   raw `secretRef` strings, backend paths, connection labels, policy reasons,
+   or capability entries. Success payloads keep using
    `publicCredentialConnection` (redacted `secretRef`).
 6. `broker exec --dry-run` keeps the pre-existing exit-0 planned payload as the
    documented equivalent (not renamed); the contract brake applies when neither

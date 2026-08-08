@@ -895,8 +895,8 @@ export class AgentsCommands {
         "agents delete",
         {
           agentId: id,
-          cwd: before.cwd,
-          ...(before.name ? { name: before.name } : {}),
+          cwdPresent: before.cwd.length > 0,
+          namePresent: Boolean(before.name),
         },
         { asJson },
       );
@@ -1299,8 +1299,12 @@ export class AgentsCommands {
         "agents permissions",
         {
           agentId: id,
-          before: before ?? null,
-          after,
+          beforePresent: before !== null,
+          beforeProfile: before?.profile ?? null,
+          beforeCapabilitiesCount: before?.capabilities?.length ?? 0,
+          afterPresent: after !== null,
+          afterProfile: after?.profile ?? null,
+          afterCapabilitiesCount: after?.capabilities?.length ?? 0,
         },
         { asJson },
       );
@@ -1626,7 +1630,6 @@ export class AgentsCommands {
             agentId: id,
             target: "all",
             count: sessions.length,
-            sessions: sessions.map((s) => s.name ?? s.sessionKey),
           },
           { asJson },
         );
@@ -1679,7 +1682,6 @@ export class AgentsCommands {
           {
             agentId: id,
             target: nameOrKey ?? "main",
-            session: session.name ?? session.sessionKey,
             sessionKey: session.sessionKey,
           },
           { asJson },

@@ -59,7 +59,9 @@ bundle/database.
    without `--execute`: both are local soft-deletes with explicit restore
    commands. Resolution and the runtime-mismatch check MUST still run before
    the write. `instances pending reject` has no restore path and MUST retain
-   dry-run + `--execute`, with its resolved pending entry in the plan.
+   dry-run + `--execute`. Its plan uses
+   `{instance,contactPresent,pendingFound,kind,phonePresent,chatIdPresent,namePresent}`;
+   contact, phone, chat id, and name values MUST NOT appear.
 6. Unbraked writes keep immediate-write behavior and MUST be listed as unbraked
    in the shipped skills: `create`, `set`, `enable`, `disable`, `restore`,
    `disconnect`, `delete`, `connect` (interactive QR pairing — human in the

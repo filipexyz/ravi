@@ -332,7 +332,7 @@ export class CredentialConnectionsCommands {
           provider: existing.provider,
           connection: existing.connection,
           id: existing.id,
-          label: existing.label ?? null,
+          labelPresent: Boolean(existing.label),
           backend: existing.backend,
           status: existing.status,
           deleteBackendSecret: deleteBackendSecret === true,
@@ -458,6 +458,7 @@ export class CredentialBrokerCommands {
     const record = getCredentialConnection(provider, connection);
     if (!record) failCredentialConnectionNotFound("credentials broker exec", provider, connection, asJson);
     if (dryRun !== true && execute !== true) {
+      const policy = explainCredentialPolicy({ provider: record.provider, connection: record.connection, action });
       // Write brake (Manual v2 7.8): exec is the broker boundary that resolves
       // a REAL backend credential for a provider action, so dry-run by default
       // and exit 3 before any secret resolution. The pre-existing `--dry-run`
@@ -470,7 +471,10 @@ export class CredentialBrokerCommands {
           provider: record.provider,
           connection: record.connection,
           action,
-          policy: explainCredentialPolicy({ provider: record.provider, connection: record.connection, action }),
+          policy: {
+            approvalRequired: policy.approval.required,
+            requiredCapabilitiesCount: policy.requiredCapabilities.length,
+          },
         },
         { asJson },
       );

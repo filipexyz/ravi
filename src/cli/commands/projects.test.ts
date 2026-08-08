@@ -1121,13 +1121,20 @@ describe("projects agent-first contract", () => {
     expect(startProjectWorkflowRunCalls).toHaveLength(0);
   });
 
-  it("blocks projects fixtures seed without --execute (dry-run, exit 3, no seed)", async () => {
+  it("minimizes the fixtures seed effect to an operational flag", async () => {
     const commands = new ProjectFixtureCommands();
     const error = await expectContractError(() => commands.seed(undefined, true));
     expect(error.exitCode).toBe(3);
     const envelope = error.envelope();
     expect(envelope.op).toBe("projects fixtures seed");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.plan).toEqual({
+      ownerAgentId: "main",
+      resetsCanonicalFixtures: true,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain(
+      "reset and reseed the canonical project/workflow/task fixtures",
+    );
     expect(seedFixtureCalls).toHaveLength(0);
   });
 
