@@ -830,8 +830,6 @@ export class TriggersCommands {
         "triggers test",
         {
           triggerId: id,
-          name: trigger.name,
-          topic: trigger.topic,
           executionType: trigger.executionType ?? "agent",
         },
         { asJson },
@@ -892,8 +890,6 @@ export class TriggersCommands {
         "triggers rm",
         {
           triggerId: id,
-          name: trigger.name,
-          topic: trigger.topic,
           executionType: trigger.executionType ?? "agent",
           enabled: trigger.enabled,
         },

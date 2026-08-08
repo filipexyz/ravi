@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { listCalendarEvents, listCalendarMembers, listCalendarOutbox } from "../../calendar/index.js";
 import { ContractError } from "../agent-contract.js";
+import { hashForAudit } from "../provenance.js";
 import { buildRegistry } from "../registry-snapshot.js";
 import {
   CalendarAccountsCommands,
@@ -424,7 +425,16 @@ describe("calendar agent-first contract", () => {
     expect(envelope.op).toBe("calendars share");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
-    expect((envelope.error.plan as Record<string, unknown>).with).toBe("agent:reader");
+    expect(envelope.error.plan).toEqual({
+      calendarId: calendar.id,
+      memberType: "agent",
+      memberRef: `sha256:${hashForAudit("agent:reader")}`,
+      relation: "reader",
+      expiresAtPresent: false,
+    });
+    const serializedPlan = JSON.stringify(envelope.error.plan);
+    expect(serializedPlan).not.toContain(calendar.name);
+    expect(serializedPlan).not.toContain("agent:reader");
     expect(listCalendarMembers(calendar.id).some((member) => member.memberId === "reader")).toBe(false);
 
     await captureConsole(() => calendars.share(calendar.id, "agent:reader", "reader", undefined, true, true));
@@ -457,12 +467,29 @@ describe("calendar agent-first contract", () => {
     const respondEnvelope = respondError.envelope();
     expect(respondEnvelope.op).toBe("calendars events respond");
     expect(respondEnvelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    expect((respondEnvelope.error.plan as Record<string, unknown>).status).toBe("accepted");
+    expect(respondEnvelope.error.plan).toEqual({
+      eventId: created.event.id,
+      calendarId: calendar.id,
+      status: "accepted",
+      attendeeEmailPresent: true,
+      attendeeAgentId: null,
+    });
+    const serializedRespondPlan = JSON.stringify(respondEnvelope.error.plan);
+    expect(serializedRespondPlan).not.toContain("Contract Sync");
+    expect(serializedRespondPlan).not.toContain("bob@example.com");
     expect(listCalendarOutbox().some((row) => row.operation === "respond")).toBe(false);
 
     const cancelError = await expectContractError(() => events.cancel(created.event.id, undefined, true));
     expect(cancelError.exitCode).toBe(3);
     expect(cancelError.envelope().op).toBe("calendars events cancel");
+    expect(cancelError.envelope().error.plan).toEqual({
+      eventId: created.event.id,
+      calendarId: calendar.id,
+      attendeeCount: 1,
+    });
+    const serializedCancelPlan = JSON.stringify(cancelError.envelope().error.plan);
+    expect(serializedCancelPlan).not.toContain("Contract Sync");
+    expect(serializedCancelPlan).not.toContain("2026-06-05T13:00:00.000Z");
     expect(listCalendarOutbox().some((row) => row.operation === "cancel")).toBe(false);
     const window = { from: Date.parse("2026-06-05T00:00:00.000Z"), to: Date.parse("2026-06-06T00:00:00.000Z") };
     expect(listCalendarEvents(window)[0]?.status).toBe("confirmed");

@@ -71,7 +71,13 @@ irreversible effect, and compact discovery via `--fields`.
    MUST default to dry-run and require `--execute`; the dry-run MUST report
    `dryRun: true` and the `plan`, exit 3, and MUST NOT write anything (no
    membership row, no event mutation, no outbox row). Validation and permission
-   checks run BEFORE the brake so a dry-run is an honest preview.
+   checks run BEFORE the brake so a dry-run is an honest preview. Plans MUST be
+   metadata-only: share uses `{calendarId, memberType, memberRef, relation,
+   expiresAtPresent}`, where `memberRef` is a pseudonymous stable hash; cancel
+   uses `{eventId, calendarId, attendeeCount}`, and
+   respond uses `{eventId, calendarId, status, attendeeEmailPresent,
+   attendeeAgentId}`. Calendar names, event titles/times, subjects, and attendee
+   emails MUST NOT appear.
 5. `calendars events list`, `calendars list`, `calendars sources list`,
    `calendars outbox list`, and `calendars availability` MUST accept
    `--fields a,b,c` for compact output.

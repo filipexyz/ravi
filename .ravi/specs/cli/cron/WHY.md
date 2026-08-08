@@ -8,6 +8,11 @@ real agent session or a real shell command — outside its schedule. That is why
 `run` joins `rm` behind the write brake, mirroring `tasks dispatch` (the other
 op that starts real agent execution).
 
+The confirmation plan names the opaque job id and execution shape, not the job
+name, schedule expression, prompt, or shell command. Length/presence metadata is
+enough to distinguish an empty or unexpected payload without copying executable
+content into a public contract envelope.
+
 `add`, `set`, `enable` and `disable` stay immediate: each has an inverse
 (`rm --execute` undoes `add`, `disable` undoes `enable`, `set` overwrites
 `set`), and braking the configuration loop would put exit-3 friction inside

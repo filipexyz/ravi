@@ -7,6 +7,7 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { Group, Command, CommandAccess, Arg, Option, Scope } from "../decorators.js";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { hashForAudit } from "../provenance.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
@@ -78,16 +79,12 @@ function normalizeGroupJid(groupId: string): string {
   return `${trimmed}@g.us`;
 }
 
-function maskWhatsAppTarget(jid: string): string {
-  const separator = jid.indexOf("@");
-  const local = separator >= 0 ? jid.slice(0, separator) : jid;
-  const domain = separator >= 0 ? jid.slice(separator) : "";
-  const visibleSuffix = local.length > 4 ? local.slice(-4) : local.slice(-1);
-  return `***${visibleSuffix}${domain}`;
-}
-
 function normalizeGroupLookupKey(groupId: string): string {
   return normalizeGroupJid(groupId).replace(/@g\.us$/, "");
+}
+
+function pseudonymousTargetRef(value: string): string {
+  return `sha256:${hashForAudit(value)}`;
 }
 
 function resolveGroupSendChatId(groupId: string): string {
@@ -1017,7 +1014,8 @@ export class GroupCommands {
           channel: "whatsapp",
           accountId,
           instanceId,
-          target: maskWhatsAppTarget(groupJid),
+          targetType: "group",
+          targetRef: pseudonymousTargetRef(groupJid),
           effect: "send-message",
           messageChars: cleanMessage.length,
           mentionTargetCount: mentionTargets.length,
@@ -1149,12 +1147,12 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group create",
         {
-          subject: name,
+          subjectChars: name.length,
           accountId: resolveGroupAccount(account) || null,
           participantCount: participants.length,
           requestedAdminCount: explicitAdmins.length,
           actorAdminCount: actorAdmins.length,
-          agent: agent ?? null,
+          agentId: agent ?? null,
           createAgent: createAgentIfMissing === true,
         },
         { asJson },
@@ -1422,7 +1420,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group add",
         {
-          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          targetType: "group",
+          targetRef: pseudonymousTargetRef(normalizeGroupJid(groupId)),
           participantCount: participants.length,
           accountId: resolveGroupAccount(account) || null,
         },
@@ -1471,7 +1470,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group remove",
         {
-          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          targetType: "group",
+          targetRef: pseudonymousTargetRef(normalizeGroupJid(groupId)),
           participantCount: participants.length,
           accountId: resolveGroupAccount(account) || null,
         },
@@ -1525,7 +1525,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group promote",
         {
-          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          targetType: "group",
+          targetRef: pseudonymousTargetRef(normalizeGroupJid(groupId)),
           participantCount: participants.length,
           accountId: resolveGroupAccount(account) || null,
         },
@@ -1580,7 +1581,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group demote",
         {
-          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          targetType: "group",
+          targetRef: pseudonymousTargetRef(normalizeGroupJid(groupId)),
           participantCount: participants.length,
           accountId: resolveGroupAccount(account) || null,
         },
@@ -1646,7 +1648,8 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group revoke-invite",
         {
-          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          targetType: "group",
+          targetRef: pseudonymousTargetRef(normalizeGroupJid(groupId)),
           effect: "revoke-invite",
           accountId: resolveGroupAccount(account) || null,
         },
@@ -1686,8 +1689,7 @@ export class GroupCommands {
     if (execute !== true) {
       // Write brake (Manual v2 7.8): joining puts the account inside a real
       // group ("X entrou via link" is visible to every member), an external
-      // mutation despite the legacy read/low CommandAccess metadata — so
-      // dry-run by default and exit 3 before any provider call.
+      // mutation, so dry-run by default and exit 3 before any provider call.
       contractDryRun(
         "whatsapp group join",
         {
@@ -1728,13 +1730,13 @@ export class GroupCommands {
   ) {
     if (execute !== true) {
       // Write brake (Manual v2 7.8): leaving is visible to every member and
-      // re-entry needs an invite, an external mutation despite the legacy
-      // read/low CommandAccess metadata — so dry-run by default and exit 3
-      // before any provider call.
+      // re-entry needs an invite, so dry-run by default and exit 3 before any
+      // provider call.
       contractDryRun(
         "whatsapp group leave",
         {
-          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          targetType: "group",
+          targetRef: pseudonymousTargetRef(normalizeGroupJid(groupId)),
           effect: "leave-group",
           accountId: resolveGroupAccount(account) || null,
         },
@@ -1777,9 +1779,10 @@ export class GroupCommands {
       contractDryRun(
         "whatsapp group rename",
         {
-          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          targetType: "group",
+          targetRef: pseudonymousTargetRef(normalizeGroupJid(groupId)),
           effect: "rename-group",
-          subject: name,
+          subjectChars: name.length,
           accountId: resolveGroupAccount(account) || null,
         },
         { asJson },
@@ -1817,12 +1820,13 @@ export class GroupCommands {
   ) {
     if (execute !== true) {
       // Write brake (Manual v2 7.8): the description is shown to every member,
-      // an external mutation despite the legacy read/low CommandAccess metadata
-      // — so dry-run by default and exit 3 before any provider call.
+      // an external mutation, so dry-run by default and exit 3 before any
+      // provider call.
       contractDryRun(
         "whatsapp group description",
         {
-          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          targetType: "group",
+          targetRef: pseudonymousTargetRef(normalizeGroupJid(groupId)),
           accountId: resolveGroupAccount(account) || null,
           effect: "update-description",
           descriptionChars: text.length,
@@ -1870,13 +1874,12 @@ export class GroupCommands {
 
     if (execute !== true) {
       // Write brake (Manual v2 7.8): settings change who can post/edit in a
-      // live group, an external mutation despite the legacy read/low
-      // CommandAccess metadata — so dry-run by default and exit 3 before any
-      // provider call.
+      // live group, so dry-run by default and exit 3 before any provider call.
       contractDryRun(
         "whatsapp group settings",
         {
-          target: maskWhatsAppTarget(normalizeGroupJid(groupId)),
+          targetType: "group",
+          targetRef: pseudonymousTargetRef(normalizeGroupJid(groupId)),
           effect: "update-settings",
           setting,
           accountId: resolveGroupAccount(account) || null,

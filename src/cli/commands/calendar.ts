@@ -39,6 +39,7 @@ import {
   type CalendarVisibility,
 } from "../../calendar/index.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { hashForAudit } from "../provenance.js";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { jsonObjectSchema, stringNumberRecordSchema } from "../return-schemas.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
@@ -251,11 +252,11 @@ export class CalendarCalendarsCommands {
         contractDryRun(
           "calendars share",
           {
-            calendar: calendar.id,
-            name: calendar.name,
-            with: `${target.type}:${target.id}`,
+            calendarId: calendar.id,
+            memberType: target.type,
+            memberRef: `sha256:${hashForAudit(`${target.type}:${target.id}`)}`,
             relation: memberRelation,
-            expiresAt: expiresAtMs,
+            expiresAtPresent: expiresAtMs !== null,
           },
           { asJson },
         );
@@ -458,11 +459,8 @@ export class CalendarEventsCommands {
         contractDryRun(
           "calendars events cancel",
           {
-            event: event.id,
-            title: event.title,
+            eventId: event.id,
             calendarId: calendar.id,
-            startAt: event.startAt,
-            endAt: event.endAt,
             attendeeCount: event.attendees.length,
           },
           { asJson },
@@ -507,12 +505,11 @@ export class CalendarEventsCommands {
         contractDryRun(
           "calendars events respond",
           {
-            event: event.id,
-            title: event.title,
+            eventId: event.id,
             calendarId: calendar.id,
             status: responseStatus,
-            attendeeEmail: attendeeEmail ?? null,
-            attendeeAgent: attendeeAgent ?? null,
+            attendeeEmailPresent: Boolean(attendeeEmail),
+            attendeeAgentId: attendeeAgent ?? null,
           },
           { asJson },
         );

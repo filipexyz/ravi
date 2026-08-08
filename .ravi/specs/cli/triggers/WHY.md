@@ -9,8 +9,10 @@ op in this domain.
 trigger configuration, but it is still triggered execution: the emitted event
 can wake an agent or start a shell action. Its confirmation is therefore based
 on the external execution effect, not on the command name or a database write.
-Without `--execute`, the command exposes the target and execution type and
-emits nothing.
+Without `--execute`, the command exposes only the opaque trigger id and
+execution type and emits nothing. The name and topic are content-bearing
+configuration and are unnecessary to decide whether to activate the stored
+trigger.
 
 `add`, `set`, `enable` and `disable` also stay immediate: each has an inverse,
 and the CLI already rejects invalid filters/topics before persisting, so the

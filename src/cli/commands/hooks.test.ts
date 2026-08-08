@@ -275,13 +275,16 @@ describe("HooksCommands agent-first contract", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       hookId: "hook-1",
-      name: "bridge",
-      eventName: "FileChanged",
-      scope: "workspace:/tmp/work",
+      scopeType: "workspace",
       actionType: "inject_context",
+      enabled: false,
     });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain("bridge");
+    expect(serializedPlan).not.toContain("FileChanged");
+    expect(serializedPlan).not.toContain("/tmp/work");
     expect(deletedHooks).toHaveLength(0);
     expect(refreshCalls).toHaveLength(0);
   });
@@ -304,10 +307,15 @@ describe("HooksCommands agent-first contract", () => {
     const commands = new HooksCommands();
     const error = await expectContractError(() => commands.test("hook-1", true), "WRITE_REQUIRES_EXECUTE", 3);
 
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       hookId: "hook-1",
       actionType,
+      scopeType: "workspace",
     });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain("bridge");
+    expect(serializedPlan).not.toContain("FileChanged");
+    expect(serializedPlan).not.toContain("/tmp/work");
     expect(runHookByIdMock).not.toHaveBeenCalled();
   });
 

@@ -873,9 +873,8 @@ export class CronCommands {
         "cron run",
         {
           jobId: id,
-          name: job.name,
-          executionType: job.executionType,
-          schedule: describeSchedule(job.schedule),
+          executionType: job.executionType ?? "agent",
+          scheduleType: job.schedule.type,
           ...(job.executionType === "shell"
             ? {
                 shellCommandPresent: Boolean(job.shellCommand?.trim()),
@@ -941,9 +940,8 @@ export class CronCommands {
         "cron rm",
         {
           jobId: id,
-          name: job.name,
-          executionType: job.executionType,
-          schedule: describeSchedule(job.schedule),
+          executionType: job.executionType ?? "agent",
+          scheduleType: job.schedule.type,
           enabled: job.enabled,
         },
         { asJson },

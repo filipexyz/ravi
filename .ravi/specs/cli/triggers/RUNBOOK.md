@@ -8,7 +8,7 @@
 3. Exit `1` + `TRIGGER_NOT_FOUND`: read `error.suggestions` — live trigger ids
    and names similar to what was asked. Retry with one of them.
 4. Exit `2`: read `error.acceptedFlags`; the list is authoritative for that op.
-5. Exit `3`: read `error.plan` (id, name, topic), confirm the delete is
+5. Exit `3`: read `error.plan` (id, execution type, enabled flag), confirm the delete is
    intended, then re-run the same command adding `--execute`.
 6. Need to see what a trigger would do? Run `triggers test <id>` to inspect
    the plan, then add `--execute` only when activating the agent or shell with

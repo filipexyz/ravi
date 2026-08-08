@@ -9,6 +9,9 @@
 - `hooks rm <id>` without `--execute` MUST exit 3, MUST report `dryRun: true`
   with the deletion `plan`, and MUST NOT delete the hook nor emit a hook
   refresh; with `--execute` the deletion and the refresh MUST happen.
+- Hook dry-run plans MUST contain only the hook id, action/scope types, and the
+  deletion enabled flag; names, event names, and complete scope values MUST be
+  absent.
 - The `rm` aliases (`delete`, `remove`) MUST inherit the same brake — no alias
   bypasses `--execute`.
 - `hooks enable`/`hooks disable` on an unknown id MUST exit 1 with

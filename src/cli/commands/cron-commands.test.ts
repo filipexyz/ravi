@@ -633,11 +633,11 @@ describe("cron agent-first contract", () => {
     cronJobs = [];
     cronJob = {
       id: "cron-1",
-      name: "Daily",
+      name: "SENTINEL_CRON_NAME_8K2R",
       enabled: true,
       schedule: { type: "every", every: 1_800_000 },
       executionType: "agent",
-      message: "hello",
+      message: "PRIVATE_CRON_MESSAGE_8K2R",
       sessionTarget: "main",
       deleteAfterRun: false,
       fireCount: 0,
@@ -665,7 +665,13 @@ describe("cron agent-first contract", () => {
     expect(envelope.op).toBe("cron rm");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
-    expect((envelope.error.plan as Record<string, unknown>).jobId).toBe("cron-1");
+    expect(envelope.error.plan).toEqual({
+      jobId: "cron-1",
+      executionType: "agent",
+      scheduleType: "every",
+      enabled: true,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("SENTINEL_CRON_NAME_8K2R");
     expect(cronJob).not.toBeNull();
     expect(emitMock).not.toHaveBeenCalled();
   });
@@ -689,13 +695,17 @@ describe("cron agent-first contract", () => {
     expect(envelope.op).toBe("cron run");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
-    // The plan identifies the job without exposing the message or shell command.
     const plan = envelope.error.plan as Record<string, unknown>;
-    expect(plan.jobId).toBe("cron-1");
-    expect(plan.name).toBe("Daily");
-    expect(plan.messageChars).toBe("hello".length);
-    expect(plan.message).toBeUndefined();
-    expect(JSON.stringify(plan)).not.toContain("hello");
+    expect(plan).toEqual({
+      jobId: "cron-1",
+      executionType: "agent",
+      scheduleType: "every",
+      messageChars: "PRIVATE_CRON_MESSAGE_8K2R".length,
+      agentId: "main",
+      sessionTarget: "main",
+    });
+    expect(JSON.stringify(plan)).not.toContain("SENTINEL_CRON_NAME_8K2R");
+    expect(JSON.stringify(plan)).not.toContain("PRIVATE_CRON_MESSAGE_8K2R");
     expect(emitMock).not.toHaveBeenCalled();
   });
 
@@ -728,7 +738,13 @@ describe("cron agent-first contract", () => {
 
     expect(thrown).toBeInstanceOf(ContractError);
     const plan = (thrown as InstanceType<typeof ContractError>).details.plan as Record<string, unknown>;
-    expect(plan).toMatchObject({ shellCommandPresent: true, shellCommandChars: sentinel.length });
+    expect(plan).toEqual({
+      jobId: "cron-shell",
+      executionType: "shell",
+      scheduleType: "every",
+      shellCommandPresent: true,
+      shellCommandChars: sentinel.length,
+    });
     expect(JSON.stringify(plan)).not.toContain(sentinel);
     expect(emitMock).not.toHaveBeenCalled();
   });

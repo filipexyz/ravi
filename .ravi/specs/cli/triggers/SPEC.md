@@ -43,12 +43,13 @@ RUNTIME (`src/triggers/`) is a separate, untouched contract.
    visibility filter as `triggers list` (access-denied stays folded into
    not-found, as before).
 4. `triggers rm` MUST default to dry-run and require `--execute`; the dry-run
-   MUST report `dryRun: true` and the `plan` (id, name, topic, executionType,
-   enabled), and MUST NOT delete anything or emit `ravi.triggers.refresh`.
+   MUST report `dryRun: true` and the plan `{triggerId, executionType, enabled}`,
+   and MUST NOT delete anything or emit `ravi.triggers.refresh`. Trigger names
+   and topics MUST NOT appear.
 5. `triggers test` MUST default to dry-run and require `--execute`. Although
    its event data is synthetic (`_test: true`) and it does not mutate trigger
    configuration, emitting the event can activate an agent or shell action.
-   The dry-run MUST happen before the NATS emission.
+   The dry-run `{triggerId, executionType}` MUST happen before the NATS emission.
 6. `triggers list` MUST accept `--fields a,b,c` for compact output (applied to
    both `items` and `triggers`).
 7. When invoked from an agent context (`RAVI_*` envs present), a thrown

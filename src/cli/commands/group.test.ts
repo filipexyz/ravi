@@ -7,6 +7,7 @@
  * contract helpers throw ContractError instead of exiting the process.
  */
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { hashForAudit } from "../provenance.js";
 
 const previousActorType = process.env.RAVI_ACTOR_TYPE;
 // Keep inferActorAdminPhones deterministic: agent actors contribute no phones.
@@ -368,11 +369,12 @@ describe("whatsapp group write brake", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       channel: "whatsapp",
       accountId: "main",
       instanceId: "inst-1",
-      target: "***0001@g.us",
+      targetType: "group",
+      targetRef: `sha256:${hashForAudit("120363000000000001@g.us")}`,
       effect: "send-message",
       messageChars: sensitiveMessage.length,
       mentionTargetCount: 1,
@@ -436,9 +438,11 @@ describe("whatsapp group write brake", () => {
       3,
     );
 
-    expect(error.details.plan).toMatchObject({
-      target: "***0001@g.us",
+    expect(error.details.plan).toEqual({
+      targetType: "group",
+      targetRef: `sha256:${hashForAudit("120363000000000001@g.us")}`,
       participantCount: 1,
+      accountId: "main",
     });
     expect(JSON.stringify(error.details.plan)).not.toContain("5511999999999");
     expect(addParticipantCalls).toHaveLength(0);
@@ -457,12 +461,18 @@ describe("whatsapp group write brake", () => {
 
   it("remove without --execute is a dry-run: exit 3 and no provider call", async () => {
     const commands = new GroupCommands();
-    await expectContractError(
+    const error = await expectContractError(
       () => commands.remove("120363000000000001", "5511999999999", undefined, true, undefined),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );
 
+    expect(error.details.plan).toEqual({
+      targetType: "group",
+      targetRef: `sha256:${hashForAudit("120363000000000001@g.us")}`,
+      participantCount: 1,
+      accountId: "main",
+    });
     expect(updateParticipantCalls).toHaveLength(0);
   });
 
@@ -486,23 +496,49 @@ describe("whatsapp group write brake", () => {
     expect(updateParticipantCalls[0]).toMatchObject({ action: "promote" });
   });
 
+  it("promote without --execute exposes only target type and participant count", async () => {
+    const commands = new GroupCommands();
+    const error = await expectContractError(
+      () => commands.promote("120363000000000001", "5511999999999", undefined, true, undefined),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      targetType: "group",
+      targetRef: `sha256:${hashForAudit("120363000000000001@g.us")}`,
+      participantCount: 1,
+      accountId: "main",
+    });
+    expect(JSON.stringify(error.details.plan)).not.toContain("120363000000000001");
+    expect(JSON.stringify(error.details.plan)).not.toContain("5511999999999");
+    expect(updateParticipantCalls).toHaveLength(0);
+  });
+
   it("demote without --execute is a dry-run: exit 3 and no provider call", async () => {
     const commands = new GroupCommands();
-    await expectContractError(
+    const error = await expectContractError(
       () => commands.demote("120363000000000001", "5511999999999", undefined, true, undefined),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );
 
+    expect(error.details.plan).toEqual({
+      targetType: "group",
+      targetRef: `sha256:${hashForAudit("120363000000000001@g.us")}`,
+      participantCount: 1,
+      accountId: "main",
+    });
     expect(updateParticipantCalls).toHaveLength(0);
   });
 
   it("create without --execute is a dry-run: exit 3, no group created, no agent created", async () => {
     const commands = new GroupCommands();
+    const sensitiveSubject = "SENTINEL_GROUP_SUBJECT_8K2R";
     const error = await expectContractError(
       () =>
         commands.create(
-          "Equipe Teste",
+          sensitiveSubject,
           "5511999999999",
           undefined,
           undefined,
@@ -520,12 +556,18 @@ describe("whatsapp group write brake", () => {
       3,
     );
 
-    expect(error.details.plan).toMatchObject({
-      subject: "Equipe Teste",
+    expect(error.details.plan).toEqual({
+      subjectChars: sensitiveSubject.length,
+      accountId: "main",
       participantCount: 1,
-      agent: null,
+      requestedAdminCount: 0,
+      actorAdminCount: 0,
+      agentId: null,
+      createAgent: false,
     });
-    expect(JSON.stringify(error.details.plan)).not.toContain("5511999999999");
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain(sensitiveSubject);
+    expect(serializedPlan).not.toContain("5511999999999");
     expect(createGroupCalls).toHaveLength(0);
     expect(createAgentCalls).toHaveLength(0);
     expect(upsertChatCalls).toHaveLength(0);
@@ -605,9 +647,10 @@ describe("whatsapp group write brake", () => {
     }
   });
 
-  it("group mutation plans mask the group id while preserving the material effect", async () => {
+  it("group mutation plans expose only target type, material effect and bounded metadata", async () => {
     const commands = new GroupCommands();
     const sensitiveGroupId = "120363000000000001";
+    const sensitiveSubject = "SENTINEL_RENAME_SUBJECT_8K2R";
     const cases: Array<{ run: () => Promise<unknown>; effect: Record<string, unknown> }> = [
       {
         run: () => commands.revokeInvite(sensitiveGroupId, undefined, true, undefined),
@@ -618,8 +661,8 @@ describe("whatsapp group write brake", () => {
         effect: { effect: "leave-group" },
       },
       {
-        run: () => commands.rename(sensitiveGroupId, "Novo Nome", undefined, true, undefined),
-        effect: { effect: "rename-group", subject: "Novo Nome" },
+        run: () => commands.rename(sensitiveGroupId, sensitiveSubject, undefined, true, undefined),
+        effect: { effect: "rename-group", subjectChars: sensitiveSubject.length },
       },
       {
         run: () => commands.settings(sensitiveGroupId, "announcement", undefined, true, undefined),
@@ -629,8 +672,15 @@ describe("whatsapp group write brake", () => {
 
     for (const testCase of cases) {
       const error = await expectContractError(testCase.run, "WRITE_REQUIRES_EXECUTE", 3);
-      expect(error.details.plan).toMatchObject({ target: "***0001@g.us", ...testCase.effect });
-      expect(JSON.stringify(error.details.plan)).not.toContain(sensitiveGroupId);
+      expect(error.details.plan).toEqual({
+        targetType: "group",
+        targetRef: `sha256:${hashForAudit(`${sensitiveGroupId}@g.us`)}`,
+        ...testCase.effect,
+        accountId: "main",
+      });
+      const serializedPlan = JSON.stringify(error.details.plan);
+      expect(serializedPlan).not.toContain(sensitiveGroupId);
+      expect(serializedPlan).not.toContain(sensitiveSubject);
     }
   });
 
@@ -650,7 +700,7 @@ describe("whatsapp group write brake", () => {
     expect(joinCalls).toHaveLength(0);
   });
 
-  it("description dry-run exposes only the target, effect and description length", async () => {
+  it("description dry-run exposes only the target type, effect and description length", async () => {
     const commands = new GroupCommands();
     const sensitiveDescription = "SENTINEL_GROUP_DESCRIPTION_DO_NOT_LEAK";
     const error = await expectContractError(
@@ -659,8 +709,9 @@ describe("whatsapp group write brake", () => {
       3,
     );
 
-    expect(error.details.plan).toMatchObject({
-      target: "***3@g.us",
+    expect(error.details.plan).toEqual({
+      targetType: "group",
+      targetRef: `sha256:${hashForAudit("123@g.us")}`,
       accountId: "main",
       effect: "update-description",
       descriptionChars: sensitiveDescription.length,
@@ -743,10 +794,11 @@ describe("whatsapp dm contract", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       channel: "whatsapp",
       accountId: "main",
-      target: "***6555@s.whatsapp.net",
+      targetType: "contact",
+      targetRef: `sha256:${hashForAudit(sensitiveJid)}`,
       effect: "send-message",
       messageChars: sensitiveMessage.length,
     });
@@ -800,10 +852,11 @@ describe("whatsapp dm contract", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       channel: "whatsapp",
       accountId: "main",
-      target: "***6555@s.whatsapp.net",
+      targetType: "contact",
+      targetRef: `sha256:${hashForAudit(sensitiveJid)}`,
       effect: "send-read-receipt",
       receiptCount: 1,
     });
@@ -844,10 +897,11 @@ describe("whatsapp dm contract", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       channel: "whatsapp",
       accountId: "main",
-      target: "***6555@s.whatsapp.net",
+      targetType: "contact",
+      targetRef: `sha256:${hashForAudit(sensitiveJid)}`,
       effect: "read-and-send-receipt",
       messageCount: 2,
       receiptCount: 1,

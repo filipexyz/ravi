@@ -39,3 +39,8 @@ Decisions that shaped this wave:
 
 Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
 `acceptedFlags`; command-body errors preserve the same shared taxonomy.
+
+Confirmation requires knowing the target kind and material effect, not a phone,
+JID suffix, display name, group subject, invite, or message body. Counts,
+presence flags, and text lengths preserve enough intent for an agent to decide
+whether to execute without copying personal data into the public plan.

@@ -598,8 +598,12 @@ describe("triggers agent-first contract", () => {
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
     const plan = envelope.error.plan as Record<string, unknown>;
-    expect(plan.triggerId).toBe("trg_1");
-    expect(plan.topic).toBe("ravi.external.topic");
+    expect(plan).toEqual({
+      triggerId: "trg_1",
+      executionType: "agent",
+      enabled: true,
+    });
+    expect(JSON.stringify(plan)).not.toContain("ravi.external.topic");
     expect(deletedTriggerIds).toEqual([]);
     expect(emitMock).not.toHaveBeenCalled();
   });
@@ -634,7 +638,11 @@ describe("triggers agent-first contract", () => {
     const envelope = contractError.envelope();
     expect(envelope.op).toBe("triggers test");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    expect((envelope.error.plan as { triggerId?: string }).triggerId).toBe("trg_1");
+    expect(envelope.error.plan).toEqual({
+      triggerId: "trg_1",
+      executionType: "agent",
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("ravi.external.topic");
     expect(emitMock).not.toHaveBeenCalled();
   });
 

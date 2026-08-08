@@ -39,6 +39,20 @@ subset.
    live WhatsApp state MUST default to dry-run (exit 3, `dryRun: true`, `plan`)
    and MUST emit the dry-run BEFORE any provider/NATS/queue call — including
    read-only provider calls made on the send path (group-metadata resolution).
+   Plans MUST replace phone/JID targets and text with bounded metadata:
+   `group send` uses `{channel, accountId, instanceId, targetType, targetRef, effect,
+   messageChars, mentionTargetCount}`; `group create` uses `{subjectChars,
+   accountId, participantCount, requestedAdminCount, actorAdminCount, agentId,
+   createAgent}`; add/remove/promote/demote use `{targetType, targetRef,
+   participantCount, accountId}`; revoke/leave/settings use `{targetType,
+   targetRef, effect, accountId}`
+   (settings also has `setting`); join uses `{inviteProvided, accountId}`;
+   rename adds `subjectChars`; description adds `descriptionChars`. DM plans use
+   `{channel, accountId, targetType, targetRef, effect}` plus only `messageChars`,
+   `messageCount`, or `receiptCount` as applicable. `targetType` is `group` or
+   `contact`; `targetRef` is a stable SHA-256 prefix used only to distinguish
+   targets. No target suffix, display name, phone, JID, subject, invite,
+   message id, or message text may appear.
 2. With `--json`, every failure on a migrated op MUST return the envelope
    `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
 3. Exit codes MUST follow the taxonomy: `0` success · `1` error (not-found /

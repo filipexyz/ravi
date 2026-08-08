@@ -29,6 +29,12 @@ NO invite. Provider delivery is a separate future step; if it ships, the brake
 decision for create/update with attendees must be revisited (recorded in the
 SPEC's write classification table).
 
+Dry-run plans identify the local calendar/event row and material effect, but do
+not repeat agenda content or personal recipient identity. Share uses a stable
+pseudonymous `memberRef`; respond may preserve a non-personal local agent id.
+Presence and count metadata keep the plan useful without turning it into
+another copy of the private event.
+
 ## Why Suggestions Come Only From Cheap Scoped Lists
 
 `CALENDAR_NOT_FOUND` and `SOURCE_NOT_FOUND` suggest from lists that are both

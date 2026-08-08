@@ -10,8 +10,9 @@
   the job `plan`, and MUST NOT delete anything; with `--execute` the delete
   MUST happen and `ravi.cron.refresh` MUST be emitted.
 - `cron run` without `--execute` MUST exit 3, its `plan` MUST show the resolved
-  job and the message (or shell command) that would fire, and it MUST NOT emit
-  `ravi.cron.trigger`; with `--execute` the trigger MUST be emitted.
+  job id, execution/schedule types, and message/command presence or length, but
+  MUST NOT show the job name, message, schedule text, or shell command. It MUST
+  NOT emit `ravi.cron.trigger`; with `--execute` the trigger MUST be emitted.
 - A braked op invoked with `RAVI_*` envs present (agent context) MUST still
   exit 3 with the envelope — the registry dispatcher MUST preserve
   `ContractError.exitCode` instead of the generic exit 1.

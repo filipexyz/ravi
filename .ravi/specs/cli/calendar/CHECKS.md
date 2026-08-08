@@ -27,6 +27,9 @@ owners:
 - `calendars events cancel` and `calendars events respond` without `--execute`
   MUST exit 3 and MUST NOT mutate the event or enqueue an outbox row; with
   `--execute` the local write and outbox row MUST happen.
+- Calendar dry-run plans MUST identify local calendar/event ids while replacing
+  names, titles, times, subjects, and attendee emails with type, presence, or
+  count metadata defined in the SPEC.
 - Validation and permission checks on braked ops MUST run before the brake, so
   a dry-run against a missing event still yields `EVENT_NOT_FOUND` (exit 1),
   never a misleading exit-3 plan.

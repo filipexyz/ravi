@@ -7,8 +7,9 @@
 2. Exit `1` + `HOOK_NOT_FOUND`: read `error.suggestions` — live hook ids and
    names similar to what was asked. Retry with one of them.
 3. Exit `2`: read `error.acceptedFlags`; the list is authoritative for that op.
-4. Exit `3`: read `error.plan` (hook id, name, event, scope, action), confirm
-   the deletion is intended, then re-run the same command adding `--execute`.
+4. Exit `3`: read `error.plan` (hook id, action/scope types, enabled flag),
+   confirm the deletion is intended, then re-run adding `--execute`. The plan
+   deliberately omits hook/event names and the complete scope value.
 5. If a deletion executed without `--execute`, the brake regressed: check that
    `rm` still calls `contractDryRun` before `dbDeleteHook`, and that the
    registry dispatcher still maps `ContractError.exitCode`.

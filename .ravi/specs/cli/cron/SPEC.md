@@ -44,9 +44,11 @@ with real side effects — so it is braked together with the destructive
    `cron list` (access-denied stays folded into not-found, as before).
 4. `cron rm` and `cron run` MUST default to dry-run and require `--execute`;
    the dry-run MUST report `dryRun: true` and the `plan`, and MUST NOT delete
-   the job or emit `ravi.cron.trigger`. The `cron run` plan MUST show the
-   resolved job and the message (agent jobs) or shell command (shell jobs) that
-   would fire.
+   the job or emit `ravi.cron.trigger`. Both plans use `jobId`, `executionType`
+   and `scheduleType`; `rm` adds `enabled`. Agent runs add `messageChars`,
+   `agentId`, and `sessionTarget`; shell runs add `shellCommandPresent` and
+   `shellCommandChars`. Job names, schedule text, prompts, and shell commands
+   MUST NOT appear.
 5. `cron list` MUST accept `--fields a,b,c` for compact output (applied to both
    `items` and `jobs`).
 6. When invoked from an agent context (`RAVI_*` envs present), a thrown

@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Arg, Option } from "../decorators.js";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { hashForAudit } from "../provenance.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
 import { getContact, getContactIdentities, normalizePhone, formatPhone, searchContacts } from "../../contacts.js";
@@ -16,12 +17,8 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
-function maskWhatsAppTarget(jid: string): string {
-  const separator = jid.indexOf("@");
-  const local = separator >= 0 ? jid.slice(0, separator) : jid;
-  const domain = separator >= 0 ? jid.slice(separator) : "";
-  const visibleSuffix = local.length > 4 ? local.slice(-4) : local.slice(-1);
-  return `***${visibleSuffix}${domain}`;
+function pseudonymousTargetRef(value: string): string {
+  return `sha256:${hashForAudit(value)}`;
 }
 
 /**
@@ -119,7 +116,8 @@ export class WhatsAppDmCommands {
         {
           channel: "whatsapp",
           accountId,
-          target: maskWhatsAppTarget(jid),
+          targetType: "contact",
+          targetRef: pseudonymousTargetRef(jid),
           effect: "send-message",
           messageChars: cleanMessage.length,
         },
@@ -225,7 +223,8 @@ export class WhatsAppDmCommands {
               {
                 channel: "whatsapp",
                 accountId,
-                target: maskWhatsAppTarget(jid),
+                targetType: "contact",
+                targetRef: pseudonymousTargetRef(jid),
                 effect: "read-and-send-receipt",
                 messageCount: messages.length,
                 receiptCount: 1,
@@ -293,7 +292,8 @@ export class WhatsAppDmCommands {
         {
           channel: "whatsapp",
           accountId,
-          target: maskWhatsAppTarget(jid),
+          targetType: "contact",
+          targetRef: pseudonymousTargetRef(jid),
           effect: "send-read-receipt",
           receiptCount: 1,
         },

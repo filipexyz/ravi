@@ -42,12 +42,13 @@ behavior the daemon depends on — that is the op that gets the brake.
    on an unknown id MUST exit 1 with `HOOK_NOT_FOUND` and up to 3
    `suggestions` from live hook ids/names.
 4. `hooks rm` MUST default to dry-run and require `--execute`; the dry-run MUST
-   report `dryRun: true` and the `plan` (hook id, name, event, scope, action),
-   and MUST NOT delete the hook nor emit a hook refresh.
+   report `dryRun: true` and the metadata-only plan `{hookId, scopeType,
+   actionType, enabled}`, and MUST NOT delete the hook nor emit a hook refresh.
+   Hook names, event names, and complete scope values MUST NOT appear.
 5. `hooks test` MUST require `--execute` only for `inject_context` and
    `send_session_event`, because those actions deliver into a live session.
    Other synthetic hook actions remain immediate. Unknown ids MUST fail before
-   either path.
+   either path. Its dry-run plan is `{hookId, actionType, scopeType}`.
 6. `hooks list` MUST accept `--fields a,b,c` for compact output.
 7. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.

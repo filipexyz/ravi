@@ -483,9 +483,7 @@ export class HooksCommands {
         "hooks rm",
         {
           hookId: hook.id,
-          name: hook.name,
-          eventName: hook.eventName,
-          scope: formatScope(hook),
+          scopeType: hook.scopeType,
           actionType: hook.actionType,
           enabled: hook.enabled,
         },
@@ -526,10 +524,8 @@ export class HooksCommands {
         "hooks test",
         {
           hookId: hook.id,
-          name: hook.name,
-          eventName: hook.eventName,
           actionType: hook.actionType,
-          scope: formatScope(hook),
+          scopeType: hook.scopeType,
         },
         { asJson },
       );

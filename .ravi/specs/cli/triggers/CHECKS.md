@@ -8,7 +8,8 @@
 - An invalid flag on any `triggers` op MUST exit 2 with `acceptedFlags` in the
   envelope.
 - `triggers rm` without `--execute` MUST exit 3, MUST report `dryRun: true`
-  with the trigger `plan` (id, name, topic), and MUST NOT delete anything nor
+  with the trigger `plan` (id, execution type, enabled flag), MUST NOT expose
+  the trigger name or topic, and MUST NOT delete anything nor
   emit `ravi.triggers.refresh`; with `--execute` the delete MUST happen.
 - `triggers test` without `--execute` MUST exit 3 and MUST NOT emit to NATS;
   with `--execute` it emits the synthetic event and reports `changedCount: 0`.
