@@ -1097,3 +1097,11 @@ Depois das correções, passaram localmente 10 testes de permissões/aprovação
 53 testes no lote conjunto Omni + Apps que reproduz a ordem relevante da CI.
 A spec permanece `draft`; somente uma nova CI verde no SHA exato pode promover
 esta fase para aprovada.
+
+O CI Linux [`31282273679`](https://github.com/filipexyz/ravi/actions/runs/31282273679)
+do SHA `05cda8798042e92f2b01b45a04e864d2dfa27bf8` voltou a passar Build e
+Typecheck. Test parou em uma única identidade, `channels-json.test.ts`, antes de
+executar seus casos: o mock parcial não expunha dependências agora alcançadas
+pelo grafo de imports no Bun 1.3.11 da CI. O commit `0b938edf` completou apenas
+os mocks desse teste; seus oito casos passaram localmente depois da correção.
+Quality Gate permaneceu ignorado nessa rodada e a spec continua `draft`.
