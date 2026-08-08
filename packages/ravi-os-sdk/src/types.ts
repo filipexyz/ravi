@@ -922,6 +922,7 @@ export type AppsPromptsReturn = {
 /** Input shape for `apps.run`. */
 export type AppsRunInput = {
   args?: string[];
+  execute?: boolean;
   id: string;
   operation?: string;
 };
@@ -933,8 +934,10 @@ export type AppsRunReturn = {
   channel?: string;
   childContextId?: string;
   command?: string;
+  dryRun?: true;
   durationMs: number;
   error?: string;
+  errorCode?: string;
   exitCode?: number | null;
   handler?: string;
   interface: ("builtin" | "cli") | null;
@@ -943,7 +946,10 @@ export type AppsRunReturn = {
   operation: string | null;
   operationId: string | null;
   permissionProvider?: {
-    audit?: unknown;
+    audit?: {
+      evidenceCount: number;
+      policyVersion?: string;
+    };
     cache: {
       hit: boolean;
       ttlSec?: number;
@@ -951,17 +957,36 @@ export type AppsRunReturn = {
     decision: "allow" | "deny" | "needs_grant" | "not_applicable" | "error" | "invalid";
     durationMs: number;
     error?: string;
-    grantSuggestion?: unknown;
+    grantSuggestion?: {
+      object: {
+        id: string;
+        type: string;
+      };
+      reasonPresent?: boolean;
+      relation: string;
+      subject: {
+        id: string;
+        type: string;
+      };
+      ttlSec?: number;
+    };
     interface: "builtin" | "cli";
     providerId: string;
     providerOperationId: string;
     providerVersion: string;
-    reason?: string;
     reasonCode: string | null;
+    reasonPresent?: boolean;
     requestId: string;
   };
+  plan?: {
+    appId: string;
+    argumentCount: number;
+    interface: "builtin" | "cli";
+    mutating: true;
+    operationId: string;
+  };
   result?: unknown;
-  status: "completed" | "failed";
+  status: "completed" | "blocked" | "failed";
   stderr?: string;
   stdout?: string;
 };
@@ -7035,6 +7060,7 @@ export type HeartbeatStatusReturn = {
 
 /** Input shape for `heartbeat.trigger`. */
 export type HeartbeatTriggerInput = {
+  execute?: boolean;
   id: string;
 };
 
@@ -9333,6 +9359,7 @@ export type PagesCreateInput = {
   args: string[];
   console?: string;
   defaultSite?: boolean;
+  execute?: boolean;
   project?: string;
   visibility?: string;
 };
@@ -9352,6 +9379,7 @@ export type PagesDomainsInput = {
   args: string[];
   check?: boolean;
   console?: string;
+  execute?: boolean;
   project?: string;
 };
 

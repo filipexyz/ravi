@@ -5011,6 +5011,10 @@ export const AppsRunInputSchema = {
       },
       "type": "array"
     },
+    "execute": {
+      "description": "Execute a mutating app operation",
+      "type": "boolean"
+    },
     "id": {
       "description": "App id",
       "type": "string"
@@ -5028,39 +5032,6 @@ export const AppsRunInputSchema = {
 
 /** JSON Schema for the return shape of `apps.run`. */
 export const AppsRunReturnSchema = {
-  "$defs": {
-    "__schema0": {
-      "anyOf": [
-        {
-          "type": "string"
-        },
-        {
-          "type": "number"
-        },
-        {
-          "type": "boolean"
-        },
-        {
-          "type": "null"
-        },
-        {
-          "items": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "type": "array"
-        },
-        {
-          "additionalProperties": {
-            "$ref": "#/$defs/__schema0"
-          },
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        }
-      ]
-    }
-  },
   "additionalProperties": false,
   "properties": {
     "appId": {
@@ -5085,10 +5056,17 @@ export const AppsRunReturnSchema = {
     "command": {
       "type": "string"
     },
+    "dryRun": {
+      "const": true,
+      "type": "boolean"
+    },
     "durationMs": {
       "type": "number"
     },
     "error": {
+      "type": "string"
+    },
+    "errorCode": {
       "type": "string"
     },
     "exitCode": {
@@ -5148,7 +5126,19 @@ export const AppsRunReturnSchema = {
       "additionalProperties": false,
       "properties": {
         "audit": {
-          "$ref": "#/$defs/__schema0"
+          "additionalProperties": false,
+          "properties": {
+            "evidenceCount": {
+              "type": "number"
+            },
+            "policyVersion": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "evidenceCount"
+          ],
+          "type": "object"
         },
         "cache": {
           "additionalProperties": false,
@@ -5183,7 +5173,56 @@ export const AppsRunReturnSchema = {
           "type": "string"
         },
         "grantSuggestion": {
-          "$ref": "#/$defs/__schema0"
+          "additionalProperties": false,
+          "properties": {
+            "object": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "type": "object"
+            },
+            "reasonPresent": {
+              "type": "boolean"
+            },
+            "relation": {
+              "type": "string"
+            },
+            "subject": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "type": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "type",
+                "id"
+              ],
+              "type": "object"
+            },
+            "ttlSec": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "subject",
+            "relation",
+            "object"
+          ],
+          "type": "object"
         },
         "interface": {
           "enum": [
@@ -5201,9 +5240,6 @@ export const AppsRunReturnSchema = {
         "providerVersion": {
           "type": "string"
         },
-        "reason": {
-          "type": "string"
-        },
         "reasonCode": {
           "anyOf": [
             {
@@ -5213,6 +5249,9 @@ export const AppsRunReturnSchema = {
               "type": "null"
             }
           ]
+        },
+        "reasonPresent": {
+          "type": "boolean"
         },
         "requestId": {
           "type": "string"
@@ -5231,10 +5270,44 @@ export const AppsRunReturnSchema = {
       ],
       "type": "object"
     },
+    "plan": {
+      "additionalProperties": false,
+      "properties": {
+        "appId": {
+          "type": "string"
+        },
+        "argumentCount": {
+          "type": "number"
+        },
+        "interface": {
+          "enum": [
+            "builtin",
+            "cli"
+          ],
+          "type": "string"
+        },
+        "mutating": {
+          "const": true,
+          "type": "boolean"
+        },
+        "operationId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "appId",
+        "operationId",
+        "interface",
+        "mutating",
+        "argumentCount"
+      ],
+      "type": "object"
+    },
     "result": {},
     "status": {
       "enum": [
         "completed",
+        "blocked",
         "failed"
       ],
       "type": "string"
@@ -35391,6 +35464,10 @@ export const HeartbeatStatusReturnSchema = {
 export const HeartbeatTriggerInputSchema = {
   "additionalProperties": false,
   "properties": {
+    "execute": {
+      "description": "Queue the manual heartbeat agent run",
+      "type": "boolean"
+    },
     "id": {
       "description": "Agent ID",
       "type": "string"
@@ -47612,6 +47689,10 @@ export const PagesCreateInputSchema = {
       "description": "Mark this as the project default site when available",
       "type": "boolean"
     },
+    "execute": {
+      "description": "Create the external Pages host record",
+      "type": "boolean"
+    },
     "project": {
       "description": "Console project id or slug; overrides saved Console scope",
       "type": "string"
@@ -47737,6 +47818,10 @@ export const PagesDomainsInputSchema = {
     "console": {
       "description": "Console base URL",
       "type": "string"
+    },
+    "execute": {
+      "description": "Bind hostnames through the external Pages provider",
+      "type": "boolean"
     },
     "project": {
       "description": "Console project id or slug; overrides saved Console scope",

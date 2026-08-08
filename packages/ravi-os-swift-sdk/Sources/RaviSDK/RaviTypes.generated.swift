@@ -894,14 +894,34 @@ public struct AppsPromptsReturn: Codable, Sendable {
   }
 }
 
+public struct AppsRunOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
 public struct AppsRunReturn: Codable, Sendable {
   public var appId: RaviJSON
   public var callerContextId: String?
   public var channel: String?
   public var childContextId: String?
   public var command: String?
+  public var dryRun: Bool?
   public var durationMs: Double
   public var error: String?
+  public var errorCode: String?
   public var exitCode: RaviJSON?
   public var handler: String?
   public var interface: RaviJSON
@@ -910,19 +930,22 @@ public struct AppsRunReturn: Codable, Sendable {
   public var operation: RaviJSON
   public var operationId: RaviJSON
   public var permissionProvider: RaviJSON?
+  public var plan: RaviJSON?
   public var result: RaviJSON?
   public var status: String
   public var stderr: String?
   public var stdout: String?
 
-  public init(appId: RaviJSON, callerContextId: String? = nil, channel: String? = nil, childContextId: String? = nil, command: String? = nil, durationMs: Double, error: String? = nil, exitCode: RaviJSON? = nil, handler: String? = nil, interface: RaviJSON, mutating: Bool, ok: Bool, operation: RaviJSON, operationId: RaviJSON, permissionProvider: RaviJSON? = nil, result: RaviJSON? = nil, status: String, stderr: String? = nil, stdout: String? = nil) {
+  public init(appId: RaviJSON, callerContextId: String? = nil, channel: String? = nil, childContextId: String? = nil, command: String? = nil, dryRun: Bool? = nil, durationMs: Double, error: String? = nil, errorCode: String? = nil, exitCode: RaviJSON? = nil, handler: String? = nil, interface: RaviJSON, mutating: Bool, ok: Bool, operation: RaviJSON, operationId: RaviJSON, permissionProvider: RaviJSON? = nil, plan: RaviJSON? = nil, result: RaviJSON? = nil, status: String, stderr: String? = nil, stdout: String? = nil) {
     self.appId = appId
     self.callerContextId = callerContextId
     self.channel = channel
     self.childContextId = childContextId
     self.command = command
+    self.dryRun = dryRun
     self.durationMs = durationMs
     self.error = error
+    self.errorCode = errorCode
     self.exitCode = exitCode
     self.handler = handler
     self.interface = interface
@@ -931,6 +954,7 @@ public struct AppsRunReturn: Codable, Sendable {
     self.operation = operation
     self.operationId = operationId
     self.permissionProvider = permissionProvider
+    self.plan = plan
     self.result = result
     self.status = status
     self.stderr = stderr
@@ -943,8 +967,10 @@ public struct AppsRunReturn: Codable, Sendable {
     case channel = "channel"
     case childContextId = "childContextId"
     case command = "command"
+    case dryRun = "dryRun"
     case durationMs = "durationMs"
     case error = "error"
+    case errorCode = "errorCode"
     case exitCode = "exitCode"
     case handler = "handler"
     case interface = "interface"
@@ -953,6 +979,7 @@ public struct AppsRunReturn: Codable, Sendable {
     case operation = "operation"
     case operationId = "operationId"
     case permissionProvider = "permissionProvider"
+    case plan = "plan"
     case result = "result"
     case status = "status"
     case stderr = "stderr"
@@ -10390,6 +10417,24 @@ public struct HeartbeatStatusReturn: Codable, Sendable {
   }
 }
 
+public struct HeartbeatTriggerOptions: Codable, Sendable {
+  public var execute: Bool?
+
+  public init(execute: Bool? = nil) {
+    self.execute = execute
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case execute = "execute"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
 public struct HeartbeatTriggerReturn: Codable, Sendable {
   public var changedCount: Double
   public var heartbeatFile: String
@@ -13974,12 +14019,14 @@ public struct ObserversShowReturn: Codable, Sendable {
 public struct PagesCreateOptions: Codable, Sendable {
   public var console: String?
   public var defaultSite: Bool?
+  public var execute: Bool?
   public var project: String?
   public var visibility: String?
 
-  public init(console: String? = nil, defaultSite: Bool? = nil, project: String? = nil, visibility: String? = nil) {
+  public init(console: String? = nil, defaultSite: Bool? = nil, execute: Bool? = nil, project: String? = nil, visibility: String? = nil) {
     self.console = console
     self.defaultSite = defaultSite
+    self.execute = execute
     self.project = project
     self.visibility = visibility
   }
@@ -13987,6 +14034,7 @@ public struct PagesCreateOptions: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case console = "console"
     case defaultSite = "defaultSite"
+    case execute = "execute"
     case project = "project"
     case visibility = "visibility"
   }
@@ -13997,6 +14045,9 @@ public struct PagesCreateOptions: Codable, Sendable {
     }
     if let value = self.defaultSite {
       body["defaultSite"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.project {
       body["project"] = try RaviJSON.fromEncodable(value)
@@ -14037,17 +14088,20 @@ public struct PagesCreateReturn: Codable, Sendable {
 public struct PagesDomainsOptions: Codable, Sendable {
   public var check: Bool?
   public var console: String?
+  public var execute: Bool?
   public var project: String?
 
-  public init(check: Bool? = nil, console: String? = nil, project: String? = nil) {
+  public init(check: Bool? = nil, console: String? = nil, execute: Bool? = nil, project: String? = nil) {
     self.check = check
     self.console = console
+    self.execute = execute
     self.project = project
   }
 
   enum CodingKeys: String, CodingKey {
     case check = "check"
     case console = "console"
+    case execute = "execute"
     case project = "project"
   }
 
@@ -14057,6 +14111,9 @@ public struct PagesDomainsOptions: Codable, Sendable {
     }
     if let value = self.console {
       body["console"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.project {
       body["project"] = try RaviJSON.fromEncodable(value)

@@ -447,7 +447,7 @@ public struct AppsNamespace: Sendable {
     return try await transport.call(groupSegments: ["apps"], command: "prompts", body: requestBody, as: AppsPromptsReturn.self)
   }
 
-  public func run(_ id: String, _ operation: String? = nil, _ args: [String]? = nil) async throws -> AppsRunReturn {
+  public func run(_ id: String, _ operation: String? = nil, _ args: [String]? = nil, _ options: AppsRunOptions = .init()) async throws -> AppsRunReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
     if let operation {
@@ -456,6 +456,7 @@ public struct AppsNamespace: Sendable {
     if let args {
       requestBody["args"] = try RaviJSON.fromEncodable(args)
     }
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["apps"], command: "run", body: requestBody, as: AppsRunReturn.self)
   }
 
@@ -2329,9 +2330,10 @@ public struct HeartbeatNamespace: Sendable {
     return try await transport.call(groupSegments: ["heartbeat"], command: "status", body: requestBody, as: HeartbeatStatusReturn.self)
   }
 
-  public func trigger(_ id: String) async throws -> HeartbeatTriggerReturn {
+  public func trigger(_ id: String, _ options: HeartbeatTriggerOptions = .init()) async throws -> HeartbeatTriggerReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["heartbeat"], command: "trigger", body: requestBody, as: HeartbeatTriggerReturn.self)
   }
 }

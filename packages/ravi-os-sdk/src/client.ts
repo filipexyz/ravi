@@ -228,11 +228,13 @@ export class RaviClient {
       });
     },
     /** Run a Ravi app operation through the runtime app router */
-    run: async (id: string, operation?: string, args?: string[]): Promise<AppsRunReturn> => {
+    run: async (id: string, operation?: string, args?: string[], options?: {
+      execute?: boolean;
+    }): Promise<AppsRunReturn> => {
       return this.transport.call({
         groupSegments: ["apps"],
         command: "run",
-        body: { id, operation, args },
+        body: { id, operation, args, ...(options ?? {}) },
       });
     },
     /** Create a Ravi app scaffold from the app contract */
@@ -2932,11 +2934,13 @@ export class RaviClient {
       });
     },
     /** Manually trigger a heartbeat */
-    trigger: async (id: string): Promise<HeartbeatTriggerReturn> => {
+    trigger: async (id: string, options?: {
+      execute?: boolean;
+    }): Promise<HeartbeatTriggerReturn> => {
       return this.transport.call({
         groupSegments: ["heartbeat"],
         command: "trigger",
-        body: { id },
+        body: { id, ...(options ?? {}) },
       });
     }
   };
@@ -4170,6 +4174,7 @@ export class RaviClient {
     create: async (args: string[], options?: {
       console?: string;
       defaultSite?: boolean;
+      execute?: boolean;
       project?: string;
       visibility?: string;
     }): Promise<PagesCreateReturn> => {
@@ -4183,6 +4188,7 @@ export class RaviClient {
     domains: async (args: string[], options?: {
       check?: boolean;
       console?: string;
+      execute?: boolean;
       project?: string;
     }): Promise<PagesDomainsReturn> => {
       return this.transport.call({
