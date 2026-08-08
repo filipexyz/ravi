@@ -141,7 +141,7 @@ export async function runLogout(options: CloudLogoutOptions = {}, deps: CloudAut
       loggedOut: true,
       consoleUrl: normalizeConsoleUrl(options.console ?? DEFAULT_CONSOLE_URL),
       revoked: false,
-      revokeError: cloudError.toJSON(),
+      revokeError: toSafeCloudLogoutError(cloudError),
     };
     printPayload(payload, options.json, () => {
       console.log("Invalid Ravi Cloud credentials were removed locally.");
@@ -164,7 +164,7 @@ export async function runLogout(options: CloudLogoutOptions = {}, deps: CloudAut
 
   const client = deps.client ?? new ConsoleApiClient({ consoleUrl: credentials.consoleUrl });
   let revoked = false;
-  let revokeError: ReturnType<CloudAuthError["toJSON"]> | null = null;
+  let revokeError: ReturnType<typeof toSafeCloudLogoutError> | null = null;
   let logoutCredentials = credentials;
   try {
     await client.logout(
@@ -187,10 +187,10 @@ export async function runLogout(options: CloudLogoutOptions = {}, deps: CloudAut
         );
         revoked = true;
       } catch (refreshOrLogoutError) {
-        revokeError = cloudAuthErrorFromUnknown(refreshOrLogoutError).toJSON();
+        revokeError = toSafeCloudLogoutError(refreshOrLogoutError);
       }
     } else {
-      revokeError = cloudAuthErrorFromUnknown(error).toJSON();
+      revokeError = toSafeCloudLogoutError(error);
     }
   } finally {
     del();
@@ -208,6 +208,14 @@ export async function runLogout(options: CloudLogoutOptions = {}, deps: CloudAut
     if (!revoked && revokeError) console.log(`Console revoke did not complete: ${revokeError.code}`);
   });
   return payload;
+}
+
+function toSafeCloudLogoutError(error: unknown): { code: CloudAuthError["code"]; status?: number } {
+  const cloudError = cloudAuthErrorFromUnknown(error);
+  return {
+    code: cloudError.code,
+    ...(cloudError.status !== undefined ? { status: cloudError.status } : {}),
+  };
 }
 
 export async function runCloudAuthRootCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T> {

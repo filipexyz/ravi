@@ -249,7 +249,7 @@ describe("stickers contract", () => {
         chatIdPresent: true,
         threadIdPresent: false,
       },
-      fileName: "wave.webp",
+      fileName: "[REDACTED:content length=9]",
       mimeType: "image/webp",
     });
     const serializedPlan = JSON.stringify(error.details.plan);
@@ -269,6 +269,36 @@ describe("stickers contract", () => {
 
     expect(error.details.suggestions).toContain("wave");
     expect(error.details.suggestedAction).toContain("ravi stickers list");
+    expect(emittedEvents).toHaveLength(0);
+  });
+
+  it("does not expose the local media path when sticker media is missing", async () => {
+    const privatePath = join(stateDir!, "PRIVATE_CUSTOMER_STICKER_8K2R.webp");
+    writeFileSync(privatePath, "webp");
+    addSticker({
+      id: "missing-media",
+      label: "Missing media",
+      description: "Missing file fixture.",
+      channels: ["whatsapp"],
+      agents: [],
+      media: { kind: "file", path: privatePath },
+      enabled: true,
+    });
+    rmSync(privatePath);
+
+    const error = await expectContractError(
+      () => new StickerCommands().send("missing-media", undefined, undefined, undefined, undefined, true, true),
+      "STICKER_MEDIA_NOT_FOUND",
+      1,
+    );
+
+    expect(error.message).toBe("Sticker media file is unavailable.");
+    expect(error.details).toMatchObject({
+      mediaPathPresent: true,
+      suggestedAction: "Re-add the sticker media and retry the command",
+    });
+    expect(JSON.stringify(error.envelope())).not.toContain(privatePath);
+    expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_CUSTOMER_STICKER_8K2R");
     expect(emittedEvents).toHaveLength(0);
   });
 

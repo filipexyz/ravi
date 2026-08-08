@@ -3,7 +3,7 @@ const BEARER_TOKEN_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi;
 const API_TOKEN_PATTERN = /\b(?:sk|rk|pk)-[A-Za-z0-9_-]{12,}\b/g;
 const REDACTION_MARKER_PATTERN = /^\[REDACTED(?::(?:path|rctx|token|content(?: length=\d+)?))?\]$/;
 const CONTENT_KEY_PATTERN =
-  /^(?:body|caption|content|fileName|inputName|message|output|prompt|sourceName|subject|text)$/i;
+  /^(?:body|caption|content|fileName|inputName|instructions|message|output|prompt|query|reason|sourceName|subject|text|title)$/i;
 const SECRET_KEY_SEGMENTS = new Set(["password", "passwords", "secret", "secrets", "token", "tokens"]);
 const SAFE_NUMERIC_SECRET_SUFFIXES = new Set(["chars", "count", "length"]);
 const SECRET_KEYS = new Set([

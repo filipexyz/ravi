@@ -149,4 +149,27 @@ describe("CLI audit redaction", () => {
     });
     expect(JSON.stringify(payload)).not.toContain("SENTINEL_SECRET_7M4Q");
   });
+
+  it("redacts user-authored task, failure and search text from audit inputs", () => {
+    const sanitized = sanitizeCliAuditValue({
+      title: "PRIVATE_TITLE_8K2R",
+      instructions: "PRIVATE_INSTRUCTIONS_8K2R",
+      reason: "PRIVATE_REASON_8K2R",
+      query: "PRIVATE_QUERY_8K2R",
+      taskId: "task_123",
+    });
+
+    expect(sanitized).toEqual({
+      title: "[REDACTED:content length=18]",
+      instructions: "[REDACTED:content length=25]",
+      reason: "[REDACTED:content length=19]",
+      query: "[REDACTED:content length=18]",
+      taskId: "task_123",
+    });
+    const serialized = JSON.stringify(sanitized);
+    expect(serialized).not.toContain("PRIVATE_TITLE_8K2R");
+    expect(serialized).not.toContain("PRIVATE_INSTRUCTIONS_8K2R");
+    expect(serialized).not.toContain("PRIVATE_REASON_8K2R");
+    expect(serialized).not.toContain("PRIVATE_QUERY_8K2R");
+  });
 });

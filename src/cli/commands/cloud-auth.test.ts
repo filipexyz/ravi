@@ -160,13 +160,14 @@ describe("cloud auth root command handlers", () => {
 
   it("deletes invalid local credentials even when Console revoke cannot run", async () => {
     let deleted = false;
+    const providerMessage = "PRIVATE_PROVIDER_MESSAGE_8K2R";
 
     const { output, result } = await captureConsole(() =>
       runLogout(
         { json: true },
         {
           readCredentials: () => {
-            throw new CloudAuthError("CREDENTIALS_INVALID", "Stored credentials are invalid.");
+            throw new CloudAuthError("CREDENTIALS_INVALID", providerMessage, { status: 401 });
           },
           deleteCredentials: () => {
             deleted = true;
@@ -186,9 +187,43 @@ describe("cloud auth root command handlers", () => {
       revoked: false,
       revokeError: {
         code: "CREDENTIALS_INVALID",
-        message: "Stored credentials are invalid.",
+        status: 401,
       },
     });
+    expect(payload.revokeError.message).toBeUndefined();
+    expect(JSON.stringify(payload)).not.toContain(providerMessage);
+  });
+
+  it("does not expose a provider message when remote logout fails", async () => {
+    const credentials = makeCredentials();
+    const providerMessage = "PRIVATE_LOGOUT_PROVIDER_MESSAGE_8K2R";
+    const client = {
+      logout: mock(async () => {
+        throw new CloudAuthError("SERVER_UNAVAILABLE", providerMessage, { status: 503 });
+      }),
+    } as unknown as ConsoleApiClient;
+
+    const { output } = await captureConsole(() =>
+      runLogout(
+        { json: true },
+        {
+          client,
+          readCredentials: () => credentials,
+          deleteCredentials: () => {},
+          writeCredentials: () => {},
+        },
+      ),
+    );
+    const payload = JSON.parse(output);
+
+    expect(payload).toMatchObject({
+      success: true,
+      loggedOut: true,
+      revoked: false,
+      revokeError: { code: "SERVER_UNAVAILABLE", status: 503 },
+    });
+    expect(payload.revokeError.message).toBeUndefined();
+    expect(JSON.stringify(payload)).not.toContain(providerMessage);
   });
 });
 

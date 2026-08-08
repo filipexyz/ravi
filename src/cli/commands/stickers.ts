@@ -352,7 +352,13 @@ export class StickerCommands {
   }
 
   @Command({ name: "remove", description: "Remove a sticker catalog entry" })
-  @CommandAccess({ kind: "mutate", resource: "stickers", action: "remove", risk: "destructive", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "stickers",
+    action: "remove",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   @Returns(stickerRemoveReturnSchema)
   remove(
     @Arg("id", { description: "Sticker id" }) id: string,
@@ -429,10 +435,11 @@ export class StickerCommands {
       failStickerNotFound("stickers send", id, asJson);
     }
     if (!existsSync(sticker.media.path)) {
-      contractFail("stickers send", "STICKER_MEDIA_NOT_FOUND", `Sticker media file not found: ${sticker.media.path}`, {
+      contractFail("stickers send", "STICKER_MEDIA_NOT_FOUND", "Sticker media file is unavailable.", {
         asJson,
         details: {
-          suggestedAction: `Re-add the sticker media (ravi stickers add ${sticker.id} <mediaPath> --overwrite ...)`,
+          mediaPathPresent: true,
+          suggestedAction: "Re-add the sticker media and retry the command",
         },
       });
     }

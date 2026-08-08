@@ -32,9 +32,7 @@ export const REMOTE_GATEWAY_DEFAULT_TIMEOUT_MS = 30_000;
 // be a broader contract change than this boundary repair.
 const REMOTE_CONTRACT_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 const REMOTE_FLAG_PATTERN = /^--[a-z0-9][a-z0-9-]{0,63}$/;
-const REMOTE_POSITIONAL_PATTERN =
-  /^(?:<[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?>|\[[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?\])$/;
-const REMOTE_SUGGESTION_PATTERN = /^[^\u0000-\u001f\u007f]{1,128}$/u;
+const REMOTE_POSITIONAL_PATTERN = /^(?:<[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?>|\[[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?\])$/;
 
 export interface RemoteGatewayConfig {
   url: string;
@@ -42,10 +40,7 @@ export interface RemoteGatewayConfig {
   source: "env";
 }
 
-export function getRemoteGatewayConfig(
-  env: NodeJS.ProcessEnv = process.env,
-  op = "cli",
-): RemoteGatewayConfig | null {
+export function getRemoteGatewayConfig(env: NodeJS.ProcessEnv = process.env, op = "cli"): RemoteGatewayConfig | null {
   const raw = env[REMOTE_GATEWAY_URL_ENV]?.trim();
   if (!raw) return null;
   let parsed: URL;
@@ -192,8 +187,6 @@ function projectRemoteContractDetails(op: string, body: CompleteContractErrorBod
   if (typeof remote.suggestedAction === "string") {
     details.suggestedAction = remoteSuggestedAction(op, body.outcome);
   }
-  const suggestions = boundedStringList(remote.suggestions, REMOTE_SUGGESTION_PATTERN);
-  if (suggestions) details.suggestions = suggestions;
   const acceptedFlags = boundedStringList(remote.acceptedFlags, REMOTE_FLAG_PATTERN);
   if (acceptedFlags) details.acceptedFlags = acceptedFlags;
   const acceptedPositionals = boundedStringList(remote.acceptedPositionals, REMOTE_POSITIONAL_PATTERN);
