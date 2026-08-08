@@ -5,9 +5,8 @@ import { contractDryRun, contractFail } from "../agent-contract.js";
 import { readCloudCredentials } from "../../cloud-auth/storage.js";
 import {
   createConsoleSyncBridge,
-  getSyncStatusSummary,
   getSyncStatusSummaryReadOnly,
-  inspectSyncRecord,
+  inspectSyncRecordReadOnly,
   retryOutbox,
 } from "../../sync/index.js";
 import { getSyncRuntimeConfig } from "../../sync/config.js";
@@ -188,7 +187,7 @@ export class SyncCommands {
     @Arg("id", { description: "sync_outbox or sync_inbox id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const result = inspectSyncRecord(id);
+    const result = inspectSyncRecordReadOnly(id);
     if (!result) {
       // Manual v2 not-found envelope (exit 1). Sync row ids are opaque ULIDs,
       // so similarity suggestions would be noise — point at the status surface
@@ -337,7 +336,7 @@ declareCommandReturns(SyncCommands, {
 
 function buildStatusPayload() {
   const credentials = readCloudCredentials();
-  const summary = getSyncStatusSummary();
+  const summary = getSyncStatusSummaryReadOnly();
   const config = getSyncRuntimeConfig();
   const lastUpload = summary.cursors.find((cursor) => cursor.domain === "sync" && cursor.cursorKey === "last_upload");
   const lastDownload = summary.cursors.filter((cursor) => cursor.domain === "sync_remote").at(-1);

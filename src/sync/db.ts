@@ -530,13 +530,44 @@ export function inspectSyncRecord(
   return null;
 }
 
+/** Inspect sync state without creating or migrating the shared Ravi database. */
+export function inspectSyncRecordReadOnly(
+  id: string,
+): { kind: "outbox"; record: SyncOutboxRecord } | { kind: "inbox"; record: SyncInboxRecord } | null {
+  const dbPath = getRaviDbPath();
+  if (!existsSync(dbPath)) return null;
+
+  const db = new Database(dbPath, { readonly: true, create: false });
+  try {
+    db.exec("PRAGMA busy_timeout = 1000");
+    const outbox = getOutboxByIdFromDb(db, id);
+    if (outbox) return { kind: "outbox", record: outbox };
+    const inbox = getInboxByIdFromDb(db, id);
+    if (inbox) return { kind: "inbox", record: inbox };
+    return null;
+  } catch (error) {
+    if (error instanceof Error && /no such table: sync_(?:outbox|inbox)/i.test(error.message)) return null;
+    throw error;
+  } finally {
+    db.close();
+  }
+}
+
 export function getOutboxById(id: string): SyncOutboxRecord | null {
-  const row = getDb().prepare("SELECT * FROM sync_outbox WHERE id = ?").get(id) as SyncOutboxRow | undefined;
+  return getOutboxByIdFromDb(getDb(), id);
+}
+
+function getOutboxByIdFromDb(db: Database, id: string): SyncOutboxRecord | null {
+  const row = db.prepare("SELECT * FROM sync_outbox WHERE id = ?").get(id) as SyncOutboxRow | undefined;
   return row ? rowToOutbox(row) : null;
 }
 
 export function getInboxById(id: string): SyncInboxRecord | null {
-  const row = getDb().prepare("SELECT * FROM sync_inbox WHERE id = ?").get(id) as SyncInboxRow | undefined;
+  return getInboxByIdFromDb(getDb(), id);
+}
+
+function getInboxByIdFromDb(db: Database, id: string): SyncInboxRecord | null {
+  const row = db.prepare("SELECT * FROM sync_inbox WHERE id = ?").get(id) as SyncInboxRow | undefined;
   return row ? rowToInbox(row) : null;
 }
 

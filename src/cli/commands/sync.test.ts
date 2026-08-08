@@ -38,7 +38,7 @@ afterEach(async () => {
 afterAll(() => mock.restore());
 
 describe("sync cli", () => {
-  it("prints status as JSON", () => {
+  it("prints an empty status as JSON without creating sync storage", () => {
     const logs: string[] = [];
     const log = spyOn(console, "log").mockImplementation((value: unknown) => {
       logs.push(String(value));
@@ -54,6 +54,7 @@ describe("sync cli", () => {
       expect(parsed.linked).toBe(false);
       expect(parsed.runner).toMatchObject({ enabled: false, env: "RAVI_SYNC_RUNNER_ENABLED" });
       expect(parsed.outbox.pending).toBe(0);
+      expect(readdirSync(stateDir)).toEqual([]);
     } finally {
       log.mockRestore();
     }
@@ -148,7 +149,7 @@ describe("sync contract", () => {
     expect(result).toEqual({ success: true, retried: 0 });
   });
 
-  it("inspect on an unknown id exits 1 with the SYNC_RECORD_NOT_FOUND envelope", async () => {
+  it("inspect on an unknown id exits 1 without creating sync storage", async () => {
     const commands = new SyncCommands();
     const error = await expectContractError(
       () => commands.inspect("row-does-not-exist", true),
@@ -157,6 +158,7 @@ describe("sync contract", () => {
     );
 
     expect(error.details.suggestedAction).toContain("ravi sync status --json");
+    expect(readdirSync(stateDir)).toEqual([]);
   });
 });
 
