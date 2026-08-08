@@ -157,6 +157,36 @@ describe("gateway ContractError compatibility", () => {
     expect(buildErrorFromGateway(403, body, "agents.debounce")).not.toBeInstanceOf(RaviContractError);
   });
 
+  it("discards an incoherent contract-looking response instead of retaining remote content", () => {
+    const sentinel = "PRIVATE_SENTINEL_INCOHERENT_4J7M";
+    const body = {
+      ...contractBody(3, "failed"),
+      error: {
+        ...contractBody(3, "failed").error,
+        message: sentinel,
+        plan: { prompt: sentinel },
+      },
+      providerBody: sentinel,
+    } as unknown as RaviContractErrorBody;
+
+    const error = buildErrorFromGateway(409, body, "audio.generate");
+    const serialized = JSON.stringify({
+      message: error.message,
+      body: error.body,
+      status: error.status,
+      command: error.command,
+    });
+
+    expect(error).not.toBeInstanceOf(RaviContractError);
+    expect(error).toMatchObject({
+      message: "Ravi gateway returned HTTP 409",
+      body: null,
+      status: 409,
+      command: "audio.generate",
+    });
+    expect(serialized).not.toContain(sentinel);
+  });
+
   it("preserves a policy block through the HTTP transport", async () => {
     const body = contractBody(3, "blocked");
     const transport = createHttpTransport({
@@ -180,6 +210,35 @@ describe("gateway ContractError compatibility", () => {
       exitCode: 3,
       outcome: "blocked",
     });
+  });
+
+  it("does not retain a malformed non-JSON HTTP response", async () => {
+    const sentinel = "PRIVATE_SENTINEL_HTTP_BODY_9K2R";
+    const transport = createHttpTransport({
+      baseUrl: "https://gateway.example",
+      contextKey: "rctx_test",
+      fetch: (async () =>
+        new Response(`<html>${sentinel}</html>`, {
+          status: 502,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        })) as typeof fetch,
+    });
+
+    let caught: unknown;
+    try {
+      await transport.call({ groupSegments: ["audio"], command: "generate", body: {} });
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(RaviInternalError);
+    expect(caught).toMatchObject({
+      message: "Ravi gateway returned HTTP 502",
+      body: null,
+      status: 502,
+      command: "audio.generate",
+    });
+    expect(JSON.stringify(caught)).not.toContain(sentinel);
   });
 
   it.each([

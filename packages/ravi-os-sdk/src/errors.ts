@@ -184,15 +184,25 @@ export function buildErrorFromGateway(
   command: string | null,
 ): RaviError {
   if (isRaviContractErrorBody(body)) return new RaviContractError(status, body, command);
-  const message = pickMessage(body) ?? `Ravi gateway returned status ${status}`;
-  if (status === 401) return new RaviAuthError(message, body, command);
-  if (status === 403) return new RaviPermissionError(message, body, command);
+  const publicBody = isUnsafeGatewayErrorBody(body) ? null : (body as RaviErrorBody | null);
+  const message = pickMessage(publicBody) ?? `Ravi gateway returned HTTP ${status}`;
+  if (status === 401) return new RaviAuthError(message, publicBody, command);
+  if (status === 403) return new RaviPermissionError(message, publicBody, command);
   if (status >= 400 && status < 500) {
-    const issues = Array.isArray(body?.issues) ? (body!.issues as RaviIssue[]) : [];
-    return new RaviValidationError(message, issues, status, body, command);
+    const issues = Array.isArray(publicBody?.issues) ? (publicBody.issues as RaviIssue[]) : [];
+    return new RaviValidationError(message, issues, status, publicBody, command);
   }
-  if (status >= 500) return new RaviInternalError(message, body, status, command);
-  return new RaviError(message, status, body, command);
+  if (status >= 500) return new RaviInternalError(message, publicBody, status, command);
+  return new RaviError(message, status, publicBody, command);
+}
+
+function isUnsafeGatewayErrorBody(body: RaviGatewayErrorBody | null): boolean {
+  if (!body) return false;
+  if (body.error === "MalformedResponse") return true;
+  return (
+    body.success === false &&
+    (typeof body.op === "string" || "exitCode" in body || "outcome" in body)
+  );
 }
 
 /** Runtime guard for consumers that inspect raw SDK error bodies. */
