@@ -30,10 +30,12 @@ mock.module("../nats.js", () => ({
   getNats: () => {
     throw new Error("not used in this test");
   },
+  isExplicitConnect: () => false,
   publish: publishMock,
   nats: {
     emit: mock(async () => {}),
     subscribe: async function* () {},
+    close: mock(async () => {}),
   },
 }));
 
