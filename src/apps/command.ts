@@ -89,7 +89,7 @@ export function tokenizeRaviAppCommand(command: string): string[] {
 
   for (const char of command) {
     if (escaped) {
-      token += char;
+      token += isEscapedCommandCharacter(char) ? char : `\\${char}`;
       tokenStarted = true;
       escaped = false;
       continue;
@@ -133,6 +133,10 @@ export function tokenizeRaviAppCommand(command: string): string[] {
   if (tokenStarted) tokens.push(token);
   if (tokens.length === 0) throw new Error("CLI command must declare an executable.");
   return tokens;
+}
+
+function isEscapedCommandCharacter(char: string): boolean {
+  return /\s/.test(char) || char === "\\" || char === "'" || char === '"' || "|&;<>".includes(char);
 }
 
 export function resolveRaviAppCommand(

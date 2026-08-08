@@ -178,7 +178,10 @@ function writeContextProbeApp(root: string): { appDir: string; scriptPath: strin
     `
 const whoami = Bun.spawnSync({
   cmd: [process.execPath, ${JSON.stringify(cliEntrypoint)}, "context", "whoami", "--json"],
-  cwd: process.cwd(),
+  // The test invokes the TypeScript source directly, so Bun must discover the
+  // repository tsconfig that enables the CLI's legacy decorator metadata.
+  // The app process itself still runs from appDir, as asserted below.
+  cwd: ${JSON.stringify(originalCwd)},
   env: process.env,
   stdout: "pipe",
   stderr: "pipe"

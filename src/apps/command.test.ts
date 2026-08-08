@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { resolve } from "node:path";
 import {
   buildRaviAppProcessEnv,
   parseRaviAppCapability,
@@ -15,6 +16,14 @@ describe("Ravi App CLI command contract", () => {
       "three words",
       "escaped value",
     ]);
+  });
+
+  it("preserves Windows absolute paths with or without quotes", () => {
+    const unquotedPath = String.raw`C:\ravi\permission-provider.mjs`;
+    const quotedPath = String.raw`C:\Program Files\Ravi\permission-provider.mjs`;
+
+    expect(tokenizeRaviAppCommand(`bun ${unquotedPath} --json`)).toEqual(["bun", unquotedPath, "--json"]);
+    expect(tokenizeRaviAppCommand(`bun "${quotedPath}" --json`)).toEqual(["bun", quotedPath, "--json"]);
   });
 
   it("inserts dynamic args only at the complete {args} token", () => {
@@ -35,14 +44,15 @@ describe("Ravi App CLI command contract", () => {
   });
 
   it("rewrites the ravi executable to the current runtime entrypoint", () => {
+    const entrypoint = resolve("src", "cli", "index.ts");
     expect(
       resolveRaviAppCommand("ravi contacts list {args} --json", ["--limit", "2"], {
         execPath: "/runtime/bun",
-        entrypoint: "/repo/src/cli/index.ts",
+        entrypoint,
       }),
     ).toMatchObject({
       executable: "/runtime/bun",
-      argv: ["/repo/src/cli/index.ts", "contacts", "list", "--limit", "2", "--json"],
+      argv: [entrypoint, "contacts", "list", "--limit", "2", "--json"],
     });
   });
 
