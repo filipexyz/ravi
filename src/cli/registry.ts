@@ -277,7 +277,7 @@ function registerCommand(
 
     // Execute and emit single event with input + output
     const startTime = Date.now();
-    let outcome: "succeeded" | "blocked" | "usage_error" | "failed" = "succeeded";
+    let outcome: "succeeded" | "blocked" | "usage_error" | "denied" | "failed" = "succeeded";
     let contractExitCode: number | null = null;
     let contractErrorCode: string | undefined;
 

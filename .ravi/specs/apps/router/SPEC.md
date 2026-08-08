@@ -45,12 +45,14 @@ Operator command:
 
 ```bash
 ravi <app-id> [operation] [args...] --json
+ravi <app-id> [operation] [args...] --execute --json
 ```
 
 Router fallback/debug command:
 
 ```bash
 ravi apps run <app-id> [operation] [args...] --json
+ravi apps run <app-id> [operation] [args...] --execute --json
 ```
 
 ## Invariants
@@ -111,6 +113,16 @@ ravi apps run <app-id> [operation] [args...] --json
   (`help`, `show`, `check`) MUST require `use app:<app-id>` before returning
   manifest details, validation errors, operation ids, or next commands.
 - Mutating operations MUST declare `permission` or `permissions`.
+- Read-only operations MUST run without `--execute`.
+- A mutating operation MUST return the shared exit-3 policy envelope until the
+  caller passes `--execute`. The plan MUST contain only the app id, resolved
+  operation id, interface, mutation classification, and argument count. Raw
+  arguments MUST NOT be copied into the plan.
+- The mutation brake MUST run after app-object authorization and operation
+  resolution, but before the app permission provider, child-context issuance,
+  builtin handler, or subprocess spawn.
+- The dynamic root alias MUST consume `--execute` as a Ravi router flag and
+  MUST NOT forward it as an app argument.
 - When a runtime caller context exists, the router MUST issue a fresh child
   context before launching the app CLI.
 - The child context MUST use stable `cliName: "app:<app-id>"`, a bounded TTL,
@@ -128,12 +140,22 @@ ravi apps run <app-id> [operation] [args...] --json
 - The router MUST scrub raw credentials, bearer tokens, and unrelated secret
   environment variables. App credentials MUST be resolved through Ravi's
   credential boundary after authorization, not inherited from the launcher.
-- The router MUST emit audit metadata for app dispatch attempts, including
-  `appId`, `operationId`, `interface`, `mutating`, caller context id, child
-  context id, status, duration, and error class when available. It MUST NOT log
-  either raw context key.
+- The active CLI, tool, or gateway transport MUST emit exactly one terminal
+  audit for each app dispatch attempt. It MUST preserve the requested app,
+  operation, semantic outcome, exit code, and error code when present. Runtime
+  context provenance MAY be added by the transport. Raw arguments, provider
+  output, stdout, stderr, and context keys MUST NOT be logged. The internal
+  router MUST NOT emit a second terminal audit.
 - `--json` MUST produce machine-readable output for router success and failure
   states when requested. It is an output format, not an App transport.
+- Missing apps, permission denials, provider failures, and subprocess failures
+  MUST cross public CLI, tool, and gateway boundaries as the shared contract
+  envelope. Raw provider errors, command strings, stdout, and stderr MUST NOT
+  appear in a failure response.
+- App or provider policy decisions `deny`, `needs_grant`, and `not_applicable`
+  are `PERMISSION_DENIED` with outcome `denied`. Provider timeout, process
+  failure, invalid JSON, and invalid schema are
+  `APP_PERMISSION_PROVIDER_FAILED` with outcome `failed`.
 - Discovery and help/show/check/list operations MUST NOT execute app binaries,
   run health commands, import arbitrary code, or mutate storage.
 - Interactive or streaming app behavior MUST remain a CLI operation and use a
@@ -148,6 +170,8 @@ ravi apps run <app-id> [operation] [args...] --json
 ```bash
 ravi <app-id> [operation] [args...] --json
 ravi apps run <app-id> [operation] [args...] --json
+ravi <app-id> <mutating-operation> [args...] --execute --json
+ravi apps run <app-id> <mutating-operation> [args...] --execute --json
 ```
 
 Argument handling:
@@ -160,10 +184,12 @@ Argument handling:
   operation executor has been resolved and authorized.
 - Each remaining arg MUST remain one argv element. Quoting or shell-like text
   in user input MUST be treated as data, not evaluated.
-- Global CLI flags such as `--json` MUST retain their normal behavior.
-- App process completion MUST preserve exit status, stdout, and stderr
-  semantics. Capturing output for a caller MUST NOT invent a second result
-  protocol.
+- Global CLI flags such as `--json` and `--execute` MUST retain their normal
+  behavior and MUST NOT be forwarded to the app implementation.
+- Successful app process completion MAY preserve exit status, stdout, and
+  stderr semantics for the requesting transport. Failed process output is
+  private diagnostic material and MUST be replaced by the stable contract
+  error at public boundaries.
 
 ## Resolution Order
 
@@ -251,6 +277,10 @@ is ordinary CLI composition, not a distinct App protocol.
   without `use app:<app-id>`.
 - In agent/runtime context, a mutating operation MUST fail without
   `execute app:<app-id>` even when `use app:<app-id>` is present.
+- With `execute app:<app-id>` but without `--execute`, a mutating operation
+  MUST be blocked with exit `3` before provider evaluation or process spawn.
+- Adding `--execute` MUST run the same resolved operation without forwarding
+  the flag to the app.
 - In agent/runtime context, a valid operation MUST launch with a new child
   context no broader than manifest `context.allow`.
 - A child-context issuance failure MUST produce no app process.

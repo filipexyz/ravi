@@ -164,10 +164,7 @@ class GatewayDemoCommands {
   @CommandAccess({ kind: "read", resource: "demo", action: "missing-blob", risk: "low" })
   @Returns.binary()
   missingBlob() {
-    return Response.json(
-      { error: "NotFound", detail: "private storage path and provider response" },
-      { status: 404 },
-    );
+    return Response.json({ error: "NotFound", detail: "private storage path and provider response" }, { status: 404 });
   }
 
   @Command({
@@ -295,7 +292,11 @@ function adminSystem(): ContextCapability {
 
 const demoContext = gatewayContext([executeGroup("demo")]);
 const appsContext = gatewayContext(
-  [semanticCap("read", "apps", "show"), semanticCap("use", "app", "contract-missing-app")],
+  [
+    semanticCap("read", "apps", "show"),
+    semanticCap("mutate", "apps", "run"),
+    semanticCap("use", "app", "contract-missing-app"),
+  ],
   "gateway-apps",
 );
 const sessionsContext = gatewayContext([executeGroup("sessions")]);
@@ -538,6 +539,35 @@ describe("dispatch — error path", () => {
     });
     expect(JSON.stringify(body)).not.toContain("evidence");
     expect(audits.events[0]).toMatchObject({ outcome: "failed", exitCode: 1, errorCode: "not_found" });
+  });
+
+  it("does not turn an apps run failure into an HTTP success", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findAppCmd("apps.run"),
+      { id: "contract-missing-app", operation: "check", args: ["PRIVATE_ARGUMENT_SENTINEL"] },
+      {},
+      { contextRecord: appsContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(422);
+    const body = await result.response.json();
+    expect(body).toMatchObject({
+      success: false,
+      op: "apps run",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "not_found", message: "Ravi app was not found." },
+    });
+    expect(JSON.stringify(body)).not.toContain("contract-missing-app");
+    expect(JSON.stringify(body)).not.toContain("PRIVATE_ARGUMENT_SENTINEL");
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]).toMatchObject({
+      input: { id: "contract-missing-app", operation: "check", args: "[REDACTED]" },
+      outcome: "failed",
+      exitCode: 1,
+      errorCode: "not_found",
+    });
   });
 
   it("normalizes RaviAppError as a redacted canonical contract and audit", async () => {

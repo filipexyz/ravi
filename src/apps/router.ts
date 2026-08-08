@@ -15,7 +15,8 @@ import type {
   RaviAppRunOptions,
   RaviAppRunResult,
 } from "./types.js";
-import { emitCliAuditEvent } from "../cli/audit.js";
+import { RaviAppError } from "./types.js";
+import { runWithCliAudit } from "../cli/audit.js";
 import { getContext } from "../cli/context.js";
 import { AppPermissionProviderDeniedError, evaluateAppPermissionProvider } from "../permissions/provider-runtime.js";
 import {
@@ -24,7 +25,13 @@ import {
   type IssueRuntimeContextInput,
 } from "../runtime/context-registry.js";
 import type { ContextRecord } from "../router/router-db.js";
-import { assertCanRunAppOperation, assertCanUseApp, filterVisibleAppManifests } from "./permissions.js";
+import {
+  assertCanRunAppOperation,
+  assertCanUseApp,
+  filterVisibleAppManifests,
+  RaviAppPermissionDeniedError,
+} from "./permissions.js";
+import { enforceRaviAppRunResult } from "./error-contract.js";
 
 interface ResolvedOperation {
   id: string;
@@ -64,8 +71,18 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       runtime: options.runtime,
       callerContext,
       startedAt,
+      execute: options.execute === true,
     });
   } catch (error) {
+    const errorCode = classifyAppRunError(error);
+    const message =
+      errorCode === "not_found"
+        ? "Ravi app was not found."
+        : errorCode === "PERMISSION_DENIED"
+          ? "Ravi app operation was denied."
+          : errorCode === "APP_PERMISSION_PROVIDER_FAILED"
+            ? "Ravi app permission provider failed."
+            : "Ravi app operation failed.";
     result = {
       ok: false,
       appId: options.appId,
@@ -75,43 +92,25 @@ export async function runAppOperation(options: RaviAppRunOptions): Promise<RaviA
       mutating: false,
       status: "failed",
       durationMs: Date.now() - startedAt,
-      error: error instanceof Error ? error.message : String(error),
+      error: message,
+      errorCode,
       ...(callerContext ? { callerContextId: callerContext.contextId } : {}),
       ...(error instanceof AppPermissionProviderDeniedError ? { permissionProvider: error.audit } : {}),
     };
   }
 
-  await emitCliAuditEvent({
-    group: "apps",
-    name: "run",
-    tool: "apps_run",
-    input: {
-      appId: result.appId,
-      operation: result.operation,
-      operationId: result.operationId,
-      interface: result.interface,
-      mutating: result.mutating,
-      callerContextId: result.callerContextId,
-      childContextId: result.childContextId,
-      permissionProvider: result.permissionProvider
-        ? {
-            providerId: result.permissionProvider.providerId,
-            providerVersion: result.permissionProvider.providerVersion,
-            providerOperationId: result.permissionProvider.providerOperationId,
-            decision: result.permissionProvider.decision,
-            reasonCode: result.permissionProvider.reasonCode,
-            cache: result.permissionProvider.cache,
-            durationMs: result.permissionProvider.durationMs,
-          }
-        : undefined,
-    },
-    isError: !result.ok,
-    status: "completed",
-    durationMs: result.durationMs,
-    closeLazyConnection: true,
-  });
-
   return result;
+}
+
+function classifyAppRunError(error: unknown): string {
+  if (error instanceof RaviAppError) return error.code;
+  if (error instanceof RaviAppPermissionDeniedError) return "PERMISSION_DENIED";
+  if (error instanceof AppPermissionProviderDeniedError) {
+    return ["deny", "needs_grant", "not_applicable"].includes(error.audit.decision)
+      ? "PERMISSION_DENIED"
+      : "APP_PERMISSION_PROVIDER_FAILED";
+  }
+  return "APP_OPERATION_FAILED";
 }
 
 export function resolveAppAliasInvocation(
@@ -138,13 +137,14 @@ export function resolveAppAliasInvocation(
     const candidate = argv.slice(0, segmentCount).join("/");
     if (!appIds.has(candidate)) continue;
     const rest = argv.slice(segmentCount);
-    const { json, help, args } = stripRouterFlags(rest);
+    const { json, help, execute, args } = stripRouterFlags(rest);
     const operation = help ? "help" : args[0];
     return {
       appId: candidate,
       operation,
       args: help ? args : operation ? args.slice(1) : args,
       json,
+      ...(execute ? { execute: true } : {}),
     };
   }
 
@@ -162,17 +162,35 @@ export async function maybeRunAppAliasRoute(
   const invocation = resolveAppAliasInvocation(argv, options);
   if (!invocation) return false;
 
-  const result = await runAppOperation({
-    appId: invocation.appId,
-    operation: invocation.operation,
-    args: invocation.args,
-    json: invocation.json,
-    cwd: options.cwd,
-    env: options.env,
-    staticRootCommands: options.staticRootCommands,
-  });
-  printAppRunResult(result, { json: invocation.json });
-  if (!result.ok) process.exitCode = 1;
+  await runWithCliAudit(
+    {
+      group: "apps",
+      name: "run",
+      tool: "apps_run",
+      input: {
+        appId: invocation.appId,
+        operation: invocation.operation,
+        json: invocation.json,
+        execute: invocation.execute === true,
+        argumentCount: invocation.args.length,
+      },
+      closeLazyConnection: true,
+    },
+    async () => {
+      const result = await runAppOperation({
+        appId: invocation.appId,
+        operation: invocation.operation,
+        args: invocation.args,
+        json: invocation.json,
+        execute: invocation.execute === true,
+        cwd: options.cwd,
+        env: options.env,
+        staticRootCommands: options.staticRootCommands,
+      });
+      enforceRaviAppRunResult(result, invocation.json);
+      printAppRunResult(result, { json: invocation.json });
+    },
+  );
   return true;
 }
 
@@ -295,6 +313,7 @@ async function dispatchResolvedOperation(
     runtime?: RaviAppRunOptions["runtime"];
     callerContext?: ContextRecord;
     startedAt: number;
+    execute: boolean;
   },
 ): Promise<RaviAppRunResult> {
   const appId = app.manifest?.id ?? app.id;
@@ -311,6 +330,27 @@ async function dispatchResolvedOperation(
     throw new Error(`Mutating operation ${resolved.id} must declare permission or permissions.`);
   }
   assertCanRunAppOperation(appId, resolved.id, mutating);
+  if (mutating && !options.execute) {
+    return {
+      ok: false,
+      appId,
+      operation: localOperationName(appId, resolved.id),
+      operationId: resolved.id,
+      interface: interfaceName,
+      mutating: true,
+      status: "blocked",
+      durationMs: Date.now() - options.startedAt,
+      dryRun: true,
+      plan: {
+        appId,
+        operationId: resolved.id,
+        interface: interfaceName,
+        mutating: true,
+        argumentCount: options.args.length,
+      },
+      ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
+    };
+  }
   const permissionProvider = await evaluateAppPermissionProvider(app, resolved, {
     args: options.args,
     cwd: options.cwd,
@@ -390,19 +430,31 @@ async function runCliOperation(
   });
   const parsed = options.json ? parseJsonOutput(run.stdout) : undefined;
 
-  return {
-    ok: run.exitCode === 0,
+  const base = {
     appId,
     operation: localOperationName(appId, resolved.id),
     operationId: resolved.id,
-    interface: "cli",
+    interface: "cli" as const,
     mutating: resolved.operation.mutating === true,
-    status: run.exitCode === 0 ? "completed" : "failed",
     durationMs: Date.now() - options.startedAt,
-    command: invocation.displayCommand,
-    exitCode: run.exitCode,
     ...(options.callerContext ? { callerContextId: options.callerContext.contextId } : {}),
     ...(childContext ? { childContextId: childContext.contextId } : {}),
+  };
+  if (run.exitCode !== 0) {
+    return {
+      ...base,
+      ok: false,
+      status: "failed",
+      errorCode: "APP_OPERATION_FAILED",
+      error: "Ravi app operation failed.",
+    };
+  }
+  return {
+    ...base,
+    ok: true,
+    status: "completed",
+    command: invocation.displayCommand,
+    exitCode: run.exitCode,
     ...(options.json
       ? {
           stdout: run.stdout,
@@ -410,11 +462,6 @@ async function runCliOperation(
           result: parsed ?? run.stdout.trim(),
         }
       : {}),
-    ...(run.exitCode === 0
-      ? {}
-      : {
-          error: run.stderr.trim() || `Command exited with code ${run.exitCode}`,
-        }),
   };
 }
 
@@ -599,10 +646,12 @@ function toDetail(record: RaviAppManifestRecord): Record<string, unknown> {
 function stripRouterFlags(argv: string[]): {
   json: boolean;
   help: boolean;
+  execute: boolean;
   args: string[];
 } {
   let json = false;
   let help = false;
+  let execute = false;
   const args: string[] = [];
   for (const arg of argv) {
     if (arg === "--json") {
@@ -613,9 +662,13 @@ function stripRouterFlags(argv: string[]): {
       help = true;
       continue;
     }
+    if (arg === "--execute") {
+      execute = true;
+      continue;
+    }
     args.push(arg);
   }
-  return { json, help, args };
+  return { json, help, execute, args };
 }
 
 function spawnExecutable(

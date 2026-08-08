@@ -3,7 +3,7 @@ import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
-import { throwRaviAppContractError } from "../../apps/error-contract.js";
+import { enforceRaviAppRunResult, throwRaviAppContractError } from "../../apps/error-contract.js";
 import {
   buildAppsGuide,
   checkAppManifests,
@@ -222,10 +222,21 @@ const appsRunReturnSchema = z.object({
   operationId: z.string().nullable(),
   interface: z.enum(["builtin", "cli"]).nullable(),
   mutating: z.boolean(),
-  status: z.enum(["completed", "failed"]),
+  status: z.enum(["completed", "blocked", "failed"]),
   durationMs: z.number(),
   result: z.unknown().optional(),
   error: z.string().optional(),
+  errorCode: z.string().optional(),
+  dryRun: z.literal(true).optional(),
+  plan: z
+    .object({
+      appId: z.string(),
+      operationId: z.string(),
+      interface: z.enum(["builtin", "cli"]),
+      mutating: z.literal(true),
+      argumentCount: z.number(),
+    })
+    .optional(),
   command: z.string().optional(),
   handler: z.string().optional(),
   channel: z.string().optional(),
@@ -454,13 +465,21 @@ export class AppsCommands {
   }
 
   @Command({ name: "run", description: "Run a Ravi app operation through the runtime app router" })
-  @CommandAccess({ kind: "mutate", resource: "apps", action: "run", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "apps",
+    action: "run",
+    risk: "high",
+    redactions: ["args"],
+    requiresConfirmation: true,
+  })
   @Returns(appsRunReturnSchema)
   async run(
     @Arg("id", { description: "App id" }) id: string,
     @Arg("operation", { required: false, description: "Operation name. Defaults to app help." }) operation?: string,
     @Arg("args", { required: false, variadic: true, description: "Operation arguments" }) rest?: string[],
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Execute a mutating app operation" }) execute?: boolean,
   ) {
     const wantsJson = asJson === true || getContext()?.suppressCliOutput === true;
     const result = await runAppOperation({
@@ -468,10 +487,11 @@ export class AppsCommands {
       operation,
       args: rest ?? [],
       json: wantsJson,
+      execute: execute === true,
     });
 
+    enforceRaviAppRunResult(result, wantsJson);
     printAppRunResult(result, { json: wantsJson });
-    if (!result.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
     return result;
   }
 

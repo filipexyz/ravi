@@ -74,7 +74,9 @@ export function contractErrorResponse(
   statusOverride?: number,
   outcomeOverride?: GatewayContractErrorBody["outcome"],
 ): Response {
-  const status = statusOverride ?? (error.exitCode === 2 ? 400 : error.exitCode === 3 ? 409 : 422);
+  const status =
+    statusOverride ??
+    (error.code === "PERMISSION_DENIED" ? 403 : error.exitCode === 2 ? 400 : error.exitCode === 3 ? 409 : 422);
   const body: GatewayContractErrorBody = {
     ...error.envelope(),
     exitCode: error.exitCode,

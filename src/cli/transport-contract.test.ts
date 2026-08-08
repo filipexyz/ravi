@@ -5,7 +5,7 @@ import { z } from "zod";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { dispatch } from "../sdk/gateway/dispatcher.js";
-import { ContractError, contractDryRun } from "./agent-contract.js";
+import { ContractError, contractDryRun, contractFailureOutcome } from "./agent-contract.js";
 import { runWithCliAudit, wasContractErrorAudited } from "./audit.js";
 import { runWithContext } from "./context.js";
 import { Command, CommandAccess, Group, Option, Returns } from "./decorators.js";
@@ -61,6 +61,10 @@ const deniedContext: ContextRecord = {
 };
 
 describe("global cloud failure contract", () => {
+  it("classifies an internal PERMISSION_DENIED contract as denied", () => {
+    expect(contractFailureOutcome(new ContractError("apps run", "PERMISSION_DENIED", "denied", 1))).toBe("denied");
+  });
+
   it("sanitizes contract details before every transport can observe them", () => {
     const failure = new ContractError("media send", "WRITE_REQUIRES_EXECUTE", "confirmation required", 3, {
       dryRun: true,

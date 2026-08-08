@@ -144,6 +144,7 @@ const appsContext: ContextRecord = {
   agentId: "apps-test",
   capabilities: [
     { permission: "read", objectType: "apps", objectId: "show", source: "test" },
+    { permission: "mutate", objectType: "apps", objectId: "run", source: "test" },
     { permission: "use", objectType: "app", objectId: "contract-missing-app", source: "test" },
   ],
   createdAt: Date.now(),
@@ -195,9 +196,7 @@ describe("tools export provider-runtime authorization", () => {
 
 describe("tools export contract errors", () => {
   it("normalizes a non-success binary Response instead of returning empty success", async () => {
-    const tool = extractTools([ContractToolCommands]).find(
-      (candidate) => candidate.name === "contract_missing-binary",
-    );
+    const tool = extractTools([ContractToolCommands]).find((candidate) => candidate.name === "contract_missing-binary");
     expect(tool).toBeDefined();
 
     const result = await runWithContext({ agentId: contractContext.agentId, context: contractContext }, () =>
@@ -230,6 +229,30 @@ describe("tools export contract errors", () => {
       error: { code: "not_found", message: "Ravi app was not found." },
     });
     expect(JSON.stringify(body)).not.toContain("evidence");
+  });
+
+  it("does not flatten an apps run failure into a successful tool result", async () => {
+    const tool = extractTools([AppsCommands]).find((candidate) => candidate.name === "apps_run");
+    expect(tool).toBeDefined();
+
+    const result = await runWithContext({ agentId: appsContext.agentId, context: appsContext }, () =>
+      tool!.handler({
+        id: "contract-missing-app",
+        operation: "check",
+        args: ["PRIVATE_ARGUMENT_SENTINEL"],
+        json: true,
+      }),
+    );
+
+    expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
+    const body = JSON.parse(result.content[0]?.text ?? "{}");
+    expect(body).toMatchObject({
+      success: false,
+      op: "apps run",
+      error: { code: "not_found", message: "Ravi app was not found." },
+    });
+    expect(JSON.stringify(body)).not.toContain("contract-missing-app");
+    expect(JSON.stringify(body)).not.toContain("PRIVATE_ARGUMENT_SENTINEL");
   });
 
   it("returns a redacted canonical envelope for an unexpected error", async () => {

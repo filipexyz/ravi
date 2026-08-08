@@ -26,7 +26,7 @@ export const CONTRACT_EXIT_ERROR = 1;
 export const CONTRACT_EXIT_USAGE = 2;
 export const CONTRACT_EXIT_POLICY = 3;
 
-export type ContractFailureOutcome = "blocked" | "usage_error" | "failed";
+export type ContractFailureOutcome = "blocked" | "usage_error" | "denied" | "failed";
 
 export interface ContractErrorDetails {
   retryable?: boolean;
@@ -67,9 +67,10 @@ export class ContractError extends Error {
   }
 }
 
-export function contractFailureOutcome(error: Pick<ContractError, "exitCode">): ContractFailureOutcome {
+export function contractFailureOutcome(error: Pick<ContractError, "code" | "exitCode">): ContractFailureOutcome {
   if (error.exitCode === CONTRACT_EXIT_POLICY) return "blocked";
   if (error.exitCode === CONTRACT_EXIT_USAGE) return "usage_error";
+  if (error.code === "PERMISSION_DENIED") return "denied";
   return "failed";
 }
 
@@ -98,10 +99,22 @@ export function binaryResponseToContractError(op: string, status: number): Contr
     return new ContractError(op, "USAGE_ERROR", "Binary resource request was invalid.", CONTRACT_EXIT_USAGE, details);
   }
   if (status === 401) {
-    return new ContractError(op, "AUTH_REQUIRED", "Binary resource authentication failed.", CONTRACT_EXIT_ERROR, details);
+    return new ContractError(
+      op,
+      "AUTH_REQUIRED",
+      "Binary resource authentication failed.",
+      CONTRACT_EXIT_ERROR,
+      details,
+    );
   }
   if (status === 403) {
-    return new ContractError(op, "PERMISSION_DENIED", "Binary resource access was denied.", CONTRACT_EXIT_ERROR, details);
+    return new ContractError(
+      op,
+      "PERMISSION_DENIED",
+      "Binary resource access was denied.",
+      CONTRACT_EXIT_ERROR,
+      details,
+    );
   }
   if (status === 404) {
     return new ContractError(op, "RESOURCE_NOT_FOUND", "Binary resource was not found.", CONTRACT_EXIT_ERROR, details);
@@ -113,10 +126,16 @@ export function binaryResponseToContractError(op: string, status: number): Contr
     });
   }
   if (status >= 500) {
-    return new ContractError(op, "SERVER_UNAVAILABLE", "Binary resource provider is unavailable.", CONTRACT_EXIT_ERROR, {
-      ...details,
-      retryable: true,
-    });
+    return new ContractError(
+      op,
+      "SERVER_UNAVAILABLE",
+      "Binary resource provider is unavailable.",
+      CONTRACT_EXIT_ERROR,
+      {
+        ...details,
+        retryable: true,
+      },
+    );
   }
   return new ContractError(op, "COMMAND_FAILED", "Binary resource request failed.", CONTRACT_EXIT_ERROR, details);
 }

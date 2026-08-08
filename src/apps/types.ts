@@ -277,6 +277,7 @@ export interface RaviAppRunOptions extends RaviAppDiscoveryOptions {
   operation?: string;
   args?: string[];
   json?: boolean;
+  execute?: boolean;
   staticRootCommands?: Set<string>;
   runtime?: {
     execPath?: string;
@@ -291,10 +292,19 @@ export interface RaviAppRunResult {
   operationId: string | null;
   interface: RaviAppOperationInterface | null;
   mutating: boolean;
-  status: "completed" | "failed";
+  status: "completed" | "blocked" | "failed";
   durationMs: number;
   result?: unknown;
   error?: string;
+  errorCode?: string;
+  dryRun?: true;
+  plan?: {
+    appId: string;
+    operationId: string;
+    interface: RaviAppOperationInterface;
+    mutating: true;
+    argumentCount: number;
+  };
   command?: string;
   handler?: string;
   channel?: string;
@@ -311,6 +321,7 @@ export interface RaviAppAliasInvocation {
   operation?: string;
   args: string[];
   json: boolean;
+  execute?: boolean;
 }
 
 export type RaviAppPermissionDecision = "allow" | "deny" | "needs_grant" | "not_applicable";

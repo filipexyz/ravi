@@ -272,7 +272,7 @@ function buildHandler(
     };
 
     let isError = false;
-    let outcome: "succeeded" | "blocked" | "usage_error" | "failed" = "succeeded";
+    let outcome: "succeeded" | "blocked" | "usage_error" | "denied" | "failed" = "succeeded";
     let contractExitCode: number | undefined;
     let contractErrorCode: string | undefined;
 
