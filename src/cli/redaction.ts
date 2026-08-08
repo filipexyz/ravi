@@ -1,6 +1,8 @@
 const RCTX_TOKEN_PATTERN = /rctx_[A-Za-z0-9_-]+/g;
 const BEARER_TOKEN_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi;
 const API_TOKEN_PATTERN = /\b(?:sk|rk|pk)-[A-Za-z0-9_-]{12,}\b/g;
+const REDACTION_MARKER_PATTERN =
+  /^\[REDACTED(?::(?:path|rctx|token|content(?: length=\d+)?))?\]$/;
 const CONTENT_KEY_PATTERN = /^(?:body|caption|content|message|output|prompt|text)$/i;
 const SECRET_KEY_SEGMENTS = new Set(["password", "passwords", "secret", "secrets", "token", "tokens"]);
 const SAFE_NUMERIC_SECRET_SUFFIXES = new Set(["chars", "count", "length"]);
@@ -56,6 +58,7 @@ function parentNamesSecret(parent: Readonly<Record<string, unknown>> | undefined
 
 /** Sanitize values before they can cross CLI, tool, gateway or audit boundaries. */
 export function sanitizePublicValue(value: unknown, key?: string, parent?: Readonly<Record<string, unknown>>): unknown {
+  if (typeof value === "string" && REDACTION_MARKER_PATTERN.test(value)) return value;
   if (key && isSecretKey(key) && !isTypedSecretMetadata(key, value)) return "[REDACTED]";
   if (key === "value" && parentNamesSecret(parent, value)) return "[REDACTED]";
   if (key && normalizeKey(key).endsWith("path") && typeof value === "string") {

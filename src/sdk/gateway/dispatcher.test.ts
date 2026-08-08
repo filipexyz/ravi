@@ -64,6 +64,21 @@ class GatewayDemoCommands {
     return { ok: true as const };
   }
 
+  @Command({ name: "setting-audit", description: "Redact dynamic setting values from audits" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "settings",
+    action: "set",
+    risk: "medium",
+    input: ["key", "value"],
+  })
+  @Returns(z.object({ ok: z.literal(true) }))
+  settingAudit(@Arg("key") key: string, @Arg("value") value: string) {
+    void key;
+    void value;
+    return { ok: true as const };
+  }
+
   @Command({ name: "redacted-invalid", description: "Reject sensitive command input" })
   @CommandAccess({
     kind: "read",
@@ -327,6 +342,21 @@ describe("dispatch — body shape (flat-only)", () => {
     expect(audits.events).toHaveLength(1);
     expect(audits.events[0]?.input).toEqual({ content: "[REDACTED]" });
     expect(JSON.stringify(audits.events)).not.toContain("private message body");
+  });
+
+  it("redacts a custom setting value from gateway audits", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.setting-audit"),
+      { key: "custom.password", value: "SENTINEL_SECRET_7M4Q" },
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(200);
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]?.input).toEqual({ key: "custom.password", value: "[REDACTED]" });
+    expect(JSON.stringify(audits.events)).not.toContain("SENTINEL_SECRET_7M4Q");
   });
 
   it("rejects the wrapped {args, options} form as unknown keys", async () => {

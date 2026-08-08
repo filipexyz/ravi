@@ -60,6 +60,24 @@ describe("CLI command access enforcement", () => {
     expect(input.secret).toBe("provider-private-value");
   });
 
+  it("redacts a custom setting value declaratively without changing authorization input", () => {
+    const input = { key: "custom.password", value: "SENTINEL_SECRET_7M4Q", json: true };
+    const access: CommandAccessOptions = {
+      kind: "mutate",
+      resource: "settings",
+      action: "set",
+      risk: "medium",
+      redactions: ["value"],
+    };
+
+    expect(redactCommandAccessInput(access, input)).toEqual({
+      key: "custom.password",
+      value: "[REDACTED]",
+      json: true,
+    });
+    expect(input.value).toBe("SENTINEL_SECRET_7M4Q");
+  });
+
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-cli-command-access-test-");
     previousEnv = {};

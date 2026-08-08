@@ -18,6 +18,11 @@ may contain credentials or other secrets.
 - braking it would add exit-3 friction to the primary configuration loop
   without protecting anything irreversible.
 
+Immediate execution does not make the value public: `settings set` declares
+`value` as redacted audit input, and the shared sanitizer also recognizes a
+secret-bearing sibling `key` such as `custom.password`. The two layers keep
+CLI, tool and gateway audits safe even if one caller omits metadata.
+
 Not-found semantics required a distinction the old code did not make: known
 settings may legitimately be unset (reads show their default), and legacy
 `account.*` rows carry a migration hint. Only keys that are unknown AND unset

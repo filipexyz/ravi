@@ -19,7 +19,9 @@
 - `settings list --fields a,b,c --json` MUST return `items` containing only
   the requested fields.
 - `settings set` MUST keep immediate-write behavior (unbraked, declared) and
-  MUST keep rejecting legacy `account.*` writes with the instances hint.
+  MUST keep rejecting legacy `account.*` writes with the instances hint. CLI,
+  tool and gateway audits MUST retain the setting key but replace its value
+  with `[REDACTED]`, including custom keys such as `custom.password`.
 - The `settings.test.ts` mock of `../context.js` MUST export
   `hasContext: () => true` or contract helpers exit the test process.
 - `bun test src/cli/commands/settings.test.ts` SHOULD pass after any change to

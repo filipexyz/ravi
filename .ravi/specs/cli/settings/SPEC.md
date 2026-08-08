@@ -51,7 +51,9 @@ single braked op of the domain.
 6. `settings list` MUST accept `--fields a,b,c` for compact output of `items`.
 7. `settings set` keeps immediate-write behavior (unbraked, declared): it is
    the reversible inverse documented across AGENTS.md and docs, and legacy
-   `account.*` writes stay rejected.
+   `account.*` writes stay rejected. Its `value` MUST be declared as redacted
+   command input, and audit sanitization MUST also redact it contextually when
+   the sibling setting key is secret-bearing (for example `custom.password`).
 8. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher.
 9. Without `--json`, error output keeps the legacy text path (exit 1).

@@ -7,17 +7,6 @@ const actualRouterDbModule = await import("../../router/router-db.js");
 let settingsStore: Record<string, string> = {};
 const emitMock = mock(async () => {});
 
-mock.module("../decorators.js", () => ({
-  Group: () => () => {},
-  Command: () => () => {},
-  CommandAccess: () => () => {},
-  Scope: () => () => {},
-  CliOnly: () => () => {},
-  Returns: Object.assign(() => () => {}, { binary: () => () => {} }),
-  Arg: () => () => {},
-  Option: () => () => {},
-}));
-
 mock.module("../context.js", () => ({
   ...actualCliContextModule,
   getContext: () => undefined,
@@ -71,6 +60,7 @@ mock.module("../../router/router-db.js", () => ({
 
 const { SettingsCommands } = await import("./settings.js");
 const { ContractError } = await import("../agent-contract.js");
+const { getCommandAccessMetadata } = await import("../decorators.js");
 
 function captureLogs(run: () => void): string {
   const lines: string[] = [];
@@ -209,6 +199,15 @@ describe("settings agent-first contract", () => {
     expect(JSON.stringify(envelope.error.plan)).not.toContain("SENTINEL_SECRET_7M4Q");
     expect(settingsStore["custom.password"]).toBe("SENTINEL_SECRET_7M4Q");
     expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("declares the setting value as redacted command input", () => {
+    expect(getCommandAccessMetadata(SettingsCommands).get("set")).toMatchObject({
+      kind: "mutate",
+      resource: "settings",
+      action: "set",
+      redactions: ["value"],
+    });
   });
 
   it("deletes with --execute and emits config change", () => {

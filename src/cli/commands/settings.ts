@@ -361,7 +361,7 @@ export class SettingsCommands {
   }
 
   @Command({ name: "set", description: "Set a setting value" })
-  @CommandAccess({ kind: "mutate", resource: "settings", action: "set", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "settings", action: "set", risk: "medium", redactions: ["value"] })
   @Returns(settingsMutationReturnSchema)
   set(
     @Arg("key", { description: "Setting key" }) key: string,

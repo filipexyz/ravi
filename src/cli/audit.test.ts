@@ -100,6 +100,20 @@ describe("CLI audit redaction", () => {
     expect(sanitizeCliAuditValue("private provider response", "output")).toBe("[REDACTED:content length=25]");
   });
 
+  it("keeps existing redaction markers stable across transport boundaries", () => {
+    expect(sanitizeCliAuditValue("[REDACTED]", "content")).toBe("[REDACTED]");
+    expect(sanitizeCliAuditValue("[REDACTED:path]", "filePath")).toBe("[REDACTED:path]");
+  });
+
+  it("does not trust user-controlled strings that only resemble redaction markers", () => {
+    const fakeContentMarker = "[REDACTED:PRIVATE_MESSAGE_8K2R]";
+    expect(sanitizeCliAuditValue("[REDACTED:SENTINEL_SECRET_7M4Q]", "password")).toBe("[REDACTED]");
+    expect(sanitizeCliAuditValue(fakeContentMarker, "content")).toBe(
+      `[REDACTED:content length=${fakeContentMarker.length}]`,
+    );
+    expect(sanitizeCliAuditValue("[REDACTED:C:/private/file.txt]", "filePath")).toBe("[REDACTED:path]");
+  });
+
   it("uses sibling setting keys to redact dynamic values and local paths", () => {
     const input = {
       key: "custom.password",
@@ -116,5 +130,23 @@ describe("CLI audit redaction", () => {
     });
     expect(input.value).toBe("SENTINEL_SECRET_7M4Q");
     expect(input.filePath).toBe("C:/sentinel/private/file-9P3X.txt");
+  });
+
+  it("never includes a custom setting secret in the emitted audit payload", () => {
+    const payload = buildCliAuditPayload({
+      group: "settings",
+      name: "set",
+      input: { key: "custom.password", value: "SENTINEL_SECRET_7M4Q", json: true },
+      outcome: "succeeded",
+      status: "completed",
+    });
+
+    expect(payload).toMatchObject({
+      tool: "settings_set",
+      input: { key: "custom.password", value: "[REDACTED]", json: true },
+      outcome: "succeeded",
+      isError: false,
+    });
+    expect(JSON.stringify(payload)).not.toContain("SENTINEL_SECRET_7M4Q");
   });
 });

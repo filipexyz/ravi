@@ -23,7 +23,7 @@ import { ZodError, type ZodTypeAny, type ZodIssue } from "zod";
 import type { CommandRegistryEntry } from "../../cli/registry-snapshot.js";
 import { runWithContext, type ToolContext } from "../../cli/context.js";
 import { enforceCliCommandAuthorization, redactCommandAccessInput } from "../../cli/command-access.js";
-import { emitCliAuditEvent, type CliAuditOutcome } from "../../cli/audit.js";
+import { emitCliAuditEvent, sanitizeCliAuditValue, type CliAuditOutcome } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
 import { RaviAppError } from "../../apps/types.js";
@@ -286,7 +286,7 @@ function buildAuditEvent(
     group: cmd.groupSegments.join("_"),
     name: cmd.command,
     tool,
-    input,
+    input: sanitizeCliAuditValue(input) as Record<string, unknown>,
     isError: outcome !== "succeeded" && outcome !== "blocked",
     outcome,
     ...(exitCode !== undefined ? { exitCode } : {}),
