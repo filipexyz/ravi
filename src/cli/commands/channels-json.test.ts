@@ -60,6 +60,10 @@ mock.module("../context.js", () => ({
   },
 }));
 
+mock.module("../../runtime/context-registry.js", () => ({
+  RAVI_CONTEXT_KEY_ENV: "RAVI_CONTEXT_KEY",
+}));
+
 mock.module("../../utils/request-reply.js", () => ({
   requestReply: mock(async (topic: string, data: Record<string, unknown>) => {
     requestCalls.push({ topic, data });
@@ -196,6 +200,7 @@ mock.module("../../contacts.js", () => ({
       identities: [{ platform: "phone", value: ref, isPrimary: true }],
     };
   },
+  getContactDetails: () => null,
   getContactById: (id: string) => ({
     id,
     phone: "5511888888888",
@@ -215,6 +220,7 @@ mock.module("../../contacts.js", () => ({
 }));
 
 mock.module("../../router/router-db.js", () => ({
+  getRaviDbPath: () => "/tmp/ravi.db",
   getDb: () => ({
     prepare: () => ({
       all: () => [],
