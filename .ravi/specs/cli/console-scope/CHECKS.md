@@ -80,9 +80,9 @@ owners:
 - `ravi pages list --json` can omit project when a default is set.
 - `ravi pages list --json` fails with a clear missing project message when no
   project default exists and more than one remote project is visible.
-- `ravi pages create <slug> --json` uses the default project when project is
+- `ravi pages create <slug> --json --execute` uses the default project when project is
   omitted and explicit project when provided.
-- `ravi pages publish <site> <target> --json` uses the default
+- `ravi pages publish <site> <target> --json --execute` uses the default
   project when `--project` is omitted.
 - `ravi bridges create --json` uses the default project when `--project` is
   omitted.

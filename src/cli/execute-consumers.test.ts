@@ -132,6 +132,32 @@ const executeInstructions = [
     path: "docs/cli/overview.mdx",
     instruction: "ravi heartbeat trigger <id> --execute",
   },
+  {
+    name: "Pages create root instructions",
+    path: "AGENTS.md",
+    instruction: "ravi pages create <project-ref> <site-slug> --visibility public --execute",
+  },
+  {
+    name: "Pages create artifact skill",
+    path: "src/plugins/internal/ravi-system/skills/artifacts/SKILL.md",
+    instruction: "ravi pages create <project-ref> <site-slug> --visibility public --execute",
+  },
+  {
+    name: "Pages create artifact runbook",
+    path: ".ravi/specs/artifacts/RUNBOOK.md",
+    instruction: "ravi pages create <project-ref> <site-slug> --visibility public --execute",
+  },
+  {
+    name: "Pages publish artifact spec",
+    path: ".ravi/specs/artifacts/SPEC.md",
+    instruction:
+      "ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html --execute",
+  },
+  {
+    name: "Pages create Console-scope acceptance",
+    path: ".ravi/specs/cli/console-scope/SPEC.md",
+    instruction: "ravi pages create <slug> --json --execute",
+  },
 ] as const;
 
 const obsoleteExecuteConsumers = [

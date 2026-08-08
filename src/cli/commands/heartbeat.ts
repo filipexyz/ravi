@@ -202,7 +202,7 @@ export class HeartbeatCommands {
       console.log("  ravi heartbeat enable <agent>              # Enable heartbeat");
       console.log("  ravi heartbeat disable <agent>             # Disable heartbeat");
       console.log("  ravi heartbeat set <agent> interval 30m    # Set interval");
-      console.log("  ravi heartbeat trigger <agent>             # Manual trigger");
+      console.log("  ravi heartbeat trigger <agent> --execute   # Queue pending heartbeat work");
     }
     return payload;
   }

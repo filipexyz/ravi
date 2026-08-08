@@ -8,6 +8,8 @@
   expose the raw source path or title/description content, and MUST NOT call
   Console at all — not even the project scope resolution. With `--execute`
   the upload/release MUST happen.
+- `pages create` and `pages domains` without `--execute` MUST exit 3 before
+  credential reads, project resolution or any Console/provider request.
 - `pages password set` without `--execute` MUST exit 3 BEFORE the hidden
   password prompt and before any Console call; its plan MUST NOT contain a
   password key or raw route path and MUST use `routePresent` metadata.
@@ -26,8 +28,8 @@
   through `runPagesCommand`'s CloudAuthError funnel untouched.
 - `pages list --fields a,b,c --json` and `pages published --fields a,b,c
   --json` MUST return items containing only the requested fields.
-- Unbraked ops (`create`, `domains`, visibility reductions, `password status`)
-  MUST keep immediate behavior and be declared as unbraked in the spec.
+- Unbraked ops (visibility reductions and `password status`) MUST keep
+  immediate behavior and be declared as unbraked in the spec.
 - The dry-run plans of `pages publish` MUST work without saved Console scope,
   showing `(Console scope default)` placeholders instead of resolved refs.
 - `bun test src/cli/commands/pages.test.ts` SHOULD pass after any change to

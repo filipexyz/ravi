@@ -5,11 +5,10 @@ misunderstood `pages publish` is not a local mistake — bytes land on a hosted
 site and, by default, a release goes live. The same logic covers the password
 pair (`set` flips the route policy, `remove` can widen access up to fully
 public) and the visibility switch to `public`, which exposes content that is
-ALREADY hosted. Those are exactly the braked ops. Everything that only reduces
-or prepares exposure stays immediate: `create` uploads nothing (the canonical
-flow is create → braked publish), reducing visibility is the emergency path
-that must never be slowed down, and `domains` only takes effect for someone who
-also controls the external DNS record.
+ALREADY hosted. `create` and `domains` do not upload bytes, but they still
+change provider-backed Console state and routing, so they are braked as
+external service mutations. Reducing visibility remains the emergency path
+that must never be slowed down.
 
 Decisions specific to this domain:
 
@@ -17,8 +16,9 @@ Decisions specific to this domain:
   change would put exit-3 friction inside "make it private NOW". The brake
   keys off the requested value: `public` → dry-run; `private`/`protected_link`
   → immediate. The rule is directional exposure, not the op name.
-- **Brake before scope resolution.** `pages publish` resolves the Console
-  project scope before publishing; the brake fires even before that, so a
+- **Brake before scope resolution.** `pages create`, `pages domains` and
+  `pages publish` resolve the Console project scope before publishing; the
+  brake fires even before that, so a
   dry-run works offline and unauthenticated — the plan shows the parsed
   intent (`(Console scope default)` placeholders) instead of resolved refs.
 - **Brake before the password prompt.** A `password set` dry-run must never

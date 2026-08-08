@@ -42,13 +42,15 @@ ravi pages publish proj demo ./site --route / --visibility public --entrypoint i
 ravi pages password set proj demo --route / --execute
 ravi pages password remove proj demo --route / --visibility private --execute
 ravi pages visibility proj demo public --execute
+ravi pages create proj demo --visibility private --execute
+ravi pages domains proj demo docs.example.com --execute
 ```
 
 Escritas SEM freio (gravam na hora — o freio é você conferir o alvo antes):
 
 - `artifacts create`, `update`, `attach`, `event`, `snapshot`
 - `artifacts archive` e `artifacts restore` (par reversível: archive é soft-delete consultável com `--include-deleted`; restore recupera de versão imutável e registra nova versão)
-- `pages create` (só garante o registro do site; nenhum byte fica acessível sem o publish freado), `pages domains`, reduções de visibilidade, `pages password status`
+- reduções de visibilidade e `pages password status`
 
 Compact mode: `artifacts list`, `pages list` e `pages published` aceitam `--fields a,b,c` (ex.: `--fields id,kind`) — use em varredura para não arrastar o objeto inteiro.
 
@@ -169,7 +171,7 @@ cria/edita o site, mas não sobe bytes sem o publish.
 Fluxo canônico para diretório local (`publish` é freado: sem `--execute` é dry-run com exit 3):
 
 ```bash
-ravi pages create <project-ref> <site-slug> --visibility public
+ravi pages create <project-ref> <site-slug> --visibility public --execute
 ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html --execute
 ```
 

@@ -96,6 +96,18 @@ async function captureJson(run: () => Promise<unknown> | unknown): Promise<Recor
   return JSON.parse(lines.join("\n")) as Record<string, unknown>;
 }
 
+async function captureText(run: () => Promise<unknown> | unknown): Promise<string> {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => lines.push(args.map((arg) => String(arg)).join(" "));
+  try {
+    await run();
+  } finally {
+    console.log = originalLog;
+  }
+  return lines.join("\n");
+}
+
 describe("HeartbeatCommands --json", () => {
   beforeEach(() => {
     emitMock.mockClear();
@@ -135,6 +147,12 @@ describe("HeartbeatCommands --json", () => {
         },
       ],
     });
+  });
+
+  it("teaches --execute for manual triggers in text status output", async () => {
+    const output = await captureText(() => new HeartbeatCommands().status(false));
+
+    expect(output).toContain("ravi heartbeat trigger <agent> --execute");
   });
 
   it("returns the updated heartbeat config for enable --json", async () => {

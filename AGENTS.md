@@ -51,7 +51,7 @@ domains, and site settings. It does not upload HTML or assets.
 Use the Pages publish command for content:
 
 ```bash
-ravi pages create <project-ref> <site-slug> --visibility public
+ravi pages create <project-ref> <site-slug> --visibility public --execute
 ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html --execute
 ```
 
@@ -62,8 +62,9 @@ ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibilit
 ```
 
 `ravi pages publish` is the user-facing Pages command. It delegates to the
-artifact upload/publish pipeline internally. Publishing and password changes
-are dry-run by default (exit 3): re-run with `--execute` to perform the write.
+artifact upload/publish pipeline internally. Host creation, domain binding,
+publishing and password changes are dry-run by default (exit 3): re-run with
+`--execute` to perform the external mutation.
 
 Protect an active route with a password without republishing its bytes:
 

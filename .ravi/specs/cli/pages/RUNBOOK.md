@@ -16,8 +16,8 @@
    missing or invalid — it is validated BEFORE the brake, on purpose.
 7. `AUTH_REQUIRED`/`AUTH_EXPIRED`: legacy CloudAuthError funnel, not the
    contract — run `ravi login`.
-8. If a publish/password write executed without `--execute`, the brake
-   regressed: check the op still calls `contractDryRun` before
+8. If a create/domains/publish/password write executed without `--execute`,
+   the brake regressed: check the op still calls `contractDryRun` before
    `resolvePagesProject` (publish/password) or before `updatePageSite`
    (update/visibility with `public`).
 9. If a braked op in agent context reports a CloudAuthError instead of the
@@ -33,6 +33,8 @@ Live checks against the local CLI (read-only or dry-run):
 
 ```bash
 ravi pages publish proj site ./dist --route / --visibility public --json  # expect exit 3 + plan, no Console call
+ravi pages create proj site --visibility private --json                   # expect exit 3 before credentials
+ravi pages domains proj site docs.example.com --json                      # expect exit 3 before credentials
 ravi pages password set proj site --route / --json                        # expect exit 3, no prompt
 ravi pages password remove proj site --route / --json                     # expect PAYLOAD_INVALID (missing --visibility)
 ravi pages visibility proj site public --json                             # expect exit 3
