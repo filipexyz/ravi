@@ -611,7 +611,7 @@ describe("dispatch — error path", () => {
       op: "demo legacy",
       exitCode: 1,
       outcome: "failed",
-      error: { code: "COMMAND_FAILED", message: "legacy validation failed" },
+      error: { code: "COMMAND_FAILED", message: "Command could not be completed." },
     });
     expect(audits.events[0]).toMatchObject({ outcome: "failed", exitCode: 1, errorCode: "COMMAND_FAILED" });
   });

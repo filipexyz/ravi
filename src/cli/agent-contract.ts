@@ -62,7 +62,12 @@ export class ContractError extends Error {
     return {
       success: false,
       op: this.op,
-      error: { code: this.code, message: this.message, retryable: retryable ?? false, ...rest },
+      error: {
+        code: this.code,
+        message: publicContractMessage(this.code, this.message),
+        retryable: retryable ?? false,
+        ...rest,
+      },
     };
   }
 }
@@ -76,7 +81,7 @@ export function contractFailureOutcome(error: Pick<ContractError, "code" | "exit
 
 export function expectedErrorToContractError(op: string, error: unknown): ContractError | null {
   if (!(error instanceof CliExpectedError)) return null;
-  return new ContractError(op, error.code, error.message, error.exitCode, {
+  return new ContractError(op, error.code, "Command could not be completed.", error.exitCode, {
     suggestedAction: `Inspect the command input and retry '${op}'`,
   });
 }
@@ -145,8 +150,12 @@ export function renderContractError(error: ContractError, asJson: boolean | unde
   if (asJson) {
     console.log(JSON.stringify(error.envelope(), null, 2));
   } else {
-    console.error(error.message);
+    console.error(error.envelope().error.message);
   }
+}
+
+function publicContractMessage(code: string, message: string): string {
+  return code === "COMMAND_FAILED" ? "Command could not be completed." : message;
 }
 
 export interface ContractFailOptions {

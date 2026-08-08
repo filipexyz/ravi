@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { cloudErrorToContractError } from "../cli/cloud-error-contract.js";
 import { CloudAuthError, cloudAuthErrorFromUnknown } from "./errors.js";
 
 describe("cloudAuthErrorFromUnknown", () => {
@@ -18,5 +19,37 @@ describe("cloudAuthErrorFromUnknown", () => {
       cause,
     });
     expect(JSON.stringify(normalized.toJSON())).not.toContain("private-provider-secret");
+  });
+});
+
+describe("cloudErrorToContractError", () => {
+  it.each([
+    ["AUTH_REQUIRED", "Console authentication is required.", false],
+    ["AUTH_PENDING", "Console authentication is still pending.", true],
+    ["AUTH_EXPIRED", "Console authentication expired.", false],
+    ["INSTALLATION_REVOKED", "Console installation access was revoked.", false],
+    ["ORG_ACCESS_DENIED", "Console organization access was denied.", false],
+    ["PROJECT_ACCESS_DENIED", "Console project access was denied.", false],
+    ["PUBLISH_NOT_ALLOWED", "Console publishing is not allowed.", false],
+    ["PAYLOAD_INVALID", "Console request input was invalid.", false],
+    ["RATE_LIMITED", "Console request was rate limited.", true],
+    ["SERVER_UNAVAILABLE", "Console service is unavailable.", true],
+    ["CREDENTIALS_INVALID", "Console credentials are invalid.", false],
+    ["CLOUD_PUBLISH_NOT_IMPLEMENTED", "Console publishing is unavailable for this command.", false],
+  ] as const)("maps %s to a stable public message", (code, publicMessage, retryable) => {
+    const source = new CloudAuthError(code, `PRIVATE_PROVIDER_BODY_8K2R:${code}`, { status: 429 });
+    const contract = cloudErrorToContractError("cloud fixture fail", source);
+
+    expect(contract).toMatchObject({
+      code,
+      message: publicMessage,
+      exitCode: code === "PAYLOAD_INVALID" ? 2 : 1,
+      details: {
+        retryable,
+        status: 429,
+      },
+    });
+    expect(contract.details.suggestedAction).toBeString();
+    expect(JSON.stringify(contract.envelope())).not.toContain("PRIVATE_PROVIDER_BODY_8K2R");
   });
 });

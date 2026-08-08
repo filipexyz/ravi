@@ -14,7 +14,7 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
   return new ContractError(
     op,
     error.code,
-    error.message,
+    publicMessage(error.code),
     error.code === "PAYLOAD_INVALID" ? CONTRACT_EXIT_USAGE : CONTRACT_EXIT_ERROR,
     {
       retryable: RETRYABLE_CODES.has(error.code),
@@ -22,6 +22,35 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
       suggestedAction: suggestedAction(error.code),
     },
   );
+}
+
+function publicMessage(code: CloudAuthError["code"]): string {
+  switch (code) {
+    case "AUTH_REQUIRED":
+      return "Console authentication is required.";
+    case "AUTH_PENDING":
+      return "Console authentication is still pending.";
+    case "AUTH_EXPIRED":
+      return "Console authentication expired.";
+    case "INSTALLATION_REVOKED":
+      return "Console installation access was revoked.";
+    case "ORG_ACCESS_DENIED":
+      return "Console organization access was denied.";
+    case "PROJECT_ACCESS_DENIED":
+      return "Console project access was denied.";
+    case "PUBLISH_NOT_ALLOWED":
+      return "Console publishing is not allowed.";
+    case "PAYLOAD_INVALID":
+      return "Console request input was invalid.";
+    case "RATE_LIMITED":
+      return "Console request was rate limited.";
+    case "SERVER_UNAVAILABLE":
+      return "Console service is unavailable.";
+    case "CREDENTIALS_INVALID":
+      return "Console credentials are invalid.";
+    case "CLOUD_PUBLISH_NOT_IMPLEMENTED":
+      return "Console publishing is unavailable for this command.";
+  }
 }
 
 /** Render once for the local CLI. Tools and gateway serialize the returned ContractError themselves. */
