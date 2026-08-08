@@ -5,7 +5,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
-import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { commandTargetSchema } from "../return-schemas.js";
 import { existsSync, readFileSync } from "node:fs";
@@ -132,12 +132,8 @@ function serializeHeartbeatAgent(agent: AgentConfig) {
 // {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
 // 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
 //
-// Heartbeat deliberately declares NO braked op (no `--execute` anywhere):
-// `trigger` fires the agent's OWN heartbeat — a benign, frequent operational
-// action that just processes HEARTBEAT.md (and is suppressed on HEARTBEAT_OK) —
-// while `enable`, `disable` and `set` are reversible config writes with an
-// obvious inverse. Braking them would put exit-3 friction inside routine
-// operation without protecting anything destructive.
+// Reversible configuration writes remain immediate. Manual `trigger` is
+// braked only when HEARTBEAT.md contains work, because it queues an agent run.
 // ============================================================
 
 /**
@@ -396,20 +392,20 @@ export class HeartbeatCommands {
   }
 
   @Command({ name: "trigger", description: "Manually trigger a heartbeat" })
-  @CommandAccess({ kind: "mutate", resource: "heartbeat", action: "trigger", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "heartbeat",
+    action: "trigger",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   @Returns(heartbeatTriggerReturnSchema)
   async trigger(
     @Arg("id", { description: "Agent ID" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Queue the manual heartbeat agent run" }) execute?: boolean,
   ) {
-    // Deliberately NOT braked: this fires the agent's own heartbeat (reads
-    // HEARTBEAT.md, suppressed on HEARTBEAT_OK) and is a frequent operational
-    // action — see the contract note above the helpers.
     const agent = requireHeartbeatAgent("heartbeat trigger", id, asJson);
-
-    if (!asJson) {
-      console.log(`\nTriggering heartbeat for: ${id}`);
-    }
 
     try {
       // Note: Manual triggers bypass active hours check
@@ -451,6 +447,21 @@ export class HeartbeatCommands {
         return payload;
       }
 
+      if (execute !== true) {
+        contractDryRun(
+          "heartbeat trigger",
+          {
+            agentId: id,
+            heartbeatFilePresent: true,
+          },
+          { asJson },
+        );
+      }
+
+      if (!asJson) {
+        console.log(`\nTriggering heartbeat for: ${id}`);
+      }
+
       // Send heartbeat prompt using session name
       const mainSession = getMainSession(id);
       const sessionName = mainSession?.name ?? id;
@@ -475,6 +486,7 @@ export class HeartbeatCommands {
       }
       return payload;
     } catch (err) {
+      if (err instanceof ContractError) throw err;
       fail(`Error: ${err instanceof Error ? err.message : err}`);
     }
   }

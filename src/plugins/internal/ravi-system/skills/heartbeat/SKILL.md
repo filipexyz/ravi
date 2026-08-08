@@ -74,7 +74,7 @@ ravi heartbeat set <agent> active-hours always  # Sempre ativo
 
 ### Disparar manualmente
 ```bash
-ravi heartbeat trigger <agent>
+ravi heartbeat trigger <agent> --execute
 ```
 
 ## Arquivo HEARTBEAT.md
@@ -120,6 +120,6 @@ ravi heartbeat set main model haiku
 
 Testar configuração:
 ```bash
-ravi heartbeat trigger main
+ravi heartbeat trigger main --execute
 ravi daemon logs -f
 ```

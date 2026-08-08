@@ -112,6 +112,26 @@ const executeInstructions = [
     path: "docs/reference/media.mdx",
     instruction: 'ravi image generate "coffee shop interior" --send --execute',
   },
+  {
+    name: "heartbeat root instructions",
+    path: "AGENTS.md",
+    instruction: "ravi heartbeat trigger <id> --execute",
+  },
+  {
+    name: "heartbeat skill",
+    path: "src/plugins/internal/ravi-system/skills/heartbeat/SKILL.md",
+    instruction: "ravi heartbeat trigger <agent> --execute",
+  },
+  {
+    name: "heartbeat feature guide",
+    path: "docs/features/overview.mdx",
+    instruction: "ravi heartbeat trigger main --execute",
+  },
+  {
+    name: "heartbeat CLI overview",
+    path: "docs/cli/overview.mdx",
+    instruction: "ravi heartbeat trigger <id> --execute",
+  },
 ] as const;
 
 const obsoleteExecuteConsumers = [

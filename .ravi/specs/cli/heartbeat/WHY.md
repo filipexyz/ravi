@@ -1,24 +1,17 @@
 # Heartbeat agent-first CLI contract / WHY
 
-Heartbeat is the one migrated domain where the right number of write brakes is
-zero. The instinct is to brake `trigger` because it "fires an agent" — but
-unlike `tasks dispatch` (which starts real tracked work in another session) or
-`watch trigger` (which arms a durable automation), `heartbeat trigger` fires
-the agent's OWN heartbeat: it reads `HEARTBEAT.md`, runs the standing
-check-in, and the runtime suppresses the output entirely when the agent
-answers `HEARTBEAT_OK`. It is also a frequent operational action — operators
-and agents use it to test heartbeat config (`ravi heartbeat trigger main` +
-`ravi daemon logs -f`) — so exit-3 friction there would tax the routine path
-daily while protecting nothing destructive: the worst case of a stray trigger
-is one extra benign check-in.
+Manual heartbeat triggering is an execution request, not a routine local
+write. When `HEARTBEAT.md` contains work, `heartbeat trigger` queues a prompt
+for an agent session and therefore uses the same risk-based confirmation rule
+as other dispatched runs.
 
-`enable`/`disable` are the textbook reversible pair, and every `set` property
-(interval, model, account, active-hours) has an obvious inverse value. Nothing
-in this domain deletes state or reaches an external provider.
+The command still avoids needless friction. It validates the agent and reads
+the local heartbeat file first. Missing or empty files return `skipped` with
+exit 0 and do not require `--execute`. Only a trigger that would actually
+queue work returns the exit-3 dry-run and asks the caller to repeat with
+`--execute`.
 
-The migration value here is the rest of the contract: unknown agents now
-return the `AGENT_NOT_FOUND` envelope with live suggestions instead of plain
-text, usage errors exit 2 with `acceptedFlags`, and `status --fields` gives
-compact discovery. Declaring the no-brake decision explicitly (with this
-rationale) is part of the contract — future waves should not "fix" it by
-adding `--execute` here.
+`enable`/`disable` remain a reversible pair, and every `set` property has an
+obvious inverse. Those configuration writes remain immediate. The domain also
+keeps the shared contract for typed errors, exit taxonomy and compact
+`--fields` discovery.

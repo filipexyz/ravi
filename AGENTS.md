@@ -136,7 +136,7 @@ ravi heartbeat set main model haiku           # Use cheaper model
 ravi heartbeat set main active-hours 09:00-22:00  # Only run during these hours
 
 # Manual trigger
-ravi heartbeat trigger main
+ravi heartbeat trigger main --execute
 
 # Status
 ravi heartbeat status   # All agents
@@ -161,7 +161,7 @@ ravi heartbeat show main
 **Triggers:**
 - `interval` - Timer-based (configurable)
 - `tool-complete` - After agent finishes using a tool (with 30s cooldown)
-- `manual` - Via `ravi heartbeat trigger`
+- `manual` - Via `ravi heartbeat trigger <id> --execute` when work is pending
 
 ## Cron Jobs
 
@@ -567,7 +567,7 @@ ravi heartbeat show <id>             # Show config
 ravi heartbeat enable <id> [interval]  # Enable (e.g., 30m, 1h)
 ravi heartbeat disable <id>          # Disable
 ravi heartbeat set <id> <key> <value>  # Set property
-ravi heartbeat trigger <id>          # Manual trigger
+ravi heartbeat trigger <id> --execute # Manual trigger (dry-run when work is pending)
 
 # Cron jobs
 ravi cron list                       # List all jobs

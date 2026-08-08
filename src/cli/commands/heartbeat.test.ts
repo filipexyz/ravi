@@ -207,7 +207,7 @@ async function expectContractError(
 }
 
 describe("HeartbeatCommands agent-first contract", () => {
-  let heartbeatWorkspace: string | null = null;
+  const heartbeatWorkspaces: string[] = [];
 
   beforeEach(() => {
     emitMock.mockClear();
@@ -228,7 +228,9 @@ describe("HeartbeatCommands agent-first contract", () => {
   });
 
   afterAll(() => {
-    if (heartbeatWorkspace) rmSync(heartbeatWorkspace, { recursive: true, force: true });
+    for (const workspace of heartbeatWorkspaces) {
+      rmSync(workspace, { recursive: true, force: true });
+    }
   });
 
   it("show on an unknown agent exits 1 with AGENT_NOT_FOUND and suggestions from the local agent list", async () => {
@@ -251,12 +253,32 @@ describe("HeartbeatCommands agent-first contract", () => {
     expect(promptMock).not.toHaveBeenCalled();
   });
 
-  it("trigger is deliberately UNBRAKED: it fires the heartbeat prompt without any --execute flag", async () => {
-    heartbeatWorkspace = mkdtempSync(join(tmpdir(), "ravi-heartbeat-contract-"));
+  it("trigger with pending work but without --execute dry-runs before publishing a prompt", async () => {
+    const heartbeatWorkspace = mkdtempSync(join(tmpdir(), "ravi-heartbeat-contract-"));
+    heartbeatWorkspaces.push(heartbeatWorkspace);
     writeFileSync(join(heartbeatWorkspace, "HEARTBEAT.md"), "- tarefa pendente\n");
     agents[0]!.cwd = heartbeatWorkspace;
 
-    const payload = await captureJson(() => new HeartbeatCommands().trigger("dev", true));
+    const error = await expectContractError(
+      () => new HeartbeatCommands().trigger("dev", true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      agentId: "dev",
+      heartbeatFilePresent: true,
+    });
+    expect(promptMock).not.toHaveBeenCalled();
+  });
+
+  it("trigger with --execute publishes the heartbeat prompt", async () => {
+    const heartbeatWorkspace = mkdtempSync(join(tmpdir(), "ravi-heartbeat-contract-"));
+    heartbeatWorkspaces.push(heartbeatWorkspace);
+    writeFileSync(join(heartbeatWorkspace, "HEARTBEAT.md"), "- tarefa pendente\n");
+    agents[0]!.cwd = heartbeatWorkspace;
+
+    const payload = await captureJson(() => new HeartbeatCommands().trigger("dev", true, true));
 
     expect(payload).toMatchObject({
       status: "triggered",
