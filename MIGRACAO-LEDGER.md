@@ -1113,3 +1113,12 @@ comandos Bash integrais em eventos de negação. O commit `ee215584` alinhou as
 expectativas à redação central e minimizou também o `detail` e o comando
 persistido para apenas seu comprimento. Os 65 testes focados de Bash hook e
 contexto passaram; Quality Gate continuou ignorado e a spec permanece `draft`.
+
+O CI Linux [`31282844020`](https://github.com/filipexyz/ravi/actions/runs/31282844020)
+do SHA `504c570207ba7df6a20defcee28b76f2e8de96b0` passou Build e Typecheck e
+falhou em uma única identidade de `inbox.test.ts`. O plano de replay usava o
+campo `subject` para um tópico NATS, colidindo semanticamente com a redação
+central de assunto de mensagem. O commit `26a9a543` renomeou somente esse campo
+estruturado para `eventTopic` no runtime, teste e spec do domínio, sem afrouxar
+a política global de privacidade. Os 11 testes focados de inbox passaram;
+Quality Gate permaneceu ignorado e a spec continua `draft`.
