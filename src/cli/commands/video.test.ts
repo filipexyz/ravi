@@ -135,9 +135,20 @@ describe("video analyze contract", () => {
   });
 
   it("validates the strategy before analysis", async () => {
-    await expect(
-      new VideoCommands().analyze("https://youtu.be/abc", undefined, undefined, "bogus", undefined, true),
-    ).rejects.toThrow("Invalid video analysis strategy");
+    const sentinel = "PRIVATE_STRATEGY_9M2Q";
+    let failure: unknown;
+    try {
+      await new VideoCommands().analyze("https://youtu.be/abc", undefined, undefined, sentinel, undefined, true);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toMatchObject({
+      code: "USAGE_ERROR",
+      message: "Invalid video analysis strategy.",
+      exitCode: 2,
+    });
+    expect(JSON.stringify(failure)).not.toContain(sentinel);
     expect(analyzeCalls).toHaveLength(0);
   });
 });

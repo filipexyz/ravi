@@ -1,9 +1,9 @@
 const RCTX_TOKEN_PATTERN = /rctx_[A-Za-z0-9_-]+/g;
 const BEARER_TOKEN_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi;
 const API_TOKEN_PATTERN = /\b(?:sk|rk|pk)-[A-Za-z0-9_-]{12,}\b/g;
-const REDACTION_MARKER_PATTERN =
-  /^\[REDACTED(?::(?:path|rctx|token|content(?: length=\d+)?))?\]$/;
-const CONTENT_KEY_PATTERN = /^(?:body|caption|content|message|output|prompt|text)$/i;
+const REDACTION_MARKER_PATTERN = /^\[REDACTED(?::(?:path|rctx|token|content(?: length=\d+)?))?\]$/;
+const CONTENT_KEY_PATTERN =
+  /^(?:body|caption|content|fileName|inputName|message|output|prompt|sourceName|subject|text)$/i;
 const SECRET_KEY_SEGMENTS = new Set(["password", "passwords", "secret", "secrets", "token", "tokens"]);
 const SAFE_NUMERIC_SECRET_SUFFIXES = new Set(["chars", "count", "length"]);
 const SECRET_KEYS = new Set([
@@ -64,15 +64,15 @@ export function sanitizePublicValue(value: unknown, key?: string, parent?: Reado
   if (key && normalizeKey(key).endsWith("path") && typeof value === "string") {
     return "[REDACTED:path]";
   }
+  if (key && normalizeKey(key).endsWith("url") && typeof value === "string") {
+    return sanitizePublicUrl(value);
+  }
   if (key && CONTENT_KEY_PATTERN.test(key)) {
     if (typeof value === "string") return `[REDACTED:content length=${value.length}]`;
     return "[REDACTED:content]";
   }
   if (typeof value === "string") {
-    return value
-      .replace(RCTX_TOKEN_PATTERN, "[REDACTED:rctx]")
-      .replace(BEARER_TOKEN_PATTERN, "Bearer [REDACTED]")
-      .replace(API_TOKEN_PATTERN, "[REDACTED:token]");
+    return sanitizePublicString(value);
   }
   if (Array.isArray(value)) return value.map((item) => sanitizePublicValue(item));
   if (value && typeof value === "object") {
@@ -84,4 +84,27 @@ export function sanitizePublicValue(value: unknown, key?: string, parent?: Reado
     return sanitized;
   }
   return value;
+}
+
+function sanitizePublicUrl(value: string): string {
+  if (/^(?:[A-Za-z]:[\\/]|\\\\|\/|\.\.?[\\/])/.test(value)) return "[REDACTED:path]";
+  try {
+    const url = new URL(value);
+    if (url.protocol === "file:") return "[REDACTED:path]";
+    if (url.protocol !== "http:" && url.protocol !== "https:") return sanitizePublicString(value);
+    url.username = "";
+    url.password = "";
+    url.search = "";
+    url.hash = "";
+    return url.toString();
+  } catch {
+    return sanitizePublicString(value);
+  }
+}
+
+function sanitizePublicString(value: string): string {
+  return value
+    .replace(RCTX_TOKEN_PATTERN, "[REDACTED:rctx]")
+    .replace(BEARER_TOKEN_PATTERN, "Bearer [REDACTED]")
+    .replace(API_TOKEN_PATTERN, "[REDACTED:token]");
 }

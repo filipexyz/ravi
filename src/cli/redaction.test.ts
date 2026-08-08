@@ -107,4 +107,24 @@ describe("public contract redaction", () => {
       tokens: "[REDACTED]",
     });
   });
+
+  it("minimizes semantic paths, URLs and content-like names", () => {
+    expect(
+      sanitizePublicValue({
+        url: "C:/private/client-video.mp4",
+        callbackUrl: "https://user:pass@example.com/private?token=secret#fragment",
+        fileName: "PRIVATE_CLIENT_FILENAME.pdf",
+        sourceName: "PRIVATE_SOURCE_NAME",
+        inputName: "PRIVATE_INPUT_NAME",
+        subject: "PRIVATE_MAIL_SUBJECT",
+      }),
+    ).toEqual({
+      url: "[REDACTED:path]",
+      callbackUrl: "https://example.com/private",
+      fileName: "[REDACTED:content length=27]",
+      sourceName: "[REDACTED:content length=19]",
+      inputName: "[REDACTED:content length=18]",
+      subject: "[REDACTED:content length=20]",
+    });
+  });
 });

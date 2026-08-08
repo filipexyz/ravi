@@ -21,7 +21,7 @@ function slugify(text: string): string {
 function parseStrategy(value: string | undefined, asJson?: boolean): VideoAnalyzeStrategy {
   if (!value) return "auto";
   if (value === "auto" || value === "subtitles" || value === "gemini") return value;
-  contractFail("video analyze", "USAGE_ERROR", `Invalid video analysis strategy: ${value}.`, {
+  contractFail("video analyze", "USAGE_ERROR", "Invalid video analysis strategy.", {
     asJson,
     exitCode: CONTRACT_EXIT_USAGE,
     details: {
@@ -38,7 +38,13 @@ function parseStrategy(value: string | undefined, asJson?: boolean): VideoAnalyz
 })
 export class VideoCommands {
   @Command({ name: "analyze", description: "Analyze a video (YouTube URL or local file) and save to markdown" })
-  @CommandAccess({ kind: "mutate", resource: "video", action: "analyze", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "video",
+    action: "analyze",
+    risk: "high",
+    redactions: ["url", "output", "prompt", "strategy"],
+  })
   @Returns(videoAnalyzeReturnSchema)
   async analyze(
     @Arg("url", { description: "YouTube URL or local file path" }) url: string,

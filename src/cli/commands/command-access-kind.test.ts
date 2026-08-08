@@ -752,6 +752,23 @@ describe("corrected mutating command access", () => {
     expect(JSON.stringify({ operation, auditInput })).not.toContain("sk-abcdefghijklmnop");
   });
 
+  it("redacts private video inputs from audit boundaries", () => {
+    const access = getCommandAccessMetadata(VideoCommands).get("analyze");
+    expect(access?.redactions).toEqual(expect.arrayContaining(["url", "output", "prompt", "strategy"]));
+    if (!access) throw new Error("Missing command access metadata for video analyze");
+
+    const auditInput = redactCommandAccessInput(access, {
+      url: "C:/private/client-video.mp4",
+      output: "C:/private/analysis.md",
+      prompt: "PRIVATE_VIDEO_PROMPT",
+      strategy: "PRIVATE_STRATEGY_9M2Q",
+    });
+
+    expect(Object.values(auditInput)).toEqual(["[REDACTED]", "[REDACTED]", "[REDACTED]", "[REDACTED]"]);
+    expect(JSON.stringify(auditInput)).not.toContain("PRIVATE");
+    expect(JSON.stringify(auditInput)).not.toContain("C:/private");
+  });
+
   it("denies read capabilities before DB/FS effects and allows mutate capabilities", () => {
     for (const testCase of ACCESS_CASES) {
       const access = getCommandAccessMetadata(testCase.target).get(testCase.method);
