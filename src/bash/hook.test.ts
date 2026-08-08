@@ -133,6 +133,9 @@ describe("createBashPermissionHook", () => {
       );
       expect(isDenied(result)).toBe(true);
       expect(getDenyReason(result)).toContain("python3");
+      const denial = listPermissionDenials({ subjectType: "agent", subjectId: "test", resolved: false })[0];
+      expect(denial?.command).toBe("[REDACTED:content length=17]");
+      expect(JSON.stringify(denial)).not.toContain("python3 --version");
     });
 
     it("blocks unconditional blocks regardless of grants", async () => {

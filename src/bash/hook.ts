@@ -38,7 +38,7 @@ function buildBashDeniedAuditEvent(
   agentId: string;
   denied: string;
   reason: string;
-  detail?: string;
+  detail?: { commandChars: number };
   context?: AuditContextProvenance;
 } | null {
   if (decision.allowed || !decision.denialType) {
@@ -46,7 +46,7 @@ function buildBashDeniedAuditEvent(
   }
 
   const resolvedAgentId = agentId ?? "unknown";
-  const detail = command.slice(0, 200);
+  const detail = { commandChars: command.length };
   const provenance = buildAuditContextProvenance(ctx);
   const contextFields = provenance ? { context: provenance } : {};
 
@@ -395,7 +395,7 @@ function recordAndEmitBashPermissionDenial(
       objectType: denied.objectType,
       objectId: denied.objectId,
       reason: decision.reason,
-      command,
+      command: `[REDACTED:content length=${command.length}]`,
       detail: provenance ? { context: provenance } : undefined,
       audit,
     });

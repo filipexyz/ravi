@@ -945,9 +945,9 @@ describe("ContextCommands", () => {
             type: "executable",
             agentId: "codex",
             denied: "node",
-            reason: "Permission denied: agent:codex cannot execute: node",
-            dedupeKey: "audit.denied:executable:codex:node:Permission denied: agent:codex cannot execute: node",
-            detail: "node -v",
+            reason: "[REDACTED:content length=51]",
+            dedupeKey: "audit.denied:executable:codex:node:[REDACTED:content length=51]",
+            detail: { commandChars: 7 },
             context: expect.objectContaining({
               contextId: "ctx_codex",
               kind: "agent-runtime",
@@ -960,6 +960,7 @@ describe("ContextCommands", () => {
         },
       ]);
       expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("rctx_codex");
+      expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("node -v");
     });
 
     it("publishes env spoofing audit events", () => {
@@ -982,8 +983,9 @@ describe("ContextCommands", () => {
             type: "env_spoofing",
             agentId: "codex",
             denied: "RAVI_* override",
-            reason: "Cannot override RAVI environment variables",
-            detail: "RAVI_AGENT_ID=main ravi sessions list",
+            reason: "[REDACTED:content length=42]",
+            dedupeKey: "audit.denied:env_spoofing:codex:RAVI_* override:[REDACTED:content length=42]",
+            detail: { commandChars: 37 },
             context: expect.objectContaining({
               contextId: "ctx_codex",
               kind: "agent-runtime",
@@ -995,6 +997,7 @@ describe("ContextCommands", () => {
           }),
         },
       ]);
+      expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("RAVI_AGENT_ID=main");
     });
 
     it("publishes session scope audit events", () => {
@@ -1017,8 +1020,9 @@ describe("ContextCommands", () => {
             type: "session_scope",
             agentId: "codex",
             denied: "main",
-            reason: "Permission denied: agent:codex cannot access session:main",
-            detail: "ravi sessions send main 'hello'",
+            reason: "[REDACTED:content length=57]",
+            dedupeKey: "audit.denied:session_scope:codex:main:[REDACTED:content length=57]",
+            detail: { commandChars: 31 },
             context: expect.objectContaining({
               contextId: "ctx_codex",
               kind: "agent-runtime",
@@ -1030,6 +1034,7 @@ describe("ContextCommands", () => {
           }),
         },
       ]);
+      expect(JSON.stringify(publishedAuditEvents[0].data)).not.toContain("'hello'");
     });
   });
 
