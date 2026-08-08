@@ -10,6 +10,9 @@ const mediaSendCalls: Array<Record<string, unknown>> = [];
 let mediaSendError: unknown;
 const publishedOutboundJobs: Array<Record<string, unknown>> = [];
 const generateAudioCalls: Array<Record<string, unknown>> = [];
+let forbidAudioDryRunStateReads = false;
+let audioAgentReads = 0;
+let audioTargetResolutions = 0;
 
 const runtimeContext: {
   agentId: string;
@@ -109,11 +112,15 @@ mock.module("../../audio/tts.js", () => ({
 }));
 
 mock.module("../../router/config.js", () => ({
-  getAgent: () => ({
-    defaults: {
-      tts_lang: "en",
-    },
-  }),
+  getAgent: () => {
+    audioAgentReads += 1;
+    if (forbidAudioDryRunStateReads) throw new Error("audio dry-run read agent state");
+    return {
+      defaults: {
+        tts_lang: "en",
+      },
+    };
+  },
 }));
 
 mock.module("../../router/router-db.js", () => ({
@@ -126,12 +133,16 @@ mock.module("../../router/router-db.js", () => ({
 mock.module("../media-send.js", () => ({
   inferMediaMimeType: (filePath: string) => (filePath.endsWith(".png") ? "image/png" : "application/octet-stream"),
   inferMediaType: (mime: string) => (mime.startsWith("image/") ? "image" : "document"),
-  resolveMediaSendTarget: () => ({
-    channel: "whatsapp",
-    accountId: "main",
-    instanceId: "inst-1",
-    chatId: "chat-1",
-  }),
+  resolveMediaSendTarget: () => {
+    audioTargetResolutions += 1;
+    if (forbidAudioDryRunStateReads) throw new Error("audio dry-run resolved delivery state");
+    return {
+      channel: "whatsapp",
+      accountId: "main",
+      instanceId: "inst-1",
+      chatId: "chat-1",
+    };
+  },
   sendMediaWithOmniCli: mock(async (input: Record<string, unknown>) => {
     mediaSendCalls.push(input);
     if (mediaSendError !== undefined) throw mediaSendError;
@@ -218,6 +229,9 @@ beforeEach(() => {
   ledgerMessageFound = false;
   ledgerRecentMessages = [];
   ttsPlaybackItems = [];
+  forbidAudioDryRunStateReads = false;
+  audioAgentReads = 0;
+  audioTargetResolutions = 0;
 });
 
 describe("media/audio/react JSON output", () => {
@@ -522,7 +536,7 @@ describe("media send contract", () => {
 
       expect(error.details.dryRun).toBe(true);
       expect(error.details.plan).toEqual({
-        fileName: "sample.png",
+        fileName: expect.stringContaining("[REDACTED:content"),
         mimeType: "image/png",
         mediaType: "image",
         captionPresent: true,
@@ -546,17 +560,7 @@ describe("media send contract", () => {
   it("send on a missing file exits 1 with FILE_NOT_FOUND before the brake", async () => {
     const missingPath = "C:/sentinel/private/file-9P3X.png";
     const error = await expectContractError(
-      () =>
-        new MediaCommands().send(
-          missingPath,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          false,
-          true,
-        ),
+      () => new MediaCommands().send(missingPath, undefined, undefined, undefined, undefined, undefined, false, true),
       "FILE_NOT_FOUND",
       1,
     );
@@ -576,17 +580,7 @@ describe("media send contract", () => {
     try {
       const error = await expectContractError(
         () =>
-          new MediaCommands().send(
-            filePath,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            false,
-            true,
-            true,
-          ),
+          new MediaCommands().send(filePath, undefined, undefined, undefined, undefined, undefined, false, true, true),
         "MEDIA_SEND_FAILED",
         1,
       );
@@ -634,10 +628,11 @@ describe("audio contract", () => {
     expect(mediaSendCalls).toHaveLength(0);
   });
 
-  it("generate with --send but without --execute is a dry-run before provider and delivery", async () => {
+  it("generate with --send in virgin state dry-runs before agent, target, provider and delivery reads", async () => {
     const text = "SECRET_AT_START hello world SECRET_AT_END";
     const caption = "CAPTION_SECRET_AT_START caption CAPTION_SECRET_AT_END";
     const outputDir = "C:/sentinel/private/audio-output-8K2R";
+    forbidAudioDryRunStateReads = true;
     const error = await expectContractError(
       () =>
         new AudioCommands().generate(
@@ -662,7 +657,7 @@ describe("audio contract", () => {
       voice: "voice-1",
       model: "eleven_turbo_v2_5",
       speed: 1.5,
-      lang: "en",
+      lang: null,
       format: null,
       outputDirPresent: true,
       send: true,
@@ -684,6 +679,8 @@ describe("audio contract", () => {
     expect(serializedPlan).not.toContain("inst-1");
     expect(generateAudioCalls).toHaveLength(0);
     expect(mediaSendCalls).toHaveLength(0);
+    expect(audioAgentReads).toBe(0);
+    expect(audioTargetResolutions).toBe(0);
   });
 
   it("generate validates text BEFORE the brake", async () => {

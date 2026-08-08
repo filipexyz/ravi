@@ -10,7 +10,7 @@ import { fail, getContext } from "../context.js";
 import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { generateAudio, listElevenLabsVoices } from "../../audio/generator.js";
 import { getAgent } from "../../router/config.js";
-import { resolveMediaSendTarget, sendMediaWithOmniCli } from "../media-send.js";
+import { sendMediaWithOmniCli } from "../media-send.js";
 import { nats } from "../../nats.js";
 import {
   getTtsPlaybackItem,
@@ -29,12 +29,13 @@ import {
 
 const TEXT_FILE_EXTENSIONS = new Set([".md", ".txt"]);
 
-function summarizeMediaSendTarget(target: ReturnType<typeof resolveMediaSendTarget>) {
+function summarizeMediaSendContext(context: ReturnType<typeof getContext>) {
+  const source = context?.source;
   return {
-    channel: target.channel ?? null,
-    accountId: target.accountId,
-    chatIdPresent: Boolean(target.chatId),
-    threadIdPresent: Boolean(target.threadId),
+    channel: source?.channel ?? null,
+    accountId: source?.accountId ?? null,
+    chatIdPresent: Boolean(source?.chatId),
+    threadIdPresent: Boolean(source?.threadId),
   };
 }
 
@@ -167,7 +168,29 @@ export class AudioCommands {
       });
     }
 
-    // Resolve agent defaults (CLI flags take precedence)
+    if (send === true && execute !== true) {
+      // The paid generation itself is routine processing and runs directly.
+      // Only the externally visible delivery is braked, before both the
+      // provider call and all state resolution so a dry-run has no effects.
+      contractDryRun(
+        "audio generate",
+        {
+          textChars: resolvedText.length,
+          voice: voice ?? null,
+          model: model ?? null,
+          speed: speed ? Number.parseFloat(speed) : null,
+          lang: lang ?? null,
+          format: format ?? null,
+          outputDirPresent: Boolean(output),
+          send: true,
+          target: summarizeMediaSendContext(getContext()),
+          captionPresent: Boolean(caption),
+        },
+        { asJson },
+      );
+    }
+
+    // Resolve agent defaults only after any delivery confirmation barrier.
     const agentId = getContext()?.agentId;
     const defaults = agentId ? getAgent(agentId)?.defaults : undefined;
 
@@ -175,29 +198,6 @@ export class AudioCommands {
     const resolvedModel = model ?? (defaults?.tts_model as string);
     const resolvedSpeed = speed ? Number.parseFloat(speed) : (defaults?.tts_speed as number | undefined);
     const resolvedLang = lang ?? (defaults?.tts_lang as string) ?? "pt-br";
-
-    if (send === true && execute !== true) {
-      const target = resolveMediaSendTarget();
-      // The paid generation itself is routine processing and runs directly.
-      // Only the externally visible delivery is braked, before both the
-      // provider call and the media sender so a dry-run has no side effects.
-      contractDryRun(
-        "audio generate",
-        {
-          textChars: resolvedText.length,
-          voice: resolvedVoice ?? null,
-          model: resolvedModel ?? null,
-          speed: resolvedSpeed ?? null,
-          lang: resolvedLang,
-          format: format ?? null,
-          outputDirPresent: Boolean(output),
-          send: true,
-          target: summarizeMediaSendTarget(target),
-          captionPresent: Boolean(caption),
-        },
-        { asJson },
-      );
-    }
 
     if (!asJson) {
       console.log("Generating audio...");

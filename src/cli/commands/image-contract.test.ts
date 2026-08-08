@@ -23,6 +23,8 @@ const imageSendCalls: Array<Record<string, unknown>> = [];
 const spawnCalls: Array<{ command: string; args: string[]; options: Record<string, unknown> }> = [];
 let splitImageAtlasCalls = 0;
 let artifactSequence = 0;
+let forbidImageDryRunStateReads = false;
+const imageStateReads: string[] = [];
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -70,13 +72,29 @@ mock.module("../../image/generator.js", () => ({
 }));
 
 mock.module("../../router/config.js", () => ({
-  getAgent: () => undefined,
+  getAgent: () => {
+    imageStateReads.push("agent");
+    if (forbidImageDryRunStateReads) throw new Error("image dry-run read agent state");
+    return undefined;
+  },
 }));
 
 mock.module("../../router/router-db.js", () => ({
-  dbGetInstance: () => undefined,
-  dbGetInstanceByInstanceId: () => undefined,
-  dbGetSetting: () => undefined,
+  dbGetInstance: () => {
+    imageStateReads.push("instance");
+    if (forbidImageDryRunStateReads) throw new Error("image dry-run read instance state");
+    return undefined;
+  },
+  dbGetInstanceByInstanceId: () => {
+    imageStateReads.push("instance-by-id");
+    if (forbidImageDryRunStateReads) throw new Error("image dry-run read instance state");
+    return undefined;
+  },
+  dbGetSetting: () => {
+    imageStateReads.push("setting");
+    if (forbidImageDryRunStateReads) throw new Error("image dry-run read setting state");
+    return undefined;
+  },
 }));
 
 mock.module("../../artifacts/store.js", () => ({
@@ -102,13 +120,17 @@ mock.module("../../image/atlas.js", () => ({
 }));
 
 mock.module("../media-send.js", () => ({
-  resolveMediaSendTarget: (target: Record<string, unknown> = {}) => ({
-    channel: target.channel ?? "whatsapp",
-    accountId: target.accountId ?? "main",
-    instanceId: "inst-1",
-    chatId: target.chatId ?? "chat-1",
-    ...(target.threadId ? { threadId: target.threadId } : {}),
-  }),
+  resolveMediaSendTarget: (target: Record<string, unknown> = {}) => {
+    imageStateReads.push("delivery-target");
+    if (forbidImageDryRunStateReads) throw new Error("image dry-run resolved delivery state");
+    return {
+      channel: target.channel ?? "whatsapp",
+      accountId: target.accountId ?? "main",
+      instanceId: "inst-1",
+      chatId: target.chatId ?? "chat-1",
+      ...(target.threadId ? { threadId: target.threadId } : {}),
+    };
+  },
   sendMediaWithOmniCli: mock(async (input: Record<string, unknown>) => {
     imageSendCalls.push(input);
     return {
@@ -206,6 +228,8 @@ beforeEach(() => {
   spawnCalls.length = 0;
   artifactSequence = 0;
   splitImageAtlasCalls = 0;
+  forbidImageDryRunStateReads = false;
+  imageStateReads.length = 0;
 });
 
 describe("image generate contract", () => {
@@ -222,7 +246,7 @@ describe("image generate contract", () => {
     });
   });
 
-  it("with delivery but without --execute is a dry-run before provider, artifact and sender", async () => {
+  it("with delivery in virgin state dry-runs before DB, provider, artifact and sender", async () => {
     const prompt = "PROMPT_SECRET_AT_START gato roxo PROMPT_SECRET_AT_END";
     const caption = "CAPTION_SECRET_8K2R";
     const testDir = mkdtempSync(join(tmpdir(), "ravi-image-generate-private-"));
@@ -230,8 +254,17 @@ describe("image generate contract", () => {
     const outputDir = join(testDir, "private-output");
     writeFileSync(sourcePath, "fake image", "utf8");
     try {
+      forbidImageDryRunStateReads = true;
       const error = await expectContractError(
-        () => runGenerate(prompt, { provider: "openai", source: sourcePath, output: outputDir, caption, send: true, asJson: true }),
+        () =>
+          runGenerate(prompt, {
+            provider: "openai",
+            source: sourcePath,
+            output: outputDir,
+            caption,
+            send: true,
+            asJson: true,
+          }),
         "WRITE_REQUIRES_EXECUTE",
         3,
       );
@@ -248,14 +281,14 @@ describe("image generate contract", () => {
         format: null,
         compression: null,
         background: null,
-        sourceName: "source.png",
+        sourceName: expect.stringContaining("[REDACTED:content"),
         outputDirPresent: true,
         async: true,
         send: true,
         target: {
-          channel: "whatsapp",
-          accountId: "main",
-          chatIdPresent: true,
+          channel: null,
+          accountId: null,
+          chatIdPresent: false,
           threadIdPresent: false,
         },
         captionPresent: true,
@@ -273,6 +306,7 @@ describe("image generate contract", () => {
       expect(artifactEventCalls).toHaveLength(0);
       expect(spawnCalls).toHaveLength(0);
       expect(imageSendCalls).toHaveLength(0);
+      expect(imageStateReads).toEqual([]);
     } finally {
       rmSync(testDir, { recursive: true, force: true });
     }
@@ -349,7 +383,7 @@ describe("image atlas split contract", () => {
       );
 
       expect(error.details.plan).toEqual({
-        inputName: "atlas.png",
+        inputName: expect.stringContaining("[REDACTED:content"),
         outputDirMode: "generated",
         cols: 3,
         rows: 2,

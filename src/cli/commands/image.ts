@@ -39,6 +39,16 @@ function summarizeMediaSendTarget(target: ReturnType<typeof resolveMediaSendTarg
   };
 }
 
+function summarizeMediaSendContext(context: ReturnType<typeof getContext>) {
+  const source = context?.source;
+  return {
+    channel: source?.channel ?? null,
+    accountId: source?.accountId ?? null,
+    chatIdPresent: Boolean(source?.chatId),
+    threadIdPresent: Boolean(source?.threadId),
+  };
+}
+
 function parseCompression(value?: string): number | undefined {
   if (!value?.trim()) return undefined;
   const parsed = Number.parseInt(value, 10);
@@ -251,10 +261,48 @@ export class ImageCommands {
     })
     execute?: boolean,
   ) {
+    const ctx = getContext();
+    const sourcePath = source ? resolve(source) : undefined;
+    if (sourcePath && !existsSync(sourcePath)) fail(`Source image not found: ${sourcePath}`);
+    const outputDir = output ? resolve(output) : undefined;
+    const compressionValue = parseCompression(compression);
+    if (asyncMode && syncMode) {
+      fail("--async and --sync cannot be used together. Async is already the default; use --sync only when needed.");
+    }
+    const shouldRunAsync = syncMode !== true && asyncWorker !== true;
+    const hasOriginChat = Boolean(ctx?.source?.accountId && ctx.source.chatId);
+    const shouldSend = send === true || hasOriginChat;
+
+    if (shouldSend && execute !== true) {
+      // Confirmation must precede defaults/settings/artifact/provider/target
+      // resolution. The plan uses only explicit inputs and context presence.
+      contractDryRun(
+        "image generate",
+        {
+          promptChars: prompt.length,
+          provider: provider ? (normalizeImageProvider(provider) ?? null) : null,
+          model: model ?? null,
+          mode: mode === "quality" ? "quality" : "fast",
+          aspect: aspect ?? null,
+          size: size ?? null,
+          quality: quality ?? null,
+          format: format ?? null,
+          compression: compressionValue ?? null,
+          background: background ?? null,
+          sourceName: sourcePath ? basename(sourcePath) : null,
+          outputDirPresent: Boolean(outputDir),
+          async: shouldRunAsync,
+          send: shouldSend,
+          target: summarizeMediaSendContext(ctx),
+          captionPresent: Boolean(caption),
+        },
+        { asJson },
+      );
+    }
+
     // Resolve defaults: explicit flag > agent > instance > global setting > env.
     // There is intentionally no implicit provider fallback: if the selected
     // provider fails, the command fails. Operators can retry with --provider.
-    const ctx = getContext();
     const agentId = ctx?.agentId;
     const defaults = (agentId ? getAgent(agentId)?.defaults : undefined) ?? undefined;
     const accountId = ctx?.source?.accountId;
@@ -335,17 +383,8 @@ export class ImageCommands {
       dbGetSetting("image.background") ??
       undefined;
 
-    const sourcePath = source ? resolve(source) : undefined;
-    if (sourcePath && !existsSync(sourcePath)) fail(`Source image not found: ${sourcePath}`);
-    const outputDir = output ? resolve(output) : undefined;
-    const compressionValue = parseCompression(compressionDefault);
+    const resolvedCompressionValue = parseCompression(compressionDefault);
     const artifactContext = contextArtifactFields(ctx);
-    if (asyncMode && syncMode) {
-      fail("--async and --sync cannot be used together. Async is already the default; use --sync only when needed.");
-    }
-    const shouldRunAsync = syncMode !== true && asyncWorker !== true;
-    const hasOriginChat = Boolean(ctx?.source?.accountId && ctx.source.chatId);
-    const shouldSend = send === true || hasOriginChat;
     const asyncHint = shouldSend
       ? "No polling needed: this artifact emits lifecycle events and will be sent to the origin chat when completed. Use events only for manual inspection or debugging."
       : ctx?.sessionName || ctx?.sessionKey
@@ -359,7 +398,7 @@ export class ImageCommands {
       ...(resolvedSize ? { size: resolvedSize } : {}),
       ...(resolvedQuality ? { quality: resolvedQuality } : {}),
       ...(resolvedFormat ? { format: resolvedFormat } : {}),
-      ...(compressionValue !== undefined ? { compression: compressionValue } : {}),
+      ...(resolvedCompressionValue !== undefined ? { compression: resolvedCompressionValue } : {}),
       ...(resolvedBackground ? { background: resolvedBackground } : {}),
       ...(sourcePath ? { source: sourcePath } : {}),
       ...(outputDir ? { outputDir } : {}),
@@ -403,35 +442,6 @@ export class ImageCommands {
       fail("--artifact-id is reserved for internal image async workers.");
     }
 
-    if (shouldSend && execute !== true) {
-      const target = resolveMediaSendTarget();
-      // Generation and local artifact persistence run directly. Externally
-      // visible delivery is braked before any artifact, worker, provider, or
-      // sender side effect so the confirmation pass remains a true dry-run.
-      contractDryRun(
-        "image generate",
-        {
-          promptChars: prompt.length,
-          provider: normalizedProvider,
-          model: resolvedModel ?? null,
-          mode: resolvedMode,
-          aspect: resolvedAspect ?? null,
-          size: resolvedSize ?? null,
-          quality: resolvedQuality ?? null,
-          format: resolvedFormat ?? null,
-          compression: compressionValue ?? null,
-          background: resolvedBackground ?? null,
-          sourceName: sourcePath ? basename(sourcePath) : null,
-          outputDirPresent: Boolean(outputDir),
-          async: shouldRunAsync,
-          send: shouldSend,
-          target: summarizeMediaSendTarget(target),
-          captionPresent: Boolean(caption),
-        },
-        { asJson },
-      );
-    }
-
     if (shouldRunAsync) {
       const artifact = createArtifact(baseArtifactInput);
       appendArtifactEvent(artifact.id, {
@@ -451,7 +461,7 @@ export class ImageCommands {
       pushOption(workerArgs, "--size", resolvedSize);
       pushOption(workerArgs, "--quality", resolvedQuality);
       pushOption(workerArgs, "--format", resolvedFormat);
-      pushOption(workerArgs, "--compression", compressionValue);
+      pushOption(workerArgs, "--compression", resolvedCompressionValue);
       pushOption(workerArgs, "--background", resolvedBackground);
       if (shouldSend) workerArgs.push("--send");
       pushOption(workerArgs, "--caption", caption);
@@ -554,7 +564,7 @@ export class ImageCommands {
         size: resolvedSize,
         quality: resolvedQuality,
         format: resolvedFormat,
-        compression: compressionValue,
+        compression: resolvedCompressionValue,
         background: resolvedBackground,
         source: sourcePath,
         outputDir,
@@ -840,7 +850,13 @@ export class ImageAtlasCommands {
     name: "split",
     description: "Split an image atlas/contact sheet into deterministic crop artifacts",
   })
-  @CommandAccess({ kind: "mutate", resource: "image.atlas", action: "split", risk: "medium", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "image.atlas",
+    action: "split",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   @Returns(imageAtlasSplitReturnSchema)
   async split(
     @Arg("input", { description: "Atlas/contact sheet image path" })
