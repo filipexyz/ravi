@@ -33,6 +33,7 @@ export const REMOTE_GATEWAY_DEFAULT_TIMEOUT_MS = 30_000;
 const REMOTE_CONTRACT_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 const REMOTE_FLAG_PATTERN = /^--[a-z0-9][a-z0-9-]{0,63}$/;
 const REMOTE_POSITIONAL_PATTERN = /^(?:<[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?>|\[[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?\])$/;
+const REMOTE_SUGGESTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 
 export interface RemoteGatewayConfig {
   url: string;
@@ -176,7 +177,7 @@ function boundedStringList(value: unknown, pattern: RegExp): string[] | undefine
   const items = value
     .filter((item): item is string => typeof item === "string" && pattern.test(item))
     .map((item) => sanitizePublicValue(item))
-    .filter((item): item is string => typeof item === "string")
+    .filter((item): item is string => typeof item === "string" && pattern.test(item))
     .slice(0, 32);
   return items.length > 0 ? items : undefined;
 }
@@ -187,6 +188,8 @@ function projectRemoteContractDetails(op: string, body: CompleteContractErrorBod
   if (typeof remote.suggestedAction === "string") {
     details.suggestedAction = remoteSuggestedAction(op, body.outcome);
   }
+  const suggestions = boundedStringList(remote.suggestions, REMOTE_SUGGESTION_ID_PATTERN);
+  if (suggestions) details.suggestions = suggestions;
   const acceptedFlags = boundedStringList(remote.acceptedFlags, REMOTE_FLAG_PATTERN);
   if (acceptedFlags) details.acceptedFlags = acceptedFlags;
   const acceptedPositionals = boundedStringList(remote.acceptedPositionals, REMOTE_POSITIONAL_PATTERN);

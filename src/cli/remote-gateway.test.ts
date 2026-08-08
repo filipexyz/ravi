@@ -209,7 +209,14 @@ describe("remote gateway exit taxonomy", () => {
             message: "PRIVATE_MESSAGE_8K2R",
             retryable: false,
             suggestedAction: "PRIVATE_MESSAGE_8K2R",
-            suggestions: ["Alice Smith", "CRM-42", "calendar_main", { secret: "SENTINEL_SECRET_7M4Q" }],
+            suggestions: [
+              "Alice Smith",
+              "CRM-42",
+              "calendar_main",
+              "C:/sentinel/private",
+              "sk-abcdefghijklmnop",
+              { secret: "SENTINEL_SECRET_7M4Q" },
+            ],
             acceptedFlags: ["--json", "PRIVATE_MESSAGE_8K2R"],
             acceptedPositionals: [
               "<opportunity>",
@@ -234,6 +241,7 @@ describe("remote gateway exit taxonomy", () => {
 
     expect(error?.envelope().error).toMatchObject({
       suggestedAction: "Review the remote policy block before retrying the command",
+      suggestions: ["CRM-42", "calendar_main"],
       acceptedFlags: ["--json"],
       acceptedPositionals: ["<opportunity>", "[text]", "<name...>"],
       dryRun: true,
@@ -244,11 +252,8 @@ describe("remote gateway exit taxonomy", () => {
         filePath: "[REDACTED:path]",
       },
     });
-    expect(error?.envelope().error.suggestions).toBeUndefined();
     const serialized = JSON.stringify(error?.envelope());
     expect(serialized).not.toContain("Alice Smith");
-    expect(serialized).not.toContain("CRM-42");
-    expect(serialized).not.toContain("calendar_main");
     expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
     expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
     expect(serialized).not.toContain("C:/sentinel/private");
