@@ -6,8 +6,9 @@
   `--execute` (async by default; `--sync` calls the provider inline).
 - A generate run that will deliver MUST exit 3 without `--execute` before
   artifact, worker, provider and sender side effects.
-- Generate and atlas delivery plans MUST NOT contain prompt/caption bytes;
-  secret markers at the beginning or end MUST be absent from the envelope.
+- Generate and atlas delivery plans MUST NOT contain prompt/caption bytes,
+  absolute source/output paths or chat/thread ids. They retain only basename,
+  output-directory mode/presence and target presence metadata.
 - Internal worker args MUST include `--execute` only for approved delivery.
 - Provider-resolution failures (`No image provider configured`) and the
   `--async`+`--sync` conflict, missing local input/source and missing delivery

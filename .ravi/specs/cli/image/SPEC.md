@@ -37,8 +37,9 @@ by an origin chat on `image generate`.
 1. `image generate` without delivery MUST run without `--execute`. When
    delivery is explicit or implied by an origin chat, it MUST require
    `--execute` and show resolved generation/delivery facts in the plan. The
-   plan MUST expose only `promptChars` and `captionPresent`, never prompt or
-   caption bytes.
+   plan MUST use `promptChars`, `sourceName`, `outputDirPresent`,
+   `captionPresent` and chat/thread presence; it never exposes prompt/caption
+   bytes, absolute paths or destination ids.
 2. A delivery brake MUST run BEFORE any side effect: no artifact record is
    created, no background worker is spawned and no provider is called on exit 3.
 3. An internal async worker MUST carry `--execute` only when it inherits an
@@ -51,7 +52,9 @@ by an origin chat on `image generate`.
    text messages in text mode and exit 1.
 5. `image atlas split` without `--send` keeps immediate execution. With
    `--send`, it MUST require `--execute` before splitting, artifact creation or
-   media delivery; the plan exposes `captionPresent`, never the caption body.
+   media delivery. The plan uses `inputName` and `outputDirMode`, plus target
+   presence and `captionPresent`, never absolute paths, destination ids or the
+   caption body.
 6. The `sendCommand` field in the generate payload MUST teach
    `ravi media send "<path>" --execute`.
 7. When invoked from an agent context (`RAVI_*` envs present), a thrown

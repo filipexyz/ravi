@@ -7,9 +7,10 @@
 - `audio generate "<texto>" --send --json` without `--execute` MUST exit 3
   before both ElevenLabs and the media sender; adding `--execute` MUST generate
   and deliver.
-- Generate and TTS dry-run plans MUST expose only text length and
-  `captionPresent`; secret markers at the beginning or end of text/caption MUST
-  NOT appear in the envelope.
+- Generate and TTS dry-run plans MUST expose text length, safe scalar options
+  and presence metadata only. Output paths, chat/thread/client ids, arbitrary
+  voice JSON and secret markers from text/caption MUST NOT appear in the
+  envelope.
 - `audio tts "<texto>" --json` without `--execute` MUST exit 3 and MUST NOT
   emit `ravi.tts`; with `--execute` the emit MUST happen. This brake protects
   triggered downstream work/playback, not cost without a configured threshold.

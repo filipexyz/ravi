@@ -89,12 +89,12 @@ afterEach(() => {
   stateDir = null;
 });
 
-function seedSticker(id = "wave") {
+function seedSticker(id = "wave", label = "Wave") {
   const mediaPath = join(stateDir!, `${id}.webp`);
   writeFileSync(mediaPath, "webp");
   return addSticker({
     id,
-    label: "Wave",
+    label,
     description: "Use for a friendly hello.",
     channels: ["whatsapp"],
     agents: [],
@@ -229,7 +229,10 @@ async function expectContractError(
 
 describe("stickers contract", () => {
   it("send without --execute is a dry-run: exit 3 and NO NATS emit", async () => {
-    seedSticker();
+    const label = "PRIVATE_LABEL_8K2R";
+    const chatId = "PRIVATE_CHAT_8K2R";
+    seedSticker("wave", label);
+    runtimeContext.source.chatId = chatId;
 
     const error = await expectContractError(
       () => new StickerCommands().send("wave", undefined, undefined, undefined, undefined, true, undefined),
@@ -238,15 +241,20 @@ describe("stickers contract", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
-      sticker: { id: "wave", label: "Wave" },
+    expect(error.details.plan).toEqual({
+      sticker: { id: "wave", labelPresent: true },
       target: {
         channel: "whatsapp",
         accountId: "main",
-        chatId: "5511999999999",
+        chatIdPresent: true,
+        threadIdPresent: false,
       },
-      filename: "wave.webp",
+      fileName: "wave.webp",
+      mimeType: "image/webp",
     });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain(label);
+    expect(serializedPlan).not.toContain(chatId);
     expect(emittedEvents).toHaveLength(0);
   });
 
@@ -273,7 +281,8 @@ describe("stickers contract", () => {
   });
 
   it("remove without --execute is a dry-run: exit 3 and the sticker stays in the catalog", async () => {
-    seedSticker();
+    const label = "PRIVATE_LABEL_8K2R";
+    const sticker = seedSticker("wave", label);
     const commands = new StickerCommands();
 
     const error = await expectContractError(
@@ -282,7 +291,15 @@ describe("stickers contract", () => {
       3,
     );
 
-    expect(error.details.plan).toMatchObject({ stickerId: "wave", label: "Wave" });
+    expect(error.details.plan).toEqual({
+      stickerId: "wave",
+      labelPresent: true,
+      media: { kind: "file", name: "wave.webp" },
+      enabled: true,
+    });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain(label);
+    expect(serializedPlan).not.toContain(sticker.media.path);
     const { output } = await captureConsole(() => commands.show("wave", true));
     expect(JSON.parse(output).sticker.id).toBe("wave");
   });

@@ -16,3 +16,8 @@ Two structural findings shaped the brake placement:
 `image atlas split` stays immediate for local derivation. Its integrated
 `--send` path previously bypassed the media command's confirmation because it
 called the sender directly; it now has its own conditional brake.
+
+Both conditional delivery plans are projected at the caller: local paths are
+reduced to basename or directory mode/presence, and destination chat/thread
+ids to presence. The operator keeps enough shape to review the effect without
+copying prompt, caption, path or personal data into a blocked envelope.

@@ -3,9 +3,10 @@
 A misfired `prox calls request` is not a local mistake: a real phone rings in
 a real person's pocket, with a voice agent speaking on the operator's behalf.
 That is the single most human-facing write in the CLI, so it got the brake.
-The plan identifies the semantic person/profile and provider mode, but exposes
-only whether a phone/reason was supplied and the dynamic-variable keys; it
-never copies the phone, reason or variable values into an error or audit path.
+The plan identifies the profile and provider mode, but reduces the person,
+phone and reason to presence and dynamic variables to a count. It never copies
+the person id, phone, reason, variable keys or values into an error or audit
+path.
 
 `cancel` went the OPPOSITE way on purpose. Cancel is how you stop a call that
 should not happen — quiet hours misjudged, person already replied, wrong

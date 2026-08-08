@@ -712,7 +712,7 @@ export class ProxCallsCommands {
         {
           profileId,
           profileProvider,
-          personId,
+          personIdPresent: Boolean(personId),
           phoneProvided: Boolean(phone),
           reasonProvided: true,
           priority: priority ?? "normal",

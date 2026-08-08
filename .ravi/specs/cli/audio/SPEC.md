@@ -38,11 +38,14 @@ its NATS publish triggers downstream generation and playback.
 1. `audio generate` without `--send` MUST run immediately without `--execute`.
    When `--send` is present, the command MUST require `--execute` and the
    dry-run plan MUST carry the resolved generation options, `textChars`,
-   `captionPresent` and `send: true`; it MUST NOT contain text or caption bytes.
+   `outputDirPresent`, `captionPresent`, `send: true`, channel/account and only
+   chat/thread presence; it MUST NOT contain text, caption, output path or
+   destination ids.
 2. `audio tts` MUST default to dry-run and require `--execute`; the dry-run
    MUST exit 3 BEFORE the `ravi.tts` NATS emit (the emit is what triggers the
-   paid ElevenLabs generation downstream) and MUST show the resolved voice
-   config, target, playback and `textChars` in the plan, never the text itself.
+   paid ElevenLabs generation downstream). Its plan keeps `textChars`, agent,
+   topic, voice/model identifiers and scalar voice settings; arbitrary voice
+   JSON, chat/thread/client ids are reduced to presence booleans.
 3. Text/`--text-file` validation (both given, neither given, unsafe paths)
    and delivery-target resolution MUST fail before generation or conditional
    delivery confirmation.

@@ -14,7 +14,9 @@
   `ravi artifacts versions <id> --json`.
 - `artifacts publish` without `--execute` MUST exit 3, MUST report
   `dryRun: true` with the publish `plan`, and MUST NOT open an upload session
-  or call Console at all; with `--execute` the upload/release MUST happen.
+  or call Console at all; with `--execute` the upload/release MUST happen. The
+  plan MUST expose presence booleans rather than route, published-name or
+  entrypoint bytes.
 - `artifacts release activate` without `--execute` MUST exit 3 and MUST NOT
   call Console; with `--execute` the activation MUST happen.
 - A `ContractError` thrown by the brake or a not-found envelope MUST pass

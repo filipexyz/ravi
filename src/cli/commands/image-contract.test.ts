@@ -126,6 +126,9 @@ type ContractErrorInstance = InstanceType<typeof ContractError>;
 
 interface GenerateOverrides {
   provider?: string;
+  source?: string;
+  output?: string;
+  caption?: string;
   asyncMode?: boolean;
   syncMode?: boolean;
   send?: boolean;
@@ -142,8 +145,8 @@ function runGenerate(prompt: string, overrides: GenerateOverrides = {}) {
     overrides.provider,
     undefined, // model
     undefined, // mode
-    undefined, // source
-    undefined, // output
+    overrides.source,
+    overrides.output,
     undefined, // aspect
     undefined, // size
     undefined, // quality
@@ -151,7 +154,7 @@ function runGenerate(prompt: string, overrides: GenerateOverrides = {}) {
     undefined, // compression
     undefined, // background
     overrides.send,
-    undefined, // caption
+    overrides.caption,
     overrides.asyncMode,
     overrides.syncMode,
     undefined,
@@ -221,29 +224,58 @@ describe("image generate contract", () => {
 
   it("with delivery but without --execute is a dry-run before provider, artifact and sender", async () => {
     const prompt = "PROMPT_SECRET_AT_START gato roxo PROMPT_SECRET_AT_END";
-    const error = await expectContractError(
-      () => runGenerate(prompt, { provider: "openai", send: true, asJson: true }),
-      "WRITE_REQUIRES_EXECUTE",
-      3,
-    );
+    const caption = "CAPTION_SECRET_8K2R";
+    const testDir = mkdtempSync(join(tmpdir(), "ravi-image-generate-private-"));
+    const sourcePath = join(testDir, "source.png");
+    const outputDir = join(testDir, "private-output");
+    writeFileSync(sourcePath, "fake image", "utf8");
+    try {
+      const error = await expectContractError(
+        () => runGenerate(prompt, { provider: "openai", source: sourcePath, output: outputDir, caption, send: true, asJson: true }),
+        "WRITE_REQUIRES_EXECUTE",
+        3,
+      );
 
-    expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
-      promptChars: prompt.length,
-      provider: "openai",
-      mode: "fast",
-      async: true,
-      send: true,
-      captionPresent: false,
-    });
-    const serializedPlan = JSON.stringify(error.details.plan);
-    expect(serializedPlan).not.toContain("PROMPT_SECRET_AT_START");
-    expect(serializedPlan).not.toContain("PROMPT_SECRET_AT_END");
-    expect(generateImageCalls).toHaveLength(0);
-    expect(createArtifactCalls).toHaveLength(0);
-    expect(artifactEventCalls).toHaveLength(0);
-    expect(spawnCalls).toHaveLength(0);
-    expect(imageSendCalls).toHaveLength(0);
+      expect(error.details.dryRun).toBe(true);
+      expect(error.details.plan).toEqual({
+        promptChars: prompt.length,
+        provider: "openai",
+        model: null,
+        mode: "fast",
+        aspect: null,
+        size: null,
+        quality: null,
+        format: null,
+        compression: null,
+        background: null,
+        sourceName: "source.png",
+        outputDirPresent: true,
+        async: true,
+        send: true,
+        target: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatIdPresent: true,
+          threadIdPresent: false,
+        },
+        captionPresent: true,
+      });
+      const serializedPlan = JSON.stringify(error.details.plan);
+      expect(serializedPlan).not.toContain("PROMPT_SECRET_AT_START");
+      expect(serializedPlan).not.toContain("PROMPT_SECRET_AT_END");
+      expect(serializedPlan).not.toContain(caption);
+      expect(serializedPlan).not.toContain(sourcePath);
+      expect(serializedPlan).not.toContain(outputDir);
+      expect(serializedPlan).not.toContain("chat-1");
+      expect(serializedPlan).not.toContain("inst-1");
+      expect(generateImageCalls).toHaveLength(0);
+      expect(createArtifactCalls).toHaveLength(0);
+      expect(artifactEventCalls).toHaveLength(0);
+      expect(spawnCalls).toHaveLength(0);
+      expect(imageSendCalls).toHaveLength(0);
+    } finally {
+      rmSync(testDir, { recursive: true, force: true });
+    }
   });
 
   it("resolves and validates the provider BEFORE the brake", async () => {
@@ -316,14 +348,27 @@ describe("image atlas split contract", () => {
         3,
       );
 
-      expect(error.details.plan).toMatchObject({
+      expect(error.details.plan).toEqual({
+        inputName: "atlas.png",
+        outputDirMode: "generated",
+        cols: 3,
+        rows: 2,
+        mode: "raw",
         send: true,
-        target: { channel: "whatsapp", accountId: "main", chatId: "chat-1" },
+        target: {
+          channel: "whatsapp",
+          accountId: "main",
+          chatIdPresent: true,
+          threadIdPresent: false,
+        },
         captionPresent: true,
       });
       const serializedPlan = JSON.stringify(error.details.plan);
       expect(serializedPlan).not.toContain("ATLAS_SECRET_AT_START");
       expect(serializedPlan).not.toContain("ATLAS_SECRET_AT_END");
+      expect(serializedPlan).not.toContain(inputPath);
+      expect(serializedPlan).not.toContain("chat-1");
+      expect(serializedPlan).not.toContain("inst-1");
       expect(splitImageAtlasCalls).toBe(0);
       expect(createArtifactCalls).toHaveLength(0);
     } finally {

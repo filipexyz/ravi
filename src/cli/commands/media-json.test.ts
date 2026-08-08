@@ -597,6 +597,7 @@ describe("audio contract", () => {
   it("generate with --send but without --execute is a dry-run before provider and delivery", async () => {
     const text = "SECRET_AT_START hello world SECRET_AT_END";
     const caption = "CAPTION_SECRET_AT_START caption CAPTION_SECRET_AT_END";
+    const outputDir = "C:/sentinel/private/audio-output-8K2R";
     const error = await expectContractError(
       () =>
         new AudioCommands().generate(
@@ -606,7 +607,7 @@ describe("audio contract", () => {
           "1.5",
           undefined,
           undefined,
-          undefined,
+          outputDir,
           true,
           caption,
           true,
@@ -616,13 +617,21 @@ describe("audio contract", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       textChars: text.length,
       voice: "voice-1",
       model: "eleven_turbo_v2_5",
       speed: 1.5,
       lang: "en",
+      format: null,
+      outputDirPresent: true,
       send: true,
+      target: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatIdPresent: true,
+        threadIdPresent: false,
+      },
       captionPresent: true,
     });
     const serializedPlan = JSON.stringify(error.details.plan);
@@ -630,6 +639,9 @@ describe("audio contract", () => {
     expect(serializedPlan).not.toContain("SECRET_AT_END");
     expect(serializedPlan).not.toContain("CAPTION_SECRET_AT_START");
     expect(serializedPlan).not.toContain("CAPTION_SECRET_AT_END");
+    expect(serializedPlan).not.toContain(outputDir);
+    expect(serializedPlan).not.toContain("chat-1");
+    expect(serializedPlan).not.toContain("inst-1");
     expect(generateAudioCalls).toHaveLength(0);
     expect(mediaSendCalls).toHaveLength(0);
   });
@@ -654,26 +666,30 @@ describe("audio contract", () => {
 
   it("tts without --execute is a dry-run: exit 3 and NO ravi.tts emit", async () => {
     const text = "TTS_SECRET_AT_START fala comigo TTS_SECRET_AT_END";
+    const chatId = "PRIVATE_CHAT_8K2R";
+    const clientId = "PRIVATE_CLIENT_8K2R";
+    const voiceSettings = '{"stability":0.5,"private":"VOICE_SETTINGS_SECRET_8K2R"}';
+    const elevenlabs = '{"PRIVATE_ELEVEN_SECRET_8K2R":"value"}';
     const error = await expectContractError(
       () =>
         new AudioCommands().tts(
           text,
           undefined,
+          "agent-safe",
           undefined,
           undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
-          undefined,
+          "whatsapp",
+          "main",
+          chatId,
+          "voice-1",
+          "model-1",
+          "1.2",
+          "pt",
+          "mp3",
+          voiceSettings,
+          elevenlabs,
+          clientId,
+          false,
           true,
         ),
       "WRITE_REQUIRES_EXECUTE",
@@ -681,13 +697,38 @@ describe("audio contract", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       textChars: text.length,
+      agentId: "agent-safe",
+      target: {
+        channel: "whatsapp",
+        accountId: "main",
+        chatIdPresent: true,
+        threadIdPresent: false,
+      },
+      playback: {
+        target: "extension",
+        autoplay: true,
+        clientIdPresent: true,
+      },
+      voice: {
+        voiceId: "voice-1",
+        modelId: "model-1",
+        speed: 1.2,
+        lang: "pt",
+        outputFormat: "mp3",
+        voiceSettingsPresent: true,
+        elevenlabsPresent: true,
+      },
       topic: "ravi.tts",
     });
     const serializedPlan = JSON.stringify(error.details.plan);
     expect(serializedPlan).not.toContain("TTS_SECRET_AT_START");
     expect(serializedPlan).not.toContain("TTS_SECRET_AT_END");
+    expect(serializedPlan).not.toContain(chatId);
+    expect(serializedPlan).not.toContain(clientId);
+    expect(serializedPlan).not.toContain("VOICE_SETTINGS_SECRET_8K2R");
+    expect(serializedPlan).not.toContain("PRIVATE_ELEVEN_SECRET_8K2R");
     expect(emittedEvents).toHaveLength(0);
   });
 

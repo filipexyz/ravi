@@ -40,10 +40,13 @@ suggestions and compact `--fields` on `list`.
 1. With `--json`, every failure on a migrated op MUST return the envelope
    `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?}}`.
 2. `stickers send` MUST default to dry-run and require `--execute`; the
-   dry-run MUST exit 3 with `dryRun: true` and a `plan` (sticker id/label,
-   resolved target, filename/mime) and MUST NOT emit `ravi.stickers.send`.
+   dry-run MUST exit 3 with `dryRun: true` and a plan containing sticker id,
+   label presence, channel/account, chat/thread presence, file name and MIME.
+   It MUST NOT expose label or destination ids and MUST NOT emit
+   `ravi.stickers.send`.
 3. `stickers remove` MUST default to dry-run and require `--execute`; on exit 3
-   the sticker MUST still exist in the catalog.
+   the plan keeps sticker id, label presence, media kind/name and enabled state,
+   never the label or media path; the sticker MUST still exist in the catalog.
 4. `stickers show`, `stickers remove` and `stickers send` on an unknown id
    MUST exit 1 with `STICKER_NOT_FOUND` and up to 3 `suggestions` drawn from
    the LOCAL catalog (ids and labels).

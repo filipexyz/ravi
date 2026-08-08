@@ -52,7 +52,10 @@ immediate — the brake sits exactly where bytes leave the machine: `publish`
 5. `publish` and `release activate` MUST default to dry-run and require
    `--execute`; the dry-run MUST report `dryRun: true` and the `plan`, and MUST
    NOT open an upload session or call Console at all. `--execute` is the LAST
-   declared option on both ops.
+   declared option on both ops. The publish plan keeps the target kind and
+   artifact id (when applicable), project/site/visibility/slug/version and the
+   activation booleans; route, published name and entrypoint are represented
+   only by `routePresent`, `namePresent` and `entrypointPresent`.
 6. `artifacts list` MUST accept `--fields a,b,c` for compact output on the
    standard listing (`--rich` keeps its own fixed projection).
 7. A thrown `ContractError` MUST pass through the legacy CloudAuthError funnel

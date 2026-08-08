@@ -11,8 +11,8 @@
 5. Exit `1` with `Stickers are not supported on channel`: capability gate —
    the current channel has no sticker support; this is not retryable from the
    same context.
-6. Exit `3`: read `error.plan`, confirm sticker and target, then re-run adding
-   `--execute`.
+6. Exit `3`: read `error.plan`, confirm the sticker id and safe target-presence
+   metadata, then re-run adding `--execute`.
 7. If a send emitted without `--execute`, the brake regressed: check that
    `contractDryRun` runs before `nats.emit("ravi.stickers.send")` in
    `src/cli/commands/stickers.ts`.

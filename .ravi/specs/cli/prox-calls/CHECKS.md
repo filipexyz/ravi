@@ -3,8 +3,10 @@
 ## Checks
 
 - `prox calls request` without `--execute` MUST exit 3, MUST report
-  `dryRun: true` with the plan (profile, person, phone, providerMode), and
-  MUST NOT persist any `call_requests` row or touch a provider.
+  `dryRun: true` with profile/provider ids, person/phone/reason presence,
+  dynamic-variable count and `providerMode`. It MUST NOT expose the person id,
+  phone, reason or variable keys/values, persist a `call_requests` row or touch
+  a provider.
 - `prox calls request` with `--execute` MUST submit the call request through
   `submitCallRequest` (stub provider in tests).
 - `prox calls request` with an unknown `--profile` MUST exit 1 with

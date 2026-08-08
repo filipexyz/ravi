@@ -7,10 +7,11 @@ runs immediately. The brake follows observable risk instead: `--send` delivers
 to a live chat, while `audio tts` publishes work that triggers downstream
 generation and playback.
 
-When confirmation is required, the plan shows the resolved voice/model/speed,
-`textChars` and whether a caption exists. User text and captions are excluded
-entirely because even a bounded preview may expose a token or secret. These
-facts are useful context but are not presented as a monetary estimate.
+When confirmation is required, the plan shows resolved scalar generation
+facts, `textChars` and presence metadata. User text, captions, output paths,
+destination ids and arbitrary nested voice options are excluded entirely;
+even a bounded preview or identifier can expose a token or personal datum.
+These facts are useful context but are not presented as a monetary estimate.
 
 `audio blob` remains binary on success so playback is unchanged. Failure is
 different: a 4xx/5xx `Response` is normalized to the shared contract instead

@@ -12,9 +12,9 @@ simultaneously the validator (channel capability, enabled flag, per-channel and
 per-agent allowlists) and the event builder. Keeping it BEFORE the brake means
 exit 3 is only ever shown for sends that would actually succeed — an agent on a
 Matrix channel gets the capability error (exit 1) instead of a dry-run plan for
-an impossible send. The plan deliberately omits the raw event payload (paths,
-mime internals) and shows the operator-relevant facts: sticker id/label, target
-chat, filename.
+an impossible send. The plan deliberately omits the raw event payload, label,
+media path and destination ids. It retains the sticker id, label/target
+presence, channel/account, file name and MIME type.
 
 This domain has the widest teaching surface of the batch: the sessions action
 hints AND a dedicated prompt section (`stickers/prompt.ts`) inject the send

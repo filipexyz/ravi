@@ -1142,7 +1142,7 @@ describe("prox calls agent-first contract", () => {
       expect(error.details.plan).toEqual({
         profileId: "checkin",
         profileProvider: "elevenlabs",
-        personId: "person_brake_1",
+        personIdPresent: true,
         phoneProvided: true,
         reasonProvided: true,
         priority: "normal",
@@ -1155,6 +1155,7 @@ describe("prox calls agent-first contract", () => {
       const serializedPlan = JSON.stringify(error.details.plan);
       expect(serializedPlan).not.toContain(phoneSentinel);
       expect(serializedPlan).not.toContain(reasonSentinel);
+      expect(serializedPlan).not.toContain("person_brake_1");
       for (const sentinel of dynamicValueSentinels) expect(serializedPlan).not.toContain(sentinel);
       expect(serializedPlan).not.toContain("alpha");
       expect(serializedPlan).not.toContain("zeta");

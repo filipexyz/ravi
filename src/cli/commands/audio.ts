@@ -29,6 +29,39 @@ import {
 
 const TEXT_FILE_EXTENSIONS = new Set([".md", ".txt"]);
 
+function summarizeMediaSendTarget(target: ReturnType<typeof resolveMediaSendTarget>) {
+  return {
+    channel: target.channel ?? null,
+    accountId: target.accountId,
+    chatIdPresent: Boolean(target.chatId),
+    threadIdPresent: Boolean(target.threadId),
+  };
+}
+
+function summarizeTtsTarget(target: RaviTtsRequest["target"]) {
+  if (!target) return null;
+  return {
+    ...(target.channel ? { channel: target.channel } : {}),
+    ...(target.accountId ? { accountId: target.accountId } : {}),
+    chatIdPresent: Boolean(target.chatId),
+    threadIdPresent: Boolean(target.threadId),
+  };
+}
+
+function summarizeTtsVoice(voice: RaviTtsRequest["voice"]) {
+  if (!voice) return null;
+  return {
+    ...(voice.provider ? { provider: voice.provider } : {}),
+    ...(voice.voiceId ? { voiceId: voice.voiceId } : {}),
+    ...(voice.modelId ? { modelId: voice.modelId } : {}),
+    ...(voice.speed !== undefined ? { speed: voice.speed } : {}),
+    ...(voice.lang ? { lang: voice.lang } : {}),
+    ...(voice.outputFormat ? { outputFormat: voice.outputFormat } : {}),
+    voiceSettingsPresent: Boolean(voice.voiceSettings),
+    elevenlabsPresent: Boolean(voice.elevenlabs),
+  };
+}
+
 function readTextFileOption(path: string | undefined): string | undefined {
   if (path === undefined) return undefined;
 
@@ -157,9 +190,9 @@ export class AudioCommands {
           speed: resolvedSpeed ?? null,
           lang: resolvedLang,
           format: format ?? null,
-          outputDir: output ? resolve(output) : null,
+          outputDirPresent: Boolean(output),
           send: true,
-          target,
+          target: summarizeMediaSendTarget(target),
           captionPresent: Boolean(caption),
         },
         { asJson },
@@ -368,9 +401,13 @@ export class AudioCommands {
         {
           textChars: text.length,
           agentId: resolvedAgentId ?? null,
-          target: request.target ?? null,
-          playback: request.playback,
-          voice: request.voice ?? null,
+          target: summarizeTtsTarget(request.target),
+          playback: {
+            target: request.playback?.target ?? null,
+            autoplay: request.playback?.autoplay ?? null,
+            clientIdPresent: Boolean(request.playback?.clientId),
+          },
+          voice: summarizeTtsVoice(request.voice),
           topic: RAVI_TTS_TOPIC,
         },
         { asJson },

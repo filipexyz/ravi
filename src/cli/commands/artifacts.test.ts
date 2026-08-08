@@ -291,18 +291,21 @@ beforeEach(() => {
 describe("artifacts write brake", () => {
   it("publish without --execute is a dry-run: exit 3 and NO Console/upload call", async () => {
     const commands = new ArtifactsCommands();
+    const route = "/PRIVATE_ROUTE_8K2R";
+    const name = "PRIVATE_NAME_8K2R";
+    const entrypoint = "private/PRIVATE_ENTRYPOINT_8K2R.html";
     const error = await expectContractError(
       () =>
         commands.publish(
           "art_aaa111",
           "proj",
           "demo",
-          "/",
+          route,
           "public",
+          name,
           undefined,
           undefined,
-          undefined,
-          "index.html",
+          entrypoint,
           undefined,
           undefined,
           undefined,
@@ -319,16 +322,23 @@ describe("artifacts write brake", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       target: { kind: "artifact", artifactId: "art_aaa111" },
       project: "proj",
       site: "demo",
-      route: "/",
+      routePresent: true,
       visibility: "public",
-      entrypoint: "index.html",
+      namePresent: true,
+      slug: null,
+      entrypointPresent: true,
+      artifactVersion: null,
       activate: true,
       replaceRelease: false,
     });
+    const serializedPlan = JSON.stringify(error.details.plan);
+    expect(serializedPlan).not.toContain(route);
+    expect(serializedPlan).not.toContain(name);
+    expect(serializedPlan).not.toContain(entrypoint);
     expect(publishCalls).toHaveLength(0);
   });
 

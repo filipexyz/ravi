@@ -30,6 +30,15 @@ function stringDefault(defaults: Record<string, unknown> | undefined, key: strin
   return typeof value === "string" && value.trim() ? value : undefined;
 }
 
+function summarizeMediaSendTarget(target: ReturnType<typeof resolveMediaSendTarget>) {
+  return {
+    channel: target.channel ?? null,
+    accountId: target.accountId,
+    chatIdPresent: Boolean(target.chatId),
+    threadIdPresent: Boolean(target.threadId),
+  };
+}
+
 function parseCompression(value?: string): number | undefined {
   if (!value?.trim()) return undefined;
   const parsed = Number.parseInt(value, 10);
@@ -412,11 +421,11 @@ export class ImageCommands {
           format: resolvedFormat ?? null,
           compression: compressionValue ?? null,
           background: resolvedBackground ?? null,
-          source: sourcePath ?? null,
-          outputDir: outputDir ?? null,
+          sourceName: sourcePath ? basename(sourcePath) : null,
+          outputDirPresent: Boolean(outputDir),
           async: shouldRunAsync,
           send: shouldSend,
-          target,
+          target: summarizeMediaSendTarget(target),
           captionPresent: Boolean(caption),
         },
         { asJson },
@@ -908,13 +917,13 @@ export class ImageAtlasCommands {
       contractDryRun(
         "image atlas split",
         {
-          input: inputPath,
-          outputDir,
+          inputName: basename(inputPath),
+          outputDirMode: output ? "explicit" : "generated",
           cols: resolvedCols,
           rows: resolvedRows,
           mode: resolvedMode,
           send: true,
-          target,
+          target: summarizeMediaSendTarget(target),
           captionPresent: Boolean(caption),
         },
         { asJson },

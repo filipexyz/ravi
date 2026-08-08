@@ -36,8 +36,11 @@ primary braked op. `cancel` is deliberately unbraked (damage stop).
 2. Exit codes MUST follow the taxonomy: `0` success · `1` error (not-found) ·
    `2` usage error · `3` blocked by policy (write brake).
 3. `prox calls request` MUST default to dry-run and require `--execute`; the
-   dry-run MUST report `dryRun: true` and the `plan` (including
-   `providerMode` stub/live), and MUST NOT call `submitCallRequest`.
+   dry-run MUST report `dryRun: true` and a plan with profile/provider ids,
+   `personIdPresent`, phone/reason presence, priority, dynamic-variable count,
+   control booleans and `providerMode` stub/live. It MUST NOT expose the person
+   id, phone, reason or dynamic-variable keys/values, and MUST NOT call
+   `submitCallRequest`.
 4. `request` MUST validate the profile BEFORE the brake: an unknown profile is
    exit 1 with `CALL_PROFILE_NOT_FOUND`, never a wasted dry-run.
 5. `prox calls cancel` MUST stay unbraked: it is a damage stop for a

@@ -8,8 +8,9 @@
    tools come from the local DB). For `CALL_REQUEST_NOT_FOUND` there is no
    list op — recover the `cr_*` id from the original `request` output or the
    originating session.
-4. Exit `3`: read `error.plan` (person, phone, reason, providerMode), confirm
-   the CALL is intended with the operator, then re-run adding `--execute`.
+4. Exit `3`: read `error.plan` (profile/provider, target/input presence,
+   providerMode), confirm the CALL is intended with the operator, then re-run
+   adding `--execute`.
 5. Call executed but should not have: `ravi prox calls cancel <id> --reason
    "..."` immediately — cancel is unbraked precisely for this.
 6. `TRANSCRIPT_NOT_FOUND`: ElevenLabs profiles → retry with `--sync`; Agora →

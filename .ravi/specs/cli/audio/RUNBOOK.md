@@ -5,7 +5,8 @@
 1. Read the rules: `ravi specs get cli/audio --mode rules --json`.
 2. Reproduce with `--json` and read `error.code` first.
 3. Exit `3`: only `generate --send` and `tts` should reach this path. Review
-   the delivery/trigger plan and re-run with `--execute` if approved.
+   the scalar options and target-presence metadata in the delivery/trigger
+   plan, then re-run with `--execute` if approved.
 4. Exit `1` on text validation: fix the text/`--text-file` combination (only
    one of them, relative `.md`/`.txt` inside the cwd).
 5. TTS emitted but nothing played: the brake is not involved — inspect the

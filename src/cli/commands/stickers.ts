@@ -4,7 +4,7 @@
 
 import "reflect-metadata";
 import { existsSync } from "node:fs";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
@@ -378,8 +378,11 @@ export class StickerCommands {
         "stickers remove",
         {
           stickerId: sticker.id,
-          label: sticker.label,
-          mediaPath: sticker.media.path,
+          labelPresent: Boolean(sticker.label),
+          media: {
+            kind: sticker.media.kind,
+            name: basename(sticker.media.path),
+          },
           enabled: sticker.enabled,
         },
         { asJson },
@@ -446,15 +449,15 @@ export class StickerCommands {
         {
           sticker: {
             id: sticker.id,
-            label: sticker.label,
+            labelPresent: Boolean(sticker.label),
           },
           target: {
             channel: eventPayload.channel,
             accountId: eventPayload.accountId,
-            chatId: eventPayload.chatId,
-            ...(eventPayload.threadId ? { threadId: eventPayload.threadId } : {}),
+            chatIdPresent: Boolean(eventPayload.chatId),
+            threadIdPresent: Boolean(eventPayload.threadId),
           },
-          filename: eventPayload.filename,
+          fileName: eventPayload.filename,
           mimeType: eventPayload.mimeType,
         },
         { asJson },

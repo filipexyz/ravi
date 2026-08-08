@@ -4,8 +4,9 @@
 
 1. Read the rules: `ravi specs get cli/image --mode rules --json`.
 2. Reproduce with `--json` and read `error.code` first.
-3. Exit `3`: the command plans external delivery. Review the target and
-   generation facts, then re-run with `--execute` if approved.
+3. Exit `3`: the command plans external delivery. Review the safe target
+   presence, basename/directory mode and generation facts, then re-run with
+   `--execute` if approved.
 4. Exit `1` with `No image provider configured`: pass `--provider openai|gemini`
    or set `image_provider` on the agent/instance/default settings.
 5. Artifact stuck in `pending` on an approved delivery: check that the worker
