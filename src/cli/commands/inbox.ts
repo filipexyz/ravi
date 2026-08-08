@@ -477,7 +477,7 @@ export class InboxCommands {
           ref,
           itemId: row.itemId,
           sequence: row.sequence,
-          subject: row.natsSubject || INBOX_NATS_SUBJECT,
+          eventTopic: row.natsSubject || INBOX_NATS_SUBJECT,
           nextReplayCount: row.replayCount + 1,
         },
         { asJson },

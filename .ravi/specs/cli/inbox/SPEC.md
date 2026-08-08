@@ -94,7 +94,7 @@ The `ravi inbox` CLI group follows the agent-first contract defined by
    remote ids keep the pre-existing fail-closed error (no NOT_FOUND code).
 5. `inbox replay` MUST default to dry-run and require `--execute`: the
    dry-run MUST report `dryRun: true` and the plan (`ref`, `itemId`,
-   `sequence`, `subject`, `nextReplayCount`) and MUST NOT publish to NATS or
+   `sequence`, `eventTopic`, `nextReplayCount`) and MUST NOT publish to NATS or
    increment the replay count. Ref resolution and the ambiguity check happen
    BEFORE the brake, so not-found exits 1, never 3.
 6. `inbox list` and `inbox items` MUST accept `--fields a,b,c` for compact

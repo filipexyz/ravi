@@ -194,7 +194,7 @@ describe("inbox agent-first contract", () => {
       ref: String(row.id),
       itemId: row.itemId,
       sequence: row.sequence,
-      subject: "ravi.console.inbox.item",
+      eventTopic: "ravi.console.inbox.item",
       nextReplayCount: 1,
     });
     expect(publishCalls).toHaveLength(0);

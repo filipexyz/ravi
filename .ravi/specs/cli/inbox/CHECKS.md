@@ -3,7 +3,7 @@
 ## Agent-First Contract Checks
 
 - `inbox replay <ref> --json` without `--execute` MUST exit 3, MUST report
-  `dryRun: true` with the `{ref, itemId, sequence, subject, nextReplayCount}`
+  `dryRun: true` with the `{ref, itemId, sequence, eventTopic, nextReplayCount}`
   plan, and MUST NOT publish to NATS or change `replay_count`; with
   `--execute` the republish MUST happen.
 - `inbox replay <unknown-ref> --json` MUST exit 1 with the
