@@ -47,7 +47,7 @@ copies third-party code into the operator environment — that is the braked op.
    real agent ids/names.
 5. `skills install` MUST default to dry-run and require `--execute`; the
    dry-run MUST report `dryRun: true` and an exact metadata-only `plan` with
-   `sourceKind`, path-basename-only `sourceName`, `skillCount`, `overwrite`
+   `sourceKind`, path-basename-only `sourceLabel`, `skillCount`, `overwrite`
    and `codexSync`. It MUST NOT carry raw source/destination paths, plugin
    bucket paths, skill names or skill content, and MUST NOT copy anything.
    Not-found validation MUST fire BEFORE the brake (exit 1, never 3).

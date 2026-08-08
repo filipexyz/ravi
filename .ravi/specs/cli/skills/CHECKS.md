@@ -9,7 +9,7 @@
   `AGENT_NOT_FOUND` and suggestions of real agent ids/names; the same applies
   to `skills inspect` and the `--agent` axis of the batch ops.
 - `skills install` without `--execute` MUST exit 3, MUST report `dryRun: true`
-  with exactly `sourceKind`, path-basename-only `sourceName`, `skillCount`,
+  with exactly `sourceKind`, path-basename-only `sourceLabel`, `skillCount`,
   `overwrite` and `codexSync`. Raw source/destination paths, plugin bucket
   paths, skill names and skill content MUST be absent, and the command MUST
   NOT write anything to the plugin bucket.

@@ -291,14 +291,14 @@ describe("skills agent-first contract", () => {
     expect(envelope.error.dryRun).toBe(true);
     const plan = envelope.error.plan as {
       sourceKind: string;
-      sourceName: string;
+      sourceLabel: string;
       skillCount: number;
       overwrite: boolean;
       codexSync: boolean;
     };
     expect(plan).toEqual({
       sourceKind: "catalog",
-      sourceName: "catalog",
+      sourceLabel: "catalog",
       skillCount: 1,
       overwrite: false,
       codexSync: false,
@@ -358,9 +358,9 @@ describe("skills agent-first contract", () => {
       const plan = contractError.envelope().error.plan as Record<string, unknown>;
       expect(plan.sourceKind).toBe("local");
       expect(plan.skillCount).toBe(1);
-      expect(String(plan.sourceName)).toStartWith("sentinel-private-");
-      expect(String(plan.sourceName)).not.toContain("/");
-      expect(String(plan.sourceName)).not.toContain("\\");
+      expect(String(plan.sourceLabel)).toStartWith("sentinel-private-");
+      expect(String(plan.sourceLabel)).not.toContain("/");
+      expect(String(plan.sourceLabel)).not.toContain("\\");
       expect(JSON.stringify(plan)).not.toContain(source);
       expect(JSON.stringify(plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
       expect(JSON.stringify(plan)).not.toContain("SENTINEL_SECRET_7M4Q");

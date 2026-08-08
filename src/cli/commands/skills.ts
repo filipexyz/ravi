@@ -685,7 +685,7 @@ export class SkillsCommands {
         : surveySelected(listCatalogSkills());
       const planned = "ok" in survey.selection ? survey.selection.ok : failInstallSelection(survey, { source, asJson });
       const planSource = source ? parseSkillSource(source) : null;
-      const sourceName = planSource
+      const sourceLabel = planSource
         ? (planSource.subpath ?? planSource.rootPath ?? planSource.gitUrl ?? planSource.input)
             .replace(/\\/g, "/")
             .replace(/\/+$/, "")
@@ -697,7 +697,7 @@ export class SkillsCommands {
         "skills install",
         {
           sourceKind: planSource?.type ?? "catalog",
-          sourceName,
+          sourceLabel,
           skillCount: planned.length,
           overwrite: overwrite === true,
           codexSync: skipCodexSync !== true,
