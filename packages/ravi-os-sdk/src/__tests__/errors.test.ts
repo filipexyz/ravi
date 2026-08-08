@@ -20,7 +20,14 @@ function contractBody(exitCode: 1 | 2 | 3, outcome: RaviContractErrorBody["outco
     exitCode,
     outcome,
     error: {
-      code: exitCode === 3 ? "WRITE_REQUIRES_EXECUTE" : exitCode === 2 ? "USAGE_ERROR" : "PROVIDER_ERROR",
+      code:
+        outcome === "denied"
+          ? "PERMISSION_DENIED"
+          : exitCode === 3
+            ? "WRITE_REQUIRES_EXECUTE"
+            : exitCode === 2
+              ? "USAGE_ERROR"
+              : "PROVIDER_ERROR",
       message: "contract stopped execution",
       retryable: false,
       suggestedAction: "inspect and retry",
@@ -31,6 +38,7 @@ function contractBody(exitCode: 1 | 2 | 3, outcome: RaviContractErrorBody["outco
 describe("gateway ContractError compatibility", () => {
   it.each([
     [422, 1, "failed"],
+    [403, 1, "denied"],
     [400, 2, "usage_error"],
     [409, 3, "blocked"],
   ] as const)("preserves the canonical envelope at HTTP %i / exit %i", (status, exitCode, outcome) => {
@@ -49,9 +57,104 @@ describe("gateway ContractError compatibility", () => {
       exitCode,
       outcome,
     });
-    expect(error.body).toBe(body);
-    expect((error as RaviContractError).contractBody).toBe(body);
+    expect(error.body).not.toBe(body);
+    expect(error.body).toEqual(body);
+    expect((error as RaviContractError).contractBody).toEqual(body);
     expect(isRaviContractErrorBody(error.body)).toBe(true);
+  });
+
+  it("projects and sanitizes canonical details instead of retaining the remote body", () => {
+    const body = {
+      ...contractBody(3, "blocked"),
+      providerBody: "SENTINEL_SECRET_7M4Q",
+      error: {
+        ...contractBody(3, "blocked").error,
+        providerBody: "SENTINEL_SECRET_7M4Q",
+        dryRun: true,
+        acceptedFlags: ["--execute", "--json"],
+        plan: {
+          providerBody: "SENTINEL_SECRET_7M4Q",
+          caption: "PRIVATE_MESSAGE_8K2R",
+          filePath: "C:/private/SENTINEL_SECRET_7M4Q.txt",
+          key: "custom.password",
+          value: "SENTINEL_SECRET_7M4Q",
+          count: 2,
+          captionPresent: true,
+        },
+        issues: [
+          {
+            path: ["caption"],
+            code: "invalid",
+            message: "PRIVATE_MESSAGE_8K2R",
+            providerBody: "SENTINEL_SECRET_7M4Q",
+          },
+        ],
+      },
+    } as unknown as RaviContractErrorBody;
+
+    const error = buildErrorFromGateway(409, body, "artifacts.publish") as RaviContractError;
+    const serialized = JSON.stringify({ body: error.body, contractBody: error.contractBody });
+
+    expect(error).toBeInstanceOf(RaviContractError);
+    expect(error.contractBody).toEqual({
+      success: false,
+      op: "audio generate",
+      error: {
+        code: "WRITE_REQUIRES_EXECUTE",
+        message: "contract stopped execution",
+        retryable: false,
+        suggestedAction: "inspect and retry",
+        acceptedFlags: ["--execute", "--json"],
+        dryRun: true,
+        plan: {
+          caption: "[REDACTED:content length=20]",
+          filePath: "[REDACTED:path]",
+          key: "custom.password",
+          value: "[REDACTED]",
+          count: 2,
+          captionPresent: true,
+        },
+        issues: [
+          {
+            path: ["caption"],
+            code: "invalid",
+            message: "[REDACTED:content length=20]",
+          },
+        ],
+      },
+      exitCode: 3,
+      outcome: "blocked",
+    });
+    expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(serialized).not.toContain("providerBody");
+  });
+
+  it.each([
+    [1, "blocked"],
+    [1, "usage_error"],
+    [2, "failed"],
+    [2, "denied"],
+    [2, "blocked"],
+    [3, "failed"],
+    [3, "denied"],
+    [3, "usage_error"],
+  ] as const)("rejects the incoherent exit %i / %s pair", (exitCode, outcome) => {
+    const body = contractBody(exitCode, outcome as RaviContractErrorBody["outcome"]);
+
+    expect(isRaviContractErrorBody(body)).toBe(false);
+    expect(buildErrorFromGateway(400, body, "audio.generate")).not.toBeInstanceOf(RaviContractError);
+  });
+
+  it.each([
+    ["denied", "SOME_ERROR"],
+    ["failed", "PERMISSION_DENIED"],
+  ] as const)("rejects outcome %s with permission code %s", (outcome, code) => {
+    const body = contractBody(1, outcome);
+    body.error.code = code;
+
+    expect(isRaviContractErrorBody(body)).toBe(false);
+    expect(buildErrorFromGateway(403, body, "agents.debounce")).not.toBeInstanceOf(RaviContractError);
   });
 
   it("preserves a policy block through the HTTP transport", async () => {
