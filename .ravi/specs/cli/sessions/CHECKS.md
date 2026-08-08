@@ -9,6 +9,9 @@
   `dryRun: true` and the `plan`, and MUST NOT reset or delete anything.
 - `sessions delete-message` and `sessions edit-message` without `--execute`
   MUST exit 3 and MUST NOT queue any provider action.
+- The `sessions edit-message` plan MUST carry only `session`, `messageId`,
+  `providerMessageIdPresent`, `channel` and `newTextChars`; it MUST NOT expose
+  the provider message ID or new text.
 - Runtime `follow-up`, `rollback` and `fork` without `--execute` MUST exit 3
   before any runtime request; their execute paths MUST forward the option.
 - Runtime `interrupt` and `steer` MUST remain immediate.

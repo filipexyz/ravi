@@ -42,8 +42,9 @@ single braked op of the domain.
    `suggestions` drawn from known setting keys plus keys actually set.
    Known-but-unset keys and legacy keys keep their informational read (exit 0).
 4. `settings delete` MUST default to dry-run and require `--execute`; the
-   dry-run MUST report `dryRun: true` and a `plan` carrying `key`,
-   `currentValue`, `legacy` and `known`, and MUST NOT delete anything nor emit
+   dry-run MUST report `dryRun: true` and a semantically minimal `plan`
+   carrying only `key`, `valuePresent`, `legacy` and `known`. The plan MUST NOT
+   contain the current value, and the dry-run MUST NOT delete anything nor emit
    `ravi.config.changed`.
 5. `settings delete` of a key that is not set MUST exit 1 with
    `SETTING_NOT_FOUND` — validation fires BEFORE the brake, never exit 3.

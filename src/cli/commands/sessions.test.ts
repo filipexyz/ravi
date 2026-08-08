@@ -1298,6 +1298,78 @@ describe("SessionCommands attach hints", () => {
     });
   });
 
+  it("minimizes edit-message dry-run text and provider identity without queueing", async () => {
+    const sessionKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = {
+      sessionKey,
+      name: "dev-slack",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    sessionSubscriptions = [
+      {
+        id: "sub_slack",
+        sessionKey,
+        chatId: "chat_slack",
+        role: "primary",
+        speechMode: "speak",
+        outputAttachedAt: 1,
+      },
+    ];
+    chatRecords.set("chat_slack", {
+      id: "chat_slack",
+      title: "ravi",
+      channel: "slack",
+      instanceId: "ravi-slack",
+      platformChatId: "C123",
+    });
+    agentMessageByRef = {
+      id: "cm_slack",
+      chatId: "chat_slack",
+      channel: "slack",
+      instanceId: "ravi-slack",
+      providerMessageId: "1711111111.000100",
+      rawChatId: "C123",
+      actorType: "agent",
+      agentId: "dev",
+      originSessionKey: sessionKey,
+      messageType: "text",
+      content: { type: "text", text: "old text" },
+      ingestedAt: 1_711_111_111_000,
+      createdAt: 1_711_111_111_000,
+      updatedAt: 1_711_111_111_000,
+    };
+
+    let thrown: unknown;
+    await captureLogsAsync(async () => {
+      try {
+        await new SessionCommands().editMessage(
+          "dev-slack",
+          "cm_slack",
+          "PRIVATE_MESSAGE_8K2R",
+          undefined,
+          true,
+        );
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    expect(contractError.envelope().error.plan).toEqual({
+      session: "dev-slack",
+      messageId: "cm_slack",
+      providerMessageIdPresent: true,
+      channel: "slack",
+      newTextChars: 20,
+    });
+    expect(JSON.stringify(contractError.envelope().error.plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(JSON.stringify(contractError.envelope().error.plan)).not.toContain("1711111111.000100");
+    expect(publishedOutboundJobs).toHaveLength(0);
+  });
+
   it("marks channel actions unavailable when the session has no chat surface", () => {
     resolvedSession = {
       sessionKey: "session_without_chat",

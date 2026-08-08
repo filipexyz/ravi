@@ -9,8 +9,10 @@
 4. Exit `1` + `MEDIA_SEND_FAILED`: delivery-side problem (omni CLI missing,
    unmapped instance, Slack upload failure). The message carries the transport
    error; it is retryable after fixing the target.
-5. Exit `3`: read `error.plan`, confirm file and target are the intended ones,
-   then re-run the same command adding `--execute`.
+5. Exit `3`: read `error.plan`, confirm the file name/type, target
+   channel/account and target-presence flags, then re-run the same command
+   adding `--execute`. The plan intentionally omits the full path, caption and
+   personal target IDs.
 6. If a send executed without `--execute`, the brake regressed: check that
    `contractDryRun` still runs before `sendMediaWithOmniCli` in
    `src/cli/commands/media.ts`.

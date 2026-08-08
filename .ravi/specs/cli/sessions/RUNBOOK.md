@@ -10,7 +10,8 @@
    not-found.
 4. Exit `2`: read `error.acceptedFlags`; the list is authoritative for that op.
 5. Exit `3`: read `error.plan`, confirm the target session/message, then re-run
-   with `--execute`.
+   with `--execute`. An `edit-message` plan intentionally reports only provider
+   ID presence and new-text length, never either integral value.
 6. If `reset`/`delete`/`delete-message`/`edit-message` executed without
    `--execute`, the brake regressed — check the op still calls
    `contractDryRun` before any state/queue/provider call.

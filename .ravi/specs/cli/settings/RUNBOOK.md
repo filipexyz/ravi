@@ -8,9 +8,10 @@
 3. Exit `1` + `SETTING_NOT_FOUND`: read `error.suggestions` — real keys from
    the known-settings catalog plus keys actually set. Retry with one, or list
    the universe: `ravi settings list --json` (add `--legacy` for `account.*`).
-4. Exit `3`: read `error.plan` — it carries `key`, `currentValue`, `legacy`,
-   `known`. Confirm the value shown is the one you intend to erase, then
-   re-run the same command adding `--execute`.
+4. Exit `3`: read `error.plan` — it carries `key`, `valuePresent`, `legacy`,
+   `known`. Confirm the key is the one you intend to erase, then re-run the
+   same command adding `--execute`. The plan intentionally omits the current
+   value and reports only whether one is present.
 5. A legacy `account.*` read/write pointing you to `ravi instances` is not a
    contract error — it is the migration hint; follow it.
 6. If a `delete` executed without `--execute`, the brake regressed: check that

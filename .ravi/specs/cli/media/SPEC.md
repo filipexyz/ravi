@@ -38,9 +38,12 @@ live channel (WhatsApp/Slack) and cannot be unsent.
 2. Exit codes MUST follow the taxonomy: `0` success · `1` error (not-found /
    delivery) · `2` usage error · `3` blocked by policy (write brake).
 3. `media send` MUST default to dry-run and require `--execute`; the dry-run
-   MUST report `dryRun: true` and a `plan` with the resolved file
-   (path/filename/mime/type), caption, voiceNote and target, and MUST NOT call
-   the omni CLI or the Slack native sender.
+   MUST report `dryRun: true` and a semantically minimal `plan` with
+   `fileName`, `mimeType`, `mediaType`, `captionPresent`, `voiceNote` and a
+   target containing only `channel`, `accountId`, `chatIdPresent` and
+   `threadIdPresent`. The plan MUST NOT contain the resolved path, caption,
+   chat ID or thread ID, and MUST NOT call the omni CLI or the Slack native
+   sender.
 4. A missing local file MUST exit 1 with `FILE_NOT_FOUND` BEFORE the brake — no
    plan is shown for a send that could never happen.
 5. Delivery failures after `--execute` MUST exit 1 with `MEDIA_SEND_FAILED`

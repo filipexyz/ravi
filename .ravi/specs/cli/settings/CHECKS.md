@@ -9,8 +9,9 @@
   (exit 0 with the default shown), and legacy `account.*` reads MUST keep the
   `ravi instances` hint.
 - `settings delete <set-key>` without `--execute` MUST exit 3, MUST report
-  `dryRun: true` with a `plan` carrying `key`/`currentValue`/`legacy`/`known`,
-  and MUST NOT delete the row nor emit `ravi.config.changed`.
+  `dryRun: true` with a `plan` carrying only
+  `key`/`valuePresent`/`legacy`/`known`, MUST NOT expose the current value, and
+  MUST NOT delete the row nor emit `ravi.config.changed`.
 - `settings delete <unset-key>` MUST exit 1 with `SETTING_NOT_FOUND` even
   without `--execute` — validation fires before the brake, never exit 3.
 - `settings delete <set-key> --execute` MUST delete the row and emit

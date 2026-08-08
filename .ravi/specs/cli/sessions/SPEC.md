@@ -47,7 +47,9 @@ triggered runtime execution use risk-based confirmation.
 4. `sessions reset`, `sessions delete`, `sessions delete-message` and
    `sessions edit-message` MUST default to dry-run and require `--execute`; the
    dry-run MUST report `dryRun: true` and the `plan`, and MUST NOT touch state,
-   queues or providers.
+   queues or providers. The `edit-message` plan MUST contain only `session`,
+   `messageId`, `providerMessageIdPresent`, `channel` and `newTextChars`; it
+   MUST NOT contain the provider message ID or new message text.
 5. `sessions prune` keeps its native richer dry-run (candidates payload,
    exit 0 preview) — declared exception that predates the taxonomy; its
    `--execute` semantics are the model the contract generalizes.
@@ -100,7 +102,7 @@ triggered runtime execution use risk-based confirmation.
 
 ## Validation
 
-- `bun test src/cli/commands/sessions.test.ts` green (49 tests, contract block
+- `bun test src/cli/commands/sessions.test.ts` green (50 tests, contract block
   included); `sessions-runtime.test.ts` green; `prompt-builder.test.ts` green.
 - Live checks (isolated `RAVI_STATE_DIR`): `sessions info ghost --json` →
   `SESSION_NOT_FOUND` without suggestions, exit 1; `reset`/`delete` without

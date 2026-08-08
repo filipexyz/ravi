@@ -6385,9 +6385,9 @@ export class SessionCommands {
         {
           session: sessionRef,
           messageId: message.id,
-          providerMessageId: message.providerMessageId ?? null,
+          providerMessageIdPresent: Boolean(message.providerMessageId),
           channel: message.channel,
-          newText: nextText,
+          newTextChars: nextText.length,
         },
         { asJson },
       );

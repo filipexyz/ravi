@@ -3,8 +3,11 @@
 ## Checks
 
 - `media send <file> --json` without `--execute` MUST exit 3, MUST report
-  `dryRun: true` with the file/target `plan`, and MUST NOT call the omni CLI or
-  the Slack native sender.
+  `dryRun: true` with a minimal plan carrying `fileName`, `mimeType`,
+  `mediaType`, `captionPresent`, `voiceNote` and target channel/account plus
+  chat/thread presence flags. It MUST NOT expose the resolved path, caption or
+  personal target IDs, and MUST NOT call the omni CLI or the Slack native
+  sender.
 - `media send <file> --json --execute` MUST perform the delivery and return the
   typed success payload.
 - `media send /path/that/does/not/exist --json` MUST exit 1 with the

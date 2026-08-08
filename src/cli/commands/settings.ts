@@ -435,7 +435,7 @@ export class SettingsCommands {
         "settings delete",
         {
           key,
-          currentValue,
+          valuePresent: currentValue !== null,
           legacy,
           known: Boolean(KNOWN_SETTINGS[key]),
         },

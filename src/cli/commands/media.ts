@@ -83,17 +83,16 @@ export class MediaCommands {
       contractDryRun(
         "media send",
         {
-          filePath: absPath,
-          filename: basename(absPath),
+          fileName: basename(absPath),
           mimeType,
-          type,
-          caption: caption ?? null,
+          mediaType: type,
+          captionPresent: Boolean(caption),
           voiceNote: ptt === true,
           target: {
             channel: channel ?? source?.channel ?? null,
             accountId: account ?? source?.accountId ?? null,
-            chatId: to ?? source?.chatId ?? null,
-            threadId: threadId ?? source?.threadId ?? null,
+            chatIdPresent: Boolean(to ?? source?.chatId),
+            threadIdPresent: Boolean(threadId ?? source?.threadId),
           },
         },
         { asJson },

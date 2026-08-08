@@ -190,8 +190,8 @@ describe("settings agent-first contract", () => {
   });
 
   it("blocks settings delete without --execute (dry-run, exit 3, no write)", () => {
-    settingsStore = { "custom.featureFlag": "on" };
-    const { thrown } = capture(() => new SettingsCommands().delete("custom.featureFlag", true));
+    settingsStore = { "custom.password": "SENTINEL_SECRET_7M4Q" };
+    const { thrown } = capture(() => new SettingsCommands().delete("custom.password", true));
 
     expect(thrown).toBeInstanceOf(ContractError);
     const contractError = thrown as InstanceType<typeof ContractError>;
@@ -200,9 +200,14 @@ describe("settings agent-first contract", () => {
     expect(envelope.op).toBe("settings delete");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
-    expect((envelope.error.plan as Record<string, unknown>).key).toBe("custom.featureFlag");
-    expect((envelope.error.plan as Record<string, unknown>).currentValue).toBe("on");
-    expect(settingsStore["custom.featureFlag"]).toBe("on");
+    expect(envelope.error.plan).toEqual({
+      key: "custom.password",
+      valuePresent: true,
+      legacy: false,
+      known: false,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(settingsStore["custom.password"]).toBe("SENTINEL_SECRET_7M4Q");
     expect(emitMock).not.toHaveBeenCalled();
   });
 

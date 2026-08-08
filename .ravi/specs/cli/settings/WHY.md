@@ -5,8 +5,9 @@ policies, timezone, task-session TTLs. A wrong `delete` silently changes
 runtime routing/policy behavior for every channel the daemon serves, and there
 is no undo — the previous value is gone unless someone remembers it. That is
 why `delete` is the single braked op: dry-run by default, and the plan echoes
-the `currentValue` so the caller sees exactly what would be lost before
-passing `--execute`.
+the key plus `valuePresent` so the caller can confirm what will be erased
+before passing `--execute`. The value itself is omitted because custom settings
+may contain credentials or other secrets.
 
 `set` deliberately stays unbraked:
 

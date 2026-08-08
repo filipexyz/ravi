@@ -502,24 +502,38 @@ describe("media send contract", () => {
     writeFileSync(filePath, "png");
     try {
       const error = await expectContractError(
-        () => new MediaCommands().send(filePath, "caption", undefined, undefined, undefined, undefined, false, true),
+        () =>
+          new MediaCommands().send(
+            filePath,
+            "PRIVATE_MESSAGE_8K2R",
+            "whatsapp",
+            "5511999999999",
+            "main",
+            "PRIVATE_THREAD_2J7N",
+            false,
+            true,
+          ),
         "WRITE_REQUIRES_EXECUTE",
         3,
       );
 
       expect(error.details.dryRun).toBe(true);
-      expect(error.details.plan).toMatchObject({
-        filePath,
-        filename: "sample.png",
+      expect(error.details.plan).toEqual({
+        fileName: "sample.png",
         mimeType: "image/png",
-        type: "image",
-        caption: "caption",
+        mediaType: "image",
+        captionPresent: true,
+        voiceNote: false,
         target: {
           channel: "whatsapp",
           accountId: "main",
-          chatId: "5511999999999",
+          chatIdPresent: true,
+          threadIdPresent: true,
         },
       });
+      expect(JSON.stringify(error.details.plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
+      expect(JSON.stringify(error.details.plan)).not.toContain("PRIVATE_THREAD_2J7N");
+      expect(JSON.stringify(error.details.plan)).not.toContain(dir);
       expect(mediaSendCalls).toHaveLength(0);
     } finally {
       rmSync(dir, { recursive: true, force: true });
