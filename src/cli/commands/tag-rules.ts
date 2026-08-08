@@ -30,12 +30,12 @@ function printJson(payload: unknown): void {
 function summarizeTagRuleValidationErrors(errors: Array<{ source: string; error: string }>) {
   return errors.map(({ source, error }) => {
     if (error.startsWith("Invalid JSON:")) {
-      return { source: basename(source), code: "INVALID_JSON", message: "Rule file is not valid JSON" };
+      return { source: basename(source), code: "INVALID_JSON" };
     }
     if (error.startsWith("Duplicate rule id:")) {
-      return { source: basename(source), code: "DUPLICATE_RULE_ID", message: error };
+      return { source: basename(source), code: "DUPLICATE_RULE_ID" };
     }
-    return { source: basename(source), code: "SCHEMA_INVALID", message: "Rule schema validation failed" };
+    return { source: basename(source), code: "SCHEMA_INVALID" };
   });
 }
 

@@ -149,9 +149,8 @@ describe("tag-rules agent-first contract", () => {
     const contractError = expectContractError(() => new TagRulesCommands().validate(true));
     expect(contractError.code).toBe("TAG_RULE_VALIDATION_FAILED");
     expect(contractError.exitCode).toBe(1);
-    expect(contractError.details.errors).toEqual([
-      { source: "broken.json", code: "INVALID_JSON", message: "Rule file is not valid JSON" },
-    ]);
+    expect(contractError.details.errors).toEqual([{ source: "broken.json", code: "INVALID_JSON" }]);
+    expect(JSON.stringify(contractError.envelope())).not.toContain("Rule file is not valid JSON");
     expect(JSON.stringify(contractError.envelope())).not.toContain(stateDir);
   });
 
