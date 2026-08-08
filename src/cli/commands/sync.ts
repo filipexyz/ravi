@@ -3,7 +3,13 @@ import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
 import { contractDryRun, contractFail } from "../agent-contract.js";
 import { readCloudCredentials } from "../../cloud-auth/storage.js";
-import { createConsoleSyncBridge, getSyncStatusSummary, inspectSyncRecord, retryOutbox } from "../../sync/index.js";
+import {
+  createConsoleSyncBridge,
+  getSyncStatusSummary,
+  getSyncStatusSummaryReadOnly,
+  inspectSyncRecord,
+  retryOutbox,
+} from "../../sync/index.js";
 import { getSyncRuntimeConfig } from "../../sync/config.js";
 import { enqueueTraceExportBatch, pushTraceExportBatch } from "../../session-trace/cloud-trace-export.js";
 import type { ConsoleSyncPullResult, ConsoleSyncPushResult } from "../../sync/console-bridge.js";
@@ -67,7 +73,7 @@ export class SyncCommands {
       // Console (and --traces also ENQUEUES trace batches locally), so dry-run
       // by default and exit 3 before the bridge is even created. The plan uses
       // the cheap local status summary to show what would be uploaded.
-      const summary = getSyncStatusSummary();
+      const summary = getSyncStatusSummaryReadOnly();
       contractDryRun(
         "sync push",
         {
@@ -128,7 +134,7 @@ export class SyncCommands {
       // Write brake (Manual v2 7.8): pull downloads a bulk remote batch and
       // APPLIES it to the local inbox/state, so dry-run by default and exit 3
       // before the bridge is even created.
-      const summary = getSyncStatusSummary();
+      const summary = getSyncStatusSummaryReadOnly();
       contractDryRun(
         "sync pull",
         {

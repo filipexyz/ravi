@@ -43,7 +43,9 @@ ops of the domain — so both are braked.
    `--execute`; the dry-run MUST report `dryRun: true` and a plan built from
    the cheap local status summary (filters + `outboxPending`/`outboxFailed`
    for push, `inboxPending`/`inboxFailed` for pull), and MUST NOT create the
-   Console bridge, enqueue trace batches, upload, download, or apply anything.
+   Ravi database, migrate its schema, create the Console bridge, enqueue trace
+   batches, upload, download, or apply anything. A missing database yields zero
+   counters; an existing database is opened read-only for the summary.
 4. The brake fires BEFORE any side effect: with `--traces`, even the local
    `enqueueTraceExportBatch()` write MUST NOT happen on a dry-run.
 5. `sync inspect <id>` on an unknown row MUST exit 1 with

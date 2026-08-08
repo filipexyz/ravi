@@ -1,4 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 
 // Manual v2 contract: hasContext() true makes the contract helpers throw
@@ -14,6 +17,8 @@ mock.module("../context.js", () => ({
 
 const { SyncCommands } = await import("./sync.js");
 const { ContractError } = await import("../agent-contract.js");
+const { enqueueSyncEvent } = await import("../../sync/index.js");
+const { closeRouterDb } = await import("../../router/router-db.js");
 
 let stateDir: string;
 let originalSyncRunnerEnabled: string | undefined;
@@ -75,6 +80,7 @@ describe("sync contract", () => {
       outboxPending: 0,
       outboxFailed: 0,
     });
+    expect(readdirSync(stateDir)).toEqual([]);
   });
 
   it("push with --execute on an unlinked install reports unlinked without throwing", async () => {
@@ -100,6 +106,39 @@ describe("sync contract", () => {
       inboxPending: 0,
       inboxFailed: 0,
     });
+    expect(readdirSync(stateDir)).toEqual([]);
+  });
+
+  it("reads an existing sync summary without changing storage", async () => {
+    enqueueSyncEvent({
+      domain: "tasks",
+      eventType: "task.updated",
+      entityType: "task",
+      entityId: "task_existing",
+      payload: { status: "ready" },
+    });
+    closeRouterDb();
+    const before = stateSnapshot(stateDir);
+
+    const error = await expectContractError(
+      () =>
+        new SyncCommands().push(
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          false,
+          true,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toMatchObject({ outboxPending: 1, outboxFailed: 0 });
+    expect(stateSnapshot(stateDir)).toEqual(before);
   });
 
   it("retry is declared UNBRAKED: it runs immediately without --execute", async () => {
@@ -152,4 +191,13 @@ async function expectContractError(
   expect(contractError.code).toBe(code);
   expect(contractError.exitCode).toBe(exitCode);
   return contractError;
+}
+
+function stateSnapshot(dir: string): { files: string[]; databaseHash: string } {
+  const files = readdirSync(dir).sort();
+  const database = readFileSync(join(dir, "ravi.db"));
+  return {
+    files,
+    databaseHash: createHash("sha256").update(database).digest("hex"),
+  };
 }

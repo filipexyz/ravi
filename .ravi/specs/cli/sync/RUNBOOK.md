@@ -13,8 +13,9 @@
 5. `status: "unlinked"` on an executed push/pull is not an error: run
    `ravi login` to link the install to Console.
 6. If a push/pull hit Console (or enqueued trace batches) without `--execute`,
-   the brake regressed — it must be the FIRST statement of the command, before
-   `createConsoleSyncBridge()`.
+   the brake regressed — it must run before `createConsoleSyncBridge()` and
+   every write/provider boundary. The optional queue summary before it must use
+   the read-only path and must not create `ravi.db` in a virgin state dir.
 
 ## Validation
 

@@ -10,9 +10,12 @@ retry writes nothing remote and its effect is consumed by the next (braked)
 push anyway.
 
 The dry-run plans deliberately include the local queue counters
-(`outboxPending`, `inboxPending`, ...) from the cheap `getSyncStatusSummary()`
-read: "what would this push move?" is the question the agent needs answered
-before `--execute`, and the counters answer it without touching Console.
+(`outboxPending`, `inboxPending`, ...) from the cheap status-summary read:
+"what would this push move?" is the question the agent needs answered before
+`--execute`. The dry-run uses the read-only variant: it returns zero counters
+when `ravi.db` does not exist and reads an existing database without running
+initialization or migrations. This keeps an inspection from creating the very
+storage it claims not to modify.
 
 One ordering subtlety shaped the implementation: `push --traces` calls
 `enqueueTraceExportBatch()` — a LOCAL write — before uploading. If the brake
