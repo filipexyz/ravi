@@ -97,6 +97,21 @@ const executeInstructions = [
     path: "src/plugins/internal/ravi-system/skills/triggers/SKILL.md",
     instruction: "ravi triggers test <id> --execute",
   },
+  {
+    name: "audio direct-send documentation",
+    path: "docs/reference/media.mdx",
+    instruction: 'ravi audio generate "Voice message content" --send --execute',
+  },
+  {
+    name: "audio captioned-send documentation",
+    path: "docs/reference/media.mdx",
+    instruction: 'ravi audio generate "Important update" --send --caption "Listen to this" --execute',
+  },
+  {
+    name: "image direct-send documentation",
+    path: "docs/reference/media.mdx",
+    instruction: 'ravi image generate "coffee shop interior" --send --execute',
+  },
 ] as const;
 
 const obsoleteExecuteConsumers = [

@@ -38,10 +38,10 @@ ravi audio generate "Fast narration" --voice JBFqnCBsd6RMkjVDRZzb --speed 1.5
 ravi audio generate "Bom dia a todos" --lang pt
 
 # Generate and send directly to the current chat
-ravi audio generate "Voice message content" --send
+ravi audio generate "Voice message content" --send --execute
 
 # With custom caption when sending
-ravi audio generate "Important update" --send --caption "Listen to this"
+ravi audio generate "Important update" --send --caption "Listen to this" --execute
 
 # Use turbo model for faster output
 ravi audio generate "Quick response" --model eleven_turbo_v2_5
@@ -219,7 +219,7 @@ ravi image generate "mountain landscape at sunset" --aspect 16:9 --size 4K
 ravi image generate "remove the background and add a sunset" --source /tmp/photo.png
 
 # Generate and send to chat
-ravi image generate "coffee shop interior" --send
+ravi image generate "coffee shop interior" --send --execute
 
 # Save to specific directory
 ravi image generate "product mockup" -o /tmp/mockups
