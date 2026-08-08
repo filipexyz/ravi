@@ -36,9 +36,11 @@ Expected behavior:
 - Secret hygiene holds: no command prints token values, signing secrets, auth
   headers, or raw secret config, and modal `private_metadata` MUST be redacted.
 - A braked command without `--execute` MUST exit `3` with the
-  `WRITE_REQUIRES_EXECUTE` envelope and MUST NOT perform any Slack Web API
-  call — including reads (`messages-replay` must not fetch history in
-  dry-run).
+  `WRITE_REQUIRES_EXECUTE` envelope and MUST NOT resolve a credential,
+  initialize credential storage, append a credential audit event, construct a
+  Slack client or perform any Slack Web API call — including reads
+  (`messages-replay` must not fetch history in dry-run). This check enumerates
+  all 24 braked operations rather than sampling them.
 - The dry-run envelope's `plan` MUST include the Slack method and a safe,
   material-effect summary of the request that `--execute` would send. It MUST
   include the channel-create visibility and name length, rename name length,
@@ -46,12 +48,14 @@ Expected behavior:
   applicable; it MUST NOT serialize Slack IDs, message text, Markdown, files,
   Block Kit, or other request payload bodies.
 - The same braked command with `--execute` MUST perform the Slack call whose
-  material effect was described by the plan and return `dryRun: false`.
+  material effect was described by the plan, hydrate credentials exactly once
+  and return `dryRun: false`.
 - An unresolved Ravi channel config MUST exit `1` with `CHANNEL_NOT_FOUND` and
   suggestions computed only from the local config store.
 - A missing replay target MUST exit `1` with `MESSAGE_NOT_FOUND`; a missing
   canvas artifact MUST exit `1` with `ARTIFACT_NOT_FOUND` and local artifact
-  suggestions.
+  suggestions. `canvas-artifact-publish` MUST resolve that local artifact
+  before credential hydration.
 - Listings with `--fields a,b` MUST narrow the JSON `items` to those fields and
   MUST keep pagination metadata intact.
 - Local validation errors (invalid canvas access level, malformed Block Kit
@@ -70,6 +74,8 @@ Expected behavior:
   `0` instead of `3`.
 - `ravi slack messages-replay` performs the `conversations.history` fetch
   before the brake.
+- Any of the 24 braked commands resolves a secret, initializes credential
+  storage/audit or constructs a Slack client before exit `3`.
 - A NOT_FOUND envelope computes suggestions by calling the Slack Web API.
 - A Slack API error is printed without method, target, and corrective next
   step.

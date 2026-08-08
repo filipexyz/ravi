@@ -27,6 +27,7 @@ const jsonFixturePath = fileURLToPath(import.meta.url);
 // ---------------------------------------------------------------------------
 
 const clientCalls: Array<{ method: string; args: unknown }> = [];
+const credentialResolutionCalls: Array<{ action?: string; channel?: string }> = [];
 const replayEnvelopes: Array<Record<string, unknown>> = [];
 const interactionResponses: Array<Record<string, unknown>> = [];
 const createdArtifacts: Array<Record<string, unknown>> = [];
@@ -37,6 +38,8 @@ let conversationsListResult: Record<string, unknown> = { ok: true, channels: [] 
 let conversationsHistoryResult: Record<string, unknown> = { ok: true, messages: [] };
 let filesListResult: Record<string, unknown> = { ok: true, files: [] };
 let credentialsAvailable = true;
+let credentialConnectionConfigured = true;
+let clientConstructionCount = 0;
 
 function recordClientCall<T extends Record<string, unknown>>(method: string, args: unknown, result: T): T {
   clientCalls.push({ method, args });
@@ -78,8 +81,18 @@ mock.module("../../config-store.js", () => ({
   configStore: {
     getConfig: () => ({
       channels: {
-        main: { enabled: true, provider: "slack", name: "ravi-slack" },
-        dev: { enabled: true, provider: "slack", name: "ravi-slack-dev" },
+        main: {
+          enabled: true,
+          provider: "slack",
+          name: "ravi-slack",
+          ...(credentialConnectionConfigured ? { credentialConnection: "ravi-slack-secret" } : {}),
+        },
+        dev: {
+          enabled: true,
+          provider: "slack",
+          name: "ravi-slack-dev",
+          credentialConnection: "ravi-slack-dev-secret",
+        },
         zap: { enabled: true, provider: "whatsapp", name: "zap" },
       },
     }),
@@ -87,8 +100,15 @@ mock.module("../../config-store.js", () => ({
 }));
 
 mock.module("../../channels/slack/credentials.js", () => ({
-  resolveSlackCredentialConfigFromEnv: async (_env: NodeJS.ProcessEnv, options?: { channel?: { name?: string } }) => {
-    if (!credentialsAvailable) return null;
+  resolveSlackCredentialConfigFromEnv: async (
+    _env: NodeJS.ProcessEnv,
+    options?: { action?: string; channel?: { name?: string; credentialConnection?: string } },
+  ) => {
+    credentialResolutionCalls.push({
+      ...(options?.action ? { action: options.action } : {}),
+      ...(options?.channel?.name ? { channel: options.channel.name } : {}),
+    });
+    if (!credentialsAvailable || !options?.channel?.credentialConnection) return null;
     const name = options?.channel?.name ?? "ravi-slack";
     return {
       appToken: "xapp-test",
@@ -105,6 +125,10 @@ mock.module("../../channels/slack/credentials.js", () => ({
 
 mock.module("../../channels/slack/client.js", () => ({
   SlackWebApiClient: class SlackWebApiClient {
+    constructor() {
+      clientConstructionCount += 1;
+    }
+
     async authTest() {
       return recordClientCall("authTest", {}, { ok: true, scopes: ["chat:write"] });
     }
@@ -386,6 +410,8 @@ async function expectContractError(
 
 beforeEach(() => {
   clientCalls.length = 0;
+  credentialResolutionCalls.length = 0;
+  clientConstructionCount = 0;
   replayEnvelopes.length = 0;
   interactionResponses.length = 0;
   createdArtifacts.length = 0;
@@ -393,6 +419,7 @@ beforeEach(() => {
   conversationsHistoryResult = { ok: true, messages: [] };
   filesListResult = { ok: true, files: [] };
   credentialsAvailable = true;
+  credentialConnectionConfigured = true;
   schemaInitializingArtifactCalls.length = 0;
 });
 
@@ -601,6 +628,199 @@ describe("Slack CLI Canvas helpers", () => {
 // ---------------------------------------------------------------------------
 
 describe("slack agent-first contract", () => {
+  const brakedMutationCases: Array<{ name: string; run: (commands: InstanceType<typeof SlackCommands>) => unknown }> = [
+    {
+      name: "messages-send",
+      run: (commands) => commands.messagesSend("C123", "message", "ravi-slack", undefined, undefined, true, undefined),
+    },
+    {
+      name: "blocks-send",
+      run: (commands) =>
+        commands.blocksSend(
+          "C123",
+          jsonFixturePath,
+          "ravi-slack",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+    },
+    {
+      name: "blocks-update",
+      run: (commands) =>
+        commands.blocksUpdate("C123", "111.222", jsonFixturePath, "ravi-slack", undefined, true, undefined),
+    },
+    {
+      name: "interactions-respond",
+      run: (commands) => commands.interactionsRespond("response-1", jsonFixturePath, "ravi-slack", true, undefined),
+    },
+    {
+      name: "modals-open",
+      run: (commands) => commands.modalsOpen("trigger-1", jsonFixturePath, "ravi-slack", true, undefined),
+    },
+    {
+      name: "modals-update",
+      run: (commands) => commands.modalsUpdate("V1", jsonFixturePath, "ravi-slack", false, undefined, true, undefined),
+    },
+    {
+      name: "modals-push",
+      run: (commands) => commands.modalsPush("trigger-1", jsonFixturePath, "ravi-slack", true, undefined),
+    },
+    {
+      name: "blocks-showcase",
+      run: (commands) => commands.blocksShowcase("C123", "ravi-slack", undefined, true, undefined),
+    },
+    {
+      name: "work-objects-send",
+      run: (commands) =>
+        commands.workObjectsSend(
+          "C123",
+          jsonFixturePath,
+          "ravi-slack",
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+    },
+    {
+      name: "work-objects-unfurl",
+      run: (commands) =>
+        commands.workObjectsUnfurl(
+          "C123",
+          "111.222",
+          "https://example.test/task",
+          jsonFixturePath,
+          "ravi-slack",
+          undefined,
+          true,
+          undefined,
+        ),
+    },
+    {
+      name: "work-objects-present-details",
+      run: (commands) =>
+        commands.workObjectsPresentDetails("trigger-1", jsonFixturePath, "ravi-slack", undefined, true, undefined),
+    },
+    {
+      name: "messages-replay",
+      run: (commands) => commands.messagesReplay("C123", "111.222", "ravi-slack", false, true, undefined),
+    },
+    {
+      name: "channels-create",
+      run: (commands) => commands.channelsCreate("new-channel", "ravi-slack", false, true, undefined),
+    },
+    {
+      name: "channels-rename",
+      run: (commands) => commands.channelsRename("C123", "renamed-channel", "ravi-slack", true, undefined),
+    },
+    {
+      name: "channels-invite",
+      run: (commands) => commands.channelsInvite("C123", "U1,U2", "ravi-slack", undefined, true, undefined),
+    },
+    {
+      name: "canvas-create",
+      run: (commands) =>
+        commands.canvasCreate(
+          "ravi-slack",
+          "Canvas",
+          "# Markdown",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+    },
+    {
+      name: "canvas-channel-create",
+      run: (commands) =>
+        commands.canvasChannelCreate(
+          "C123",
+          "ravi-slack",
+          "Canvas",
+          "# Markdown",
+          undefined,
+          undefined,
+          false,
+          undefined,
+          true,
+          undefined,
+        ),
+    },
+    {
+      name: "canvas-showcase",
+      run: (commands) => commands.canvasShowcase("F123", "ravi-slack", undefined, "Canvas", true, undefined),
+    },
+    {
+      name: "canvas-channel-showcase",
+      run: (commands) => commands.canvasChannelShowcase("C123", "ravi-slack", "Canvas", true, undefined),
+    },
+    {
+      name: "canvas-artifact-publish",
+      run: (commands) =>
+        commands.canvasArtifactPublish(
+          "art_canvas_runbook",
+          "ravi-slack",
+          "F123",
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+    },
+    {
+      name: "canvas-edit",
+      run: (commands) =>
+        commands.canvasEdit(
+          "F123",
+          "replace",
+          "ravi-slack",
+          undefined,
+          "# Updated",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+    },
+    {
+      name: "canvas-access-set",
+      run: (commands) => commands.canvasAccessSet("F123", "write", "ravi-slack", "U1", undefined, true, undefined),
+    },
+    {
+      name: "canvas-access-delete",
+      run: (commands) => commands.canvasAccessDelete("F123", "ravi-slack", "U1", undefined, true, undefined),
+    },
+    {
+      name: "canvas-delete",
+      run: (commands) => commands.canvasDelete("F123", "ravi-slack", true, undefined),
+    },
+  ];
+
+  for (const mutationCase of brakedMutationCases) {
+    it(`${mutationCase.name} dry-run does not hydrate credentials or construct a Slack client`, async () => {
+      const commands = new SlackCommands();
+
+      await expectContractError(() => mutationCase.run(commands), "WRITE_REQUIRES_EXECUTE", 3);
+
+      expect(credentialResolutionCalls).toEqual([]);
+      expect(clientConstructionCount).toBe(0);
+      expect(clientCalls).toEqual([]);
+      expect(interactionResponses).toEqual([]);
+      expect(replayEnvelopes).toEqual([]);
+      expect(createdArtifacts).toEqual([]);
+    });
+  }
+
   it("declares redactions for actual Slack content, payload-file and identifier inputs", () => {
     const sentinel = "SENTINEL_SLACK_PRIVATE_INPUT_DO_NOT_LEAK";
     const cases = [
@@ -676,7 +896,7 @@ describe("slack agent-first contract", () => {
     const plan = JSON.stringify(error.details.plan);
     expect(plan).not.toContain("C123");
     expect(plan).not.toContain("olá time");
-    expect(plan).not.toContain('\"text\":\"');
+    expect(plan).not.toContain('"text":"');
     expect(clientCalls).toHaveLength(0);
   });
 
@@ -688,7 +908,19 @@ describe("slack agent-first contract", () => {
 
     expect(callsTo("postMessage")).toHaveLength(1);
     expect(callsTo("postMessage")[0]?.args).toMatchObject({ channel: "C123", text: "olá time" });
+    expect(credentialResolutionCalls).toHaveLength(1);
+    expect(clientConstructionCount).toBe(1);
     expect(payload).toMatchObject({ ok: true, dryRun: false, method: "chat.postMessage" });
+  });
+
+  it("interactions-respond with --execute resolves credentials once without constructing an unused client", async () => {
+    const commands = new SlackCommands();
+
+    await silenced(() => commands.interactionsRespond("response-1", jsonFixturePath, "ravi-slack", true, true));
+
+    expect(credentialResolutionCalls).toHaveLength(1);
+    expect(clientConstructionCount).toBe(0);
+    expect(interactionResponses).toHaveLength(1);
   });
 
   it("blocks-send without --execute is a dry-run: exit 3 and no Web API call", async () => {
@@ -713,7 +945,7 @@ describe("slack agent-first contract", () => {
     expect(error.details.plan).toMatchObject({ method: "chat.postMessage" });
     const plan = JSON.stringify(error.details.plan);
     expect(plan).not.toContain("fallback text");
-    expect(plan).not.toContain('\"blocks\":[');
+    expect(plan).not.toContain('"blocks":[');
     expect(clientCalls).toHaveLength(0);
   });
 
@@ -806,15 +1038,7 @@ describe("slack agent-first contract", () => {
       3,
     );
     const inviteError = await expectContractError(
-      () =>
-        commands.channelsInvite(
-          sentinel,
-          `${sentinel},${sentinel}`,
-          "ravi-slack",
-          undefined,
-          true,
-          undefined,
-        ),
+      () => commands.channelsInvite(sentinel, `${sentinel},${sentinel}`, "ravi-slack", undefined, true, undefined),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );
@@ -995,6 +1219,20 @@ describe("slack agent-first contract", () => {
     expect(clientCalls).toHaveLength(0);
   });
 
+  it("a mutating command reports a missing credential connection without hydrating the broker", async () => {
+    credentialConnectionConfigured = false;
+    const commands = new SlackCommands();
+
+    await expectContractError(
+      () => commands.messagesSend("C123", "message", "ravi-slack", undefined, undefined, true, undefined),
+      "CREDENTIALS_NOT_CONFIGURED",
+      1,
+    );
+
+    expect(credentialResolutionCalls).toEqual([]);
+    expect(clientConstructionCount).toBe(0);
+  });
+
   it("missing credentials exit 1 with CREDENTIALS_NOT_CONFIGURED", async () => {
     credentialsAvailable = false;
     const commands = new SlackCommands();
@@ -1015,6 +1253,29 @@ describe("slack agent-first contract", () => {
     );
 
     expect(error.details.suggestions).toContain("art_canvas_runbook");
+  });
+
+  it("canvas-artifact-publish validates an unknown artifact before hydrating credentials", async () => {
+    const commands = new SlackCommands();
+
+    await expectContractError(
+      () =>
+        commands.canvasArtifactPublish(
+          "art_canvas_missing",
+          "ravi-slack",
+          "F123",
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      "ARTIFACT_NOT_FOUND",
+      1,
+    );
+
+    expect(credentialResolutionCalls).toEqual([]);
+    expect(clientConstructionCount).toBe(0);
   });
 
   it("channels-list --fields narrows each item to the requested fields", async () => {

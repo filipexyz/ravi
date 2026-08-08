@@ -42,17 +42,23 @@ content. An earlier draft used `--dry-run`/`--apply` with exit 0; that was super
 the shared agent-first contract (`src/cli/agent-contract.ts`) so all 30+
 migrated domains behave identically.
 
-### Brake Before Any Slack Web API Call
+### Brake Before Credential Hydration Or Slack Web API Calls
 
 The brake fires before ANY Slack Web API call, including reads.
 `messages-replay` used to fetch the target message to enrich its dry-run; that
 read was moved after the brake so a planning step costs zero Slack calls.
 Enrichment belongs to `messages-inspect`, which is the read-only surface.
 
-Local resolution (Ravi channel config, credential broker, artifact store) stays
-before the brake: it is local, and validating it early keeps dry-run plans
-honest (a plan should not promise a write on a channel config that does not
-resolve).
+Side-effect-free local resolution (Ravi channel config, payload validation and
+read-only artifact inspection) stays before the brake so a plan does not
+promise an impossible write. Credential hydration does not: the broker can
+initialize SQLite, read Keychain or Vault and append an audit event. Those
+operations, plus Slack client construction, happen only after `--execute`.
+
+The dry-run validates that the Ravi channel names a credential connection; it
+does not claim that the credential record or secret was successfully loaded.
+That validation is intentionally deferred to execution to preserve the
+stronger zero-effect invariant.
 
 ### Suggestions Only From Local Sources
 

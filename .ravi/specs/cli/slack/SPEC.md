@@ -44,19 +44,22 @@ The `slack` domain follows the shared agent-first contract implemented in
   is the system working.
 - Write brake (7.8): every externally visible Slack mutation is dry-run by
   default. Without `--execute` the command exits `3` with the
-  `WRITE_REQUIRES_EXECUTE` envelope BEFORE any Slack Web API call. The dry-run
-  plan carries the Slack method and a safe summary of the material request
-  effect; it never serializes Slack IDs or payload/content values.
+  `WRITE_REQUIRES_EXECUTE` envelope BEFORE credential hydration, credential
+  audit writes, Slack client construction or any Slack Web API call. The
+  dry-run plan carries the Slack method and a safe summary of the material
+  request effect; it never serializes Slack IDs or payload/content values.
 - `--execute` MUST be the LAST option of every braked command, and all local
   validation (payload files, access levels, artifact resolution) MUST run
   BEFORE the brake so the plan never promises an impossible write.
-- Local resolution (Ravi channel config, credential broker, artifact store,
-  local SQLite) MAY run before the brake: it is local. Slack Web API calls MUST
-  NOT run before the brake — including reads (`messages-replay` brakes before
-  its `conversations.history` fetch).
+- Side-effect-free local resolution (Ravi channel config and read-only artifact
+  inspection) MAY run before the brake. Credential hydration MUST NOT: the
+  broker may initialize SQLite, read Keychain or Vault and append an audit
+  event. Slack Web API calls also MUST NOT run before the brake — including
+  reads (`messages-replay` brakes before its `conversations.history` fetch).
 - Not-found envelopes: `CHANNEL_NOT_FOUND` (Ravi Slack channel config, with
   suggestions from the local config store), `CREDENTIALS_NOT_CONFIGURED`
-  (credential broker gap), `MESSAGE_NOT_FOUND` (replay target),
+  (the resolved Ravi channel has no configured credential connection),
+  `MESSAGE_NOT_FOUND` (replay target),
   `CANVAS_NOT_FOUND` (channel canvas resolution), `ARTIFACT_NOT_FOUND` (canvas
   artifact source, with suggestions from the local artifact store). Suggestions
   MUST come only from cheap local sources — never from extra Slack API calls.
@@ -127,7 +130,8 @@ Unbraked commands (reads or purely local operations; no `--execute`):
 - Every agent-consumed command MUST support `--json`.
 - Every list command MUST be bounded and paginated.
 - Mutating commands MUST default to dry-run and MUST require `--execute`
-  before they call Slack write APIs, exiting `3` with the
+  before they hydrate credentials, append credential audit events, construct a
+  Slack client or call Slack write APIs, exiting `3` with the
   `WRITE_REQUIRES_EXECUTE` envelope otherwise.
 - Commands MUST NOT print Slack tokens, signing secrets, auth headers, raw
   secret config, Ravi context keys, or provider session ids
@@ -147,7 +151,8 @@ JSON list output includes `items`, `pagination.limit`, `pagination.cursor`,
 Braked dry-runs exit `3` and emit the `WRITE_REQUIRES_EXECUTE` envelope whose
 `plan` includes:
 
-- the resolved connection and credential source;
+- the configured Ravi channel target and credential source descriptor; actual
+  credential record/secret validation is deferred until `--execute`;
 - the Slack method that would be called;
 - a safe request summary that preserves material effects without exposing IDs,
   message text, Markdown, file paths, Block Kit, or payload bodies;
@@ -160,6 +165,8 @@ Braked dry-runs exit `3` and emit the `WRITE_REQUIRES_EXECUTE` envelope whose
 - Message sends that happen during a planning/dry-run step.
 - A dry-run that performs a Slack Web API call before braking (regression:
   `messages-replay` fetching history before exit 3).
+- A dry-run that resolves a credential, initializes credential storage,
+  appends a credential audit event or constructs a token-bearing Slack client.
 - A failed Slack API call that prints only `invalid_auth` or `missing_scope`
   without the next corrective action.
 - Logging or printing tokens, signing secrets, auth headers, or raw config.

@@ -133,6 +133,25 @@ interface SlackOpsContext {
   config: SlackCredentialConfig;
 }
 
+type SlackConnectionSummary = Pick<SlackCredentialConfig, "accountId" | "instanceId" | "source">;
+
+interface SlackOpsTarget {
+  channel: ChannelConfig;
+  channels: Record<string, ChannelConfig>;
+  summary: SlackConnectionSummary;
+}
+
+interface SlackMutationContextInput {
+  channelName?: string;
+  action: string;
+  op: string;
+  method: string;
+  request: Record<string, unknown>;
+  asJson?: boolean;
+  execute?: boolean;
+  item?: unknown;
+}
+
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
@@ -217,18 +236,7 @@ interface SlackContractContext {
   readonly asJson?: boolean;
 }
 
-/**
- * Resolve the Ravi Slack channel config + credentials and build the Web API
- * client. Everything here is LOCAL (config store + credential broker/SQLite):
- * no Slack Web API call happens before the write brake in mutating commands.
- * Failures follow the Manual v2 envelope: CHANNEL_NOT_FOUND with suggestions
- * from the local config store, CREDENTIALS_NOT_CONFIGURED for broker gaps.
- */
-async function createSlackOpsContext(
-  channelName: string | undefined,
-  action: string,
-  contract: SlackContractContext,
-): Promise<SlackOpsContext> {
+function resolveSlackOpsTarget(channelName: string | undefined, contract: SlackContractContext): SlackOpsTarget {
   const channels = configStore.getConfig().channels ?? {};
   const channel = resolveSlackChannelConfig(channelName);
   if (!channel) {
@@ -249,6 +257,38 @@ async function createSlackOpsContext(
       },
     );
   }
+
+  if (!channel.credentialConnection?.trim()) {
+    contractFail(
+      contract.op,
+      "CREDENTIALS_NOT_CONFIGURED",
+      `Slack credentials not configured for channel ${channel.name}. Set channel credentialConnection first.`,
+      {
+        asJson: contract.asJson,
+        details: {
+          suggestedAction: `Set credentialConnection for channel ${channel.name} (see: ravi channels list --json)`,
+        },
+      },
+    );
+  }
+
+  return {
+    channel,
+    channels,
+    summary: {
+      accountId: channel.name,
+      instanceId: channel.name,
+      source: "broker",
+    },
+  };
+}
+
+async function resolveSlackCredentialContext(
+  target: SlackOpsTarget,
+  action: string,
+  contract: SlackContractContext,
+): Promise<SlackCredentialConfig> {
+  const { channel, channels } = target;
   const config = await resolveSlackCredentialConfigFromEnv(process.env, { action, channel, channels });
   if (!config) {
     contractFail(
@@ -263,6 +303,17 @@ async function createSlackOpsContext(
       },
     );
   }
+  return config;
+}
+
+/** Resolve credentials and construct a Slack client for an executing/read operation. */
+async function createSlackOpsContext(
+  channelName: string | undefined,
+  action: string,
+  contract: SlackContractContext,
+): Promise<SlackOpsContext> {
+  const target = resolveSlackOpsTarget(channelName, contract);
+  const config = await resolveSlackCredentialContext(target, action, contract);
   return {
     config,
     client: new SlackWebApiClient({
@@ -272,7 +323,7 @@ async function createSlackOpsContext(
   };
 }
 
-function connectionLabel(config: SlackCredentialConfig): string {
+function connectionLabel(config: SlackConnectionSummary): string {
   return config.accountId || config.instanceId;
 }
 
@@ -1345,8 +1396,15 @@ export class SlackCommands {
     const op = "slack messages-send";
     const method = ephemeralUser ? "chat.postEphemeral" : "chat.postMessage";
     const request = { channel, text, ...(threadTs ? { threadTs } : {}), ...(ephemeralUser ? { ephemeralUser } : {}) };
-    const { client, config } = await createSlackOpsContext(raviChannel, method, { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, method, request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: method,
+      op,
+      method,
+      request,
+      asJson,
+      execute,
+    });
     const raw = ephemeralUser
       ? await client.postEphemeral({ channel, user: ephemeralUser, text, ...(threadTs ? { threadTs } : {}) })
       : await client.postMessage({ channel, text, ...(threadTs ? { threadTs } : {}) });
@@ -1437,8 +1495,15 @@ export class SlackCommands {
       ...(threadTs ? { threadTs } : {}),
       ...(ephemeralUser ? { ephemeralUser } : {}),
     };
-    const { client, config } = await createSlackOpsContext(connection || raviChannel, method, { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, method, request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: connection || raviChannel,
+      action: method,
+      op,
+      method,
+      request,
+      asJson,
+      execute,
+    });
     const raw = ephemeralUser
       ? await client.postEphemeral({
           channel,
@@ -1489,8 +1554,15 @@ export class SlackCommands {
     const op = "slack blocks-update";
     const message = normalizeSlackBlockKitMessagePayload(readSlackBlockKitJsonFile(file), text);
     const request = { channel, ts, file, text: message.text, blocks: message.blocks };
-    const { client, config } = await createSlackOpsContext(raviChannel, "chat.update", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "chat.update", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "chat.update",
+      op,
+      method: "chat.update",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.updateMessage({
       channel,
       ts,
@@ -1533,8 +1605,15 @@ export class SlackCommands {
     }
     const op = "slack interactions-respond";
     const request = { responseUrlId, file, payload: responsePayload as Record<string, unknown> };
-    const { config } = await createSlackOpsContext(raviChannel, "slack.interactions.respond", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "slack.interactions.respond", request, asJson);
+    const config = await this.mutationCredentialContext({
+      channelName: raviChannel,
+      action: "slack.interactions.respond",
+      op,
+      method: "slack.interactions.respond",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await respondToSlackInteraction({
       responseUrlId,
       payload: responsePayload as Record<string, unknown>,
@@ -1572,8 +1651,15 @@ export class SlackCommands {
     const op = "slack modals-open";
     const view = readSlackViewJsonFile(file);
     const request = { triggerId, file, view: redactSlackPrivateMetadata(view) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "views.open", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "views.open", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "views.open",
+      op,
+      method: "views.open",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.viewsOpen({ triggerId, view });
     const safeRaw = redactSlackPrivateMetadata(raw) as Record<string, unknown>;
     const item = slackViewMutationItem(safeRaw);
@@ -1619,8 +1705,15 @@ export class SlackCommands {
       ...(hash ? { hash } : {}),
       view: redactSlackPrivateMetadata(view),
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, "views.update", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "views.update", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "views.update",
+      op,
+      method: "views.update",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.viewsUpdate({
       view,
       viewId: useExternalId ? undefined : viewTarget,
@@ -1662,8 +1755,15 @@ export class SlackCommands {
     const op = "slack modals-push";
     const view = readSlackViewJsonFile(file);
     const request = { triggerId, file, view: redactSlackPrivateMetadata(view) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "views.push", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "views.push", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "views.push",
+      op,
+      method: "views.push",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.viewsPush({ triggerId, view });
     const safeRaw = redactSlackPrivateMetadata(raw) as Record<string, unknown>;
     const item = slackViewMutationItem(safeRaw);
@@ -1697,8 +1797,15 @@ export class SlackCommands {
     const op = "slack blocks-showcase";
     const message = buildSlackBlockKitShowcasePayload();
     const request = { channel, text: message.text, blocks: message.blocks, ...(threadTs ? { threadTs } : {}) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "chat.postMessage", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "slack.block-kit.showcase", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "chat.postMessage",
+      op,
+      method: "slack.block-kit.showcase",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.postMessage({
       channel,
       text: message.text,
@@ -1794,11 +1901,16 @@ export class SlackCommands {
       ...(threadTs ? { threadTs } : {}),
     };
     const op = "slack work-objects-send";
-    const { client, config } = await createSlackOpsContext(connection || raviChannel, "chat.postMessage", {
+    const { client, config } = await this.mutationOpsContext({
+      channelName: connection || raviChannel,
+      action: "chat.postMessage",
       op,
+      method: "chat.postMessage",
+      request,
       asJson,
+      execute,
+      item: message.metadata,
     });
-    if (!execute) this.brakeDryRun(op, config, "chat.postMessage", request, asJson, message.metadata);
     const raw = await client.postMessage({
       channel,
       text: message.text,
@@ -1845,8 +1957,16 @@ export class SlackCommands {
     );
     const op = "slack work-objects-unfurl";
     const request = { channel, ts, url, file, ...unfurl };
-    const { client, config } = await createSlackOpsContext(connection || raviChannel, "chat.unfurl", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "chat.unfurl", request, asJson, unfurl.metadata);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: connection || raviChannel,
+      action: "chat.unfurl",
+      op,
+      method: "chat.unfurl",
+      request,
+      asJson,
+      execute,
+      item: unfurl.metadata,
+    });
     let raw;
     try {
       raw = await client.unfurl({
@@ -1901,11 +2021,16 @@ export class SlackCommands {
     );
     const op = "slack work-objects-present-details";
     const request = { triggerId, file, metadata };
-    const { client, config } = await createSlackOpsContext(connection || raviChannel, "entity.presentDetails", {
+    const { client, config } = await this.mutationOpsContext({
+      channelName: connection || raviChannel,
+      action: "entity.presentDetails",
       op,
+      method: "entity.presentDetails",
+      request,
       asJson,
+      execute,
+      item: metadata,
     });
-    if (!execute) this.brakeDryRun(op, config, "entity.presentDetails", request, asJson, metadata);
     const raw = await client.entityPresentDetails({ triggerId, metadata });
     const payload = this.mutationPayload(config, false, "entity.presentDetails", request, raw, raw);
     if (asJson) printJson(payload);
@@ -2054,14 +2179,18 @@ export class SlackCommands {
   ) {
     const op = "slack messages-replay";
     const request = { channel, ts, force: Boolean(force) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "slack.messages.replay", { op, asJson });
-    if (!execute) {
-      // Write brake (Manual v2 7.8): the brake fires BEFORE the
-      // conversations.history fetch — a dry-run performs no Slack Web API call.
-      this.brakeDryRun(op, config, "slack.messages.replay", request, asJson, {
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "slack.messages.replay",
+      op,
+      method: "slack.messages.replay",
+      request,
+      asJson,
+      execute,
+      item: {
         note: "Inspect the message first with: ravi slack messages-inspect <channel> <ts> --json",
-      });
-    }
+      },
+    });
     const message = await fetchSlackMessageByTs(client, channel, ts);
     if (!message) {
       contractFail(op, "MESSAGE_NOT_FOUND", `Slack message not found: ${channel} ${ts}`, {
@@ -2270,8 +2399,15 @@ export class SlackCommands {
   ) {
     const op = "slack channels-create";
     const request = { name, isPrivate: Boolean(isPrivate) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.create", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "conversations.create", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "conversations.create",
+      op,
+      method: "conversations.create",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.conversationsCreate(request);
     const payload = this.mutationPayload(config, false, "conversations.create", request, raw.channel, raw);
     if (asJson) printJson(payload);
@@ -2302,8 +2438,15 @@ export class SlackCommands {
   ) {
     const op = "slack channels-rename";
     const request = { channel, name };
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.rename", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "conversations.rename", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "conversations.rename",
+      op,
+      method: "conversations.rename",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.conversationsRename(request);
     const payload = this.mutationPayload(config, false, "conversations.rename", request, raw.channel, raw);
     if (asJson) printJson(payload);
@@ -2336,11 +2479,15 @@ export class SlackCommands {
   ) {
     const op = "slack channels-invite";
     const request = { channel, userIds: parseRequiredCsvOption(usersValue, "Slack user ids") };
-    const { client, config } = await createSlackOpsContext(connection || raviChannel, "conversations.invite", {
+    const { client, config } = await this.mutationOpsContext({
+      channelName: connection || raviChannel,
+      action: "conversations.invite",
       op,
+      method: "conversations.invite",
+      request,
       asJson,
+      execute,
     });
-    if (!execute) this.brakeDryRun(op, config, "conversations.invite", request, asJson);
     const raw = await client.conversationsInvite(request);
     const payload = this.mutationPayload(config, false, "conversations.invite", request, raw.channel, raw);
     if (asJson) printJson(payload);
@@ -2395,8 +2542,15 @@ export class SlackCommands {
       ...(channelId ? { channelId } : {}),
       ...slackCanvasMarkdownSourceRequest(source),
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.create", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "canvases.create", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "canvases.create",
+      op,
+      method: "canvases.create",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.canvasesCreate(request);
     const canvasId = raw.canvas_id ?? null;
     const artifactRecord =
@@ -2488,11 +2642,15 @@ export class SlackCommands {
       ensure: Boolean(ensure),
       ...slackCanvasMarkdownSourceRequest(source),
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.canvases.create", {
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "conversations.canvases.create",
       op,
+      method: "conversations.canvases.create",
+      request,
       asJson,
+      execute,
     });
-    if (!execute) this.brakeDryRun(op, config, "conversations.canvases.create", request, asJson);
 
     const raw = await client.conversationsCanvasesCreate(request, {
       okErrors: ensure ? ["channel_canvas_already_exists"] : [],
@@ -2579,13 +2737,19 @@ export class SlackCommands {
     const title = titleValue?.trim() || SLACK_CANVAS_SHOWCASE_TITLE;
     const markdown = buildSlackCanvasShowcaseMarkdown({ canvasId, channelId, title });
     const request = { canvasId, ...(channelId ? { channelId } : {}), title, markdown };
-    const { client, config } = await createSlackOpsContext(raviChannel, "slack.canvas.showcase", { op, asJson });
-    if (!execute) {
-      this.brakeDryRun(op, config, "slack.canvas.showcase", request, asJson, {
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "slack.canvas.showcase",
+      op,
+      method: "slack.canvas.showcase",
+      request,
+      asJson,
+      execute,
+      item: {
         title,
         markdownChars: markdown.length,
-      });
-    }
+      },
+    });
 
     const published = await this.publishCanvasShowcase(client, { canvasId, channelId, title });
     const item = { status: "published", canvasId, channelId: channelId ?? null, title };
@@ -2623,16 +2787,19 @@ export class SlackCommands {
     const title = titleValue?.trim() || SLACK_CANVAS_SHOWCASE_TITLE;
     const dryRunMarkdown = buildSlackCanvasShowcaseMarkdown({ channelId: channel, title });
     const request = { channelId: channel, title, markdown: dryRunMarkdown };
-    const { client, config } = await createSlackOpsContext(raviChannel, "slack.canvas.channelShowcase", {
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "slack.canvas.channelShowcase",
       op,
+      method: "slack.canvas.channelShowcase",
+      request,
       asJson,
-    });
-    if (!execute) {
-      this.brakeDryRun(op, config, "slack.canvas.channelShowcase", request, asJson, {
+      execute,
+      item: {
         title,
         markdownChars: dryRunMarkdown.length,
-      });
-    }
+      },
+    });
 
     let info = await client.conversationsInfo({ channel });
     let canvasId = extractSlackCanvasIdFromConversationInfo(info.channel, title);
@@ -2687,13 +2854,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "publish-artifact",
     risk: "high",
-    redactions: [
-      "artifactOrFile",
-      "raviChannel",
-      "canvasId",
-      "channelId",
-      "title",
-    ],
+    redactions: ["artifactOrFile", "raviChannel", "canvasId", "channelId", "title"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2720,10 +2881,6 @@ export class SlackCommands {
     if (canvasIdValue?.trim() && channelId?.trim()) fail("Pass only one of --canvas or --slack-channel.");
     if (!canvasIdValue?.trim() && !channelId?.trim()) fail("Pass one of --canvas or --slack-channel.");
 
-    const { client, config } = await createSlackOpsContext(raviChannel, "slack.canvas.artifact.publish", {
-      op,
-      asJson,
-    });
     const source = resolveSlackCanvasArtifactSource({
       artifactOrFile,
       title: titleValue,
@@ -2747,12 +2904,19 @@ export class SlackCommands {
       refreshed: source.refreshed,
       sourceFileChanged: source.sourceFileChanged,
     };
-    if (!execute) {
-      this.brakeDryRun(op, config, "slack.canvas.artifact.publish", request, asJson, {
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "slack.canvas.artifact.publish",
+      op,
+      method: "slack.canvas.artifact.publish",
+      request,
+      asJson,
+      execute,
+      item: {
         ...request,
         limitation: SLACK_CANVAS_REMOTE_EXPORT_LIMITATION,
-      });
-    }
+      },
+    });
     if (!source.artifact) fail("Could not create or resolve Ravi artifact for Slack Canvas publish.");
 
     const target = await this.resolveCanvasPublishTarget(
@@ -2884,8 +3048,16 @@ export class SlackCommands {
     const markdown = source.markdown;
     const change = buildSlackCanvasEditChange({ operation, sectionId, markdown, title });
     const request = { canvasId, changes: [change], ...slackCanvasMarkdownSourceRequest(source) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.edit", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "canvases.edit", request, asJson, change);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "canvases.edit",
+      op,
+      method: "canvases.edit",
+      request,
+      asJson,
+      execute,
+      item: change,
+    });
     const raw = await client.canvasesEdit(request);
     const artifactRecord =
       isWholeCanvasReplace(change) && canRecordSlackCanvasArtifactPublish(source)
@@ -3009,8 +3181,15 @@ export class SlackCommands {
       accessLevel,
       ...targets,
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.access.set", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "canvases.access.set", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "canvases.access.set",
+      op,
+      method: "canvases.access.set",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.canvasesAccessSet(request);
     const payload = this.mutationPayload(config, false, "canvases.access.set", request, { ok: raw.ok }, raw);
     if (asJson) printJson(payload);
@@ -3048,8 +3227,15 @@ export class SlackCommands {
       canvasId,
       ...parseSlackCanvasAccessTargets(usersValue, channelsValue),
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.access.delete", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "canvases.access.delete", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "canvases.access.delete",
+      op,
+      method: "canvases.access.delete",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.canvasesAccessDelete(request);
     const payload = this.mutationPayload(config, false, "canvases.access.delete", request, { ok: raw.ok }, raw);
     if (asJson) printJson(payload);
@@ -3079,8 +3265,15 @@ export class SlackCommands {
   ) {
     const op = "slack canvas-delete";
     const request = { canvasId };
-    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.delete", { op, asJson });
-    if (!execute) this.brakeDryRun(op, config, "canvases.delete", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "canvases.delete",
+      op,
+      method: "canvases.delete",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.canvasesDelete(request);
     const payload = this.mutationPayload(config, false, "canvases.delete", request, { ok: raw.ok }, raw);
     if (asJson) printJson(payload);
@@ -3166,15 +3359,36 @@ export class SlackCommands {
     };
   }
 
+  private async mutationCredentialContext(input: SlackMutationContextInput): Promise<SlackCredentialConfig> {
+    const contract = { op: input.op, asJson: input.asJson };
+    const target = resolveSlackOpsTarget(input.channelName, contract);
+    if (!input.execute) {
+      this.brakeDryRun(input.op, target.summary, input.method, input.request, input.asJson, input.item);
+    }
+    return resolveSlackCredentialContext(target, input.action, contract);
+  }
+
+  private async mutationOpsContext(input: SlackMutationContextInput): Promise<SlackOpsContext> {
+    const config = await this.mutationCredentialContext(input);
+    return {
+      config,
+      client: new SlackWebApiClient({
+        appToken: config.appToken,
+        botToken: config.botToken,
+      }),
+    };
+  }
+
   /**
    * Write brake (Manual v2 7.8): every externally visible Slack mutation is a
-   * dry-run by default and exits 3 (WRITE_REQUIRES_EXECUTE) BEFORE any Slack
-   * Web API call. The plan carries safe request metadata only; message text,
-   * Block Kit payloads and other request bodies are never serialized.
+   * dry-run by default and exits 3 (WRITE_REQUIRES_EXECUTE) before credentials
+   * are hydrated, a client is constructed or any Slack Web API call is made.
+   * The plan carries safe request metadata only; message text, Block Kit
+   * payloads and other request bodies are never serialized.
    */
   private brakeDryRun(
     op: string,
-    config: SlackCredentialConfig,
+    config: SlackConnectionSummary,
     method: string,
     request: Record<string, unknown>,
     asJson?: boolean,
