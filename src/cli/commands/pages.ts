@@ -137,7 +137,13 @@ export class PagesCommands {
     name: "create",
     description: "Compatibility: ensure a Ravi Pages host record; does not upload HTML or assets",
   })
-  @CommandAccess({ kind: "mutate", resource: "pages", action: "create", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "pages",
+    action: "create",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   async create(
     @Arg("args", { variadic: true, description: "[project] <slug>; project defaults to Ravi Console scope" })
     args: string[],
@@ -149,18 +155,31 @@ export class PagesCommands {
     isDefault?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Create the external Pages host record" }) execute?: boolean,
   ) {
-    // Declared UNBRAKED (Manual v2): create only ensures the host record and
-    // its default visibility — no bytes are uploaded and nothing becomes
-    // reachable until `pages publish`, which carries the write brake.
+    // Creating a Pages host record mutates Ravi Console, so confirmation must
+    // happen before credential and project resolution.
     return runPagesCommand("pages create", asJson, async () => {
       const parsed = parseCreateArgs(args, projectOption);
+      const normalizedVisibility = normalizePageVisibility(visibility);
+      if (execute !== true) {
+        contractDryRun(
+          "pages create",
+          {
+            project: parsed.project ?? "(Console scope default)",
+            slug: parsed.slug,
+            defaultVisibility: normalizedVisibility ?? null,
+            defaultSite: Boolean(isDefault),
+          },
+          { asJson },
+        );
+      }
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const result = await createPageSite(
         {
           project: resolved.projectRef,
           slug: parsed.slug,
-          defaultVisibility: normalizePageVisibility(visibility),
+          defaultVisibility: normalizedVisibility,
           isDefault,
           console: consoleUrl,
         },
@@ -309,7 +328,13 @@ export class PagesCommands {
   }
 
   @Command({ name: "visibility", description: "Set a Ravi Pages site default visibility" })
-  @CommandAccess({ kind: "mutate", resource: "pages", action: "visibility", risk: "medium", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "pages",
+    action: "visibility",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   async visibility(
     @Arg("args", {
       variadic: true,
@@ -347,7 +372,13 @@ export class PagesCommands {
   }
 
   @Command({ name: "domains", description: "Bind custom hostnames to a Ravi Pages site" })
-  @CommandAccess({ kind: "mutate", resource: "pages", action: "domains", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "pages",
+    action: "domains",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   async domains(
     @Arg("args", {
       variadic: true,
@@ -359,12 +390,25 @@ export class PagesCommands {
     @Option({ flags: "--check", description: "Run provider readiness check after binding" }) check?: boolean,
     @Option({ flags: "--console <url>", description: "Console base URL" }) consoleUrl?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Bind hostnames through the external Pages provider" })
+    execute?: boolean,
   ) {
-    // Declared UNBRAKED (Manual v2): binding a hostname is reversible and only
-    // takes effect when the caller also controls the external DNS record; the
-    // content exposure itself is gated by the braked publish/visibility ops.
+    // Domain binding mutates Ravi Console and may change external routing, so
+    // confirmation must happen before credential and project resolution.
     return runPagesCommand("pages domains", asJson, async () => {
       const parsed = parseDomainsArgs(args, projectOption);
+      if (execute !== true) {
+        contractDryRun(
+          "pages domains",
+          {
+            project: parsed.project ?? "(Console scope default)",
+            site: parsed.site,
+            hostnameCount: parsed.hostnames.length,
+            readinessCheck: Boolean(check),
+          },
+          { asJson },
+        );
+      }
       const resolved = await resolvePagesProject(parsed.project, undefined, consoleUrl, this.deps);
       const result = await bindPageDomains(
         {

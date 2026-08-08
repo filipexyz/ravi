@@ -230,7 +230,7 @@ describe("pages CLI commands", () => {
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() =>
-      command.create(["proj", "demo"], undefined, "public", true, undefined, true),
+      command.create(["proj", "demo"], undefined, "public", true, undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -365,7 +365,7 @@ describe("pages CLI commands", () => {
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() =>
-      command.domains(["filipe-ai", "filipe-ai", "www.filipe.ai", "filipe.ai"], undefined, true, undefined, true),
+      command.domains(["filipe-ai", "filipe-ai", "www.filipe.ai", "filipe.ai"], undefined, true, undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -643,6 +643,68 @@ describe("pages CLI commands", () => {
 // ---------------------------------------------------------------------------
 
 describe("pages agent-first contract", () => {
+  it("create without --execute dry-runs before credentials or Console", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    let credentialReads = 0;
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return {};
+    });
+    const command = new PagesCommands({
+      client,
+      readCredentials: () => {
+        credentialReads += 1;
+        return makeCredentials();
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.create(["proj", "demo"], undefined, "private", true, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      slug: "demo",
+      defaultVisibility: "private",
+      defaultSite: true,
+    });
+    expect(credentialReads).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  it("domains without --execute dry-runs before credentials or Console", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    let credentialReads = 0;
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return {};
+    });
+    const command = new PagesCommands({
+      client,
+      readCredentials: () => {
+        credentialReads += 1;
+        return makeCredentials();
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.domains(["proj", "demo", "docs.example.com"], undefined, true, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      site: "demo",
+      hostnameCount: 1,
+      readinessCheck: true,
+    });
+    expect(credentialReads).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
   it("publish without --execute is a dry-run: exit 3 and no Console call at all", async () => {
     const calls: Array<{ method: string; path: string }> = [];
     const client = makeClient(async (method, path) => {
@@ -682,7 +744,7 @@ describe("pages agent-first contract", () => {
       project: "proj",
       site: "demo",
       sourceKind: "path",
-      sourceName: "private",
+      sourceName: expect.stringContaining("[REDACTED:content"),
       route: "/guide",
       visibility: "public",
       entrypointPresent: true,
@@ -729,7 +791,7 @@ describe("pages agent-first contract", () => {
       project: "proj",
       site: "demo",
       sourceKind: "artifact",
-      sourceName: "art_demo_123",
+      sourceName: expect.stringContaining("[REDACTED:content"),
       route: "/",
       visibility: "private",
       entrypointPresent: false,
