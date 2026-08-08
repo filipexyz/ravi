@@ -1122,3 +1122,12 @@ central de assunto de mensagem. O commit `26a9a543` renomeou somente esse campo
 estruturado para `eventTopic` no runtime, teste e spec do domínio, sem afrouxar
 a política global de privacidade. Os 11 testes focados de inbox passaram;
 Quality Gate permaneceu ignorado e a spec continua `draft`.
+
+O CI Linux [`31283066860`](https://github.com/filipexyz/ravi/actions/runs/31283066860)
+do SHA `d66e94b01691e34d517e1554174de2cfe2f08156` passou Build e Typecheck e
+falhou em duas expectativas do mesmo plano de `skills install`. O identificador
+mínimo de origem usava `sourceName`, chave que a política central trata como
+conteúdo privado. O commit `47ee78ea` renomeou o campo para `sourceLabel`,
+preservando somente `catalog` ou o basename local e mantendo caminho, nome de
+skill e conteúdo ausentes. Os 29 testes focados de skills passaram; Quality
+Gate permaneceu ignorado e a spec continua `draft`.
