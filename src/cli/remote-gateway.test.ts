@@ -62,12 +62,18 @@ describe("remote gateway exit taxonomy", () => {
       result({
         status: 403,
         contentType: "application/json",
-        body: JSON.stringify({ error: "PermissionDenied", reason: "missing capability" }),
+        body: JSON.stringify({ error: "PermissionDenied", reason: "PRIVATE_MESSAGE_8K2R" }),
       }),
     );
 
-    expect(error).toMatchObject({ op: "commands list", code: "PERMISSION_DENIED", exitCode: 1 });
+    expect(error).toMatchObject({
+      op: "commands list",
+      code: "PERMISSION_DENIED",
+      exitCode: 1,
+      message: "Remote gateway denied the command.",
+    });
     expect(error?.envelope()).toMatchObject({ success: false, error: { code: "PERMISSION_DENIED" } });
+    expect(JSON.stringify(error?.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
   });
 
   it("redacts malformed remote failures as retryable server errors", () => {
@@ -112,7 +118,61 @@ describe("remote gateway exit taxonomy", () => {
     expect(wrongOperation).toMatchObject({ code: "SERVER_UNAVAILABLE", exitCode: 1 });
   });
 
-  it("preserves a complete coherent contract response", () => {
+  it.each([
+    [1, "failed", "COMMAND_FAILED", "Remote command failed."],
+    [1, "denied", "PERMISSION_DENIED", "Remote gateway denied the command."],
+    [2, "usage_error", "USAGE_ERROR", "Remote gateway rejected the command input."],
+    [3, "blocked", "WRITE_REQUIRES_EXECUTE", "Remote command was blocked by policy."],
+  ] as const)("projects a complete exit %i/%s response into a safe local contract", (exitCode, outcome, code, message) => {
+    const error = remoteGatewayErrorToContractError(
+      "commands list",
+      result({
+        status: 409,
+        body: JSON.stringify({
+          success: false,
+          op: "commands list",
+          exitCode,
+          outcome,
+          providerBody: "PRIVATE_MESSAGE_8K2R",
+          plan: { token: "SENTINEL_SECRET_7M4Q" },
+          error: {
+            code,
+            message: "PRIVATE_MESSAGE_8K2R",
+            retryable: true,
+            metadata: { secret: "SENTINEL_SECRET_7M4Q" },
+          },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({ op: "commands list", code, exitCode, message, details: { retryable: true } });
+    const serialized = JSON.stringify(error?.envelope());
+    expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(serialized).not.toContain("providerBody");
+    expect(serialized).not.toContain("metadata");
+  });
+
+  it("rejects an invalid remote error code instead of reflecting it", () => {
+    const error = remoteGatewayErrorToContractError(
+      "commands list",
+      result({
+        body: JSON.stringify({
+          success: false,
+          op: "commands list",
+          exitCode: 1,
+          outcome: "failed",
+          error: { code: "private:SENTINEL_SECRET_7M4Q", message: "safe", retryable: false },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({ code: "SERVER_UNAVAILABLE", exitCode: 1 });
+    expect(JSON.stringify(error?.envelope())).not.toContain("SENTINEL_SECRET_7M4Q");
+  });
+
+  it("preserves only allowlisted and sanitized agent-first details", () => {
+    const oversizedPosition = `<${"a".repeat(65)}>`;
     const error = remoteGatewayErrorToContractError(
       "commands list",
       result({
@@ -122,11 +182,52 @@ describe("remote gateway exit taxonomy", () => {
           op: "commands list",
           exitCode: 3,
           outcome: "blocked",
-          error: { code: "WRITE_REQUIRES_EXECUTE", message: "confirmation required", retryable: false },
+          error: {
+            code: "WRITE_REQUIRES_EXECUTE",
+            message: "PRIVATE_MESSAGE_8K2R",
+            retryable: false,
+            suggestedAction: "PRIVATE_MESSAGE_8K2R",
+            suggestions: ["Alice Smith", "CRM-42", "calendar_main", { secret: "SENTINEL_SECRET_7M4Q" }],
+            acceptedFlags: ["--json", "PRIVATE_MESSAGE_8K2R"],
+            acceptedPositionals: [
+              "<opportunity>",
+              "[text]",
+              "<name...>",
+              "SENTINEL_SECRET_7M4Q",
+              "PRIVATE MESSAGE",
+              oversizedPosition,
+            ],
+            dryRun: true,
+            plan: {
+              target: "commands",
+              token: "SENTINEL_SECRET_7M4Q",
+              message: "PRIVATE_MESSAGE_8K2R",
+              filePath: "C:/sentinel/private/file-9P3X.txt",
+            },
+            issues: [{ providerBody: "PRIVATE_MESSAGE_8K2R" }],
+          },
         }),
       }),
     );
 
-    expect(error).toBeNull();
+    expect(error?.envelope().error).toMatchObject({
+      suggestedAction: "Review the remote policy block before retrying the command",
+      suggestions: ["Alice Smith", "CRM-42", "calendar_main"],
+      acceptedFlags: ["--json"],
+      acceptedPositionals: ["<opportunity>", "[text]", "<name...>"],
+      dryRun: true,
+      plan: {
+        target: "commands",
+        token: "[REDACTED]",
+        message: "[REDACTED:content length=20]",
+        filePath: "[REDACTED:path]",
+      },
+    });
+    const serialized = JSON.stringify(error?.envelope());
+    expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(serialized).not.toContain("C:/sentinel/private");
+    expect(serialized).not.toContain("issues");
+    expect(serialized).not.toContain(oversizedPosition);
   });
 });

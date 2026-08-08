@@ -9,18 +9,32 @@
  * resolved runtime context-key (`rctx_*`).
  *
  * The remote dispatcher is intentionally minimal: it builds a flat JSON body
- * (matching `src/sdk/gateway/dispatcher.ts`), forwards the response unchanged
- * (text bodies for non-JSON, pretty-printed JSON otherwise) and exits with a
- * non-zero status when the gateway returns 4xx/5xx so shell pipelines can
- * detect failure the same way they do in local mode.
+ * (matching `src/sdk/gateway/dispatcher.ts`), forwards successful responses
+ * and projects non-success responses into a local canonical contract before
+ * rendering. Shell pipelines still receive the same non-zero exit taxonomy as
+ * local mode without trusting arbitrary remote error fields.
  */
 
 import { resolveRuntimeContext } from "../runtime/context-registry.js";
 import { readCredentialsFile, selectDefaultCredentialsKey } from "../runtime/credentials-store.js";
-import { ContractError, CONTRACT_EXIT_USAGE, permissionDeniedToContractError } from "./agent-contract.js";
+import {
+  ContractError,
+  CONTRACT_EXIT_USAGE,
+  permissionDeniedToContractError,
+  type ContractErrorDetails,
+} from "./agent-contract.js";
+import { sanitizePublicValue } from "./redaction.js";
 
 export const REMOTE_GATEWAY_URL_ENV = "RAVI_GATEWAY_URL";
 export const REMOTE_GATEWAY_DEFAULT_TIMEOUT_MS = 30_000;
+// The authenticated target gateway owns the protocol code. Preserve it for
+// transport parity, but reject free-form strings; a shared code catalog would
+// be a broader contract change than this boundary repair.
+const REMOTE_CONTRACT_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
+const REMOTE_FLAG_PATTERN = /^--[a-z0-9][a-z0-9-]{0,63}$/;
+const REMOTE_POSITIONAL_PATTERN =
+  /^(?:<[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?>|\[[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?\])$/;
+const REMOTE_SUGGESTION_PATTERN = /^[^\u0000-\u001f\u007f]{1,128}$/u;
 
 export interface RemoteGatewayConfig {
   url: string;
@@ -108,10 +122,17 @@ export function remoteGatewayErrorToContractError(op: string, result: RemoteDisp
   if (result.contentType?.includes("application/json")) {
     try {
       const body = JSON.parse(result.body) as Record<string, unknown>;
-      if (isCompleteContractErrorBody(body, op)) return null;
+      if (isCompleteContractErrorBody(body, op)) {
+        return new ContractError(
+          op,
+          body.error.code,
+          remoteContractFailureMessage(body.outcome),
+          body.exitCode,
+          projectRemoteContractDetails(op, body),
+        );
+      }
       if (body.error === "PermissionDenied") {
-        const reason = typeof body.reason === "string" ? body.reason : "Permission denied.";
-        return permissionDeniedToContractError(op, reason);
+        return permissionDeniedToContractError(op, "Remote gateway denied the command.");
       }
       if (body.error === "Unauthorized") {
         return new ContractError(op, "AUTH_REQUIRED", "Remote gateway authentication failed.", 1, {
@@ -138,7 +159,50 @@ interface CompleteContractErrorBody {
   op: string;
   exitCode: 1 | 2 | 3;
   outcome: "failed" | "usage_error" | "blocked" | "denied";
-  error: { code: string; message: string; retryable: boolean };
+  error: { code: string; message: string; retryable: boolean; [key: string]: unknown };
+}
+
+function remoteContractFailureMessage(outcome: CompleteContractErrorBody["outcome"]): string {
+  if (outcome === "denied") return "Remote gateway denied the command.";
+  if (outcome === "usage_error") return "Remote gateway rejected the command input.";
+  if (outcome === "blocked") return "Remote command was blocked by policy.";
+  return "Remote command failed.";
+}
+
+function remoteSuggestedAction(op: string, outcome: CompleteContractErrorBody["outcome"]): string {
+  if (outcome === "denied") return "Request the required remote permission before retrying the command";
+  if (outcome === "usage_error") return `Inspect '${op} --help' and retry with valid input`;
+  if (outcome === "blocked") return "Review the remote policy block before retrying the command";
+  return "Inspect redacted remote logs and retry when the underlying cause is resolved";
+}
+
+function boundedStringList(value: unknown, pattern: RegExp): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const items = value
+    .filter((item): item is string => typeof item === "string" && pattern.test(item))
+    .map((item) => sanitizePublicValue(item))
+    .filter((item): item is string => typeof item === "string")
+    .slice(0, 32);
+  return items.length > 0 ? items : undefined;
+}
+
+function projectRemoteContractDetails(op: string, body: CompleteContractErrorBody): ContractErrorDetails {
+  const remote = body.error;
+  const details: ContractErrorDetails = { retryable: remote.retryable };
+  if (typeof remote.suggestedAction === "string") {
+    details.suggestedAction = remoteSuggestedAction(op, body.outcome);
+  }
+  const suggestions = boundedStringList(remote.suggestions, REMOTE_SUGGESTION_PATTERN);
+  if (suggestions) details.suggestions = suggestions;
+  const acceptedFlags = boundedStringList(remote.acceptedFlags, REMOTE_FLAG_PATTERN);
+  if (acceptedFlags) details.acceptedFlags = acceptedFlags;
+  const acceptedPositionals = boundedStringList(remote.acceptedPositionals, REMOTE_POSITIONAL_PATTERN);
+  if (acceptedPositionals) details.acceptedPositionals = acceptedPositionals;
+  if (typeof remote.dryRun === "boolean") details.dryRun = remote.dryRun;
+  if (remote.plan && typeof remote.plan === "object" && !Array.isArray(remote.plan)) {
+    details.plan = sanitizePublicValue(remote.plan);
+  }
+  return details;
 }
 
 function isCompleteContractErrorBody(value: unknown, expectedOp?: string): value is CompleteContractErrorBody {
@@ -153,7 +217,17 @@ function isCompleteContractErrorBody(value: unknown, expectedOp?: string): value
   if (typeof body.outcome !== "string" || !expectedOutcomes.includes(body.outcome)) return false;
   if (!body.error || typeof body.error !== "object" || Array.isArray(body.error)) return false;
   const error = body.error as Record<string, unknown>;
-  return typeof error.code === "string" && typeof error.message === "string" && typeof error.retryable === "boolean";
+  if (
+    typeof error.code !== "string" ||
+    !REMOTE_CONTRACT_CODE_PATTERN.test(error.code) ||
+    typeof error.message !== "string" ||
+    typeof error.retryable !== "boolean"
+  ) {
+    return false;
+  }
+  if (body.outcome === "denied" && error.code !== "PERMISSION_DENIED") return false;
+  if (error.code === "PERMISSION_DENIED" && body.outcome !== "denied") return false;
+  return true;
 }
 
 export async function dispatchRemote(input: RemoteDispatchInput): Promise<RemoteDispatchResult> {
