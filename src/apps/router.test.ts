@@ -138,6 +138,7 @@ if (process.env.PROVIDER_SLEEP_MS) {
   await new Promise((resolve) => setTimeout(resolve, Number(process.env.PROVIDER_SLEEP_MS)));
 }
 if (process.env.PROVIDER_EXIT_CODE) {
+  console.error(process.env.PROVIDER_STDERR || "provider failed");
   process.exit(Number(process.env.PROVIDER_EXIT_CODE));
 }
 if (process.env.PROVIDER_INVALID_JSON === "1") {
@@ -149,7 +150,7 @@ console.log(JSON.stringify({
   schema: process.env.PROVIDER_SCHEMA || "ravi.app.permission.decision/v1",
   decision,
   reasonCode: process.env.PROVIDER_REASON_CODE || decision + "_test",
-  reason: "provider test decision",
+  reason: "PRIVATE_PROVIDER_REASON_SENTINEL",
   visibility: decision === "allow" ? "visible" : "hidden",
   resource: { type: "app-operation", id: request?.operation?.id || "unknown" },
   grantSuggestion: decision === "needs_grant" ? {
@@ -157,9 +158,14 @@ console.log(JSON.stringify({
     relation: "use",
     object: { type: "app-resource", id: "khal-tasks:list" },
     ttlSec: 900,
-    reason: "test grant suggestion"
+    reason: "PRIVATE_GRANT_REASON_SENTINEL",
+    privatePayload: "PRIVATE_GRANT_PAYLOAD_SENTINEL"
   } : null,
-  audit: { policyVersion: "test", evidence: ["request:" + request?.schema] },
+  audit: {
+    policyVersion: "test",
+    evidence: ["PRIVATE_PROVIDER_EVIDENCE_SENTINEL"],
+    privatePayload: "PRIVATE_PROVIDER_AUDIT_SENTINEL"
+  },
   cache: { ttlSec: 60 }
 }));
 `,
@@ -894,7 +900,7 @@ describe("Ravi app router", () => {
         runAppOperation({
           appId: "khal-tasks",
           operation: "list",
-          args: ["task-123", "--project", "ravi", "--token", "token_secret_must_not_leak"],
+          args: ["PRIVATE_POSITIONAL_SENTINEL", "--project", "ravi", "--token", "token_secret_must_not_leak"],
           json: true,
           env: {
             ...process.env,
@@ -914,8 +920,13 @@ describe("Ravi app router", () => {
       providerOperationId: "khal-tasks.permissions.decide",
       decision: "allow",
       reasonCode: "allow_test",
+      reasonPresent: true,
       cache: { hit: false, ttlSec: 30 },
+      audit: { policyVersion: "test", evidenceCount: 1 },
     });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_PROVIDER_REASON_SENTINEL");
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_PROVIDER_EVIDENCE_SENTINEL");
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_PROVIDER_AUDIT_SENTINEL");
 
     const requestText = readFileSync(requestPath, "utf8");
     expect(requestText).not.toContain("rctx_secret_must_not_leak");
@@ -940,8 +951,8 @@ describe("Ravi app router", () => {
         owner: { type: "contact", id: "luis" },
       },
       input: {
-        args: ["task-123"],
-        options: { project: "ravi" },
+        args: ["[redacted]"],
+        options: { project: "[redacted]" },
         rawArgCount: 5,
         redacted: true,
       },
@@ -953,6 +964,7 @@ describe("Ravi app router", () => {
       core: { appBoundary: "allow", agentCeiling: "allow", surfaceConstraint: "allow" },
     });
     expect(requestText).not.toContain("token_secret_must_not_leak");
+    expect(requestText).not.toContain("PRIVATE_POSITIONAL_SENTINEL");
     expect(requestText).not.toContain("rctx_env_must_not_leak");
 
     const envSnapshot = JSON.parse(readFileSync(envPath, "utf8")) as Record<string, unknown>;
@@ -1099,9 +1111,65 @@ describe("Ravi app router", () => {
         expect(result.permissionProvider?.grantSuggestion).toMatchObject({
           relation: "use",
           ttlSec: 900,
+          reasonPresent: true,
         });
+        expect(JSON.stringify(result)).not.toContain("PRIVATE_GRANT_REASON_SENTINEL");
+        expect(JSON.stringify(result)).not.toContain("PRIVATE_GRANT_PAYLOAD_SENTINEL");
       }
     }
+  });
+
+  it("does not expose permission provider stderr", async () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks"));
+
+    const result = await runWithContext(appToolContext([appCapability("use")]), () =>
+      runAppOperation({
+        appId: "khal-tasks",
+        operation: "list",
+        json: true,
+        env: {
+          ...process.env,
+          PROVIDER_EXIT_CODE: "7",
+          PROVIDER_STDERR: "PRIVATE_PROVIDER_STDERR_SENTINEL",
+        },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      errorCode: "APP_PERMISSION_PROVIDER_FAILED",
+      permissionProvider: {
+        decision: "error",
+        reasonCode: "provider_exit_nonzero",
+        error: "Permission provider process exited unsuccessfully.",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_PROVIDER_STDERR_SENTINEL");
+  });
+
+  it("rejects unstable provider reason codes without reflecting them", async () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks"));
+
+    const result = await runWithContext(appToolContext([appCapability("use")]), () =>
+      runAppOperation({
+        appId: "khal-tasks",
+        operation: "list",
+        json: true,
+        env: { ...process.env, PROVIDER_REASON_CODE: "PRIVATE REASON CODE SENTINEL" },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      errorCode: "APP_PERMISSION_PROVIDER_FAILED",
+      permissionProvider: {
+        decision: "invalid",
+        reasonCode: "provider_reason_code_invalid",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE REASON CODE SENTINEL");
   });
 
   it("fails closed on provider invalid JSON and timeout", async () => {

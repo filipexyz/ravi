@@ -254,14 +254,27 @@ const appsRunReturnSchema = z.object({
       requestId: z.string(),
       decision: z.enum(["allow", "deny", "needs_grant", "not_applicable", "error", "invalid"]),
       reasonCode: z.string().nullable(),
-      reason: z.string().optional(),
+      reasonPresent: z.boolean().optional(),
       durationMs: z.number(),
       cache: z.object({
         hit: z.boolean(),
         ttlSec: z.number().optional(),
       }),
-      grantSuggestion: jsonValueSchema.optional(),
-      audit: jsonValueSchema.optional(),
+      grantSuggestion: z
+        .object({
+          subject: z.object({ type: z.string(), id: z.string() }),
+          relation: z.string(),
+          object: z.object({ type: z.string(), id: z.string() }),
+          ttlSec: z.number().optional(),
+          reasonPresent: z.boolean().optional(),
+        })
+        .optional(),
+      audit: z
+        .object({
+          policyVersion: z.string().optional(),
+          evidenceCount: z.number(),
+        })
+        .optional(),
       error: z.string().optional(),
     })
     .optional(),

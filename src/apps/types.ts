@@ -326,6 +326,24 @@ export interface RaviAppAliasInvocation {
 
 export type RaviAppPermissionDecision = "allow" | "deny" | "needs_grant" | "not_applicable";
 
+export interface RaviAppPermissionGrantPrincipal {
+  type: string;
+  id: string;
+}
+
+export interface RaviAppPermissionGrantSuggestion {
+  subject: RaviAppPermissionGrantPrincipal;
+  relation: string;
+  object: RaviAppPermissionGrantPrincipal;
+  ttlSec?: number;
+  reasonPresent?: boolean;
+}
+
+export interface RaviAppPermissionProviderAuditSummary {
+  policyVersion?: string;
+  evidenceCount: number;
+}
+
 export interface RaviAppPermissionProviderAudit {
   providerId: string;
   providerVersion: string;
@@ -334,13 +352,13 @@ export interface RaviAppPermissionProviderAudit {
   requestId: string;
   decision: RaviAppPermissionDecision | "error" | "invalid";
   reasonCode: string | null;
-  reason?: string;
+  reasonPresent?: boolean;
   durationMs: number;
   cache: {
     hit: boolean;
     ttlSec?: number;
   };
-  grantSuggestion?: unknown;
-  audit?: unknown;
+  grantSuggestion?: RaviAppPermissionGrantSuggestion;
+  audit?: RaviAppPermissionProviderAuditSummary;
   error?: string;
 }
