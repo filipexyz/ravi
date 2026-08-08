@@ -128,9 +128,9 @@ describe("permission denials", () => {
           type: "tool",
           agentId: "worker",
           denied: "tool:Bash",
-          reason: "missing tool grant",
+          reason: "[REDACTED:content length=18]",
           denialId: denial?.id,
-          dedupeKey: "audit.denied:tool:worker:tool:Bash:missing tool grant",
+          dedupeKey: "audit.denied:tool:worker:tool:Bash:[REDACTED:content length=18]",
         }),
       },
     ]);
@@ -169,9 +169,9 @@ describe("permission denials", () => {
           type: "sdk_gateway_command",
           agentId: null,
           denied: "read:agents:list",
-          reason: "permission_denied",
+          reason: "[REDACTED:content length=17]",
           denialId: denial?.id,
-          dedupeKey: "audit.denied:sdk_gateway_command:-:read:agents:list:permission_denied",
+          dedupeKey: "audit.denied:sdk_gateway_command:-:read:agents:list:[REDACTED:content length=17]",
         }),
       },
     ]);

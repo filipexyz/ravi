@@ -242,7 +242,9 @@ function buildAuditDeniedDedupeKey(event: {
   denied?: string | null;
   reason?: string | null;
 }): string {
-  return ["audit.denied", event.type, event.agentId, event.denied, event.reason].map(normalizeDedupePart).join(":");
+  const sanitizedReason = sanitizePublicValue(event.reason, "reason");
+  const reasonPart = typeof sanitizedReason === "string" ? sanitizedReason : null;
+  return ["audit.denied", event.type, event.agentId, event.denied, reasonPart].map(normalizeDedupePart).join(":");
 }
 
 function normalizeDedupePart(value: string | null | undefined): string {
