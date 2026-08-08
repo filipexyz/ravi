@@ -1105,3 +1105,11 @@ executar seus casos: o mock parcial não expunha dependências agora alcançadas
 pelo grafo de imports no Bun 1.3.11 da CI. O commit `0b938edf` completou apenas
 os mocks desse teste; seus oito casos passaram localmente depois da correção.
 Quality Gate permaneceu ignorado nessa rodada e a spec continua `draft`.
+
+O CI Linux [`31282534997`](https://github.com/filipexyz/ravi/actions/runs/31282534997)
+do SHA `e778fbe0907ca21c2624e5092818ad243d52ca5e` passou Build e Typecheck e
+alcançou `context.test.ts`, onde três expectativas ainda exigiam motivos e
+comandos Bash integrais em eventos de negação. O commit `ee215584` alinhou as
+expectativas à redação central e minimizou também o `detail` e o comando
+persistido para apenas seu comprimento. Os 65 testes focados de Bash hook e
+contexto passaram; Quality Gate continuou ignorado e a spec permanece `draft`.
