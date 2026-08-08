@@ -1077,3 +1077,23 @@ O head de implementação imediatamente anterior a este registro foi
 Esses resultados locais não substituem build, typecheck, suíte completa e
 quality gate da CI. Não há veredito final para esta fase até o head documental
 ser publicado na PR 399 e todos os checks obrigatórios passarem no mesmo SHA.
+
+### Primeira rodada de CI da fase 5
+
+O CI Linux [`31281927163`](https://github.com/filipexyz/ravi/actions/runs/31281927163)
+do SHA `d477d8b755dca6f24a94ac10cd25948afda41169` passou Build e Typecheck, mas
+falhou em Test com cinco identidades; por consequência, Quality Gate foi
+ignorado nessa rodada.
+
+Três falhas mostraram que a auditoria já redigia `reason` no evento publicado,
+enquanto a chave de deduplicação ainda preservava o texto integral. O commit
+`a8ca0848` passou a construir a chave com o mesmo valor saneado e atualizou os
+testes de permissões e aprovação. As outras duas falhas eram contaminação de
+módulo no processo compartilhado de testes: dois mocks de NATS do Omni não
+implementavam `isExplicitConnect` e `nats.close`, exigidos pelo caminho de Apps.
+O commit `7f648bbd` completou esses mocks.
+
+Depois das correções, passaram localmente 10 testes de permissões/aprovação e
+53 testes no lote conjunto Omni + Apps que reproduz a ordem relevante da CI.
+A spec permanece `draft`; somente uma nova CI verde no SHA exato pode promover
+esta fase para aprovada.
