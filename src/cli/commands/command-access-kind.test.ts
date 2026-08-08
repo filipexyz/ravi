@@ -7,7 +7,11 @@ import { Database } from "bun:sqlite";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { CLI_READ_TO_MUTATE_MIGRATIONS } from "../../permissions/command-access-kind-migration.js";
 import type { ContextRecord } from "../../router/router-db.js";
-import { enforceCliCommandAuthorization, redactCommandAccessInput } from "../command-access.js";
+import {
+  buildCliCommandOperation,
+  enforceCliCommandAuthorization,
+  redactCommandAccessInput,
+} from "../command-access.js";
 import { runWithContext } from "../context.js";
 import { getCommandAccessMetadata, type CommandAccessOptions } from "../decorators.js";
 import { AgentsCommands } from "./agents.js";
@@ -46,6 +50,7 @@ import { TranscribeCommands } from "./transcribe.js";
 import { TriggersCommands } from "./triggers.js";
 import { VideoCommands } from "./video.js";
 import { WhatsAppDmCommands } from "./whatsapp-dm.js";
+import { WorkObjectCommands } from "./work-objects.js";
 import { WorkflowRunCommands } from "./workflows.js";
 
 setDefaultTimeout(90_000);
@@ -720,6 +725,31 @@ describe("corrected mutating command access", () => {
       expect(Object.values(auditInput)).toEqual(Object.keys(input).map(() => "[REDACTED]"));
       expect(JSON.stringify(auditInput)).not.toContain("SENTINEL_PRIVATE");
     }
+  });
+
+  it("keeps arbitrary Work Object patches out of authorization and audit boundaries", () => {
+    const updateAccess = getCommandAccessMetadata(WorkObjectCommands).get("update");
+    expect(updateAccess?.redactions).toContain("values");
+    if (!updateAccess) throw new Error("Missing command access metadata for work-objects update");
+
+    const values = JSON.stringify({
+      nested: { prompt: "PRIVATE_PROMPT_7YQ4" },
+      apiKey: "sk-abcdefghijklmnop",
+    });
+    const input = { type: "task", id: "task-1", values };
+    const operation = buildCliCommandOperation({
+      group: "work-objects",
+      command: "update",
+      access: updateAccess,
+      input,
+      source: "tool",
+    });
+    const auditInput = redactCommandAccessInput(updateAccess, input);
+
+    expect(operation.input).toEqual({ type: "task", id: "task-1", values: "[REDACTED]" });
+    expect(auditInput).toEqual({ type: "task", id: "task-1", values: "[REDACTED]" });
+    expect(JSON.stringify({ operation, auditInput })).not.toContain("PRIVATE_PROMPT_7YQ4");
+    expect(JSON.stringify({ operation, auditInput })).not.toContain("sk-abcdefghijklmnop");
   });
 
   it("denies read capabilities before DB/FS effects and allows mutate capabilities", () => {

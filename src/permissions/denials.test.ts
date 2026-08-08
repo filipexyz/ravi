@@ -68,6 +68,39 @@ describe("permission denials", () => {
     expect(listPermissionDenials()).toEqual([]);
   });
 
+  it("sanitizes nested denial details before persistence", () => {
+    const denial = recordPermissionDenial({
+      subjectType: "agent",
+      subjectId: "worker",
+      relation: "mutate",
+      objectType: "work-objects",
+      objectId: "update",
+      detail: {
+        operation: {
+          input: {
+            values: {
+              nested: { prompt: "PRIVATE_PROMPT_7YQ4" },
+              apiKey: "sk-abcdefghijklmnop",
+            },
+          },
+        },
+      },
+    });
+
+    expect(denial?.detail).toEqual({
+      operation: {
+        input: {
+          values: {
+            nested: { prompt: "[REDACTED:content length=19]" },
+            apiKey: "[REDACTED]",
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(denial)).not.toContain("PRIVATE_PROMPT_7YQ4");
+    expect(JSON.stringify(denial)).not.toContain("sk-abcdefghijklmnop");
+  });
+
   it("records and publishes denied audit events with the same denial id", async () => {
     delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
 

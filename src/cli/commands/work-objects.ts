@@ -170,6 +170,7 @@ export class WorkObjectCommands {
     action: "update",
     risk: "medium",
     input: ["type", "id", "values"],
+    redactions: ["values"],
   })
   @Returns(workObjectUpdateReturnSchema)
   async update(
