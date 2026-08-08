@@ -847,6 +847,96 @@ describe("AgentsCommands permissions", () => {
     );
     expect(updateAgentCalls).toEqual([]);
   });
+
+  it("narrows a wildcard capability to an already-covered exact capability without --execute", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      defaults: {
+        runtimePermissions: {
+          profile: "bootstrap",
+          capabilities: ["mutate:agents:*"],
+        },
+      },
+    };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      const payload = commands.permissions("dev", undefined, "mutate:agents:debounce", true);
+
+      expect(payload).toMatchObject({
+        changed: true,
+        before: {
+          profile: "bootstrap",
+          capabilities: [{ permission: "mutate", objectType: "agents", objectId: "*" }],
+        },
+        after: {
+          profile: "bootstrap",
+          capabilities: [{ permission: "mutate", objectType: "agents", objectId: "debounce" }],
+        },
+      });
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(updateAgentCalls).toEqual([
+      {
+        id: "dev",
+        partial: {
+          defaults: {
+            runtimePermissions: {
+              profile: "bootstrap",
+              capabilities: [{ permission: "mutate", objectType: "agents", objectId: "debounce" }],
+            },
+          },
+        },
+      },
+    ]);
+  });
+
+  it("brakes expansion from an exact capability to a wildcard and reports the scoped change", () => {
+    currentAgent = {
+      id: "dev",
+      cwd: "/tmp/dev",
+      defaults: {
+        runtimePermissions: {
+          profile: "bootstrap",
+          capabilities: ["mutate:agents:debounce"],
+        },
+      },
+    };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+
+    try {
+      commands.permissions("dev", undefined, "mutate:agents:*", true);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect(thrown).toMatchObject({
+      code: "WRITE_REQUIRES_EXECUTE",
+      exitCode: 3,
+      op: "agents permissions",
+    });
+    expect((thrown as InstanceType<typeof ContractError>).envelope().error.plan).toEqual({
+      agentId: "dev",
+      beforePresent: true,
+      beforeProfile: "bootstrap",
+      beforeCapabilitiesCount: 1,
+      afterPresent: true,
+      afterProfile: "bootstrap",
+      afterCapabilitiesCount: 1,
+    });
+    expect(updateAgentCalls).toHaveLength(0);
+  });
 });
 
 describe("AgentsCommands session", () => {

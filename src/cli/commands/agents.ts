@@ -38,7 +38,8 @@ import {
   loadRouterConfig,
   setAgentSpecMode,
 } from "../../router/config.js";
-import { DmScopeSchema } from "../../router/router-db.js";
+import { DmScopeSchema, type ContextCapability } from "../../router/router-db.js";
+import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import {
   deleteSession,
   getSessionTurnUsageSummary,
@@ -313,13 +314,17 @@ function parseRuntimePermissionCapabilities(value: string | undefined): AgentRun
   });
 }
 
-function runtimePermissionCapabilityKey(capability: unknown): string {
-  if (typeof capability === "string") return capability.trim();
-  if (typeof capability === "object" && capability !== null) {
-    const value = capability as Record<string, unknown>;
-    return `${String(value.permission ?? "")}:${String(value.objectType ?? "")}:${String(value.objectId ?? "")}`;
+function normalizeRuntimePermissionCapability(capability: unknown): ContextCapability | null {
+  if (typeof capability === "string") {
+    const [permission, objectType, ...objectIdParts] = capability.split(":");
+    const objectId = objectIdParts.join(":");
+    return permission && objectType && objectId ? { permission, objectType, objectId } : null;
   }
-  return String(capability);
+  if (typeof capability !== "object" || capability === null) return null;
+  const value = capability as Partial<ContextCapability>;
+  return value.permission && value.objectType && value.objectId
+    ? { permission: value.permission, objectType: value.objectType, objectId: value.objectId }
+    : null;
 }
 
 function expandsRuntimePermissionAuthority(
@@ -336,8 +341,16 @@ function expandsRuntimePermissionAuthority(
     return true;
   }
 
-  const beforeCapabilities = new Set((before?.capabilities ?? []).map(runtimePermissionCapabilityKey));
-  return (after?.capabilities ?? []).some((capability) => !beforeCapabilities.has(runtimePermissionCapabilityKey(capability)));
+  const beforeCapabilities = (before?.capabilities ?? []).flatMap((capability) => {
+    const normalized = normalizeRuntimePermissionCapability(capability);
+    return normalized ? [normalized] : [];
+  });
+
+  return (after?.capabilities ?? []).some((capability) => {
+    const normalized = normalizeRuntimePermissionCapability(capability);
+    if (!normalized) return true;
+    return !canWithCapabilities(beforeCapabilities, normalized.permission, normalized.objectType, normalized.objectId);
+  });
 }
 
 function describeRuntimePermissionConfig(config: AgentRuntimePermissionsConfig | null): string {
