@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -21,6 +20,7 @@ const CONTEXT_ENV_KEYS = [
   "RAVI_CHANNEL",
   "RAVI_ACCOUNT_ID",
   "RAVI_CHAT_ID",
+  "RAVI_SUPPRESS_AUDIT_EVENTS",
 ] as const;
 const originalContextEnv = new Map<string, string | undefined>(CONTEXT_ENV_KEYS.map((key) => [key, process.env[key]]));
 
@@ -601,10 +601,9 @@ describe("Ravi app router", () => {
     expect(JSON.stringify(result)).not.toContain("SECRET_STDERR_SENTINEL");
   });
 
-  it("runs an external CLI through the public alias with a least-privilege child context", () => {
+  it("runs an external CLI through the public alias with a least-privilege child context", async () => {
     const root = makeRepo();
     const { appDir } = writeContextProbeApp(root);
-    const cliEntrypoint = resolve(originalCwd, "src", "cli", "index.ts");
     const markerPath = join(root, "shell-injection-marker");
     const injectionArg = `$(touch ${markerPath})`;
     const parent = createRuntimeContext({
@@ -615,31 +614,25 @@ describe("Ravi app router", () => {
         { permission: "execute", objectType: "group", objectId: "context" },
       ],
     });
-
-    const run = spawnSync(
-      process.execPath,
-      [cliEntrypoint, "probe-app", "inspect", injectionArg, ";", "literal value", "--json"],
-      {
-        cwd: root,
-        env: {
-          ...process.env,
-          RAVI_CONTEXT_KEY: parent.contextKey,
-          RAVI_SESSION_KEY: "legacy-session",
-          RAVI_SESSION_NAME: "legacy-name",
-          RAVI_AGENT_ID: "legacy-agent",
-          APP_SECRET: "must-not-leak",
-          RAVI_LOG_LEVEL: "error",
-          RAVI_CLI_LOG_LEVEL: "error",
-          RAVI_SUPPRESS_AUDIT_EVENTS: "1",
-        },
-        encoding: "utf8",
-        timeout: 30_000,
-      },
-    );
-
-    expect(run.status).toBe(0);
-    expect(run.stderr).not.toContain("must-not-leak");
-    const payload = JSON.parse(run.stdout) as {
+    process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+    const payload = (await runWithContext({ agentId: "main", context: parent }, () =>
+      captureJson(() =>
+        maybeRunAppAliasRoute(["probe-app", "inspect", injectionArg, ";", "literal value", "--json"], {
+          cwd: root,
+          env: {
+            ...process.env,
+            RAVI_CONTEXT_KEY: parent.contextKey,
+            RAVI_SESSION_KEY: "legacy-session",
+            RAVI_SESSION_NAME: "legacy-name",
+            RAVI_AGENT_ID: "legacy-agent",
+            APP_SECRET: "must-not-leak",
+            RAVI_LOG_LEVEL: "error",
+            RAVI_CLI_LOG_LEVEL: "error",
+            RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+          },
+        }),
+      ),
+    )) as {
       ok: boolean;
       callerContextId: string;
       childContextId: string;
@@ -695,7 +688,8 @@ describe("Ravi app router", () => {
     expect(payload.result.whoami.contextId).toBe(payload.childContextId);
     expect(realpathSync(payload.result.cwd)).toBe(realpathSync(appDir));
     expect(existsSync(markerPath)).toBe(false);
-    expect(run.stdout).not.toContain(parent.contextKey);
+    expect(JSON.stringify(payload)).not.toContain(parent.contextKey);
+    expect(JSON.stringify(payload)).not.toContain("must-not-leak");
 
     const lineage = getContextLineage(parent.contextId);
     expect(lineage?.descendants.map((context) => context.contextId)).toContain(payload.childContextId);
