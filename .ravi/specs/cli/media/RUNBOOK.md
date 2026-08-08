@@ -7,8 +7,8 @@
 3. Exit `1` + `FILE_NOT_FOUND`: the local path is wrong — the file must exist
    on the machine running the CLI, not on the channel side.
 4. Exit `1` + `MEDIA_SEND_FAILED`: delivery-side problem (omni CLI missing,
-   unmapped instance, Slack upload failure). The message carries the transport
-   error; it is retryable after fixing the target.
+   unmapped instance, Slack upload failure). The public message is stable and
+   redacted; inspect redacted runtime logs and target configuration before retrying.
 5. Exit `3`: read `error.plan`, confirm the file name/type, target
    channel/account and target-presence flags, then re-run the same command
    adding `--execute`. The plan intentionally omits the full path, caption and

@@ -7,6 +7,7 @@ afterAll(() => mock.restore());
 
 const emittedEvents: Array<{ topic: string; payload: Record<string, unknown> }> = [];
 const mediaSendCalls: Array<Record<string, unknown>> = [];
+let mediaSendError: unknown;
 const publishedOutboundJobs: Array<Record<string, unknown>> = [];
 const generateAudioCalls: Array<Record<string, unknown>> = [];
 
@@ -133,6 +134,7 @@ mock.module("../media-send.js", () => ({
   }),
   sendMediaWithOmniCli: mock(async (input: Record<string, unknown>) => {
     mediaSendCalls.push(input);
+    if (mediaSendError !== undefined) throw mediaSendError;
     const filePath = String(input.filePath ?? "/tmp/unknown.bin");
     const type = String(input.type ?? (filePath.endsWith(".png") ? "image" : "audio"));
     return {
@@ -203,6 +205,7 @@ async function expectContractError(
 beforeEach(() => {
   emittedEvents.length = 0;
   mediaSendCalls.length = 0;
+  mediaSendError = undefined;
   publishedOutboundJobs.length = 0;
   generateAudioCalls.length = 0;
   sourceAvailable = true;
@@ -541,10 +544,11 @@ describe("media send contract", () => {
   });
 
   it("send on a missing file exits 1 with FILE_NOT_FOUND before the brake", async () => {
+    const missingPath = "C:/sentinel/private/file-9P3X.png";
     const error = await expectContractError(
       () =>
         new MediaCommands().send(
-          "/tmp/nope-does-not-exist.png",
+          missingPath,
           undefined,
           undefined,
           undefined,
@@ -557,8 +561,44 @@ describe("media send contract", () => {
       1,
     );
 
+    expect(error.message).toBe("Media file was not found.");
     expect(error.details.suggestedAction).toContain("file path");
+    expect(JSON.stringify(error.envelope())).not.toContain("file-9P3X");
+    expect(JSON.stringify(error.envelope())).not.toContain(missingPath);
     expect(mediaSendCalls).toHaveLength(0);
+  });
+
+  it("does not expose a provider failure in the MEDIA_SEND_FAILED envelope", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "ravi-media-provider-failure-"));
+    const filePath = join(dir, "sample.png");
+    writeFileSync(filePath, "png");
+    mediaSendError = new Error("PRIVATE_MESSAGE_8K2R sk-abcdefghijklmnop");
+    try {
+      const error = await expectContractError(
+        () =>
+          new MediaCommands().send(
+            filePath,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            false,
+            true,
+            true,
+          ),
+        "MEDIA_SEND_FAILED",
+        1,
+      );
+
+      expect(error.message).toBe("Media delivery failed.");
+      expect(error.details.retryable).toBe(true);
+      expect(JSON.stringify(error.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
+      expect(JSON.stringify(error.envelope())).not.toContain("sk-abcdefghijklmnop");
+      expect(mediaSendCalls).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

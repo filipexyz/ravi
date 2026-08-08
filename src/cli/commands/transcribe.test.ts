@@ -15,6 +15,7 @@ import { join } from "node:path";
 afterAll(() => mock.restore());
 
 const transcribeCalls: Array<Record<string, unknown>> = [];
+let transcribeFailure: unknown;
 
 mock.module("../decorators.js", () => ({
   Group: () => () => {},
@@ -42,6 +43,7 @@ mock.module("../../transcribe/service.js", () => ({
   inferAudioMimeType: (filePath: string) => (filePath.toLowerCase().endsWith(".mp3") ? "audio/mpeg" : undefined),
   transcribeFile: mock(async (input: Record<string, unknown>) => {
     transcribeCalls.push(input);
+    if (transcribeFailure !== undefined) throw transcribeFailure;
     return {
       text: "texto transcrito",
       provider: "openai",
@@ -100,6 +102,7 @@ let audioDir: string;
 
 beforeEach(() => {
   transcribeCalls.length = 0;
+  transcribeFailure = undefined;
 });
 
 function seedAudioFile(name = "voz.mp3"): string {
@@ -135,13 +138,41 @@ describe("transcribe file contract", () => {
   });
 
   it("exits 1 with FILE_NOT_FOUND when the audio file does not exist", async () => {
+    const missingPath = "C:/sentinel/private/file-9P3X.mp3";
     const error = await expectContractError(
-      () => new TranscribeCommands().file("/tmp/nao-existe-987.mp3", "pt", true),
+      () => new TranscribeCommands().file(missingPath, "pt", true),
       "FILE_NOT_FOUND",
       1,
     );
 
+    expect(error.message).toBe("Audio file was not found.");
     expect(error.details.suggestedAction).toContain("audio file path");
+    expect(JSON.stringify(error.envelope())).not.toContain("file-9P3X");
+    expect(JSON.stringify(error.envelope())).not.toContain(missingPath);
     expect(transcribeCalls).toHaveLength(0);
+  });
+
+  it.each([
+    new Error("PRIVATE_MESSAGE_8K2R"),
+    "SENTINEL_SECRET_7M4Q",
+  ])("does not expose a provider rejection in the TRANSCRIBE_FAILED envelope", async (providerFailure) => {
+    const filePath = seedAudioFile();
+    transcribeFailure = providerFailure;
+    try {
+      const error = await expectContractError(
+        () => new TranscribeCommands().file(filePath, "pt", true),
+        "TRANSCRIBE_FAILED",
+        1,
+      );
+
+      expect(error.message).toBe("Audio transcription failed.");
+      expect(error.details.retryable).toBe(true);
+      const serialized = JSON.stringify(error.envelope());
+      expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
+      expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
+      expect(transcribeCalls).toHaveLength(1);
+    } finally {
+      rmSync(audioDir, { recursive: true, force: true });
+    }
   });
 });

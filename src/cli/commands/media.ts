@@ -64,7 +64,7 @@ export class MediaCommands {
     // not something --execute should be spent on.
     const absPath = resolve(filePath);
     if (!existsSync(absPath)) {
-      contractFail("media send", "FILE_NOT_FOUND", `File not found: ${absPath}`, {
+      contractFail("media send", "FILE_NOT_FOUND", "Media file was not found.", {
         asJson,
         details: {
           suggestedAction: "Check the local file path (the file must exist on this machine) and re-run",
@@ -140,8 +140,8 @@ export class MediaCommands {
       }
 
       return payload;
-    } catch (error) {
-      contractFail("media send", "MEDIA_SEND_FAILED", error instanceof Error ? error.message : String(error), {
+    } catch {
+      contractFail("media send", "MEDIA_SEND_FAILED", "Media delivery failed.", {
         asJson,
         details: {
           retryable: true,

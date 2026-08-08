@@ -55,7 +55,7 @@ export class TranscribeCommands {
     }
     const absPath = resolve(filePath);
     if (!existsSync(absPath)) {
-      contractFail("transcribe file", "FILE_NOT_FOUND", `File not found: ${absPath}`, {
+      contractFail("transcribe file", "FILE_NOT_FOUND", "Audio file was not found.", {
         asJson,
         details: {
           suggestedAction: "Check the local audio file path and re-run",
@@ -70,8 +70,8 @@ export class TranscribeCommands {
     let result: Awaited<ReturnType<typeof transcribeFile>>;
     try {
       result = await transcribeFile({ filePath: absPath, mimeType: mimetype, language: _lang ?? "pt" });
-    } catch (err) {
-      contractFail("transcribe file", "TRANSCRIBE_FAILED", err instanceof Error ? err.message : String(err), {
+    } catch {
+      contractFail("transcribe file", "TRANSCRIBE_FAILED", "Audio transcription failed.", {
         asJson,
         details: {
           retryable: true,
