@@ -56,6 +56,7 @@ let updateAgentCalls: Array<{ id: string; partial: Record<string, unknown> }> = 
 let deleteAgentCalls: string[] = [];
 let deleteAgentResult = true;
 let deleteSessionCalls: string[] = [];
+let natsEmitCalls: Array<{ topic: string; payload: unknown }> = [];
 let resolvedSession: SessionLike | null = null;
 let mainSession: SessionLike | null = null;
 let sessionsByAgent: SessionLike[] = [];
@@ -127,7 +128,9 @@ mock.module("../../nats.js", () => ({
   publish: mock(async () => {}),
   subscribe: mock(() => (async function* () {})()),
   nats: {
-    emit: mock(async () => {}),
+    emit: mock(async (topic: string, payload: unknown) => {
+      natsEmitCalls.push({ topic, payload });
+    }),
     subscribe: mock(() => (async function* () {})()),
     close: mock(async () => {}),
   },
@@ -1128,6 +1131,7 @@ describe("agents agent-first contract", () => {
     deleteAgentCalls = [];
     deleteAgentResult = true;
     deleteSessionCalls = [];
+    natsEmitCalls = [];
     resolvedSession = null;
     mainSession = null;
     sessionsByAgent = [];
@@ -1267,6 +1271,35 @@ describe("agents agent-first contract", () => {
     });
     expect(JSON.stringify(contractError.envelope().error.plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
     expect(deleteSessionCalls).toHaveLength(0);
+  });
+
+  it("blocks a single-session reset before abort emission or session deletion", async () => {
+    resolvedSession = {
+      sessionKey: "agent:dev:main",
+      name: "dev-main",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const sessionBefore = { ...resolvedSession };
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    let thrown: unknown;
+    try {
+      await commands.reset("dev", "dev-main", true, undefined);
+    } catch (error) {
+      thrown = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect(thrown).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3, op: "agents reset" });
+    expect(natsEmitCalls).toHaveLength(0);
+    expect(deleteSessionCalls).toHaveLength(0);
+    expect(resolvedSession).toEqual(sessionBefore);
   });
 
   it("resets all sessions when --execute is passed", async () => {

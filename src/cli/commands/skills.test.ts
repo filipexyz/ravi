@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -9,6 +9,7 @@ import {
   withoutRaviRuntimeContextEnv,
 } from "../../test/ravi-state.js";
 import { dbCreateAgent, dbDeleteAgent, dbListSkillGrants, dbListSkillGrantsForAgent } from "../../router/router-db.js";
+import * as skillManager from "../../skills/manager.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { SkillsCommands } from "./skills.js";
@@ -303,6 +304,41 @@ describe("skills agent-first contract", () => {
       codexSync: false,
     });
     expect(JSON.stringify(plan)).not.toContain(KNOWN_CATALOG_SKILL);
+  });
+
+  it("blocks skills install before the file installation sink", () => {
+    let installState = "unchanged";
+    const installSpy = spyOn(skillManager, "installSkills").mockImplementation(() => {
+      installState = "changed";
+      return [];
+    });
+    try {
+      const contractError = expectContractError(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().install(
+            KNOWN_CATALOG_SKILL,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            true,
+            undefined,
+          ),
+        ),
+      );
+
+      expect(contractError).toMatchObject({
+        code: "WRITE_REQUIRES_EXECUTE",
+        exitCode: 3,
+        op: "skills install",
+      });
+      expect(installSpy).toHaveBeenCalledTimes(0);
+      expect(installState).toBe("unchanged");
+    } finally {
+      installSpy.mockRestore();
+    }
   });
 
   it("does not expose a local source path or skill content in the install plan", () => {

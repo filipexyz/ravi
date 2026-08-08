@@ -309,7 +309,7 @@ describe("watch write brake", () => {
           undefined,
           undefined,
         ),
-      ).rejects.toThrow("--message is required");
+      ).rejects.toMatchObject({ code: "COMMAND_FAILED", exitCode: 1 });
     });
 
     expect(createTriggerCalls).toHaveLength(0);
@@ -330,7 +330,7 @@ describe("watch write brake", () => {
           undefined,
           undefined,
         ),
-      ).rejects.toThrow("Agent not found: ghost");
+      ).rejects.toMatchObject({ code: "COMMAND_FAILED", exitCode: 1 });
     });
 
     expect(createTriggerCalls).toHaveLength(0);
@@ -343,6 +343,7 @@ describe("watch write brake", () => {
         eventTypes: ["SENTINEL_SECRET_7M4Q"],
       }),
     ];
+    const stateBefore = structuredClone(watchStore);
     const commands = new WatchCommands();
     const error = await expectContractError(
       () => commands.run("watch-gh-1", true, true, undefined),
@@ -364,6 +365,7 @@ describe("watch write brake", () => {
     expect(removeWatchCalls).toHaveLength(0);
     expect(setEnabledCalls).toHaveLength(0);
     expect(createTriggerCalls).toHaveLength(0);
+    expect(watchStore).toEqual(stateBefore);
   });
 
   it("run with --execute emits LOCAL_RUNNER_NOT_IMPLEMENTED with exit 1", async () => {

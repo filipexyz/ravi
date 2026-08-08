@@ -5,13 +5,14 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
@@ -241,6 +242,44 @@ describe("DaemonCommands log transport", () => {
         plan: { action: "flush-logs", process: "ravi" },
       },
     });
+  });
+
+  it("keeps process state unchanged when logs --clear is blocked", () => {
+    const fakeBin = makeTempDir("ravi-daemon-logs-clear-sink-");
+    const markerPath = join(fakeBin, "process-state.txt");
+    writeFileSync(markerPath, "unchanged", "utf8");
+    const executableSuffix = process.platform === "win32" ? ".cmd" : "";
+    const fakeScript =
+      process.platform === "win32"
+        ? '@echo invoked>>"%RAVI_F012_PROCESS_MARKER%"\r\n@exit /b 0\r\n'
+        : '#!/bin/sh\nprintf invoked >> "$RAVI_F012_PROCESS_MARKER"\nexit 0\n';
+    for (const executable of ["which", "pm2"]) {
+      const executablePath = join(fakeBin, `${executable}${executableSuffix}`);
+      writeFileSync(executablePath, fakeScript, "utf8");
+      if (process.platform !== "win32") chmodSync(executablePath, 0o755);
+    }
+
+    const previousPath = process.env.PATH;
+    const previousMarker = process.env.RAVI_F012_PROCESS_MARKER;
+    process.env.PATH = `${fakeBin}${delimiter}${previousPath ?? ""}`;
+    process.env.RAVI_F012_PROCESS_MARKER = markerPath;
+    let failure: unknown;
+    try {
+      runWithContext({ transport: "tool", suppressCliOutput: true }, () =>
+        new DaemonCommands().logs(false, "50", true, false, true, undefined),
+      );
+    } catch (error) {
+      failure = error;
+    } finally {
+      if (previousPath === undefined) delete process.env.PATH;
+      else process.env.PATH = previousPath;
+      if (previousMarker === undefined) delete process.env.RAVI_F012_PROCESS_MARKER;
+      else process.env.RAVI_F012_PROCESS_MARKER = previousMarker;
+    }
+
+    expect(failure).toBeInstanceOf(ContractError);
+    expect(failure).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3, op: "daemon logs" });
+    expect(readFileSync(markerPath, "utf8")).toBe("unchanged");
   });
 
   it("rejects an unbounded follow stream before spawning it through a tool transport", () => {
