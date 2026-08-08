@@ -1148,3 +1148,11 @@ genérica, conforme os testes centrais de CLI, tool e gateway, mas o smoke de
 audio ainda exigia o texto bruto do path inválido. O commit `ffa79c1e` alinhou
 somente essa expectativa. Os 9 testes reais de processo passaram; Quality Gate
 permaneceu ignorado e a spec continua `draft`.
+
+O CI Linux [`31283577682`](https://github.com/filipexyz/ravi/actions/runs/31283577682)
+do SHA `9fbbd7dd2e8940c5923745e97b38570e78ca9b2e` passou Build, Typecheck, Test e
+Quality Gate (specs + coverage). Essa é a primeira evidência verde da fase 5 no
+head exato de implementação após os fechamentos adversariais. A spec global foi
+promovida para `active` neste commit documental. Como a promoção muda o head, o
+veredito final permanece condicionado à CI verde deste próprio commit; o
+resultado pode ser registrado no corpo da PR sem criar outro ciclo documental.
