@@ -220,6 +220,8 @@ export function isRaviContractErrorBody(body: RaviGatewayErrorBody | null): body
   if (!validShape) return false;
   if (body.outcome === "denied" && body.error.code !== "PERMISSION_DENIED") return false;
   if (body.error.code === "PERMISSION_DENIED" && body.outcome !== "denied") return false;
+  if (body.error.code === "WRITE_REQUIRES_EXECUTE" && body.exitCode !== 3) return false;
+  if (body.error.code === "USAGE_ERROR" && body.exitCode !== 2) return false;
   return true;
 }
 

@@ -25,6 +25,7 @@ import { sanitizePublicValue } from "./redaction.js";
 export const CONTRACT_EXIT_ERROR = 1;
 export const CONTRACT_EXIT_USAGE = 2;
 export const CONTRACT_EXIT_POLICY = 3;
+type ContractExitCode = typeof CONTRACT_EXIT_ERROR | typeof CONTRACT_EXIT_USAGE | typeof CONTRACT_EXIT_POLICY;
 
 export type ContractFailureOutcome = "blocked" | "usage_error" | "denied" | "failed";
 
@@ -50,10 +51,11 @@ export class ContractError extends Error {
 
   constructor(op: string, code: string, message: string, exitCode: number, details: ContractErrorDetails = {}) {
     super(message);
+    const canonicalExitCode = validateContractTaxonomy(code, exitCode);
     this.name = "ContractError";
     this.op = op;
     this.code = code;
-    this.exitCode = exitCode;
+    this.exitCode = canonicalExitCode;
     this.details = sanitizePublicValue(details) as ContractErrorDetails;
   }
 
@@ -70,6 +72,22 @@ export class ContractError extends Error {
       },
     };
   }
+}
+
+function validateContractTaxonomy(code: string, exitCode: number): ContractExitCode {
+  if (exitCode !== CONTRACT_EXIT_ERROR && exitCode !== CONTRACT_EXIT_USAGE && exitCode !== CONTRACT_EXIT_POLICY) {
+    throw new Error("Invalid CLI contract exit taxonomy");
+  }
+  if (code === "PERMISSION_DENIED" && exitCode !== CONTRACT_EXIT_ERROR) {
+    throw new Error("Invalid CLI contract exit taxonomy");
+  }
+  if (code === "WRITE_REQUIRES_EXECUTE" && exitCode !== CONTRACT_EXIT_POLICY) {
+    throw new Error("Invalid CLI contract exit taxonomy");
+  }
+  if (code === "USAGE_ERROR" && exitCode !== CONTRACT_EXIT_USAGE) {
+    throw new Error("Invalid CLI contract exit taxonomy");
+  }
+  return exitCode;
 }
 
 export function contractFailureOutcome(error: Pick<ContractError, "code" | "exitCode">): ContractFailureOutcome {

@@ -119,6 +119,28 @@ describe("remote gateway exit taxonomy", () => {
   });
 
   it.each([
+    [1, "failed", "WRITE_REQUIRES_EXECUTE"],
+    [1, "failed", "USAGE_ERROR"],
+  ] as const)("rejects exit %i/%s with policy code %s", (exitCode, outcome, code) => {
+    const error = remoteGatewayErrorToContractError(
+      "commands list",
+      result({
+        status: 409,
+        body: JSON.stringify({
+          success: false,
+          op: "commands list",
+          exitCode,
+          outcome,
+          error: { code, message: "private mismatch", retryable: false },
+        }),
+      }),
+    );
+
+    expect(error).toMatchObject({ code: "SERVER_UNAVAILABLE", exitCode: 1 });
+    expect(JSON.stringify(error?.envelope())).not.toContain("private mismatch");
+  });
+
+  it.each([
     [1, "failed", "COMMAND_FAILED", "Remote command failed."],
     [1, "denied", "PERMISSION_DENIED", "Remote gateway denied the command."],
     [2, "usage_error", "USAGE_ERROR", "Remote gateway rejected the command input."],

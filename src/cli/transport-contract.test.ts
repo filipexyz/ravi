@@ -93,6 +93,25 @@ describe("global cloud failure contract", () => {
     expect(contractFailureOutcome(new ContractError("apps run", "PERMISSION_DENIED", "denied", 1))).toBe("denied");
   });
 
+  it("rejects invalid or semantically incoherent exit taxonomy at the contract source", () => {
+    const attempts = [
+      () => new ContractError("demo invalid", "CUSTOM_ERROR", "private", 9),
+      () => new ContractError("demo invalid", "PERMISSION_DENIED", "private", 3),
+      () => new ContractError("demo invalid", "WRITE_REQUIRES_EXECUTE", "private", 1),
+      () => new ContractError("demo invalid", "USAGE_ERROR", "private", 1),
+    ];
+
+    for (const attempt of attempts) {
+      let thrown = false;
+      try {
+        attempt();
+      } catch {
+        thrown = true;
+      }
+      expect(thrown).toBe(true);
+    }
+  });
+
   it("sanitizes contract details before every transport can observe them", () => {
     const failure = new ContractError("media send", "WRITE_REQUIRES_EXECUTE", "confirmation required", 3, {
       dryRun: true,

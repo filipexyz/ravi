@@ -157,6 +157,17 @@ describe("gateway ContractError compatibility", () => {
     expect(buildErrorFromGateway(403, body, "agents.debounce")).not.toBeInstanceOf(RaviContractError);
   });
 
+  it.each([
+    [1, "failed", "WRITE_REQUIRES_EXECUTE"],
+    [1, "failed", "USAGE_ERROR"],
+  ] as const)("rejects exit %i/%s with policy code %s", (exitCode, outcome, code) => {
+    const body = contractBody(exitCode, outcome);
+    body.error.code = code;
+
+    expect(isRaviContractErrorBody(body)).toBe(false);
+    expect(buildErrorFromGateway(400, body, "audio.generate")).not.toBeInstanceOf(RaviContractError);
+  });
+
   it("discards an incoherent contract-looking response instead of retaining remote content", () => {
     const sentinel = "PRIVATE_SENTINEL_INCOHERENT_4J7M";
     const body = {
