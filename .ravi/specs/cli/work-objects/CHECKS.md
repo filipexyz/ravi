@@ -3,8 +3,8 @@
 ## Checks
 
 - `work-objects action` without `--execute` MUST exit 3, MUST report
-  `dryRun: true` with the `{ref, actionId, value?}` plan, and MUST NOT call
-  any adapter; with `--execute` the adapter call MUST happen.
+  `dryRun: true` with the `{ref, actionId, valuePresent}` plan, MUST NOT expose
+  the value or call any adapter; with `--execute` the adapter call MUST happen.
 - `work-objects action` MUST validate `type`, `id` and `actionId` BEFORE the
   brake — an empty actionId fails with a usage-style error, never exit 3.
 - `work-objects resolve|update|action|suggest` on a reference no adapter

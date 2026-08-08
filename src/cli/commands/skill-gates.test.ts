@@ -157,9 +157,12 @@ describe("skill-gates agent-first contract", () => {
     expect(envelope.op).toBe("skill-gates rm");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
-    const plan = envelope.error.plan as { id: string; action: string };
-    expect(plan.id).toBe("linear");
-    expect(plan.action).toBe("delete-custom");
+    expect(envelope.error.plan).toEqual({
+      id: "linear",
+      action: "delete-custom",
+      configuredRulePresent: true,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("linear-skill");
     // The rule survives the dry-run untouched.
     expect(dbGetSkillGateRule("linear")).not.toBeNull();
   });
@@ -196,9 +199,12 @@ describe("skill-gates agent-first contract", () => {
     const envelope = contractError.envelope();
     expect(envelope.op).toBe("skill-gates reset");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    const plan = envelope.error.plan as { id: string; discards: { skill: string | null } };
-    expect(plan.id).toBe("image");
-    expect(plan.discards.skill).toBe("custom-image-skill");
+    expect(envelope.error.plan).toEqual({
+      id: "image",
+      configuredRulePresent: true,
+      restoresDefault: true,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("custom-image-skill");
     expect(dbGetSkillGateRule("image")).not.toBeNull();
   });
 

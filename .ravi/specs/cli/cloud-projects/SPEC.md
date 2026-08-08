@@ -40,9 +40,10 @@ wrong organization is exactly the mistake the brake prevents.
 2. Exit codes on contract paths MUST follow the taxonomy: `0` success · `1`
    error · `2` usage error · `3` blocked by policy (write brake).
 3. `cloud projects create` MUST default to dry-run and require `--execute`;
-   the dry-run MUST report `dryRun: true` and the plan (`slug`, effective
-   `name`, `description`, effective `defaultVisibility`, `defaultPageSite`),
-   and MUST NOT call Console.
+   the dry-run MUST report `dryRun: true` and the plan (`slug`,
+   `namePresent`, `descriptionPresent`, effective `defaultVisibility`,
+   `defaultPageSite`), MUST NOT expose name/description content, and MUST NOT
+   call Console.
 4. Validation runs BEFORE the brake: an invalid `--visibility` MUST fail with
    `PAYLOAD_INVALID`, exit `2`, with or without `--execute`, and MUST NOT
    produce a plan.

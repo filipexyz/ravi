@@ -449,7 +449,7 @@ export class SkillGatesCommands {
         {
           id,
           action: isDefault ? "disable-default" : "delete-custom",
-          ...(existing ? { current: serializeDbRule(existing) } : {}),
+          configuredRulePresent: existing !== null,
         },
         { asJson },
       );
@@ -496,8 +496,8 @@ export class SkillGatesCommands {
         "skill-gates reset",
         {
           id,
-          discards: serializeDbRule(existing),
-          restores: isDefaultSkillGateRuleId(id) ? "default rule behavior" : "no rule (custom id)",
+          configuredRulePresent: true,
+          restoresDefault: isDefaultSkillGateRuleId(id),
         },
         { asJson },
       );

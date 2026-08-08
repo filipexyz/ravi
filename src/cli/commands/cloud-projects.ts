@@ -96,8 +96,8 @@ export class CloudProjectsCommands {
           "cloud projects create",
           {
             slug,
-            name: name ?? slug,
-            description: description ?? null,
+            namePresent: Boolean(name?.trim()),
+            descriptionPresent: Boolean(description?.trim()),
             defaultVisibility: defaultVisibility ?? "private",
             defaultPageSite: defaultPageSite ?? false,
           },

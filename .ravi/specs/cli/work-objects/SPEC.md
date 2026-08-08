@@ -44,8 +44,9 @@ in `work-objects/SPEC.md`; this spec covers only the CLI surface.
    instead of `suggestions` — there is no cheap local enumeration across
    adapters.
 4. `work-objects action` MUST default to dry-run and require `--execute`; the
-   dry-run MUST report `dryRun: true` and the `plan` (ref + actionId + value)
-   and MUST NOT call any adapter. Argument validation (`type`, `id`,
+   dry-run MUST report `dryRun: true` and the `plan` (ref + actionId +
+   valuePresent), MUST NOT expose the value, and MUST NOT call any adapter.
+   Argument validation (`type`, `id`,
    `actionId` non-empty) happens BEFORE the brake.
 5. `work-objects update` is declared UNBRAKED and keeps immediate-write
    behavior: it is a field-validated structured patch with an optimistic

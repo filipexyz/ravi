@@ -407,7 +407,13 @@ describe("workflows agent-first contract", () => {
     expect(envelope.op).toBe("workflows runs start");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
-    expect((envelope.error.plan as Record<string, unknown>).specId).toBe("wf-spec-1");
+    expect(envelope.error.plan).toEqual({
+      specId: "wf-spec-1",
+      runId: "wf-run-1",
+      titlePresent: true,
+      nodeCount: 0,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("Workflow");
     expect(startWorkflowRunCalls).toHaveLength(0);
   });
 

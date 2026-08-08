@@ -50,7 +50,8 @@ irreversible — those two are the braked ops.
    "unknown node" (`Workflow node K not found in run R.` covers both).
 5. `workflows runs start` and `workflows runs archive-node` MUST default to
    dry-run and require `--execute`; the dry-run MUST report `dryRun: true` and
-   the `plan`, and MUST NOT create a run or archive a node. `--execute` is the
+   the `plan`, with workflow titles reduced to `titlePresent` and nodes to
+   `nodeCount`, and MUST NOT create a run or archive a node. `--execute` is the
    LAST declared option, and spec/run/node existence is validated BEFORE the
    brake.
 6. `workflows runs cancel` MUST stay unbraked: it is the emergency stop for a

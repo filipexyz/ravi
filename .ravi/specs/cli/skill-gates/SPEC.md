@@ -45,11 +45,12 @@ and `reset` are the braked ops.
    can be enabled).
 4. `skill-gates rm` MUST default to dry-run and require `--execute`; the
    dry-run MUST report `dryRun: true` and a `plan` carrying the id, the
-   pending action (`disable-default` or `delete-custom`) and the current
-   configured row when one exists, and MUST NOT write. Not-found validation
-   MUST fire BEFORE the brake (exit 1, never 3).
-5. `skill-gates reset` MUST brake (exit 3, plan shows the override being
-   discarded) whenever a configured override exists; without an override the
+   pending action (`disable-default` or `delete-custom`) and
+   `configuredRulePresent`, and MUST NOT expose the configured row or write.
+   Not-found validation MUST fire BEFORE the brake (exit 1, never 3).
+5. `skill-gates reset` MUST brake (exit 3, plan carries
+   `configuredRulePresent` and `restoresDefault`) whenever a configured
+   override exists; without an override the
    legacy no-op result stands (exit 0, `deleted:false`) because there is
    nothing to discard.
 6. `skill-gates list` MUST accept `--fields a,b,c` for compact output.

@@ -7,16 +7,17 @@
   configured).
 - `skill-gates rm <custom-id>` without `--execute` MUST exit 3, MUST report
   `dryRun: true` with a `plan` carrying `action: "delete-custom"` and the
-  current row, and MUST NOT delete the rule; with `--execute` the rule MUST be
-  deleted.
+  boolean `configuredRulePresent`, MUST NOT expose the current row, and MUST
+  NOT delete the rule; with `--execute` the rule MUST be deleted.
 - `skill-gates rm <default-id>` without `--execute` MUST exit 3 with
   `action: "disable-default"` and MUST NOT write an override row; with
   `--execute` the default MUST be disabled via an override.
 - `skill-gates rm <unknown-custom-id>` MUST exit 1 with `GATE_NOT_FOUND` even
   when `--execute` is passed — validation fires before the brake.
 - `skill-gates reset <id>` with a configured override and no `--execute` MUST
-  exit 3 with the override in `plan.discards` and MUST keep the override; with
-  `--execute` the override MUST be deleted (`deleted: true`).
+  exit 3 with `configuredRulePresent` and `restoresDefault` in the plan and
+  MUST keep the override without exposing it; with `--execute` the override
+  MUST be deleted (`deleted: true`).
 - `skill-gates reset <id>` without a configured override MUST keep the legacy
   no-op result: exit 0 and `deleted: false`, no brake.
 - `skill-gates enable <never-configured-id> --json` MUST exit 1 with

@@ -8,7 +8,7 @@
    Check the ref syntax (`--type task --id <task-id>` or a URL) and list real
    ids through the adapter-backed listing in `error.suggestedAction`
    (`ravi tasks list --json` today).
-4. Exit `3`: read `error.plan` (`ref`, `actionId`, `value`), confirm the
+4. Exit `3`: read `error.plan` (`ref`, `actionId`, `valuePresent`), confirm the
    action is intended, then re-run the same command adding `--execute`.
 5. Success envelope with `fieldErrors`/`formError`: the adapter REJECTED the
    patch — that is adapter validation, not a CLI failure; fix the values, do

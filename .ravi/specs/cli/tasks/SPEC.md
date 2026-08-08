@@ -46,7 +46,9 @@ and compact discovery. Tasks are the core work-dispatch surface for agents, so
    though the underlying `getTaskDetails` throws on unknown ids.
 4. `tasks dispatch`, `tasks deps rm` and `tasks automations rm` MUST default to
    dry-run and require `--execute`; the dry-run MUST report `dryRun: true` and
-   the `plan`, and MUST NOT dispatch, remove or delete anything.
+   the `plan`, and MUST NOT dispatch, remove or delete anything. Dispatch plans
+   represent checkpoint and report-event content only as presence booleans;
+   automation removal represents the name only as `namePresent`.
 5. `tasks list` MUST accept `--fields a,b,c` for compact output.
 6. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher —

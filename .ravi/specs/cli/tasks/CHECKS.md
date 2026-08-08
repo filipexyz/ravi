@@ -8,9 +8,12 @@
 - An invalid flag on any `tasks` op MUST exit 2 with `acceptedFlags` in the
   envelope.
 - `tasks dispatch` without `--execute` MUST exit 3, MUST report `dryRun: true`
-  with the dispatch `plan`, and MUST NOT queue or dispatch anything.
+  with a dispatch `plan` containing `checkpointPresent` and
+  `reportEventsPresent` instead of their raw values, and MUST NOT queue or
+  dispatch anything.
 - `tasks deps rm` and `tasks automations rm` without `--execute` MUST exit 3 and
-  MUST NOT remove anything; with `--execute` the write MUST happen.
+  MUST NOT remove anything; automation removal exposes only `namePresent`, not
+  the automation name. With `--execute` the write MUST happen.
 - A braked op invoked with `RAVI_*` envs present (agent context) MUST still exit
   3 with the envelope — the registry dispatcher MUST preserve
   `ContractError.exitCode` instead of the generic exit 1.

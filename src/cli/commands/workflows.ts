@@ -341,8 +341,8 @@ export class WorkflowRunCommands {
           {
             specId: spec.id,
             runId: runId?.trim() || null,
-            title: spec.title,
-            nodes: spec.nodes.length,
+            titlePresent: Boolean(spec.title?.trim()),
+            nodeCount: spec.nodes.length,
           },
           { asJson },
         );

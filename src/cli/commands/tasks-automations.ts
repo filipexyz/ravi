@@ -433,7 +433,7 @@ export class TaskAutomationCommands {
     const automation = requireAutomation(id);
     if (execute !== true) {
       // Write brake (Manual v2 7.8): dry-run by default, exit 3 before any write.
-      contractDryRun("tasks automations rm", { id, name: automation.name }, { asJson });
+      contractDryRun("tasks automations rm", { id, namePresent: Boolean(automation.name?.trim()) }, { asJson });
     }
     if (!deleteTaskAutomation(id)) {
       fail(`Task automation not found: ${id}`);

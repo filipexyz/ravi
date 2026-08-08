@@ -9,8 +9,9 @@
    (defaults ∪ configured). Confirm the universe with
    `ravi skill-gates list --json` (`configuredTotal` tells overrides apart).
 4. Exit `3`: read `error.plan`. For `rm`, check `action`
-   (`disable-default` vs `delete-custom`) and `current`; for `reset`, check
-   `discards`. If intended, re-run the same command adding `--execute`.
+   (`disable-default` vs `delete-custom`) and `configuredRulePresent`; for
+   `reset`, check `configuredRulePresent` and `restoresDefault`. If intended,
+   re-run the same command adding `--execute`.
 5. `reset` returned exit 0 with `deleted:false`: there was no configured
    override — the default was already in effect; nothing was discarded.
 6. If an `rm`/`reset` executed without `--execute`, the brake regressed: check

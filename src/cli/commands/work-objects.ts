@@ -233,7 +233,7 @@ export class WorkObjectCommands {
         {
           ref,
           actionId: normalizedActionId,
-          ...(normalizedValue ? { value: normalizedValue } : {}),
+          valuePresent: normalizedValue !== undefined,
         },
         { asJson },
       );

@@ -723,7 +723,7 @@ export class ObserverRuleCommands {
         {
           id: rule.id,
           observerAgentId: rule.observerAgentId,
-          scope: rule.scope,
+          scopeKind: rule.scope,
           enabled: rule.enabled,
         },
         { asJson },

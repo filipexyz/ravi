@@ -5,9 +5,10 @@ textbook brake candidate: it creates a billable, organization-scoped remote
 resource, optionally with a default Pages site, and the RBBT incident recorded
 in `cli/console-scope` shows agents actually reaching for it in the wrong
 organization ("pages list returned 0, so let me create the project"). The
-dry-run plan surfaces the exact slug, effective name, visibility, and
-default-site decision so the agent (or the human reading the transcript) can
-catch a wrong-org create before it exists remotely.
+dry-run plan surfaces the exact slug, whether optional descriptive content is
+present, visibility, and the default-site decision so the agent (or the human
+reading the transcript) can catch a wrong-org create without copying project
+names or descriptions into traces.
 
 Two ordering decisions matter:
 
@@ -15,9 +16,9 @@ Two ordering decisions matter:
   same way with or without `--execute`; otherwise the dry-run would bless a
   plan that the real run rejects, and the agent would learn a false "plan ok"
   signal.
-- The plan shows EFFECTIVE values (`name ?? slug`, `visibility ?? "private"`),
-  not the raw flags, because Console applies those defaults server-side and
-  the plan's job is to predict the write.
+- The plan shows the effective visibility and default-site decision. Optional
+  name and description are represented only by `namePresent` and
+  `descriptionPresent`; their actual values remain in the execute request.
 
 `list` stays a plain read with `--fields`. Not-found suggestions do not apply:
 projects are listed, not addressed by id, and the corpus is remote. The funnel

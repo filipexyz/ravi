@@ -141,16 +141,18 @@ describe("work-objects action write brake", () => {
   it("action without --execute is a dry-run: exit 3 and NO adapter call", async () => {
     const commands = new WorkObjectCommands();
     const error = await expectContractError(
-      () => commands.action("task", "task-1", "task.done", undefined, true, undefined),
+      () => commands.action("task", "task-1", "task.comment", "PRIVATE_ACTION_VALUE_8K2R", true, undefined),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       ref: { type: "task", id: "task-1" },
-      actionId: "task.done",
+      actionId: "task.comment",
+      valuePresent: true,
     });
+    expect(JSON.stringify(error.details.plan)).not.toContain("PRIVATE_ACTION_VALUE_8K2R");
     expect(actionCalls).toHaveLength(0);
   });
 

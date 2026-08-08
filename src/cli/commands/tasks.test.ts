@@ -2757,7 +2757,15 @@ describe("tasks agent-first contract", () => {
     console.log = () => {};
     let thrown: unknown;
     try {
-      await commands.dispatch("task-cli-1", "dev", "task-cli-work", undefined, undefined, undefined, true);
+      await commands.dispatch(
+        "task-cli-1",
+        "dev",
+        "task-cli-work",
+        "5m",
+        "report-session",
+        "progress,done",
+        true,
+      );
     } catch (error) {
       thrown = error;
     } finally {
@@ -2770,7 +2778,19 @@ describe("tasks agent-first contract", () => {
     expect(envelope.op).toBe("tasks dispatch");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
-    expect((envelope.error.plan as Record<string, unknown>).agentId).toBe("dev");
+    expect(envelope.error.plan).toEqual({
+      taskId: "task-cli-1",
+      agentId: "dev",
+      sessionName: "task-cli-work",
+      checkpointPresent: true,
+      reportTo: "report-session",
+      reportEventsPresent: true,
+      model: null,
+      effort: null,
+      thinking: null,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("5m");
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("progress,done");
     expect(dispatchCalls).toHaveLength(0);
   });
 

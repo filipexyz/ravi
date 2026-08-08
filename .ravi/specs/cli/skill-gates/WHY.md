@@ -19,7 +19,8 @@ Two semantic decisions shaped this wave:
   (`disable-default` vs `delete-custom`), because the same command performs
   two different writes: default gates are never deleted, only disabled via an
   override row, while custom gates are physically removed. The plan makes the
-  difference auditable before `--execute`.
+  difference auditable before `--execute` while representing configured rule
+  contents only as `configuredRulePresent`.
 
 `enable` keeps its distinct legacy message ("Skill gate override not found")
 under the same `GATE_NOT_FOUND` code, with suggestions restricted to

@@ -3,8 +3,8 @@
 ## Checks
 
 - `workflows runs start <spec>` without `--execute` MUST exit 3, MUST report
-  `dryRun: true` with the start `plan` (specId, runId, title, nodes), and MUST
-  NOT instantiate any run.
+  `dryRun: true` with the start `plan` (specId, runId, titlePresent,
+  nodeCount), MUST NOT expose the title, and MUST NOT instantiate any run.
 - `workflows runs archive-node <run> <node>` without `--execute` MUST exit 3
   and MUST NOT archive; with `--execute` the archive MUST happen.
 - `workflows runs start <unknown-spec> --json` MUST exit 1 with

@@ -51,7 +51,7 @@ and compact discovery. Observer rules are durable coordination config — a stra
    sessions from other scopes.
 5. `observers rules rm` MUST default to dry-run and require `--execute`; the
    dry-run MUST report `dryRun: true` and the `plan` (rule id, observer agent,
-   scope, enabled) and MUST NOT delete anything. `--execute` is the LAST
+   `scopeKind`, enabled) and MUST NOT delete anything. `--execute` is the LAST
    declared option of the op, and rule existence is validated BEFORE the brake.
 6. `observers list`, `observers rules list` and `observers profiles list` MUST
    accept `--fields a,b,c` for compact output.

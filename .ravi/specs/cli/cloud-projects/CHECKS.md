@@ -3,10 +3,12 @@
 ## Checks
 
 - `cloud projects create <slug>` without `--execute` MUST exit 3 with
-  `dryRun: true` and a plan carrying the effective `slug`, `name`,
-  `defaultVisibility`, and `defaultPageSite`, and MUST NOT call Console.
+  `dryRun: true` and a plan carrying `slug`, `namePresent`,
+  `descriptionPresent`, effective `defaultVisibility`, and
+  `defaultPageSite`, and MUST NOT call Console or expose descriptive content.
 - `cloud projects create <slug> --execute` MUST create the project through the
-  Console CLI API with the same effective values shown in the plan.
+  Console CLI API with the supplied values and the effective policy decisions
+  shown in the plan.
 - An invalid `--visibility` MUST fail with `PAYLOAD_INVALID` BEFORE the brake
   (no plan is produced), with or without `--execute`.
 - `cloud projects list --fields a,b,c --json` MUST return project items

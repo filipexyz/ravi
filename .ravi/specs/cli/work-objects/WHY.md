@@ -9,7 +9,7 @@ split:
 
 - `action` is braked. The op executes an OPAQUE identifier — the agent asks
   for "task.done" and the adapter decides what that means. A dry-run showing
-  `{ref, actionId, value}` costs one retry and prevents the class of mistake
+  `{ref, actionId, valuePresent}` costs one retry and prevents the class of mistake
   where an agent fires a lifecycle action at the wrong object. Yes, through
   the tasks adapter this is stricter than `ravi tasks done` (unbraked in
   `cli/tasks`) — deliberately: `tasks done` names its semantics in the

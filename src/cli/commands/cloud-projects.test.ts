@@ -142,18 +142,30 @@ describe("cloud projects contract", () => {
     const command = new CloudProjectsCommands({ client, readCredentials: makeReadCredentials() });
 
     const error = await expectContractError(
-      () => command.create("nx-hv", "Namastex - Hapvida", undefined, "private", undefined, undefined, true, undefined),
+      () =>
+        command.create(
+          "nx-hv",
+          "PRIVATE_PROJECT_NAME_8K2R",
+          "PRIVATE_PROJECT_DESCRIPTION_7M4Q",
+          "private",
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       slug: "nx-hv",
-      name: "Namastex - Hapvida",
+      namePresent: true,
+      descriptionPresent: true,
       defaultVisibility: "private",
       defaultPageSite: false,
     });
+    expect(JSON.stringify(error.details.plan)).not.toContain("PRIVATE_PROJECT");
     expect(calls).toHaveLength(0);
   });
 
