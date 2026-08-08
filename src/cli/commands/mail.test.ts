@@ -348,7 +348,14 @@ describe("mail agent-first contract", () => {
     const mail = new MailCommands();
 
     const contractError = await expectContractError(() =>
-      mail.send("bob@example.com", "Subject", "Body text", "luis@ravi.bot", "idem-1", true),
+      mail.send(
+        "PRIVATE_MESSAGE_8K2R@example.com",
+        "SENTINEL_SECRET_7M4Q",
+        "PRIVATE_MESSAGE_8K2R",
+        "luis@ravi.bot",
+        "idem-1",
+        true,
+      ),
     );
 
     expect(contractError.exitCode).toBe(3);
@@ -358,10 +365,17 @@ describe("mail agent-first contract", () => {
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
     const plan = envelope.error.plan as Record<string, unknown>;
-    expect(plan.from).toBe("luis@ravi.bot");
-    expect(plan.to).toEqual(["bob@example.com"]);
-    expect(plan.subject).toBe("Subject");
-    expect(plan.bodyPreview).toBe("Body text");
+    expect(plan).toEqual({
+      fromPresent: true,
+      toCount: 1,
+      ccCount: 0,
+      bccCount: 0,
+      subjectChars: 20,
+      bodyChars: 20,
+      inReplyToPresent: false,
+    });
+    expect(JSON.stringify(plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(JSON.stringify(plan)).not.toContain("SENTINEL_SECRET_7M4Q");
     expect(listMailMessages()).toHaveLength(0);
     expect(listMailOutbox({ limit: 10 })).toHaveLength(0);
   });
@@ -395,8 +409,17 @@ describe("mail agent-first contract", () => {
     expect(envelope.op).toBe("mail reply");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     const plan = envelope.error.plan as Record<string, unknown>;
-    expect(plan.messageId).toBe(imported.message.id);
-    expect(plan.to).toBe("(original sender)");
+    expect(plan).toEqual({
+      fromPresent: true,
+      toCount: 1,
+      ccCount: 0,
+      bccCount: 0,
+      subjectChars: 8,
+      bodyChars: 4,
+      inReplyToPresent: true,
+    });
+    expect(JSON.stringify(plan)).not.toContain(imported.message.id);
+    expect(JSON.stringify(plan)).not.toContain("alice@example.com");
     expect(listMailOutbox({ limit: 10 })).toHaveLength(0);
     expect(listMailMessages()).toHaveLength(1);
   });
@@ -410,13 +433,33 @@ describe("mail agent-first contract", () => {
     const command = new MailRaviMailCommands({ client, readCredentials: makeReadCredentials() });
 
     const contractError = await expectContractError(() =>
-      command.send("bob@example.com", "Subject", "Body", "agent@example.com", undefined, undefined, true),
+      command.send(
+        "PRIVATE_MESSAGE_8K2R@example.com",
+        "SENTINEL_SECRET_7M4Q",
+        "PRIVATE_MESSAGE_8K2R",
+        "agent@example.com",
+        undefined,
+        undefined,
+        true,
+      ),
     );
 
     expect(contractError.exitCode).toBe(3);
     const envelope = contractError.envelope();
     expect(envelope.op).toBe("mail providers ravi-mail send");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    const plan = envelope.error.plan as Record<string, unknown>;
+    expect(plan).toEqual({
+      fromPresent: true,
+      toCount: 1,
+      ccCount: 0,
+      bccCount: 0,
+      subjectChars: 20,
+      bodyChars: 20,
+      inReplyToPresent: false,
+    });
+    expect(JSON.stringify(plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(JSON.stringify(plan)).not.toContain("SENTINEL_SECRET_7M4Q");
     expect(bodies).toHaveLength(0);
   });
 
@@ -425,13 +468,13 @@ describe("mail agent-first contract", () => {
 
     const contractError = await expectContractError(() =>
       gmail.send(
-        "bob@example.com",
+        "PRIVATE_MESSAGE_8K2R@example.com",
+        "cc-one@example.com,cc-two@example.com",
+        "bcc@example.com",
+        "SENTINEL_SECRET_7M4Q",
+        "PRIVATE_MESSAGE_8K2R",
         undefined,
-        undefined,
-        "Oi",
-        "Corpo do email",
-        undefined,
-        undefined,
+        "gmail-message-id",
         undefined,
         true,
       ),
@@ -442,9 +485,17 @@ describe("mail agent-first contract", () => {
     expect(envelope.op).toBe("gmail send");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     const plan = envelope.error.plan as Record<string, unknown>;
-    expect(plan.to).toEqual(["bob@example.com"]);
-    expect(plan.subject).toBe("Oi");
-    expect(plan.bodyPreview).toBe("Corpo do email");
+    expect(plan).toEqual({
+      fromPresent: false,
+      toCount: 1,
+      ccCount: 2,
+      bccCount: 1,
+      subjectChars: 20,
+      bodyChars: 20,
+      inReplyToPresent: true,
+    });
+    expect(JSON.stringify(plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(JSON.stringify(plan)).not.toContain("SENTINEL_SECRET_7M4Q");
     expect(gmailConnectorCalls).toHaveLength(0);
     expect(gmailConnectorLookups).toHaveLength(0);
   });

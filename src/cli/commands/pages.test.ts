@@ -654,7 +654,7 @@ describe("pages agent-first contract", () => {
     const error = await expectContractError(
       () =>
         command.publish(
-          ["proj", "demo", "./site"],
+          ["proj", "demo", "C:/sentinel/private"],
           undefined,
           "/guide",
           "public",
@@ -678,15 +678,63 @@ describe("pages agent-first contract", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       project: "proj",
       site: "demo",
-      source: "./site",
+      sourceKind: "path",
+      sourceName: "private",
       route: "/guide",
       visibility: "public",
-      entrypoint: "index.html",
-      activate: true,
+      entrypointPresent: true,
     });
+    expect(JSON.stringify(error.details.plan)).not.toContain("C:/sentinel/private");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("publish identifies a local artifact without exposing unrelated publish content", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return [];
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () =>
+        command.publish(
+          ["proj", "demo", "art_demo_123"],
+          undefined,
+          undefined,
+          "private",
+          "SENTINEL_SECRET_7M4Q",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      site: "demo",
+      sourceKind: "artifact",
+      sourceName: "art_demo_123",
+      route: "/",
+      visibility: "private",
+      entrypointPresent: false,
+    });
+    expect(JSON.stringify(error.details.plan)).not.toContain("SENTINEL_SECRET_7M4Q");
     expect(calls).toHaveLength(0);
   });
 
@@ -707,12 +755,18 @@ describe("pages agent-first contract", () => {
     });
 
     const error = await expectContractError(
-      () => command.set(["proj", "demo"], undefined, "/report", false, undefined, true),
+      () => command.set(["proj", "demo"], undefined, "/sentinel/private", false, undefined, true),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );
 
-    expect(error.details.plan).toMatchObject({ project: "proj", site: "demo", route: "/report", action: "set" });
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      site: "demo",
+      routePresent: true,
+      action: "set",
+    });
+    expect(JSON.stringify(error.details.plan)).not.toContain("/sentinel/private");
     expect(Object.keys(error.details.plan as Record<string, unknown>)).not.toContain("password");
     expect(prompted).toBe(false);
     expect(calls).toHaveLength(0);
@@ -727,17 +781,18 @@ describe("pages agent-first contract", () => {
     const command = new PagesPasswordCommands({ client, readCredentials: makeReadCredentials() });
 
     const error = await expectContractError(
-      () => command.remove(["proj", "demo"], undefined, "/report", "private", undefined, true),
+      () => command.remove(["proj", "demo"], undefined, "/sentinel/private", "private", undefined, true),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );
 
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       project: "proj",
       site: "demo",
-      route: "/report",
+      routePresent: true,
       replacementVisibility: "private",
     });
+    expect(JSON.stringify(error.details.plan)).not.toContain("/sentinel/private");
     expect(calls).toHaveLength(0);
   });
 

@@ -229,14 +229,11 @@ export class PagesCommands {
           {
             project: parsed.project ?? "(Console scope default)",
             site: parsed.site ?? "(project default Pages host)",
-            source: parsed.source,
+            sourceKind: /^art_[a-z0-9]+_[a-z0-9]+$/.test(parsed.source) ? "artifact" : "path",
+            sourceName: parsed.source.replace(/\\/g, "/").split("/").filter(Boolean).at(-1) ?? parsed.source,
             route: route ?? "/",
             visibility: normalizedVisibility ?? null,
-            title: title ?? null,
-            entrypoint: entrypoint ?? null,
-            artifactVersion: parsedArtifactVersion ?? null,
-            activate: !noActivate,
-            replaceRelease: Boolean(replaceRelease),
+            entrypointPresent: Boolean(entrypoint),
           },
           { asJson },
         );
@@ -455,7 +452,7 @@ export class PagesPasswordCommands {
           {
             project: parsed.project ?? "(Console scope default)",
             site: parsed.site,
-            route: route ?? "/",
+            routePresent: route !== undefined,
             action: "set",
           },
           { asJson },
@@ -555,7 +552,7 @@ export class PagesPasswordCommands {
           {
             project: parsed.project ?? "(Console scope default)",
             site: parsed.site,
-            route: route ?? "/",
+            routePresent: route !== undefined,
             replacementVisibility,
           },
           { asJson },

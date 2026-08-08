@@ -48,14 +48,18 @@ contract errors rethrow first, recognizable Console not-found failures map to
    is no cheap local candidate source — listing suggestedAction, never
    similarity suggestions.
 4. `pages publish` MUST default to dry-run and require `--execute`; the
-   dry-run MUST report `dryRun: true` and the `plan`, and MUST NOT call
-   Console at all — not even the project scope resolution.
+   dry-run MUST report `dryRun: true` and an exact plan with `project`, `site`,
+   `sourceKind`, path-basename-only `sourceName`, `route`, `visibility` and
+   `entrypointPresent`. Raw source paths and title/description content MUST be
+   absent. The dry-run MUST NOT call Console at all — not even the project
+   scope resolution.
 5. `pages password set` and `pages password remove` MUST default to dry-run
    and require `--execute`. The `set` dry-run MUST fire BEFORE the hidden
    password prompt (a dry-run never reads secret material) and its plan MUST
-   never carry a password. `remove` MUST validate the replacement visibility
-   BEFORE the brake (missing `--visibility` is `PAYLOAD_INVALID` even on the
-   dry-run path).
+   never carry a password or route path; it carries only `routePresent` route
+   metadata. `remove` uses the same route metadata and MUST validate the
+   replacement visibility BEFORE the brake (missing `--visibility` is
+   `PAYLOAD_INVALID` even on the dry-run path).
 6. `pages update` and `pages visibility` carry a CONDITIONAL brake: switching
    a site default to `public` requires `--execute` (exit 3 otherwise);
    reducing visibility (`private`/`protected_link`) writes immediately —

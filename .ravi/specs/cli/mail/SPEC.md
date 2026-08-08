@@ -44,11 +44,13 @@ CLI — a sent e-mail cannot be unsent — so every send path (`mail send`,
    provider) · `2` usage error · `3` blocked by policy (write brake).
 3. `mail send`, `mail reply`, `mail providers ravi-mail send` and `gmail send`
    MUST default to dry-run and require `--execute` (always the LAST declared
-   option); the dry-run MUST report `dryRun: true` and a `plan` carrying
-   from/to/subject and a `bodyPreview` (never the full body), and MUST NOT
-   enqueue, write, or call any provider/connector. For `gmail send` the brake
-   fires BEFORE connector resolution (`listConnectors`) — not just before the
-   send capability.
+   option); the dry-run MUST report `dryRun: true` and an exact metadata-only
+   `plan` carrying `fromPresent`, `toCount`, `ccCount`, `bccCount`,
+   `subjectChars`, `bodyChars` and `inReplyToPresent`. It MUST NOT carry raw
+   addresses, subject, body, connector id or message id, and MUST NOT enqueue,
+   write, or call any provider/connector. For `gmail send` the brake fires
+   BEFORE connector resolution (`listConnectors`) — not just before the send
+   capability.
 4. Not-found failures MUST use per-resource codes: `ACCOUNT_NOT_FOUND`,
    `MAILBOX_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `OUTBOX_NOT_FOUND`,
    `THREAD_NOT_FOUND` — exit 1. Accounts and mailboxes come from the cheap

@@ -3,7 +3,6 @@
  */
 
 import "reflect-metadata";
-import { join } from "node:path";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
@@ -27,9 +26,8 @@ import {
   installSkills,
   listCatalogSkills,
   listInstalledSkills,
+  parseSkillSource,
   selectSkills,
-  slugifySkillName,
-  userSkillsPluginDir,
   withResolvedSkillSource,
   type InstalledRaviSkill,
   type RaviSkill,
@@ -677,27 +675,30 @@ export class SkillsCommands {
     }
 
     const surveySelected = (available: RaviSkill[]) => surveyInstallSelection(available, requestedSkill, all === true);
-    const skillsRoot = join(userSkillsPluginDir(undefined, plugin), "skills");
-
     if (execute !== true) {
       // Write brake (Manual v2 7.8): install copies third-party code into the
       // operator environment — the riskiest write of this domain. Resolve and
       // select first (read-only; validation, e.g. SKILL_NOT_FOUND, fires BEFORE
-      // the brake), then exit 3 with the exact source → destination plan.
+      // the brake), then exit 3 with metadata-only source/selection counts.
       const survey = source
         ? withResolvedSkillSource(source, (resolvedSource) => surveySelected(discoverSkills(resolvedSource)))
         : surveySelected(listCatalogSkills());
       const planned = "ok" in survey.selection ? survey.selection.ok : failInstallSelection(survey, { source, asJson });
+      const planSource = source ? parseSkillSource(source) : null;
+      const sourceName = planSource
+        ? (planSource.subpath ?? planSource.rootPath ?? planSource.gitUrl ?? planSource.input)
+            .replace(/\\/g, "/")
+            .replace(/\/+$/, "")
+            .split("/")
+            .at(-1)
+            ?.replace(/\.git$/i, "") || planSource.type
+        : "catalog";
       contractDryRun(
         "skills install",
         {
-          source: source ?? "catalog",
-          pluginBucket: plugin ?? "ravi-user-skills",
-          skills: planned.map((skill) => ({
-            name: skill.name,
-            from: skill.source,
-            to: join(skillsRoot, slugifySkillName(skill.name)),
-          })),
+          sourceKind: planSource?.type ?? "catalog",
+          sourceName,
+          skillCount: planned.length,
           overwrite: overwrite === true,
           codexSync: skipCodexSync !== true,
         },

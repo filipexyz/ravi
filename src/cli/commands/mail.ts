@@ -510,10 +510,13 @@ export class MailCommands {
         contractDryRun(
           "mail send",
           {
-            from: mailbox.address,
-            to: recipients,
-            subject: subject as string,
-            bodyPreview: mailBodyPreview(body),
+            fromPresent: Boolean(mailbox.address),
+            toCount: recipients.length,
+            ccCount: 0,
+            bccCount: 0,
+            subjectChars: (subject as string).length,
+            bodyChars: (body as string).length,
+            inReplyToPresent: false,
           },
           { asJson },
         );
@@ -568,13 +571,13 @@ export class MailCommands {
         contractDryRun(
           "mail reply",
           {
-            messageId,
-            from: sendMailbox.address,
-            to: to ? parseRecipients(to) : "(original sender)",
-            cc: parseOptionalRecipients(cc) ?? null,
-            bcc: parseOptionalRecipients(bcc) ?? null,
-            subject: subject ?? original.subject ?? null,
-            bodyPreview: mailBodyPreview(body),
+            fromPresent: Boolean(sendMailbox.address),
+            toCount: to ? parseRecipients(to).length : 1,
+            ccCount: parseOptionalRecipients(cc)?.length ?? 0,
+            bccCount: parseOptionalRecipients(bcc)?.length ?? 0,
+            subjectChars: (subject ?? original.subject ?? "").length,
+            bodyChars: (body as string).length,
+            inReplyToPresent: true,
           },
           { asJson },
         );
@@ -885,10 +888,13 @@ export class MailRaviMailCommands {
         contractDryRun(
           "mail providers ravi-mail send",
           {
-            from: from ?? null,
-            to: recipients,
-            subject: subject as string,
-            bodyPreview: mailBodyPreview(body),
+            fromPresent: Boolean(from),
+            toCount: recipients.length,
+            ccCount: 0,
+            bccCount: 0,
+            subjectChars: (subject as string).length,
+            bodyChars: (body as string).length,
+            inReplyToPresent: false,
           },
           { asJson },
         );
@@ -1504,17 +1510,6 @@ async function syncRaviMailAccount(account: MailAccount, deps: MailCommandDeps):
 // {success:false, op, error:{code, ...}} envelope. Exit taxonomy: 1 not-found/
 // provider · 2 usage · 3 policy (write brake / dry-run).
 // ============================================================
-
-const MAIL_BODY_PREVIEW_LENGTH = 120;
-
-/** Body preview shown in dry-run plans: the agent inspects what would go out without printing the full body. */
-function mailBodyPreview(body: string | undefined): string | null {
-  const normalized = body?.replace(/\s+/g, " ").trim();
-  if (!normalized) return null;
-  return normalized.length > MAIL_BODY_PREVIEW_LENGTH
-    ? `${normalized.slice(0, MAIL_BODY_PREVIEW_LENGTH)}…`
-    : normalized;
-}
 
 function failMailAccountNotFound(op: string, accountId: string, asJson?: boolean): never {
   // Accounts live in the cheap local DB, so real ids/names feed suggestions.

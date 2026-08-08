@@ -6,8 +6,9 @@ URLs, or local paths) into the operator's plugin bucket, from where it is
 materialized into runtimes. A wrong `install` is not a local mistake — it
 plants executable instructions into every agent that later receives the skill.
 That is why `install` is the single braked op of the domain: dry-run by
-default, `--execute` to write, and the plan spells out source → destination per
-skill so the caller audits exactly what lands where.
+default, `--execute` to write, and the plan exposes source kind/name, skill
+count and write-mode booleans without echoing local paths, skill names or
+content.
 
 The rest of the surface deliberately stays unbraked:
 

@@ -10,9 +10,9 @@
    or list the right universe: `ravi skills list [--installed|--source <src>]`.
 4. Exit `1` + `AGENT_NOT_FOUND`: read `error.suggestions`; confirm with
    `ravi agents list --json`.
-5. Exit `3`: read `error.plan` — source, plugin bucket, and per-skill
-   `from`/`to`. Confirm the destination is intended, then re-run the same
-   command adding `--execute`.
+5. Exit `3`: read `error.plan` — source kind/name, skill count, overwrite and
+   Codex-sync intent. Confirm that install shape, then re-run the same command
+   adding `--execute`; paths, names and content are deliberately not echoed.
 6. Batch ops (`grant-batch`/`revoke-batch`): there is NO `--execute` here; the
    preview is the pre-existing `--dry-run` (exit 0 with counts). If a batch
    surprised you, re-run with `--dry-run` and compare `pairsAffected`.

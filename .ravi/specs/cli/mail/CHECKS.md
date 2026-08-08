@@ -2,11 +2,12 @@
 
 ## Checks
 
-- `mail send` without `--execute` MUST exit 3, MUST report `dryRun: true` with
-  a plan carrying from/to/subject and `bodyPreview` (never the full body), and
-  MUST NOT create any local message or outbox row.
-- `mail reply` without `--execute` MUST exit 3 and MUST NOT enqueue anything;
-  the plan MUST name the original `messageId`.
+- Every braked mail/Gmail send without `--execute` MUST exit 3 and report an
+  exact metadata-only plan with `fromPresent`, `toCount`, `ccCount`,
+  `bccCount`, `subjectChars`, `bodyChars` and `inReplyToPresent`; raw
+  addresses, subject, body, connector id and message id MUST be absent.
+- `mail send` without `--execute` MUST NOT create any local message or outbox
+  row; `mail reply` MUST NOT enqueue anything.
 - `mail providers ravi-mail send` without `--execute` MUST exit 3 and MUST NOT
   issue any Console API request.
 - `gmail send` without `--execute` MUST exit 3 BEFORE any connector call —

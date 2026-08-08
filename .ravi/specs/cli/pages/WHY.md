@@ -22,7 +22,7 @@ Decisions specific to this domain:
   dry-run works offline and unauthenticated — the plan shows the parsed
   intent (`(Console scope default)` placeholders) instead of resolved refs.
 - **Brake before the password prompt.** A `password set` dry-run must never
-  read a secret; the plan carries site/route/action only.
+  read a secret; the plan carries site/action and `routePresent` metadata only.
 - **Message-based not-found mapping.** Console reports unknown sites/routes as
   generic 404/PAYLOAD_INVALID errors. Only recognizable "site/route not found"
   messages map to `SITE_NOT_FOUND`/`ROUTE_NOT_FOUND` (with listing

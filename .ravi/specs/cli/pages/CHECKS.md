@@ -3,14 +3,18 @@
 ## Checks
 
 - `pages publish` without `--execute` MUST exit 3, MUST report `dryRun: true`
-  with the publish `plan`, and MUST NOT call Console at all — not even the
-  project scope resolution; with `--execute` the upload/release MUST happen.
+  with exactly `project`, `site`, `sourceKind`, path-basename-only
+  `sourceName`, `route`, `visibility` and `entrypointPresent`; it MUST NOT
+  expose the raw source path or title/description content, and MUST NOT call
+  Console at all — not even the project scope resolution. With `--execute`
+  the upload/release MUST happen.
 - `pages password set` without `--execute` MUST exit 3 BEFORE the hidden
   password prompt and before any Console call; its plan MUST NOT contain a
-  password key.
+  password key or raw route path and MUST use `routePresent` metadata.
 - `pages password remove` MUST reject a missing replacement `--visibility`
   with `PAYLOAD_INVALID` even without `--execute`; with a valid visibility and
-  no `--execute` it MUST exit 3 without calling Console.
+  no `--execute` it MUST exit 3 without calling Console or exposing the raw
+  route path.
 - `pages update`/`pages visibility` switching a site to `public` without
   `--execute` MUST exit 3; switching to `private` or `protected_link` MUST
   write immediately without any brake.

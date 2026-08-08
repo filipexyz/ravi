@@ -11,8 +11,10 @@
 4. Exit `1` + `MESSAGE_NOT_FOUND`/`OUTBOX_NOT_FOUND`/`THREAD_NOT_FOUND`: these
    ids are opaque; run the listing command from `error.suggestedAction` and
    copy the exact id.
-5. Exit `3`: read `error.plan` (from/to/subject/bodyPreview), confirm the
-   e-mail is intended, then re-run the same command adding `--execute`.
+5. Exit `3`: read `error.plan` (sender/reply presence plus recipient counts and
+   subject/body lengths), confirm the e-mail shape is intended, then re-run the
+   same command adding `--execute`. Sensitive mail content is deliberately not
+   echoed by the plan.
 6. If a send/reply reached the outbox (or a provider) without `--execute`, the
    brake regressed: check the op still calls `contractDryRun` before
    `enqueueMailSend`/`enqueueMailReply`/`sendRemoteMail`/`execCapability`, and

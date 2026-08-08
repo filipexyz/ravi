@@ -21,12 +21,13 @@ Decisions that shaped this wave:
   `runGmailCommand` → CloudAuthError → `formatCloudAuthError`), the same
   swallow-everything shape the agents domain hit: both funnels now rethrow
   `ContractError` first, otherwise the brake exits as a generic provider error.
-- `gmail send` brakes BEFORE `resolveDefaultGoogleConnector`: the plan can name
-  the connector as "(default google connector)", but a dry-run must not run the
-  connector lookup — that is a provider/DB call.
-- Dry-run plans show `bodyPreview` (first 120 chars, whitespace-collapsed)
-  instead of the full body, matching the domain's existing redaction posture
-  (outbox payloads print `[redacted]`).
+- `gmail send` brakes BEFORE `resolveDefaultGoogleConnector`: the metadata-only
+  plan does not need a connector id, and a dry-run must not run the connector
+  lookup — that is a provider/DB call.
+- Dry-run plans expose only presence/count/length metadata for sender,
+  recipients, subject, body and reply linkage. This matches the domain's
+  existing redaction posture (outbox payloads print `[redacted]`) without
+  leaking even a body preview.
 - The parser-level usage contract uses the shared exit-2 `USAGE_ERROR`
   envelope for both `mail` and `gmail`.
 

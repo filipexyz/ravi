@@ -165,13 +165,13 @@ export class GmailCommands {
         contractDryRun(
           "gmail send",
           {
-            connector: connector ?? "(default google connector)",
-            to: recipients,
-            cc: parseAddressList(cc),
-            bcc: parseAddressList(bcc),
-            subject,
-            bodyPreview: gmailBodyPreview(body ?? html),
-            inReplyTo: inReplyTo ?? null,
+            fromPresent: false,
+            toCount: recipients.length,
+            ccCount: parseAddressList(cc).length,
+            bccCount: parseAddressList(bcc).length,
+            subjectChars: subject.length,
+            bodyChars: (body ?? html ?? "").length,
+            inReplyToPresent: Boolean(inReplyTo),
           },
           { asJson },
         );
@@ -318,17 +318,6 @@ function parseAddressList(value: string | undefined): string[] {
     .split(/[,\s]+/)
     .map((entry) => entry.trim())
     .filter(Boolean);
-}
-
-const GMAIL_BODY_PREVIEW_LENGTH = 120;
-
-/** Body preview shown in the dry-run plan without printing the full body. */
-function gmailBodyPreview(body: string | undefined): string | null {
-  const normalized = body?.replace(/\s+/g, " ").trim();
-  if (!normalized) return null;
-  return normalized.length > GMAIL_BODY_PREVIEW_LENGTH
-    ? `${normalized.slice(0, GMAIL_BODY_PREVIEW_LENGTH)}…`
-    : normalized;
 }
 
 async function runGmailCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T | undefined> {

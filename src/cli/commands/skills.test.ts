@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -266,7 +266,7 @@ describe("SkillsCommands — grant/revoke/who/inspect", () => {
 });
 
 describe("skills agent-first contract", () => {
-  it("blocks skills install without --execute (dry-run, exit 3, source → destination plan)", () => {
+  it("blocks skills install without --execute with only minimal source metadata", () => {
     const commands = new SkillsCommands();
     const contractError = expectContractError(() =>
       runWithContext({}, () =>
@@ -289,14 +289,48 @@ describe("skills agent-first contract", () => {
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
     const plan = envelope.error.plan as {
-      source: string;
-      skills: Array<{ name: string; from: string; to: string }>;
+      sourceKind: string;
+      sourceName: string;
+      skillCount: number;
       overwrite: boolean;
+      codexSync: boolean;
     };
-    expect(plan.source).toBe("catalog");
-    expect(plan.overwrite).toBe(false);
-    expect(plan.skills.map((skill) => skill.name)).toEqual([KNOWN_CATALOG_SKILL]);
-    expect(plan.skills[0]?.to).toContain(KNOWN_CATALOG_SKILL);
+    expect(plan).toEqual({
+      sourceKind: "catalog",
+      sourceName: "catalog",
+      skillCount: 1,
+      overwrite: false,
+      codexSync: false,
+    });
+    expect(JSON.stringify(plan)).not.toContain(KNOWN_CATALOG_SKILL);
+  });
+
+  it("does not expose a local source path or skill content in the install plan", () => {
+    const source = mkdtempSync(join(tmpdir(), "sentinel-private-"));
+    try {
+      writeFileSync(
+        join(source, "SKILL.md"),
+        "---\nname: PRIVATE_MESSAGE_8K2R\ndescription: SENTINEL_SECRET_7M4Q\n---\n\nPrivate content\n",
+      );
+      const commands = new SkillsCommands();
+      const contractError = expectContractError(() =>
+        runWithContext({}, () =>
+          commands.install(undefined, source, undefined, true, undefined, undefined, true, true, undefined),
+        ),
+      );
+
+      const plan = contractError.envelope().error.plan as Record<string, unknown>;
+      expect(plan.sourceKind).toBe("local");
+      expect(plan.skillCount).toBe(1);
+      expect(String(plan.sourceName)).toStartWith("sentinel-private-");
+      expect(String(plan.sourceName)).not.toContain("/");
+      expect(String(plan.sourceName)).not.toContain("\\");
+      expect(JSON.stringify(plan)).not.toContain(source);
+      expect(JSON.stringify(plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
+      expect(JSON.stringify(plan)).not.toContain("SENTINEL_SECRET_7M4Q");
+    } finally {
+      rmSync(source, { recursive: true, force: true });
+    }
   });
 
   it("validates SKILL_NOT_FOUND before the brake on skills install (exit 1, not 3)", () => {
