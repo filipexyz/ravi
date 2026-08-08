@@ -1139,3 +1139,12 @@ basename e categoria estável, mas mantinham um campo `message` redundante que a
 redação central mascarava. O commit `6bf93383` removeu esse texto dos detalhes,
 preservando o código canônico e a mensagem do envelope. Os 7 testes focados de
 tag-rules passaram; Quality Gate permaneceu ignorado e a spec continua `draft`.
+
+O CI Linux [`31283371350`](https://github.com/filipexyz/ravi/actions/runs/31283371350)
+do SHA `4cf6d5783640747b9ef6d55b1f9fbb5855b2183f` passou Build e Typecheck e
+falhou em uma expectativa stale do smoke de processo. O runtime já normalizava
+falhas do helper legado como `COMMAND_FAILED`, exit 1 e mensagem pública
+genérica, conforme os testes centrais de CLI, tool e gateway, mas o smoke de
+audio ainda exigia o texto bruto do path inválido. O commit `ffa79c1e` alinhou
+somente essa expectativa. Os 9 testes reais de processo passaram; Quality Gate
+permaneceu ignorado e a spec continua `draft`.
