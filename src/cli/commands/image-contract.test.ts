@@ -153,6 +153,7 @@ interface GenerateOverrides {
   caption?: string;
   asyncMode?: boolean;
   syncMode?: boolean;
+  artifactId?: string;
   send?: boolean;
   asJson?: boolean;
   execute?: boolean;
@@ -179,7 +180,7 @@ function runGenerate(prompt: string, overrides: GenerateOverrides = {}) {
     overrides.caption,
     overrides.asyncMode,
     overrides.syncMode,
-    undefined,
+    overrides.artifactId,
     undefined,
     overrides.asJson,
     overrides.execute,
@@ -314,6 +315,31 @@ describe("image generate contract", () => {
 
   it("resolves and validates the provider BEFORE the brake", async () => {
     await expect(runGenerate("gato", { asJson: true })).rejects.toThrow("No image provider configured");
+    expect(generateImageCalls).toHaveLength(0);
+    expect(createArtifactCalls).toHaveLength(0);
+  });
+
+  it("rejects an invalid explicit provider before the delivery brake", async () => {
+    await expectContractError(
+      () => runGenerate("gato", { provider: "private-provider", send: true, asJson: true }),
+      "IMAGE_PROVIDER_NOT_CONFIGURED",
+      1,
+    );
+    expect(imageStateReads).toEqual([]);
+    expect(generateImageCalls).toHaveLength(0);
+    expect(createArtifactCalls).toHaveLength(0);
+  });
+
+  it("rejects a caller-supplied worker artifact id before the delivery brake", async () => {
+    await expect(
+      runGenerate("gato", {
+        provider: "openai",
+        artifactId: "art_private_worker",
+        send: true,
+        asJson: true,
+      }),
+    ).rejects.toThrow("--artifact-id is reserved for internal image async workers");
+    expect(imageStateReads).toEqual([]);
     expect(generateImageCalls).toHaveLength(0);
     expect(createArtifactCalls).toHaveLength(0);
   });

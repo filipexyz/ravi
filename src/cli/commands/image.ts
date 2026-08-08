@@ -49,6 +49,22 @@ function summarizeMediaSendContext(context: ReturnType<typeof getContext>) {
   };
 }
 
+function failImageProviderNotConfigured(asJson?: boolean): never {
+  return contractFail(
+    "image generate",
+    "IMAGE_PROVIDER_NOT_CONFIGURED",
+    "No image provider configured. Pass --provider openai|gemini or set image_provider on the agent/instance/default settings.",
+    {
+      asJson,
+      details: {
+        suggestedAction:
+          "Pass --provider openai|gemini or configure image_provider on the agent, instance or global settings",
+        acceptedValues: ["openai", "gemini"],
+      },
+    },
+  );
+}
+
 function parseCompression(value?: string): number | undefined {
   if (!value?.trim()) return undefined;
   const parsed = Number.parseInt(value, 10);
@@ -269,6 +285,11 @@ export class ImageCommands {
     if (asyncMode && syncMode) {
       fail("--async and --sync cannot be used together. Async is already the default; use --sync only when needed.");
     }
+    if (artifactId && !asyncWorker) {
+      fail("--artifact-id is reserved for internal image async workers.");
+    }
+    const explicitProvider = provider ? normalizeImageProvider(provider) : undefined;
+    if (provider && !explicitProvider) failImageProviderNotConfigured(asJson);
     const shouldRunAsync = syncMode !== true && asyncWorker !== true;
     const hasOriginChat = Boolean(ctx?.source?.accountId && ctx.source.chatId);
     const shouldSend = send === true || hasOriginChat;
@@ -280,7 +301,7 @@ export class ImageCommands {
         "image generate",
         {
           promptChars: prompt.length,
-          provider: provider ? (normalizeImageProvider(provider) ?? null) : null,
+          provider: explicitProvider ?? null,
           model: model ?? null,
           mode: mode === "quality" ? "quality" : "fast",
           aspect: aspect ?? null,
@@ -316,21 +337,7 @@ export class ImageCommands {
       dbGetSetting("image.provider") ??
       process.env.RAVI_IMAGE_PROVIDER;
     const normalizedProvider = normalizeImageProvider(resolvedProvider);
-    if (!normalizedProvider) {
-      contractFail(
-        "image generate",
-        "IMAGE_PROVIDER_NOT_CONFIGURED",
-        "No image provider configured. Pass --provider openai|gemini or set image_provider on the agent/instance/default settings.",
-        {
-          asJson,
-          details: {
-            suggestedAction:
-              "Pass --provider openai|gemini or configure image_provider on the agent, instance or global settings",
-            acceptedValues: ["openai", "gemini"],
-          },
-        },
-      );
-    }
+    if (!normalizedProvider) failImageProviderNotConfigured(asJson);
 
     const resolvedModel =
       model ??
@@ -437,10 +444,6 @@ export class ImageCommands {
       },
       tags: ["generated", "image", normalizedProvider],
     };
-
-    if (artifactId && !asyncWorker) {
-      fail("--artifact-id is reserved for internal image async workers.");
-    }
 
     if (shouldRunAsync) {
       const artifact = createArtifact(baseArtifactInput);
