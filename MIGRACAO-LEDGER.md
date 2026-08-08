@@ -1021,3 +1021,59 @@ apenas para registrar o próprio SHA.
 
 **Veredito do head de implementação: APPROVE. Veredito final da PR: condicionado
 à CI verde do commit documental de promoção.**
+
+---
+
+## FASE 5 — força-tarefa adversarial de privacidade e gates (2026-08-08)
+
+Esta fase substitui o veredito final da FASE 4 para o head atual. O CI verde de
+`652662ab` continua como evidência histórica, mas não aprova os commits
+posteriores. A spec global voltou para `draft` até a CI Linux da PR 399 passar
+no SHA exato publicado.
+
+### Fatos de comportamento atualizados
+
+- Apps deixou de ser apenas scaffolding dispensado: o roteador público, o
+  subprocesso externo e o contexto filho least-privilege participam do
+  contrato e do gate oficial.
+- `pages create` e `pages domains` alteram o Console externamente e agora são
+  freados antes de credenciais, resolução de projeto ou chamada de provider.
+  As afirmações históricas da entrada 12 de que essas operações eram imediatas
+  não descrevem mais o runtime.
+- `heartbeat trigger` continua imediato quando não existe trabalho acionável,
+  retornando `skipped`; quando há trabalho enfileirável, exige `--execute` antes
+  da publicação. Isso supersede a afirmação histórica de ausência total de
+  freio na entrada 19+20+21.
+- Geração local de áudio e imagem permanece imediata. Entrega externa exige
+  confirmação e o dry-run ocorre antes de DB, provider, artifact, destino ou
+  fila. Validações puras de imagem continuam antes do freio.
+
+### Fechamentos de privacidade e paridade
+
+- A redação central de auditoria cobre texto autoral em `title`,
+  `instructions`, `reason` e `query`, além da redação contextual de valores de
+  settings.
+- Planos, stickers ausentes e cloud logout não refletem caminho local, conteúdo
+  integral nem mensagem bruta de provider.
+- O gateway remoto valida a coerência do contrato e projeta detalhes por
+  allowlist: preserva apenas identificadores estáveis e formas canônicas de
+  flags/posicionais; descarta texto livre, paths, URLs, tokens e objetos.
+- Os testes de redaction e audit passaram a fazer parte de
+  `test:agent-contract`; Apps integra a suíte principal; os dois snapshots
+  OpenAPI versionados são verificados pela CI.
+
+### Evidência local antes da publicação
+
+O head de implementação imediatamente anterior a este registro foi
+`25745fd4`. Foram observados localmente, por identidade:
+
+- image contract: 9 testes verdes;
+- remote gateway: 16 testes verdes;
+- redaction + audit: 15 testes verdes;
+- Apps router: 26 testes verdes, incluindo o subprocesso/contexto filho;
+- SDK TypeScript, `docs/openapi.json`, `openapi.json` e Swift regenerados e sem
+  drift nos checks canônicos.
+
+Esses resultados locais não substituem build, typecheck, suíte completa e
+quality gate da CI. Não há veredito final para esta fase até o head documental
+ser publicado na PR 399 e todos os checks obrigatórios passarem no mesmo SHA.

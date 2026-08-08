@@ -24,6 +24,9 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 - Remote dispatch is authorized by the target gateway, accepts only a complete
   coherent contract body for the expected `op`, preserves exit `1/2/3`, and
   fails closed on invalid gateway configuration with exit `2`.
+- Remote detail projection preserves only bounded stable identifiers and
+  canonical flag/positional shapes; sentinel free text, paths, URLs, tokens
+  and objects MUST be absent from the resulting envelope.
 - Non-success binary responses and return-shape failures produce canonical,
   redacted gateway envelopes and matching `failed`/`denied` audit outcomes.
 - A handler using the compatibility `fail()` helper produces one parseable
@@ -81,6 +84,8 @@ bun test src/cli/transport-contract.test.ts
 bun test src/cli/tools-export.test.ts
 bun test src/sdk/gateway/dispatcher.test.ts
 bun test src/cli/remote-gateway.test.ts
+bun test src/cli/redaction.test.ts
+bun test src/cli/audit.test.ts
 bun test src/cli/registry.test.ts
 bun test src/cloud-auth/errors.test.ts
 ```
@@ -106,6 +111,8 @@ bun test src/cli/commands/artifacts.test.ts
 bun test src/cli/commands/prox-calls.test.ts
 bun test src/cli/commands/media-json.test.ts
 bun test src/cli/commands/image-contract.test.ts
+bun test src/cli/commands/pages.test.ts
+bun test src/cli/commands/heartbeat.test.ts
 bun test src/cli/commands/video.test.ts
 bun test src/cli/commands/transcribe.test.ts
 bun test src/cli/commands/group.test.ts
@@ -120,9 +127,11 @@ bun test src/cli/commands/devin.test.ts
 ```bash
 bun test src/cli/execute-consumers.test.ts
 bun test src/cli/schema-inference.test.ts
+bun test src/apps/router.test.ts
 bun test src/sdk/client-codegen/codegen.test.ts
 bun src/cli/index.ts sdk client check
 bun src/cli/index.ts sdk openapi check --against docs/openapi.json
+bun src/cli/index.ts sdk openapi check --against openapi.json
 bun src/cli/index.ts sdk swift check
 ```
 
