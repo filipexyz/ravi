@@ -5,7 +5,7 @@ import { z } from "zod";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { dispatch } from "../sdk/gateway/dispatcher.js";
-import { ContractError } from "./agent-contract.js";
+import { ContractError, contractDryRun } from "./agent-contract.js";
 import { runWithCliAudit, wasContractErrorAudited } from "./audit.js";
 import { runWithContext } from "./context.js";
 import { Command, CommandAccess, Group, Option, Returns } from "./decorators.js";
@@ -21,6 +21,22 @@ class CloudFailureCommands {
   fail(@Option({ flags: "--json", description: "Print raw JSON result" }) _asJson?: boolean) {
     throw new CloudAuthError("RATE_LIMITED", "provider rate limit reached", { status: 429 });
   }
+
+  @Command({ name: "confirm", description: "Return a sentinel-rich policy brake" })
+  @CommandAccess({ kind: "mutate", resource: "cloud.fixture", action: "confirm", risk: "high" })
+  confirm(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
+    contractDryRun(
+      "cloud fixture confirm",
+      {
+        caption: "PRIVATE_MESSAGE_8K2R",
+        filePath: "C:/sentinel/private/file-9P3X.txt",
+        key: "custom.password",
+        value: "SENTINEL_SECRET_7M4Q",
+        count: 2,
+      },
+      { asJson },
+    );
+  }
 }
 
 const runtimeContext: ContextRecord = {
@@ -28,7 +44,10 @@ const runtimeContext: ContextRecord = {
   contextKey: "rctx_transport_cloud_test",
   kind: "test-runtime",
   agentId: "transport-test",
-  capabilities: [{ permission: "read", objectType: "cloud.fixture", objectId: "fail", source: "test" }],
+  capabilities: [
+    { permission: "read", objectType: "cloud.fixture", objectId: "fail", source: "test" },
+    { permission: "mutate", objectType: "cloud.fixture", objectId: "confirm", source: "test" },
+  ],
   createdAt: Date.now(),
 };
 
@@ -42,6 +61,133 @@ const deniedContext: ContextRecord = {
 };
 
 describe("global cloud failure contract", () => {
+  it("sanitizes contract details before every transport can observe them", () => {
+    const failure = new ContractError("media send", "WRITE_REQUIRES_EXECUTE", "confirmation required", 3, {
+      dryRun: true,
+      plan: {
+        caption: "PRIVATE_MESSAGE_8K2R",
+        filePath: "C:/sentinel/private/file-9P3X.txt",
+        key: "custom.password",
+        value: "SENTINEL_SECRET_7M4Q",
+        count: 2,
+        captionPresent: true,
+      },
+    });
+
+    expect(failure.envelope().error.plan).toEqual({
+      caption: "[REDACTED:content length=20]",
+      filePath: "[REDACTED:path]",
+      key: "custom.password",
+      value: "[REDACTED]",
+      count: 2,
+      captionPresent: true,
+    });
+    expect(JSON.stringify(failure.envelope())).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(JSON.stringify(failure.envelope())).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(JSON.stringify(failure.envelope())).not.toContain("C:/sentinel/private");
+  });
+
+  it("renders the sanitized ContractError plan in human dry-run mode", () => {
+    const originalLog = console.log;
+    const output: string[] = [];
+    console.log = (...args: unknown[]) => output.push(args.map(String).join(" "));
+
+    let failure: unknown;
+    try {
+      contractDryRun("media send", {
+        caption: "PRIVATE_MESSAGE_8K2R",
+        filePath: "C:/sentinel/private/file-9P3X.txt",
+        key: "custom.password",
+        value: "SENTINEL_SECRET_7M4Q",
+      });
+    } catch (error) {
+      failure = error;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(failure).toBeInstanceOf(ContractError);
+    const rendered = output.join("\n");
+    expect(rendered).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(rendered).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(rendered).not.toContain("C:/sentinel/private");
+    expect(rendered).toContain("[REDACTED:content length=20]");
+    expect(rendered).toContain("[REDACTED:path]");
+  });
+
+  it("preserves one sanitized policy envelope across CLI, tool and gateway", async () => {
+    const previousSuppressAudit = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const originalExit = process.exit;
+    const originalLog = console.log;
+    const cliOutput: string[] = [];
+    let cliExitCode: number | undefined;
+    process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+    console.log = (...args: unknown[]) => cliOutput.push(args.map(String).join(" "));
+    process.exit = ((code?: number) => {
+      cliExitCode = code;
+      throw new Error("__dry_run_exit__");
+    }) as typeof process.exit;
+
+    try {
+      const program = new CommanderCommand();
+      program.exitOverride();
+      registerCommands(program, [CloudFailureCommands]);
+      await expect(
+        runWithContext({ agentId: runtimeContext.agentId, context: runtimeContext }, () =>
+          program.parseAsync(["node", "test", "cloud", "fixture", "confirm", "--json"]),
+        ),
+      ).rejects.toThrow("__dry_run_exit__");
+    } finally {
+      process.exit = originalExit;
+      console.log = originalLog;
+      if (previousSuppressAudit === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousSuppressAudit;
+    }
+
+    expect(cliExitCode).toBe(3);
+    expect(cliOutput).toHaveLength(1);
+    const cliEnvelope = JSON.parse(cliOutput[0] ?? "{}");
+
+    const tool = extractTools([CloudFailureCommands]).find((candidate) => candidate.name === "cloud_fixture_confirm");
+    expect(tool).toBeDefined();
+    const toolResult = await runWithContext({ agentId: runtimeContext.agentId, context: runtimeContext }, () =>
+      tool!.handler({ json: true }),
+    );
+    expect(toolResult).toMatchObject({ isError: false, outcome: "blocked", exitCode: 3 });
+    const toolEnvelope = JSON.parse(toolResult.content[0]?.text ?? "{}");
+
+    const registry = buildRegistry([CloudFailureCommands]);
+    const command = registry.commands.find((candidate) => candidate.fullName === "cloud.fixture.confirm");
+    expect(command).toBeDefined();
+    const gatewayResult = await dispatch(command!, {}, {}, { contextRecord: runtimeContext, emitAudit: () => {} });
+    expect(gatewayResult.response.status).toBe(409);
+    const gatewayBody = (await gatewayResult.response.json()) as Record<string, unknown>;
+    const { exitCode, outcome, ...gatewayEnvelope } = gatewayBody;
+
+    expect(exitCode).toBe(3);
+    expect(outcome).toBe("blocked");
+    expect(toolEnvelope).toEqual(cliEnvelope);
+    expect(gatewayEnvelope).toEqual(cliEnvelope);
+    const serialized = JSON.stringify(cliEnvelope);
+    expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(serialized).not.toContain("C:/sentinel/private");
+    expect(cliEnvelope).toMatchObject({
+      success: false,
+      op: "cloud fixture confirm",
+      error: {
+        code: "WRITE_REQUIRES_EXECUTE",
+        plan: {
+          caption: "[REDACTED:content length=20]",
+          filePath: "[REDACTED:path]",
+          key: "custom.password",
+          value: "[REDACTED]",
+          count: 2,
+        },
+      },
+    });
+  });
+
   it("preserves the same op, code, envelope and exit taxonomy in CLI, tool and gateway", async () => {
     const previousSuppressAudit = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
     const originalExit = process.exit;

@@ -75,7 +75,17 @@ class ContractToolCommands {
   @Command({ name: "dry-run", description: "Render the default human dry-run before throwing" })
   @CommandAccess({ kind: "mutate", resource: "contract", action: "dry-run", risk: "high" })
   dryRun(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
-    contractDryRun("contract dry-run", { target: "fixture" }, { asJson });
+    contractDryRun(
+      "contract dry-run",
+      {
+        caption: "PRIVATE_MESSAGE_8K2R",
+        filePath: "C:/sentinel/private/file-9P3X.txt",
+        key: "custom.password",
+        value: "SENTINEL_SECRET_7M4Q",
+        target: "fixture",
+      },
+      { asJson },
+    );
   }
 
   @Command({ name: "missing-binary", description: "Return a missing binary response" })
@@ -312,10 +322,23 @@ describe("tools export contract errors", () => {
     expect(result).toMatchObject({ isError: false, outcome: "blocked", exitCode: 3 });
     const text = result.content[0]?.text ?? "{}";
     expect(text).not.toContain("[dry-run]");
+    expect(text).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(text).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(text).not.toContain("C:/sentinel/private");
     expect(JSON.parse(text)).toMatchObject({
       success: false,
       op: "contract dry-run",
-      error: { code: "WRITE_REQUIRES_EXECUTE", dryRun: true, plan: { target: "fixture" } },
+      error: {
+        code: "WRITE_REQUIRES_EXECUTE",
+        dryRun: true,
+        plan: {
+          caption: "[REDACTED:content length=20]",
+          filePath: "[REDACTED:path]",
+          key: "custom.password",
+          value: "[REDACTED]",
+          target: "fixture",
+        },
+      },
     });
   });
 });

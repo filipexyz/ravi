@@ -99,4 +99,22 @@ describe("CLI audit redaction", () => {
   it("never stores full tool output content", () => {
     expect(sanitizeCliAuditValue("private provider response", "output")).toBe("[REDACTED:content length=25]");
   });
+
+  it("uses sibling setting keys to redact dynamic values and local paths", () => {
+    const input = {
+      key: "custom.password",
+      value: "SENTINEL_SECRET_7M4Q",
+      filePath: "C:/sentinel/private/file-9P3X.txt",
+      count: 2,
+    };
+
+    expect(sanitizeCliAuditValue(input)).toEqual({
+      key: "custom.password",
+      value: "[REDACTED]",
+      filePath: "[REDACTED:path]",
+      count: 2,
+    });
+    expect(input.value).toBe("SENTINEL_SECRET_7M4Q");
+    expect(input.filePath).toBe("C:/sentinel/private/file-9P3X.txt");
+  });
 });

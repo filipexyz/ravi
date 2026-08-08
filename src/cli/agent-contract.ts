@@ -20,6 +20,7 @@
 import type { Command as CommanderCommand, CommanderError } from "commander";
 import { getContext } from "./context.js";
 import { CliExpectedError } from "./expected-error.js";
+import { sanitizePublicValue } from "./redaction.js";
 
 export const CONTRACT_EXIT_ERROR = 1;
 export const CONTRACT_EXIT_USAGE = 2;
@@ -53,7 +54,7 @@ export class ContractError extends Error {
     this.op = op;
     this.code = code;
     this.exitCode = exitCode;
-    this.details = details;
+    this.details = sanitizePublicValue(details) as ContractErrorDetails;
   }
 
   envelope(): ContractErrorEnvelope {
@@ -170,7 +171,7 @@ export function contractDryRun(op: string, plan: Record<string, unknown>, option
     } else {
       console.log(`[dry-run] ${op}: nothing was written.`);
       console.log(`Planned input:`);
-      console.log(JSON.stringify(plan, null, 2));
+      console.log(JSON.stringify(error.details.plan, null, 2));
       console.log(`Re-run with --execute to perform the write.`);
     }
   }

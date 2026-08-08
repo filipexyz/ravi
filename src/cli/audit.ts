@@ -9,25 +9,9 @@ import {
 import { isCloudAuthError } from "../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation, renderCloudContractError } from "./cloud-error-contract.js";
 import { buildCliInvocationMetadata } from "./provenance.js";
+import { sanitizePublicValue } from "./redaction.js";
 
 const MAX_INPUT_LENGTH = 500;
-const RCTX_TOKEN_PATTERN = /rctx_[A-Za-z0-9_-]+/g;
-const BEARER_TOKEN_PATTERN = /\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi;
-const API_TOKEN_PATTERN = /\b(?:sk|rk|pk)-[A-Za-z0-9_-]{12,}\b/g;
-const CONTENT_KEY_PATTERN = /^(?:body|caption|content|message|output|prompt|text)$/i;
-const SECRET_KEYS = new Set([
-  "accesstoken",
-  "apikey",
-  "authorization",
-  "contextkey",
-  "credentialref",
-  "credentialsref",
-  "password",
-  "refreshtoken",
-  "secret",
-  "secretref",
-  "token",
-]);
 const auditedContractErrors = new WeakSet<ContractError>();
 
 export function wasContractErrorAudited(error: ContractError): boolean {
@@ -166,24 +150,5 @@ function truncate(value: unknown): unknown {
 }
 
 export function sanitizeCliAuditValue(value: unknown, key?: string): unknown {
-  if (key && SECRET_KEYS.has(key.replace(/[-_]/g, "").toLowerCase())) return "[REDACTED]";
-  if (key && CONTENT_KEY_PATTERN.test(key)) {
-    if (typeof value === "string") return `[REDACTED:content length=${value.length}]`;
-    return "[REDACTED:content]";
-  }
-  if (typeof value === "string") {
-    return value
-      .replace(RCTX_TOKEN_PATTERN, "[REDACTED:rctx]")
-      .replace(BEARER_TOKEN_PATTERN, "Bearer [REDACTED]")
-      .replace(API_TOKEN_PATTERN, "[REDACTED:token]");
-  }
-  if (Array.isArray(value)) return value.map((item) => sanitizeCliAuditValue(item));
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [nestedKey, nested] of Object.entries(value)) {
-      out[nestedKey] = sanitizeCliAuditValue(nested, nestedKey);
-    }
-    return out;
-  }
-  return value;
+  return sanitizePublicValue(value, key);
 }

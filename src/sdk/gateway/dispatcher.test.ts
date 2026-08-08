@@ -415,7 +415,7 @@ describe("dispatch — validation", () => {
         message: "Invalid input for demo echo.",
         retryable: false,
         suggestedAction: "Correct the request body and retry demo echo",
-        issues: [{ path: ["name"], code: "invalid_type" }],
+        issues: [{ path: ["name"], code: "invalid_type", message: "[REDACTED:content length=50]" }],
       },
     });
     expect(result.audit).not.toBeNull();
@@ -447,7 +447,7 @@ describe("dispatch — validation", () => {
     expect(body).toMatchObject({
       error: {
         code: "USAGE_ERROR",
-        issues: [{ path: ["content"], code: "custom", message: "Invalid redacted value." }],
+        issues: [{ path: ["content"], code: "custom", message: "[REDACTED:content length=23]" }],
       },
     });
     expect(JSON.stringify(body)).not.toContain(secret);
@@ -867,8 +867,7 @@ describe("dispatch — @Returns.binary() escape hatch", () => {
       outcome: "failed",
       error: { code: "RETURN_SHAPE_ERROR", message: "Command returned an invalid response shape." },
     });
-    expect(body.error.issues[0]?.message).toContain("@Returns.binary()");
-    expect(body.error.issues[0]?.message).toContain("instead of a Response");
+    expect(body.error.issues[0]?.message).toBe("[REDACTED:content length=106]");
 
     expect(audits.events).toHaveLength(1);
     expect(audits.events[0]).toMatchObject({
