@@ -461,6 +461,16 @@ describe("runCoverageGate", () => {
     expect(result.ok).toBe(true);
     expect(result.triggeredPrefixes).toEqual(["src/devin/"]);
   });
+
+  it("requires the Apps router contract test for Apps runtime changes", () => {
+    const uncovered = runCoverageGate(["src/apps/router.ts"]);
+    const covered = runCoverageGate(["src/apps/router.ts", "src/apps/router.test.ts"]);
+
+    expect(uncovered.ok).toBe(false);
+    expect(uncovered.triggeredPrefixes).toEqual(["src/apps/"]);
+    expect(uncovered.errors[0]!.message).toContain("src/apps/router.test.ts");
+    expect(covered.ok).toBe(true);
+  });
 });
 
 describe("runQualityGate (combined)", () => {
