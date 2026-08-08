@@ -39,7 +39,7 @@ import {
 } from "../../cli/agent-contract.js";
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
-import { contractErrorResponse, errorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
+import { contractErrorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
 
 const QUIET_SUCCESS_AUDIT_TOOLS = new Set(["sessions_list", "tasks_list", "tasks_show"]);
 
@@ -99,17 +99,19 @@ export async function dispatch(
   const tool = `${cmd.groupSegments.join("_")}_${cmd.command}`;
   const group = cmd.groupSegments.join("_");
   const lineage = extractLineage(opts.contextRecord);
+  const startedAt = Date.now();
 
   if (cmd.scope === "superadmin" && !opts.allowSuperadmin) {
-    return {
-      response: errorResponse(403, "PermissionDenied", {
-        reason: `superadmin commands are not exposed by this gateway. Pass --allow-superadmin to opt in.`,
-      }),
-      audit: null,
-    };
+    const error = permissionDeniedToContractError(
+      commandOperation(group, cmd.command),
+      "Gateway access to this command was denied.",
+    );
+    const response = contractErrorResponse(error, 403, "denied");
+    const audit = buildAuditEvent(cmd, tool, {}, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
+    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+    return { response, audit: auditEmitted ? audit : null };
   }
 
-  const startedAt = Date.now();
   const normalized = normalizeBody(cmd, body);
   if (!normalized.ok) {
     return usageErrorResult(cmd, tool, group, normalized.issues, startedAt, lineage, opts.emitAudit);

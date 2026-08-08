@@ -690,13 +690,28 @@ describe("dispatch — scope and superadmin gating", () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("secret.ping"), {}, {}, { emitAudit: audits.emit });
     expect(result.response.status).toBe(403);
-    const body = (await result.response.json()) as {
-      error: string;
-      reason: string;
-    };
-    expect(body.error).toBe("PermissionDenied");
-    expect(body.reason).toContain("superadmin");
-    expect(audits.events).toHaveLength(0);
+    const body = (await result.response.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      success: false,
+      op: "secret ping",
+      exitCode: 1,
+      outcome: "denied",
+      error: { code: "PERMISSION_DENIED" },
+    });
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain("superadmin");
+    expect(serialized).not.toContain("allow-superadmin");
+    expect(audits.events).toHaveLength(1);
+    expect(result.audit).toEqual(audits.events[0]);
+    expect(audits.events[0]).toMatchObject({
+      tool: "secret_ping",
+      input: {},
+      isError: true,
+      outcome: "denied",
+      exitCode: 1,
+      errorCode: "PERMISSION_DENIED",
+    });
+    expect(JSON.stringify(audits.events)).not.toContain("allow-superadmin");
   });
 
   it("admits superadmin commands when allowSuperadmin is on and context has system admin", async () => {
