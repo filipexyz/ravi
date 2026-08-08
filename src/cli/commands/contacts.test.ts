@@ -620,13 +620,22 @@ describe("contacts agent-first contract", () => {
   }
 
   it("blocks contacts remove without --execute (dry-run, exit 3, no delete)", () => {
+    allContacts[0]!.name = "PRIVATE_MESSAGE_8K2R";
+    allContacts[0]!.phone = "SENTINEL_SECRET_7M4Q";
     const contractError = expectContractError(() => new ContactsCommands().remove("contact-1", true));
     expect(contractError.exitCode).toBe(3);
     const envelope = contractError.envelope();
     expect(envelope.op).toBe("contacts remove");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
-    expect((envelope.error.plan as Record<string, unknown>).contact).toBe("contact-1");
+    expect(envelope.error.plan).toEqual({
+      contact: "contact-1",
+      namePresent: true,
+      phonePresent: true,
+      status: "allowed",
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("SENTINEL_SECRET_7M4Q");
     expect(deleteContactCalls).toHaveLength(0);
   });
 
@@ -637,6 +646,8 @@ describe("contacts agent-first contract", () => {
   });
 
   it("blocks contacts merge without --execute (dry-run, exit 3, no merge)", () => {
+    allContacts[1]!.name = "PRIVATE_MESSAGE_8K2R";
+    allContacts[2]!.name = "SENTINEL_SECRET_7M4Q";
     const contractError = expectContractError(() =>
       new ContactsCommands().merge("source-contact", "target-contact", true),
     );
@@ -644,10 +655,15 @@ describe("contacts agent-first contract", () => {
     const envelope = contractError.envelope();
     expect(envelope.op).toBe("contacts merge");
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-    const plan = envelope.error.plan as Record<string, unknown>;
-    expect(plan.source).toBe("source-contact");
-    expect(plan.target).toBe("target-contact");
-    expect(plan.identitiesToMove).toBe(1);
+    expect(envelope.error.plan).toEqual({
+      source: "source-contact",
+      sourceNamePresent: true,
+      target: "target-contact",
+      targetNamePresent: true,
+      identitiesToMove: 1,
+    });
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(JSON.stringify(envelope.error.plan)).not.toContain("SENTINEL_SECRET_7M4Q");
     expect(mergeCall).toBeNull();
   });
 

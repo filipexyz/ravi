@@ -12,6 +12,10 @@
 - `contacts remove` and `contacts merge` without `--execute` MUST exit 3,
   MUST report `dryRun: true` with the `plan`, and MUST NOT delete or merge
   anything; with `--execute` the write MUST happen.
+- The `remove` plan MUST be `{contact, namePresent, phonePresent, status}` and
+  the `merge` plan MUST be `{source, sourceNamePresent, target,
+  targetNamePresent, identitiesToMove}`; neither plan may expose names or
+  phone numbers.
 - `contacts block` MUST block immediately without `--execute`, remain
   `kind: "mutate"`, and be reversible via `contacts allow`.
 - `contacts backfill` MUST stay preview-only without `--apply` and MUST keep

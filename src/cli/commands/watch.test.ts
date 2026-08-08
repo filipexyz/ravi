@@ -197,6 +197,7 @@ beforeEach(() => {
 
 describe("watch write brake", () => {
   it("rm without --execute is a dry-run: exit 3, plan shown, NO local or remote removal", async () => {
+    watchStore = [buildWatch({ name: "PRIVATE_MESSAGE_8K2R", resourceRef: "C:/sentinel/private" })];
     const commands = new WatchCommands();
     const error = await expectContractError(
       () => commands.rm("watch-gh-1", true, undefined),
@@ -205,14 +206,16 @@ describe("watch write brake", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       watchId: "watch-gh-1",
       provider: "github",
-      resourceRef: "filipexyz/ravi.bot",
+      resourceRefPresent: true,
       placement: "local",
       status: "active",
-      name: "ravi repo",
+      namePresent: true,
     });
+    expect(JSON.stringify(error.details.plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(JSON.stringify(error.details.plan)).not.toContain("C:/sentinel/private");
     expect(removeWatchCalls).toHaveLength(0);
   });
 
@@ -225,12 +228,14 @@ describe("watch write brake", () => {
   });
 
   it("trigger without --execute is a dry-run: exit 3 with the resolved watch + trigger plan, NO trigger created", async () => {
+    watchStore = [buildWatch({ resourceRef: "C:/sentinel/private" })];
+    const sensitiveMessage = "PRIVATE_MESSAGE_8K2R";
     const commands = new WatchCommands();
     const error = await expectContractError(
       () =>
         commands.trigger(
           "watch-gh-1",
-          "Resume o evento e diga se precisamos agir.",
+          sensitiveMessage,
           undefined,
           undefined,
           undefined,
@@ -244,17 +249,19 @@ describe("watch write brake", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
-      watch: { id: "watch-gh-1", provider: "github", resourceRef: "filipexyz/ravi.bot" },
+    expect(error.details.plan).toEqual({
+      watch: { id: "watch-gh-1", provider: "github" },
       trigger: {
         name: "watch:github:release.published",
         topic: "ravi.watch.github.release.published",
-        filter: 'data.watchId == "watch-gh-1"',
-        message: "Resume o evento e diga se precisamos agir.",
+        filterPresent: true,
+        messageChars: sensitiveMessage.length,
         session: "isolated",
         cooldownMs: 5000,
       },
     });
+    expect(JSON.stringify(error.details.plan)).not.toContain(sensitiveMessage);
+    expect(JSON.stringify(error.details.plan)).not.toContain("C:/sentinel/private");
     expect(createTriggerCalls).toHaveLength(0);
   });
 
@@ -330,6 +337,12 @@ describe("watch write brake", () => {
   });
 
   it("run without --execute is a dry-run: exit 3 with the resolved local watch plan", async () => {
+    watchStore = [
+      buildWatch({
+        resourceRef: "C:/sentinel/private",
+        eventTypes: ["SENTINEL_SECRET_7M4Q"],
+      }),
+    ];
     const commands = new WatchCommands();
     const error = await expectContractError(
       () => commands.run("watch-gh-1", true, true, undefined),
@@ -338,12 +351,19 @@ describe("watch write brake", () => {
     );
 
     expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toMatchObject({
+    expect(error.details.plan).toEqual({
       watchId: "watch-gh-1",
       provider: "github",
+      resourceRefPresent: true,
       placement: "local",
+      eventTypesCount: 1,
       once: true,
     });
+    expect(JSON.stringify(error.details.plan)).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(JSON.stringify(error.details.plan)).not.toContain("C:/sentinel/private");
+    expect(removeWatchCalls).toHaveLength(0);
+    expect(setEnabledCalls).toHaveLength(0);
+    expect(createTriggerCalls).toHaveLength(0);
   });
 
   it("run with --execute emits LOCAL_RUNNER_NOT_IMPLEMENTED with exit 1", async () => {

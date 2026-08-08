@@ -85,6 +85,7 @@ describe("feedback CLI commands", () => {
 
 describe("feedback agent-first contract", () => {
   it("blocks feedback send without --execute (dry-run, exit 3, nothing leaves the machine)", async () => {
+    const sensitiveMessage = "PRIVATE_MESSAGE_8K2R";
     const calls: unknown[] = [];
     const client = makeClient(async (...args) => {
       calls.push(args);
@@ -103,16 +104,16 @@ describe("feedback agent-first contract", () => {
     try {
       await captureConsole(() =>
         command.send(
-          ["Pages", "links", "are", "hard", "to", "find"],
+          [sensitiveMessage],
           "bug",
           "high",
-          "Pages nav",
+          "SENTINEL_SECRET_7M4Q",
           "console/pages",
-          "rbbt",
-          "https://console.example/p/rbbt/pages",
-          "pages,ux",
-          '{"route":"/p/rbbt/pages"}',
-          undefined,
+          "PRIVATE_PROJECT_3P9X",
+          "https://sentinel.invalid/private",
+          "private-tag,secret-tag",
+          '{"route":"C:/sentinel/private","alpha":"private metadata"}',
+          "https://private-console.invalid",
           true,
         ),
       );
@@ -128,16 +129,26 @@ describe("feedback agent-first contract", () => {
     expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
     expect(envelope.error.dryRun).toBe(true);
     const plan = envelope.error.plan as Record<string, unknown>;
-    expect(plan).toMatchObject({
+    expect(plan).toEqual({
       kind: "bug",
       severity: "high",
-      title: "Pages nav",
-      message: "Pages links are hard to find",
+      titlePresent: true,
+      messageChars: sensitiveMessage.length,
       surface: "console/pages",
-      project: "rbbt",
-      tags: ["pages", "ux"],
-      metadata: { route: "/p/rbbt/pages" },
+      projectPresent: true,
+      urlPresent: true,
+      tagsCount: 2,
+      metadataKeys: ["alpha", "route"],
     });
+    const serializedPlan = JSON.stringify(plan);
+    expect(serializedPlan).not.toContain(sensitiveMessage);
+    expect(serializedPlan).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(serializedPlan).not.toContain("PRIVATE_PROJECT_3P9X");
+    expect(serializedPlan).not.toContain("C:/sentinel/private");
+    expect(serializedPlan).not.toContain("https://sentinel.invalid/private");
+    expect(serializedPlan).not.toContain("https://private-console.invalid");
+    expect(serializedPlan).not.toContain("private-tag");
+    expect(serializedPlan).not.toContain("private metadata");
     // The brake fires before auth or any network call.
     expect(calls).toHaveLength(0);
     expect(credentialReads).toBe(0);

@@ -3,12 +3,15 @@
 ## Checks
 
 - `feedback send <msg>` without `--execute` MUST exit 3, MUST report
-  `dryRun: true` with a `plan` mirroring the normalized payload, and MUST NOT
-  read credentials nor perform any network call.
+  `dryRun: true` with `{kind, severity, titlePresent, messageChars, surface,
+  projectPresent, urlPresent, tagsCount, metadataKeys}`, and MUST NOT read
+  credentials nor perform any network call.
 - `feedback send <msg> --execute` MUST POST to `/api/cli/feedback` with the
-  same normalized payload the plan showed and print the Console feedback URL.
-- The dry-run plan MUST carry normalized values (kind/severity defaults
-  applied, tags normalized) — not the raw flag inputs.
+  full normalized payload and print the Console feedback URL.
+- The dry-run plan MUST derive kind/severity defaults and tag counts from
+  normalized values. `metadataKeys` MUST contain sorted key names only; raw
+  title, message, project, URL, tag values, metadata values and Console
+  override MUST be absent.
 - Invalid `--kind`, `--severity`, `--metadata-json` or an empty message MUST
   exit 2 with `PAYLOAD_INVALID` even without `--execute` — payload validation
   fires in dry-run too, never as exit 3.

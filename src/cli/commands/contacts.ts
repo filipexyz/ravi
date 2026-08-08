@@ -814,8 +814,8 @@ export class ContactsCommands {
         "contacts remove",
         {
           contact: contact.id,
-          name: contact.name ?? null,
-          phone: contact.phone,
+          namePresent: Boolean(contact.name?.trim()),
+          phonePresent: Boolean(contact.phone?.trim()),
           status: contact.status,
         },
         { asJson },
@@ -1761,9 +1761,9 @@ export class ContactsCommands {
         "contacts merge",
         {
           source: source.id,
-          sourceName: source.name ?? null,
+          sourceNamePresent: Boolean(source.name?.trim()),
           target: target.id,
-          targetName: target.name ?? null,
+          targetNamePresent: Boolean(target.name?.trim()),
           identitiesToMove: source.identities.length,
         },
         { asJson },

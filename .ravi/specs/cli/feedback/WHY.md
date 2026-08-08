@@ -12,9 +12,10 @@ short of destructive deletion. Hence `send` is dry-run by default and
 
 Two ordering rules keep the brake honest:
 
-- **Brake before auth.** The plan is built locally from normalized values, so
-  a dry-run needs no credentials and produces zero network traffic. An agent
-  can rehearse feedback on a machine that never ran `ravi login`.
+- **Brake before auth.** The plan is built locally from normalized,
+  content-minimized metadata, so a dry-run needs no credentials, exposes no
+  feedback body or destination override, and produces zero network traffic.
+  An agent can rehearse feedback on a machine that never ran `ravi login`.
 - **Validation before the brake outcome matters.** Invalid `--kind`,
   `--severity`, broken `--metadata-json` or an empty message fail with the
   pre-existing `PAYLOAD_INVALID` CloudAuthError code (exit 2) even in dry-run —

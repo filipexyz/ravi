@@ -35,10 +35,15 @@ so `send` is braked.
 ## Invariants
 
 1. `feedback send` MUST default to dry-run and require `--execute`; the
-   dry-run MUST report `dryRun: true` and a `plan` mirroring the normalized
-   payload that would be submitted (kind, severity, title, message, surface,
-   project, url, tags, metadata, console), and MUST NOT read credentials nor
-   perform any network call.
+   dry-run MUST report `dryRun: true` and the content-minimized plan `{kind,
+   severity, titlePresent, messageChars, surface, projectPresent, urlPresent,
+   tagsCount, metadataKeys}`, and MUST NOT read credentials nor perform any
+   network call. `metadataKeys` MUST contain only sorted key names. Raw title,
+   message, project, URL, tag values, metadata values and Console override
+   MUST NOT appear in the plan. `surface` remains as the normalized product
+   surface selector needed to locate the feedback; the Console override is
+   omitted because exposing or summarizing an alternate endpoint adds no safe
+   review value.
 2. The brake MUST fire BEFORE authentication: a dry-run works without stored
    credentials and leaks nothing off the machine.
 3. Payload validation MUST fail fast even in dry-run: invalid `--kind`,
@@ -88,6 +93,6 @@ plan as the review step.
 - `runFeedbackCommand` wraps unknown errors as `SERVER_UNAVAILABLE`; without
   the explicit `ContractError` rethrow the brake would be swallowed into a
   cloud-error envelope with the wrong exit code.
-- The dry-run plan must be built from the NORMALIZED values (via
-  `normalizeFeedbackKind/Severity/Tags`) or the plan lies about what
-  `--execute` would submit.
+- The dry-run metadata must be derived from normalized values (via
+  `normalizeFeedbackKind/Severity/Tags`) so defaults and counts describe what
+  `--execute` would submit without copying its content.

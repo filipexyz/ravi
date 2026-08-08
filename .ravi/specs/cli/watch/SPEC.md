@@ -72,8 +72,16 @@ at the source with the shared helpers in `src/cli/agent-contract.ts`.
    built from live watch ids/names/resources.
 4. `rm`, `trigger` and `run` MUST default to dry-run and require `--execute`;
    the dry-run MUST report `dryRun: true` and the `plan`, and MUST NOT delete
-   the watch, create the trigger, or start a poll cycle. `trigger`'s plan MUST
-   show the resolved watch and the exact trigger record that would be created.
+   the watch, create the trigger, or start a poll cycle. Plans MUST use these
+   content-minimized shapes:
+   - `rm`: `{watchId, provider, resourceRefPresent, placement, status, namePresent}`;
+   - `trigger`: `{watch:{id,provider}, trigger:{name,topic,filterPresent,messageChars,session,cooldownMs}}`;
+   - `run`: `{watchId, provider, resourceRefPresent, placement, eventTypesCount, once}`.
+   Raw resource refs, watch names, filter expressions, messages and event-type
+   arrays MUST NOT appear in these plans. Trigger `name` and `topic` remain as
+   generated operational identifiers needed to distinguish the proposed
+   automation. `cooldownMs` and `once` remain as non-content numeric/boolean
+   execution controls.
 5. Validation happens BEFORE the brake: missing `--message`, unknown watch,
    unknown `--agent` and non-local placement (for `run`) fail without emitting
    a dry-run plan.

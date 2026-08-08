@@ -6,10 +6,11 @@
 2. Reproduce with `--json` and branch on the code: `WRITE_REQUIRES_EXECUTE`
    is the brake, `PAYLOAD_INVALID` is your payload, `AUTH_*` is login state,
    `SERVER_UNAVAILABLE` is the Console.
-3. Exit `3`: read `error.plan` — it is the exact normalized payload
-   (`kind`, `severity`, `title`, `message`, `surface`, `project`, `url`,
-   `tags`, `metadata`, `console`) that `--execute` would submit. Review it,
-   then re-run the same command adding `--execute`.
+3. Exit `3`: read `error.plan` — it contains normalized kind/severity plus
+   presence, length, count and sorted metadata-key summaries (`titlePresent`,
+   `messageChars`, `projectPresent`, `urlPresent`, `tagsCount`,
+   `metadataKeys`), never the feedback content or destination override.
+   Review it, then re-run the same command adding `--execute`.
 4. `PAYLOAD_INVALID` (exit 2): fix the flag it names — kind must be
    bug|idea|ux|docs|performance|security|other, severity
    low|medium|high|critical, `--metadata-json` a JSON object, message

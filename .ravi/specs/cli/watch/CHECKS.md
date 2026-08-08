@@ -46,13 +46,18 @@ Expected:
 - An invalid flag on any `watch` op MUST exit 2 with `acceptedFlags` in the
   envelope.
 - `watch rm <id>` without `--execute` MUST exit 3, MUST report `dryRun: true`
-  with the removal `plan`, and MUST NOT delete anything (local or console);
-  with `--execute` the removal MUST happen.
+  with the content-minimized removal plan `{watchId, provider,
+  resourceRefPresent, placement, status, namePresent}`, and MUST NOT delete
+  anything (local or console); with `--execute` the removal MUST happen.
 - `watch trigger <id> --message ...` without `--execute` MUST exit 3 with a
-  plan showing the resolved watch and the exact trigger record, and MUST NOT
-  create the trigger; with `--execute` the trigger MUST be created.
+  plan shaped as `{watch:{id,provider}, trigger:{name,topic,filterPresent,
+  messageChars,session,cooldownMs}}`, and MUST NOT create the trigger; with
+  `--execute` the trigger MUST be created.
 - `watch run <id> --once` without `--execute` MUST exit 3 and MUST NOT start a
-  poll cycle.
+  poll cycle; its plan MUST be `{watchId, provider, resourceRefPresent,
+  placement, eventTypesCount, once}`.
+- Watch dry-run plans MUST NOT contain raw resource refs, watch names, filter
+  expressions, messages or event-type arrays.
 - `watch run <id> --once --execute` without local runner support MUST emit
   `LOCAL_RUNNER_NOT_IMPLEMENTED` with exit 1 in text and JSON, never an
   `ok:false` success payload.

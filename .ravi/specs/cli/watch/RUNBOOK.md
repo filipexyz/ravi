@@ -60,9 +60,10 @@ ravi watch rm <watch-id> --execute  # actually removes
 2. Exit `1` + `WATCH_NOT_FOUND`: read `error.suggestions` — live watch
    ids/names/resources similar to what was asked. Retry with one of them.
 3. Exit `2`: read `error.acceptedFlags`; the list is authoritative for that op.
-4. Exit `3`: read `error.plan` (for `trigger` it shows the resolved watch and
-   the exact trigger record), confirm it is intended, then re-run the same
-   command adding `--execute`.
+4. Exit `3`: read `error.plan` (for `trigger` it shows the resolved watch id /
+   provider plus trigger name/topic and presence/length metadata), confirm it
+   is intended, then re-run the same command adding `--execute`. Raw resource
+   refs, filters and prompt text are deliberately excluded.
 5. If a braked op (`rm`, `trigger`, `run`) mutated without `--execute`, the
    brake regressed: check the op still calls `contractDryRun` before the
    service call and that `runWatchCommand` still rethrows `ContractError`.

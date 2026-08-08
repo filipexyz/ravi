@@ -277,10 +277,10 @@ export class WatchCommands {
         {
           watchId: watch.id,
           provider: watch.provider,
-          resourceRef: watch.resourceRef,
+          resourceRefPresent: Boolean(watch.resourceRef?.trim()),
           placement: watch.placement,
           status: watch.status,
-          ...(watch.name ? { name: watch.name } : {}),
+          namePresent: Boolean(watch.name?.trim()),
         },
         { asJson },
       );
@@ -374,24 +374,19 @@ export class WatchCommands {
         // Write brake (Manual v2 7.8): this arms a real automation — every
         // future watch event will fire a prompt at an agent session. Dry-run
         // by default and exit 3 before dbCreateTrigger, showing the resolved
-        // watch and the exact trigger that would be created.
+        // identifiers and non-content trigger metadata.
         contractDryRun(
           "watch trigger",
           {
             watch: {
               id: watch.id,
               provider: watch.provider,
-              resourceRef: watch.resourceRef,
-              placement: watch.placement,
-              status: watch.status,
             },
             trigger: {
               name: input.name,
               topic: input.topic,
-              filter: input.filter,
-              message: input.message,
-              agentId: input.agentId ?? null,
-              accountId: input.accountId ?? null,
+              filterPresent: Boolean(input.filter),
+              messageChars: input.message.length,
               session: input.session,
               cooldownMs: input.cooldownMs,
             },
@@ -441,9 +436,9 @@ export class WatchCommands {
         {
           watchId: watch.id,
           provider: watch.provider,
-          resourceRef: watch.resourceRef,
+          resourceRefPresent: Boolean(watch.resourceRef?.trim()),
           placement: watch.placement,
-          eventTypes: watch.eventTypes,
+          eventTypesCount: watch.eventTypes.length,
           once: true,
         },
         { asJson },

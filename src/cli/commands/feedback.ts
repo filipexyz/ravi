@@ -73,20 +73,19 @@ export class FeedbackCommands {
       if (execute !== true) {
         // Write brake (Manual v2 7.8): `send` publishes OUTSIDE the local runtime
         // (POST to the Ravi Console), so it is dry-run by default, exit 3. The
-        // plan mirrors the normalized payload that --execute would submit.
+        // plan carries only normalized, non-content metadata about the payload.
         contractDryRun(
           "feedback send",
           {
             kind: normalizeFeedbackKind(kind),
             severity: normalizeFeedbackSeverity(severity),
-            title: title?.trim() || null,
-            message,
+            titlePresent: Boolean(title?.trim()),
+            messageChars: message.length,
             surface: surface?.trim() || null,
-            project: project?.trim() || null,
-            url: url?.trim() || null,
-            tags: normalizeTags(options.tags),
-            metadata: options.metadata ?? null,
-            console: consoleUrl?.trim() || null,
+            projectPresent: Boolean(project?.trim()),
+            urlPresent: Boolean(url?.trim()),
+            tagsCount: normalizeTags(options.tags).length,
+            metadataKeys: Object.keys(options.metadata ?? {}).sort(),
           },
           { asJson },
         );

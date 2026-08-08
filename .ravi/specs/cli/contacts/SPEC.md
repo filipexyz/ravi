@@ -46,8 +46,12 @@ containment action so confirmation cannot delay stopping unwanted traffic.
    `contactScope` (own/tagged) MUST never appear as suggestions.
 4. `contacts remove` and `contacts merge` MUST default to dry-run and require
    `--execute`; the dry-run MUST report `dryRun: true` and the `plan`, and MUST
-   NOT delete or merge anything. `contacts block` MUST execute immediately
-   without `--execute`, remain `kind: "mutate"`, and be reversible via `allow`.
+   NOT delete or merge anything. The plans MUST be content-minimized:
+   `remove` uses `{contact, namePresent, phonePresent, status}` and `merge`
+   uses `{source, sourceNamePresent, target, targetNamePresent,
+   identitiesToMove}`; raw names and phone numbers MUST NOT appear.
+   `contacts block` MUST execute immediately without `--execute`, remain
+   `kind: "mutate"`, and be reversible via `allow`.
 5. `contacts backfill` keeps its historical default-dry-run flag `--apply` —
    it is the brake equivalent for that op and MUST NOT be renamed to
    `--execute`.
