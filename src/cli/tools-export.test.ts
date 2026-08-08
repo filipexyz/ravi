@@ -51,7 +51,7 @@ class ContractToolCommands {
   @Command({ name: "legacy", description: "Throw a legacy expected failure" })
   @CommandAccess({ kind: "read", resource: "contract", action: "legacy", risk: "low" })
   legacy() {
-    fail("legacy validation failed");
+    fail("PRIVATE_LEGACY_VALIDATION_8K2R");
   }
 
   @Command({ name: "emitted", description: "Emit then throw a contract envelope" })
@@ -282,11 +282,13 @@ describe("tools export contract errors", () => {
     );
 
     expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
-    expect(JSON.parse(result.content[0]?.text ?? "{}")).toMatchObject({
+    const text = result.content[0]?.text ?? "{}";
+    expect(JSON.parse(text)).toMatchObject({
       success: false,
       op: "contract legacy",
-      error: { code: "COMMAND_FAILED", message: "legacy validation failed" },
+      error: { code: "COMMAND_FAILED", message: "Command could not be completed." },
     });
+    expect(text).not.toContain("PRIVATE_LEGACY_VALIDATION_8K2R");
   });
 
   it("keeps an emitted contract envelope without a duplicate Error line", async () => {
