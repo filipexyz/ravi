@@ -1230,3 +1230,17 @@ O commit `c0966db4` alinhou as duas expectativas ao marcador estruturado
 `[REDACTED:content length=11]`, preservando como comportamento normativo a
 ausencia do comando privado integral. A spec permanece `draft`; uma nova CI no
 head exato continua necessaria para qualquer aprovacao.
+
+### Terceira rodada de CI da fase 6
+
+O CI Linux [`31294567287`](https://github.com/filipexyz/ravi/actions/runs/31294567287)
+do SHA `f90e8d275d30bc1da29a4876411720e216c2a6fc` passou Build, Typecheck e
+todos os testes comportamentais alcancados, inclusive a expectativa de comando
+negado redigido. Test falhou no check de drift OpenAPI: as duas copias tinham o
+corpo atual, mas conservavam o hash `info.version` anterior.
+
+O commit `1a866b52` recalculou o hash deterministico para
+`f957e4614d5d334b` em `openapi.json` e `docs/openapi.json`. A igualdade entre
+as copias e o hash do corpo foram verificados com Node, sem Bun local. A spec
+permanece `draft`; uma nova CI no head exato continua necessaria para qualquer
+aprovacao.
