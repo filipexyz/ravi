@@ -1258,3 +1258,17 @@ acompanhou o hash ja validado pelo SDK TypeScript. O commit `d5e3c19b` alinhou
 ambos a `sha256:2389d0925c0f408c05773debd2f094c19705b8f392212fbdc8b467b2151b8e79`.
 A spec permanece `draft`; uma nova CI no head exato continua necessaria para
 qualquer aprovacao.
+
+### Quinta rodada de CI da fase 6 e promocao normativa
+
+O CI Linux [`31295216577`](https://github.com/filipexyz/ravi/actions/runs/31295216577)
+do SHA `cfcf0a7c0511341f396f64d3e3fec9e6631b201a` passou Build, Typecheck,
+Test e Quality Gate (specs + coverage). A descricao obrigatoria da PR tambem
+passou no run `31295216571`.
+
+Essa e a primeira evidencia integralmente verde da fase 6 no head exato de
+implementacao depois dos fechamentos de privacidade nativa, gateway remoto,
+permissao de leitura WhatsApp e snapshots gerados. A spec global foi promovida
+para `active` neste commit documental. Como a promocao muda o head, o veredito
+final permanece condicionado a CI verde deste proprio commit; o resultado pode
+ser registrado no corpo da PR sem criar outro ciclo documental.
