@@ -343,9 +343,9 @@ foram preservados pela migração de compatibilidade. O freio acontece ANTES de
 qualquer chamada de provider/NATS: em `group send` antes até da leitura de
 metadata; em `group create` antes do `ensureGroupAgent` (dry-run com
 `--create-agent` não cria agent nem diretório), com pré-validação de agent para
-o plan nunca prometer rota a agent inexistente. `dm ack` também exige
-confirmação. `dm read --no-ack` é leitura direta; o read padrão só bloqueia
-quando há recibo real a emitir. `group list/info/invite` são leituras.
+o plan nunca prometer rota a agent inexistente. `dm read` é sempre uma leitura
+local sem receipt; `dm ack` é a única operação de receipt e exige confirmação.
+`group list/info/invite` são leituras.
 `GROUP_NOT_FOUND` (suggestions da própria listagem já resolvida — zero chamadas
 extras) e `CONTACT_NOT_FOUND` (DB local). `--fields` em `group list` e
 `dm read`. Usage contract no subtree `whatsapp`.
@@ -914,8 +914,8 @@ quatro stores, não um rollback destrutivo automático.
 - Geração local de áudio/imagem executa diretamente; somente entrega externa
   (`--send`) e TTS disparado exigem confirmação. Vídeo/transcrição não alegam
   um freio monetário sem estimativa confiável e limite configurado.
-- `whatsapp dm read --no-ack` é leitura direta. O read padrão só bloqueia
-  quando há recibo real a emitir; `dm ack` exige confirmação.
+- `whatsapp dm read` é sempre leitura local direta, sem receipt. `dm ack` é a
+  operação externa separada e exige confirmação.
 - `prox calls profiles configure` só bloqueia quando haverá sincronização real
   com ElevenLabs. `--skip-provider-sync` e updates locais continuam diretos.
 - `daemon logs --clear` bloqueia antes do flush destrutivo; leituras de log
@@ -1156,3 +1156,49 @@ head exato de implementação após os fechamentos adversariais. A spec global f
 promovida para `active` neste commit documental. Como a promoção muda o head, o
 veredito final permanece condicionado à CI verde deste próprio commit; o
 resultado pode ser registrado no corpo da PR sem criar outro ciclo documental.
+
+---
+
+## FASE 6 - fechamento de privacidade nativa e leitura pura (2026-08-09)
+
+Esta fase substitui o veredito da FASE 5 para qualquer head posterior a
+`fecec02e`. A CI verde desse SHA continua sendo evidencia historica, mas nao
+valida as mudancas abaixo. A spec global voltou para `draft` ate a CI Linux da
+PR 399 passar no novo SHA exato.
+
+### Findings reproduzidos e decisao minima
+
+- A sanitizacao central preservava pathname de URL e nao reconhecia aliases
+  comuns como `cwd`, `outputDir`, `endpoint` e `credential`. Provenance de CLI
+  e planos recebidos do gateway podiam atravessar as fronteiras de audit/tool
+  com dados privados.
+- O runtime nativo Codex/Kimi entregava o comando negado integral para a
+  persistencia de `permission_denials` e para `ravi.audit.denied`; a protecao
+  anterior cobria apenas o hook legado de Bash.
+- `whatsapp dm read --no-ack` era leitura pura, mas a autorizacao estatica da
+  operacao era `mutate`. O acoplamento entre leitura local e receipt implicito
+  foi removido: `dm read` agora e sempre `read`; `dm ack --execute` e o unico
+  caminho que publica o receipt.
+
+### Fechamentos implementados
+
+- O sanitizador central redige paths por chave e por valor, remove pathname,
+  credenciais, query e fragment de URLs publicas, e minimiza comandos para um
+  marcador com comprimento. A mesma regra protege ContractError, provenance,
+  auditoria e denial records.
+- O gateway remoto nao confia em `plan` arbitrario. Ele projeta apenas metadata
+  estrutural tipada e identificadores de gramatica restrita, descartando texto
+  livre, paths, URLs, comandos, secrets e chaves desconhecidas.
+- Testes adversariais usam sentinelas no ContractError, CLI audit, provenance,
+  gateway remoto, banco de denials, evento de audit e host-services nativo.
+- A superficie WhatsApp, os consumidores, a skill, a spec de dominio e os SDKs
+  gerados foram alinhados a separacao `read`/`ack`; a entrada foi retirada do
+  inventario read-to-mutate sem remover o grant legado de leitura.
+
+### Estado de verificacao antes da publicacao
+
+Por instrucao explicita do operador, nenhum Bun/Bunx foi executado localmente
+nesta fase. A verificacao local fica limitada a revisao adversarial dos diffs,
+arquivos staged explicitos e `git diff --check`. Build, typecheck, testes,
+snapshots gerados e quality gate so contam quando a CI da PR 399 terminar no
+mesmo SHA publicado. Enquanto isso, o veredito permanece **DO NOT APPROVE**.

@@ -24,9 +24,10 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 - Remote dispatch is authorized by the target gateway, accepts only a complete
   coherent contract body for the expected `op`, preserves exit `1/2/3`, and
   fails closed on invalid gateway configuration with exit `2`.
-- Remote detail projection preserves only bounded stable identifiers and
-  canonical flag/positional shapes; sentinel free text, paths, URLs, tokens
-  and objects MUST be absent from the resulting envelope.
+- Remote detail projection preserves only bounded stable identifiers,
+  canonical flag/positional shapes and explicitly projected typed plan
+  metadata; sentinel free text, paths, URLs, tokens and arbitrary nested
+  objects MUST be absent from the resulting envelope.
 - Non-success binary responses and return-shape failures produce canonical,
   redacted gateway envelopes and matching `failed`/`denied` audit outcomes.
 - A handler using the compatibility `fail()` helper produces one parseable
@@ -60,7 +61,16 @@ and transport names follow [`SPEC.md`](./SPEC.md).
 - Invalid input and side-effect-free entity checks happen before the brake.
   Any deferred entity lookup is documented by the plan and proven to be
   side-effecting if attempted earlier.
-- Plans, envelopes, suggestions and audits pass redaction tests.
+- Plans, envelopes, suggestions and audits pass redaction tests. This includes
+  URL pathnames, standalone paths under unknown field names, common aliases
+  such as `cwd`, `outputDir`, `endpoint` and `credential`, structured CLI
+  provenance, and plans received from the remote gateway.
+- Native runtime permission denials persist and publish only a bounded command
+  marker; the denied command body and its arguments never enter the denial
+  database or `ravi.audit.denied` event.
+- A pure-read invocation is authorized as `read` without a confirmation flag.
+  `whatsapp dm read` never emits a receipt; `whatsapp dm ack` remains the sole
+  confirmed receipt operation.
 - `--execute` is the last declared option and every consumer example/smoke of a
   braked operation includes it.
 - Static consumer checks also reject obsolete `--execute` flags on immediate
@@ -86,8 +96,12 @@ bun test src/sdk/gateway/dispatcher.test.ts
 bun test src/cli/remote-gateway.test.ts
 bun test src/cli/redaction.test.ts
 bun test src/cli/audit.test.ts
+bun test src/cli/provenance.test.ts
 bun test src/cli/registry.test.ts
 bun test src/cloud-auth/errors.test.ts
+bun test src/permissions/audit-provenance.test.ts
+bun test src/permissions/denials.test.ts
+bun test src/runtime/skill-gate.test.ts
 ```
 
 ### Authorization and compatibility migration

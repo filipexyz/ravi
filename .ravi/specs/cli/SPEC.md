@@ -29,7 +29,7 @@ applies_to:
   - src/sdk/gateway
 owners:
   - ravi-dev
-status: active
+status: draft
 normative: true
 ---
 
@@ -126,10 +126,12 @@ details and policy outcome:
   usage error (`REMOTE_GATEWAY_INVALID`, exit `2`). Remote failures MUST NOT
   print raw URLs, credentials, provider responses or exception text.
 - Remote details MUST be projected through a local allowlist instead of copied
-  blindly. `suggestions` may preserve only bounded stable identifiers; free
-  text, paths, URLs, token-shaped values and objects are discarded. Flags and
-  positionals must match their canonical grammars, and `suggestedAction` is
-  replaced by a safe local action. This privacy projection is the permitted
+  blindly. `suggestions` may preserve only bounded stable identifiers. A
+  remote `plan` may preserve typed booleans/numbers and identifier/ref/enum
+  strings that match restricted grammars; free text, paths, URLs,
+  token-shaped values, commands and arbitrary objects are discarded. Flags
+  and positionals must match their canonical grammars, and `suggestedAction`
+  is replaced by a safe local action. This privacy projection is the permitted
   exception to byte-for-byte detail parity; semantic fields and taxonomy still
   remain equivalent.
 
