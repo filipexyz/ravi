@@ -114,6 +114,7 @@ describe("public contract redaction", () => {
       sanitizePublicValue({
         url: "C:/private/client-video.mp4",
         callbackUrl: "https://user:pass@example.com/private?token=secret#fragment",
+        route: "/guide",
         fileName: "PRIVATE_CLIENT_FILENAME.pdf",
         sourceName: "PRIVATE_SOURCE_NAME",
         inputName: "PRIVATE_INPUT_NAME",
@@ -122,6 +123,7 @@ describe("public contract redaction", () => {
     ).toEqual({
       url: "[REDACTED:path]",
       callbackUrl: "https://example.com",
+      route: "/guide",
       fileName: "[REDACTED:content length=27]",
       sourceName: "[REDACTED:content length=19]",
       inputName: "[REDACTED:content length=18]",

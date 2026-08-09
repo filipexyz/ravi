@@ -7,6 +7,7 @@ const CONTENT_KEY_PATTERN =
 const SECRET_KEY_SEGMENTS = new Set(["password", "passwords", "secret", "secrets", "token", "tokens"]);
 const SAFE_NUMERIC_SECRET_SUFFIXES = new Set(["chars", "count", "length"]);
 const PATH_KEYS = new Set(["cwd", "exe", "execpath", "outputdir"]);
+const SAFE_PUBLIC_PATH_KEYS = new Set(["route"]);
 const URL_KEYS = new Set(["endpoint"]);
 const COMMAND_KEYS = new Set(["command", "commandline", "shellcommand"]);
 const SECRET_KEYS = new Set([
@@ -75,6 +76,9 @@ export function sanitizePublicValue(value: unknown, key?: string, parent?: Reado
   }
   if (normalizedKey && COMMAND_KEYS.has(normalizedKey) && typeof value === "string") {
     return `[REDACTED:content length=${value.length}]`;
+  }
+  if (normalizedKey && SAFE_PUBLIC_PATH_KEYS.has(normalizedKey) && typeof value === "string") {
+    return sanitizePublicString(value);
   }
   if (key && CONTENT_KEY_PATTERN.test(key)) {
     if (typeof value === "string") return `[REDACTED:content length=${value.length}]`;
