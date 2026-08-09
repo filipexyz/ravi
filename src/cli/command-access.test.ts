@@ -615,6 +615,7 @@ describe("CLI command access enforcement", () => {
           agentId: "dev",
           denied: "mutate:demo.items:create",
           blockType: "cli_command_access_missing_grant",
+          command: "[REDACTED:content length=11]",
           denialId: expect.any(Number),
           context: expect.objectContaining({
             contextId: "ctx_command_access_test",
@@ -628,7 +629,7 @@ describe("CLI command access enforcement", () => {
         relation: "mutate",
         objectType: "demo.items",
         objectId: "create",
-        command: "demo create",
+        command: "[REDACTED:content length=11]",
         notifiedAt: expect.any(Number),
       }),
     );
