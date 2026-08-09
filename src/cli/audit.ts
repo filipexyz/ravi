@@ -57,11 +57,13 @@ export function buildCliAuditPayload(options: CliAuditEventOptions, explicitTool
   const tool = explicitTool ?? options.tool ?? `${options.group}_${options.name}`;
   const outcome = options.outcome ?? (options.isError ? "failed" : "succeeded");
   const isError = options.isError ?? (outcome !== "succeeded" && outcome !== "blocked");
-  const cliInvocation = safeBuildCliInvocationMetadata({
-    group: options.group,
-    name: options.name,
-    tool,
-  });
+  const cliInvocation = sanitizeCliAuditValue(
+    safeBuildCliInvocationMetadata({
+      group: options.group,
+      name: options.name,
+      tool,
+    }),
+  );
 
   return {
     tool,

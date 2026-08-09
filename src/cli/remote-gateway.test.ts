@@ -228,11 +228,22 @@ describe("remote gateway exit taxonomy", () => {
             ],
             dryRun: true,
             plan: {
+              operation: "publish",
+              resource: "artifact",
+              resourceId: "artifact_123",
+              provider: "sk-abcdefghijklmnop",
+              contextId: "rctx_private_context",
+              captionPresent: true,
+              messageChars: 20,
+              attachmentCount: 1,
               target: "commands",
               token: "SENTINEL_SECRET_7M4Q",
               message: "PRIVATE_MESSAGE_8K2R",
               filePath: "C:/sentinel/private/file-9P3X.txt",
+              privateNote: "private-note",
+              destination: { channelId: "channel_123", label: "PRIVATE_LABEL_8K2R" },
             },
+            details: { arbitrary: "PRIVATE_DETAILS_8K2R" },
             issues: [{ providerBody: "PRIVATE_MESSAGE_8K2R" }],
           },
         }),
@@ -246,18 +257,99 @@ describe("remote gateway exit taxonomy", () => {
       acceptedPositionals: ["<opportunity>", "[text]", "<name...>"],
       dryRun: true,
       plan: {
-        target: "commands",
-        token: "[REDACTED]",
-        message: "[REDACTED:content length=20]",
-        filePath: "[REDACTED:path]",
+        operation: "publish",
+        resource: "artifact",
+        resourceId: "artifact_123",
+        captionPresent: true,
+        messageChars: 20,
+        attachmentCount: 1,
+        destination: { channelId: "channel_123" },
       },
     });
     const serialized = JSON.stringify(error?.envelope());
     expect(serialized).not.toContain("Alice Smith");
     expect(serialized).not.toContain("PRIVATE_MESSAGE_8K2R");
     expect(serialized).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(serialized).not.toContain("sk-abcdefghijklmnop");
+    expect(serialized).not.toContain("rctx_private_context");
     expect(serialized).not.toContain("C:/sentinel/private");
     expect(serialized).not.toContain("issues");
+    expect(serialized).not.toContain("privateNote");
+    expect(serialized).not.toContain("PRIVATE_DETAILS_8K2R");
+    expect(serialized).not.toContain("PRIVATE_LABEL_8K2R");
+    expect(serialized).not.toContain('"target"');
     expect(serialized).not.toContain(oversizedPosition);
+  });
+
+  it("keeps representative native dry-run plans actionable after remote projection", () => {
+    const cases = [
+      {
+        op: "agents delete",
+        plan: { agentId: "main", cwdPresent: true, namePresent: false },
+      },
+      {
+        op: "agents permissions",
+        plan: {
+          agentId: "main",
+          beforePresent: true,
+          beforeProfile: "none",
+          beforeCapabilitiesCount: 0,
+          afterPresent: true,
+          afterProfile: "full-access",
+          afterCapabilitiesCount: 3,
+        },
+      },
+      {
+        op: "artifacts publish",
+        plan: {
+          target: { kind: "artifact", artifactId: "art_123" },
+          project: "project-main",
+          site: "public-site",
+          routePresent: true,
+          visibility: "public",
+          namePresent: true,
+          slug: "landing-page",
+          entrypointPresent: true,
+          artifactVersion: 2,
+          activate: true,
+          replaceRelease: false,
+        },
+      },
+      {
+        op: "whatsapp dm send",
+        plan: {
+          channel: "whatsapp",
+          accountId: "default",
+          targetType: "contact",
+          targetRef: "sha256:0123456789abcdef",
+          effect: "send-message",
+          messageChars: 20,
+        },
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const error = remoteGatewayErrorToContractError(
+        testCase.op,
+        result({
+          status: 409,
+          body: JSON.stringify({
+            success: false,
+            op: testCase.op,
+            exitCode: 3,
+            outcome: "blocked",
+            error: {
+              code: "WRITE_REQUIRES_EXECUTE",
+              message: "private remote message",
+              retryable: false,
+              dryRun: true,
+              plan: testCase.plan,
+            },
+          }),
+        }),
+      );
+
+      expect(error?.envelope().error).toMatchObject({ dryRun: true, plan: testCase.plan });
+    }
   });
 });

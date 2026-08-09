@@ -6,11 +6,16 @@ const CONTENT_KEY_PATTERN =
   /^(?:body|caption|content|fileName|inputName|instructions|message|output|prompt|query|reason|sourceName|subject|text|title)$/i;
 const SECRET_KEY_SEGMENTS = new Set(["password", "passwords", "secret", "secrets", "token", "tokens"]);
 const SAFE_NUMERIC_SECRET_SUFFIXES = new Set(["chars", "count", "length"]);
+const PATH_KEYS = new Set(["cwd", "exe", "execpath", "outputdir"]);
+const URL_KEYS = new Set(["endpoint"]);
+const COMMAND_KEYS = new Set(["command", "commandline", "shellcommand"]);
 const SECRET_KEYS = new Set([
   "accesstoken",
   "apikey",
   "authorization",
   "contextkey",
+  "credential",
+  "credentials",
   "credentialref",
   "credentialsref",
   "password",
@@ -61,17 +66,22 @@ export function sanitizePublicValue(value: unknown, key?: string, parent?: Reado
   if (typeof value === "string" && REDACTION_MARKER_PATTERN.test(value)) return value;
   if (key && isSecretKey(key) && !isTypedSecretMetadata(key, value)) return "[REDACTED]";
   if (key === "value" && parentNamesSecret(parent, value)) return "[REDACTED]";
-  if (key && normalizeKey(key).endsWith("path") && typeof value === "string") {
+  const normalizedKey = key ? normalizeKey(key) : undefined;
+  if (normalizedKey && (PATH_KEYS.has(normalizedKey) || normalizedKey.endsWith("path")) && typeof value === "string") {
     return "[REDACTED:path]";
   }
-  if (key && normalizeKey(key).endsWith("url") && typeof value === "string") {
+  if (normalizedKey && (URL_KEYS.has(normalizedKey) || normalizedKey.endsWith("url")) && typeof value === "string") {
     return sanitizePublicUrl(value);
+  }
+  if (normalizedKey && COMMAND_KEYS.has(normalizedKey) && typeof value === "string") {
+    return `[REDACTED:content length=${value.length}]`;
   }
   if (key && CONTENT_KEY_PATTERN.test(key)) {
     if (typeof value === "string") return `[REDACTED:content length=${value.length}]`;
     return "[REDACTED:content]";
   }
   if (typeof value === "string") {
+    if (isStandalonePath(value)) return "[REDACTED:path]";
     return sanitizePublicString(value);
   }
   if (Array.isArray(value)) return value.map((item) => sanitizePublicValue(item));
@@ -87,7 +97,7 @@ export function sanitizePublicValue(value: unknown, key?: string, parent?: Reado
 }
 
 function sanitizePublicUrl(value: string): string {
-  if (/^(?:[A-Za-z]:[\\/]|\\\\|\/|\.\.?[\\/])/.test(value)) return "[REDACTED:path]";
+  if (isStandalonePath(value)) return "[REDACTED:path]";
   try {
     const url = new URL(value);
     if (url.protocol === "file:") return "[REDACTED:path]";
@@ -96,10 +106,14 @@ function sanitizePublicUrl(value: string): string {
     url.password = "";
     url.search = "";
     url.hash = "";
-    return url.toString();
+    return url.origin;
   } catch {
     return sanitizePublicString(value);
   }
+}
+
+function isStandalonePath(value: string): boolean {
+  return /^(?:[A-Za-z]:[\\/]|\\\\|\/|\.\.?[\\/])/.test(value);
 }
 
 function sanitizePublicString(value: string): string {

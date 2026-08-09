@@ -34,6 +34,56 @@ const REMOTE_CONTRACT_CODE_PATTERN = /^[A-Z][A-Z0-9_]{0,63}$/;
 const REMOTE_FLAG_PATTERN = /^--[a-z0-9][a-z0-9-]{0,63}$/;
 const REMOTE_POSITIONAL_PATTERN = /^(?:<[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?>|\[[a-z][A-Za-z0-9_-]{0,63}(?:\.\.\.)?\])$/;
 const REMOTE_SUGGESTION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+const REMOTE_PLAN_KEY_PATTERN = /^[a-z][A-Za-z0-9]{0,63}$/;
+const REMOTE_PLAN_BLOCKED_STRING_KEY_SEGMENTS = new Set([
+  "body",
+  "caption",
+  "command",
+  "content",
+  "credential",
+  "credentials",
+  "details",
+  "endpoint",
+  "error",
+  "file",
+  "instructions",
+  "issues",
+  "message",
+  "metadata",
+  "output",
+  "password",
+  "path",
+  "prompt",
+  "query",
+  "raw",
+  "reason",
+  "secret",
+  "text",
+  "token",
+  "url",
+]);
+const REMOTE_PLAN_IDENTIFIER_KEY_PATTERN = /(?:Id|Ref)$/;
+const REMOTE_PLAN_IDENTIFIER_KEYS = new Set(["project", "site", "slug"]);
+const REMOTE_PLAN_IDENTIFIER_VALUE_PATTERN = /^(?:[A-Za-z0-9][A-Za-z0-9._-]{0,63}|sha256:[a-f0-9]{16})$/;
+const REMOTE_PLAN_ENUM_KEY_PATTERN =
+  /(?:Channel|Effect|Kind|Mode|Operation|Profile|Provider|Resource|Status|Type|Visibility)$/;
+const REMOTE_PLAN_ENUM_KEYS = new Set([
+  "action",
+  "channel",
+  "effect",
+  "kind",
+  "mode",
+  "operation",
+  "provider",
+  "resource",
+  "status",
+  "visibility",
+]);
+const REMOTE_PLAN_TARGET_VALUES = new Set(["all", "main"]);
+const REMOTE_PLAN_ENUM_VALUE_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+const REMOTE_PLAN_TYPED_SUMMARY_KEY_PATTERN = /(?:Bytes|Chars|Configured|Count|Enabled|Length|Present|Requested)$/;
+const REMOTE_PLAN_MAX_DEPTH = 3;
+const REMOTE_PLAN_MAX_PROPERTIES = 64;
 
 export interface RemoteGatewayConfig {
   url: string;
@@ -195,10 +245,73 @@ function projectRemoteContractDetails(op: string, body: CompleteContractErrorBod
   const acceptedPositionals = boundedStringList(remote.acceptedPositionals, REMOTE_POSITIONAL_PATTERN);
   if (acceptedPositionals) details.acceptedPositionals = acceptedPositionals;
   if (typeof remote.dryRun === "boolean") details.dryRun = remote.dryRun;
-  if (remote.plan && typeof remote.plan === "object" && !Array.isArray(remote.plan)) {
-    details.plan = sanitizePublicValue(remote.plan);
-  }
+  const plan = projectRemotePlan(remote.plan);
+  if (plan) details.plan = plan;
   return details;
+}
+
+function projectRemotePlan(value: unknown, depth = 0): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value) || depth > REMOTE_PLAN_MAX_DEPTH) return undefined;
+  const projected: Record<string, unknown> = {};
+  for (const [key, candidate] of Object.entries(value as Record<string, unknown>).slice(
+    0,
+    REMOTE_PLAN_MAX_PROPERTIES,
+  )) {
+    if (!REMOTE_PLAN_KEY_PATTERN.test(key)) continue;
+    const blockedStringKey = isBlockedRemotePlanStringKey(key);
+    if (typeof candidate === "boolean") {
+      if (blockedStringKey && !REMOTE_PLAN_TYPED_SUMMARY_KEY_PATTERN.test(key)) continue;
+      projected[key] = candidate;
+      continue;
+    }
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      if (blockedStringKey && !REMOTE_PLAN_TYPED_SUMMARY_KEY_PATTERN.test(key)) continue;
+      projected[key] = candidate;
+      continue;
+    }
+    if (blockedStringKey) continue;
+    const safeString = typeof candidate === "string" ? projectRemotePlanString(candidate) : undefined;
+    if (key === "target" && safeString !== undefined && REMOTE_PLAN_TARGET_VALUES.has(safeString)) {
+      projected[key] = safeString;
+      continue;
+    }
+    if (
+      (REMOTE_PLAN_ENUM_KEYS.has(key) || REMOTE_PLAN_ENUM_KEY_PATTERN.test(key)) &&
+      safeString !== undefined &&
+      REMOTE_PLAN_ENUM_VALUE_PATTERN.test(safeString)
+    ) {
+      projected[key] = safeString;
+      continue;
+    }
+    if (
+      (REMOTE_PLAN_IDENTIFIER_KEYS.has(key) || REMOTE_PLAN_IDENTIFIER_KEY_PATTERN.test(key)) &&
+      safeString !== undefined &&
+      REMOTE_PLAN_IDENTIFIER_VALUE_PATTERN.test(safeString)
+    ) {
+      projected[key] = safeString;
+      continue;
+    }
+    if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+      const nested = projectRemotePlan(candidate, depth + 1);
+      if (nested) projected[key] = nested;
+    }
+  }
+  return Object.keys(projected).length > 0 ? projected : undefined;
+}
+
+function projectRemotePlanString(value: string): string | undefined {
+  const sanitized = sanitizePublicValue(value);
+  return typeof sanitized === "string" && sanitized === value ? value : undefined;
+}
+
+function isBlockedRemotePlanStringKey(key: string): boolean {
+  const segments = key
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .split(/[._-]/)
+    .flatMap((segment) => segment.split(" "))
+    .filter(Boolean)
+    .map((segment) => segment.toLowerCase());
+  return segments.some((segment) => REMOTE_PLAN_BLOCKED_STRING_KEY_SEGMENTS.has(segment));
 }
 
 function isCompleteContractErrorBody(value: unknown, expectedOp?: string): value is CompleteContractErrorBody {

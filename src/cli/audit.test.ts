@@ -172,4 +172,20 @@ describe("CLI audit redaction", () => {
     expect(serialized).not.toContain("PRIVATE_REASON_8K2R");
     expect(serialized).not.toContain("PRIVATE_QUERY_8K2R");
   });
+
+  it("does not include process paths in CLI audit provenance", () => {
+    const payload = buildCliAuditPayload({ group: "tasks", name: "list" });
+    const serialized = JSON.stringify(payload);
+
+    expect(payload).toMatchObject({
+      cliInvocation: {
+        process: {
+          cwd: "[REDACTED:path]",
+          execPath: "[REDACTED:path]",
+        },
+      },
+    });
+    expect(serialized).not.toContain(process.cwd());
+    expect(serialized).not.toContain(process.execPath);
+  });
 });

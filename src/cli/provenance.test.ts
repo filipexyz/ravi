@@ -28,11 +28,14 @@ describe("CLI provenance", () => {
     expect(metadata.command?.tool).toBe("sessions_reset");
     expect(metadata.process.pid).toBe(process.pid);
     expect(metadata.process.ppid).toBe(process.ppid);
-    expect(metadata.process.cwd).toBe(process.cwd());
+    expect(metadata.process.cwd).toBe("[REDACTED:path]");
+    expect(metadata.process.execPath).toBe("[REDACTED:path]");
     expect(metadata.process.argv.length).toBeGreaterThan(0);
     expect(metadata.host.hostname).toBeTruthy();
     expect(metadata.runtime.nodeVersion).toBe(process.versions.node);
     expect(typeof metadata.raviContext.hasContextKey).toBe("boolean");
+    expect(JSON.stringify(metadata)).not.toContain(process.cwd());
+    expect(JSON.stringify(metadata)).not.toContain(process.execPath);
   });
 
   it("hashes audit identifiers without exposing raw values", () => {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { ContractError } from "./agent-contract.js";
 import { sanitizePublicValue } from "./redaction.js";
 
 describe("public contract redaction", () => {
@@ -120,11 +121,53 @@ describe("public contract redaction", () => {
       }),
     ).toEqual({
       url: "[REDACTED:path]",
-      callbackUrl: "https://example.com/private",
+      callbackUrl: "https://example.com",
       fileName: "[REDACTED:content length=27]",
       sourceName: "[REDACTED:content length=19]",
       inputName: "[REDACTED:content length=18]",
       subject: "[REDACTED:content length=20]",
+    });
+  });
+
+  it("sanitizes path, endpoint, credential and command aliases including URL path tokens", () => {
+    const privateCommand = "ravi settings set custom.password SENTINEL_SECRET_7M4Q";
+
+    expect(
+      sanitizePublicValue({
+        cwd: "C:/private/customer/project",
+        outputDir: "C:/private/customer/output",
+        endpoint: "https://user:pass@example.com/hooks/SENTINEL_SECRET_7M4Q/callback?token=private",
+        credential: "SENTINEL_SECRET_7M4Q",
+        credentials: "SENTINEL_SECRET_7M4Q",
+        command: privateCommand,
+        nestedPathByValue: "C:/private/customer/unlabelled.txt",
+      }),
+    ).toEqual({
+      cwd: "[REDACTED:path]",
+      outputDir: "[REDACTED:path]",
+      endpoint: "https://example.com",
+      credential: "[REDACTED]",
+      credentials: "[REDACTED]",
+      command: `[REDACTED:content length=${privateCommand.length}]`,
+      nestedPathByValue: "[REDACTED:path]",
+    });
+  });
+
+  it("applies the same aliases to ContractError details", () => {
+    const error = new ContractError("demo run", "COMMAND_FAILED", "Command failed.", 1, {
+      cwd: "C:/private/customer/project",
+      outputDir: "C:/private/customer/output",
+      endpoint: "https://example.com/SENTINEL_SECRET_7M4Q/result?token=private",
+      credential: "SENTINEL_SECRET_7M4Q",
+      credentials: "SENTINEL_SECRET_7M4Q",
+    });
+
+    expect(error.details).toEqual({
+      cwd: "[REDACTED:path]",
+      outputDir: "[REDACTED:path]",
+      endpoint: "https://example.com",
+      credential: "[REDACTED]",
+      credentials: "[REDACTED]",
     });
   });
 });
