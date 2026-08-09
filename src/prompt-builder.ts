@@ -447,7 +447,7 @@ export function buildSystemPromptSections(
 When instructed via [System] Execute or [System] Ask, you CAN send messages explicitly:
 
 - \`ravi whatsapp dm send <contact> "message" --account $RAVI_ACCOUNT_ID --execute\` — send a WhatsApp message (without \`--execute\` it is a dry-run, exit 3)
-- \`ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID --no-ack\` — read recent messages locally without sending a receipt
+- \`ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID\` — read recent messages locally; this command never sends a receipt
 - \`ravi whatsapp dm ack <contact> <messageId> --account $RAVI_ACCOUNT_ID --execute\` — send a confirmed read receipt (blue ticks; without \`--execute\` it is a dry-run, exit 3)
 
 The env var $RAVI_ACCOUNT_ID is set automatically with your WhatsApp account. Always use it.

@@ -48,8 +48,8 @@ subset.
    targetRef, effect, accountId}`
    (settings also has `setting`); join uses `{inviteProvided, accountId}`;
    rename adds `subjectChars`; description adds `descriptionChars`. DM plans use
-   `{channel, accountId, targetType, targetRef, effect}` plus only `messageChars`,
-   `messageCount`, or `receiptCount` as applicable. `targetType` is `group` or
+    `{channel, accountId, targetType, targetRef, effect}` plus only `messageChars`
+    or `receiptCount` as applicable. `targetType` is `group` or
    `contact`; `targetRef` is a stable SHA-256 prefix used only to distinguish
    targets. No target suffix, display name, phone, JID, subject, invite,
    message id, or message text may appear.
@@ -72,9 +72,9 @@ subset.
 8. When invoked from an agent context (`RAVI_*` envs present), a thrown
    `ContractError` MUST preserve its exit code through the registry dispatcher —
    the brake exits 3, never a generic `Error: ...` with exit 1.
-9. Pure reads keep immediate behavior. `dm read --no-ack` reads local history
-   directly; the default read path requires `--execute` only when it finds a
-   message id and would send a receipt. `dm ack` always requires `--execute`.
+9. `dm read` is always a pure local-history read: it never emits a receipt and
+   never accepts `--no-ack` or `--execute`. `dm ack` is the explicit external
+   receipt operation and always requires `--execute`.
 
 ## Write classification (brake decision per op)
 
@@ -90,12 +90,12 @@ subset.
 | group join / leave | membership changes visible to all members (high) | dry-run + `--execute` |
 | dm send | message reaches a real person (high) | dry-run + `--execute` |
 | group list / info / invite | reads | not braked (declared) |
-| dm read --no-ack, or no receipt candidate | local history read | not braked |
-| dm read with a receipt candidate / dm ack | external read-receipt emission | conditional dry-run + `--execute` |
+| dm read | local history read | not braked |
+| dm ack | external read-receipt emission | dry-run + `--execute` |
 
-`join`, `leave`, `description`, `settings` and `dm read` are authorized as
-`mutate` because they can produce external effects. Exact legacy read grants
-follow the [global compatibility
+`join`, `leave`, `description` and `settings` are authorized as `mutate`
+because they can produce external effects. Exact legacy read grants follow the
+[global compatibility
 migration](../SPEC.md#authorization-and-confirmation-are-different-controls).
 
 ## Official error cases
@@ -114,16 +114,16 @@ and MUST document `--execute` on every braked op and list the unbraked ops
 explicitly. Other teaching surfaces updated with `--execute`: the `agents` and
 `architect` skills, `src/prompt-builder.ts` (group-create suggestion + sentinel
 DM instructions), `docs/guides/whatsapp-groups.mdx` and `docs/cli/overview.mdx`.
-The sentinel prompt teaches `dm read --no-ack` for silent local inspection and
-`dm ack ... --execute` for an intentional external receipt.
+The sentinel prompt teaches `dm read` for local inspection and `dm ack ...
+--execute` for an intentional external receipt.
 Daemon-side outbound delivery publishes to NATS directly (channel senders), not
 through this CLI, so the brake does not affect runtime message routing.
 
 ## Validation
 
 - `bun test src/cli/commands/group.test.ts src/cli/commands/channels-json.test.ts`
-  covers group writes plus conditional DM receipts, including zero NATS emits
-  in dry-run and `--no-ack` compact reads.
+  covers group writes, pure DM reads with zero NATS emits, explicit receipt
+  confirmation, and compact reads.
 - `bun tsc --noEmit` clean.
 - Live checks (isolated `RAVI_STATE_DIR`, daemon running): `whatsapp group send
   <jid> "test" --json` → exit 3 and NO message delivered; adding `--execute`

@@ -879,7 +879,7 @@ describe("whatsapp dm contract", () => {
     expect(payload).toMatchObject({ status: "acknowledged" });
   });
 
-  it("read with an acknowledgement candidate requires --execute before emitting the receipt", async () => {
+  it("read stays local even when the history contains an acknowledgement candidate", async () => {
     const sensitiveMessageId = "SENTINEL_READ_MID";
     historyMock = [
       { role: "user", content: `[mid:${sensitiveMessageId}] oi`, created_at: "2026-01-01T10:00:00" },
@@ -887,48 +887,11 @@ describe("whatsapp dm contract", () => {
     ];
 
     const commands = new WhatsAppDmCommands();
-    const sensitivePhone = "5511777666555";
-    const sensitiveJid = `${sensitivePhone}@s.whatsapp.net`;
-    const sensitiveDisplayName = "SENTINEL_PRIVATE_DISPLAY_NAME";
-    const error = await expectContractError(
-      () => commands.read(sensitivePhone, undefined, false, undefined, true, undefined, undefined),
-      "WRITE_REQUIRES_EXECUTE",
-      3,
-    );
+    const payload = await silenced(() => commands.read("5511999999999", undefined, undefined, true, undefined));
 
-    expect(error.details.dryRun).toBe(true);
-    expect(error.details.plan).toEqual({
-      channel: "whatsapp",
-      accountId: "main",
-      targetType: "contact",
-      targetRef: `sha256:${hashForAudit(sensitiveJid)}`,
-      effect: "read-and-send-receipt",
-      messageCount: 2,
-      receiptCount: 1,
-    });
-    const serializedPlan = JSON.stringify(error.details.plan);
-    expect(serializedPlan).not.toContain(sensitivePhone);
-    expect(serializedPlan).not.toContain(sensitiveJid);
-    expect(serializedPlan).not.toContain(sensitiveDisplayName);
-    expect(serializedPlan).not.toContain(sensitiveMessageId);
-    expect((error.details.plan as Record<string, unknown>).messageId).toBeUndefined();
+    expect(payload.total).toBe(2);
+    expect(payload).not.toHaveProperty("ackedMessageId");
     expect(natsEmits).toHaveLength(0);
-  });
-
-  it("read --execute emits the default read receipt", async () => {
-    historyMock = [
-      { role: "user", content: "[mid:ABC] oi", created_at: "2026-01-01T10:00:00" },
-      { role: "assistant", content: "olÃ¡!", created_at: "2026-01-01T10:01:00" },
-    ];
-
-    const commands = new WhatsAppDmCommands();
-    const payload = await silenced(() =>
-      commands.read("5511999999999", undefined, false, undefined, true, undefined, true),
-    );
-
-    expect(payload.ackedMessageId).toBe("ABC");
-    expect(natsEmits).toHaveLength(1);
-    expect(natsEmits[0]?.topic).toBe("ravi.outbound.receipt");
   });
 
   it("read --fields narrows each message to the requested fields", async () => {
@@ -938,15 +901,12 @@ describe("whatsapp dm contract", () => {
     ];
 
     const commands = new WhatsAppDmCommands();
-    const payload = await silenced(() =>
-      commands.read("5511999999999", undefined, true, undefined, true, "role,content"),
-    );
+    const payload = await silenced(() => commands.read("5511999999999", undefined, undefined, true, "role,content"));
 
     expect(payload.total).toBe(2);
     for (const message of payload.messages as unknown as Array<Record<string, unknown>>) {
       expect(Object.keys(message).sort()).toEqual(["content", "role"]);
     }
-    // --no-ack: no receipt emitted
     expect(natsEmits).toHaveLength(0);
   });
 });

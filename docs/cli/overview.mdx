@@ -323,15 +323,14 @@ Send direct messages and manage read receipts.
 ```bash
 ravi whatsapp.dm send <contact> <message> --execute  # Send a DM (resolves LID or phone; without --execute it is a dry-run, exit 3)
   --account <id>                              #   WhatsApp account
-ravi whatsapp.dm read <contact> --no-ack      # Read locally without sending a receipt
-ravi whatsapp.dm read <contact> --execute     # Read and send the default receipt when an inbound MID exists
+ravi whatsapp.dm read <contact>               # Read local history; never sends a receipt
   --last <n>                                  #   Number of messages (default: 10)
   --account <id>                              #   WhatsApp account
 ravi whatsapp.dm ack <contact> <messageId> --execute  # Send a receipt (without --execute it is a dry-run, exit 3)
   --account <id>                              #   WhatsApp account
 ```
 
-The default `dm read` only requires `--execute` when the selected history contains an inbound MID and would therefore emit a read receipt. Without `--execute`, that case returns the plan and exits 3; when no receipt can be emitted, the read returns directly. Use `--no-ack` for an always read-only path.
+`dm read` is always read-only and never sends a receipt. To send a blue-tick receipt intentionally, use `dm ack <contact> <messageId> --execute`.
 
 ## Media
 

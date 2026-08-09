@@ -6,20 +6,19 @@ visible and socially irreversible; a stray `group send` cannot be unsent; a
 `group leave` announces itself to every member. The write-brake benchmark that
 motivated the contract showed exactly this class of failure (0/27 unintended
 writes blocked before the brake, 27/27 after), so here the brake covers the
-ENTIRE mutation surface — 12 group ops plus `dm send` — instead of only the
-"destructive" subset used in calmer domains like tasks.
+ENTIRE mutation surface — 12 group ops plus `dm send` and `dm ack` — instead
+of only the "destructive" subset used in calmer domains like tasks.
 
 Decisions that shaped this wave:
 
-- **Authorization follows the effect.** `group join`, `leave`, `description`,
-  `settings` and `dm read` are `mutate` because they can change live WhatsApp
-  state. Exact legacy grants are migrated so least-privilege callers do not
-  lose their prior command-level access.
+- **Authorization follows the effect.** `group join`, `leave`, `description`
+  and `settings` are `mutate` because they can change live WhatsApp state.
+  Exact legacy grants are migrated so least-privilege callers do not lose
+  their prior command-level access. `dm read` is a pure local read.
 - **Confirmation follows the invocation.** `group list`, `group info` and
-  `group invite` only read. `dm read --no-ack` is also a local read and stays
-  immediate. A blue-tick receipt is still an observable outbound signal, so
-  the implicit receipt in `dm read` and explicit `dm ack` require confirmation
-  before NATS emission. This avoids taxing silent read loops.
+  `group invite` only read. `dm read` also stays immediate and never emits a
+  receipt. A blue-tick receipt is an observable outbound signal, so the
+  explicit `dm ack` requires confirmation before NATS emission.
 - **Suggestions only from sources already in hand.** `GROUP_NOT_FOUND` in
   `group info` enriches the envelope from the group list that the resolution
   path had ALREADY fetched (omni REST with local chat-model fallback) — zero

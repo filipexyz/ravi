@@ -153,34 +153,31 @@ export class WhatsAppDmCommands {
 
   @Command({ name: "read", description: "Read recent messages from a DM chat" })
   @CommandAccess({
-    kind: "mutate",
+    kind: "read",
     resource: "whatsapp.dm",
     action: "read",
-    risk: "medium",
-    requiresConfirmation: true,
+    risk: "low",
     redactions: ["contact"],
   })
   async read(
     @Arg("contact", { description: "Contact ID, phone, or WhatsApp identity" }) contactRef: string,
     @Option({ flags: "--last <n>", description: "Number of messages to read (default: 10)" }) last?: string,
-    @Option({ flags: "--no-ack", description: "Don't send read receipt" }) noAck?: boolean,
-    @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
+    @Option({
+      flags: "--account <id>",
+      description: "WhatsApp account ID (accepted for compatibility; local history is account-independent)",
+    })
+    account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each message" })
     fields?: string,
-    @Option({
-      flags: "--execute",
-      description: "Actually send the default read receipt; --no-ack reads locally without confirmation",
-    })
-    execute?: boolean,
   ) {
     const { jid, displayName } = resolveWhatsAppJid("whatsapp dm read", contactRef, asJson);
     const sessionId = jidToSessionId(jid);
     const limit = last ? parseInt(last, 10) : 10;
-    const accountId = account ?? getFirstAccountName() ?? "";
+    // Kept for CLI compatibility; local history is not account-scoped.
+    void account;
 
     const messages = getRecentHistory(sessionId, limit);
-    let ackedMessageId: string | null = null;
 
     if (messages.length === 0) {
       const emptyPayload = {
@@ -191,7 +188,6 @@ export class WhatsAppDmCommands {
         limit,
         total: 0,
         messages: [],
-        ackedMessageId: null,
       };
       if (asJson) {
         printJson(emptyPayload);
@@ -210,41 +206,6 @@ export class WhatsAppDmCommands {
       }
     }
 
-    // Send ack for the last user message by default
-    if (!noAck) {
-      // Find last inbound message ID from content (mid tag)
-      const lastUserMsg = [...messages].reverse().find((m) => m.role === "user");
-      if (lastUserMsg) {
-        const midMatch = lastUserMsg.content.match(/\[mid:([^\]]+)\]/);
-        if (midMatch) {
-          if (execute !== true) {
-            contractDryRun(
-              "whatsapp dm read",
-              {
-                channel: "whatsapp",
-                accountId,
-                targetType: "contact",
-                targetRef: pseudonymousTargetRef(jid),
-                effect: "read-and-send-receipt",
-                messageCount: messages.length,
-                receiptCount: 1,
-              },
-              { asJson },
-            );
-          }
-          await nats.emit("ravi.outbound.receipt", {
-            channel: "whatsapp",
-            accountId,
-            chatId: jid,
-            senderId: jid,
-            messageIds: [midMatch[1]],
-          });
-          ackedMessageId = midMatch[1];
-          if (!asJson) console.log(`\n✓ Read receipt sent (${midMatch[1]})`);
-        }
-      }
-    }
-
     const payload = {
       contact: contactRef,
       displayName,
@@ -254,7 +215,6 @@ export class WhatsAppDmCommands {
       total: messages.length,
       // Compact mode (Manual v2 7.9): narrows the message objects only.
       messages: pickFields(messages, fields),
-      ackedMessageId,
     };
 
     if (asJson) {

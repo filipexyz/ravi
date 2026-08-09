@@ -73,7 +73,6 @@ export const CLI_READ_TO_MUTATE_MIGRATIONS: readonly CliReadToMutateMigration[] 
   { resource: "triggers", action: "test" },
   { resource: "video", action: "analyze" },
   { resource: "whatsapp.group", action: "join" },
-  { resource: "whatsapp.dm", action: "read" },
   { resource: "whatsapp.group", action: "leave" },
   { resource: "whatsapp.group", action: "description" },
   { resource: "whatsapp.group", action: "settings" },

@@ -11,8 +11,18 @@ import {
 describe("CLI command access kind migration", () => {
   it("has one unique entry for every reclassified operation", () => {
     const keys = CLI_READ_TO_MUTATE_MIGRATIONS.map(({ resource, action }) => `${resource}:${action}`);
-    expect(keys).toHaveLength(69);
+    expect(keys).toHaveLength(68);
     expect(new Set(keys).size).toBe(keys.length);
+    expect(keys).not.toContain("whatsapp.dm:read");
+  });
+
+  it("does not migrate the pure whatsapp dm read capability to mutate", () => {
+    expect(migrateLegacyReadCapabilityInputs(["read:whatsapp.dm:read"])).toEqual({
+      capabilities: ["read:whatsapp.dm:read"],
+      changed: false,
+      added: 0,
+      ambiguous: 0,
+    });
   });
 
   it("adds exact mutate grants for canonical strings, aliases, and objects", () => {

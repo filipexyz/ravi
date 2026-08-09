@@ -702,13 +702,13 @@ describe("channel command --json output", () => {
     expect(emitted[0].topic).toBe("ravi.outbound.deliver");
   });
 
-  it("prints WhatsApp DM reads and auto-ack metadata as typed JSON", async () => {
+  it("prints WhatsApp DM reads as typed JSON without emitting a receipt", async () => {
     const payload = await captureJson(() =>
-      new WhatsAppDmCommands().read("5511999999999", "5", false, "main", true, undefined, true),
+      new WhatsAppDmCommands().read("5511999999999", "5", "main", true, undefined),
     );
 
     expect(payload.total).toBe(2);
-    expect(payload.ackedMessageId).toBe("msg-1");
-    expect(emitted[0].topic).toBe("ravi.outbound.receipt");
+    expect(payload).not.toHaveProperty("ackedMessageId");
+    expect(emitted).toHaveLength(0);
   });
 });

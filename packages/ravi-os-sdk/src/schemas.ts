@@ -73790,16 +73790,12 @@ export const WhatsappDmReadInputSchema = {
   "additionalProperties": false,
   "properties": {
     "account": {
-      "description": "WhatsApp account ID",
+      "description": "WhatsApp account ID (accepted for compatibility; local history is account-independent)",
       "type": "string"
     },
     "contact": {
       "description": "Contact ID, phone, or WhatsApp identity",
       "type": "string"
-    },
-    "execute": {
-      "description": "Actually send the default read receipt; --no-ack reads locally without confirmation",
-      "type": "boolean"
     },
     "fields": {
       "description": "Compact mode: keep only these fields of each message",
@@ -73808,11 +73804,6 @@ export const WhatsappDmReadInputSchema = {
     "last": {
       "description": "Number of messages to read (default: 10)",
       "type": "string"
-    },
-    "noAck": {
-      "default": false,
-      "description": "Don't send read receipt",
-      "type": "boolean"
     }
   },
   "required": [

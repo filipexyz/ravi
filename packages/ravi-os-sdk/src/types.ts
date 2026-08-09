@@ -15451,10 +15451,8 @@ export type WhatsappDmAckReturn = Record<string, unknown>;
 export type WhatsappDmReadInput = {
   account?: string;
   contact: string;
-  execute?: boolean;
   fields?: string;
   last?: string;
-  noAck?: boolean;
 };
 
 /** Return shape for `whatsapp.dm.read`. */

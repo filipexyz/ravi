@@ -7740,10 +7740,8 @@ export class RaviClient {
       /** Read recent messages from a DM chat */
       read: async (contact: string, options?: {
         account?: string;
-        execute?: boolean;
         fields?: string;
         last?: string;
-        noAck?: boolean;
       }): Promise<WhatsappDmReadReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","dm"],

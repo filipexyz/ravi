@@ -13,7 +13,7 @@ import {
   redactCommandAccessInput,
 } from "../command-access.js";
 import { runWithContext } from "../context.js";
-import { getCommandAccessMetadata, type CommandAccessOptions } from "../decorators.js";
+import { getCommandAccessMetadata, getOptionsMetadata, type CommandAccessOptions } from "../decorators.js";
 import { AgentsCommands } from "./agents.js";
 import { ArtifactsCommands } from "./artifacts.js";
 import { ChannelsCommands } from "./channels.js";
@@ -570,14 +570,6 @@ const ACCESS_CASES: AccessCase[] = [
     risk: "high",
   },
   {
-    label: "whatsapp dm read",
-    group: "whatsapp.dm",
-    command: "read",
-    target: WhatsAppDmCommands,
-    method: "read",
-    risk: "medium",
-  },
-  {
     label: "whatsapp group leave",
     group: "whatsapp.group",
     command: "leave",
@@ -676,6 +668,36 @@ describe("corrected mutating command access", () => {
     const migrated = CLI_READ_TO_MUTATE_MIGRATIONS.map(({ resource, action }) => `${resource}:${action}`).sort();
 
     expect(migrated).toEqual(expected);
+  });
+
+  it("keeps whatsapp dm read as a pure read without confirmation flags", () => {
+    const access = getCommandAccessMetadata(WhatsAppDmCommands).get("read");
+    const flags = getOptionsMetadata(new WhatsAppDmCommands(), "read").map((option) => option.flags);
+
+    expect(access).toMatchObject({ kind: "read", risk: "low" });
+    if (!access) throw new Error("Missing command access metadata for whatsapp dm read");
+    expect(access?.requiresConfirmation).not.toBe(true);
+    expect(flags).toContain("--account <id>");
+    expect(flags).not.toContain("--no-ack");
+    expect(flags).not.toContain("--execute");
+    expect(CLI_READ_TO_MUTATE_MIGRATIONS).not.toContainEqual({
+      resource: "whatsapp.dm",
+      action: "read",
+    });
+    expect(
+      authorize(
+        {
+          label: "whatsapp dm read",
+          group: "whatsapp.dm",
+          command: "read",
+          target: WhatsAppDmCommands,
+          method: "read",
+          risk: "low",
+        },
+        access,
+        "read",
+      ).allowed,
+    ).toBe(true);
   });
 
   it("declares redaction for WhatsApp content and private identifiers in audit input", () => {
