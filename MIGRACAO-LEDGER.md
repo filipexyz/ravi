@@ -1202,3 +1202,17 @@ nesta fase. A verificacao local fica limitada a revisao adversarial dos diffs,
 arquivos staged explicitos e `git diff --check`. Build, typecheck, testes,
 snapshots gerados e quality gate so contam quando a CI da PR 399 terminar no
 mesmo SHA publicado. Enquanto isso, o veredito permanece **DO NOT APPROVE**.
+
+### Primeira rodada de CI da fase 6
+
+O CI Linux [`31294160621`](https://github.com/filipexyz/ravi/actions/runs/31294160621)
+do SHA `806b0718dc5d6b8186c35e312a1f11ee50830f19` passou Build e Typecheck,
+mas Test falhou em duas expectativas do mesmo arquivo, `pages.test.ts`. A
+deteccao de path por valor tratava a rota publica material (`/` ou `/guide`)
+como caminho local privado. O Quality Gate foi ignorado por consequencia.
+
+O commit `42d99343` manteve a protecao de paths desconhecidos e criou uma
+excecao explicita apenas para o campo estrutural `route`, ainda passando seu
+valor pelo sanitizador de tokens. O teste central de redaction agora protege
+essa distincao. A spec permanece `draft`; uma nova CI no head exato e
+necessaria para qualquer aprovacao.
