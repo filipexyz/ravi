@@ -101,6 +101,31 @@ describe("permission denials", () => {
     expect(JSON.stringify(denial)).not.toContain("sk-abcdefghijklmnop");
   });
 
+  it("never persists or publishes the full denied command", async () => {
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const command = "ravi settings set custom.password SENTINEL_SECRET_7M4Q";
+
+    const denial = recordAndEmitPermissionDenial({
+      subjectType: "agent",
+      subjectId: "worker",
+      relation: "execute",
+      objectType: "executable",
+      objectId: "ravi",
+      command,
+      audit: {
+        type: "executable",
+        agentId: "worker",
+        denied: "ravi",
+        command,
+      },
+    });
+    await flushPermissionAuditEvents();
+
+    expect(denial?.command).toBe(`[REDACTED:content length=${command.length}]`);
+    expect(auditEvents[0]?.data.command).toBe(`[REDACTED:content length=${command.length}]`);
+    expect(JSON.stringify({ denial, auditEvents })).not.toContain("SENTINEL_SECRET_7M4Q");
+  });
+
   it("records and publishes denied audit events with the same denial id", async () => {
     delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
 

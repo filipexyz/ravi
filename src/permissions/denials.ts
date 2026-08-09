@@ -119,8 +119,8 @@ export function recordPermissionDenial(input: PermissionDenialInput): Permission
       normalizeNullableText(input.sessionKey),
       normalizeNullableText(input.sessionName),
       normalizeNullableText(input.contextId),
-      truncate(normalizeNullableText(input.reason), MAX_REASON_LENGTH),
-      truncate(normalizeNullableText(input.command), MAX_COMMAND_LENGTH),
+      truncate(sanitizeNullableText(input.reason, "reason"), MAX_REASON_LENGTH),
+      truncate(sanitizeNullableText(input.command, "command"), MAX_COMMAND_LENGTH),
       detailJson,
       now,
     );
@@ -253,6 +253,13 @@ function normalizeDedupePart(value: string | null | undefined): string {
 
 function normalizeNullableText(value: string | null | undefined): string | null {
   return normalizeText(value);
+}
+
+function sanitizeNullableText(value: string | null | undefined, key: string): string | null {
+  const normalized = normalizeNullableText(value);
+  if (!normalized) return null;
+  const sanitized = sanitizePublicValue(normalized, key);
+  return typeof sanitized === "string" ? sanitized : null;
 }
 
 function truncate(value: string | null, max: number): string | null {
