@@ -1244,3 +1244,17 @@ O commit `1a866b52` recalculou o hash deterministico para
 as copias e o hash do corpo foram verificados com Node, sem Bun local. A spec
 permanece `draft`; uma nova CI no head exato continua necessaria para qualquer
 aprovacao.
+
+### Quarta rodada de CI da fase 6
+
+O CI Linux [`31294999558`](https://github.com/filipexyz/ravi/actions/runs/31294999558)
+do SHA `cd8032c8b7681478637b6323687350fa7745a64d` passou Build, Typecheck,
+testes comportamentais, os dois checks OpenAPI e o check do SDK TypeScript.
+Test falhou somente no check final do SDK Swift, que informou um artefato
+gerado divergente.
+
+O arquivo divergente era `RaviVersion.generated.swift`: seu registry hash nao
+acompanhou o hash ja validado pelo SDK TypeScript. O commit `d5e3c19b` alinhou
+ambos a `sha256:2389d0925c0f408c05773debd2f094c19705b8f392212fbdc8b467b2151b8e79`.
+A spec permanece `draft`; uma nova CI no head exato continua necessaria para
+qualquer aprovacao.
