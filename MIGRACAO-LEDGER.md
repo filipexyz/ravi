@@ -1216,3 +1216,17 @@ excecao explicita apenas para o campo estrutural `route`, ainda passando seu
 valor pelo sanitizador de tokens. O teste central de redaction agora protege
 essa distincao. A spec permanece `draft`; uma nova CI no head exato e
 necessaria para qualquer aprovacao.
+
+### Segunda rodada de CI da fase 6
+
+O CI Linux [`31294308314`](https://github.com/filipexyz/ravi/actions/runs/31294308314)
+do SHA `cebb612ed2ad39784481dc45ddbb4f2c13a7902d` passou Build e Typecheck e
+avancou pelos checks de Pages e SDK. Test falhou somente em uma expectativa
+obsoleta de `command-access.test.ts`: o teste ainda exigia que o comando negado
+fosse persistido em texto puro, embora o runtime ja o redigisse na auditoria e
+no banco.
+
+O commit `c0966db4` alinhou as duas expectativas ao marcador estruturado
+`[REDACTED:content length=11]`, preservando como comportamento normativo a
+ausencia do comando privado integral. A spec permanece `draft`; uma nova CI no
+head exato continua necessaria para qualquer aprovacao.
