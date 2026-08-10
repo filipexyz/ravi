@@ -895,13 +895,13 @@ async function runPagesCommand<T>(op: string, asJson: boolean | undefined, run: 
 function failPagesNotFoundFromConsole(op: string, error: CloudAuthError, asJson?: boolean): void {
   const message = error.message;
   if (/route\b.*not.?found|not.?found.*\broute/i.test(message)) {
-    contractFail(op, "ROUTE_NOT_FOUND", message, {
+    contractFail(op, "ROUTE_NOT_FOUND", "Pages route was not found.", {
       asJson,
       details: { suggestedAction: "List published routes with: ravi pages published --json" },
     });
   }
   if (/(site|pages host)\b.*not.?found|not.?found.*\bsite/i.test(message)) {
-    contractFail(op, "SITE_NOT_FOUND", message, {
+    contractFail(op, "SITE_NOT_FOUND", "Pages site was not found.", {
       asJson,
       details: { suggestedAction: "List Pages sites with: ravi pages list --json" },
     });
