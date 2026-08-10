@@ -43,11 +43,11 @@ Taxonomia de saida:
   parecidas — consulte antes de concluir "nao existe".
 - `2` erro de uso (flag/arg invalido). O envelope traz `acceptedFlags`: corrija a
   chamada, nao insista na mesma sintaxe.
-- `3` **freio de escrita — nao e erro.** Nada foi gravado; o envelope traz `dryRun:true`
-  e `plan` com exatamente o que seria escrito. Revise o plano e repita com `--execute`.
+- `3` bloqueio de confirmacao do contrato global. Esse exit nao ocorre nas operacoes
+  CRM atuais.
 
-**Onde o freio existe hoje:** somente `crm pipeline create`, `crm opportunity create` e
-`crm opportunity move`. **Todas as demais escritas gravam na hora**, sem dry-run:
+`crm pipeline create`, `crm opportunity create` e `crm opportunity move` executam
+imediatamente sem `--execute`. **Todas as escritas CRM gravam na hora**, sem dry-run:
 `crm contact set`, `crm account create`, `crm account link-contact`,
 `crm opportunity link-contact`, `crm pipeline set`, `crm task create|done|cancel|snooze`,
 `crm fact propose|confirm|reject`. Nessas o freio e voce: confira o alvo antes de rodar.
@@ -191,8 +191,8 @@ negociacao. Para evitar dupla notificacao no mesmo dia, o cron MAY filtrar taref
 
 - Nao ha `crm account set`, `crm opportunity set` nem `crm task set` generico: o que nao
   tem comando proprio nao se edita por aqui.
-- Nao existe delete de oportunidade — criar a oportunidade errada e irreversivel. Use o
-  dry-run (exit 3) para conferir o `plan` antes de `--execute`.
+- Nao existe delete de oportunidade — criar a oportunidade errada e irreversivel.
+  Confira o alvo antes de criar e use `--idempotency-key` para evitar duplicacoes.
 - `crm task create` nao aceita status: toda task nasce `open` com prioridade `normal`.
 - Campo desconhecido em `crm contact set` ainda falha em texto puro (exit 1), fora do
   envelope; a mensagem lista os campos aceitos.
@@ -206,7 +206,7 @@ negociacao. Para evitar dupla notificacao no mesmo dia, o cron MAY filtrar taref
 - Chequei ambiguidade/duplicatas antes de escrever?
 - Diferenciei policy status de lifecycle CRM?
 - Usei `--json` nas leituras que guiaram writes?
-- Tratei exit 3 como freio (revisei o `plan`) e nao como falha?
+- Confirmei o alvo e nao acrescentei `--execute` aos comandos CRM?
 - Consultei `suggestions` do envelope antes de declarar not-found?
 - Usei idempotency key em criacoes/propostas repetiveis?
 - Provei ou propus facts conforme a confianca?
