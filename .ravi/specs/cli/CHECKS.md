@@ -65,6 +65,9 @@ and transport names follow [`SPEC.md`](./SPEC.md).
   URL pathnames, standalone paths under unknown field names, common aliases
   such as `cwd`, `outputDir`, `endpoint` and `credential`, structured CLI
   provenance, and plans received from the remote gateway.
+- CLI provenance tests place sentinels in option values, `--key=value`
+  arguments and positionals such as invite links. Neither process nor parent
+  `argv` may retain raw values; both expose only an argument-count marker.
 - Native runtime permission denials persist and publish only a bounded command
   marker; the denied command body and its arguments never enter the denial
   database or `ravi.audit.denied` event.

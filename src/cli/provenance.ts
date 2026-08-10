@@ -4,11 +4,8 @@ import { hostname, userInfo } from "node:os";
 import { basename } from "node:path";
 import { getContext } from "./context.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
-import { sanitizePublicValue } from "./redaction.js";
 
 const MAX_ARG_LENGTH = 240;
-const MAX_ARG_COUNT = 80;
-const SENSITIVE_KEY_PATTERN = /(token|secret|password|passwd|pwd|api[-_]?key|auth|bearer|credential|context[-_]?key)/i;
 
 export interface CliInvocationMetadata {
   invocationId: string;
@@ -79,76 +76,16 @@ export function hashForAudit(value: string | null | undefined, length = 16): str
   return createHash("sha256").update(value).digest("hex").slice(0, length);
 }
 
-function argvOptionKey(value: string): string | null {
-  const match = value.match(/^--?([^=]+)(?:=|$)/);
-  return match?.[1] ?? null;
-}
-
-function sanitizeArgValue(key: string, value: string): string {
-  const projected = sanitizePublicValue(value, key);
-  return typeof projected === "string" ? projected : "[REDACTED]";
-}
-
-function shouldProjectArgValue(key: string): boolean {
-  const normalized = key.replace(/[-_]/g, "").toLowerCase();
-  return (
-    SENSITIVE_KEY_PATTERN.test(key) ||
-    normalized === "cwd" ||
-    normalized === "outputdir" ||
-    normalized === "endpoint" ||
-    normalized.endsWith("url") ||
-    normalized.endsWith("path")
-  );
-}
-
-function isBooleanCliFlag(
-  key: string,
-  command: { group?: string; name?: string; tool?: string } | undefined,
-): boolean {
-  return command?.group === "daemon" && command.name === "logs" && key.replace(/[-_]/g, "").toLowerCase() === "path";
-}
-
 export function sanitizeCliArgv(
   argv: readonly string[],
-  command?: { group?: string; name?: string; tool?: string },
+  _command?: { group?: string; name?: string; tool?: string },
 ): string[] {
-  const out: string[] = [];
-  let nextValueKey: string | null = null;
+  if (argv.length === 0) return [];
 
-  for (const rawArg of argv.slice(0, MAX_ARG_COUNT)) {
-    if (nextValueKey) {
-      const projected = SENSITIVE_KEY_PATTERN.test(nextValueKey)
-        ? "[REDACTED]"
-        : sanitizeArgValue(nextValueKey, rawArg);
-      out.push(truncateAuditString(projected));
-      nextValueKey = null;
-      continue;
-    }
-
-    const eqIndex = rawArg.indexOf("=");
-    if (eqIndex > 0) {
-      const option = rawArg.slice(0, eqIndex);
-      const key = argvOptionKey(option);
-      if (key && shouldProjectArgValue(key)) {
-        const value = rawArg.slice(eqIndex + 1);
-        const projected = SENSITIVE_KEY_PATTERN.test(key) ? "[REDACTED]" : sanitizeArgValue(key, value);
-        out.push(truncateAuditString(`${option}=${projected}`));
-        continue;
-      }
-    }
-
-    const key = argvOptionKey(rawArg);
-    if (key && shouldProjectArgValue(key) && !isBooleanCliFlag(key, command)) {
-      out.push(truncateAuditString(rawArg));
-      nextValueKey = key;
-      continue;
-    }
-
-    out.push(truncateAuditString(rawArg));
-  }
-
-  if (argv.length > MAX_ARG_COUNT) out.push(`...[${argv.length - MAX_ARG_COUNT} more]`);
-  return out;
+  // The canonical command and redacted input already live beside this field in
+  // the audit event. Persisting raw argv values duplicates private content and
+  // cannot be made safe by maintaining an ever-growing list of option names.
+  return [`[REDACTED:argv count=${argv.length}]`];
 }
 
 export function buildCliInvocationMetadata(command?: {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test";
 import { buildCliInvocationMetadata, hashForAudit, sanitizeCliArgv } from "./provenance.js";
 
 describe("CLI provenance", () => {
-  it("redacts sensitive argv values", () => {
+  it("summarizes argv without persisting values", () => {
     expect(
       sanitizeCliArgv([
         "ravi",
@@ -14,37 +14,37 @@ describe("CLI provenance", () => {
         "--reason",
         "manual",
       ]),
-    ).toEqual(["ravi", "sessions", "reset", "--api-key", "[REDACTED]", "--token=[REDACTED]", "--reason", "manual"]);
+    ).toEqual(["[REDACTED:argv count=8]"]);
   });
 
-  it("consumes Commander required-option values that begin with a hyphen", () => {
-    expect(sanitizeCliArgv(["--api-key", "-secret-value"])).toEqual(["--api-key", "[REDACTED]"]);
-    expect(sanitizeCliArgv(["--api-key", "--json"])).toEqual(["--api-key", "[REDACTED]"]);
-    expect(sanitizeCliArgv(["--output-path", "-private-file"])).toEqual(["--output-path", "[REDACTED:path]"]);
+  it("summarizes values that resemble flags", () => {
+    expect(sanitizeCliArgv(["--api-key", "-secret-value"])).toEqual(["[REDACTED:argv count=2]"]);
+    expect(sanitizeCliArgv(["--api-key", "--json"])).toEqual(["[REDACTED:argv count=2]"]);
+    expect(sanitizeCliArgv(["--output-path", "-private-file"])).toEqual(["[REDACTED:argv count=2]"]);
   });
 
-  it("classifies long URL options before bounding their public representation", () => {
+  it("does not persist long option names or URL values", () => {
     const option = `--${"x".repeat(250)}url`;
 
-    expect(sanitizeCliArgv([option, "https://user:password@example.test/private?token=secret#fragment"])[1]).toBe(
-      "https://example.test",
-    );
+    expect(sanitizeCliArgv([option, "https://user:password@example.test/private?token=secret#fragment"])).toEqual([
+      "[REDACTED:argv count=2]",
+    ]);
   });
 
-  it("bounds reconstructed long path options", () => {
+  it("does not reconstruct long path options", () => {
     const option = `--${"x".repeat(250)}path=/x`;
     const [projected] = sanitizeCliArgv([option]);
 
-    expect(projected).toHaveLength(240);
+    expect(projected).toBe("[REDACTED:argv count=1]");
   });
 
-  it("preserves negative numeric values for projecting options", () => {
-    expect(sanitizeCliArgv(["--url", "-1"])).toEqual(["--url", "-1"]);
+  it("does not persist negative numeric values", () => {
+    expect(sanitizeCliArgv(["--url", "-1"])).toEqual(["[REDACTED:argv count=2]"]);
   });
 
-  it("preserves daemon logs path as a boolean flag", () => {
+  it("does not special-case boolean flags", () => {
     expect(sanitizeCliArgv(["ravi", "daemon", "logs", "--path", "--json"], { group: "daemon", name: "logs" })).toEqual(
-      ["ravi", "daemon", "logs", "--path", "--json"],
+      ["[REDACTED:argv count=5]"],
     );
   });
 

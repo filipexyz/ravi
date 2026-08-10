@@ -203,7 +203,7 @@ describe("CLI audit redaction", () => {
     expect(JSON.stringify(payload)).not.toContain("SENTINEL_METADATA_8K2R");
   });
 
-  it("removes private URL components from audit argv", () => {
+  it("does not persist private URL components in audit argv", () => {
     const originalArgv = [...process.argv];
     try {
       process.argv.splice(
@@ -220,7 +220,7 @@ describe("CLI audit redaction", () => {
       const payload = buildCliAuditPayload({ group: "projects", name: "create" });
       const serialized = JSON.stringify(payload);
       expect(payload).toMatchObject({
-        cliInvocation: { process: { argv: expect.arrayContaining(["--url", "https://example.test"]) } },
+        cliInvocation: { process: { argv: [`[REDACTED:argv count=${process.argv.length}]`] } },
       });
       expect(serialized).not.toContain("SENTINEL_ARGV_5P9X");
       expect(serialized).not.toContain("user:");

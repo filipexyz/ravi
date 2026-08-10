@@ -226,6 +226,9 @@ runtime history; an emergency interrupt remains immediate.
   data. Use identifiers and paths only when needed for the decision, plus
   counts, lengths, presence booleans, masked values and bounded non-sensitive
   previews.
+- Audit provenance MUST NOT persist raw process or parent-process `argv`
+  values. The canonical command and redacted `input` are already recorded;
+  `argv` retains only a bounded structural count.
 - `--execute` MUST be the last declared option of the operation.
 - Existing equivalent confirmation contracts (`--apply`, explicit `--dry-run`
   or confirmation token) may remain when documented; do not rename them only
