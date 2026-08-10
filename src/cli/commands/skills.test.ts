@@ -10,6 +10,7 @@ import {
 } from "../../test/ravi-state.js";
 import { dbCreateAgent, dbDeleteAgent, dbListSkillGrants, dbListSkillGrantsForAgent } from "../../router/router-db.js";
 import * as skillManager from "../../skills/manager.js";
+import type { ResolvedSkillSource } from "../../skills/manager.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { SkillsCommands } from "./skills.js";
@@ -349,7 +350,8 @@ describe("skills agent-first contract", () => {
         "---\nname: confirmed-git-skill\ndescription: Confirmed Git fixture\n---\n\nFixture content\n",
       );
       resolveSpy = spyOn(skillManager, "withResolvedSkillSource").mockImplementation(
-        <T>(input, run): T => run({ source: skillManager.parseSkillSource(input), rootPath: sourceRoot }),
+        <T>(input: string, run: (resolved: ResolvedSkillSource) => T): T =>
+          run({ source: skillManager.parseSkillSource(input), rootPath: sourceRoot }),
       );
       installSpy = spyOn(skillManager, "installSkills").mockImplementation((skills, options = {}) => {
         installedNames = skills.map((skill) => skill.name);
@@ -381,7 +383,8 @@ describe("skills agent-first contract", () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), "SENTINEL_PRIVATE_PATH-"));
     const gitSource = "https://git.example/org/repo.git?access=SENTINEL_PRIVATE_URL";
     const resolveSpy = spyOn(skillManager, "withResolvedSkillSource").mockImplementation(
-      <T>(input, run): T => run({ source: skillManager.parseSkillSource(input), rootPath: sourceRoot }),
+      <T>(input: string, run: (resolved: ResolvedSkillSource) => T): T =>
+        run({ source: skillManager.parseSkillSource(input), rootPath: sourceRoot }),
     );
     try {
       writeFileSync(
