@@ -25652,10 +25652,6 @@ export const ContextRevokeInputSchema = {
       "description": "Context ID to revoke",
       "type": "string"
     },
-    "execute": {
-      "description": "Actually revoke the context; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
-    },
     "noCascade": {
       "default": false,
       "description": "Do not revoke descendant contexts (use only for narrow rotation; emits a loud warning)",
@@ -62434,10 +62430,6 @@ export const SlackCanvasAccessDeleteInputSchema = {
       "description": "Comma-separated Slack channel IDs",
       "type": "string"
     },
-    "execute": {
-      "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
-    },
     "users": {
       "description": "Comma-separated Slack user IDs",
       "type": "string"
@@ -73968,10 +73960,6 @@ export const WhatsappGroupDemoteInputSchema = {
     "account": {
       "description": "WhatsApp account ID",
       "type": "string"
-    },
-    "execute": {
-      "description": "Actually demote the participants; default is a dry-run that only shows the plan (exit 3)",
-      "type": "boolean"
     },
     "groupId": {
       "description": "Group ID or JID",

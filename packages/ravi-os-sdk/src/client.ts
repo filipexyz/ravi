@@ -1787,7 +1787,6 @@ export class RaviClient {
     },
     /** Revoke a runtime context by context ID */
     revoke: async (contextId: string, options?: {
-      execute?: boolean;
       noCascade?: boolean;
       reason?: string;
     }): Promise<ContextRevokeReturn> => {
@@ -6200,11 +6199,10 @@ export class RaviClient {
         body: { file, ...(options ?? {}) },
       });
     },
-    /** Delete Slack standalone canvas access; dry-run unless --execute is set */
+    /** Revoke Slack standalone canvas access immediately */
     canvasAccessDelete: async (canvas: string, options?: {
       channel?: string;
       channels?: string;
-      execute?: boolean;
       users?: string;
     }): Promise<SlackCanvasAccessDeleteReturn> => {
       return this.transport.call({
@@ -7795,7 +7793,6 @@ export class RaviClient {
       /** Demote participants from admin */
       demote: async (groupId: string, participants: string, options?: {
         account?: string;
-        execute?: boolean;
       }): Promise<WhatsappGroupDemoteReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","group"],

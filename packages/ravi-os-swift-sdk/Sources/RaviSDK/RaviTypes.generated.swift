@@ -6292,26 +6292,20 @@ public struct ContextPruneReturn: Codable, Sendable {
 }
 
 public struct ContextRevokeOptions: Codable, Sendable {
-  public var execute: Bool?
   public var noCascade: Bool?
   public var reason: String?
 
-  public init(execute: Bool? = nil, noCascade: Bool? = nil, reason: String? = nil) {
-    self.execute = execute
+  public init(noCascade: Bool? = nil, reason: String? = nil) {
     self.noCascade = noCascade
     self.reason = reason
   }
 
   enum CodingKeys: String, CodingKey {
-    case execute = "execute"
     case noCascade = "noCascade"
     case reason = "reason"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.execute {
-      body["execute"] = try RaviJSON.fromEncodable(value)
-    }
     if let value = self.noCascade {
       body["noCascade"] = try RaviJSON.fromEncodable(value)
     }
@@ -21180,20 +21174,17 @@ public struct SlackBlocksValidateReturn: Codable, Sendable {
 public struct SlackCanvasAccessDeleteOptions: Codable, Sendable {
   public var channel: String?
   public var channels: String?
-  public var execute: Bool?
   public var users: String?
 
-  public init(channel: String? = nil, channels: String? = nil, execute: Bool? = nil, users: String? = nil) {
+  public init(channel: String? = nil, channels: String? = nil, users: String? = nil) {
     self.channel = channel
     self.channels = channels
-    self.execute = execute
     self.users = users
   }
 
   enum CodingKeys: String, CodingKey {
     case channel = "channel"
     case channels = "channels"
-    case execute = "execute"
     case users = "users"
   }
 
@@ -21203,9 +21194,6 @@ public struct SlackCanvasAccessDeleteOptions: Codable, Sendable {
     }
     if let value = self.channels {
       body["channels"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.execute {
-      body["execute"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.users {
       body["users"] = try RaviJSON.fromEncodable(value)
@@ -27799,24 +27787,18 @@ public typealias WhatsappGroupCreateReturn = [String: RaviJSON]
 
 public struct WhatsappGroupDemoteOptions: Codable, Sendable {
   public var account: String?
-  public var execute: Bool?
 
-  public init(account: String? = nil, execute: Bool? = nil) {
+  public init(account: String? = nil) {
     self.account = account
-    self.execute = execute
   }
 
   enum CodingKeys: String, CodingKey {
     case account = "account"
-    case execute = "execute"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.account {
       body["account"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.execute {
-      body["execute"] = try RaviJSON.fromEncodable(value)
     }
   }
 }

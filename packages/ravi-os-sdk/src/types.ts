@@ -4845,7 +4845,6 @@ export type ContextPruneReturn = {
 /** Input shape for `context.revoke`. */
 export type ContextRevokeInput = {
   contextId: string;
-  execute?: boolean;
   noCascade?: boolean;
   reason?: string;
 };
@@ -12889,7 +12888,6 @@ export type SlackCanvasAccessDeleteInput = {
   canvas: string;
   channel?: string;
   channels?: string;
-  execute?: boolean;
   users?: string;
 };
 
@@ -15502,7 +15500,6 @@ export type WhatsappGroupCreateReturn = Record<string, unknown>;
 /** Input shape for `whatsapp.group.demote`. */
 export type WhatsappGroupDemoteInput = {
   account?: string;
-  execute?: boolean;
   groupId: string;
   participants: string;
 };

@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "44927243a2fae88c"
+    "version": "e7f3421fdf30c37a"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -30082,10 +30082,6 @@
                   "contextId": {
                     "description": "Context ID to revoke",
                     "type": "string"
-                  },
-                  "execute": {
-                    "description": "Actually revoke the context; default is a dry-run that only shows the plan (exit 3)",
-                    "type": "boolean"
                   },
                   "noCascade": {
                     "default": false,
@@ -78381,10 +78377,6 @@
                     "description": "Comma-separated Slack channel IDs",
                     "type": "string"
                   },
-                  "execute": {
-                    "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
-                    "type": "boolean"
-                  },
                   "users": {
                     "description": "Comma-separated Slack user IDs",
                     "type": "string"
@@ -78517,7 +78509,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Delete Slack standalone canvas access; dry-run unless --execute is set",
+        "summary": "Revoke Slack standalone canvas access immediately",
         "tags": [
           "slack"
         ]
@@ -93903,10 +93895,6 @@
                   "account": {
                     "description": "WhatsApp account ID",
                     "type": "string"
-                  },
-                  "execute": {
-                    "description": "Actually demote the participants; default is a dry-run that only shows the plan (exit 3)",
-                    "type": "boolean"
                   },
                   "groupId": {
                     "description": "Group ID or JID",
