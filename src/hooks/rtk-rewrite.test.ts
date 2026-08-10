@@ -41,18 +41,6 @@ mock.module("../nats.js", () => ({
   },
 }));
 
-// Mock logger
-mock.module("../utils/logger.js", () => ({
-  logger: {
-    child: () => ({
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-      debug: () => {},
-    }),
-  },
-}));
-
 describe("createRtkRewriteHook", () => {
   test("preserves unrelated NATS exports in the module mock", async () => {
     const natsModule = await import("../nats.js");
