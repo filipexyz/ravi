@@ -1338,3 +1338,53 @@ OpenAPI e SDKs TypeScript/Swift atualizados para as tres operacoes. Esse run
 fecha a implementacao da fase 7. Como este registro factual cria um novo head,
 o veredito final permanece condicionado a CI verde do proprio commit
 documental; o resultado pode ser registrado no corpo da PR sem outro ciclo.
+
+---
+
+## FASE 8 - argv privado e compatibilidade de leitura (2026-08-10)
+
+Esta fase substitui o veredito da fase 7 depois de uma nova revisao adversarial.
+O bloqueador de privacidade nao fazia parte dos 26 bugs consolidados antes
+desta rodada; com sua confirmacao, o inventario passa a 27 bugs de produto
+confirmados e corrigidos. A compatibilidade abaixo e registrada separadamente
+como migracao, nao como novo efeito desejado.
+
+### Auditoria nao persiste valores crus de `argv`
+
+O CI Linux [`31402772780`](https://github.com/filipexyz/ravi/actions/runs/31402772780)
+do SHA `864ee56209704dbfa3a82407c59c2c57c7f62b71` passou Build e Typecheck e
+falhou somente no novo teste adversarial. `cliInvocation.process.argv`
+preservava titulo e `--instructions` de task, URI privada de artifact e convite
+posicional de WhatsApp. A evidencia mostrou ainda que `parentProcess.argv`
+podia carregar a linha integral do processo pai.
+
+A correcao remove a lista incompleta de aliases sensiveis. Proveniencia de
+processo e processo pai agora guarda somente `[REDACTED:argv count=N]`; comando
+canonico e `input` redigido continuam nos campos proprios do evento. O run
+[`31403300522`](https://github.com/filipexyz/ravi/actions/runs/31403300522)
+detectou um import removido em excesso no Typecheck; o commit `457ff42d`
+restaurou somente esse import. O CI
+[`31403444146`](https://github.com/filipexyz/ravi/actions/runs/31403444146)
+passou Build, Typecheck, Test e Quality Gate (specs + coverage), incluindo
+sentinelas nos tres formatos e a proveniencia do processo pai.
+
+### `whatsapp dm read --no-ack` permanece aceito durante a migracao
+
+O comportamento normativo permanece: `dm read` e leitura local `read` e nunca
+envia receipt; `dm ack --execute` e a operacao externa explicita. Para evitar
+quebrar scripts seguros existentes, `--no-ack` volta como no-op obsoleto e nao
+deve ser usado por consumidores novos. `--execute` continua rejeitado em
+`dm read`, evitando sucesso enganoso para quem esperava envio de receipt.
+
+O CI [`31403868928`](https://github.com/filipexyz/ravi/actions/runs/31403868928)
+do SHA `2c4460ae667f016f2e34db4c85ccf8641ed22094` passou Build e Typecheck e
+falhou somente porque a flag de compatibilidade ainda nao existia. Depois da
+implementacao, o run
+[`31404175734`](https://github.com/filipexyz/ravi/actions/runs/31404175734)
+passou os testes comportamentais e falhou apenas no check deterministico que
+identificou quatro artefatos TypeScript divergentes. OpenAPI e SDKs
+TypeScript/Swift foram alinhados em commit dedicado, com `GIT_SHA` preservado.
+
+Por instrucao explicita do operador, nenhum Bun foi executado localmente. O
+head final com este registro e os snapshots atualizados ainda precisa passar a
+CI completa antes de restaurar o veredito **APPROVE**.
