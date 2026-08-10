@@ -61320,7 +61320,7 @@ export const SkillsInstallInputSchema = {
       "type": "boolean"
     },
     "execute": {
-      "description": "Actually install the skill(s); default is a dry-run that only shows the plan (exit 3)",
+      "description": "Confirm installation from a Git source or replacement with --overwrite",
       "type": "boolean"
     },
     "name": {

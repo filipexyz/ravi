@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "f957e4614d5d334b"
+    "version": "44927243a2fae88c"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -76931,7 +76931,7 @@
                     "type": "boolean"
                   },
                   "execute": {
-                    "description": "Actually install the skill(s); default is a dry-run that only shows the plan (exit 3)",
+                    "description": "Confirm installation from a Git source or replacement with --overwrite",
                     "type": "boolean"
                   },
                   "name": {
@@ -77055,7 +77055,7 @@
           }
         },
         "security": [],
-        "summary": "Install Ravi catalog skills or skills from an explicit source. Dry-run by default; pass --execute to write.",
+        "summary": "Install Ravi catalog skills or skills from an explicit source. Git sources and overwrites require --execute.",
         "tags": [
           "skills"
         ]

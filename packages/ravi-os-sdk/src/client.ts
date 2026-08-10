@@ -6066,7 +6066,7 @@ export class RaviClient {
         body: { agent },
       });
     },
-    /** Install Ravi catalog skills or skills from an explicit source. Dry-run by default; pass --execute to write. */
+    /** Install Ravi catalog skills or skills from an explicit source. Git sources and overwrites require --execute. */
     install: async (name?: string, options?: {
       all?: boolean;
       execute?: boolean;
