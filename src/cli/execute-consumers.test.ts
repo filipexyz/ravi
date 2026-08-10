@@ -220,6 +220,18 @@ const obsoleteExecuteConsumers = [
     obsolete: 'ravi whatsapp group demote group:120363425628305127 "5511999999999" --execute',
     current: 'ravi whatsapp group demote group:120363425628305127 "5511999999999"',
   },
+  {
+    name: "Slack Canvas access removal skill reference",
+    path: "src/plugins/internal/ravi-system/skills/slack/references/canvas.md",
+    obsolete: "ravi slack canvas-access-delete <canvas> --users <userIds> --execute --json",
+    current: "ravi slack canvas-access-delete <canvas> --users <userIds> --json",
+  },
+  {
+    name: "Slack Canvas access removal runbook",
+    path: ".ravi/specs/channels/slack/canvas/RUNBOOK.md",
+    obsolete: "ravi slack canvas-access-delete F123 --users U123 --execute --json",
+    current: "ravi slack canvas-access-delete F123 --users U123 --json",
+  },
 ] as const;
 
 describe("command consumer contracts", () => {

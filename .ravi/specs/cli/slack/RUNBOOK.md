@@ -10,9 +10,10 @@ Use this runbook when implementing or validating `ravi slack`.
    message, canvas, work object, file, or interaction surface.
 2. Confirm the Slack method and required scopes from Slack's official Web API
    docs.
-3. Decide whether the command is read-only, purely local, or an externally
-   visible mutation, and add it to the classification table in `SPEC.md`.
-4. For mutations, implement the write brake first: local validation, then
+3. Decide whether the command is read-only, purely local, containment, or an
+   externally visible mutation, and add it to the classification table in
+   `SPEC.md`.
+4. For risky mutations, implement the write brake first: local validation, then
    `contractDryRun` (exit 3, `WRITE_REQUIRES_EXECUTE`) BEFORE any Slack Web API
    call, then the real write behind `--execute`. `--execute` is the last
    option of the command.

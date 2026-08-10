@@ -641,9 +641,9 @@ limpo · spec gate PASSED (5 specs cli/*). **Rotina Y:** settings set →
 delete sem `--execute` → envelope exit 3 · delete de key nunca setada →
 exit 1 (not-found vence o freio, ao vivo).
 
-### 38. slack — MIGRADO (subagente, verificado e integrado)
+### 38. slack — MIGRADO (estado original, superado pela FASE 7)
 
-**Escopo (36 comandos classificados um a um):** **24 ops freadas** — todas as
+**Escopo historico deste head (36 comandos classificados um a um):** **24 ops freadas** — todas as
 mutações externas visíveis a humanos (messages-send, blocks-send/update/
 showcase, interactions-respond, modals open/update/push, work-objects
 send/unfurl/present-details, canvas create/edit/delete/access-set/
@@ -1311,6 +1311,21 @@ mas remove a confirmacao e o parametro `--execute` apenas de `demote`. Promover
 continua freado porque amplia autoridade; demover remove poder administrativo e
 executa imediatamente. A skill, os exemplos, os consumidores e a spec WhatsApp
 foram atualizados sem mudar grants REBAC.
+
+### `slack canvas-access-delete`: remocao de compartilhamento imediata
+
+O CI Linux [`31363483451`](https://github.com/filipexyz/ravi/actions/runs/31363483451)
+do SHA `9d5802c5150851a54256e9cd786c30e9c6f3aa25` passou Build e Typecheck e
+avancou ate a suite Slack. Cinquenta e oito testes do arquivo passaram; somente
+o novo teste de `canvas-access-delete` falhou porque o helper de mutacoes ainda
+retornava `WRITE_REQUIRES_EXECUTE`, exit 3, antes de hidratar credenciais ou
+chamar `canvases.access.delete`.
+
+A correcao mantem `kind: mutate`, recurso, acao, risco e redactions, remove
+somente a confirmacao/flag e reutiliza o contexto Slack existente de execucao.
+Remover acesso reduz compartilhamento e passa a executar em uma chamada. A
+matriz Slack fica com 23 operacoes freadas e 13 imediatas; specs, skills,
+runbooks e consumidores foram alinhados, sem mudanca de grants REBAC.
 
 Por instrucao explicita do operador, nenhum Bun foi executado localmente. A
 validacao local desta etapa foi revisao do diff, varredura de consumidores e

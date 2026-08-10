@@ -1156,12 +1156,16 @@ describe("slack agent-first contract", () => {
   it("canvas-access-delete reduces sharing immediately without --execute", async () => {
     const commands = new SlackCommands();
     const payload = await silenced(() =>
-      commands.canvasAccessDelete("F123", "ravi-slack", "U1", undefined, true, undefined),
+      commands.canvasAccessDelete("F123", "ravi-slack", "U1", undefined, true),
     );
 
     expect(callsTo("canvasesAccessDelete")).toEqual([
       { method: "canvasesAccessDelete", args: { canvasId: "F123", userIds: ["U1"] } },
     ]);
+    expect(credentialResolutionCalls).toEqual([
+      { action: "canvases.access.delete", channel: "ravi-slack" },
+    ]);
+    expect(clientConstructionCount).toBe(1);
     expect(payload).toMatchObject({ ok: true, dryRun: false, method: "canvases.access.delete" });
   });
 

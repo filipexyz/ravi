@@ -24,7 +24,7 @@ Slack e um canal nativo do Ravi. Para Slack, use `ravi slack ...` e as specs
   `presence`, `route`, `artifact` e `policy`.
 - Slack e adapter/plataforma: workspace, channel, DM, thread, files, Canvas e
   assistant status sao projetados para o modelo Ravi.
-- Mutacoes Slack devem ser dry-run por padrao e executar somente com
+- Mutacoes Slack freadas por risco devem ser dry-run por padrao e executar somente com
   `--execute` (contrato agent-first: dry-run sai com exit 3 — veja
   "Contrato Do CLI" abaixo).
 - Use `--json` quando outro agent ou workflow for consumir a resposta.
@@ -43,7 +43,7 @@ demais dominios migrados:
 
 - Exit codes: `0` sucesso · `1` erro/not-found · `2` erro de uso · `3` freio
   de escrita (dry-run). **Exit 3 NAO e erro** — e o sistema funcionando.
-- Toda mutacao visivel a humanos e dry-run por padrao. Sem `--execute`, o
+- Toda mutacao de risco visivel a humanos e dry-run por padrao. Sem `--execute`, o
   comando sai com exit 3 e o envelope `WRITE_REQUIRES_EXECUTE`, SEM fazer
   nenhuma chamada a Web API do Slack (nem leituras — `messages-replay` freia
   antes do fetch do historico). O `plan` do envelope mostra o metodo Slack e o
@@ -82,22 +82,24 @@ ravi slack canvas-edit F0123456789 replace --artifact art_abc_123 --json --execu
 `messages-replay`, `channels-create`, `channels-rename`, `channels-invite`,
 `canvas-create`, `canvas-channel-create`, `canvas-showcase`,
 `canvas-channel-showcase`, `canvas-artifact-publish`, `canvas-edit`,
-`canvas-access-set`, `canvas-access-delete`, `canvas-delete`.
+`canvas-access-set`, `canvas-delete`.
 
-### Comandos sem freio (leitura/local)
+### Comandos sem freio (leitura/local/contencao)
 
 `permissions-list`, `channels-list`, `channels-info`, `channels-history`,
 `messages-inspect`, `members-list`, `files-list`, `topology`,
 `blocks-validate` (chamada de validacao, nada visivel), `work-objects-validate`
-(local puro), `canvas-sections-lookup`, `canvas-artifact-status` (local puro).
+(local puro), `canvas-sections-lookup`, `canvas-artifact-status` (local puro) e
+`canvas-access-delete` (remove compartilhamento imediatamente).
 
 ### Checklist antes de mutar
 
 1. Confira scopes: `ravi slack permissions-list --json`.
-2. Rode o comando SEM `--execute` e inspecione o `plan` do envelope (exit 3 e
-   esperado).
+2. Para comandos da lista freada, rode SEM `--execute` e inspecione o `plan`
+   do envelope (exit 3 e esperado). `canvas-access-delete` e contencao: confira
+   o alvo e rode uma vez, sem `--execute`.
 3. Valide payloads antes: `blocks-validate` / `work-objects-validate`.
-4. So entao repita o comando com `--execute` (ultima flag).
+4. So entao repita o comando freado com `--execute` (ultima flag).
 5. Exit 3 = freio (repita com `--execute` se o plano estiver certo); exit 1 =
    erro real (leia `error.code` e `suggestedAction`); exit 0 = escrita feita.
 

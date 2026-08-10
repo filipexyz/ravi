@@ -42,12 +42,14 @@ The `slack` domain follows the shared agent-first contract implemented in
 - Exit taxonomy: `0` success · `1` execution/not-found error · `2` usage error
   · `3` blocked by policy (write brake / dry-run). Exit 3 is NOT an error — it
   is the system working.
-- Write brake (7.8): every externally visible Slack mutation is dry-run by
-  default. Without `--execute` the command exits `3` with the
+- Write brake (7.8): every risky externally visible Slack mutation is dry-run
+  by default. Without `--execute` the command exits `3` with the
   `WRITE_REQUIRES_EXECUTE` envelope BEFORE credential hydration, credential
   audit writes, Slack client construction or any Slack Web API call. The
   dry-run plan carries the Slack method and a safe summary of the material
   request effect; it never serializes Slack IDs or payload/content values.
+- Authority reduction is immediate: `canvas-access-delete` revokes sharing in
+  one call while remaining authorized as `mutate`.
 - `--execute` MUST be the LAST option of every braked command, and all local
   validation (payload files, access levels, artifact resolution) MUST run
   BEFORE the brake so the plan never promises an impossible write.
@@ -100,10 +102,9 @@ Slack Web API call):
 | `canvas-artifact-publish` | `canvases.edit` (replace) | replaces canvas content from an artifact |
 | `canvas-edit` | `canvases.edit` | edits canvas sections/title |
 | `canvas-access-set` | `canvases.access.set` | changes who can see/edit |
-| `canvas-access-delete` | `canvases.access.delete` | revokes access |
 | `canvas-delete` | `canvases.delete` | destroys a canvas |
 
-Unbraked commands (reads or purely local operations; no `--execute`):
+Unbraked commands (reads, local operations or containment; no `--execute`):
 
 | Command | Source | Note |
 |---|---|---|
@@ -119,6 +120,7 @@ Unbraked commands (reads or purely local operations; no `--execute`):
 | `work-objects-validate` | local normalization | purely local |
 | `canvas-sections-lookup` | `canvases.sections.lookup` | read; supports `--fields` |
 | `canvas-artifact-status` | local artifact ledger | purely local |
+| `canvas-access-delete` | `canvases.access.delete` | revokes sharing; authority reduction |
 
 ## Invariants
 
@@ -129,7 +131,7 @@ Unbraked commands (reads or purely local operations; no `--execute`):
   commands.
 - Every agent-consumed command MUST support `--json`.
 - Every list command MUST be bounded and paginated.
-- Mutating commands MUST default to dry-run and MUST require `--execute`
+- Braked mutating commands MUST default to dry-run and MUST require `--execute`
   before they hydrate credentials, append credential audit events, construct a
   Slack client or call Slack write APIs, exiting `3` with the
   `WRITE_REQUIRES_EXECUTE` envelope otherwise.

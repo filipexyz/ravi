@@ -40,7 +40,7 @@ Expected behavior:
   initialize credential storage, append a credential audit event, construct a
   Slack client or perform any Slack Web API call — including reads
   (`messages-replay` must not fetch history in dry-run). This check enumerates
-  all 24 braked operations rather than sampling them.
+  all 23 braked operations rather than sampling them.
 - The dry-run envelope's `plan` MUST include the Slack method and a safe,
   material-effect summary of the request that `--execute` would send. It MUST
   include the channel-create visibility and name length, rename name length,
@@ -50,6 +50,9 @@ Expected behavior:
 - The same braked command with `--execute` MUST perform the Slack call whose
   material effect was described by the plan, hydrate credentials exactly once
   and return `dryRun: false`.
+- `canvas-access-delete` MUST remain `mutate`, expose no `--execute`, resolve
+  credentials once and call `canvases.access.delete` exactly once because it
+  reduces sharing.
 - An unresolved Ravi channel config MUST exit `1` with `CHANNEL_NOT_FOUND` and
   suggestions computed only from the local config store.
 - A missing replay target MUST exit `1` with `MESSAGE_NOT_FOUND`; a missing
@@ -74,7 +77,7 @@ Expected behavior:
   `0` instead of `3`.
 - `ravi slack messages-replay` performs the `conversations.history` fetch
   before the brake.
-- Any of the 24 braked commands resolves a secret, initializes credential
+- Any of the 23 braked commands resolves a secret, initializes credential
   storage/audit or constructs a Slack client before exit `3`.
 - A NOT_FOUND envelope computes suggestions by calling the Slack Web API.
 - A Slack API error is printed without method, target, and corrective next

@@ -66,4 +66,15 @@ describe("global confirmation policy metadata", () => {
 
     expect(invalid).toEqual([]);
   });
+
+  it("keeps authority-reduction and containment operations immediate", () => {
+    for (const fullName of ["context.revoke", "whatsapp.group.demote", "slack.canvas-access-delete"]) {
+      const command = commands.find((candidate) => candidate.fullName === fullName);
+
+      expect(command, fullName).toBeDefined();
+      expect(command?.access?.kind, fullName).toBe("mutate");
+      expect(command?.access?.requiresConfirmation, fullName).not.toBe(true);
+      expect(command && executeOption(command), fullName).toBeUndefined();
+    }
+  });
 });

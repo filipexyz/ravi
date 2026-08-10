@@ -3199,7 +3199,7 @@ export class SlackCommands {
 
   @Command({
     name: "canvas-access-delete",
-    description: "Delete Slack standalone canvas access; dry-run unless --execute is set",
+    description: "Revoke Slack standalone canvas access immediately",
   })
   @CommandAccess({
     kind: "mutate",
@@ -3207,7 +3207,6 @@ export class SlackCommands {
     action: "unshare",
     risk: "high",
     redactions: ["canvas", "raviChannel", "users", "channels"],
-    requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
   async canvasAccessDelete(
@@ -3216,25 +3215,15 @@ export class SlackCommands {
     @Option({ flags: "--users <ids>", description: "Comma-separated Slack user IDs" }) usersValue?: string,
     @Option({ flags: "--channels <ids>", description: "Comma-separated Slack channel IDs" }) channelsValue?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({
-      flags: "--execute",
-      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
   ) {
     const op = "slack canvas-access-delete";
     const request = {
       canvasId,
       ...parseSlackCanvasAccessTargets(usersValue, channelsValue),
     };
-    const { client, config } = await this.mutationOpsContext({
-      channelName: raviChannel,
-      action: "canvases.access.delete",
+    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.access.delete", {
       op,
-      method: "canvases.access.delete",
-      request,
       asJson,
-      execute,
     });
     const raw = await client.canvasesAccessDelete(request);
     const payload = this.mutationPayload(config, false, "canvases.access.delete", request, { ok: raw.ok }, raw);
@@ -3380,8 +3369,8 @@ export class SlackCommands {
   }
 
   /**
-   * Write brake (Manual v2 7.8): every externally visible Slack mutation is a
-   * dry-run by default and exits 3 (WRITE_REQUIRES_EXECUTE) before credentials
+   * Write brake (Manual v2 7.8): every confirmable Slack mutation routed here
+   * is a dry-run by default and exits 3 (WRITE_REQUIRES_EXECUTE) before credentials
    * are hydrated, a client is constructed or any Slack Web API call is made.
    * The plan carries safe request metadata only; message text, Block Kit
    * payloads and other request bodies are never serialized.
