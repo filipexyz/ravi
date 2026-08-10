@@ -2,9 +2,9 @@
  * Slack CLI tests.
  *
  * 1. "Slack CLI Canvas helpers": pure helper behavior (pre-existing suite).
- * 2. "slack agent-first contract" (Manual v2): write brake (exit 3,
- *    WRITE_REQUIRES_EXECUTE) on every externally visible Slack mutation BEFORE
- *    any Slack Web API call, not-found envelopes (CHANNEL_NOT_FOUND /
+ * 2. "slack agent-first contract" (Manual v2): risk-based write brakes (exit 3,
+ *    WRITE_REQUIRES_EXECUTE) before the relevant Slack Web API call, immediate
+ *    execution for risk-reducing operations, not-found envelopes (CHANNEL_NOT_FOUND /
  *    MESSAGE_NOT_FOUND / ARTIFACT_NOT_FOUND, exit 1) with suggestions from
  *    cheap local sources, and compact `--fields` mode. Follows the
  *    group.test.ts pattern: no-op decorator mocks + Slack client mock with
@@ -797,10 +797,6 @@ describe("slack agent-first contract", () => {
       run: (commands) => commands.canvasAccessSet("F123", "write", "ravi-slack", "U1", undefined, true, undefined),
     },
     {
-      name: "canvas-access-delete",
-      run: (commands) => commands.canvasAccessDelete("F123", "ravi-slack", "U1", undefined, true, undefined),
-    },
-    {
       name: "canvas-delete",
       run: (commands) => commands.canvasDelete("F123", "ravi-slack", true, undefined),
     },
@@ -1155,6 +1151,18 @@ describe("slack agent-first contract", () => {
 
     await silenced(() => commands.canvasDelete("F123", "ravi-slack", true, true));
     expect(callsTo("canvasesDelete")).toHaveLength(1);
+  });
+
+  it("canvas-access-delete reduces sharing immediately without --execute", async () => {
+    const commands = new SlackCommands();
+    const payload = await silenced(() =>
+      commands.canvasAccessDelete("F123", "ravi-slack", "U1", undefined, true, undefined),
+    );
+
+    expect(callsTo("canvasesAccessDelete")).toEqual([
+      { method: "canvasesAccessDelete", args: { canvasId: "F123", userIds: ["U1"] } },
+    ]);
+    expect(payload).toMatchObject({ ok: true, dryRun: false, method: "canvases.access.delete" });
   });
 
   it("canvas-access-set still validates the access level BEFORE the brake", async () => {
