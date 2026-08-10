@@ -10,6 +10,10 @@ function sourceLines(path: string, marker: string): string[] {
     .filter((line) => line.includes(marker));
 }
 
+function normalizedSource(path: string): string {
+  return readFileSync(join(repoRoot, path), "utf8").replace(/\s+/g, " ").trim();
+}
+
 type ExecuteConsumer = {
   readonly name: string;
   readonly path: string;
@@ -224,5 +228,30 @@ describe("command consumer contracts", () => {
       expect(source, consumer.name).not.toContain(consumer.obsolete);
       expect(source, consumer.name).toContain(consumer.current);
     }
+  });
+
+  it("teaches immediate CRM writes without an execute brake", () => {
+    const source = normalizedSource("src/plugins/internal/ravi-system/skills/crm/SKILL.md");
+
+    expect(source).toContain(
+      "`crm pipeline create`, `crm opportunity create` e `crm opportunity move` executam imediatamente sem `--execute`.",
+    );
+    expect(source).not.toContain(
+      "**Onde o freio existe hoje:** somente `crm pipeline create`, `crm opportunity create` e `crm opportunity move`",
+    );
+    expect(source).not.toContain(
+      "Use o dry-run (exit 3) para conferir o `plan` antes de `--execute`.",
+    );
+  });
+
+  it("teaches the conditional heartbeat trigger brake without contradictions", () => {
+    const source = normalizedSource("src/plugins/internal/ravi-system/skills/heartbeat/SKILL.md");
+
+    expect(source).toContain(
+      "Com trabalho pendente, `heartbeat trigger` retorna dry-run (exit 3) e exige `--execute`.",
+    );
+    expect(source).not.toContain("`3` NÃO acontece neste domínio");
+    expect(source).not.toContain("nenhum comando aceita `--execute`");
+    expect(source).not.toContain("aqui NÃO existe `--execute`");
   });
 });
