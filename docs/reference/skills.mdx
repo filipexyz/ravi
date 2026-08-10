@@ -41,14 +41,23 @@ ravi skills show find-skills --source vercel-labs/skills
 
 ## Install
 
-`skills install` is dry-run by default under the agent-first contract: without `--execute` it prints the source → destination plan and exits 3 without writing anything.
+`skills install` uses a small risk-based matrix:
+
+| Situation | Without `--execute` | Next step |
+|---|---|---|
+| Additive install from the official catalog or a local path (no `--overwrite`) | installs immediately (exit 0) | verify the result; do not repeat with `--execute` |
+| Git source (GitHub shorthand/URL or git URL) | minimal dry-run (exit 3) before resolving the remote source | review the plan, then repeat with `--execute` |
+| Any source with `--overwrite` | minimal dry-run (exit 3) before replacing files | review the plan, then repeat with `--execute` |
+
+`sourceLabel` is a controlled category: exactly `catalog`, `local`, or `git`, never a label derived from the input. The plan does not repeat a URL, local path, source/repository/skill name, or content. Git selection is intentionally deferred until the confirmed run.
 
 ```bash
-ravi skills install image                # dry-run: prints the install plan (exit 3)
-ravi skills install image --execute
-ravi skills install --all --execute
+ravi skills install image                         # additive catalog install: runs now
+ravi skills install my-skill --source ./my-skills # additive local install: runs now
+ravi skills install find-skills --source vercel-labs/skills # Git: dry-run (exit 3)
 ravi skills install find-skills --source vercel-labs/skills --execute
-ravi skills install --source ./my-skills --all --execute
+ravi skills install image --overwrite             # overwrite: dry-run (exit 3)
+ravi skills install image --overwrite --execute
 ```
 
 If a catalog/source contains multiple skills, installation is explicit: pass a skill name or `--all`.

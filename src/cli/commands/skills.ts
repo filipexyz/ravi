@@ -119,6 +119,7 @@ function failAgentNotFound(op: string, agentId: string, asJson?: boolean): never
  * git clones are cleaned up before the process exits on brake/not-found).
  */
 type InstallSelection = { ok: RaviSkill[] } | { notFound: string } | { error: string };
+type InstallSourceKind = "catalog" | "local" | "git";
 
 function surveyInstallSelection(
   available: RaviSkill[],
@@ -142,16 +143,17 @@ function surveyInstallSelection(
 
 function failInstallSelection(
   survey: { selection: InstallSelection; names: string[] },
-  options: { source?: string; asJson?: boolean },
+  options: { sourceKind: InstallSourceKind; asJson?: boolean },
 ): never {
   const { selection, names } = survey;
   if ("notFound" in selection) {
     failSkillNotFound("skills install", selection.notFound, {
       asJson: options.asJson,
       candidates: names,
-      suggestedAction: options.source
-        ? `Check the skill name against the source (list with: ravi skills list --source ${options.source} --json)`
-        : "Check the skill name (see suggestions; list with: ravi skills list --json)",
+      suggestedAction:
+        options.sourceKind === "catalog"
+          ? "Check the skill name (list with: ravi skills list --json)"
+          : "Check the skill name in the same source (list with: ravi skills list --source <source> --json)",
     });
   }
   fail("error" in selection ? selection.error : "Skill selection failed.");
@@ -173,7 +175,7 @@ EXAMPLES
   ravi skills list                              # catálogo (primeira página)
   ravi skills list --installed --json           # instaladas, JSON
   ravi skills list --tag da/gtm --limit 100     # filtra por tag canônica
-  ravi skills list --source github:org/repo     # skills de uma fonte externa
+  ravi skills list --source org/repo            # skills de uma fonte externa
   ravi skills list --json --limit 50 --offset 50  # próxima página
 
 FORMATO
@@ -216,34 +218,38 @@ FONTES
 `;
 
 const SKILLS_INSTALL_HELP_AFTER = `
-MUTA (FREIO) — instala código de terceiros no bucket de plugin do operador e
-sincroniza Codex. DRY-RUN POR DEFAULT: sem --execute nada é escrito — exit 3
-(WRITE_REQUIRES_EXECUTE) com o plano fonte→destino. Destrutivo com --overwrite
-(substitui a instalada). Risco: high.
+MUTA (FREIO CONDICIONAL) — instala skills no bucket de plugin do operador e
+sincroniza Codex. Catálogo e fonte local, sem --overwrite, executam imediatamente.
+Fonte Git OU --overwrite exigem --execute. Git é bloqueado antes de resolver a
+fonte; overwrite local/catálogo valida a seleção antes do freio. Risco: high.
 
 USE
   ✓ trazer skill do catálogo Ravi ou de uma fonte (GitHub/git/path) pro sistema
   ✓ instalar em massa de uma fonte com --all
-  ✓ rodar SEM --execute primeiro: o freio é o preview (mostra fonte e destino)
+  ✓ revisar o plano antes de buscar Git ou substituir uma skill instalada
 
 NÃO USE
   ✗ criar skill nova via loop de curadoria → \`ravi skills guard --op create\`
   ✗ dar visibilidade a um agente → isso é grant, não install (\`skills grant\`)
 
 REGRAS HARD (o comando bloqueia)
-  • Sem --execute → dry-run exit 3; o plan lista nome, fonte e destino de cada skill.
-  • Nome inexistente falha ANTES do freio: exit 1 SKILL_NOT_FOUND + suggestions.
+  • Git sem --execute → dry-run exit 3 antes do clone; seleção adiada.
+  • --overwrite local/catálogo sem --execute → valida, conta e retorna exit 3.
+  • Catálogo/local sem --overwrite → instala imediatamente, sem --execute.
+  • Nome inexistente local/catálogo falha ANTES do freio; em Git, após --execute.
   • Exige um nome OU --all (senão fail "Pass a skill name or --all.").
   • --overwrite é a única forma de substituir uma já instalada (fail-safe).
 
 EXAMPLES
-  ravi skills install cli-creator                       # dry-run (exit 3): só o plano
-  ravi skills install cli-creator --execute             # instala do catálogo
-  ravi skills install --source github:org/repo --all --execute
+  ravi skills install cli-creator                       # catálogo aditivo: instala agora
+  ravi skills install minha --source ./path             # local aditivo: instala agora
+  ravi skills install --source org/repo --all           # Git: dry-run (exit 3)
+  ravi skills install --source org/repo --all --execute
+  ravi skills install cli-creator --overwrite           # dry-run (exit 3)
   ravi skills install minha --source ./path --overwrite --execute --json
 
 ON ERROR (reason → fix)
-  exit 3 WRITE_REQUIRES_EXECUTE → não é erro: revise error.plan e repita com --execute.
+  exit 3 WRITE_REQUIRES_EXECUTE → fonte Git ou overwrite: revise o plano e confirme.
   SKILL_NOT_FOUND (exit 1)      → cheque error.suggestions; liste com \`ravi skills list\`.
   Pass a skill name or --all    → passe o nome ou --all.
   já instalada (sem efeito)     → use --overwrite pra substituir.
@@ -642,7 +648,7 @@ export class SkillsCommands {
   @Command({
     name: "install",
     description:
-      "Install Ravi catalog skills or skills from an explicit source. Dry-run by default; pass --execute to write.",
+      "Install Ravi catalog skills or skills from an explicit source. Git sources and overwrites require --execute.",
     helpAfter: SKILLS_INSTALL_HELP_AFTER,
   })
   @CommandAccess({ kind: "mutate", resource: "skills", action: "install", risk: "high", requiresConfirmation: true })
@@ -665,7 +671,7 @@ export class SkillsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({
       flags: "--execute",
-      description: "Actually install the skill(s); default is a dry-run that only shows the plan (exit 3)",
+      description: "Confirm installation from a Git source or replacement with --overwrite",
     })
     execute?: boolean,
   ) {
@@ -674,29 +680,39 @@ export class SkillsCommands {
       fail("Pass a skill name or --all.");
     }
 
-    const surveySelected = (available: RaviSkill[]) => surveyInstallSelection(available, requestedSkill, all === true);
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): install copies third-party code into the
-      // operator environment — the riskiest write of this domain. Resolve and
-      // select first (read-only; validation, e.g. SKILL_NOT_FOUND, fires BEFORE
-      // the brake), then exit 3 with metadata-only source/selection counts.
-      const survey = source
-        ? withResolvedSkillSource(source, (resolvedSource) => surveySelected(discoverSkills(resolvedSource)))
-        : surveySelected(listCatalogSkills());
-      const planned = "ok" in survey.selection ? survey.selection.ok : failInstallSelection(survey, { source, asJson });
-      const planSource = source ? parseSkillSource(source) : null;
-      const sourceLabel = planSource
-        ? (planSource.subpath ?? planSource.rootPath ?? planSource.gitUrl ?? planSource.input)
-            .replace(/\\/g, "/")
-            .replace(/\/+$/, "")
-            .split("/")
-            .at(-1)
-            ?.replace(/\.git$/i, "") || planSource.type
-        : "catalog";
+    const planSource = source ? parseSkillSource(source) : null;
+    const sourceKind = planSource?.type ?? "catalog";
+    const sourceLabel = sourceKind;
+    const requiresConfirmation = sourceKind === "git" || overwrite === true;
+    if (sourceKind === "git" && execute !== true) {
+      // Cloning a Git source is not a side-effect-free lookup. Defer source
+      // resolution and selection until the caller confirms the installation.
       contractDryRun(
         "skills install",
         {
-          sourceKind: planSource?.type ?? "catalog",
+          sourceKind,
+          sourceLabel,
+          selectionDeferred: true,
+          overwrite: overwrite === true,
+          codexSync: skipCodexSync !== true,
+        },
+        { asJson },
+      );
+    }
+
+    const surveySelected = (available: RaviSkill[]) => surveyInstallSelection(available, requestedSkill, all === true);
+    if (requiresConfirmation && execute !== true) {
+      // Catalog and local discovery are side-effect-free. Validate the selected
+      // skill before the overwrite brake so not-found remains exit 1, not 3.
+      const survey = source
+        ? withResolvedSkillSource(source, (resolvedSource) => surveySelected(discoverSkills(resolvedSource)))
+        : surveySelected(listCatalogSkills());
+      const planned =
+        "ok" in survey.selection ? survey.selection.ok : failInstallSelection(survey, { sourceKind, asJson });
+      contractDryRun(
+        "skills install",
+        {
+          sourceKind,
           sourceLabel,
           skillCount: planned.length,
           overwrite: overwrite === true,
@@ -721,7 +737,7 @@ export class SkillsCommands {
       ? withResolvedSkillSource(source, (resolvedSource) => runInstall(discoverSkills(resolvedSource)))
       : runInstall(listCatalogSkills());
     if (!outcome.installed) {
-      failInstallSelection(outcome.survey, { source, asJson });
+      failInstallSelection(outcome.survey, { sourceKind, asJson });
     }
     const installed = outcome.installed;
 

@@ -1,27 +1,57 @@
 # Skills agent-first CLI contract / RUNBOOK
 
-## Debug Flow
+## Debug flow
 
-1. Read the rules: `ravi specs get cli/skills --mode rules --json`.
-2. Reproduce the failing call with `--json` and read `error.code` first; the
-   code, not the message, is the branch point.
-3. Exit `1` + `SKILL_NOT_FOUND`: read `error.suggestions` — real skill names
-   from the universe searched (catalog/installed/`--source`). Retry with one,
-   or list the right universe: `ravi skills list [--installed|--source <src>]`.
-4. Exit `1` + `AGENT_NOT_FOUND`: read `error.suggestions`; confirm with
-   `ravi agents list --json`.
-5. Exit `3`: read `error.plan` — source kind/name, skill count, overwrite and
-   Codex-sync intent. Confirm that install shape, then re-run the same command
-   adding `--execute`; paths, names and content are deliberately not echoed.
-6. Batch ops (`grant-batch`/`revoke-batch`): there is NO `--execute` here; the
-   preview is the pre-existing `--dry-run` (exit 0 with counts). If a batch
-   surprised you, re-run with `--dry-run` and compare `pairsAffected`.
-7. If an install executed without `--execute`, the brake regressed: check that
-   `install` still calls `contractDryRun` before `installSkills`, and that the
-   registry dispatcher still maps `ContractError.exitCode`.
-8. If a dry-run on a git `--source` leaves `ravi-skills-*` dirs in the OS temp
-   dir, the brake moved back inside `withResolvedSkillSource` — it must fire
-   after the callback returns.
+1. Read the domain rules with
+   `ravi specs get cli/skills --mode rules --json`. The global contract remains
+   authoritative for envelopes, exits, transports, authorization and audit.
+2. Classify the actual install invocation before diagnosing it:
+   - catalog or local source plus no `--overwrite`: immediate additive write;
+   - Git source or any `--overwrite`: confirmation-braked write.
+3. For an additive catalog/local call, absence of `--execute` is expected. A
+   valid selection installs and returns exit 0. `SKILL_NOT_FOUND`, exit 1,
+   means selection failed before any destination write.
+4. For a Git call without `--execute`, exit 3 is expected before resolution.
+   Read only `sourceKind`, controlled `sourceLabel`, `selectionDeferred`,
+   `overwrite` and `codexSync` from `error.plan`.
+5. For a catalog/local overwrite without `--execute`, safe lookup and selection
+   happen first. Exit 3 is expected with `sourceKind`, controlled `sourceLabel`,
+   `skillCount`, `overwrite` and `codexSync` in `error.plan`.
+6. `selectionDeferred: true` means a Git source was not resolved, discovered or
+   selected. A Git not-found condition is therefore not knowable on the first
+   call; it may appear as `SKILL_NOT_FOUND`, exit 1, after confirmation.
+7. `sourceLabel` must be exactly `catalog`, `local` or `git`. If either plan
+   contains a URL, path, basename/subpath, destination, skill name, skill
+   content or arbitrary metadata, treat it as a plan-minimization regression.
+   A `skillCount` is allowed only after safe catalog/local selection.
+8. Batch visibility changes (`grant-batch`/`revoke-batch`) have no
+   `--execute`. Their preview remains the pre-existing `--dry-run`, exit 0 with
+   counts and no write.
+9. For other entity errors, branch on `error.code`: `SKILL_NOT_FOUND` uses
+   visible skill suggestions; `AGENT_NOT_FOUND` uses real agent ids/names.
+   Neither the message, action nor suggestions may repeat the source input.
+
+## Zero-effect diagnosis
+
+When a dry-run appears to mutate before exit 3, inspect the ordering in
+`skills install`:
+
+1. Purely normalize the requested name and parse the source kind.
+2. For Git, call `contractDryRun` before `withResolvedSkillSource`, discovery,
+   selection, `installSkills` or Codex sync. Confirm that the plan has
+   `selectionDeferred: true` and no `skillCount`.
+3. For catalog/local overwrite, perform safe enumeration/discovery and
+   selection first so not-found remains exit 1; then call `contractDryRun`
+   before `installSkills` or Codex sync. Confirm that the plan reports only the
+   selected `skillCount`, never names or content.
+4. Confirm through the control flow that the unconfirmed Git branch never
+   enters the resolver and no braked branch reaches installation or Codex
+   synchronization.
+
+If an additive catalog/local call returns exit 3, the condition is too broad.
+If a Git call resolves before exit 3, or any braked call writes before exit 3,
+the brake is too late. If catalog/local overwrite hides a safe not-found behind
+exit 3, the brake is too early.
 
 ## Validation
 
@@ -29,13 +59,33 @@
 bun test src/cli/commands/skills.test.ts
 ```
 
-Live checks against the local CLI (read-only or dry-run; use an isolated
-`RAVI_STATE_DIR`):
+Run live install checks only with isolated `RAVI_STATE_DIR`, `HOME` and
+`USERPROFILE`; `installSkills` derives its plugin destination from the home
+directory. Refuse an execute-path check if the redirected home is not active.
 
 ```bash
-ravi skills show nope-skill --json                 # expect exit 1 + suggestions
-ravi skills grant nope-agent agents-manager --json # expect exit 1 + AGENT_NOT_FOUND
-ravi skills install agents-manager --json          # expect exit 3 + dryRun plan
-ravi skills grant-batch --all-agents --all-skills --dry-run --json  # exit 0 preview
-ravi skills list --fields name,source --json       # expect compact items
+# Additive catalog/local: immediate exit 0, no --execute required.
+ravi skills install cli-creator --json
+ravi skills install --source ./fixture-skills --all --json
+
+# Git: exit 3 before source resolution. Overwrite: exit 3 after safe selection,
+# but before writing.
+ravi skills install --source https://github.com/example/ravi-skills.git --all --json
+ravi skills install cli-creator --overwrite --json
+ravi skills install --source ./fixture-skills --all --overwrite --json
+
+# Confirm only inside the isolated fixture after reviewing the minimal plan.
+ravi skills install --source https://github.com/example/ravi-skills.git --all --execute --json
+ravi skills install cli-creator --overwrite --execute --json
+
+# Other domain contracts.
+ravi skills show nope-skill --json
+ravi skills grant nope-agent agents-manager --json
+ravi skills grant-batch --all-agents --all-skills --dry-run --json
+ravi skills list --fields name,source --json
 ```
+
+Expected ordering for a missing Git selection is exit 3 on the unconfirmed
+call, followed by exit 1 `SKILL_NOT_FOUND` only on the confirmed call. For a
+missing catalog/local selection, additive or overwrite, expect exit 1 before
+the brake and before any write on the first call.

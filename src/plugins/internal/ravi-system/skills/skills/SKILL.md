@@ -24,28 +24,41 @@ Taxonomia de saída:
 - `0` sucesso.
 - `1` erro de execução (`SKILL_NOT_FOUND`, `AGENT_NOT_FOUND`). O envelope traz `suggestions` com nomes/ids reais parecidos — consulte antes de concluir "não existe".
 - `2` erro de uso (flag/argumento inválido).
-- `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` com fonte e destino exatos do que `--execute` faria. Revise e repita com `--execute`.
+- `3` freio de política — não é erro. Nada foi gravado; revise o `plan` e repita com `--execute` somente nos casos freados abaixo.
 
-Onde o freio existe hoje: `skills install` (instala código de terceiros no ambiente — a escrita mais arriscada do domínio) é dry-run por default e exige `--execute`. Nome inexistente falha ANTES do freio (exit 1 `SKILL_NOT_FOUND`, nunca 3).
+Matriz KISS de `skills install`:
 
-Sem freio (declarado): `skills sync` (re-materializa o que já existe no repo local; idempotente e reversível) e `skills grant`/`skills revoke` (reversíveis entre si, efeito ao vivo) escrevem na hora.
+| Situação | Sem `--execute` | Próximo passo |
+|---|---|---|
+| Catálogo oficial ou path local, instalação aditiva (sem `--overwrite`) | instala imediatamente (exit 0) | confira o resultado; não repita com `--execute` |
+| Fonte Git (shorthand, URL GitHub ou URL git) | dry-run (exit 3) antes de resolver a fonte remota | revise o plano mínimo e repita com `--execute` |
+| Qualquer fonte com `--overwrite` | dry-run (exit 3) antes de substituir arquivos | revise o plano mínimo e repita com `--execute` |
+
+O plano usa um `sourceLabel` controlado: exatamente `catalog`, `local` ou `git`, nunca um rótulo derivado da entrada. Ele não repete URL, path local, nome da fonte/repositório/skill nem conteúdo. Em Git, a seleção fica adiada e erros como `SKILL_NOT_FOUND` só podem aparecer depois de `--execute`; catálogo e fonte local podem validar a seleção antes de escrever.
+
+Sem freio (declarado): instalações aditivas do catálogo ou de path local; `skills sync` (re-materializa o que já existe no repo local; idempotente e reversível); e `skills grant`/`skills revoke` (reversíveis entre si, efeito ao vivo). Todos escrevem na hora.
 
 Caso especial — batch: `skills grant-batch`/`skills revoke-batch` usam o `--dry-run` PRÉ-EXISTENTE como equivalente do freio: preview com contagem, exit 0, sem escrita. NÃO existe `--execute` nesses dois e o nome `--dry-run` é mantido por compatibilidade — sempre rode o `--dry-run` antes do write real.
 
 Compact mode: `skills list` e `skills who` aceitam `--fields a,b,c` (ex.: `--fields name,source`).
 
-Exemplos freados:
+Exemplos:
 
 ```bash
-ravi skills install cli-creator                 # dry-run: plano fonte→destino (exit 3)
-ravi skills install cli-creator --execute       # instala de verdade
-ravi skills install --source org/repo --all --execute
+ravi skills install cli-creator                         # catálogo aditivo: instala agora
+ravi skills install minha --source ./minhas-skills      # fonte local aditiva: instala agora
+ravi skills install find-skills --source vercel-labs/skills  # Git: plano mínimo (exit 3)
+ravi skills install find-skills --source vercel-labs/skills --execute
+ravi skills install cli-creator --overwrite             # overwrite: plano mínimo (exit 3)
+ravi skills install cli-creator --overwrite --execute
 ravi skills grant-batch --all-agents --all-skills --dry-run   # preview (equivalente do freio)
 ```
 
 Checklist antes de responder sobre skills:
 
-- Tratei exit 3 como freio (revisei o `plan` fonte→destino) e não como falha?
+- Classifiquei a instalação pela fonte e por `--overwrite`, em vez de presumir que todo `install` exige confirmação?
+- Em catálogo/path local aditivo, usei o resultado direto sem repetir com `--execute`?
+- No exit 3, confirmei que `sourceLabel` é apenas `catalog`/`local`/`git`, sem URL/path/nome/conteúdo e, para Git, com seleção adiada antes de repetir com `--execute`?
 - Consultei `suggestions` do envelope antes de declarar skill/agente inexistente?
 - Em batch, rodei `--dry-run` antes do write real?
 
@@ -94,14 +107,17 @@ ravi skills list --source https://github.com/vercel-labs/skills/tree/main/skills
 
 ### Instalar
 
-`skills install` é dry-run por default: sem `--execute` ele só mostra o plano fonte→destino e sai com exit 3, sem escrever nada.
+`skills install` usa confirmação proporcional ao risco. Catálogo oficial e path local instalam diretamente quando a operação é aditiva. Fonte Git ou qualquer instalação com `--overwrite` retorna dry-run (exit 3); revise o plano mínimo e repita com `--execute`.
+
+O dry-run de fonte Git acontece antes de baixar ou inspecionar o repositório. No plano, `sourceLabel` é somente `catalog`, `local` ou `git`; ele não inclui URL, path local, nome da fonte/repositório/skill nem conteúdo.
 
 ```bash
-ravi skills install image                # dry-run: mostra o plano (exit 3)
-ravi skills install image --execute
-ravi skills install --all --execute
+ravi skills install image                         # catálogo aditivo: instala agora
+ravi skills install minha --source ./minhas-skills # local aditivo: instala agora
+ravi skills install find-skills --source vercel-labs/skills # Git: dry-run (exit 3)
 ravi skills install find-skills --source vercel-labs/skills --execute
-ravi skills install --source ./minhas-skills --all --execute
+ravi skills install image --overwrite             # dry-run (exit 3)
+ravi skills install image --overwrite --execute
 ```
 
 Quando um catálogo/fonte contém várias skills, não instale implicitamente todas: passe um nome ou `--all`.
