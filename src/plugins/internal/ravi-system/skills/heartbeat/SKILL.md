@@ -27,9 +27,9 @@ Taxonomia de saída:
 - `0` sucesso.
 - `1` erro de execução (ex.: `AGENT_NOT_FOUND`). O envelope traz `suggestions` com agents reais parecidos — consulte antes de concluir "não existe".
 - `2` erro de uso (flag\argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
-- `3` NÃO acontece neste domínio: heartbeat não tem nenhum freio de escrita (nenhum comando aceita `--execute`). O valor do contrato aqui é envelope + exits + `--fields`.
+- `3` bloqueio por política: com trabalho pendente, `heartbeat trigger` retorna um plano e exige nova chamada com `--execute`. Se o `HEARTBEAT.md` estiver ausente ou vazio, o comando retorna sucesso com `status: "skipped"` antes da confirmação.
 
-Por que sem freio (decisão declarada, não omissão): `trigger` dispara o heartbeat do PRÓPRIO agente — ação benigna e frequente na operação, que só processa o `HEARTBEAT.md` e é suprimida quando o agente responde `HEARTBEAT_OK`; `enable`/`disable` são um par reversível; e todo `set` (interval, model, account, active-hours) tem inverso óbvio. Se algum comando de heartbeat um dia sair com exit 3, isso é regressão de contrato — não "conserte" adicionando `--execute` na chamada.
+Com trabalho pendente, `heartbeat trigger` retorna dry-run (exit 3) e exige `--execute`. Revise o plano e repita a chamada somente quando quiser disparar a execução manual. Se o `HEARTBEAT.md` estiver ausente ou vazio, o resultado é `status: "skipped"` com exit 0, sem exigir confirmação. `enable`, `disable` e `set` executam imediatamente porque são configurações locais e reversíveis.
 
 Compact mode: `heartbeat status` aceita `--fields a,b,c` (ex.: `--fields agent,heartbeat`) — use em varredura para não arrastar o objeto inteiro de cada agent.
 
@@ -39,7 +39,7 @@ Checklist antes de responder sobre heartbeat:
 
 - Consultei `suggestions` do envelope antes de declarar que o agent não existe?
 - Tratei `status: "skipped"` do `trigger` como sucesso (falta/vazio o HEARTBEAT.md), e não como erro?
-- Lembrei que aqui NÃO existe `--execute` — nenhum comando é dry-run?
+- Quando `trigger` trouxe um plano, revisei-o e repeti com `--execute` somente para confirmar o disparo manual?
 
 ## Comandos
 
