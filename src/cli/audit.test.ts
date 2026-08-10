@@ -188,4 +188,46 @@ describe("CLI audit redaction", () => {
     expect(serialized).not.toContain(process.cwd());
     expect(serialized).not.toContain(process.execPath);
   });
+
+  it("removes secret values from serialized audit metadata", () => {
+    const payload = buildCliAuditPayload({
+      group: "artifacts",
+      name: "create",
+      input: { metadata: '{"token":"SENTINEL_METADATA_8K2R"}' },
+      outcome: "succeeded",
+    });
+
+    expect(payload).toMatchObject({
+      input: { metadata: '{"token":"[REDACTED]"}' },
+    });
+    expect(JSON.stringify(payload)).not.toContain("SENTINEL_METADATA_8K2R");
+  });
+
+  it("removes private URL components from audit argv", () => {
+    const originalArgv = [...process.argv];
+    try {
+      process.argv.splice(
+        0,
+        process.argv.length,
+        originalArgv[0] ?? "bun",
+        originalArgv[1] ?? "ravi",
+        "projects",
+        "create",
+        "--url",
+        "https://user:SENTINEL_ARGV_5P9X@example.test/private?token=value",
+      );
+
+      const payload = buildCliAuditPayload({ group: "projects", name: "create" });
+      const serialized = JSON.stringify(payload);
+      expect(payload).toMatchObject({
+        cliInvocation: { process: { argv: expect.arrayContaining(["--url", "https://example.test"]) } },
+      });
+      expect(serialized).not.toContain("SENTINEL_ARGV_5P9X");
+      expect(serialized).not.toContain("user:");
+      expect(serialized).not.toContain("/private");
+      expect(serialized).not.toContain("token=value");
+    } finally {
+      process.argv.splice(0, process.argv.length, ...originalArgv);
+    }
+  });
 });

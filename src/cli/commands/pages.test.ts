@@ -899,8 +899,10 @@ describe("pages agent-first contract", () => {
   });
 
   it("maps a Console 'site not found' failure to the SITE_NOT_FOUND envelope (exit 1)", async () => {
+    const privateProviderMessage =
+      "Pages site not found: https://user:SENTINEL_PROVIDER_4Q7M@example.test/private?token=value";
     const client = makeClient(async () => {
-      throw new CloudAuthError("PAYLOAD_INVALID", "Pages site not found: ghost", { status: 404 });
+      throw new CloudAuthError("PAYLOAD_INVALID", privateProviderMessage, { status: 404 });
     });
     const command = new PagesPasswordCommands({
       client,
@@ -917,6 +919,11 @@ describe("pages agent-first contract", () => {
     );
 
     expect(error.details.suggestedAction).toContain("ravi pages list");
+    const serialized = JSON.stringify(error.envelope());
+    expect(error.envelope().error.message).toBe("Pages site was not found.");
+    expect(serialized).not.toContain("SENTINEL_PROVIDER_4Q7M");
+    expect(serialized).not.toContain("user:");
+    expect(serialized).not.toContain("/private");
   });
 
   it("maps a Console 'route not found' failure to the ROUTE_NOT_FOUND envelope (exit 1)", async () => {
