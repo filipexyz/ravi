@@ -1110,7 +1110,7 @@ describe("ContextCommands", () => {
   });
 
   describe("agent-first contract", () => {
-    function captureContractCall(fn: () => unknown): { logs: string[]; thrown: unknown } {
+    function captureContractCall(fn: () => unknown): { logs: string[]; result: unknown; thrown: unknown } {
       const originalLog = console.log;
       const originalError = console.error;
       const logs: string[] = [];
@@ -1118,16 +1118,17 @@ describe("ContextCommands", () => {
         logs.push(String(value));
       };
       console.error = () => {};
+      let result: unknown;
       let thrown: unknown;
       try {
-        fn();
+        result = fn();
       } catch (error) {
         thrown = error;
       } finally {
         console.log = originalLog;
         console.error = originalError;
       }
-      return { logs, thrown };
+      return { logs, result, thrown };
     }
 
     it("emits CONTEXT_NOT_FOUND envelope with id suggestions on info --json (exit 1, no rctx keys)", () => {
@@ -1155,28 +1156,30 @@ describe("ContextCommands", () => {
       expect(contractError.envelope().error.code).toBe("CONTEXT_NOT_FOUND");
     });
 
-    it("minimizes context revoke to identifiers and flags", () => {
+    it("revokes an active context immediately without --execute because it reduces authority", () => {
+      revokedContext = {
+        ...(fetchedContext ?? resolvedContext!),
+        revokedAt: 5000,
+      };
+
       const command = new ContextCommands();
-      const { thrown } = captureContractCall(() =>
-        command.revoke("ctx_123", false, "PRIVATE_MESSAGE_8K2R", true, undefined),
+      const { logs, result, thrown } = captureContractCall(() =>
+        command.revoke("ctx_123", false, undefined, true, undefined),
       );
-      expect(thrown).toBeInstanceOf(ContractError);
-      const contractError = thrown as InstanceType<typeof ContractError>;
-      expect(contractError.exitCode).toBe(3);
-      const envelope = contractError.envelope();
-      expect(envelope.op).toBe("context revoke");
-      expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
-      expect(envelope.error.dryRun).toBe(true);
-      expect(envelope.error.plan).toEqual({
-        contextId: "ctx_123",
-        kind: "agent-runtime",
-        agentId: "dev",
-        cascade: true,
-        reasonPresent: true,
-      });
-      expect(JSON.stringify(envelope)).not.toContain("PRIVATE_MESSAGE_8K2R");
-      expect(JSON.stringify(envelope)).not.toContain("rctx_");
-      expect(revokedCalls).toEqual([]);
+      const expectedPayload = {
+        context: {
+          contextId: "ctx_123",
+          status: "revoked",
+          revokedAt: 5000,
+        },
+        cascaded: [],
+        revokedAt: 5000,
+      };
+
+      expect(thrown).toBeUndefined();
+      expect(revokedCalls).toEqual([{ contextId: "ctx_123", options: { cascade: true, reason: undefined } }]);
+      expect(result).toMatchObject(expectedPayload);
+      expect(JSON.parse(logs[0] ?? "{}")).toMatchObject(expectedPayload);
     });
 
     it("emits CONTEXT_NOT_FOUND on revoke of an unknown context before any dry-run", () => {
