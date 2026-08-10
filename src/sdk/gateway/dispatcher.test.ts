@@ -835,7 +835,7 @@ describe("dispatch — audit", () => {
     expect(audits.events[0]).toMatchObject({ outcome: "usage_error", exitCode: 2, errorCode: "USAGE_ERROR" });
   });
 
-  it("suppresses successful high-frequency read audits", async () => {
+  it("emits one audit for a successful high-frequency read", async () => {
     const audits = captureAudits();
     const result = await dispatch(
       findCmd("sessions.list"),
@@ -846,8 +846,13 @@ describe("dispatch — audit", () => {
         emitAudit: audits.emit,
       },
     );
-    expect(result.audit).toBeNull();
-    expect(audits.events).toHaveLength(0);
+    expect(result.audit).toEqual(audits.events[0]);
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]).toMatchObject({
+      tool: "sessions_list",
+      outcome: "succeeded",
+      isError: false,
+    });
   });
 
   it("still emits audit when a high-frequency read fails", async () => {
