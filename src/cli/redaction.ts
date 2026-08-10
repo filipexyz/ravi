@@ -85,6 +85,8 @@ export function sanitizePublicValue(value: unknown, key?: string, parent?: Reado
     return "[REDACTED:content]";
   }
   if (typeof value === "string") {
+    const serialized = sanitizeSerializedContainer(value);
+    if (serialized !== null) return serialized;
     if (isStandalonePath(value)) return "[REDACTED:path]";
     return sanitizePublicString(value);
   }
@@ -98,6 +100,23 @@ export function sanitizePublicValue(value: unknown, key?: string, parent?: Reado
     return sanitized;
   }
   return value;
+}
+
+function sanitizeSerializedContainer(value: string): string | null {
+  const trimmed = value.trim();
+  if (
+    !(trimmed.startsWith("{") && trimmed.endsWith("}")) &&
+    !(trimmed.startsWith("[") && trimmed.endsWith("]"))
+  ) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    if (!parsed || typeof parsed !== "object") return null;
+    return JSON.stringify(sanitizePublicValue(parsed));
+  } catch {
+    return null;
+  }
 }
 
 function sanitizePublicUrl(value: string): string {
