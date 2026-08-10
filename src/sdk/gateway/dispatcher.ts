@@ -8,10 +8,9 @@
  * (e.g. `{ id, limit }`). The wrapped CLI invocation form (`{ args, options }`)
  * is intentionally rejected because it leaks CLI grammar into the API surface.
  *
- * Audit emit lives here on purpose. The transport layer (server.ts) never
- * emits command audits, which prevents drift between CLI and gateway tool
- * naming. High-frequency successful read calls may be suppressed here; errors
- * still emit audit.
+ * Gateway dispatches emit audits through the central audit path here. The
+ * transport layer (server.ts) never emits command audits, so transport does
+ * not duplicate gateway audit events.
  *
  * Context binding: when the gateway resolves a runtime context-key, it threads
  * the resolved `ContextRecord` into the dispatcher so audit events carry the
@@ -40,8 +39,6 @@ import {
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
 import { contractErrorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
-
-const QUIET_SUCCESS_AUDIT_TOOLS = new Set(["sessions_list", "tasks_list", "tasks_show"]);
 
 export interface DispatchOptions {
   /** Allow `superadmin`-scoped commands. Off by default. */
@@ -487,7 +484,6 @@ function asToolContext(scope: ScopeContext, record: ContextRecord | null): ToolC
 }
 
 async function emitDispatchAudit(event: AuditEvent, override: DispatchOptions["emitAudit"]): Promise<boolean> {
-  if (event.outcome === "succeeded" && QUIET_SUCCESS_AUDIT_TOOLS.has(event.tool)) return false;
   if (override) {
     await override(event);
     return true;
