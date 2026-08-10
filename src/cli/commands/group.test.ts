@@ -515,21 +515,19 @@ describe("whatsapp group write brake", () => {
     expect(updateParticipantCalls).toHaveLength(0);
   });
 
-  it("demote without --execute is a dry-run: exit 3 and no provider call", async () => {
+  it("demote without --execute reduces authority immediately", async () => {
     const commands = new GroupCommands();
-    const error = await expectContractError(
-      () => commands.demote("120363000000000001", "5511999999999", undefined, true, undefined),
-      "WRITE_REQUIRES_EXECUTE",
-      3,
+    const payload = await silenced(() =>
+      commands.demote("120363000000000001", "5511999999999", undefined, true, undefined),
     );
 
-    expect(error.details.plan).toEqual({
-      targetType: "group",
-      targetRef: `sha256:${hashForAudit("120363000000000001@g.us")}`,
-      participantCount: 1,
-      accountId: "main",
+    expect(updateParticipantCalls).toHaveLength(1);
+    expect(updateParticipantCalls[0]).toMatchObject({
+      action: "demote",
+      groupJid: "120363000000000001@g.us",
+      participants: ["5511999999999"],
     });
-    expect(updateParticipantCalls).toHaveLength(0);
+    expect(payload).toMatchObject({ status: "demoted", changedCount: 1 });
   });
 
   it("create without --execute is a dry-run: exit 3, no group created, no agent created", async () => {
