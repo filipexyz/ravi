@@ -414,18 +414,20 @@ describe("skills agent-first contract", () => {
   it("installs an additive local source immediately without --execute", () => {
     const source = mkdtempSync(join(tmpdir(), "skills-additive-local-"));
     let installSpy: ReturnType<typeof spyOn> | undefined;
+    let installedNames: string[] = [];
     try {
       writeFileSync(
         join(source, "SKILL.md"),
         "---\nname: local-additive-skill\ndescription: Local additive fixture\n---\n\nFixture content\n",
       );
-      installSpy = spyOn(skillManager, "installSkills").mockImplementation((skills, options = {}) =>
-        skills.map((skill) => ({
+      installSpy = spyOn(skillManager, "installSkills").mockImplementation((skills, options = {}) => {
+        installedNames = skills.map((skill) => skill.name);
+        return skills.map((skill) => ({
           ...skill,
           installPath: join(source, ".test-install", skill.name),
           pluginName: options.pluginName ?? "ravi-user-skills",
-        })),
-      );
+        }));
+      });
       const result = withoutLogs(() =>
         runWithContext({}, () =>
           new SkillsCommands().install(
@@ -444,7 +446,7 @@ describe("skills agent-first contract", () => {
 
       expect(result.success).toBe(true);
       expect(result.installed).toHaveLength(1);
-      expect(result.installed[0]?.name).toBe("local-additive-skill");
+      expect(installedNames).toEqual(["local-additive-skill"]);
       expect(installSpy).toHaveBeenCalledTimes(1);
     } finally {
       installSpy?.mockRestore();
