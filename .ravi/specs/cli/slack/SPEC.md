@@ -48,8 +48,9 @@ The `slack` domain follows the shared agent-first contract implemented in
   audit writes, Slack client construction or any Slack Web API call. The
   dry-run plan carries the Slack method and a safe summary of the material
   request effect; it never serializes Slack IDs or payload/content values.
-- Authority reduction is immediate: `canvas-access-delete` revokes sharing in
-  one call while remaining authorized as `mutate`.
+- `canvas-access-delete` preserves its pre-existing dry-run contract. Although
+  it reduces authority, removing the brake would make a legacy invocation
+  revoke live access where it previously only returned a plan.
 - `--execute` MUST be the LAST option of every braked command, and all local
   validation (payload files, access levels, artifact resolution) MUST run
   BEFORE the brake so the plan never promises an impossible write.
@@ -102,6 +103,7 @@ Slack Web API call):
 | `canvas-artifact-publish` | `canvases.edit` (replace) | replaces canvas content from an artifact |
 | `canvas-edit` | `canvases.edit` | edits canvas sections/title |
 | `canvas-access-set` | `canvases.access.set` | changes who can see/edit |
+| `canvas-access-delete` | `canvases.access.delete` | revokes live sharing; legacy callers expect a dry-run by default |
 | `canvas-delete` | `canvases.delete` | destroys a canvas |
 
 Unbraked commands (reads, local operations or containment; no `--execute`):
@@ -120,7 +122,6 @@ Unbraked commands (reads, local operations or containment; no `--execute`):
 | `work-objects-validate` | local normalization | purely local |
 | `canvas-sections-lookup` | `canvases.sections.lookup` | read; supports `--fields` |
 | `canvas-artifact-status` | local artifact ledger | purely local |
-| `canvas-access-delete` | `canvases.access.delete` | revokes sharing; authority reduction |
 
 ## Invariants
 

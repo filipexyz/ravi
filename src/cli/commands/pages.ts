@@ -74,6 +74,7 @@ export class PagesCommands {
       const result = await listPageSites({ project: resolved.projectRef, console: consoleUrl }, this.deps);
       const page = paginateCliItems(result.sites, { limit, offset });
       const pagination = buildCliOffsetPagination({
+        fields,
         baseCommand: ["ravi", "pages", "list"],
         limit: page.limit,
         offset: page.offset,
@@ -113,6 +114,7 @@ export class PagesCommands {
       const result = await listPublishedPages({ project: resolved.projectRef, console: consoleUrl }, this.deps);
       const page = paginateCliItems(result.pages, { limit, offset });
       const pagination = buildCliOffsetPagination({
+        fields,
         baseCommand: ["ravi", "pages", "published"],
         limit: page.limit,
         offset: page.offset,

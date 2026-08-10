@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "bd4f10fe46836b30"
+    "version": "4ae8093208999bd5"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -5955,6 +5955,9 @@
                           "type": "string"
                         },
                         "providerVersion": {
+                          "type": "string"
+                        },
+                        "reason": {
                           "type": "string"
                         },
                         "reasonCode": {
@@ -78377,6 +78380,10 @@
                     "description": "Comma-separated Slack channel IDs",
                     "type": "string"
                   },
+                  "execute": {
+                    "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+                    "type": "boolean"
+                  },
                   "users": {
                     "description": "Comma-separated Slack user IDs",
                     "type": "string"
@@ -78509,7 +78516,7 @@
             "bearerAuth": []
           }
         ],
-        "summary": "Revoke Slack standalone canvas access immediately",
+        "summary": "Revoke Slack standalone canvas access; dry-run unless --execute is set",
         "tags": [
           "slack"
         ]

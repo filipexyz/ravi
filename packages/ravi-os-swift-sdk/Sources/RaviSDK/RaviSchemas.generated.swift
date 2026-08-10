@@ -5276,6 +5276,9 @@ public enum RaviSchemas {
           "providerVersion": {
             "type": "string"
           },
+          "reason": {
+            "type": "string"
+          },
           "reasonCode": {
             "anyOf": [
               {
@@ -63436,6 +63439,10 @@ public enum RaviSchemas {
       "channels": {
         "description": "Comma-separated Slack channel IDs",
         "type": "string"
+      },
+      "execute": {
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "users": {
         "description": "Comma-separated Slack user IDs",

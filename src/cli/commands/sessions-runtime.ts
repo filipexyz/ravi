@@ -235,11 +235,7 @@ export class SessionRuntimeCommands {
       expectedTurnId,
     };
     if (execute !== true) {
-      contractDryRun(
-        "sessions runtime follow-up",
-        buildRuntimeControlPlan(session, request),
-        { asJson },
-      );
+      contractDryRun("sessions runtime follow-up", buildRuntimeControlPlan(session, request), { asJson });
     }
     const result = await requestRuntimeControl(session, request);
 
@@ -290,11 +286,7 @@ export class SessionRuntimeCommands {
       numTurns: parsePositiveInt(turns, 1),
     };
     if (execute !== true) {
-      contractDryRun(
-        "sessions runtime rollback",
-        buildRuntimeControlPlan(session, request),
-        { asJson },
-      );
+      contractDryRun("sessions runtime rollback", buildRuntimeControlPlan(session, request), { asJson });
     }
     const result = await requestRuntimeControl(session, request);
 
@@ -331,11 +323,7 @@ export class SessionRuntimeCommands {
       cwd: cwd ?? null,
     };
     if (execute !== true) {
-      contractDryRun(
-        "sessions runtime fork",
-        buildRuntimeControlPlan(session, request),
-        { asJson },
-      );
+      contractDryRun("sessions runtime fork", buildRuntimeControlPlan(session, request), { asJson });
     }
     const result = await requestRuntimeControl(session, request);
 

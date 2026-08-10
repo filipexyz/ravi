@@ -200,18 +200,7 @@ describe("yt agent-first contract", () => {
     spyOn(console, "log").mockImplementation(() => {});
 
     const update = await expectContractError(
-      () =>
-        commands.videoUpdate(
-          "v1",
-          sentinel,
-          sentinel,
-          "one,two",
-          undefined,
-          undefined,
-          undefined,
-          true,
-          undefined,
-        ),
+      () => commands.videoUpdate("v1", sentinel, sentinel, "one,two", undefined, undefined, undefined, true, undefined),
       "WRITE_REQUIRES_EXECUTE",
       3,
     );

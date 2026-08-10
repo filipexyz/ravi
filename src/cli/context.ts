@@ -76,9 +76,10 @@ export function runWithContext<T>(context: ToolContext, fn: () => T): T {
  * const ctx = getContext();
  * const sessionKey = ctx?.sessionKey ?? "unknown";
  */
-export function getContext(): ToolContext | undefined {
+export function getContext(options: { localOnly?: boolean } = {}): ToolContext | undefined {
   const store = contextStorage.getStore();
   if (store) return store;
+  if (options.localOnly === true) return undefined;
 
   const env = process.env;
 

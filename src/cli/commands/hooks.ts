@@ -232,6 +232,7 @@ export class HooksCommands {
     const page = paginateCliItems(hooks, { limit, offset });
     const pageHooks = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "hooks", "list"],
       limit: page.limit,
       offset: page.offset,

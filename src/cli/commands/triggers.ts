@@ -226,6 +226,7 @@ export class TriggersCommands {
     const page = paginateCliItems(triggers, { limit, offset });
     const pageTriggers = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "triggers", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -866,7 +867,13 @@ export class TriggersCommands {
     description: "Delete a trigger",
     aliases: ["delete", "remove"],
   })
-  @CommandAccess({ kind: "mutate", resource: "triggers", action: "rm", risk: "destructive", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "triggers",
+    action: "rm",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   @Returns(triggerMutationReturnSchema)
   async rm(
     @Arg("id", { description: "Trigger ID" }) id: string,

@@ -287,6 +287,7 @@ export class StickerCommands {
     const page = paginateCliItems(stickers, { limit, offset });
     const pageStickers = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "stickers", "list"],
       limit: page.limit,
       offset: page.offset,

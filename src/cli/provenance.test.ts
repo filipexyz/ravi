@@ -43,9 +43,9 @@ describe("CLI provenance", () => {
   });
 
   it("does not special-case boolean flags", () => {
-    expect(sanitizeCliArgv(["ravi", "daemon", "logs", "--path", "--json"], { group: "daemon", name: "logs" })).toEqual(
-      ["[REDACTED:argv count=5]"],
-    );
+    expect(sanitizeCliArgv(["ravi", "daemon", "logs", "--path", "--json"], { group: "daemon", name: "logs" })).toEqual([
+      "[REDACTED:argv count=5]",
+    ]);
   });
 
   it("builds process metadata for direct CLI invocations", () => {

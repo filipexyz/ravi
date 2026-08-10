@@ -20,6 +20,7 @@ import { normalizeLimitOffsetPage, type ListPage } from "../utils/pagination.js"
 import { timestampLikeToMs } from "../utils/provider-timestamp.js";
 import { executeWrite } from "../db/write-retry.js";
 import {
+  CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
   migrateAgentDefaultsRecord,
   migrateLegacyReadCapabilityInputs,
 } from "../permissions/command-access-kind-migration.js";
@@ -3647,6 +3648,11 @@ function ensureAgentVisibilityMigration(database: Database): void {
 }
 
 function ensureCliCommandAccessKindGrantMigration(database: Database): void {
+  const existing = database
+    .prepare("SELECT value FROM router_meta WHERE key = ?")
+    .get(CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.router) as { value: string } | undefined;
+  if (existing?.value === "done") return;
+
   const rows = database.prepare("SELECT id, defaults FROM agents WHERE defaults IS NOT NULL").all() as Array<{
     id: string;
     defaults: string;
@@ -3701,6 +3707,10 @@ function ensureCliCommandAccessKindGrantMigration(database: Database): void {
   } else if (ambiguousGrants > 0) {
     log.debug("Found broad agent-default read grants requiring manual review", { ambiguousGrants });
   }
+
+  database
+    .prepare("INSERT OR REPLACE INTO router_meta (key, value, updated_at) VALUES (?, ?, ?)")
+    .run(CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.router, "done", Date.now());
 }
 
 function getDefaultAgentIdFromDatabase(database: Database): string {

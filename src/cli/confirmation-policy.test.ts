@@ -30,9 +30,7 @@ describe("global confirmation policy metadata", () => {
     const invalid = commands
       .map((command) => ({ command, execute: executeOption(command) }))
       .filter(({ execute }) => execute !== undefined)
-      .filter(
-        ({ command, execute }) => execute?.index !== Math.max(...command.options.map((option) => option.index)),
-      )
+      .filter(({ command, execute }) => execute?.index !== Math.max(...command.options.map((option) => option.index)))
       .map(({ command }) => command.fullName);
 
     expect(invalid).toEqual([]);
@@ -41,10 +39,7 @@ describe("global confirmation policy metadata", () => {
   it("backs every confirmation declaration with an executable mutation brake", () => {
     const invalid = commands
       .filter((command) => command.access?.requiresConfirmation === true)
-      .filter(
-        (command) =>
-          command.access?.kind !== "mutate" || executeOption(command) === undefined,
-      )
+      .filter((command) => command.access?.kind !== "mutate" || executeOption(command) === undefined)
       .map((command) => command.fullName);
 
     expect(invalid).toEqual([]);
@@ -53,10 +48,7 @@ describe("global confirmation policy metadata", () => {
   it("declares every executable mutation brake in confirmation metadata", () => {
     const invalid = commands
       .filter((command) => executeOption(command) !== undefined)
-      .filter(
-        (command) =>
-          command.access?.kind !== "mutate" || command.access.requiresConfirmation !== true,
-      )
+      .filter((command) => command.access?.kind !== "mutate" || command.access.requiresConfirmation !== true)
       .map((command) => ({
         command: command.fullName,
         kind: command.access?.kind ?? null,
@@ -68,7 +60,7 @@ describe("global confirmation policy metadata", () => {
   });
 
   it("keeps authority-reduction and containment operations immediate", () => {
-    for (const fullName of ["context.revoke", "whatsapp.group.demote", "slack.canvas-access-delete"]) {
+    for (const fullName of ["context.revoke", "whatsapp.group.demote"]) {
       const command = commands.find((candidate) => candidate.fullName === fullName);
 
       expect(command, fullName).toBeDefined();

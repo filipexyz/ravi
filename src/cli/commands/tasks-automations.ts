@@ -419,7 +419,13 @@ export class TaskAutomationCommands {
     description: "Delete a task automation (dry-run by default; --execute writes)",
     aliases: ["delete", "remove"],
   })
-  @CommandAccess({ kind: "mutate", resource: "tasks.automations", action: "rm", risk: "destructive", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "tasks.automations",
+    action: "rm",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   @Returns(taskAutomationMutationReturnSchema)
   remove(
     @Arg("id", { description: "Task automation ID" }) id: string,

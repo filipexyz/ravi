@@ -860,7 +860,13 @@ export class MailRaviMailCommands {
   constructor(private readonly deps: MailCommandDeps = defaultMailDeps()) {}
 
   @Command({ name: "send", description: "Send mail directly through Console Ravi Mail" })
-  @CommandAccess({ kind: "mutate", resource: "mail.providers.ravi-mail", action: "send", risk: "high", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "mail.providers.ravi-mail",
+    action: "send",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   async send(
     @Option({ flags: "--to <email>", description: "Recipient email or comma-separated recipients" }) to?: string,
     @Option({ flags: "--subject <subject>", description: "Message subject" }) subject?: string,

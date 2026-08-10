@@ -254,6 +254,7 @@ const appsRunReturnSchema = z.object({
       requestId: z.string(),
       decision: z.enum(["allow", "deny", "needs_grant", "not_applicable", "error", "invalid"]),
       reasonCode: z.string().nullable(),
+      reason: z.string().optional(),
       reasonPresent: z.boolean().optional(),
       durationMs: z.number(),
       cache: z.object({
@@ -448,7 +449,7 @@ export class AppsCommands {
 
       if (asJson) {
         printJson(payload);
-        if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        if (!payload.ok && getContext({ localOnly: true })?.suppressCliOutput !== true) process.exitCode = 1;
         return payload;
       }
 
@@ -470,7 +471,7 @@ export class AppsCommands {
         console.log(`warnings for ${result.id}:`);
         for (const warning of result.warnings) console.log(`  - ${warning}`);
       }
-      if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+      if (!payload.ok && getContext({ localOnly: true })?.suppressCliOutput !== true) process.exitCode = 1;
       return payload;
     } catch (error) {
       failAppsCommand("apps check", error, asJson);
@@ -494,7 +495,7 @@ export class AppsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--execute", description: "Execute a mutating app operation" }) execute?: boolean,
   ) {
-    const wantsJson = asJson === true || getContext()?.suppressCliOutput === true;
+    const wantsJson = asJson === true || getContext({ localOnly: true })?.suppressCliOutput === true;
     const result = await runAppOperation({
       appId: id,
       operation,

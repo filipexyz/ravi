@@ -252,6 +252,7 @@ export class CronCommands {
     const page = paginateCliItems(jobs, { limit, offset });
     const pageJobs = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "cron", "list"],
       limit: page.limit,
       offset: page.offset,

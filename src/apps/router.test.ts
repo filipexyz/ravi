@@ -663,7 +663,7 @@ describe("Ravi app router", () => {
           APP_SECRET: null,
           RAVI_APP_ID: "probe-app",
           RAVI_APP_OPERATION_ID: "probe-app.inspect",
-          RAVI_APP_ROOT: realpathSync(appDir),
+          RAVI_APP_ROOT: appDir,
         },
         whoami: {
           kind: "app-runtime",
@@ -914,6 +914,7 @@ describe("Ravi app router", () => {
       providerOperationId: "khal-tasks.permissions.decide",
       decision: "allow",
       reasonCode: "allow_test",
+      reason: "[redacted]",
       reasonPresent: true,
       cache: { hit: false, ttlSec: 30 },
       audit: { policyVersion: "test", evidenceCount: 1 },

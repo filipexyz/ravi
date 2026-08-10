@@ -1,10 +1,45 @@
 import { describe, expect, it } from "bun:test";
 import {
+  dispatchRemote,
   getRemoteGatewayConfig,
+  remoteDispatchOutput,
   remoteGatewayErrorToContractError,
   remoteGatewayExitCode,
   type RemoteDispatchResult,
 } from "./remote-gateway.js";
+
+describe("remote gateway response bytes", () => {
+  it("preserves arbitrary binary payloads without UTF-8 round-tripping", async () => {
+    const bytes = new Uint8Array([0xff, 0x00, 0x42, 0x80]);
+    const response = await dispatchRemote({
+      groupSegments: ["artifacts"],
+      command: "blob",
+      body: { id: "artifact-1" },
+      config: { url: "https://gateway.example", source: "env" },
+      contextKey: "rctx_test",
+      fetchImpl: (async () =>
+        new Response(bytes, {
+          status: 200,
+          headers: { "content-type": "application/octet-stream" },
+        })) as unknown as typeof fetch,
+    });
+
+    expect(response.ok).toBe(true);
+    expect(response.bodyBytes).toEqual(bytes);
+    expect(remoteDispatchOutput(response)).toEqual({ kind: "bytes", value: bytes });
+  });
+
+  it("adds formatting only to textual output", () => {
+    expect(
+      remoteDispatchOutput({
+        status: 200,
+        ok: true,
+        body: '{"ok":true}',
+        contentType: "application/json",
+      }),
+    ).toEqual({ kind: "text", value: '{\n  "ok": true\n}\n' });
+  });
+});
 
 describe("remote gateway configuration", () => {
   it("distinguishes an unset gateway from an invalid configured URL", () => {

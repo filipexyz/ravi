@@ -623,6 +623,7 @@ export class DevinSessionCommands {
       const sessions = remotePage.items.map((item) => upsertDevinSession(item, { lastSyncedAt: Date.now() }));
       const page = paginateCliItems(sessions, { limit: max, offset: pageOffset }, { defaultLimit: 20 });
       const pagination = buildCliOffsetPagination({
+        fields,
         baseCommand: ["ravi", "devin", "sessions", "list"],
         limit: page.limit,
         offset: page.offset,
@@ -654,6 +655,7 @@ export class DevinSessionCommands {
     const sessions = listDevinSessions({ status, tag, limit: 500 });
     const page = paginateCliItems(sessions, { limit: max, offset: pageOffset }, { defaultLimit: 20 });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "devin", "sessions", "list"],
       limit: page.limit,
       offset: page.offset,

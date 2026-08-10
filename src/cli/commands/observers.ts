@@ -338,6 +338,7 @@ export class ObserverCommands {
     });
     const page = paginateCliItems(bindings, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "observers", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -462,6 +463,7 @@ export class ObserverRuleCommands {
     const rules = dbListObserverRules();
     const page = paginateCliItems(rules, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "observers", "rules", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -698,7 +700,13 @@ export class ObserverRuleCommands {
   }
 
   @Command({ name: "rm", description: "Delete an observer rule" })
-  @CommandAccess({ kind: "mutate", resource: "observers.rules", action: "rm", risk: "destructive", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "observers.rules",
+    action: "rm",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   rm(
     @Arg("id", { description: "Observer rule id" }) id: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
@@ -830,6 +838,7 @@ export class ObserverProfileCommands {
     const profiles = listObserverProfiles();
     const page = paginateCliItems(profiles, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "observers", "profiles", "list"],
       limit: page.limit,
       offset: page.offset,

@@ -358,16 +358,10 @@ function validateLocalReleaseActivation(
 // 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
 // ============================================================
 
-function failArtifactNotFound(
-  op: string,
-  artifactRef: string,
-  asJson?: boolean,
-  readOnlyCandidates?: string[],
-): never {
+function failArtifactNotFound(op: string, artifactRef: string, asJson?: boolean, readOnlyCandidates?: string[]): never {
   // Artifact ids from the cheap local SQLite ledger feed suggestions without
   // exposing artifact titles or content.
-  const candidates =
-    readOnlyCandidates ?? listArtifactsPage({ limit: 40 }).items.map((artifact) => artifact.id);
+  const candidates = readOnlyCandidates ?? listArtifactsPage({ limit: 40 }).items.map((artifact) => artifact.id);
   contractFail(op, "ARTIFACT_NOT_FOUND", `Artifact not found: ${artifactRef}`, {
     asJson,
     details: {
@@ -603,6 +597,7 @@ export class ArtifactsCommands {
     });
     const artifacts = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "artifacts", "list"],
       limit: pageLimit,
       offset: pageOffset,

@@ -321,7 +321,7 @@ function buildProviderAudit(
       hit: false,
       ...(input.cacheTtlSec !== undefined ? { ttlSec: input.cacheTtlSec } : {}),
     },
-    ...(input.reasonPresent ? { reasonPresent: true } : {}),
+    ...(input.reasonPresent ? { reason: REDACTED_VALUE, reasonPresent: true } : {}),
     ...(input.error ? { error: input.error } : {}),
     ...(input.grantSuggestion ? { grantSuggestion: input.grantSuggestion } : {}),
     ...(input.audit ? { audit: input.audit } : {}),

@@ -47,6 +47,7 @@ export class BridgesCommands {
       const result = await listMcpBridges({ projectRef, console: consoleUrl }, this.deps);
       const page = paginateCliItems(result.bridges, { limit, offset });
       const pagination = buildCliOffsetPagination({
+        fields,
         baseCommand: ["ravi", "bridges", "list"],
         limit: page.limit,
         offset: page.offset,
@@ -107,7 +108,13 @@ export class BridgesCommands {
   }
 
   @Command({ name: "revoke", description: "Revoke a Ravi MCP bridge and its client tokens" })
-  @CommandAccess({ kind: "mutate", resource: "bridges", action: "revoke", risk: "destructive", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "bridges",
+    action: "revoke",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   async revoke(
     @Arg("id", { description: "Bridge id" }) id: string,
     @Option({ flags: "--yes", description: "Skip confirmation (pre-existing equivalent of --execute)" }) yes?: boolean,

@@ -898,6 +898,7 @@ export class ACrmCommands {
       readableContactIds: listReadableCrmContactIds(),
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "crm", "next"],
       limit: page.limit,
       offset: page.offset,
@@ -992,6 +993,7 @@ export class ACrmCommands {
       readableContactIds: listReadableCrmContactIds(),
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "crm", "contacts"],
       limit: page.limit,
       offset: page.offset,
@@ -1089,6 +1091,7 @@ export class CrmPipelineCommands {
     const pipelines = listCrmPipelines({ entityType, includeArchived: Boolean(includeArchived) });
     const page = paginateCliItems(pipelines, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "crm", "pipeline", "list"],
       limit: page.limit,
       offset: page.offset,

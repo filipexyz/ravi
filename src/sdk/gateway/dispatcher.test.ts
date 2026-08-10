@@ -3,6 +3,8 @@ import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
 import { RaviAppError } from "../../apps/types.js";
+import { CloudAuthError } from "../../cloud-auth/errors.js";
+import { pickFields } from "../../cli/agent-contract.js";
 import { AppsCommands } from "../../cli/commands/apps.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
 import { contractFail } from "../../cli/agent-contract.js";
@@ -110,6 +112,43 @@ class GatewayDemoCommands {
   @Returns(z.object({ ok: z.literal(true) }))
   broken() {
     return { ok: false } as unknown as { ok: true };
+  }
+
+  @Command({ name: "fields", description: "Return a projected typed list" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "fields", risk: "low" })
+  @Returns(
+    z
+      .object({
+        items: z.array(z.object({ id: z.string(), label: z.string() }).strict()),
+      })
+      .strict(),
+  )
+  fields(@Option({ flags: "--fields <a,b,c>", description: "Fields to expose" }) fields?: string) {
+    return { items: pickFields([{ id: "demo-1", label: "Private label" }], fields) };
+  }
+
+  @Command({ name: "cloud-auth-error", description: "Throws an authentication error" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "cloud-auth-error", risk: "low" })
+  cloudAuthError() {
+    throw new CloudAuthError("AUTH_REQUIRED", "private provider authentication response", { status: 401 });
+  }
+
+  @Command({ name: "cloud-access-error", description: "Throws an access error" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "cloud-access-error", risk: "low" })
+  cloudAccessError() {
+    throw new CloudAuthError("PROJECT_ACCESS_DENIED", "private provider access response", { status: 403 });
+  }
+
+  @Command({ name: "cloud-rate-error", description: "Throws a rate limit error" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "cloud-rate-error", risk: "low" })
+  cloudRateError() {
+    throw new CloudAuthError("RATE_LIMITED", "private provider rate limit response", { status: 429 });
+  }
+
+  @Command({ name: "cloud-invalid-status", description: "Throws an auth error with an invalid HTTP status" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "cloud-invalid-status", risk: "low" })
+  cloudInvalidStatus() {
+    throw new CloudAuthError("AUTH_REQUIRED", "private provider response", { status: 999 });
   }
 
   @Command({ name: "boom", description: "Throws" })
@@ -526,9 +565,44 @@ describe("dispatch — validation", () => {
       errorCode: "RETURN_SHAPE_ERROR",
     });
   });
+
+  it("validates full projected rows while serializing only requested fields", async () => {
+    const result = await dispatch(findCmd("demo.fields"), { fields: "id" }, {}, { contextRecord: demoContext });
+
+    expect(result.response.status).toBe(200);
+    expect(await result.response.json()).toEqual({ items: [{ id: "demo-1" }] });
+  });
 });
 
 describe("dispatch — error path", () => {
+  it.each([
+    ["demo.cloud-auth-error", 401, "AUTH_REQUIRED"],
+    ["demo.cloud-access-error", 403, "PROJECT_ACCESS_DENIED"],
+    ["demo.cloud-rate-error", 429, "RATE_LIMITED"],
+  ] as const)("preserves CloudAuthError HTTP status for %s", async (command, status, code) => {
+    const result = await dispatch(findCmd(command), {}, {}, { contextRecord: demoContext });
+
+    expect(result.response.status).toBe(status);
+    const body = await result.response.json();
+    expect(body).toMatchObject({
+      success: false,
+      exitCode: 1,
+      outcome: "failed",
+      error: { code },
+    });
+    expect(JSON.stringify(body)).not.toContain("private provider");
+  });
+
+  it("falls back to the contract status for an invalid provider HTTP status", async () => {
+    const result = await dispatch(findCmd("demo.cloud-invalid-status"), {}, {}, { contextRecord: demoContext });
+
+    expect(result.response.status).toBe(422);
+    expect(await result.response.json()).toMatchObject({
+      success: false,
+      error: { code: "AUTH_REQUIRED" },
+    });
+  });
+
   it("preserves a real AppsCommands failure as a redacted canonical response", async () => {
     const audits = captureAudits();
     const result = await dispatch(

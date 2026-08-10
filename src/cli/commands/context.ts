@@ -221,6 +221,7 @@ export class ContextCommands {
     const page = paginateCliItems(contexts, { limit, offset });
     const pageContexts = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "context", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -1000,6 +1001,7 @@ export class ContextCredentialsCommands {
     const entries = serializeCredentialsFile(data);
     const page = paginateCliItems(entries, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "context", "credentials", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -1109,7 +1111,13 @@ export class ContextCredentialsCommands {
   }
 
   @Command({ name: "remove", description: "Remove a stored context-key from the credentials store" })
-  @CommandAccess({ kind: "mutate", resource: "context.credentials", action: "remove", risk: "destructive", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "context.credentials",
+    action: "remove",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   remove(
     @Arg("contextKey", { description: "Runtime context-key (rctx_*)" }) contextKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,

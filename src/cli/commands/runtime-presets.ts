@@ -124,6 +124,7 @@ export class RuntimeModelPresetCommands {
     const enabled = enabledOnly ? true : disabledOnly ? false : undefined;
     const page = listRuntimeModelPresets({ provider: provider?.trim() || undefined, enabled, limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "runtime", "presets", "list"],
       limit: page.limit,
       offset: page.offset,

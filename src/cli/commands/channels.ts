@@ -537,6 +537,7 @@ export class ChannelsCommands {
     const channels = dbListChannels().filter((channel) => !providerFilter || channel.provider === providerFilter);
     const page = paginateCliItems(channels, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "channels", "list"],
       limit: page.limit,
       offset: page.offset,

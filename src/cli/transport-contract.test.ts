@@ -290,7 +290,7 @@ describe("global cloud failure contract", () => {
         emitAudit: () => {},
       },
     );
-    expect(gatewayResult.response.status).toBe(422);
+    expect(gatewayResult.response.status).toBe(429);
     const gatewayBody = (await gatewayResult.response.json()) as Record<string, unknown>;
     const { exitCode, outcome, ...gatewayEnvelope } = gatewayBody;
 

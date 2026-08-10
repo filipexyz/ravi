@@ -31,4 +31,17 @@ describe("CLI pagination helpers", () => {
 
     expect(pagination.nextCommand).toBe("ravi agents list --json --limit 2 --offset 2 --tag core");
   });
+
+  it("preserves a fields projection in the next command", () => {
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "agents", "list"],
+      limit: 2,
+      offset: 0,
+      returned: 2,
+      total: 3,
+      fields: "id,model",
+    });
+
+    expect(pagination.nextCommand).toBe('ravi agents list --json --limit 2 --offset 2 --fields "id,model"');
+  });
 });

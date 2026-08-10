@@ -175,7 +175,15 @@ export async function dispatch(
       outcome = contractFailureOutcome(knownContractError);
       auditExitCode = knownContractError.exitCode;
       auditErrorCode = knownContractError.code;
-      response = contractErrorResponse(knownContractError);
+      const providerStatus = isCloudAuthError(err) ? err.status : undefined;
+      const cloudStatus =
+        typeof providerStatus === "number" &&
+        Number.isInteger(providerStatus) &&
+        providerStatus >= 400 &&
+        providerStatus <= 599
+          ? providerStatus
+          : undefined;
+      response = contractErrorResponse(knownContractError, cloudStatus);
     } else if (err instanceof RaviAppError) {
       const appError = raviAppErrorToContractError(commandOperation(group, cmd.command), err);
       outcome = contractFailureOutcome(appError);

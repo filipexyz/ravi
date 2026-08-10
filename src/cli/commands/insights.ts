@@ -349,6 +349,7 @@ export class InsightCommands {
     const fetchedItems = dbListInsights(queryInput);
     const page = paginateCliItems(fetchedItems, { limit: parsedLimit, offset: pageOffset }, { defaultLimit: 20 });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "insights", "list"],
       limit: page.limit,
       offset: page.offset,

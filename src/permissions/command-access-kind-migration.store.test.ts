@@ -7,6 +7,7 @@ import {
   dbGetAgent,
   dbGetContext,
   dbUpdateAgent,
+  dbUpdateContextCapabilities,
   getDb,
 } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/index.js";
@@ -15,10 +16,16 @@ import {
   dbListObserverBindings,
   dbUpsertObserverRule,
   ensureObserverBindingsForSession,
-  migrateObservationCommandAccessGrants,
+  ensureObservationCommandAccessGrantMigration,
 } from "../runtime/observation-plane.js";
-import { dbGetTagDefinition, ensureTagSchema } from "../tags/tag-db.js";
+import {
+  dbGetTagDefinition,
+  dbUpdateTagDefinition,
+  ensurePermissionTagCommandAccessGrantMigration,
+  ensureTagSchema,
+} from "../tags/tag-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS } from "./command-access-kind-migration.js";
 
 let stateDir: string | null = null;
 
@@ -62,6 +69,8 @@ describe("CLI command access durable grant migration", () => {
     const contextBefore = dbGetContext("ctx_legacy_read")!;
     const expiredContextBefore = dbGetContext("ctx_expired_legacy_read");
 
+    getDb().prepare("DELETE FROM router_meta WHERE key = ?").run(CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.router);
+
     closeRouterDb();
     const migrated = dbGetAgent("least-privilege");
     const updatedAtAfterMigration = (
@@ -93,6 +102,23 @@ describe("CLI command access durable grant migration", () => {
     ).updated_at;
     expect(updatedAtAfterSecondOpen).toBe(updatedAtAfterMigration);
     expect(dbGetContext("ctx_legacy_read")).toEqual(contextAfterMigration);
+
+    dbUpdateAgent("least-privilege", {
+      defaults: { runtimePermissions: { capabilities: ["read:agents:debounce", "read:agents:*"] } },
+    });
+    dbUpdateContextCapabilities("ctx_legacy_read", [
+      { permission: "read", objectType: "agents", objectId: "debounce" },
+      { permission: "read", objectType: "agents", objectId: "*" },
+    ]);
+
+    closeRouterDb();
+    expect(dbGetAgent("least-privilege")?.defaults).toEqual({
+      runtimePermissions: { capabilities: ["read:agents:debounce", "read:agents:*"] },
+    });
+    expect(dbGetContext("ctx_legacy_read")?.capabilities).toEqual([
+      { permission: "read", objectType: "agents", objectId: "debounce" },
+      { permission: "read", objectType: "agents", objectId: "*" },
+    ]);
   });
 
   it("migrates provider-owned permission tags and audits only changed definitions", () => {
@@ -158,6 +184,20 @@ describe("CLI command access durable grant migration", () => {
     expect(db.prepare("SELECT COUNT(*) AS count FROM tag_events WHERE tag_slug = ?").get("user-legacy")).toEqual({
       count: 0,
     });
+
+    dbUpdateTagDefinition({
+      slug: "permissions-legacy",
+      metadata: {
+        color: "blue",
+        permissions: { capabilities: ["read:sdk.openapi:emit", "read:sdk.openapi:*"] },
+      },
+      updatedBy: "operator:revoke",
+    });
+    ensurePermissionTagCommandAccessGrantMigration();
+    expect(dbGetTagDefinition("permissions-legacy")?.metadata).toEqual({
+      color: "blue",
+      permissions: { capabilities: ["read:sdk.openapi:emit", "read:sdk.openapi:*"] },
+    });
   });
 
   it("migrates observer rules and durable binding snapshots without rewriting timestamps", () => {
@@ -186,7 +226,9 @@ describe("CLI command access durable grant migration", () => {
         .get(attached.bindings[0]!.id),
     };
 
-    expect(migrateObservationCommandAccessGrants()).toEqual({
+    db.prepare("DELETE FROM router_meta WHERE key = ?").run(CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.observation);
+
+    expect(ensureObservationCommandAccessGrantMigration()).toEqual({
       changedRules: 1,
       changedBindings: 1,
       addedGrants: 4,
@@ -220,11 +262,26 @@ describe("CLI command access durable grant migration", () => {
       (before.binding as { updated_at: number }).updated_at,
     );
 
-    expect(migrateObservationCommandAccessGrants()).toEqual({
+    expect(ensureObservationCommandAccessGrantMigration()).toEqual({
       changedRules: 0,
       changedBindings: 0,
       addedGrants: 0,
       ambiguousGrants: 0,
     });
+
+    db.prepare("UPDATE observer_rules SET permission_grants_json = ? WHERE id = ?").run(
+      JSON.stringify(["read:agents:*", "read:agents:debounce"]),
+      "legacy-grants",
+    );
+    db.prepare("UPDATE observer_bindings SET permission_grants_json = ? WHERE id = ?").run(
+      JSON.stringify(["read:agents:*", "read:agents:debounce"]),
+      attached.bindings[0]!.id,
+    );
+    ensureObservationCommandAccessGrantMigration();
+    expect(dbGetObserverRule("legacy-grants")?.permissionGrants).toEqual(["read:agents:*", "read:agents:debounce"]);
+    expect(dbListObserverBindings({ sourceSessionKey: "grant-source" })[0]?.permissionGrants).toEqual([
+      "read:agents:*",
+      "read:agents:debounce",
+    ]);
   });
 });

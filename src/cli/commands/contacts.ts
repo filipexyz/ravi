@@ -431,6 +431,7 @@ export class ContactsCommands {
     const page = paginateCliItems(contacts, { limit, offset });
     const pageContacts = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "contacts", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -793,7 +794,13 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "remove", description: "Remove a contact" })
-  @CommandAccess({ kind: "mutate", resource: "contacts", action: "remove", risk: "destructive", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "contacts",
+    action: "remove",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   remove(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,

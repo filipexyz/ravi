@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { publishSessionPrompt } from "../omni/session-stream.js";
-import { migrateSerializedCapabilityArray } from "../permissions/command-access-kind-migration.js";
+import {
+  CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
+  migrateSerializedCapabilityArray,
+} from "../permissions/command-access-kind-migration.js";
 import { getProjectSurfaceByWorkflowRunId } from "../projects/service.js";
 import { getSession, getSessionByName, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { dbGetAgent, dbListSessionParticipants, getDb, getRaviDbPath } from "../router/router-db.js";
@@ -356,7 +359,7 @@ export function ensureObservationSchema(): void {
   ensureObservationColumn("observer_bindings", "debounce_ms", "INTEGER");
   ensureObservationColumn("observer_rules", "selector", "TEXT");
   ensureObservationColumn("observer_bindings", "selector", "TEXT");
-  migrateObservationCommandAccessGrants();
+  ensureObservationCommandAccessGrantMigration();
   schemaReady = true;
   schemaDbPath = dbPath;
 }
@@ -366,6 +369,24 @@ export interface ObservationCommandAccessGrantMigrationSummary {
   changedBindings: number;
   addedGrants: number;
   ambiguousGrants: number;
+}
+
+export function ensureObservationCommandAccessGrantMigration(): ObservationCommandAccessGrantMigrationSummary {
+  const db = getDb();
+  const existing = db
+    .prepare("SELECT value FROM router_meta WHERE key = ?")
+    .get(CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.observation) as { value: string } | undefined;
+  if (existing?.value === "done") {
+    return { changedRules: 0, changedBindings: 0, addedGrants: 0, ambiguousGrants: 0 };
+  }
+
+  const summary = migrateObservationCommandAccessGrants();
+  db.prepare("INSERT OR REPLACE INTO router_meta (key, value, updated_at) VALUES (?, ?, ?)").run(
+    CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.observation,
+    "done",
+    Date.now(),
+  );
+  return summary;
 }
 
 /**

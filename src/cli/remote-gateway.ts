@@ -145,7 +145,40 @@ export interface RemoteDispatchResult {
   status: number;
   ok: boolean;
   body: string;
+  /** Exact response bytes, used for binary @Returns responses. */
+  bodyBytes?: Uint8Array;
   contentType: string | null;
+}
+
+export type RemoteDispatchOutput = { kind: "bytes"; value: Uint8Array } | { kind: "text"; value: string };
+
+export function remoteDispatchOutput(result: RemoteDispatchResult): RemoteDispatchOutput {
+  if (result.bodyBytes && isBinaryRemoteContentType(result.contentType)) {
+    return { kind: "bytes", value: result.bodyBytes };
+  }
+  if (result.body.length === 0) return { kind: "text", value: "" };
+  if (!result.contentType?.includes("application/json")) {
+    return { kind: "text", value: result.body.endsWith("\n") ? result.body : `${result.body}\n` };
+  }
+  try {
+    return { kind: "text", value: `${JSON.stringify(JSON.parse(result.body), null, 2)}\n` };
+  } catch {
+    return { kind: "text", value: result.body.endsWith("\n") ? result.body : `${result.body}\n` };
+  }
+}
+
+function isBinaryRemoteContentType(contentType: string | null): boolean {
+  if (!contentType) return false;
+  const normalized = contentType.toLowerCase().split(";", 1)[0]?.trim() ?? "";
+  if (normalized.startsWith("text/") || normalized.includes("json") || normalized.includes("xml")) return false;
+  return (
+    normalized.startsWith("audio/") ||
+    normalized.startsWith("image/") ||
+    normalized.startsWith("video/") ||
+    normalized === "application/octet-stream" ||
+    normalized === "application/pdf" ||
+    normalized === "application/zip"
+  );
 }
 
 /** Preserve the process CLI taxonomy when a remote gateway returns a contract envelope. */
@@ -355,11 +388,13 @@ export async function dispatchRemote(input: RemoteDispatchInput): Promise<Remote
       body: JSON.stringify(input.body),
       signal: controller.signal,
     });
-    const text = await response.text();
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    const text = new TextDecoder().decode(bytes);
     return {
       status: response.status,
       ok: response.ok,
       body: text,
+      bodyBytes: bytes,
       contentType: response.headers.get("content-type"),
     };
   } finally {

@@ -50,9 +50,10 @@ Expected behavior:
 - The same braked command with `--execute` MUST perform the Slack call whose
   material effect was described by the plan, hydrate credentials exactly once
   and return `dryRun: false`.
-- `canvas-access-delete` MUST remain `mutate`, expose no `--execute`, resolve
-  credentials once and call `canvases.access.delete` exactly once because it
-  reduces sharing.
+- `canvas-access-delete` MUST remain `mutate` and preserve the legacy
+  dry-run/`--execute` contract. Without `--execute` it MUST stop before
+  credential resolution or Slack; with it, credentials resolve once and
+  `canvases.access.delete` runs exactly once.
 - An unresolved Ravi channel config MUST exit `1` with `CHANNEL_NOT_FOUND` and
   suggestions computed only from the local config store.
 - A missing replay target MUST exit `1` with `MESSAGE_NOT_FOUND`; a missing

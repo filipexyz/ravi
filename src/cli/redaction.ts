@@ -104,10 +104,7 @@ export function sanitizePublicValue(value: unknown, key?: string, parent?: Reado
 
 function sanitizeSerializedContainer(value: string): string | null {
   const trimmed = value.trim();
-  if (
-    !(trimmed.startsWith("{") && trimmed.endsWith("}")) &&
-    !(trimmed.startsWith("[") && trimmed.endsWith("]"))
-  ) {
+  if (!(trimmed.startsWith("{") && trimmed.endsWith("}")) && !(trimmed.startsWith("[") && trimmed.endsWith("]"))) {
     return null;
   }
   try {

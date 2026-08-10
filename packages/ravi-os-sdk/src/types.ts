@@ -974,6 +974,7 @@ export type AppsRunReturn = {
     providerId: string;
     providerOperationId: string;
     providerVersion: string;
+    reason?: string;
     reasonCode: string | null;
     reasonPresent?: boolean;
     requestId: string;
@@ -12888,6 +12889,7 @@ export type SlackCanvasAccessDeleteInput = {
   canvas: string;
   channel?: string;
   channels?: string;
+  execute?: boolean;
   users?: string;
 };
 

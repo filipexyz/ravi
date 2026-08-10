@@ -335,17 +335,17 @@ describe("HooksCommands agent-first contract", () => {
     expect(runHookByIdMock).toHaveBeenCalledWith("hook-1");
   });
 
-  it.each(["append_history", "comment_task"])(
-    "runs the internal %s hook test without --execute",
-    async (actionType) => {
-      hookActionType = actionType;
-      const commands = new HooksCommands();
+  it.each([
+    "append_history",
+    "comment_task",
+  ])("runs the internal %s hook test without --execute", async (actionType) => {
+    hookActionType = actionType;
+    const commands = new HooksCommands();
 
-      await captureJson(() => commands.test("hook-1", true));
+    await captureJson(() => commands.test("hook-1", true));
 
-      expect(runHookByIdMock).toHaveBeenCalledWith("hook-1");
-    },
-  );
+    expect(runHookByIdMock).toHaveBeenCalledWith("hook-1");
+  });
 
   it("rm on an unknown hook exits 1 with HOOK_NOT_FOUND and suggestions from the local list, before the brake", async () => {
     listedHooks = [

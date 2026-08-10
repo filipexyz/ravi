@@ -164,7 +164,7 @@ export function binaryResponseToContractError(op: string, status: number): Contr
 }
 
 export function renderContractError(error: ContractError, asJson: boolean | undefined): void {
-  if (getContext()?.suppressCliOutput === true) return;
+  if (getContext({ localOnly: true })?.suppressCliOutput === true) return;
   if (asJson) {
     console.log(JSON.stringify(error.envelope(), null, 2));
   } else {
@@ -211,7 +211,7 @@ export function contractDryRun(op: string, plan: Record<string, unknown>, option
       plan,
     },
   );
-  if (getContext()?.suppressCliOutput !== true) {
+  if (getContext({ localOnly: true })?.suppressCliOutput !== true) {
     if (options.asJson) {
       console.log(JSON.stringify(error.envelope(), null, 2));
     } else {
@@ -388,8 +388,22 @@ export function pickFields<T>(items: T[], fields?: string): T[] {
   return items.map((item) => {
     const record = item as Record<string, unknown>;
     const picked: Record<string, unknown> = {};
-    for (const key of keys) {
-      if (key in record) picked[key] = record[key];
+    const requested = new Set(keys);
+    for (const key of Object.keys(record)) {
+      if (requested.has(key)) {
+        picked[key] = record[key];
+        continue;
+      }
+
+      // Keep the complete row available to @Returns validation while exposing
+      // only requested fields through JSON/Object.keys. The gateway validates
+      // handlers before serializing their original return value.
+      Object.defineProperty(picked, key, {
+        value: record[key],
+        enumerable: false,
+        configurable: false,
+        writable: false,
+      });
     }
     return picked as T;
   });

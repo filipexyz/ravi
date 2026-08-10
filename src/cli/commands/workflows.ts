@@ -243,6 +243,7 @@ export class WorkflowSpecCommands {
     const specs = listWorkflowSpecs();
     const page = paginateCliItems(specs, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "workflows", "specs", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -312,7 +313,13 @@ export class WorkflowSpecCommands {
 })
 export class WorkflowRunCommands {
   @Command({ name: "start", description: "Instantiate one workflow run from a spec" })
-  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "start", risk: "high", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "workflows.runs",
+    action: "start",
+    risk: "high",
+    requiresConfirmation: true,
+  })
   @Returns(workflowRunDetailsReturnSchema)
   start(
     @Arg("specId", { description: "Workflow spec id" }) specId: string,
@@ -382,6 +389,7 @@ export class WorkflowRunCommands {
     const runs = listWorkflowRuns();
     const page = paginateCliItems(runs, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "workflows", "runs", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -502,7 +510,13 @@ export class WorkflowRunCommands {
   }
 
   @Command({ name: "archive-node", description: "Archive one node run from workflow aggregate state" })
-  @CommandAccess({ kind: "mutate", resource: "workflows.runs", action: "archive-node", risk: "medium", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "workflows.runs",
+    action: "archive-node",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   @Returns(workflowRunMutationReturnSchema)
   archiveNode(
     @Arg("runId", { description: "Workflow run id" }) runId: string,

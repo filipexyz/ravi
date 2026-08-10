@@ -1,5 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { migratePermissionTagMetadata } from "../permissions/command-access-kind-migration.js";
+import {
+  CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
+  migratePermissionTagMetadata,
+} from "../permissions/command-access-kind-migration.js";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -329,7 +332,7 @@ export function ensureTagSchema(): void {
   schemaReady = true;
   schemaDbPath = dbPath;
   try {
-    migratePermissionTagCommandAccessGrants();
+    ensurePermissionTagCommandAccessGrantMigration();
   } catch (error) {
     schemaReady = false;
     schemaDbPath = null;
@@ -337,8 +340,13 @@ export function ensureTagSchema(): void {
   }
 }
 
-function migratePermissionTagCommandAccessGrants(): void {
+export function ensurePermissionTagCommandAccessGrantMigration(): void {
   const db = getDb();
+  const existing = db
+    .prepare("SELECT value FROM router_meta WHERE key = ?")
+    .get(CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.permissionTags) as { value: string } | undefined;
+  if (existing?.value === "done") return;
+
   const rows = db
     .prepare("SELECT slug, metadata_json FROM tag_definitions WHERE kind = 'system' AND source = 'permissions'")
     .all() as Array<{ slug: string; metadata_json: string | null }>;
@@ -373,6 +381,12 @@ function migratePermissionTagCommandAccessGrants(): void {
   } else if (ambiguousGrants > 0) {
     log.debug("Found broad permission-tag read grants requiring manual review", { ambiguousGrants });
   }
+
+  db.prepare("INSERT OR REPLACE INTO router_meta (key, value, updated_at) VALUES (?, ?, ?)").run(
+    CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.permissionTags,
+    "done",
+    Date.now(),
+  );
 }
 
 function getTagDefinitionRowBySlug(slug: string): TagDefinitionRow | undefined {

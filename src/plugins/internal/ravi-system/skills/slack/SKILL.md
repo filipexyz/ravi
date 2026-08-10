@@ -82,22 +82,20 @@ ravi slack canvas-edit F0123456789 replace --artifact art_abc_123 --json --execu
 `messages-replay`, `channels-create`, `channels-rename`, `channels-invite`,
 `canvas-create`, `canvas-channel-create`, `canvas-showcase`,
 `canvas-channel-showcase`, `canvas-artifact-publish`, `canvas-edit`,
-`canvas-access-set`, `canvas-delete`.
+`canvas-access-set`, `canvas-access-delete`, `canvas-delete`.
 
 ### Comandos sem freio (leitura/local/contencao)
 
 `permissions-list`, `channels-list`, `channels-info`, `channels-history`,
 `messages-inspect`, `members-list`, `files-list`, `topology`,
 `blocks-validate` (chamada de validacao, nada visivel), `work-objects-validate`
-(local puro), `canvas-sections-lookup`, `canvas-artifact-status` (local puro) e
-`canvas-access-delete` (remove compartilhamento imediatamente).
+(local puro), `canvas-sections-lookup` e `canvas-artifact-status` (local puro).
 
 ### Checklist antes de mutar
 
 1. Confira scopes: `ravi slack permissions-list --json`.
 2. Para comandos da lista freada, rode SEM `--execute` e inspecione o `plan`
-   do envelope (exit 3 e esperado). `canvas-access-delete` e contencao: confira
-   o alvo e rode uma vez, sem `--execute`.
+   do envelope (exit 3 e esperado).
 3. Valide payloads antes: `blocks-validate` / `work-objects-validate`.
 4. So entao repita o comando freado com `--execute` (ultima flag).
 5. Exit 3 = freio (repita com `--execute` se o plano estiver certo); exit 1 =

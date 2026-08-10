@@ -373,66 +373,63 @@ describe("artifacts write brake", () => {
     expect(publishCalls).toHaveLength(0);
   });
 
-  it(
-    "publish resolves missing artifact ids and versions before the dry-run brake without schema initialization",
-    async () => {
-      const commands = new ArtifactsCommands();
-      await expectContractError(
-        () =>
-          commands.publish(
-            "art_missing_target",
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            true,
-          ),
-        "ARTIFACT_NOT_FOUND",
-        1,
-      );
-      await expectContractError(
-        () =>
-          commands.publish(
-            "art_aaa111",
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            "2",
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            undefined,
-            true,
-          ),
-        "ARTIFACT_VERSION_NOT_FOUND",
-        1,
-      );
-      expect(schemaInitializingStoreCalls).toEqual([]);
-      expect(publishCalls).toHaveLength(0);
-    },
-  );
+  it("publish resolves missing artifact ids and versions before the dry-run brake without schema initialization", async () => {
+    const commands = new ArtifactsCommands();
+    await expectContractError(
+      () =>
+        commands.publish(
+          "art_missing_target",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      "ARTIFACT_NOT_FOUND",
+      1,
+    );
+    await expectContractError(
+      () =>
+        commands.publish(
+          "art_aaa111",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          "2",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      "ARTIFACT_VERSION_NOT_FOUND",
+      1,
+    );
+    expect(schemaInitializingStoreCalls).toEqual([]);
+    expect(publishCalls).toHaveLength(0);
+  });
 
   it("publish with --execute uploads through the publish client", async () => {
     const commands = new ArtifactsCommands();

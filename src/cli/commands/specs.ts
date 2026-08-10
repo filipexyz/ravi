@@ -101,6 +101,7 @@ export class SpecsCommands {
       });
       const page = paginateCliItems(specs, { limit, offset });
       const pagination = buildCliOffsetPagination({
+        fields,
         baseCommand: ["ravi", "specs", "list"],
         limit: page.limit,
         offset: page.offset,

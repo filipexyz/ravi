@@ -352,6 +352,8 @@ export interface RaviAppPermissionProviderAudit {
   requestId: string;
   decision: RaviAppPermissionDecision | "error" | "invalid";
   reasonCode: string | null;
+  /** Deprecated compatibility marker. Provider-supplied reason text is never exposed. */
+  reason?: string;
   reasonPresent?: boolean;
   durationMs: number;
   cache: {

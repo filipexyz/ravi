@@ -170,6 +170,7 @@ export class WatchCommands {
       offset: parsePositiveInt(offset, 0, Number.MAX_SAFE_INTEGER),
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "watch", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -413,7 +414,14 @@ export class WatchCommands {
   }
 
   @Command({ name: "run", description: "Run a local watch once (debug)" })
-  @CommandAccess({ kind: "mutate", resource: "watch", action: "run", risk: "high", input: ["id"], requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "watch",
+    action: "run",
+    risk: "high",
+    input: ["id"],
+    requiresConfirmation: true,
+  })
   @CliOnly()
   run(
     @Arg("id", { description: "Watch id" }) id: string,

@@ -541,6 +541,7 @@ export class AgentsCommands {
     const pageAgents = page.items;
     const agentRows = pageAgents.map((agent) => buildAgentJson(agent, config.defaultAgent));
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "agents", "list"],
       limit: page.limit,
       offset: page.offset,

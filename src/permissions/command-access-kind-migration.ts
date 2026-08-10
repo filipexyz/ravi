@@ -3,6 +3,12 @@ export interface CliReadToMutateMigration {
   action: string;
 }
 
+export const CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS = {
+  router: "cli_command_access_kind_grants_router_v1",
+  permissionTags: "cli_command_access_kind_grants_permission_tags_v1",
+  observation: "cli_command_access_kind_grants_observation_v1",
+} as const;
+
 /**
  * Operations reclassified from read to mutate by the agent-first CLI work.
  *

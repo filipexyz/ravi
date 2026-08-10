@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it, jest, mock } from "bun:test";
+import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
 import type { SessionEntry } from "../../router/types.js";
 
 afterAll(() => mock.restore());
@@ -611,20 +611,24 @@ describe("instances/routes agent-first contract", () => {
   });
 
   it("emits INSTANCE_CONNECT_TIMEOUT when an instance connection times out", async () => {
-    jest.useFakeTimers();
     const lines: string[] = [];
     const originalLog = console.log;
+    const originalSetTimeout = globalThis.setTimeout;
+    const timeoutDelays: number[] = [];
     console.log = (...args: unknown[]) => lines.push(args.map(String).join(" "));
+    globalThis.setTimeout = ((callback: (...args: unknown[]) => void, delay?: number, ...args: unknown[]) => {
+      timeoutDelays.push(delay ?? 0);
+      queueMicrotask(() => callback(...args));
+      return 1;
+    }) as unknown as typeof setTimeout;
     try {
       const result = new InstancesCommands().connect("main", undefined, undefined, true).then(
         () => undefined,
         (error: unknown) => error,
       );
-      for (let index = 0; index < 5; index++) await Promise.resolve();
-      expect(jest.getTimerCount()).toBe(1);
-      jest.advanceTimersByTime(120_000);
       const caught = await result;
 
+      expect(timeoutDelays).toEqual([120_000]);
       expect(caught).toBeInstanceOf(ContractError);
       const contractError = caught as InstanceType<typeof ContractError>;
       expect(contractError.code).toBe("INSTANCE_CONNECT_TIMEOUT");
@@ -638,7 +642,7 @@ describe("instances/routes agent-first contract", () => {
       });
     } finally {
       console.log = originalLog;
-      jest.useRealTimers();
+      globalThis.setTimeout = originalSetTimeout;
     }
   });
 

@@ -55,7 +55,7 @@ function publicMessage(code: CloudAuthError["code"]): string {
 
 /** Render once for the local CLI. Tools and gateway serialize the returned ContractError themselves. */
 export function renderCloudContractError(error: ContractError, asJson: boolean | undefined): void {
-  if (getContext()?.suppressCliOutput === true) return;
+  if (getContext({ localOnly: true })?.suppressCliOutput === true) return;
   if (asJson) {
     console.log(JSON.stringify(error.envelope(), null, 2));
     return;

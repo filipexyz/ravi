@@ -2757,15 +2757,7 @@ describe("tasks agent-first contract", () => {
     console.log = () => {};
     let thrown: unknown;
     try {
-      await commands.dispatch(
-        "task-cli-1",
-        "dev",
-        "task-cli-work",
-        "5m",
-        "report-session",
-        "progress,done",
-        true,
-      );
+      await commands.dispatch("task-cli-1", "dev", "task-cli-work", "5m", "report-session", "progress,done", true);
     } catch (error) {
       thrown = error;
     } finally {

@@ -225,8 +225,7 @@ function failCallProfileNotFound(
   asJson?: boolean,
   readOnlyCandidates?: string[],
 ): never {
-  const candidates =
-    readOnlyCandidates ?? listCallProfiles().flatMap((profile) => [profile.id, profile.name]);
+  const candidates = readOnlyCandidates ?? listCallProfiles().flatMap((profile) => [profile.id, profile.name]);
   contractFail(op, "CALL_PROFILE_NOT_FOUND", `Call profile not found: ${profileId}`, {
     asJson,
     details: {
@@ -339,6 +338,7 @@ export class ProxCallsProfileCommands {
     const page = paginateCliItems(profiles, { limit, offset });
     const pageProfiles = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "prox", "calls", "profiles", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -686,12 +686,10 @@ export class ProxCallsCommands {
     const defaultProvider = DEFAULT_CALL_PROFILE_PROVIDERS.get(profileId);
     const profileProvider = inspection.profile?.provider ?? defaultProvider;
     if (!profileProvider) {
-      failCallProfileNotFound(
-        "prox calls request",
-        profileId,
-        asJson,
-        [...DEFAULT_CALL_PROFILE_PROVIDERS.keys(), ...inspection.candidates],
-      );
+      failCallProfileNotFound("prox calls request", profileId, asJson, [
+        ...DEFAULT_CALL_PROFILE_PROVIDERS.keys(),
+        ...inspection.candidates,
+      ]);
     }
     if (inspection.profile && !inspection.profile.enabled) {
       contractFail("prox calls request", "CALL_PROFILE_DISABLED", `Call profile is disabled: ${profileId}`, {
@@ -1106,6 +1104,7 @@ export class ProxCallsVoiceAgentCommands {
     const page = paginateCliItems(agents, { limit, offset });
     const pageAgents = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "prox", "calls", "voice-agents", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -1460,6 +1459,7 @@ export class ProxCallsToolCommands {
     const page = paginateCliItems(tools, { limit, offset });
     const pageTools = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "prox", "calls", "tools", "list"],
       limit: page.limit,
       offset: page.offset,

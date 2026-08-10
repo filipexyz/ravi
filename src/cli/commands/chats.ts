@@ -688,6 +688,7 @@ export class ChatsCommands {
       offset,
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "chats", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -952,6 +953,7 @@ export class ChatReadingListCommands {
       offset,
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "chats", "lists", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -1222,6 +1224,7 @@ FONTES
       offset,
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "chats", "lists", "members", listRef],
       limit: page.limit,
       offset: page.offset,

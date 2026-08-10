@@ -32,9 +32,9 @@ when useful, but it should not own that behavior.
 
 Agents can call tools autonomously. Slack writes are visible to real people and
 some operations are destructive. Risky Slack mutations therefore default to a
-dry-run and require `--execute` for the real write. Revoking Canvas access is
-the containment exception: it reduces sharing and executes immediately while
-remaining a `mutate` operation.
+dry-run and require `--execute` for the real write. Revoking Canvas access also
+keeps that brake because it already existed before this migration: removing it
+would turn the same legacy command from a preview into a live revocation.
 
 The dry-run is not a silent success: it exits `3` with the
 `WRITE_REQUIRES_EXECUTE` envelope so the calling agent explicitly sees "nothing

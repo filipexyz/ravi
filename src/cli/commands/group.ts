@@ -856,6 +856,7 @@ export class GroupCommands {
     const groups = result.groups.filter((group) => !group.isCommunity);
     const page = paginateCliItems(groups, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "whatsapp", "group", "list"],
       limit: page.limit,
       offset: page.offset,

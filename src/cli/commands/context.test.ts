@@ -1163,9 +1163,7 @@ describe("ContextCommands", () => {
       };
 
       const command = new ContextCommands();
-      const { logs, result, thrown } = captureContractCall(() =>
-        command.revoke("ctx_123", false, undefined, true),
-      );
+      const { logs, result, thrown } = captureContractCall(() => command.revoke("ctx_123", false, undefined, true));
       const expectedPayload = {
         context: {
           contextId: "ctx_123",

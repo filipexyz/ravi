@@ -237,22 +237,12 @@ describe("CLI audit redaction", () => {
       {
         group: "tasks",
         name: "create",
-        argv: [
-          "tasks",
-          "create",
-          "PRIVATE_TITLE_7H4M",
-          "--instructions",
-          "SENTINEL_PRIVATE_INSTRUCTIONS_7H4M",
-        ],
+        argv: ["tasks", "create", "PRIVATE_TITLE_7H4M", "--instructions", "SENTINEL_PRIVATE_INSTRUCTIONS_7H4M"],
       },
       {
         group: "artifacts",
         name: "create",
-        argv: [
-          "artifacts",
-          "create",
-          "--uri=https://user:SENTINEL_URI_7H4M@example.test/private?token=secret",
-        ],
+        argv: ["artifacts", "create", "--uri=https://user:SENTINEL_URI_7H4M@example.test/private?token=secret"],
       },
       {
         group: "whatsapp_group",

@@ -286,9 +286,7 @@ describe("observers agent-first contract", () => {
     const contractError = thrown as InstanceType<typeof ContractError>;
     expect(contractError.code).toBe("OBSERVER_RULE_VALIDATION_FAILED");
     expect(contractError.exitCode).toBe(1);
-    expect(contractError.details.errors).toEqual([
-      { ruleId: "rule-review", message: "[REDACTED:content length=19]" },
-    ]);
+    expect(contractError.details.errors).toEqual([{ ruleId: "rule-review", message: "[REDACTED:content length=19]" }]);
     expect(JSON.stringify(contractError.details.errors)).not.toContain("selector is invalid");
     expect(logs).toHaveLength(1);
     expect(JSON.parse(logs[0])).toMatchObject({
@@ -317,9 +315,7 @@ describe("observers agent-first contract", () => {
     const contractError = thrown as InstanceType<typeof ContractError>;
     expect(contractError.code).toBe("OBSERVER_PROFILE_VALIDATION_FAILED");
     expect(contractError.exitCode).toBe(1);
-    expect(contractError.details.errors).toEqual([
-      { profileId: "tasks", message: "[REDACTED:content length=25]" },
-    ]);
+    expect(contractError.details.errors).toEqual([{ profileId: "tasks", message: "[REDACTED:content length=25]" }]);
     expect(JSON.stringify(contractError.details.errors)).not.toContain("missing delivery template");
     expect(JSON.stringify(contractError.envelope())).not.toContain("C:/Users/private");
   });

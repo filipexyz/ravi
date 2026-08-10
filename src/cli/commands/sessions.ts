@@ -395,7 +395,7 @@ function printJson(payload: unknown): void {
 }
 
 function shouldReturnStructuredResult(asJson?: boolean): boolean {
-  return asJson === true || getContext()?.suppressCliOutput === true;
+  return asJson === true || getContext({ localOnly: true })?.suppressCliOutput === true;
 }
 
 function returnStructuredResult<T>(payload: T, asJson?: boolean): T {
@@ -2540,6 +2540,7 @@ export class SessionCommands {
     const page = paginateCliItems(sessions, { limit, offset });
     const pageSessions = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "sessions", "list"],
       limit: page.limit,
       offset: page.offset,

@@ -357,9 +357,7 @@ export function inspectArtifactPublishStateReadOnly(
   try {
     db.exec("PRAGMA busy_timeout = 1000");
     const tableExists = (tableName: string): boolean =>
-      Boolean(
-        db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName),
-      );
+      Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName));
     if (!tableExists("artifacts")) return empty;
 
     const candidates = (
@@ -379,15 +377,18 @@ export function inspectArtifactPublishStateReadOnly(
         : (db
             .prepare("SELECT * FROM artifact_versions WHERE artifact_id = ? AND version_number = ?")
             .get(artifactIdValue, versionNumber) as ArtifactVersionRow | undefined);
-    const versionAssets = versionRow && tableExists("artifact_version_assets")
-      ? (db
-          .prepare(
-            `SELECT * FROM artifact_version_assets
+    const versionAssets =
+      versionRow && tableExists("artifact_version_assets")
+        ? (
+            db
+              .prepare(
+                `SELECT * FROM artifact_version_assets
              WHERE version_id = ?
              ORDER BY CASE WHEN role = 'primary' THEN 0 ELSE 1 END, path ASC`,
-          )
-          .all(versionRow.id) as ArtifactVersionAssetRow[]).map(rowToVersionAsset)
-      : [];
+              )
+              .all(versionRow.id) as ArtifactVersionAssetRow[]
+          ).map(rowToVersionAsset)
+        : [];
     const versionExists = versionNumber === undefined ? null : Boolean(versionRow);
     const publishedEvents = !tableExists("artifact_events")
       ? []

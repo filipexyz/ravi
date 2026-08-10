@@ -36,7 +36,9 @@ import {
   getRemoteGatewayConfig,
   remoteGatewayErrorToContractError,
   remoteGatewayExitCode,
+  remoteDispatchOutput,
   resolveContextKeyForRemote,
+  type RemoteDispatchResult,
   type RemoteGatewayConfig,
 } from "./remote-gateway.js";
 
@@ -413,17 +415,7 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
   }
 }
 
-function printRemoteResponse(result: { body: string; contentType: string | null }): void {
-  if (result.body.length === 0) return;
-  const isJson = result.contentType?.includes("application/json") ?? false;
-  if (!isJson) {
-    process.stdout.write(result.body.endsWith("\n") ? result.body : `${result.body}\n`);
-    return;
-  }
-  try {
-    const parsed = JSON.parse(result.body);
-    console.log(JSON.stringify(parsed, null, 2));
-  } catch {
-    process.stdout.write(result.body.endsWith("\n") ? result.body : `${result.body}\n`);
-  }
+function printRemoteResponse(result: RemoteDispatchResult): void {
+  const output = remoteDispatchOutput(result);
+  if (output.value.length > 0) process.stdout.write(output.value);
 }

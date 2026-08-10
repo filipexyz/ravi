@@ -147,6 +147,7 @@ function buildTagsListNextCommand(input: {
   kind?: TagKind;
   source?: string;
   query?: string;
+  fields?: string;
 }): string {
   const args = [
     "ravi",
@@ -164,6 +165,7 @@ function buildTagsListNextCommand(input: {
   if (input.kind) args.push("--kind", input.kind);
   if (input.source) args.push("--source", quoteCliArg(input.source));
   if (input.query) args.push("--query", quoteCliArg(input.query));
+  if (input.fields) args.push("--fields", quoteCliArg(input.fields));
   return args.join(" ");
 }
 
@@ -176,6 +178,7 @@ function buildTagsSearchNextCommand(input: {
   target?: { assetType: TagAssetType; assetId: string };
   kind?: TagKind;
   source?: string;
+  fields?: string;
 }): string {
   const args = [
     "ravi",
@@ -194,6 +197,7 @@ function buildTagsSearchNextCommand(input: {
   if (input.target) args.push("--target", quoteCliArg(`${input.target.assetType}:${input.target.assetId}`));
   if (input.kind) args.push("--kind", input.kind);
   if (input.source) args.push("--source", quoteCliArg(input.source));
+  if (input.fields) args.push("--fields", quoteCliArg(input.fields));
   return args.join(" ");
 }
 
@@ -478,6 +482,7 @@ export class TagCommands {
           kind: parsedKind,
           source: parsedSource,
           query: parsedQuery,
+          fields,
         })
       : null;
     const projectedTags = pickFields(tags, fields);
@@ -1057,6 +1062,7 @@ export class TagCommands {
           target,
           kind: parsedKind,
           source: parsedSource,
+          fields,
         })
       : null;
 

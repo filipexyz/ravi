@@ -517,9 +517,7 @@ describe("whatsapp group write brake", () => {
 
   it("demote reduces authority immediately", async () => {
     const commands = new GroupCommands();
-    const payload = await silenced(() =>
-      commands.demote("120363000000000001", "5511999999999", undefined, true),
-    );
+    const payload = await silenced(() => commands.demote("120363000000000001", "5511999999999", undefined, true));
 
     expect(updateParticipantCalls).toHaveLength(1);
     expect(updateParticipantCalls[0]).toMatchObject({

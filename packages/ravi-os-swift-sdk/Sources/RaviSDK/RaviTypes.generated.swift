@@ -21174,17 +21174,20 @@ public struct SlackBlocksValidateReturn: Codable, Sendable {
 public struct SlackCanvasAccessDeleteOptions: Codable, Sendable {
   public var channel: String?
   public var channels: String?
+  public var execute: Bool?
   public var users: String?
 
-  public init(channel: String? = nil, channels: String? = nil, users: String? = nil) {
+  public init(channel: String? = nil, channels: String? = nil, execute: Bool? = nil, users: String? = nil) {
     self.channel = channel
     self.channels = channels
+    self.execute = execute
     self.users = users
   }
 
   enum CodingKeys: String, CodingKey {
     case channel = "channel"
     case channels = "channels"
+    case execute = "execute"
     case users = "users"
   }
 
@@ -21194,6 +21197,9 @@ public struct SlackCanvasAccessDeleteOptions: Codable, Sendable {
     }
     if let value = self.channels {
       body["channels"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.users {
       body["users"] = try RaviJSON.fromEncodable(value)

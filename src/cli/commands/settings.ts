@@ -283,6 +283,7 @@ export class SettingsCommands {
     ];
     const page = paginateCliItems(settingItems, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "settings", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -412,7 +413,13 @@ export class SettingsCommands {
   }
 
   @Command({ name: "delete", description: "Delete a setting (dry-run by default; requires --execute)" })
-  @CommandAccess({ kind: "mutate", resource: "settings", action: "delete", risk: "destructive", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "settings",
+    action: "delete",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   @Returns(settingsMutationReturnSchema)
   delete(
     @Arg("key", { description: "Setting key" }) key: string,

@@ -218,6 +218,7 @@ export class ThreadCommands {
       offset: parsedOffset,
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "threads", "list"],
       limit: result.limit,
       offset: result.offset,

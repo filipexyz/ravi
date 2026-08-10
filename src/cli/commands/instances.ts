@@ -424,6 +424,7 @@ function buildRouteListPayload(
   const routes = filterRoutesByTag(dbListRoutes(name), tagSlug);
   const page = paginateCliItems(routes, { limit, offset });
   const pagination = buildCliOffsetPagination({
+    fields,
     baseCommand,
     limit: page.limit,
     offset: page.offset,
@@ -702,6 +703,7 @@ export class InstancesCommands {
     const page = paginateCliItems(instances, { limit, offset });
     const pageInstances = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "instances", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -2165,7 +2167,13 @@ export class InstancesPendingCommands {
   }
 
   @Command({ name: "reject", description: "Reject and remove a pending contact or chat" })
-  @CommandAccess({ kind: "mutate", resource: "instances.pending", action: "reject", risk: "destructive", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "instances.pending",
+    action: "reject",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   reject(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("contact", { description: "Contact identity or chat route pattern" }) contact: string,

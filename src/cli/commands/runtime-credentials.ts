@@ -245,6 +245,7 @@ export class RuntimeCredentialsCommands {
       offset,
     });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "runtime", "credentials", "list"],
       limit: page.limit,
       offset: page.offset,

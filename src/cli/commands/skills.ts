@@ -545,6 +545,7 @@ export class SkillsCommands {
     const page = paginateCliItems(skills, { limit, offset });
     const pageSkills = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "skills", "list"],
       limit: page.limit,
       offset: page.offset,

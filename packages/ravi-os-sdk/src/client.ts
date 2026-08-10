@@ -6199,10 +6199,11 @@ export class RaviClient {
         body: { file, ...(options ?? {}) },
       });
     },
-    /** Revoke Slack standalone canvas access immediately */
+    /** Revoke Slack standalone canvas access; dry-run unless --execute is set */
     canvasAccessDelete: async (canvas: string, options?: {
       channel?: string;
       channels?: string;
+      execute?: boolean;
       users?: string;
     }): Promise<SlackCanvasAccessDeleteReturn> => {
       return this.transport.call({

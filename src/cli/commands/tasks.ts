@@ -478,6 +478,7 @@ interface TaskListNextCommandInput {
   archiveMode: TaskArchiveMode;
   updatedSince?: number;
   updatedUntil?: number;
+  fields?: string;
 }
 
 function buildTaskListNextCommand(input: TaskListNextCommandInput): string {
@@ -515,6 +516,7 @@ function buildTaskListNextCommand(input: TaskListNextCommandInput): string {
   if (typeof input.updatedSince === "number") args.push("--since", String(input.updatedSince));
   if (typeof input.updatedUntil === "number") args.push("--until", String(input.updatedUntil));
   if (typeof input.updatedSince !== "number" && typeof input.updatedUntil !== "number") args.push("--all-time");
+  if (input.fields) args.push("--fields", quoteCliArg(input.fields));
   return args.join(" ");
 }
 
@@ -1285,6 +1287,7 @@ export class TaskCommands {
           archiveMode,
           updatedSince,
           updatedUntil,
+          fields,
         })
       : null;
     const surfacedTasks = tasks.map((task) => {

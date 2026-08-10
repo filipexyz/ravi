@@ -259,6 +259,7 @@ export class SkillGatesCommands {
     );
     const page = paginateCliItems(effective, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "skill-gates", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -423,7 +424,13 @@ export class SkillGatesCommands {
     name: "rm",
     description: "Remove a custom gate or disable a default gate. Dry-run by default; pass --execute to write.",
   })
-  @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "rm", risk: "destructive", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "skill-gates",
+    action: "rm",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   @Returns(skillGateRemoveReturnSchema)
   rm(
     @Arg("id", { description: "Rule id" }) id: string,
@@ -476,7 +483,13 @@ export class SkillGatesCommands {
     description:
       "Delete a configured override and restore the default behavior. Dry-run by default; pass --execute to write.",
   })
-  @CommandAccess({ kind: "mutate", resource: "skill-gates", action: "reset", risk: "medium", requiresConfirmation: true })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "skill-gates",
+    action: "reset",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   @Returns(skillGateResetReturnSchema)
   reset(
     @Arg("id", { description: "Rule id" }) id: string,

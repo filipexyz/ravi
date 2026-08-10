@@ -53,24 +53,24 @@ Checklist antes de responder sobre imagens:
 
 ### 1. Gerar imagem nova
 ```bash
-ravi image generate "purple cat floating in space, cinematic lighting" --execute
+ravi image generate "purple cat floating in space, cinematic lighting"
 ```
 
 ### 2. Editar imagem existente
 ```bash
-ravi image generate "remove background, add sunset" --source /tmp/photo.png --execute
+ravi image generate "remove background, add sunset" --source /tmp/photo.png
 ```
 
 ### 3. Aspect ratio e tamanho
 ```bash
-ravi image generate "instagram story" --aspect 9:16 --size 2K --execute
+ravi image generate "instagram story" --aspect 9:16 --size 2K
 ```
 
 ### 4. Múltiplas imagens consistentes (atlas)
 Pra reduzir custo e manter estilo coerente, gere 1 atlas e divida:
 ```bash
 ravi image generate "atlas 3x2 grid, 6 product variants, no gutter, no margin, photorealistic" \
-  --aspect 3:2 --size 4K --execute
+  --aspect 3:2 --size 4K
 # após completar:
 ravi image atlas split /path/to/atlas.png \
   --cols 3 --rows 2 \

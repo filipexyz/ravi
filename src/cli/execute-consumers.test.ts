@@ -187,8 +187,8 @@ const obsoleteExecuteConsumers = [
   {
     name: "agent permission containment hint",
     path: "src/cli/commands/agents.ts",
-    obsolete: "ravi agents permissions ${id} none --execute",
-    current: "ravi agents permissions ${id} none",
+    obsolete: "ravi agents permissions $" + "{id} none --execute",
+    current: "ravi agents permissions $" + "{id} none",
   },
   {
     name: "agent permission containment instructions",
@@ -270,9 +270,7 @@ describe("command consumer contracts", () => {
     expect(source).not.toContain(
       "**Onde o freio existe hoje:** somente `crm pipeline create`, `crm opportunity create` e `crm opportunity move`",
     );
-    expect(source).not.toContain(
-      "Use o dry-run (exit 3) para conferir o `plan` antes de `--execute`.",
-    );
+    expect(source).not.toContain("Use o dry-run (exit 3) para conferir o `plan` antes de `--execute`.");
   });
 
   it("teaches the conditional heartbeat trigger brake without contradictions", () => {

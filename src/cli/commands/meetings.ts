@@ -1301,6 +1301,7 @@ export class MeetingProfileCommands {
     const pageProfiles = page.items;
     const publicProfiles = pickFields(pageProfiles.map(publicMeetingProfile), fields);
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "meetings", "profiles", "list"],
       limit: page.limit,
       offset: page.offset,
