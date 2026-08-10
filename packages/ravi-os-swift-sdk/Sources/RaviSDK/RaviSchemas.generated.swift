@@ -75047,6 +75047,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "noAck": {
+        "default": false,
         "description": "Deprecated compatibility no-op; dm read never sends a receipt",
         "type": "boolean"
       }

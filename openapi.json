@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "a77bc0642a20c4e2"
+    "version": "bd4f10fe46836b30"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -93601,6 +93601,7 @@
                     "type": "string"
                   },
                   "noAck": {
+                    "default": false,
                     "description": "Deprecated compatibility no-op; dm read never sends a receipt",
                     "type": "boolean"
                   }
