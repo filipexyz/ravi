@@ -803,8 +803,9 @@ describe("dispatch — scope and superadmin gating", () => {
 
       expect(result.response.status).toBe(200);
       expect(await result.response.json()).toEqual({ ok: true });
-      expect(result.audit).toBeNull();
-      expect(audits.events).toHaveLength(0);
+      expect(audits.events).toHaveLength(1);
+      expect(result.audit).toEqual(audits.events[0]);
+      expect(audits.events[0]).toMatchObject({ tool: "tasks_list", outcome: "succeeded", isError: false });
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
