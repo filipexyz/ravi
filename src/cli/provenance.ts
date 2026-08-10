@@ -4,6 +4,7 @@ import { hostname, userInfo } from "node:os";
 import { basename } from "node:path";
 import { getContext } from "./context.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
+import { sanitizePublicValue } from "./redaction.js";
 
 const MAX_ARG_LENGTH = 240;
 
