@@ -670,15 +670,17 @@ describe("corrected mutating command access", () => {
     expect(migrated).toEqual(expected);
   });
 
-  it("keeps whatsapp dm read as a pure read without confirmation flags", () => {
+  it("keeps whatsapp dm read pure while accepting the legacy --no-ack no-op", () => {
     const access = getCommandAccessMetadata(WhatsAppDmCommands).get("read");
-    const flags = getOptionsMetadata(new WhatsAppDmCommands(), "read").map((option) => option.flags);
+    const options = getOptionsMetadata(new WhatsAppDmCommands(), "read");
+    const flags = options.map((option) => option.flags);
 
     expect(access).toMatchObject({ kind: "read", risk: "low" });
     if (!access) throw new Error("Missing command access metadata for whatsapp dm read");
     expect(access?.requiresConfirmation).not.toBe(true);
     expect(flags).toContain("--account <id>");
-    expect(flags).not.toContain("--no-ack");
+    expect(flags).toContain("--no-ack");
+    expect(options.find((option) => option.flags === "--no-ack")?.description).toContain("Deprecated");
     expect(flags).not.toContain("--execute");
     expect(CLI_READ_TO_MUTATE_MIGRATIONS).not.toContainEqual({
       resource: "whatsapp.dm",
