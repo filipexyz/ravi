@@ -1298,6 +1298,20 @@ skill oficial, os consumidores e a spec de dominio foram alinhados. Os
 artefatos gerados serao atualizados em um commit dedicado depois de consolidar
 as reclassificacoes desta fase.
 
+### `whatsapp group demote`: contencao sem segunda chamada
+
+O CI Linux [`31363188032`](https://github.com/filipexyz/ravi/actions/runs/31363188032)
+do SHA `0a6d17709e11301a8851723900b8134dfbbe5b34` passou Build e Typecheck e
+falhou somente no novo teste de `group demote`: 27 testes do arquivo passaram,
+mas a operacao ainda retornava `WRITE_REQUIRES_EXECUTE`, exit 3, antes de
+chamar o provider.
+
+A correcao mantem a autorizacao `mutate`, o risco e o mesmo caminho do provider,
+mas remove a confirmacao e o parametro `--execute` apenas de `demote`. Promover
+continua freado porque amplia autoridade; demover remove poder administrativo e
+executa imediatamente. A skill, os exemplos, os consumidores e a spec WhatsApp
+foram atualizados sem mudar grants REBAC.
+
 Por instrucao explicita do operador, nenhum Bun foi executado localmente. A
 validacao local desta etapa foi revisao do diff, varredura de consumidores e
 `git diff --check`; o veredito permanece **DO NOT APPROVE** ate a CI verde no

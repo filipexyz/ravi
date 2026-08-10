@@ -6,8 +6,9 @@ visible and socially irreversible; a stray `group send` cannot be unsent; a
 `group leave` announces itself to every member. The write-brake benchmark that
 motivated the contract showed exactly this class of failure (0/27 unintended
 writes blocked before the brake, 27/27 after), so here the brake covers the
-ENTIRE mutation surface — 12 group ops plus `dm send` and `dm ack` — instead
-of only the "destructive" subset used in calmer domains like tasks.
+risky mutation surface — 11 group ops plus `dm send` and `dm ack`. `group
+demote` is the exception: it removes admin authority and executes immediately
+as containment.
 
 Decisions that shaped this wave:
 
@@ -17,8 +18,9 @@ Decisions that shaped this wave:
   their prior command-level access. `dm read` is a pure local read.
 - **Confirmation follows the invocation.** `group list`, `group info` and
   `group invite` only read. `dm read` also stays immediate and never emits a
-  receipt. A blue-tick receipt is an observable outbound signal, so the
-  explicit `dm ack` requires confirmation before NATS emission.
+  receipt. `group demote` stays immediate because it reduces authority. A
+  blue-tick receipt is an observable outbound signal, so the explicit `dm ack`
+  requires confirmation before NATS emission.
 - **Suggestions only from sources already in hand.** `GROUP_NOT_FOUND` in
   `group info` enriches the envelope from the group list that the resolution
   path had ALREADY fetched (omni REST with local chat-model fallback) — zero

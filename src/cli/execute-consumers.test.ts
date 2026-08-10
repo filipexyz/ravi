@@ -202,6 +202,24 @@ const obsoleteExecuteConsumers = [
     obsolete: "ravi context revoke <id> --execute",
     current: "ravi context revoke <id>",
   },
+  {
+    name: "WhatsApp demote skill",
+    path: "src/plugins/internal/ravi-system/skills/whatsapp/SKILL.md",
+    obsolete: 'ravi whatsapp group demote <groupId> "5511999999999" --execute',
+    current: 'ravi whatsapp group demote <groupId> "5511999999999"',
+  },
+  {
+    name: "WhatsApp demote CLI overview",
+    path: "docs/cli/overview.mdx",
+    obsolete: "ravi whatsapp.group demote <groupId> <participants> --execute",
+    current: "ravi whatsapp.group demote <groupId> <participants>",
+  },
+  {
+    name: "WhatsApp demote guide",
+    path: "docs/guides/whatsapp-groups.mdx",
+    obsolete: 'ravi whatsapp group demote group:120363425628305127 "5511999999999" --execute',
+    current: 'ravi whatsapp group demote group:120363425628305127 "5511999999999"',
+  },
 ] as const;
 
 describe("command consumer contracts", () => {

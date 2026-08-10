@@ -19,7 +19,7 @@ Funcionalidades do WhatsApp expostas via Omni/Baileys. Permite criar grupos, reg
 
 **Criação de grupo:** `ravi whatsapp group create` usa a API HTTP pública do Omni (`POST /api/v2/instances/:id/groups`) e depois registra chat, rota, participantes e sessão no SQLite local do Ravi. Não use o tópico legado `ravi.whatsapp.group.create`.
 
-**Operações de grupo:** `list`, `info` e `invite` são leituras; `list` e `info` tentam REST público do Omni e caem para o modelo local `chats` se o Omni falhar. Todas as mutações (`send`, `add`, `remove`, `promote`, `demote`, `leave`, `join`, `revoke-invite`, `rename`, `description`, `settings`) usam contratos REST do Omni pelo cliente público e são dry-run por default — exigem `--execute` (ver "Contrato Do CLI" abaixo). Não use nem sugira o bridge NATS legado `ravi.whatsapp.group.{op}`; quando um endpoint REST ainda não existir no Omni, o comando deve falhar explicitamente com erro `*_REST_UNAVAILABLE`.
+**Operações de grupo:** `list`, `info` e `invite` são leituras; `list` e `info` tentam REST público do Omni e caem para o modelo local `chats` se o Omni falhar. As mutações usam contratos REST do Omni pelo cliente público. `demote` reduz autoridade e executa imediatamente; as demais mutações (`send`, `add`, `remove`, `promote`, `leave`, `join`, `revoke-invite`, `rename`, `description`, `settings`) são dry-run por default e exigem `--execute` (ver "Contrato Do CLI" abaixo). Não use nem sugira o bridge NATS legado `ravi.whatsapp.group.{op}`; quando um endpoint REST ainda não existir no Omni, o comando deve falhar explicitamente com erro `*_REST_UNAVAILABLE`.
 
 **Novo fio de trabalho:** quando o usuário pedir para criar um grupo/agent para um assunto novo, use o fluxo transacional de criação. Não tente localizar o grupo com `ravi whatsapp group list`: listagem não registra chat/rota/sessão. Use `group list` apenas para inspeção.
 
@@ -36,9 +36,9 @@ Taxonomia de saída:
 - `2` erro de uso (flag/argumento inválido): corrija a chamada, não insista na mesma sintaxe.
 - `3` freio de escrita — não é erro. Nada foi enviado/alterado no WhatsApp; o envelope traz `dryRun:true` e um plano sanitizado com alvo e efeito material, nunca o corpo integral da mensagem. Revise o plano e repita com `--execute`.
 
-Onde o freio existe: TODA mutação externa é dry-run por default e exige `--execute` — `group send`, `group create`, `group add`, `group remove`, `group promote`, `group demote`, `group revoke-invite`, `group join`, `group leave`, `group rename`, `group description`, `group settings`, `dm send` e `dm ack`. Essas operações alteram estado que pessoas reais observam; revise o plano antes do efeito.
+Onde o freio existe: `group send`, `group create`, `group add`, `group remove`, `group promote`, `group revoke-invite`, `group join`, `group leave`, `group rename`, `group description`, `group settings`, `dm send` e `dm ack`. Essas operações alteram estado que pessoas reais observam; revise o plano antes do efeito.
 
-Sem freio: `group list`, `group info`, `group invite` e `dm read` são leituras. `ravi whatsapp dm read <contact>` sempre consulta o histórico local sem enviar recibo. Para enviar o recibo de forma intencional, use `ravi whatsapp dm ack <contact> <messageId> --execute`.
+Sem freio: `group list`, `group info`, `group invite` e `dm read` são leituras; `group demote` é mutação imediata de redução de autoridade. `ravi whatsapp dm read <contact>` sempre consulta o histórico local sem enviar recibo. Para enviar o recibo de forma intencional, use `ravi whatsapp dm ack <contact> <messageId> --execute`.
 
 Compact mode: `group list` e `dm read` aceitam `--fields a,b,c` (ex.: `--fields id,subject`) — use em varredura para não arrastar o objeto inteiro de cada item.
 
@@ -128,7 +128,7 @@ No fluxo `group create`, o Ravi usa o mesmo contrato REST de participantes do Om
 
 ### Remover admin
 ```bash
-ravi whatsapp group demote <groupId> "5511999999999" --execute
+ravi whatsapp group demote <groupId> "5511999999999"
 ```
 
 ## Convites

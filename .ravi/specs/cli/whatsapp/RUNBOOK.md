@@ -13,7 +13,7 @@
    (`ravi contacts add`) — only known contacts can join groups.
 5. Exit `3`: read `error.plan`, confirm the message/membership change is really
    intended for those real people, then re-run the same command adding
-   `--execute`.
+   `--execute`. `group demote` is immediate because it reduces authority.
 6. If a braked op reached WhatsApp without `--execute`, the brake regressed:
    check the op still calls `contractDryRun` BEFORE any provider/NATS call
    (`group send` must brake before even the group-metadata read), and that the

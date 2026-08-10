@@ -304,7 +304,7 @@ ravi whatsapp.group create <name> <participants> --execute   # Create group (com
 ravi whatsapp.group add <groupId> <participants> --execute     # Add participants
 ravi whatsapp.group remove <groupId> <participants> --execute  # Remove participants
 ravi whatsapp.group promote <groupId> <participants> --execute # Promote to admin
-ravi whatsapp.group demote <groupId> <participants> --execute  # Demote from admin
+ravi whatsapp.group demote <groupId> <participants>           # Demote from admin immediately
 ravi whatsapp.group invite <groupId>                         # Get invite link (read-only)
 ravi whatsapp.group revoke-invite <groupId> --execute        # Revoke invite link
 ravi whatsapp.group join <code> --execute                    # Join group via invite
@@ -314,7 +314,7 @@ ravi whatsapp.group description <groupId> <text> --execute   # Update descriptio
 ravi whatsapp.group settings <groupId> <setting> --execute   # Update settings (announcement, not_announcement, locked, unlocked)
 ```
 
-Every external mutation above is dry-run by default: without `--execute` it exits 3 and only prints the plan (nothing reaches WhatsApp). `list`, `info`, and `invite` are read-only and take no `--execute`.
+Every risky external mutation above is dry-run by default: without `--execute` it exits 3 and only prints the plan (nothing reaches WhatsApp). `demote` reduces authority and executes immediately. `list`, `info`, and `invite` are read-only and take no `--execute`.
 
 ## WhatsApp DMs
 

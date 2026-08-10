@@ -27,23 +27,24 @@ normative: true
 
 Make `ravi whatsapp group` and `ravi whatsapp dm` reliable for agent consumers
 under the agent-first contract defined by `cli`: typed error envelopes, the
-0/1/2/3 exit taxonomy, a write brake on every external mutation, and compact
+0/1/2/3 exit taxonomy, proportional confirmation, and compact
 discovery. This is the highest external-risk CLI domain: its mutations act on
 REAL WhatsApp groups and people — a wrong send, remove or leave is socially
-irreversible — so the brake covers the whole mutation surface, not just a
-subset.
+irreversible. Confirmation follows the actual effect; demoting an admin is an
+immediate authority reduction.
 
 ## Invariants
 
-1. **No external mutation executes without `--execute`.** Every op that changes
-   live WhatsApp state MUST default to dry-run (exit 3, `dryRun: true`, `plan`)
+1. **Risky external mutations do not execute without `--execute`.** Every
+   braked op that changes live WhatsApp state MUST default to dry-run (exit 3,
+   `dryRun: true`, `plan`)
    and MUST emit the dry-run BEFORE any provider/NATS/queue call — including
    read-only provider calls made on the send path (group-metadata resolution).
    Plans MUST replace phone/JID targets and text with bounded metadata:
    `group send` uses `{channel, accountId, instanceId, targetType, targetRef, effect,
    messageChars, mentionTargetCount}`; `group create` uses `{subjectChars,
    accountId, participantCount, requestedAdminCount, actorAdminCount, agentId,
-   createAgent}`; add/remove/promote/demote use `{targetType, targetRef,
+   createAgent}`; add/remove/promote use `{targetType, targetRef,
    participantCount, accountId}`; revoke/leave/settings use `{targetType,
    targetRef, effect, accountId}`
    (settings also has `setting`); join uses `{inviteProvided, accountId}`;
@@ -75,6 +76,8 @@ subset.
 9. `dm read` is always a pure local-history read: it never emits a receipt and
    never accepts `--no-ack` or `--execute`. `dm ack` is the explicit external
    receipt operation and always requires `--execute`.
+10. `group demote` MUST execute immediately because it reduces authority. It
+    remains a `mutate` operation and MUST call the provider exactly once.
 
 ## Write classification (brake decision per op)
 
@@ -84,7 +87,8 @@ subset.
 | group create | group creation notifies participants; also creates local chat/route/session (high) | dry-run + `--execute` |
 | group add | adds real people, visible to the group (high) | dry-run + `--execute` |
 | group remove | removes real people, socially irreversible (destructive) | dry-run + `--execute` |
-| group promote / demote | grants/strips real admin power (high) | dry-run + `--execute` |
+| group promote | grants real admin power (high) | dry-run + `--execute` |
+| group demote | strips admin power (authority reduction) | immediate |
 | group revoke-invite | kills links already shared (destructive) | dry-run + `--execute` |
 | group rename / description / settings | changes what every member sees / who can post (high) | dry-run + `--execute` |
 | group join / leave | membership changes visible to all members (high) | dry-run + `--execute` |

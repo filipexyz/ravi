@@ -2,12 +2,14 @@
 
 ## Checks
 
-- Every braked op (`group send|create|add|remove|promote|demote|revoke-invite|join|leave|rename|description|settings`, `dm send` and `dm ack`) invoked without `--execute` MUST exit 3 with `dryRun: true` and a sanitized `plan`, and MUST NOT make any provider/NATS call — not even the group-metadata read on the send path.
+- Every braked op (`group send|create|add|remove|promote|revoke-invite|join|leave|rename|description|settings`, `dm send` and `dm ack`) invoked without `--execute` MUST exit 3 with `dryRun: true` and a sanitized `plan`, and MUST NOT make any provider/NATS call — not even the group-metadata read on the send path.
 - Those plans MUST contain only the account/instance ids, target type, effect,
   presence, length, count, and flags defined in the SPEC. Full or partially
   masked phone/JID targets, names, subjects, invites, message ids, and text MUST
   be absent.
 - Every braked op invoked with `--execute` MUST perform the real write through the same provider path it planned.
+- `whatsapp group demote` MUST remain `mutate` and call the provider once
+  without `--execute`, because it reduces authority.
 - `whatsapp group info <unknown>` with `--json` MUST exit 1 with the `GROUP_NOT_FOUND` envelope and suggestions built only from the group list already fetched during resolution.
 - `whatsapp group create|add` with an unknown participant MUST exit 1 with `CONTACT_NOT_FOUND` (local contacts DB suggestions) BEFORE the brake and BEFORE any provider call.
 - Text mode MUST render that `CONTACT_NOT_FOUND` failure exactly once; helper diagnostics MUST NOT preprint a second error.

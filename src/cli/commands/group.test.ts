@@ -1,6 +1,6 @@
 /**
  * Agent-first contract tests for the `whatsapp.group` and `whatsapp.dm` CLI
- * domains (Manual v2): write brake (exit 3) on every external mutation,
+ * domains (Manual v2): risk-based write brakes (exit 3), immediate containment,
  * not-found envelopes (GROUP_NOT_FOUND / CONTACT_NOT_FOUND, exit 1) and
  * compact `--fields` mode. Follows the tasks.test.ts pattern: no-op decorator
  * mocks + service/provider mocks with spies + `hasContext: () => true` so the
@@ -515,10 +515,10 @@ describe("whatsapp group write brake", () => {
     expect(updateParticipantCalls).toHaveLength(0);
   });
 
-  it("demote without --execute reduces authority immediately", async () => {
+  it("demote reduces authority immediately", async () => {
     const commands = new GroupCommands();
     const payload = await silenced(() =>
-      commands.demote("120363000000000001", "5511999999999", undefined, true, undefined),
+      commands.demote("120363000000000001", "5511999999999", undefined, true),
     );
 
     expect(updateParticipantCalls).toHaveLength(1);

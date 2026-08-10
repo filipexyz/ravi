@@ -7,7 +7,7 @@ description: Creating, managing, and routing WhatsApp groups with Ravi.
 
 Ravi can create and manage WhatsApp groups programmatically through the CLI. Groups are managed via the `ravi whatsapp group` commands, which communicate with the WhatsApp instance through NATS request/reply. All commands require the daemon to be running with a connected WhatsApp account.
 
-Every external mutation (`create`, `add`, `remove`, `promote`, `demote`, `revoke-invite`, `join`, `leave`, `rename`, `description`, `settings`) is **dry-run by default**: without `--execute` the command exits 3 and only prints the plan — nothing reaches WhatsApp. Re-run with `--execute` to perform the write. Read-only commands (`list`, `info`, `invite`) take no `--execute`.
+Risky external mutations (`create`, `add`, `remove`, `promote`, `revoke-invite`, `join`, `leave`, `rename`, `description`, `settings`) are **dry-run by default**: without `--execute` the command exits 3 and only prints the plan — nothing reaches WhatsApp. Re-run with `--execute` to perform the write. `demote` reduces authority and executes immediately. Read-only commands (`list`, `info`, `invite`) take no `--execute`.
 
 ## Prerequisites
 
@@ -97,7 +97,7 @@ ravi whatsapp group promote group:120363425628305127 "5511999999999" --execute
 ### Demoting from Admin
 
 ```bash
-ravi whatsapp group demote group:120363425628305127 "5511999999999" --execute
+ravi whatsapp group demote group:120363425628305127 "5511999999999"
 ```
 
 ## Group Info and Listing

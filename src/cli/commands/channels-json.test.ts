@@ -452,7 +452,7 @@ describe("channel command --json output", () => {
 
     const remove = await captureJson(() => commands.remove("120363@g.us", "5511999999999", "main", true, true));
     const promote = await captureJson(() => commands.promote("120363@g.us", "5511999999999", "main", true, true));
-    const demote = await captureJson(() => commands.demote("120363@g.us", "5511999999999", "main", true, true));
+    const demote = await captureJson(() => commands.demote("120363@g.us", "5511999999999", "main", true));
     const invite = await captureJson(() => commands.invite("120363@g.us", "main", true));
     const revoke = await captureJson(() => commands.revokeInvite("120363@g.us", "main", true, true));
     const join = await captureJson(() => commands.join("https://chat.whatsapp.com/invite-code", "main", true, true));

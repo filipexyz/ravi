@@ -1555,7 +1555,6 @@ export class GroupCommands {
     resource: "whatsapp.group",
     action: "demote",
     risk: "high",
-    requiresConfirmation: true,
     redactions: ["groupId", "participants"],
   })
   async demote(
@@ -1563,32 +1562,11 @@ export class GroupCommands {
     @Arg("participants", { description: "Phone numbers to demote (comma-separated)" }) participantsStr: string,
     @Option({ flags: "--account <id>", description: "WhatsApp account ID" }) account?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
-    @Option({
-      flags: "--execute",
-      description: "Actually demote the participants; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
   ) {
     const participants = participantsStr
       .split(",")
       .map((p) => p.trim())
       .filter(Boolean);
-
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): demotion strips admin rights from real
-      // people (publicly visible), so dry-run by default and exit 3 before any
-      // provider call.
-      contractDryRun(
-        "whatsapp group demote",
-        {
-          targetType: "group",
-          targetRef: pseudonymousTargetRef(normalizeGroupJid(groupId)),
-          participantCount: participants.length,
-          accountId: resolveGroupAccount(account) || null,
-        },
-        { asJson },
-      );
-    }
 
     const payload = await updateGroupParticipantsViaOmni({
       action: "demote",
