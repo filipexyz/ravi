@@ -111,7 +111,7 @@ Ao ensinar agentes a usar contexto-filho, enfatize:
 
 - `ravi context list` para visao geral sem expor `contextKey`
 - `ravi context info <contextId>` para lineage detalhado
-- `ravi context revoke <contextId> --execute` para encerrar contexto emitido (sem `--execute` e apenas dry-run, exit 3)
+- `ravi context revoke <contextId>` para encerrar imediatamente um contexto emitido
 
 Lineage esperado no metadata:
 
@@ -128,9 +128,9 @@ O dominio `context` segue o contrato agent-first (Manual v2). Regras compactas:
 
 **Exit codes:** `0` sucesso · `1` erro/not-found · `2` uso invalido · `3` freio de escrita (dry-run — nao e erro, e o sistema funcionando).
 
-**Freio de escrita (`--execute`):**
+**Confirmação baseada em risco:**
 
-- `ravi context revoke <id>` — dry-run por default (exit 3, mostra o plano); so revoga com `--execute`. Cascateia para filhos salvo `--no-cascade`.
+- `ravi context revoke <id>` reduz autoridade e executa imediatamente. Cascateia para filhos salvo `--no-cascade`.
 - `ravi context credentials remove <key>` — dry-run por default; so remove com `--execute`.
 
 **Equivalentes locais (NAO renomear):**
@@ -150,7 +150,7 @@ O dominio `context` segue o contrato agent-first (Manual v2). Regras compactas:
 
 ### Checklist do contrato
 
-1. Vai revogar? Rode sem `--execute` primeiro, leia `error.plan`, depois repita com `--execute`.
+1. Vai revogar? Confira o ID e execute uma vez; revoga imediatamente porque reduz exposicao.
 2. Not-found? Leia `error.suggestions` antes de tentar variantes do id.
 3. Prune/cleanup? Use os flags locais (`--apply --confirm` / `--revoke`), nao invente `--execute` neles.
 4. Nunca cole uma chave `rctx_*` em log, issue ou prompt — envelopes ja vem sem ela por design.

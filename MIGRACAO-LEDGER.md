@@ -1272,3 +1272,33 @@ permissao de leitura WhatsApp e snapshots gerados. A spec global foi promovida
 para `active` neste commit documental. Como a promocao muda o head, o veredito
 final permanece condicionado a CI verde deste proprio commit; o resultado pode
 ser registrado no corpo da PR sem criar outro ciclo documental.
+
+---
+
+## FASE 7 - confirmacao proporcional para contencao (2026-08-10)
+
+Esta fase corrige classificacoes de confirmacao encontradas por auditoria
+adversarial depois da fase 6. As entradas anteriores permanecem como historico
+dos heads que elas descreviam; esta secao substitui suas conclusoes para o head
+atual.
+
+### `context revoke`: reducao de autoridade imediata
+
+O CI Linux [`31362559148`](https://github.com/filipexyz/ravi/actions/runs/31362559148)
+do SHA `a91420b907a29801900672cad1f4020e2b6da536` passou Build e Typecheck e
+falhou somente no novo teste que exigia revogacao imediata: o runtime ainda
+retornava `WRITE_REQUIRES_EXECUTE`, exit 3, antes de chamar
+`revokeRuntimeContext`.
+
+A correcao mantem `CommandAccess.kind: mutate`, risco destrutivo, validacao de
+existencia, cascata e auditoria, mas remove `requiresConfirmation`, a opcao
+`--execute` e o dry-run. Revogar um contexto reduz autoridade e exposicao; por
+isso executa em uma chamada conforme a politica global. O hint do daemon, a
+skill oficial, os consumidores e a spec de dominio foram alinhados. Os
+artefatos gerados serao atualizados em um commit dedicado depois de consolidar
+as reclassificacoes desta fase.
+
+Por instrucao explicita do operador, nenhum Bun foi executado localmente. A
+validacao local desta etapa foi revisao do diff, varredura de consumidores e
+`git diff --check`; o veredito permanece **DO NOT APPROVE** ate a CI verde no
+head final com os snapshots atualizados.

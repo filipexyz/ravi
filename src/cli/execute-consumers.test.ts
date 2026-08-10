@@ -87,11 +87,6 @@ const executeInstructions = [
     instruction: 'ravi media send "<file-path>" --execute',
   },
   {
-    name: "context revoke rotation hint",
-    path: "src/cli/commands/daemon.ts",
-    instruction: "ravi context revoke <id> --execute",
-  },
-  {
     name: "trigger test root instructions",
     path: "AGENTS.md",
     instruction: "ravi triggers test <id> --execute",
@@ -200,6 +195,12 @@ const obsoleteExecuteConsumers = [
     path: "AGENTS.md",
     obsolete: "ravi agents permissions dev none --execute",
     current: "ravi agents permissions dev none",
+  },
+  {
+    name: "context revoke rotation hint",
+    path: "src/cli/commands/daemon.ts",
+    obsolete: "ravi context revoke <id> --execute",
+    current: "ravi context revoke <id>",
   },
 ] as const;
 

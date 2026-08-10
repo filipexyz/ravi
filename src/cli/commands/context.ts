@@ -423,7 +423,7 @@ export class ContextCommands {
   }
 
   @Command({ name: "revoke", description: "Revoke a runtime context by context ID" })
-  @CommandAccess({ kind: "mutate", resource: "context", action: "revoke", risk: "destructive", requiresConfirmation: true })
+  @CommandAccess({ kind: "mutate", resource: "context", action: "revoke", risk: "destructive" })
   revoke(
     @Arg("contextId", { description: "Context ID to revoke" }) contextId: string,
     @Option({
@@ -434,11 +434,6 @@ export class ContextCommands {
     @Option({ flags: "--reason <text>", description: "Reason recorded in metadata for audit and forensics" })
     reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
-    @Option({
-      flags: "--execute",
-      description: "Actually revoke the context; default is a dry-run that only shows the plan (exit 3)",
-    })
-    execute?: boolean,
   ) {
     const existing = dbGetContext(contextId);
     if (!existing) {
@@ -450,22 +445,6 @@ export class ContextCommands {
       );
     }
     const cascade = !noCascade;
-    if (execute !== true) {
-      // Write brake (Manual v2 7.8): revoking kills auth on a live runtime
-      // context (cascading to children by default), so dry-run by default and
-      // exit 3 before any write. The plan carries only IDs — never rctx_* keys.
-      contractDryRun(
-        "context revoke",
-        {
-          contextId,
-          kind: existing.kind,
-          agentId: existing.agentId ?? null,
-          cascade,
-          reasonPresent: Boolean(reason),
-        },
-        { asJson },
-      );
-    }
     const result = revokeRuntimeContext(contextId, { cascade, reason });
     const payload = this.serializeRevokeResult(result.context, result.cascaded, result.revokedAt);
     this.printPayload(payload, asJson, () =>

@@ -773,7 +773,7 @@ describe("ContextCommands", () => {
     };
 
     try {
-      command.revoke("ctx_123", true, undefined, true, true);
+      command.revoke("ctx_123", true, undefined, true);
     } finally {
       console.log = originalLog;
       console.error = originalError;
@@ -1164,7 +1164,7 @@ describe("ContextCommands", () => {
 
       const command = new ContextCommands();
       const { logs, result, thrown } = captureContractCall(() =>
-        command.revoke("ctx_123", false, undefined, true, undefined),
+        command.revoke("ctx_123", false, undefined, true),
       );
       const expectedPayload = {
         context: {
@@ -1182,10 +1182,10 @@ describe("ContextCommands", () => {
       expect(JSON.parse(logs[0] ?? "{}")).toMatchObject(expectedPayload);
     });
 
-    it("emits CONTEXT_NOT_FOUND on revoke of an unknown context before any dry-run", () => {
+    it("emits CONTEXT_NOT_FOUND on revoke of an unknown context before any mutation", () => {
       fetchedContext = undefined;
       const command = new ContextCommands();
-      const { thrown } = captureContractCall(() => command.revoke("ctx_ghost", false, undefined, true, true));
+      const { thrown } = captureContractCall(() => command.revoke("ctx_ghost", false, undefined, true));
       expect(thrown).toBeInstanceOf(ContractError);
       const contractError = thrown as InstanceType<typeof ContractError>;
       expect(contractError.exitCode).toBe(1);

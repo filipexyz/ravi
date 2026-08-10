@@ -1106,7 +1106,7 @@ ANTHROPIC_API_KEY=
             reason: "admin_context_exists",
             existing,
             suggestedAction:
-              "Revoke the existing admin context with 'ravi context revoke <id> --execute' before rotating the bootstrap key",
+              "Revoke the existing admin context with 'ravi context revoke <id>' before rotating the bootstrap key",
           },
         },
       );

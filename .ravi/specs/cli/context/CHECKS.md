@@ -5,11 +5,8 @@
 - `context info <unknown-id> --json` MUST exit 1 with the `CONTEXT_NOT_FOUND`
   envelope and up to three `suggestions` built from real context IDs.
 - `context lineage <unknown-id> --json` MUST exit 1 with `CONTEXT_NOT_FOUND`.
-- `context revoke <id>` without `--execute` MUST exit 3, MUST report
-  `dryRun: true` with allowed identifiers, `cascade`, and `reasonPresent`; the
-  reason text MUST NOT appear and the command MUST NOT revoke anything.
-- `context revoke <id> --execute` MUST perform the revoke (cascading unless
-  `--no-cascade` was passed).
+- `context revoke <id>` MUST revoke immediately because it reduces authority,
+  cascading unless `--no-cascade` was passed, and MUST expose no context key.
 - `context credentials remove <key>` without `--execute` MUST exit 3 and MUST
   NOT write the store; the plan MUST identify the entry by allowed IDs plus
   path/key/label presence flags, never path, label, full key, or masked key.

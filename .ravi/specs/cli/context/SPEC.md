@@ -28,10 +28,11 @@ normative: true
 
 Make `ravi context` and `ravi context credentials` reliable for agent consumers
 under the agent-first contract defined by `cli`: typed error envelopes, the
-0/1/2/3 exit taxonomy, a write brake on the destructive ops, and compact
+0/1/2/3 exit taxonomy, proportional confirmation, and compact
 discovery. This domain is auth substrate: `revoke` kills live runtime auth
-(cascading to child contexts by default) and `credentials remove` drops a
-working local credential — both are braked. The domain also carries a security
+(cascading to child contexts by default) and therefore runs immediately as
+containment; `credentials remove` drops a working local credential and remains
+braked. The domain also carries a security
 invariant stronger than most: context keys (`rctx_*`) ARE credentials.
 
 ## Invariants
@@ -46,12 +47,12 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
 4. `context credentials remove` and `context credentials set-default` on an
    unknown entry MUST exit 1 with `CREDENTIAL_NOT_FOUND`; suggestions carry
    context IDs and labels only.
-5. `context revoke` and `context credentials remove` MUST default to dry-run
-   and require `--execute`; the dry-run MUST report `dryRun: true` and the
-   `plan`, and MUST NOT revoke or delete anything. Revoke uses
-   `{contextId,kind,agentId,cascade,reasonPresent}`. Credential removal uses
+5. `context revoke` MUST execute immediately because it reduces authority.
+   `context credentials remove` MUST default to dry-run and require
+   `--execute`; the dry-run MUST report `dryRun: true` and the `plan`, and MUST
+   NOT delete anything. Credential removal uses
    `{credentialsPathPresent,contextKeyPresent,contextId,agentId,labelPresent,kind,wasDefault}`.
-   Neither plan carries the reason, path, key, or label text.
+   The plan carries no path, key, or label text.
 6. Secret hygiene: a full `rctx_*` context key MUST NEVER appear in an error
    envelope, dry-run plan, or suggestion list. A credential-removal plan uses
    only `contextKeyPresent`; not-found envelopes may echo the user's queried
@@ -69,7 +70,7 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
 
 | op | class | brake |
 |---|---|---|
-| revoke | destructive (kills live runtime auth, cascades) | dry-run + `--execute` |
+| revoke | emergency containment (kills live runtime auth, cascades) | immediate |
 | credentials remove | destructive (drops a working local credential) | dry-run + `--execute` |
 | prune | destructive (deletes inactive context rows) | pre-existing `--apply` + `--confirm prune-contexts` (stronger equivalent, documented) |
 | cleanup-agent-runtime | destructive (revokes stale contexts) | pre-existing dry-run default + `--revoke` (equivalent, documented) |
@@ -88,21 +89,18 @@ invariant stronger than most: context keys (`rctx_*`) ARE credentials.
 ## Internal consumers
 
 - `src/plugins/internal/ravi-dev/skills/context-cli/SKILL.md` teaches this
-  surface and documents `--execute` on `context revoke`.
+  surface and documents immediate `context revoke` containment.
 - `src/cli/commands/daemon.ts` prints an operator hint pointing at
-  `ravi context revoke <id>`; with the brake, the operator's first run is a
-  dry-run by design (the hint may later mention `--execute`, owned by the
-  daemon domain).
+  `ravi context revoke <id>`; the command executes in one call.
 - `.ravi/specs/wa-overlay/auth/SPEC.md` references `ravi context revoke` as the
-  daemon-side key-kill path; the brake adds one explicit `--execute` step.
+  immediate daemon-side key-kill path.
 
 ## Validation
 
 - `bun test src/cli/commands/context.test.ts` green (contract blocks included),
   no new failures vs the `dev` baseline.
 - Live checks (isolated `RAVI_STATE_DIR`): `context info ctx-nope --json` →
-  `CONTEXT_NOT_FOUND`, exit 1; `context revoke <id> --json` → exit 3 with plan
-  and the context still active; with `--execute` → revoked; `context
+  `CONTEXT_NOT_FOUND`, exit 1; `context revoke <id> --json` → revoked; `context
   credentials remove <key> --json` → exit 3 and the entry still stored; the
   dry-run plan shows key/path/label presence only; `context list --json --fields
   contextId,kind` narrows items.
