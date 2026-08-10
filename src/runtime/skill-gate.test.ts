@@ -24,6 +24,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  setPermissionAuditPublisherForTest();
   if (previousCodexHome === undefined) {
     delete process.env.CODEX_HOME;
   } else {
@@ -168,9 +169,14 @@ describe("evaluateSkillGate", () => {
 
 describe("runtime host skill-gate enforcement", () => {
   it("never persists or publishes the full command denied by native runtime policy", async () => {
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
     const auditEvents: Array<Record<string, unknown>> = [];
     setPermissionAuditPublisherForTest(async (_topic, data) => {
       auditEvents.push(data);
+    });
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-gate-test",
+      runtimeProvider: "codex",
     });
     const context = createRuntimeContext({
       kind: "agent-runtime",
