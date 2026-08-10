@@ -170,12 +170,19 @@ export class WhatsAppDmCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each message" })
     fields?: string,
+    @Option({
+      flags: "--no-ack",
+      description: "Deprecated compatibility no-op; dm read never sends a receipt",
+    })
+    noAck?: boolean,
   ) {
     const { jid, displayName } = resolveWhatsAppJid("whatsapp dm read", contactRef, asJson);
     const sessionId = jidToSessionId(jid);
     const limit = last ? parseInt(last, 10) : 10;
     // Kept for CLI compatibility; local history is not account-scoped.
     void account;
+    // Kept for legacy scripts; reads are now always local and receipt-free.
+    void noAck;
 
     const messages = getRecentHistory(sessionId, limit);
 

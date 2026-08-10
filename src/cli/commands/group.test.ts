@@ -877,7 +877,7 @@ describe("whatsapp dm contract", () => {
     expect(payload).toMatchObject({ status: "acknowledged" });
   });
 
-  it("read stays local even when the history contains an acknowledgement candidate", async () => {
+  it("read --no-ack remains a local compatibility no-op", async () => {
     const sensitiveMessageId = "SENTINEL_READ_MID";
     historyMock = [
       { role: "user", content: `[mid:${sensitiveMessageId}] oi`, created_at: "2026-01-01T10:00:00" },
@@ -885,7 +885,7 @@ describe("whatsapp dm contract", () => {
     ];
 
     const commands = new WhatsAppDmCommands();
-    const payload = await silenced(() => commands.read("5511999999999", undefined, undefined, true, undefined));
+    const payload = await silenced(() => commands.read("5511999999999", undefined, undefined, true, undefined, true));
 
     expect(payload.total).toBe(2);
     expect(payload).not.toHaveProperty("ackedMessageId");

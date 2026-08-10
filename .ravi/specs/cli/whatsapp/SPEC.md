@@ -74,8 +74,9 @@ immediate authority reduction.
    `ContractError` MUST preserve its exit code through the registry dispatcher —
    the brake exits 3, never a generic `Error: ...` with exit 1.
 9. `dm read` is always a pure local-history read: it never emits a receipt and
-   never accepts `--no-ack` or `--execute`. `dm ack` is the explicit external
-   receipt operation and always requires `--execute`.
+   never accepts `--execute`. The legacy `--no-ack` flag remains accepted as a
+   deprecated no-op during migration. `dm ack` is the explicit external receipt
+   operation and always requires `--execute`.
 10. `group demote` MUST execute immediately because it reduces authority. It
     remains a `mutate` operation and MUST call the provider exactly once.
 
@@ -94,7 +95,7 @@ immediate authority reduction.
 | group join / leave | membership changes visible to all members (high) | dry-run + `--execute` |
 | dm send | message reaches a real person (high) | dry-run + `--execute` |
 | group list / info / invite | reads | not braked (declared) |
-| dm read | local history read | not braked |
+| dm read | local history read; legacy `--no-ack` is a no-op | not braked |
 | dm ack | external read-receipt emission | dry-run + `--execute` |
 
 `join`, `leave`, `description` and `settings` are authorized as `mutate`

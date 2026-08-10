@@ -38,7 +38,7 @@ Taxonomia de saída:
 
 Onde o freio existe: `group send`, `group create`, `group add`, `group remove`, `group promote`, `group revoke-invite`, `group join`, `group leave`, `group rename`, `group description`, `group settings`, `dm send` e `dm ack`. Essas operações alteram estado que pessoas reais observam; revise o plano antes do efeito.
 
-Sem freio: `group list`, `group info`, `group invite` e `dm read` são leituras; `group demote` é mutação imediata de redução de autoridade. `ravi whatsapp dm read <contact>` sempre consulta o histórico local sem enviar recibo. Para enviar o recibo de forma intencional, use `ravi whatsapp dm ack <contact> <messageId> --execute`.
+Sem freio: `group list`, `group info`, `group invite` e `dm read` são leituras; `group demote` é mutação imediata de redução de autoridade. `ravi whatsapp dm read <contact>` sempre consulta o histórico local sem enviar recibo. O antigo `--no-ack` ainda é aceito como no-op, mas não deve ser usado em chamadas novas. Para enviar o recibo de forma intencional, use `ravi whatsapp dm ack <contact> <messageId> --execute`.
 
 Compact mode: `group list` e `dm read` aceitam `--fields a,b,c` (ex.: `--fields id,subject`) — use em varredura para não arrastar o objeto inteiro de cada item.
 
