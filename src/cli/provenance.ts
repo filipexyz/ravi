@@ -79,35 +79,72 @@ export function hashForAudit(value: string | null | undefined, length = 16): str
   return createHash("sha256").update(value).digest("hex").slice(0, length);
 }
 
-export function sanitizeCliArgv(argv: readonly string[]): string[] {
+function argvOptionKey(value: string): string | null {
+  const match = value.match(/^--?([^=]+)(?:=|$)/);
+  return match?.[1] ?? null;
+}
+
+function sanitizeArgValue(key: string, value: string): string {
+  const projected = sanitizePublicValue(value, key);
+  return typeof projected === "string" ? projected : "[REDACTED]";
+}
+
+function shouldProjectArgValue(key: string): boolean {
+  const normalized = key.replace(/[-_]/g, "").toLowerCase();
+  return (
+    SENSITIVE_KEY_PATTERN.test(key) ||
+    normalized === "cwd" ||
+    normalized === "outputdir" ||
+    normalized === "endpoint" ||
+    normalized.endsWith("url") ||
+    normalized.endsWith("path")
+  );
+}
+
+function isBooleanCliFlag(
+  key: string,
+  command: { group?: string; name?: string; tool?: string } | undefined,
+): boolean {
+  return command?.group === "daemon" && command.name === "logs" && key.replace(/[-_]/g, "").toLowerCase() === "path";
+}
+
+export function sanitizeCliArgv(
+  argv: readonly string[],
+  command?: { group?: string; name?: string; tool?: string },
+): string[] {
   const out: string[] = [];
-  let redactNext = false;
+  let nextValueKey: string | null = null;
 
   for (const rawArg of argv.slice(0, MAX_ARG_COUNT)) {
-    const arg = truncateAuditString(rawArg);
-
-    if (redactNext) {
-      out.push("[REDACTED]");
-      redactNext = false;
+    if (nextValueKey) {
+      const projected = SENSITIVE_KEY_PATTERN.test(nextValueKey)
+        ? "[REDACTED]"
+        : sanitizeArgValue(nextValueKey, rawArg);
+      out.push(truncateAuditString(projected));
+      nextValueKey = null;
       continue;
     }
 
-    const eqIndex = arg.indexOf("=");
+    const eqIndex = rawArg.indexOf("=");
     if (eqIndex > 0) {
-      const key = arg.slice(0, eqIndex);
-      if (SENSITIVE_KEY_PATTERN.test(key)) {
-        out.push(`${key}=[REDACTED]`);
+      const option = rawArg.slice(0, eqIndex);
+      const key = argvOptionKey(option);
+      if (key && shouldProjectArgValue(key)) {
+        const value = rawArg.slice(eqIndex + 1);
+        const projected = SENSITIVE_KEY_PATTERN.test(key) ? "[REDACTED]" : sanitizeArgValue(key, value);
+        out.push(truncateAuditString(`${option}=${projected}`));
         continue;
       }
     }
 
-    if (SENSITIVE_KEY_PATTERN.test(arg.replace(/^--?/, ""))) {
-      out.push(arg);
-      redactNext = true;
+    const key = argvOptionKey(rawArg);
+    if (key && shouldProjectArgValue(key) && !isBooleanCliFlag(key, command)) {
+      out.push(truncateAuditString(rawArg));
+      nextValueKey = key;
       continue;
     }
 
-    out.push(arg);
+    out.push(truncateAuditString(rawArg));
   }
 
   if (argv.length > MAX_ARG_COUNT) out.push(`...[${argv.length - MAX_ARG_COUNT} more]`);
@@ -133,7 +170,7 @@ export function buildCliInvocationMetadata(command?: {
       pid: process.pid,
       ppid: process.ppid,
       execPath: process.execPath,
-      argv: sanitizeCliArgv(process.argv),
+      argv: sanitizeCliArgv(process.argv, command),
       title: truncateAuditString(process.title),
       cwd: process.cwd(),
       ...(typeof process.getuid === "function" ? { uid: process.getuid() } : {}),
@@ -194,7 +231,7 @@ export function buildCliInvocationMetadata(command?: {
 }
 
 function truncateAuditString(value: string): string {
-  return value.length > MAX_ARG_LENGTH ? `${value.slice(0, MAX_ARG_LENGTH)}...` : value;
+  return value.length > MAX_ARG_LENGTH ? `${value.slice(0, MAX_ARG_LENGTH - 3)}...` : value;
 }
 
 function safeUserInfo(): string | undefined {
