@@ -27631,17 +27631,20 @@ public struct WhatsappDmReadOptions: Codable, Sendable {
   public var account: String?
   public var fields: String?
   public var last: String?
+  public var noAck: Bool?
 
-  public init(account: String? = nil, fields: String? = nil, last: String? = nil) {
+  public init(account: String? = nil, fields: String? = nil, last: String? = nil, noAck: Bool? = nil) {
     self.account = account
     self.fields = fields
     self.last = last
+    self.noAck = noAck
   }
 
   enum CodingKeys: String, CodingKey {
     case account = "account"
     case fields = "fields"
     case last = "last"
+    case noAck = "noAck"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
@@ -27653,6 +27656,9 @@ public struct WhatsappDmReadOptions: Codable, Sendable {
     }
     if let value = self.last {
       body["last"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.noAck {
+      body["noAck"] = try RaviJSON.fromEncodable(value)
     }
   }
 }

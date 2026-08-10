@@ -7740,6 +7740,7 @@ export class RaviClient {
         account?: string;
         fields?: string;
         last?: string;
+        noAck?: boolean;
       }): Promise<WhatsappDmReadReturn> => {
         return this.transport.call({
           groupSegments: ["whatsapp","dm"],

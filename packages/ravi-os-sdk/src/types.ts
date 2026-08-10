@@ -15451,6 +15451,7 @@ export type WhatsappDmReadInput = {
   contact: string;
   fields?: string;
   last?: string;
+  noAck?: boolean;
 };
 
 /** Return shape for `whatsapp.dm.read`. */

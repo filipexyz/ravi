@@ -75045,6 +75045,10 @@ public enum RaviSchemas {
       "last": {
         "description": "Number of messages to read (default: 10)",
         "type": "string"
+      },
+      "noAck": {
+        "description": "Deprecated compatibility no-op; dm read never sends a receipt",
+        "type": "boolean"
       }
     },
     "required": [
