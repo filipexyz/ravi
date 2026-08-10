@@ -230,4 +230,63 @@ describe("CLI audit redaction", () => {
       process.argv.splice(0, process.argv.length, ...originalArgv);
     }
   });
+
+  it("never persists raw CLI values in audit argv", () => {
+    const originalArgv = [...process.argv];
+    const cases = [
+      {
+        group: "tasks",
+        name: "create",
+        argv: [
+          "tasks",
+          "create",
+          "PRIVATE_TITLE_7H4M",
+          "--instructions",
+          "SENTINEL_PRIVATE_INSTRUCTIONS_7H4M",
+        ],
+      },
+      {
+        group: "artifacts",
+        name: "create",
+        argv: [
+          "artifacts",
+          "create",
+          "--uri=https://user:SENTINEL_URI_7H4M@example.test/private?token=secret",
+        ],
+      },
+      {
+        group: "whatsapp_group",
+        name: "join",
+        argv: ["whatsapp", "group", "join", "https://chat.whatsapp.com/SENTINEL_INVITE_7H4M"],
+      },
+    ] as const;
+
+    try {
+      for (const testCase of cases) {
+        process.argv.splice(
+          0,
+          process.argv.length,
+          originalArgv[0] ?? "bun",
+          originalArgv[1] ?? "ravi",
+          ...testCase.argv,
+        );
+
+        const payload = buildCliAuditPayload({ group: testCase.group, name: testCase.name });
+        const serialized = JSON.stringify(payload);
+
+        expect(payload).toMatchObject({
+          cliInvocation: {
+            command: { group: testCase.group, name: testCase.name },
+            process: { argv: [`[REDACTED:argv count=${process.argv.length}]`] },
+          },
+        });
+        expect(serialized).not.toContain("PRIVATE_TITLE_7H4M");
+        expect(serialized).not.toContain("SENTINEL_PRIVATE_INSTRUCTIONS_7H4M");
+        expect(serialized).not.toContain("SENTINEL_URI_7H4M");
+        expect(serialized).not.toContain("SENTINEL_INVITE_7H4M");
+      }
+    } finally {
+      process.argv.splice(0, process.argv.length, ...originalArgv);
+    }
+  });
 });
