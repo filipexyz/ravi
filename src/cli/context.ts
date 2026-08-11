@@ -156,11 +156,27 @@ export function getContextValue<K extends keyof ToolContext>(key: K): ToolContex
 }
 
 /**
- * Check if running within a tool context (in-process or via env vars).
+ * Check whether any in-process CLI context or explicit runtime env is active.
  */
 export function hasContext(): boolean {
+  return contextStorage.getStore() !== undefined || hasRuntimeContextEnv();
+}
+
+/**
+ * Check whether the current command came from an explicit runtime invocation.
+ *
+ * A generic CLI handler also runs inside AsyncLocalStorage so expected command
+ * failures can be normalized at the registry boundary. That handler context is
+ * not enough to prove the command is running inside the daemon. Runtime tools,
+ * gateway calls, and child CLIs carrying explicit runtime env are.
+ */
+export function hasRuntimeInvocationContext(): boolean {
+  const transport = contextStorage.getStore()?.transport;
+  return transport === "tool" || transport === "gateway" || hasRuntimeContextEnv();
+}
+
+function hasRuntimeContextEnv(): boolean {
   return (
-    contextStorage.getStore() !== undefined ||
     !!process.env[RAVI_CONTEXT_KEY_ENV] ||
     !!process.env.RAVI_SESSION_KEY ||
     !!process.env.RAVI_SESSION_NAME ||

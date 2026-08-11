@@ -25,7 +25,7 @@ mock.module("../runtime/context-registry.js", () => ({
   getRuntimeContextFromEnv: () => resolvedContext,
 }));
 
-const { getContext } = await import("./context.js");
+const { getContext, hasContext, hasRuntimeInvocationContext, runWithContext } = await import("./context.js");
 
 describe("cli context resolution", () => {
   const originalEnv = {
@@ -114,6 +114,30 @@ describe("cli context resolution", () => {
         canonicalChatId: "chat-main",
       },
     });
+  });
+
+  it("does not mistake the generic CLI handler boundary for a runtime invocation", () => {
+    for (const context of [{}, { agentId: "operator", sessionName: "default" }]) {
+      expect(
+        runWithContext(context, () => ({
+          hasHandlerContext: hasContext(),
+          hasRuntimeInvocationContext: hasRuntimeInvocationContext(),
+        })),
+      ).toEqual({
+        hasHandlerContext: true,
+        hasRuntimeInvocationContext: false,
+      });
+    }
+  });
+
+  it.each(["tool", "gateway"] as const)("recognizes the %s transport as a runtime invocation", (transport) => {
+    expect(runWithContext({ transport }, () => hasRuntimeInvocationContext())).toBe(true);
+  });
+
+  it("recognizes explicit runtime env outside an in-process tool transport", () => {
+    process.env.RAVI_SESSION_NAME = "runtime-session";
+
+    expect(hasRuntimeInvocationContext()).toBe(true);
   });
 });
 
