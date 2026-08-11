@@ -83,6 +83,7 @@ import type {
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { buildRuntimeToolPresentation } from "./tool-presentation.js";
 import type { ResponseContentPart, ResponseMediaAttachment } from "./message-types.js";
+import { createToolLivenessLease, DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS } from "./tool-liveness.js";
 
 const log = logger.child("bot");
 
@@ -90,6 +91,7 @@ const MAX_OUTPUT_LENGTH = 1000;
 const MAX_TURN_FAILURE_LOG_DETAIL = 1800;
 const PROVIDER_INACTIVE_AFTER_TOOL_REASON = "provider_inactive";
 const PROVIDER_TURN_INACTIVITY_REASON = "provider_turn_inactive";
+const TOOL_INACTIVITY_REASON = "tool_inactive";
 const IDLE_SESSION_TTL_REASON = "idle_session_ttl";
 const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
 const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
@@ -526,7 +528,12 @@ function formatRuntimeFailureDetails(event: { error: string; rawEvent?: Record<s
 }
 
 function runtimeEventLogLevel(eventType: string): "debug" | "info" {
-  return eventType === "text.delta" || eventType === "provider.raw" || eventType === "status" ? "debug" : "info";
+  return eventType === "text.delta" ||
+    eventType === "provider.raw" ||
+    eventType === "status" ||
+    eventType === "tool.progress"
+    ? "debug"
+    : "info";
 }
 
 function isRecoverableInterruptionFailure(event: {
@@ -1007,7 +1014,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     skills: runtimeSession.skillVisibility?.skills,
     loadedSkills: runtimeSession.skillVisibility?.loadedSkills,
   });
-  const STUCK_TOOL_TIMEOUT_MS = 5 * 60 * 1000;
   // Tight timeout for the well-known codex bug: after we deliver a tool result,
   // codex's app-server occasionally drops the JSON-RPC callback and never asks
   // the model for the next step. The agent can't make progress until we abort.
@@ -1027,8 +1033,50 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     Math.max(1_000, Math.floor(PROVIDER_TURN_INACTIVITY_TIMEOUT_MS / 10)),
   );
   const IDLE_SESSION_TTL_MS = resolveRuntimeIdleSessionTtlMs();
-  let toolStuckTimer: ReturnType<typeof setTimeout> | undefined;
   let providerInactivityTimer: ReturnType<typeof setTimeout> | undefined;
+  const toolLivenessLease = createToolLivenessLease({
+    inactivityTimeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
+    onInactive: (toolUseId) => {
+      if (!streaming.toolRunning || streaming.currentToolId !== toolUseId) return;
+      const inactiveTool = streaming.currentToolName ?? "unknown";
+      log.warn("Tool inactive — aborting session", {
+        sessionName,
+        tool: inactiveTool,
+        toolId: toolUseId,
+        timeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
+      });
+      pushObservationEvent("tool.inactive", {
+        preview: inactiveTool,
+        payload: {
+          toolId: toolUseId,
+          toolName: inactiveTool,
+          timeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
+        },
+      });
+      safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "tool.inactive",
+        reason: TOOL_INACTIVITY_REASON,
+        tool: inactiveTool,
+        toolId: toolUseId,
+        timeoutMs: DEFAULT_TOOL_INACTIVITY_TIMEOUT_MS,
+        sessionName,
+      }).catch(() => {});
+      updateRuntimeLiveState(sessionName, {
+        activity: "blocked",
+        summary: `${inactiveTool} inactive`,
+        agentId: agent.id,
+        runId,
+        provider: runtimeSession.provider,
+        model,
+        toolName: inactiveTool,
+        source: streaming.currentSource,
+      });
+      if (!streaming.abortController.signal.aborted) {
+        streaming.internalAbortReason = TOOL_INACTIVITY_REASON;
+        streaming.abortController.abort();
+      }
+    },
+  });
   const clearProviderInactivityWatch = () => {
     if (providerInactivityTimer !== undefined) {
       clearTimeout(providerInactivityTimer);
@@ -1101,10 +1149,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.idleSessionEvictionTimer.unref?.();
   };
   const clearActiveToolState = () => {
-    if (toolStuckTimer !== undefined) {
-      clearTimeout(toolStuckTimer);
-      toolStuckTimer = undefined;
-    }
+    toolLivenessLease.clear();
     streaming.toolRunning = false;
     streaming.toolResultDeliveryPending = false;
     streaming.currentToolId = undefined;
@@ -1368,7 +1413,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const timedOut =
       reason === PROVIDER_INACTIVE_AFTER_TOOL_REASON ||
       reason === PROVIDER_TURN_INACTIVITY_REASON ||
-      reason === "stuck_tool";
+      reason === TOOL_INACTIVITY_REASON;
     const status = streaming.currentCrashRecoveryTerminal?.status ?? (timedOut ? "timeout" : "aborted");
     const eventType = runtimeTurnAttemptTerminalEventType(status);
 
@@ -1494,10 +1539,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     });
   };
 
-  const projectUnterminatedChannelTurn = async () => {
+  const projectUnterminatedChannelTurn = async (terminalRecordedBeforeFinalization: boolean) => {
     if (
       !streaming.currentChannelBackend ||
-      streaming.currentCrashRecoveryTerminal ||
+      terminalRecordedBeforeFinalization ||
       restartStashedReason ||
       (crashRecovery?.ownershipFailure && !streaming.currentCrashRecoveryAttemptId)
     ) {
@@ -1509,7 +1554,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     const timedOut =
       reason === PROVIDER_INACTIVE_AFTER_TOOL_REASON ||
       reason === PROVIDER_TURN_INACTIVITY_REASON ||
-      reason === "stuck_tool";
+      reason === TOOL_INACTIVITY_REASON;
     await projectRuntimeEventToChannel(
       timedOut
         ? {
@@ -1883,6 +1928,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         fencePendingProviderRawEvent(correlatedProviderRawEvent);
       }
 
+      if (event.type === "tool.progress") {
+        if (!toolLivenessLease.progress(event.toolUseId)) {
+          log.debug("Ignoring progress for inactive tool", {
+            sessionName,
+            toolId: event.toolUseId,
+          });
+        }
+        continue;
+      }
+
       const receivedFailureClassification =
         event.type === "turn.failed"
           ? (() => {
@@ -2093,27 +2148,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           tool: event.toolUse.name,
           toolId: event.toolUse.id,
         });
-        // Arm stuck-tool watchdog: if tool.completed never fires within the window, abort the session.
-        if (toolStuckTimer !== undefined) clearTimeout(toolStuckTimer);
-        toolStuckTimer = setTimeout(() => {
-          toolStuckTimer = undefined;
-          const stuckTool = streaming.currentToolName ?? "unknown";
-          log.warn("Tool stuck — aborting session", {
-            sessionName,
-            tool: stuckTool,
-            timeoutMs: STUCK_TOOL_TIMEOUT_MS,
-          });
-          safeEmit(`ravi.session.${sessionName}.runtime`, {
-            type: "tool.stuck",
-            tool: stuckTool,
-            timeoutMs: STUCK_TOOL_TIMEOUT_MS,
-            sessionName,
-          }).catch(() => {});
-          if (!streaming.abortController.signal.aborted) {
-            streaming.internalAbortReason = "stuck_tool";
-            streaming.abortController.abort();
-          }
-        }, STUCK_TOOL_TIMEOUT_MS);
+        // Expire only after a full inactivity window. Provider progress events
+        // renew this lease without exposing their output to channels or traces.
+        toolLivenessLease.start(event.toolUse.id);
         streaming.currentToolSafety = getToolSafety(
           event.toolUse.name,
           (event.toolUse.input as Record<string, unknown> | undefined) ?? {},
@@ -2313,10 +2350,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (event.type === "tool.result_delivered") {
         // Tool handler finished and result was sent to the runtime provider.
         // The provider is now responsible (model thinking). Clear the stuck-tool watchdog.
-        if (toolStuckTimer !== undefined) {
-          clearTimeout(toolStuckTimer);
-          toolStuckTimer = undefined;
-        }
+        toolLivenessLease.clear();
         // Arm provider inactivity watchdog: catches cases where the provider
         // (e.g. codex's API call to OpenAI) hangs silently with no further events.
         armProviderInactivityWatch();
@@ -3100,9 +3134,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     log.info("Streaming session ended", { runId, sessionName });
 
     try {
+      const terminalRecordedBeforeFinalization = Boolean(
+        streaming.currentCrashRecoveryTerminal || streaming.currentTraceTurnTerminalRecorded,
+      );
       prepareUnterminatedTurnRecovery();
       recordUnterminatedTurnExit();
-      await projectUnterminatedChannelTurn();
+      await projectUnterminatedChannelTurn(terminalRecordedBeforeFinalization);
     } catch (error) {
       // A lost crash-recovery fence has already made the coordinator reject
       // new work. It must not prevent provider/process cleanup below.
@@ -3133,10 +3170,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     streaming.durableTurnPreparationFailed = false;
     clearProviderInactivityWatch();
     clearIdleSessionEvictionTimer();
-    if (toolStuckTimer !== undefined) {
-      clearTimeout(toolStuckTimer);
-      toolStuckTimer = undefined;
-    }
+    toolLivenessLease.clear();
     streaming.done = true;
     streaming.starting = false;
     streaming.turnActive = false;
