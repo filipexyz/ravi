@@ -125,14 +125,14 @@ export function createKimiCodeHttpTransport(options: CreateKimiCodeHttpTransport
           try {
             chunk = await reader.read();
           } catch (error) {
-            if (isAbortError(error) || closed || request.signal?.aborted) return;
-            throw error;
+            if (isAbortError(error) || closed || request.signal?.aborted || controller.signal.aborted) return;
+            throw new Error("Kimi Code stream could not be read");
           }
           if (chunk.done) break;
           retained += decoder.decode(chunk.value, { stream: true });
-          assertBoundedBuffer(retained);
           const parsed = extractSseEvents(retained);
           retained = parsed.remainder;
+          assertBoundedBuffer(retained);
           for (const payload of parsed.payloads) {
             if (payload === "[DONE]") {
               done = true;
@@ -199,5 +199,5 @@ function extractSseEvents(source: string): { payloads: string[]; remainder: stri
 }
 
 function isAbortError(error: unknown): boolean {
-  return error instanceof Error && (error.name === "AbortError" || /abort/i.test(error.message));
+  return error instanceof Error && error.name === "AbortError";
 }

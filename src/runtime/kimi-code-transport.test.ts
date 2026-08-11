@@ -171,6 +171,15 @@ describe("createKimiCodeHttpTransport", () => {
     await expect(collect(transportRequest, ["x".repeat(1024 * 1024 + 1)])).rejects.toThrow("buffer limit");
   });
 
+  test("accepts a large fetch chunk when it contains only complete small SSE events", async () => {
+    const eventCount = 70_000;
+    const events = await collect(transportRequest, ['data: {"n":1}\n\n'.repeat(eventCount)]);
+
+    expect(events).toHaveLength(eventCount + 1);
+    expect(events[0]).toEqual({ type: "message", data: { n: 1 } });
+    expect(events.at(-1)).toEqual({ type: "eof" });
+  });
+
   test("reports a redacted non-2xx failure", async () => {
     const transport = createKimiCodeHttpTransport({
       fetch: syntheticFetch(async () => response(["private failure"], 401)),
@@ -197,6 +206,30 @@ describe("createKimiCodeHttpTransport", () => {
         }
       })(),
     ).rejects.toThrow("Kimi Code request could not be completed");
+  });
+
+  test("redacts a stream-read failure instead of propagating credential-like or prompt text", async () => {
+    const sentinel = "synthetic-key-PRIVATE-PROMPT";
+    const transport = createKimiCodeHttpTransport({
+      fetch: syntheticFetch(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new Error(sentinel));
+              },
+            }),
+          ),
+      ),
+    });
+
+    const consume = (async () => {
+      for await (const _event of transport.stream(transportRequest)) {
+        /* consume */
+      }
+    })();
+    await expect(consume).rejects.toThrow("Kimi Code stream could not be read");
+    await expect(consume).rejects.not.toThrow(sentinel);
   });
 
   test("emits EOF and stops silently on an aborted request; close is idempotent", async () => {
