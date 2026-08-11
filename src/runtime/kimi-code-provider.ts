@@ -1,3 +1,4 @@
+import { isKimiCodeSessionStartEnabled } from "./kimi-code-availability.js";
 import { KIMI_CODE_PROVIDER_ID, type KimiCodeModel } from "./kimi-code-models.js";
 import {
   commitKimiCodeSessionState,
@@ -113,6 +114,22 @@ function createKimiCodeSession(
   input: RuntimeStartRequest,
   transportFactory: () => KimiCodeTransport,
 ): RuntimeSessionHandle {
+  if (!isKimiCodeSessionStartEnabled(input.env ?? {})) {
+    return {
+      provider: KIMI_CODE_PROVIDER_ID,
+      events: (async function* () {
+        yield {
+          type: "turn.failed",
+          error: "Kimi Code session start is disabled",
+          recoverable: false,
+          metadata: { provider: KIMI_CODE_PROVIDER_ID },
+        };
+      })(),
+      interrupt: async () => {},
+      close: async () => {},
+    };
+  }
+
   let closed = false;
   let activeTurn: KimiCodeActiveTurn | undefined;
   let committedSnapshot: KimiCodeSessionSnapshot | undefined;

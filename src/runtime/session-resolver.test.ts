@@ -5,6 +5,7 @@ import {
   getOrCreateSession,
   getSession,
   updateProviderSession,
+  updateSessionModelOverride,
   updateSessionRuntimeProviderOverride,
 } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -199,5 +200,89 @@ describe("runtime session resolver", () => {
       staleCleared: true,
     });
     expect(getSession(SESSION_KEY)?.providerSessionId).toBeUndefined();
+  });
+
+  it("keeps matching Kimi model state and clears it through the generic stale path after a model change", () => {
+    const cwd = stateDir ?? "/tmp";
+    const sessionFile = join(cwd, "kimi-k3-session.json");
+    writeFileSync(sessionFile, '{"messages":["old-k3-transcript"]}');
+    getOrCreateSession(SESSION_KEY, "main", cwd, { name: SESSION_NAME });
+    updateSessionRuntimeProviderOverride(SESSION_KEY, "kimi-code");
+    updateSessionModelOverride(SESSION_KEY, "k3");
+    updateProviderSession(SESSION_KEY, "kimi-code", "kimi-k3-locator", {
+      runtimeSessionParams: {
+        provider: "kimi-code",
+        model: "k3",
+        sessionFile,
+        cwd,
+      },
+      runtimeSessionDisplayId: "kimi-k3-locator",
+    });
+
+    const matching = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "continue k3" },
+      defaultRuntimeProviderId: "codex",
+    });
+    expect(matching?.canResumeStoredSession).toBe(true);
+    expect(matching?.storedProviderSessionId).toBe("kimi-k3-locator");
+
+    updateSessionModelOverride(SESSION_KEY, "k3-256k");
+    const changed = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "restart on k3-256k" },
+      defaultRuntimeProviderId: "codex",
+    });
+
+    expect(changed?.storedProviderSessionId).toBeUndefined();
+    expect(changed?.storedRuntimeSessionParams).toBeUndefined();
+    expect(changed?.canResumeStoredSession).toBe(false);
+    expect(changed?.resumeDecision).toMatchObject({
+      requestedRuntimeProvider: "kimi-code",
+      providerMatches: true,
+      sessionStateValid: false,
+      sessionStateInvalidReason: "model_mismatch",
+      reason: "session_state_invalid",
+      staleCleared: true,
+    });
+    expect(getSession(SESSION_KEY)).toMatchObject({
+      modelOverride: "k3-256k",
+      runtimeProviderOverride: "kimi-code",
+    });
+    expect(getSession(SESSION_KEY)?.runtimeSessionParams).toBeUndefined();
+  });
+
+  it("does not apply Kimi model invalidation rules to Claude, Codex, or Pi", () => {
+    const cwd = stateDir ?? "/tmp";
+    for (const provider of ["claude", "codex", "pi"] as const) {
+      const sessionKey = `agent:main:dm:resolver-${provider}`;
+      const sessionName = `main-dm-resolver-${provider}`;
+      const sessionFile = join(cwd, `${provider}-session.json`);
+      writeFileSync(sessionFile, "{}");
+      getOrCreateSession(sessionKey, "main", cwd, { name: sessionName });
+      updateSessionRuntimeProviderOverride(sessionKey, provider);
+      updateSessionModelOverride(sessionKey, "new-model");
+      updateProviderSession(sessionKey, provider, `${provider}-locator`, {
+        runtimeSessionParams: {
+          model: "old-model",
+          sessionFile,
+          cwd,
+        },
+        runtimeSessionDisplayId: `${provider}-locator`,
+      });
+
+      const resolved = resolveRuntimeSession({
+        sessionName,
+        prompt: { prompt: `continue ${provider}` },
+        defaultRuntimeProviderId: "codex",
+      });
+
+      expect(resolved?.canResumeStoredSession).toBe(true);
+      expect(resolved?.storedProviderSessionId).toBe(`${provider}-locator`);
+      expect(resolved?.resumeDecision).toMatchObject({
+        sessionStateValid: true,
+        staleCleared: false,
+      });
+    }
   });
 });

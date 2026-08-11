@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { nats } from "../nats.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import {
@@ -14,7 +16,15 @@ import type { RuntimeUserMessage } from "./host-session.js";
 import type { RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import type { PendingRuntimeSessionStart } from "./session-launcher.js";
-import { deleteSession, getOrCreateSession, getSessionByName, setSessionEphemeral } from "../router/sessions.js";
+import {
+  deleteSession,
+  getOrCreateSession,
+  getSessionByName,
+  setSessionEphemeral,
+  updateProviderSession,
+  updateSessionModelOverride,
+  updateSessionRuntimeProviderOverride,
+} from "../router/sessions.js";
 import {
   dbGetDaemonRestartPendingMessages,
   dbGetDaemonRestartSessionSnapshot,
@@ -30,6 +40,7 @@ import { dbCompleteTask, dbCreateTask, dbDispatchTask } from "../tasks/task-db.j
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { buildDaemonRestartResumePrompt, resolveCrashRecoveryRestartResumeMode } from "./daemon-restart-resume.js";
+import { resolveRuntimeSession } from "./session-resolver.js";
 
 const crashRecoveryStub = { acceptingDeliveries: true } as unknown as RuntimeCrashRecoveryCoordinator;
 
@@ -2011,6 +2022,72 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(dispatcher.streamingSessions.has("model-change-by-name")).toBe(false);
       expect(pendingResolved).toBe(true);
       expect(dispatcher.pendingStarts).toHaveLength(0);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("restarts a Kimi model change without passing the old locator or transcript to the next request", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-kimi-model-change-");
+    try {
+      const sessionKey = "agent:main:test:kimi-model-change";
+      const sessionName = "kimi-model-change";
+      const sessionFile = join(stateDir, "kimi-k3-session.json");
+      writeFileSync(sessionFile, '{"messages":["old-k3-transcript"]}');
+      getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName });
+      updateSessionRuntimeProviderOverride(sessionKey, "kimi-code");
+      updateSessionModelOverride(sessionKey, "k3-256k");
+      updateProviderSession(sessionKey, "kimi-code", "kimi-k3-locator", {
+        runtimeSessionParams: {
+          provider: "kimi-code",
+          model: "k3",
+          sessionFile,
+          cwd: stateDir,
+        },
+        runtimeSessionDisplayId: "kimi-k3-locator",
+      });
+      const dispatcher = createDispatcher(1);
+      let interrupted = false;
+      let nextResolution: ReturnType<typeof resolveRuntimeSession> | undefined;
+      dispatcher.startStreamingSession = mock(async (restartedName, prompt) => {
+        nextResolution = resolveRuntimeSession({
+          sessionName: restartedName,
+          prompt,
+          defaultRuntimeProviderId: "codex",
+        });
+      });
+      dispatcher.streamingSessions.set(
+        sessionName,
+        createActiveSession({
+          agentId: "main",
+          currentModel: "k3",
+          currentEffort: "xhigh",
+          queryHandle: {
+            provider: "kimi-code",
+            events: (async function* () {})(),
+            interrupt: async () => {
+              interrupted = true;
+            },
+          },
+        }),
+      );
+
+      await dispatcher.handlePromptImmediate(sessionName, { prompt: "first k3-256k turn" });
+
+      expect(interrupted).toBe(true);
+      expect(nextResolution?.runtimeProviderId).toBe("kimi-code");
+      expect(nextResolution?.storedProviderSessionId).toBeUndefined();
+      expect(nextResolution?.storedRuntimeSessionParams).toBeUndefined();
+      expect(nextResolution?.canResumeStoredSession).toBe(false);
+      expect(nextResolution?.resumeDecision).toMatchObject({
+        sessionStateInvalidReason: "model_mismatch",
+        staleCleared: true,
+      });
+      expect(
+        querySessionTrace({ sessionKey, sessionName }).events.find(
+          (event) => event.eventType === "dispatch.restart_requested",
+        )?.payloadJson,
+      ).toMatchObject({ reason: "model_change_restart", strategy: "restart-next-turn", nextModel: "k3-256k" });
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

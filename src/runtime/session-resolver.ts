@@ -100,11 +100,17 @@ export function resolveRuntimeSession(options: {
     session.runtimeSessionDisplayId ?? session.providerSessionId ?? session.sdkSessionId ?? undefined;
   const storedRuntimeProvider = resolveStoredRuntimeProvider(session);
   const providerMatches = storedRuntimeProvider === runtimeProviderId;
+  const model =
+    options.prompt._observation && options.prompt._runtimeModel
+      ? options.prompt._runtimeModel
+      : (session.modelOverride ?? agentSelection.effectiveModel ?? undefined);
   const sessionStateValidation = validateRuntimeSessionState({
     capabilities: runtimeCapabilities,
     storedProviderSessionId,
     storedRuntimeSessionParams,
     sessionCwd: expandHome(session.agentCwd),
+    runtimeProviderId,
+    model,
   });
   const canResumeStoredSession =
     !!storedProviderSessionId &&

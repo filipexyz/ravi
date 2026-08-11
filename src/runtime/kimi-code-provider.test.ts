@@ -37,7 +37,15 @@ function isolatedStateEnv() {
   const cwd = join(root, "workspace");
   mkdirSync(cwd);
   temporaryStateRoots.add(root);
-  return { root, cwd, env: { RAVI_STATE_DIR: join(root, "state"), KIMI_API_KEY: "provider-key-must-stay-private" } };
+  return {
+    root,
+    cwd,
+    env: {
+      RAVI_STATE_DIR: join(root, "state"),
+      KIMI_API_KEY: "provider-key-must-stay-private",
+      RAVI_KIMI_CODE_ENABLED: "1",
+    },
+  };
 }
 
 function prompts(...content: string[]): AsyncGenerator<RuntimePromptMessage> {
@@ -161,6 +169,50 @@ function createHostServices(): RuntimeHostServices {
 }
 
 describe("createKimiCodeRuntimeProvider", () => {
+  test("rejects disabled session starts before transport creation without deleting persisted state", async () => {
+    const fixture = isolatedStateEnv();
+    const persisted = await commitKimiCodeSessionState({
+      sessionId: createKimiCodeSessionId(),
+      model: "k3",
+      cwd: fixture.cwd,
+      lastCommittedTurnId: "persisted-before-disable",
+      messages: [
+        { role: "user", content: "persisted user transcript" },
+        { role: "assistant", content: "persisted assistant transcript", reasoning_content: "", tool_calls: [] },
+      ],
+      env: fixture.env,
+    });
+    const sessionFile = String(persisted.session.params?.sessionFile);
+    const persistedContents = readFileSync(sessionFile, "utf8");
+    let transportCreations = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        transportCreations += 1;
+        return transportFrom(finalTurn("must not run"));
+      },
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        cwd: fixture.cwd,
+        env: { ...fixture.env, RAVI_KIMI_CODE_ENABLED: "0" },
+        resumeSession: persisted.session,
+      }),
+    );
+
+    expect(events).toEqual([
+      {
+        type: "turn.failed",
+        error: "Kimi Code session start is disabled",
+        recoverable: false,
+        metadata: { provider: "kimi-code" },
+      },
+    ]);
+    expect(transportCreations).toBe(0);
+    expect(readFileSync(sessionFile, "utf8")).toBe(persistedContents);
+  });
+
   test("emits thread.started before the first turn of a new transcript and never on resume", async () => {
     const fixture = isolatedStateEnv();
     const fresh = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("seed")) });
