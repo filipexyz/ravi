@@ -1,5 +1,10 @@
 import { KIMI_CODE_PROVIDER_ID, type KimiCodeModel } from "./kimi-code-models.js";
 import {
+  commitKimiCodeSessionState,
+  loadKimiCodeSessionState,
+  type KimiCodeSessionSnapshot,
+} from "./kimi-code-state.js";
+import {
   addKimiCodeUsage,
   createKimiCodeCompletedTurnAccumulator,
   createKimiCodeToolResultViews,
@@ -99,6 +104,10 @@ function createKimiCodeSession(
 ): RuntimeSessionHandle {
   let closed = false;
   let activeTurn: KimiCodeActiveTurn | undefined;
+  let committedSnapshot: KimiCodeSessionSnapshot | undefined;
+  let continuityInitialized = false;
+  let continuityInvalid = false;
+  const stateEnv: NodeJS.ProcessEnv = { ...process.env, ...input.env };
   const closeTurnTransport = async (turn: KimiCodeActiveTurn) => {
     if (!turn.transport || turn.transportClosed) return;
     turn.transportClosed = true;
@@ -128,12 +137,42 @@ function createKimiCodeSession(
           turn: { id: prompt.clientMessageId ?? prompt.session_id, status: "in_progress" },
           metadata,
         };
+        if (input.forkSession) {
+          const terminal = terminalTracker.fail({ error: "Kimi Code session fork is unsupported", metadata });
+          if (terminal) yield terminal;
+          continue;
+        }
+        if (!continuityInitialized) {
+          continuityInitialized = true;
+          if (input.resumeSession) {
+            try {
+              committedSnapshot = await loadKimiCodeSessionState({
+                session: input.resumeSession,
+                model: input.model,
+                cwd: input.cwd,
+                env: stateEnv,
+              });
+            } catch {
+              continuityInvalid = true;
+            }
+          } else if (input.resume) {
+            continuityInvalid = true;
+          }
+        }
+        if (continuityInvalid) {
+          const terminal = terminalTracker.fail({ error: "Kimi Code session state is invalid", metadata });
+          if (terminal) yield terminal;
+          continue;
+        }
         let thinkingPublished = false;
         let completedUsage: KimiCodeCompletedTurn["usage"] = { inputTokens: 0, outputTokens: 0 };
         let toolRounds = 0;
         let totalToolCalls = 0;
         const seenToolCallIds = new Set<string>();
-        const messages: KimiCodeConversationMessage[] = [{ role: "user", content: prompt.message.content }];
+        const messages: KimiCodeConversationMessage[] = [
+          ...(committedSnapshot?.messages ?? []),
+          { role: "user", content: prompt.message.content },
+        ];
 
         try {
           turnLoop: while (!terminalTracker.terminalEmitted) {
@@ -212,9 +251,48 @@ function createKimiCodeSession(
             const completed = accumulator.complete();
             completedUsage = addKimiCodeUsage(completedUsage, completed.usage);
             if (completed.toolCalls.length === 0) {
+              messages.push({
+                role: "assistant",
+                content: completed.text,
+                reasoning_content: completed.reasoning,
+                tool_calls: [],
+              });
+              if (turn.interrupted || closed || input.abortController.signal.aborted) {
+                const terminal = terminalTracker.interrupt({ metadata });
+                if (terminal) yield terminal;
+                break;
+              }
+              let committed: Awaited<ReturnType<typeof commitKimiCodeSessionState>>;
+              try {
+                committed = await commitKimiCodeSessionState({
+                  model: input.model,
+                  cwd: input.cwd,
+                  lastCommittedTurnId: prompt.clientMessageId ?? prompt.session_id,
+                  messages,
+                  previousSnapshot: committedSnapshot,
+                  env: stateEnv,
+                });
+              } catch {
+                const terminal = terminalTracker.fail({ error: "Kimi Code session state commit failed", metadata });
+                if (terminal) yield terminal;
+                break;
+              }
+              if (turn.interrupted || closed || input.abortController.signal.aborted) {
+                const terminal = terminalTracker.interrupt({ metadata });
+                if (terminal) yield terminal;
+                break;
+              }
               yield { type: "assistant.message", text: completed.text, metadata };
+              if (turn.interrupted || closed || input.abortController.signal.aborted) {
+                const terminal = terminalTracker.interrupt({ metadata });
+                if (terminal) yield terminal;
+                break;
+              }
+              committedSnapshot = committed.snapshot;
               const terminal: RuntimeEvent = {
                 type: "turn.complete",
+                providerSessionId: committed.snapshot.sessionId,
+                session: committed.session,
                 execution: { provider: KIMI_CODE_PROVIDER_ID, model: input.model, billingType: "subscription" },
                 usage: completedUsage,
                 metadata,
