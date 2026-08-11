@@ -168,6 +168,34 @@ Add focused provider and event-normalizer tests according to the final file layo
 The full provider registry and capability snapshot tests must prove that existing
 providers are unchanged.
 
+### Implementation verification record (2026-08-11)
+
+Verified against upstream `dev` at `d912bb85`:
+
+- focused Kimi/provider/catalog/credential/pricing suite: 111 passed, 0 failed,
+  2 private-live tests skipped by their explicit opt-in gate;
+- isolated runtime regression suite: 94 passed, 0 failed;
+- `bun run typecheck`: passed;
+- `bun run build`: passed;
+- `bun run sdk:check`: passed (the generator's optional local NATS connection
+  logged an unavailable-service diagnostic but the generated SDK check completed
+  successfully).
+
+The aggregate `bun run test` did not complete on this Windows host. An isolated
+`src/channels/` run also timed out, and four independently reproduced failures in
+unchanged files were Windows/path or supervisor-timeout failures outside this
+branch's diff. Running the runtime subset without competing test groups passed
+94/94, confirming that the earlier runtime setup timeouts were caused by shared
+test-state contention. The authoritative Linux CI remains the full-suite gate.
+
+`bun run check:docs` currently reports the repository baseline (432 issues across
+384 files). The Kimi spec follows the repository's existing spec frontmatter and
+heading convention; no unrelated documentation was rewritten to reduce that
+baseline.
+
+Private live checks below remain a release gate. They were not run with any
+credential disclosed through a conversation or other non-secret channel.
+
 ## Private live release checks
 
 Live checks require explicit operator opt-in and must never run in public CI. They

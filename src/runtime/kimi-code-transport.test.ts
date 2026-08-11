@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import packageJson from "../../package.json" with { type: "json" };
 import type { RuntimeStartRequest } from "./types.js";
 import {
   buildKimiCodeRequest,
@@ -58,7 +59,7 @@ describe("buildKimiCodeRequest", () => {
       Authorization: "Bearer synthetic-key",
       "Content-Type": "application/json",
       Accept: "text/event-stream",
-      "User-Agent": "ravi/3.260811.2",
+      "User-Agent": `ravi/${packageJson.version}`,
     });
     expect(built.body).toEqual({
       model: "k3",
