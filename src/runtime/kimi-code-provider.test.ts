@@ -1336,6 +1336,130 @@ describe("createKimiCodeRuntimeProvider", () => {
     ]);
   });
 
+  test("pairs the tool lifecycle when cancelled before dispatch", async () => {
+    let dispatches = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom(toolTurn([{ index: 0, id: "call-cancelled", name: "lookup_order", arguments: "{}" }])),
+    });
+    const handle = provider.startSession(
+      startRequest({
+        handleRuntimeToolCall: async () => {
+          dispatches += 1;
+          return { success: true, contentItems: [{ type: "inputText", text: "should not run" }] };
+        },
+      }),
+    );
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    const first = await iterator.next();
+    const second = await iterator.next();
+    const started = await iterator.next();
+    await handle.interrupt();
+    const completed = await iterator.next();
+    const interrupted = await iterator.next();
+    const final = await iterator.next();
+
+    expect([
+      first.value?.type,
+      second.value?.type,
+      started.value?.type,
+      completed.value?.type,
+      interrupted.value?.type,
+    ]).toEqual(["thread.started", "turn.started", "tool.started", "tool.completed", "turn.interrupted"]);
+    expect(completed.value).toMatchObject({
+      type: "tool.completed",
+      toolUseId: "call-cancelled",
+      toolName: "lookup_order",
+      content: "Tool execution cancelled.",
+      isError: true,
+    });
+    expect(dispatches).toBe(0);
+    expect(final.done).toBe(true);
+  });
+
+  test("preserves one completed tool lifecycle during host execution after interruption", async () => {
+    const dispatches: string[] = [];
+    let releaseHandler!: () => void;
+    let handlerStarted!: () => void;
+    const handlerBlocked = new Promise<void>((resolve) => {
+      releaseHandler = resolve;
+    });
+    const handlerDispatched = new Promise<void>((resolve) => {
+      handlerStarted = resolve;
+    });
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom(toolTurn([{ index: 0, id: "call-running", name: "lookup_order", arguments: "{}" }])),
+    });
+    const handle = provider.startSession(
+      startRequest({
+        handleRuntimeToolCall: async (request) => {
+          dispatches.push(request.callId ?? "missing");
+          handlerStarted();
+          await handlerBlocked;
+          return { success: true, contentItems: [{ type: "inputText", text: "finished once" }] };
+        },
+      }),
+    );
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    await iterator.next();
+    await iterator.next();
+    const started = await iterator.next();
+    const pendingCompleted = iterator.next();
+    await handlerDispatched;
+    await handle.interrupt();
+    releaseHandler();
+    const completed = await pendingCompleted;
+    const delivered = await iterator.next();
+    const interrupted = await iterator.next();
+
+    expect(started.value).toMatchObject({ type: "tool.started", toolUse: { id: "call-running" } });
+    expect(completed.value).toMatchObject({ type: "tool.completed", toolUseId: "call-running", isError: false });
+    expect(delivered.value).toMatchObject({ type: "tool.result_delivered", toolCallId: "call-running" });
+    expect(interrupted.value).toMatchObject({ type: "turn.interrupted" });
+    expect(dispatches).toEqual(["call-running"]);
+    expect((await iterator.next()).done).toBe(true);
+  });
+
+  test("stops the tool lifecycle between serialized calls without dispatching another call", async () => {
+    const dispatches: string[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom(
+          toolTurn([
+            { index: 0, id: "call-first", name: "first", arguments: "{}" },
+            { index: 1, id: "call-second", name: "second", arguments: "{}" },
+          ]),
+        ),
+    });
+    const handle = provider.startSession(
+      startRequest({
+        handleRuntimeToolCall: async (request) => {
+          dispatches.push(request.callId ?? "missing");
+          return { success: true, contentItems: [{ type: "inputText", text: "first only" }] };
+        },
+      }),
+    );
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    await iterator.next();
+    await iterator.next();
+    const firstStarted = await iterator.next();
+    const firstCompleted = await iterator.next();
+    const firstDelivered = await iterator.next();
+    await handle.interrupt();
+    const interrupted = await iterator.next();
+
+    expect(firstStarted.value).toMatchObject({ type: "tool.started", toolUse: { id: "call-first" } });
+    expect(firstCompleted.value).toMatchObject({ type: "tool.completed", toolUseId: "call-first" });
+    expect(firstDelivered.value).toMatchObject({ type: "tool.result_delivered", toolCallId: "call-first" });
+    expect(interrupted.value).toMatchObject({ type: "turn.interrupted" });
+    expect(dispatches).toEqual(["call-first"]);
+    expect((await iterator.next()).done).toBe(true);
+  });
+
   test("stops tool dispatch between calls when the turn is aborted", async () => {
     const abortController = new AbortController();
     const dispatches: string[] = [];

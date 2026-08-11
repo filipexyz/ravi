@@ -413,12 +413,18 @@ function createKimiCodeSession(
                 break turnLoop;
               }
 
+              const obligation: KimiCodeToolObligation = { id: call.id, name: call.name, completed: false };
               yield {
                 type: "tool.started",
                 toolUse: { id: call.id, name: call.name, input: call.publicArguments },
                 metadata,
               };
               if (turn.interrupted || closed || input.abortController.signal.aborted) {
+                const completion = completeToolOnce(obligation, {
+                  content: "Tool execution cancelled.",
+                  isError: true,
+                });
+                if (completion) yield completion;
                 turn.phase = "interrupted";
                 const terminal = terminalTracker.interrupt({ metadata });
                 if (terminal) yield terminal;
@@ -440,14 +446,11 @@ function createKimiCodeSession(
                 };
               }
               const { providerContent, publicContent } = createKimiCodeToolResultViews(result);
-              yield {
-                type: "tool.completed",
-                toolUseId: call.id,
-                toolName: call.name,
+              const completion = completeToolOnce(obligation, {
                 content: publicContent,
                 isError: !result.success,
-                metadata,
-              };
+              });
+              if (completion) yield completion;
               yield { type: "tool.result_delivered", toolCallId: call.id, metadata };
               messages.push({ role: "tool", tool_call_id: call.id, content: providerContent });
             }
@@ -566,6 +569,28 @@ function projectKimiCodeTransportError(error: KimiCodeTransportError) {
     error: messages[error.phase],
     recoverable: error.phase === "request_not_sent",
     rawEvent: { phase: error.phase },
+  };
+}
+
+interface KimiCodeToolObligation {
+  id: string;
+  name: string;
+  completed: boolean;
+}
+
+function completeToolOnce(
+  obligation: KimiCodeToolObligation,
+  result: { content: unknown; isError: boolean },
+): RuntimeEvent | undefined {
+  if (obligation.completed) return undefined;
+  obligation.completed = true;
+  return {
+    type: "tool.completed",
+    toolUseId: obligation.id,
+    toolName: obligation.name,
+    content: result.content,
+    isError: result.isError,
+    metadata: { provider: KIMI_CODE_PROVIDER_ID },
   };
 }
 
