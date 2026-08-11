@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 
 import { runWithContext } from "./context.js";
-import { buildCliCommandOperation, enforceCliCommandAccess, enforceCliCommandAuthorization } from "./command-access.js";
+import {
+  buildCliCommandOperation,
+  enforceCliCommandAccess,
+  enforceCliCommandAuthorization,
+  redactCommandAccessInput,
+} from "./command-access.js";
 import type { CommandAccessOptions } from "./decorators.js";
 import { createRuntimeContext } from "../runtime/context-registry.js";
 import { emptyCredentialsFile, upsertCredentialsEntry, writeCredentialsFile } from "../runtime/credentials-store.js";
@@ -48,6 +53,31 @@ function context(capabilities: ContextRecord["capabilities"]): ContextRecord {
 }
 
 describe("CLI command access enforcement", () => {
+  it("redacts command-declared audit fields without changing the original input", () => {
+    const input = { id: "item-1", secret: "provider-private-value" };
+
+    expect(redactCommandAccessInput(ACCESS, input)).toEqual({ id: "item-1", secret: "[REDACTED]" });
+    expect(input.secret).toBe("provider-private-value");
+  });
+
+  it("redacts a custom setting value declaratively without changing authorization input", () => {
+    const input = { key: "custom.password", value: "SENTINEL_SECRET_7M4Q", json: true };
+    const access: CommandAccessOptions = {
+      kind: "mutate",
+      resource: "settings",
+      action: "set",
+      risk: "medium",
+      redactions: ["value"],
+    };
+
+    expect(redactCommandAccessInput(access, input)).toEqual({
+      key: "custom.password",
+      value: "[REDACTED]",
+      json: true,
+    });
+    expect(input.value).toBe("SENTINEL_SECRET_7M4Q");
+  });
+
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-cli-command-access-test-");
     previousEnv = {};
@@ -585,6 +615,7 @@ describe("CLI command access enforcement", () => {
           agentId: "dev",
           denied: "mutate:demo.items:create",
           blockType: "cli_command_access_missing_grant",
+          command: "[REDACTED:content length=11]",
           denialId: expect.any(Number),
           context: expect.objectContaining({
             contextId: "ctx_command_access_test",
@@ -598,7 +629,7 @@ describe("CLI command access enforcement", () => {
         relation: "mutate",
         objectType: "demo.items",
         objectId: "create",
-        command: "demo create",
+        command: "[REDACTED:content length=11]",
         notifiedAt: expect.any(Number),
       }),
     );

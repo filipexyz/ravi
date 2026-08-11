@@ -242,4 +242,4 @@ Delivery events use `status: "delivered" | "failed" | "dropped"` so replay can d
 1. Check if events match the topic: `nats sub "<trigger-topic>" --server nats://127.0.0.1:4222`
 2. Check cooldown: trigger may be in cooldown window
 3. Check blocked topics: `.prompt`, `.response`, `.claude` topics are blocked
-4. Test manually: `ravi triggers test <id>`
+4. Test manually: `ravi triggers test <id> --execute`

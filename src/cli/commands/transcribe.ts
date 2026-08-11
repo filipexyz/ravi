@@ -3,9 +3,12 @@
  */
 
 import "reflect-metadata";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
+import { contractFail } from "../agent-contract.js";
 import { SUPPORTED_AUDIO_EXTENSIONS, inferAudioMimeType, transcribeFile } from "../../transcribe/service.js";
 
 const transcribeFileReturnSchema = z.object({
@@ -38,27 +41,43 @@ const transcribeFileReturnSchema = z.object({
 })
 export class TranscribeCommands {
   @Command({ name: "file", description: "Transcribe a local audio file" })
-  @CommandAccess({ kind: "read", resource: "transcribe", action: "file", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "transcribe", action: "file", risk: "high" })
   @Returns(transcribeFileReturnSchema)
   async file(
     @Arg("path", { description: "Path to audio file" }) filePath: string,
     @Option({ flags: "--lang <lang>", description: "Language code (default: pt)", defaultValue: "pt" }) _lang?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    // Validate local input before any provider call.
     const mimetype = inferAudioMimeType(filePath);
     if (!mimetype) {
       fail(`Unsupported audio format. Supported: ${SUPPORTED_AUDIO_EXTENSIONS.join(", ")}`);
     }
+    const absPath = resolve(filePath);
+    if (!existsSync(absPath)) {
+      contractFail("transcribe file", "FILE_NOT_FOUND", "Audio file was not found.", {
+        asJson,
+        details: {
+          suggestedAction: "Check the local audio file path and re-run",
+        },
+      });
+    }
 
     if (!asJson) {
-      console.log(`Transcribing ${filePath} (${mimetype})...`);
+      console.log(`Transcribing ${absPath} (${mimetype})...`);
     }
 
     let result: Awaited<ReturnType<typeof transcribeFile>>;
     try {
-      result = await transcribeFile({ filePath, mimeType: mimetype, language: _lang ?? "pt" });
-    } catch (err) {
-      fail(err instanceof Error ? err.message : String(err));
+      result = await transcribeFile({ filePath: absPath, mimeType: mimetype, language: _lang ?? "pt" });
+    } catch {
+      contractFail("transcribe file", "TRANSCRIBE_FAILED", "Audio transcription failed.", {
+        asJson,
+        details: {
+          retryable: true,
+          suggestedAction: "Check OPENAI_API_KEY and the audio file, then retry",
+        },
+      });
     }
 
     const payload = {

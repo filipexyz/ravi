@@ -14,7 +14,10 @@ import type {
   RaviAppOperationAuthorizationOwner,
   RaviAppOperationDeclaration,
   RaviAppPermissionDecision,
+  RaviAppPermissionGrantPrincipal,
+  RaviAppPermissionGrantSuggestion,
   RaviAppPermissionProviderAudit,
+  RaviAppPermissionProviderAuditSummary,
   RaviAppPermissionProviderDeclaration,
 } from "../apps/types.js";
 
@@ -37,6 +40,9 @@ const APP_PERMISSION_REQUEST_SCHEMA = "ravi.app.permission.request/v1";
 const APP_PERMISSION_DECISION_SCHEMA = "ravi.app.permission.decision/v1";
 const APP_PERMISSION_PROVIDER_MAX_OUTPUT_BYTES = 64 * 1024;
 const REDACTED_VALUE = "[redacted]";
+const STABLE_REASON_CODE_PATTERN = /^[a-z][a-z0-9._-]{0,127}$/;
+const STABLE_IDENTIFIER_TYPE_PATTERN = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
+const STABLE_IDENTIFIER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:@/-]{0,255}$/;
 const RAVI_CONTEXT_ENV_KEYS = new Set([
   "RAVI_CONTEXT_KEY",
   "RAVI_SESSION_KEY",
@@ -162,7 +168,7 @@ export async function evaluateAppPermissionProvider(
         buildProviderAudit(provider, startedAt, {
           decision: "error",
           reasonCode: "provider_exit_nonzero",
-          error: run.stderr.trim() || `Provider exited with code ${run.exitCode}`,
+          error: "Permission provider process exited unsuccessfully.",
           requestId: String(request.requestId),
         }),
       );
@@ -223,7 +229,7 @@ function finishPermissionProviderDecision(
       buildProviderAudit(provider, startedAt, {
         decision: "invalid",
         reasonCode: "provider_unknown_decision",
-        error: `Unknown decision: ${String(decision)}`,
+        error: "Provider decision is not supported.",
         requestId: String(request.requestId),
       }),
     );
@@ -240,15 +246,28 @@ function finishPermissionProviderDecision(
       }),
     );
   }
+  const normalizedReasonCode = reasonCode.trim();
+  if (!STABLE_REASON_CODE_PATTERN.test(normalizedReasonCode)) {
+    throw providerDenied(
+      provider,
+      "Permission provider decision has an invalid reasonCode.",
+      buildProviderAudit(provider, startedAt, {
+        decision: "invalid",
+        reasonCode: "provider_reason_code_invalid",
+        error: "Provider decision reasonCode must be a stable identifier.",
+        requestId: String(request.requestId),
+      }),
+    );
+  }
 
   const audit = buildProviderAudit(provider, startedAt, {
     requestId: String(request.requestId),
     decision,
-    reasonCode: reasonCode.trim(),
-    reason: typeof parsed.reason === "string" ? parsed.reason : undefined,
+    reasonCode: normalizedReasonCode,
+    reasonPresent: typeof parsed.reason === "string" && Boolean(parsed.reason.trim()),
     cacheTtlSec: resolveDecisionCacheTtl(provider, parsed.cache),
-    grantSuggestion: parsed.grantSuggestion ?? undefined,
-    audit: isObject(parsed.audit) ? parsed.audit : undefined,
+    grantSuggestion: projectGrantSuggestion(parsed.grantSuggestion),
+    audit: projectProviderAudit(parsed.audit),
   });
 
   if (decision !== "allow") {
@@ -257,9 +276,7 @@ function finishPermissionProviderDecision(
         ? "Permission provider requires a grant before this operation can run."
         : decision === "not_applicable"
           ? "Permission provider returned not_applicable for a provider-required operation."
-          : typeof parsed.reason === "string" && parsed.reason.trim()
-            ? parsed.reason.trim()
-            : "Permission provider denied this operation.";
+          : "Permission provider denied this operation.";
     throw providerDenied(provider, message, audit);
   }
 
@@ -284,11 +301,11 @@ function buildProviderAudit(
     requestId?: string;
     decision: RaviAppPermissionProviderAudit["decision"];
     reasonCode: string | null;
-    reason?: string;
+    reasonPresent?: boolean;
     error?: string;
     cacheTtlSec?: number;
-    grantSuggestion?: unknown;
-    audit?: unknown;
+    grantSuggestion?: RaviAppPermissionGrantSuggestion;
+    audit?: RaviAppPermissionProviderAuditSummary;
   },
 ): RaviAppPermissionProviderAudit {
   return {
@@ -304,10 +321,10 @@ function buildProviderAudit(
       hit: false,
       ...(input.cacheTtlSec !== undefined ? { ttlSec: input.cacheTtlSec } : {}),
     },
-    ...(input.reason ? { reason: input.reason } : {}),
+    ...(input.reasonPresent ? { reason: REDACTED_VALUE, reasonPresent: true } : {}),
     ...(input.error ? { error: input.error } : {}),
-    ...(input.grantSuggestion !== undefined ? { grantSuggestion: input.grantSuggestion } : {}),
-    ...(input.audit !== undefined ? { audit: input.audit } : {}),
+    ...(input.grantSuggestion ? { grantSuggestion: input.grantSuggestion } : {}),
+    ...(input.audit ? { audit: input.audit } : {}),
   };
 }
 
@@ -397,17 +414,70 @@ function buildPermissionProviderInput(
   const input = authorization?.input;
   const includeOptions = new Set((input?.includeOptions ?? []).map(normalizeOptionName).filter(Boolean));
   const options: Record<string, unknown> = {};
+  let redacted = parsed.redacted;
   for (const option of includeOptions) {
     const value = parsed.options[option];
-    if (value !== undefined) options[option] = value;
+    if (value === undefined) continue;
+    if (typeof value === "boolean") {
+      options[option] = value;
+      continue;
+    }
+    options[option] = Array.isArray(value) ? value.map(() => REDACTED_VALUE) : REDACTED_VALUE;
+    redacted = true;
   }
 
+  const args = input?.includeArgs === true ? parsed.positional.map(() => REDACTED_VALUE) : [];
+  if (args.length > 0) redacted = true;
+
   return {
-    args: input?.includeArgs === true ? parsed.positional : [],
+    args,
     options,
     rawArgCount,
-    redacted: parsed.redacted,
+    redacted,
   };
+}
+
+function projectGrantSuggestion(value: unknown): RaviAppPermissionGrantSuggestion | undefined {
+  if (!isObject(value)) return undefined;
+  const subject = projectGrantPrincipal(value.subject);
+  const object = projectGrantPrincipal(value.object);
+  const relation = stableIdentifier(value.relation, STABLE_IDENTIFIER_TYPE_PATTERN);
+  if (!subject || !object || !relation) return undefined;
+
+  const ttlSec =
+    Number.isInteger(value.ttlSec) && typeof value.ttlSec === "number" && value.ttlSec > 0 ? value.ttlSec : undefined;
+  const reasonPresent = typeof value.reason === "string" && Boolean(value.reason.trim());
+  return {
+    subject,
+    relation,
+    object,
+    ...(ttlSec !== undefined ? { ttlSec } : {}),
+    ...(reasonPresent ? { reasonPresent: true } : {}),
+  };
+}
+
+function projectGrantPrincipal(value: unknown): RaviAppPermissionGrantPrincipal | null {
+  if (!isObject(value)) return null;
+  const type = stableIdentifier(value.type, STABLE_IDENTIFIER_TYPE_PATTERN);
+  const id = stableIdentifier(value.id, STABLE_IDENTIFIER_PATTERN);
+  return type && id ? { type, id } : null;
+}
+
+function projectProviderAudit(value: unknown): RaviAppPermissionProviderAuditSummary | undefined {
+  if (!isObject(value)) return undefined;
+  const policyVersion = stableIdentifier(value.policyVersion, STABLE_IDENTIFIER_PATTERN);
+  const evidenceCount = Array.isArray(value.evidence) ? value.evidence.length : 0;
+  if (!policyVersion && evidenceCount === 0) return undefined;
+  return {
+    ...(policyVersion ? { policyVersion } : {}),
+    evidenceCount,
+  };
+}
+
+function stableIdentifier(value: unknown, pattern: RegExp): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return pattern.test(normalized) ? normalized : null;
 }
 
 function buildPermissionProviderResource(

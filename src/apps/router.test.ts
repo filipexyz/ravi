@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, it } from "bun:test";
-import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -21,6 +20,7 @@ const CONTEXT_ENV_KEYS = [
   "RAVI_CHANNEL",
   "RAVI_ACCOUNT_ID",
   "RAVI_CHAT_ID",
+  "RAVI_SUPPRESS_AUDIT_EVENTS",
 ] as const;
 const originalContextEnv = new Map<string, string | undefined>(CONTEXT_ENV_KEYS.map((key) => [key, process.env[key]]));
 
@@ -138,6 +138,7 @@ if (process.env.PROVIDER_SLEEP_MS) {
   await new Promise((resolve) => setTimeout(resolve, Number(process.env.PROVIDER_SLEEP_MS)));
 }
 if (process.env.PROVIDER_EXIT_CODE) {
+  console.error(process.env.PROVIDER_STDERR || "provider failed");
   process.exit(Number(process.env.PROVIDER_EXIT_CODE));
 }
 if (process.env.PROVIDER_INVALID_JSON === "1") {
@@ -149,7 +150,7 @@ console.log(JSON.stringify({
   schema: process.env.PROVIDER_SCHEMA || "ravi.app.permission.decision/v1",
   decision,
   reasonCode: process.env.PROVIDER_REASON_CODE || decision + "_test",
-  reason: "provider test decision",
+  reason: "PRIVATE_PROVIDER_REASON_SENTINEL",
   visibility: decision === "allow" ? "visible" : "hidden",
   resource: { type: "app-operation", id: request?.operation?.id || "unknown" },
   grantSuggestion: decision === "needs_grant" ? {
@@ -157,9 +158,14 @@ console.log(JSON.stringify({
     relation: "use",
     object: { type: "app-resource", id: "khal-tasks:list" },
     ttlSec: 900,
-    reason: "test grant suggestion"
+    reason: "PRIVATE_GRANT_REASON_SENTINEL",
+    privatePayload: "PRIVATE_GRANT_PAYLOAD_SENTINEL"
   } : null,
-  audit: { policyVersion: "test", evidence: ["request:" + request?.schema] },
+  audit: {
+    policyVersion: "test",
+    evidence: ["PRIVATE_PROVIDER_EVIDENCE_SENTINEL"],
+    privatePayload: "PRIVATE_PROVIDER_AUDIT_SENTINEL"
+  },
   cache: { ttlSec: 60 }
 }));
 `,
@@ -178,7 +184,10 @@ function writeContextProbeApp(root: string): { appDir: string; scriptPath: strin
     `
 const whoami = Bun.spawnSync({
   cmd: [process.execPath, ${JSON.stringify(cliEntrypoint)}, "context", "whoami", "--json"],
-  cwd: process.cwd(),
+  // The test invokes the TypeScript source directly, so Bun must discover the
+  // repository tsconfig that enables the CLI's legacy decorator metadata.
+  // The app process itself still runs from appDir, as asserted below.
+  cwd: ${JSON.stringify(originalCwd)},
   env: process.env,
   stdout: "pipe",
   stderr: "pipe"
@@ -347,6 +356,97 @@ describe("Ravi app router", () => {
     expect(result.result).toMatchObject({ ok: true, checked: 1 });
   });
 
+  it("keeps the operation name when routing <op> --help to the help builtin", () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", manifest("khal-tasks"));
+
+    expect(
+      resolveAppAliasInvocation(["khal-tasks", "list", "--help"], {
+        staticRootCommands: new Set(["apps"]),
+      }),
+    ).toEqual({
+      appId: "khal-tasks",
+      operation: "help",
+      args: ["list"],
+      json: false,
+    });
+    expect(
+      resolveAppAliasInvocation(["khal-tasks", "help", "list"], {
+        staticRootCommands: new Set(["apps"]),
+      }),
+    ).toEqual({
+      appId: "khal-tasks",
+      operation: "help",
+      args: ["list"],
+      json: false,
+    });
+  });
+
+  it("returns per-operation help instead of the full manifest help", async () => {
+    const root = makeRepo();
+    const body = manifest("khal-tasks");
+    (body.operations as Record<string, unknown>)["khal-tasks.list"] = {
+      interface: "builtin",
+      handler: "apps.stub.list",
+      mutating: false,
+      description: "List tasks.",
+      help: {
+        usage: "ravi khal-tasks list [--status <s>]",
+        options: [{ flag: "--status", description: "Filter by status" }],
+      },
+    };
+    writeManifest(root, "khal-tasks", body);
+
+    const found = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "help",
+      args: ["list"],
+      json: true,
+    });
+
+    expect(found.result).toMatchObject({
+      app: "khal-tasks",
+      operation: "khal-tasks.list",
+      found: true,
+      usage: "ravi khal-tasks list [--status <s>]",
+      description: "List tasks.",
+      mutating: false,
+    });
+    expect(found.result).not.toHaveProperty("operations");
+
+    const missing = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "help",
+      args: ["nonexistent-op"],
+      json: true,
+    });
+
+    expect(missing.result).toMatchObject({
+      app: "khal-tasks",
+      operation: "nonexistent-op",
+      found: false,
+      suggestions: [],
+    });
+  });
+
+  it("keeps global help additive with hint and index when no op is requested", async () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", manifest("khal-tasks"));
+
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "help",
+      args: [],
+      json: true,
+    });
+
+    expect(result.result).toMatchObject({
+      operations: ["khal-tasks.check", "khal-tasks.create", "khal-tasks.list", "khal-tasks.test.a"],
+    });
+    expect(result.result).toHaveProperty("hint");
+    expect(result.result).toHaveProperty("index");
+  });
+
   it("prefers declared operations over virtual router builtins", async () => {
     const root = makeRepo();
     const body = manifest("khal-tasks");
@@ -401,6 +501,23 @@ describe("Ravi app router", () => {
     ).toBe(null);
   });
 
+  it("consumes --execute in dynamic app aliases instead of forwarding it to the app", () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", manifest("khal-tasks"));
+
+    expect(
+      resolveAppAliasInvocation(["khal-tasks", "create", "private-title", "--execute", "--json"], {
+        staticRootCommands: new Set(["apps"]),
+      }),
+    ).toEqual({
+      appId: "khal-tasks",
+      operation: "create",
+      args: ["private-title"],
+      json: true,
+      execute: true,
+    });
+  });
+
   it("runs dynamic root aliases as JSON when an app id is discovered", async () => {
     const root = makeRepo();
     writeManifest(root, "khal-tasks", manifest("khal-tasks"));
@@ -449,10 +566,44 @@ describe("Ravi app router", () => {
     expect(realpathSync((result.result as { cwd: string }).cwd)).toBe(realpathSync(appDir));
   });
 
-  it("runs an external CLI through the public alias with a least-privilege child context", () => {
+  it("does not expose subprocess output when an app operation fails", async () => {
+    const root = makeRepo();
+    const body = manifest("khal-tasks");
+    (body.operations as Record<string, unknown>)["khal-tasks.fail"] = {
+      interface: "cli",
+      command: "bun fail.mjs --json",
+      mutating: false,
+    };
+    writeManifest(root, "khal-tasks", body);
+    writeFileSync(
+      join(root, "src", "apps", "khal-tasks", "fail.mjs"),
+      'console.log("PRIVATE_STDOUT_SENTINEL"); console.error("SECRET_STDERR_SENTINEL"); process.exit(42);',
+    );
+
+    const result = await runAppOperation({
+      appId: "khal-tasks",
+      operation: "fail",
+      json: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: false,
+      appId: "khal-tasks",
+      operationId: "khal-tasks.fail",
+      status: "failed",
+      errorCode: "APP_OPERATION_FAILED",
+      error: "Ravi app operation failed.",
+    });
+    expect(result).not.toHaveProperty("stdout");
+    expect(result).not.toHaveProperty("stderr");
+    expect(result).not.toHaveProperty("command");
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_STDOUT_SENTINEL");
+    expect(JSON.stringify(result)).not.toContain("SECRET_STDERR_SENTINEL");
+  });
+
+  it("runs an external CLI through the public alias with a least-privilege child context", async () => {
     const root = makeRepo();
     const { appDir } = writeContextProbeApp(root);
-    const cliEntrypoint = resolve(originalCwd, "src", "cli", "index.ts");
     const markerPath = join(root, "shell-injection-marker");
     const injectionArg = `$(touch ${markerPath})`;
     const parent = createRuntimeContext({
@@ -463,31 +614,25 @@ describe("Ravi app router", () => {
         { permission: "execute", objectType: "group", objectId: "context" },
       ],
     });
-
-    const run = spawnSync(
-      process.execPath,
-      [cliEntrypoint, "probe-app", "inspect", injectionArg, ";", "literal value", "--json"],
-      {
-        cwd: root,
-        env: {
-          ...process.env,
-          RAVI_CONTEXT_KEY: parent.contextKey,
-          RAVI_SESSION_KEY: "legacy-session",
-          RAVI_SESSION_NAME: "legacy-name",
-          RAVI_AGENT_ID: "legacy-agent",
-          APP_SECRET: "must-not-leak",
-          RAVI_LOG_LEVEL: "error",
-          RAVI_CLI_LOG_LEVEL: "error",
-          RAVI_SUPPRESS_AUDIT_EVENTS: "1",
-        },
-        encoding: "utf8",
-        timeout: 30_000,
-      },
-    );
-
-    expect(run.status).toBe(0);
-    expect(run.stderr).not.toContain("must-not-leak");
-    const payload = JSON.parse(run.stdout) as {
+    process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+    const payload = (await runWithContext({ agentId: "main", context: parent }, () =>
+      captureJson(() =>
+        maybeRunAppAliasRoute(["probe-app", "inspect", injectionArg, ";", "literal value", "--json"], {
+          cwd: root,
+          env: {
+            ...process.env,
+            RAVI_CONTEXT_KEY: parent.contextKey,
+            RAVI_SESSION_KEY: "legacy-session",
+            RAVI_SESSION_NAME: "legacy-name",
+            RAVI_AGENT_ID: "legacy-agent",
+            APP_SECRET: "must-not-leak",
+            RAVI_LOG_LEVEL: "error",
+            RAVI_CLI_LOG_LEVEL: "error",
+            RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+          },
+        }),
+      ),
+    )) as {
       ok: boolean;
       callerContextId: string;
       childContextId: string;
@@ -518,7 +663,7 @@ describe("Ravi app router", () => {
           APP_SECRET: null,
           RAVI_APP_ID: "probe-app",
           RAVI_APP_OPERATION_ID: "probe-app.inspect",
-          RAVI_APP_ROOT: realpathSync(appDir),
+          RAVI_APP_ROOT: appDir,
         },
         whoami: {
           kind: "app-runtime",
@@ -543,7 +688,8 @@ describe("Ravi app router", () => {
     expect(payload.result.whoami.contextId).toBe(payload.childContextId);
     expect(realpathSync(payload.result.cwd)).toBe(realpathSync(appDir));
     expect(existsSync(markerPath)).toBe(false);
-    expect(run.stdout).not.toContain(parent.contextKey);
+    expect(JSON.stringify(payload)).not.toContain(parent.contextKey);
+    expect(JSON.stringify(payload)).not.toContain("must-not-leak");
 
     const lineage = getContextLineage(parent.contextId);
     expect(lineage?.descendants.map((context) => context.contextId)).toContain(payload.childContextId);
@@ -574,7 +720,10 @@ describe("Ravi app router", () => {
     );
 
     expect(result.ok).toBe(false);
-    expect(result.error).toContain("Capability not granted by parent context: execute:group:context");
+    expect(result).toMatchObject({
+      errorCode: "APP_OPERATION_FAILED",
+      error: "Ravi app operation failed.",
+    });
     expect(result.childContextId).toBeUndefined();
     expect(existsSync(markerPath)).toBe(false);
   });
@@ -637,7 +786,7 @@ describe("Ravi app router", () => {
       ok: false,
       appId: "khal-tasks",
     });
-    expect(denied.error).toBe("App not found: khal-tasks");
+    expect(denied).toMatchObject({ errorCode: "not_found", error: "Ravi app was not found." });
 
     const allowed = await runWithContext(appToolContext([appCapability("use")]), () =>
       runAppOperation({
@@ -674,7 +823,7 @@ describe("Ravi app router", () => {
       ok: false,
       appId: "hidden-invalid",
     });
-    expect(denied.error).toBe("App not found: hidden-invalid");
+    expect(denied).toMatchObject({ errorCode: "not_found", error: "Ravi app was not found." });
     expect(denied.error).not.toContain("App manifest is invalid");
   });
 
@@ -691,13 +840,17 @@ describe("Ravi app router", () => {
     );
 
     expect(denied.ok).toBe(false);
-    expect(denied.error).toContain("requires execute on app:khal-tasks");
+    expect(denied).toMatchObject({
+      errorCode: "PERMISSION_DENIED",
+      error: "Ravi app operation was denied.",
+    });
 
     const allowed = await runWithContext(appToolContext([appCapability("use"), appCapability("execute")]), () =>
       runAppOperation({
         appId: "khal-tasks",
         operation: "create",
         json: true,
+        execute: true,
       }),
     );
 
@@ -741,7 +894,7 @@ describe("Ravi app router", () => {
         runAppOperation({
           appId: "khal-tasks",
           operation: "list",
-          args: ["task-123", "--project", "ravi", "--token", "token_secret_must_not_leak"],
+          args: ["PRIVATE_POSITIONAL_SENTINEL", "--project", "ravi", "--token", "token_secret_must_not_leak"],
           json: true,
           env: {
             ...process.env,
@@ -761,8 +914,14 @@ describe("Ravi app router", () => {
       providerOperationId: "khal-tasks.permissions.decide",
       decision: "allow",
       reasonCode: "allow_test",
+      reason: "[redacted]",
+      reasonPresent: true,
       cache: { hit: false, ttlSec: 30 },
+      audit: { policyVersion: "test", evidenceCount: 1 },
     });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_PROVIDER_REASON_SENTINEL");
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_PROVIDER_EVIDENCE_SENTINEL");
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_PROVIDER_AUDIT_SENTINEL");
 
     const requestText = readFileSync(requestPath, "utf8");
     expect(requestText).not.toContain("rctx_secret_must_not_leak");
@@ -787,8 +946,8 @@ describe("Ravi app router", () => {
         owner: { type: "contact", id: "luis" },
       },
       input: {
-        args: ["task-123"],
-        options: { project: "ravi" },
+        args: ["[redacted]"],
+        options: { project: "[redacted]" },
         rawArgCount: 5,
         redacted: true,
       },
@@ -800,6 +959,7 @@ describe("Ravi app router", () => {
       core: { appBoundary: "allow", agentCeiling: "allow", surfaceConstraint: "allow" },
     });
     expect(requestText).not.toContain("token_secret_must_not_leak");
+    expect(requestText).not.toContain("PRIVATE_POSITIONAL_SENTINEL");
     expect(requestText).not.toContain("rctx_env_must_not_leak");
 
     const envSnapshot = JSON.parse(readFileSync(envPath, "utf8")) as Record<string, unknown>;
@@ -823,7 +983,10 @@ describe("Ravi app router", () => {
       }),
     );
     expect(direct.ok).toBe(false);
-    expect(direct.error).toContain("reserved for app permission provider decisions");
+    expect(direct).toMatchObject({
+      errorCode: "APP_OPERATION_FAILED",
+      error: "Ravi app operation failed.",
+    });
 
     const help = await runWithContext(appToolContext([appCapability("use")]), () =>
       runAppOperation({
@@ -852,7 +1015,7 @@ describe("Ravi app router", () => {
     );
 
     expect(result.ok).toBe(false);
-    expect(result.error).toBe("App not found: khal-tasks");
+    expect(result).toMatchObject({ errorCode: "not_found", error: "Ravi app was not found." });
     expect(existsSync(requestPath)).toBe(false);
     expect(result.permissionProvider).toBeUndefined();
   });
@@ -872,9 +1035,48 @@ describe("Ravi app router", () => {
     );
 
     expect(result.ok).toBe(false);
-    expect(result.error).toContain("requires execute on app:khal-tasks");
+    expect(result).toMatchObject({
+      errorCode: "PERMISSION_DENIED",
+      error: "Ravi app operation was denied.",
+    });
     expect(existsSync(requestPath)).toBe(false);
     expect(result.permissionProvider).toBeUndefined();
+  });
+
+  it("blocks mutating app operations before the permission provider until --execute is explicit", async () => {
+    const root = makeRepo();
+    const requestPath = join(root, "provider-request.json");
+    writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks"));
+    const context = appToolContext([appCapability("use"), appCapability("execute")]);
+
+    const blocked = await runWithContext(context, () =>
+      runAppOperation({
+        appId: "khal-tasks",
+        operation: "create",
+        args: ["PRIVATE_ARGUMENT_SENTINEL"],
+        json: true,
+        env: { ...process.env, PROVIDER_REQUEST_PATH: requestPath },
+      }),
+    );
+
+    expect(blocked).toMatchObject({
+      ok: false,
+      appId: "khal-tasks",
+      operation: "create",
+      operationId: "khal-tasks.create",
+      mutating: true,
+      status: "blocked",
+      dryRun: true,
+      plan: {
+        appId: "khal-tasks",
+        operationId: "khal-tasks.create",
+        interface: "builtin",
+        mutating: true,
+        argumentCount: 1,
+      },
+    });
+    expect(JSON.stringify(blocked)).not.toContain("PRIVATE_ARGUMENT_SENTINEL");
+    expect(existsSync(requestPath)).toBe(false);
   });
 
   it("denies provider deny, needs_grant, and not_applicable decisions", async () => {
@@ -892,7 +1094,10 @@ describe("Ravi app router", () => {
       );
 
       expect(result.ok).toBe(false);
-      expect(result.error).toContain("Permission denied by app permission provider khal-tasks.local");
+      expect(result).toMatchObject({
+        errorCode: "PERMISSION_DENIED",
+        error: "Ravi app operation was denied.",
+      });
       expect(result.permissionProvider).toMatchObject({
         decision,
         reasonCode: `${decision}_test`,
@@ -901,9 +1106,65 @@ describe("Ravi app router", () => {
         expect(result.permissionProvider?.grantSuggestion).toMatchObject({
           relation: "use",
           ttlSec: 900,
+          reasonPresent: true,
         });
+        expect(JSON.stringify(result)).not.toContain("PRIVATE_GRANT_REASON_SENTINEL");
+        expect(JSON.stringify(result)).not.toContain("PRIVATE_GRANT_PAYLOAD_SENTINEL");
       }
     }
+  });
+
+  it("does not expose permission provider stderr", async () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks"));
+
+    const result = await runWithContext(appToolContext([appCapability("use")]), () =>
+      runAppOperation({
+        appId: "khal-tasks",
+        operation: "list",
+        json: true,
+        env: {
+          ...process.env,
+          PROVIDER_EXIT_CODE: "7",
+          PROVIDER_STDERR: "PRIVATE_PROVIDER_STDERR_SENTINEL",
+        },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      errorCode: "APP_PERMISSION_PROVIDER_FAILED",
+      permissionProvider: {
+        decision: "error",
+        reasonCode: "provider_exit_nonzero",
+        error: "Permission provider process exited unsuccessfully.",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_PROVIDER_STDERR_SENTINEL");
+  });
+
+  it("rejects unstable provider reason codes without reflecting them", async () => {
+    const root = makeRepo();
+    writeManifest(root, "khal-tasks", providerManifest(root, "khal-tasks"));
+
+    const result = await runWithContext(appToolContext([appCapability("use")]), () =>
+      runAppOperation({
+        appId: "khal-tasks",
+        operation: "list",
+        json: true,
+        env: { ...process.env, PROVIDER_REASON_CODE: "PRIVATE REASON CODE SENTINEL" },
+      }),
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      errorCode: "APP_PERMISSION_PROVIDER_FAILED",
+      permissionProvider: {
+        decision: "invalid",
+        reasonCode: "provider_reason_code_invalid",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE REASON CODE SENTINEL");
   });
 
   it("fails closed on provider invalid JSON and timeout", async () => {
@@ -918,7 +1179,11 @@ describe("Ravi app router", () => {
         env: { ...process.env, PROVIDER_INVALID_JSON: "1" },
       }),
     );
-    expect(invalidJson.ok).toBe(false);
+    expect(invalidJson).toMatchObject({
+      ok: false,
+      errorCode: "APP_PERMISSION_PROVIDER_FAILED",
+      error: "Ravi app permission provider failed.",
+    });
     expect(invalidJson.permissionProvider).toMatchObject({
       decision: "invalid",
       reasonCode: "provider_invalid_json",
@@ -932,7 +1197,11 @@ describe("Ravi app router", () => {
         env: { ...process.env, PROVIDER_SLEEP_MS: "1000" },
       }),
     );
-    expect(timeout.ok).toBe(false);
+    expect(timeout).toMatchObject({
+      ok: false,
+      errorCode: "APP_PERMISSION_PROVIDER_FAILED",
+      error: "Ravi app permission provider failed.",
+    });
     expect(timeout.permissionProvider).toMatchObject({
       decision: "error",
       reasonCode: "provider_timeout",

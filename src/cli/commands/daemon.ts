@@ -10,6 +10,7 @@ import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { Group, Command, CommandAccess, CliOnly, Option, Returns } from "../decorators.js";
 import { getContext, hasContext, fail } from "../context.js";
+import { CONTRACT_EXIT_POLICY, CONTRACT_EXIT_USAGE, contractDryRun, contractFail } from "../agent-contract.js";
 import {
   daemonEnvReturnSchema,
   daemonInitAdminKeyReturnSchema,
@@ -638,7 +639,13 @@ export class DaemonCommands {
   }
 
   @Command({ name: "logs", description: "Show daemon logs (PM2)" })
-  @CommandAccess({ kind: "read", resource: "daemon", action: "logs", risk: "low" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "daemon",
+    action: "logs",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   @Returns(daemonLogsReturnSchema)
   logs(
     @Option({ flags: "-f, --follow", description: "Follow log output" }) follow?: boolean,
@@ -647,7 +654,34 @@ export class DaemonCommands {
     @Option({ flags: "--path", description: "Print PM2 log file path" }) path?: boolean,
     @Option({ flags: "--json", description: "Print structured log result; with --follow, print JSONL records" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually flush PM2 logs when --clear is set; ignored for read-only log requests",
+    })
+    execute?: boolean,
   ) {
+    if (follow && getContext()?.transport) {
+      contractFail("daemon logs", "INTERACTIVE_ONLY", "--follow requires an interactive CLI terminal.", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          acceptedFlags: ["--tail <lines>", "--path", "--json"],
+          suggestedAction: "Request a bounded log snapshot with --tail instead of --follow",
+        },
+      });
+    }
+
+    if (clear && !path && execute !== true) {
+      contractDryRun(
+        "daemon logs",
+        {
+          action: "flush-logs",
+          process: PM2_PROCESS_NAME,
+        },
+        { asJson },
+      );
+    }
+
     requirePm2();
 
     if (path) {
@@ -686,7 +720,7 @@ export class DaemonCommands {
     const args = ["logs", PM2_PROCESS_NAME, "--lines", lines];
     if (!follow) args.push("--nostream");
 
-    if (asJson && !follow) {
+    if (!follow) {
       const result = capturePm2(args);
       const records = [
         ...result.stdout
@@ -706,7 +740,14 @@ export class DaemonCommands {
         pm2Status: result.status,
         records,
       };
-      printJson(payload);
+      if (asJson) {
+        printJson(payload);
+      } else {
+        for (const record of records) {
+          if (record.stream === "stderr") console.error(record.line);
+          else console.log(record.line);
+        }
+      }
       return payload;
     }
 
@@ -796,7 +837,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "uninstall", description: "Remove ravi from PM2 and clean up" })
-  @CommandAccess({ kind: "read", resource: "daemon", action: "uninstall", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "uninstall", risk: "destructive" })
   @Returns(daemonMutationReturnSchema)
   uninstall(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     requirePm2();
@@ -907,7 +948,7 @@ export class DaemonCommands {
   }
 
   @Command({ name: "env", description: "Edit environment file (~/.ravi/.env)" })
-  @CommandAccess({ kind: "read", resource: "daemon", action: "env", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "daemon", action: "env", risk: "medium" })
   @Returns(daemonEnvReturnSchema)
   env(@Option({ flags: "--json", description: "Print raw JSON result without opening an editor" }) asJson?: boolean) {
     mkdirSync(RAVI_DIR, { recursive: true });
@@ -1053,32 +1094,28 @@ ANTHROPIC_API_KEY=
     }
 
     if (live.length > 0) {
-      const payload = {
-        action: "init-admin-key" as const,
-        changed: false,
-        reason: "admin_context_exists" as const,
-        existing: live.map((ctx) => ({
-          contextId: ctx.contextId,
-          label: typeof ctx.metadata?.label === "string" ? ctx.metadata.label : null,
-          kind: ctx.kind,
-          createdAt: ctx.createdAt,
-          expiresAt: ctx.expiresAt ?? null,
-        })),
-      };
-      if (asJson) {
-        printJson(payload);
-      } else {
-        console.error("Refusing to bootstrap: a live admin context already exists.\n");
-        for (const ctx of live) {
-          const label = typeof ctx.metadata?.label === "string" ? ctx.metadata.label : "-";
-          const expires = ctx.expiresAt ? new Date(ctx.expiresAt).toISOString() : "never";
-          console.error(`  - ${ctx.contextId}  kind=${ctx.kind}  label=${label}  expires=${expires}`);
-        }
-        console.error(
-          "\nRevoke them first via 'ravi context revoke <id>' if you really intend to rotate the bootstrap key.",
-        );
-      }
-      process.exit(2);
+      const existing = live.map((ctx) => ({
+        contextId: ctx.contextId,
+        label: typeof ctx.metadata?.label === "string" ? ctx.metadata.label : null,
+        kind: ctx.kind,
+        createdAt: ctx.createdAt,
+        expiresAt: ctx.expiresAt ?? null,
+      }));
+      contractFail(
+        "daemon init-admin-key",
+        "ADMIN_CONTEXT_EXISTS",
+        "Refusing to bootstrap: a live admin context already exists.",
+        {
+          asJson,
+          exitCode: CONTRACT_EXIT_POLICY,
+          details: {
+            reason: "admin_context_exists",
+            existing,
+            suggestedAction:
+              "Revoke the existing admin context with 'ravi context revoke <id>' before rotating the bootstrap key",
+          },
+        },
+      );
     }
 
     const created = this.createBootstrapContext({ label: resolvedLabel });

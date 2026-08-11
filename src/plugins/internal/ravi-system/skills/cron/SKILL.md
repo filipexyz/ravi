@@ -12,6 +12,35 @@ description: |
 
 Você gerencia os jobs agendados do Ravi. Jobs são tarefas que rodam automaticamente em horários ou intervalos específicos.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução (ex.: `CRON_JOB_NOT_FOUND`). O envelope traz `suggestions` com jobs reais parecidos — consulte antes de concluir "não existe".
+- `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
+- `3` freio de escrita — não é erro. Nada foi gravado nem disparado; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
+
+Onde o freio existe hoje: `cron rm` (deletar é destrutivo) e `cron run` (dispara o job REAL agora, fora do agendamento — execução de agente ou shell de verdade) são dry-run por default e exigem `--execute`:
+
+```bash
+ravi cron run abc123 --json             # exit 3: plan mostra o job resolvido e a mensagem que seria enviada
+ravi cron run abc123 --execute --json   # dispara de verdade
+ravi cron rm abc123 --json              # exit 3: plan mostra o job que seria deletado
+ravi cron rm abc123 --execute           # deleta de verdade
+```
+
+Sem freio (gravam na hora, declaradas): `add`, `set`, `enable`, `disable` — todas têm comando inverso. Nessas o freio é você: confira o alvo antes de rodar.
+
+Compact mode: `cron list --fields id,name,enabled` devolve só esses campos por item — use em varredura para não arrastar o objeto inteiro de cada job.
+
+Checklist antes de responder sobre cron:
+
+- Tratei exit 3 como freio (revisei o `plan`) e não como falha?
+- Consultei `suggestions` do envelope antes de declarar not-found?
+
 ## Tipos de Schedule
 
 | Tipo | Exemplo | Descrição |
@@ -97,13 +126,20 @@ ravi cron set <id> <key> <value>
 Keys: name, message, shell, exec, timeout, env-file, on-error, cron, every, tz, agent, account, description, session, reply-session, delete-after
 
 ### Executar manualmente
+
+`cron run` dispara o job REAL agora, fora do agendamento. Sem `--execute` é dry-run (exit 3) e mostra o job resolvido e a mensagem que seria enviada:
+
 ```bash
-ravi cron run <id>
+ravi cron run <id>            # dry-run: mostra o plano, não dispara
+ravi cron run <id> --execute  # dispara de verdade
 ```
 
 ### Deletar
+
+Sem `--execute` é dry-run (exit 3); nada é deletado:
+
 ```bash
-ravi cron rm <id>
+ravi cron rm <id> --execute
 ```
 
 ## Cron Expression Reference

@@ -824,6 +824,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually delete the agent; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Agent ID",
         "type": "string"
@@ -869,6 +873,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -1624,6 +1632,10 @@ public enum RaviSchemas {
         "description": "Remove explicit capabilities while preserving profile",
         "type": "boolean"
       },
+      "execute": {
+        "description": "Actually change the runtime permission profile; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Agent ID",
         "type": "string"
@@ -2168,6 +2180,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually reset the session(s); default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Agent ID",
         "type": "string"
@@ -5030,6 +5046,10 @@ public enum RaviSchemas {
         },
         "type": "array"
       },
+      "execute": {
+        "description": "Execute a mutating app operation",
+        "type": "boolean"
+      },
       "id": {
         "description": "App id",
         "type": "string"
@@ -5048,39 +5068,6 @@ public enum RaviSchemas {
 
   public static let AppsRunReturnSchema = #"""
   {
-    "$defs": {
-      "__schema0": {
-        "anyOf": [
-          {
-            "type": "string"
-          },
-          {
-            "type": "number"
-          },
-          {
-            "type": "boolean"
-          },
-          {
-            "type": "null"
-          },
-          {
-            "items": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "type": "array"
-          },
-          {
-            "additionalProperties": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          }
-        ]
-      }
-    },
     "additionalProperties": false,
     "properties": {
       "appId": {
@@ -5105,10 +5092,17 @@ public enum RaviSchemas {
       "command": {
         "type": "string"
       },
+      "dryRun": {
+        "const": true,
+        "type": "boolean"
+      },
       "durationMs": {
         "type": "number"
       },
       "error": {
+        "type": "string"
+      },
+      "errorCode": {
         "type": "string"
       },
       "exitCode": {
@@ -5168,7 +5162,19 @@ public enum RaviSchemas {
         "additionalProperties": false,
         "properties": {
           "audit": {
-            "$ref": "#/$defs/__schema0"
+            "additionalProperties": false,
+            "properties": {
+              "evidenceCount": {
+                "type": "number"
+              },
+              "policyVersion": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "evidenceCount"
+            ],
+            "type": "object"
           },
           "cache": {
             "additionalProperties": false,
@@ -5203,7 +5209,56 @@ public enum RaviSchemas {
             "type": "string"
           },
           "grantSuggestion": {
-            "$ref": "#/$defs/__schema0"
+            "additionalProperties": false,
+            "properties": {
+              "object": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "id"
+                ],
+                "type": "object"
+              },
+              "reasonPresent": {
+                "type": "boolean"
+              },
+              "relation": {
+                "type": "string"
+              },
+              "subject": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "type",
+                  "id"
+                ],
+                "type": "object"
+              },
+              "ttlSec": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "subject",
+              "relation",
+              "object"
+            ],
+            "type": "object"
           },
           "interface": {
             "enum": [
@@ -5234,6 +5289,9 @@ public enum RaviSchemas {
               }
             ]
           },
+          "reasonPresent": {
+            "type": "boolean"
+          },
           "requestId": {
             "type": "string"
           }
@@ -5251,10 +5309,44 @@ public enum RaviSchemas {
         ],
         "type": "object"
       },
+      "plan": {
+        "additionalProperties": false,
+        "properties": {
+          "appId": {
+            "type": "string"
+          },
+          "argumentCount": {
+            "type": "number"
+          },
+          "interface": {
+            "enum": [
+              "builtin",
+              "cli"
+            ],
+            "type": "string"
+          },
+          "mutating": {
+            "const": true,
+            "type": "boolean"
+          },
+          "operationId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "appId",
+          "operationId",
+          "interface",
+          "mutating",
+          "argumentCount"
+        ],
+        "type": "object"
+      },
       "result": {},
       "status": {
         "enum": [
           "completed",
+          "blocked",
           "failed"
         ],
         "type": "string"
@@ -6212,6 +6304,10 @@ public enum RaviSchemas {
         "description": "Filter rich projection by agent id",
         "type": "string"
       },
+      "fields": {
+        "description": "Comma-separated fields to keep on each listed item (standard listing; ignored with --rich)",
+        "type": "string"
+      },
       "includeDeleted": {
         "description": "Include archived/deleted artifacts",
         "type": "boolean"
@@ -6461,6 +6557,10 @@ public enum RaviSchemas {
       "entrypoint": {
         "description": "Package entrypoint path",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually upload/release to Console; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "idempotencyKey": {
         "description": "Idempotency key for Console retries",
@@ -6748,6 +6848,10 @@ public enum RaviSchemas {
       "console": {
         "description": "Console base URL",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually activate the release in Console; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "id": {
         "description": "Local artifact id",
@@ -7226,6 +7330,10 @@ public enum RaviSchemas {
         "description": "Caption when sending (used with --send)",
         "type": "string"
       },
+      "execute": {
+        "description": "Confirm delivery when --send is used; local generation runs immediately",
+        "type": "boolean"
+      },
       "format": {
         "description": "Output format: mp3_44100_128 (default), mp3_22050_32, pcm_16000",
         "type": "string"
@@ -7377,6 +7485,10 @@ public enum RaviSchemas {
       },
       "clientId": {
         "description": "Filter by extension playback client id",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "id": {
@@ -7764,6 +7876,10 @@ public enum RaviSchemas {
         "description": "Additional ElevenLabs request JSON",
         "type": "string"
       },
+      "execute": {
+        "description": "Confirm publishing work that triggers downstream TTS generation and playback",
+        "type": "boolean"
+      },
       "format": {
         "description": "ElevenLabs output format override",
         "type": "string"
@@ -8085,6 +8201,10 @@ public enum RaviSchemas {
         "description": "Voice category filter",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each voice",
+        "type": "string"
+      },
       "limit": {
         "description": "Maximum voices to return",
         "type": "string"
@@ -8342,6 +8462,10 @@ public enum RaviSchemas {
         "description": "Console base URL",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Maximum bridges to return (default: 50)",
         "type": "string"
@@ -8506,12 +8630,16 @@ public enum RaviSchemas {
         "description": "Console base URL",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually revoke the bridge; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Bridge id",
         "type": "string"
       },
       "yes": {
-        "description": "Skip confirmation prompt",
+        "description": "Skip confirmation (pre-existing equivalent of --execute)",
         "type": "boolean"
       }
     },
@@ -8556,6 +8684,10 @@ public enum RaviSchemas {
     "properties": {
       "calendar": {
         "description": "Local calendar id or name",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "from": {
@@ -9077,6 +9209,10 @@ public enum RaviSchemas {
       "event": {
         "description": "Local event id",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually cancel the event; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "idempotencyKey": {
         "description": "Local write idempotency key",
@@ -10535,6 +10671,10 @@ public enum RaviSchemas {
         "description": "Local calendar id or name",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "from": {
         "description": "Window start; default now",
         "type": "string"
@@ -11783,6 +11923,10 @@ public enum RaviSchemas {
       "event": {
         "description": "Local event id",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually record the response; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "idempotencyKey": {
         "description": "Local write idempotency key",
@@ -13245,6 +13389,10 @@ public enum RaviSchemas {
         "description": "Local account id",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Maximum records",
         "type": "string"
@@ -13450,6 +13598,10 @@ public enum RaviSchemas {
       "calendar": {
         "description": "Local calendar id or name",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually grant the relation; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "expiresAt": {
         "description": "Optional membership expiration timestamp",
@@ -14966,6 +15118,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -17541,6 +17697,10 @@ public enum RaviSchemas {
         "description": "Filter by contact id, phone, or identity",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "includeRaw": {
         "description": "Include raw provider ids and provenance in JSON output",
         "type": "boolean"
@@ -18252,6 +18412,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "includeArchived": {
         "description": "Include archived lists",
         "type": "boolean"
@@ -18342,6 +18506,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "includeRaw": {
         "description": "Include raw provider ids and provenance in JSON output",
         "type": "boolean"
@@ -19631,6 +19799,10 @@ public enum RaviSchemas {
         "description": "Project description",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually create the Console project; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "name": {
         "description": "Project display name; defaults to the slug",
         "type": "string"
@@ -19735,6 +19907,10 @@ public enum RaviSchemas {
     "properties": {
       "console": {
         "description": "Console base URL",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "limit": {
@@ -20686,6 +20862,10 @@ public enum RaviSchemas {
         "description": "Resolve agent-scoped commands for this agent",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -21544,6 +21724,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -21652,12 +21836,16 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually revoke the connector; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Connector id",
         "type": "string"
       },
       "yes": {
-        "description": "Skip confirmation prompt",
+        "description": "Skip confirmation (pre-existing equivalent of --execute)",
         "type": "boolean"
       }
     },
@@ -22037,6 +22225,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "query": {
         "description": "Tag name (with --tag) or search query",
         "type": "string"
@@ -22153,6 +22345,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -22182,6 +22378,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually merge the contacts; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "source": {
         "description": "Source contact ID (will be deleted)",
         "type": "string"
@@ -22451,6 +22651,10 @@ public enum RaviSchemas {
       "contact": {
         "description": "Contact ID or identity",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually remove the contact; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       }
     },
     "required": [
@@ -23753,6 +23957,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -24002,6 +24210,10 @@ public enum RaviSchemas {
       "contextKey": {
         "description": "Runtime context-key (rctx_*)",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually remove the stored entry; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       }
     },
     "required": [
@@ -25284,6 +25496,10 @@ public enum RaviSchemas {
       "all": {
         "description": "Include revoked and expired contexts",
         "type": "boolean"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
       },
       "kind": {
         "description": "Filter by context kind",
@@ -26841,6 +27057,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "hours": {
         "description": "Time window in hours (default: 24)",
         "type": "string"
@@ -26963,6 +27183,10 @@ public enum RaviSchemas {
       "dryRun": {
         "description": "Preview recompute results without updating cost_events",
         "type": "boolean"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each coverage row",
+        "type": "string"
       },
       "hours": {
         "description": "Time window in hours (default: 24)",
@@ -27381,6 +27605,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "hours": {
         "description": "Time window in hours (default: 24)",
         "type": "string"
@@ -27715,6 +27943,10 @@ public enum RaviSchemas {
       "all": {
         "description": "Include disabled connections",
         "type": "boolean"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
       },
       "limit": {
         "default": "50",
@@ -28212,6 +28444,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each opportunity",
+        "type": "string"
+      },
       "includeEmptyStages": {
         "description": "Include configured stages with no opportunities",
         "type": "boolean"
@@ -28384,6 +28620,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -28767,6 +29007,10 @@ public enum RaviSchemas {
       "dueToday": {
         "description": "Only actions whose due_at is today",
         "type": "boolean"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
       },
       "limit": {
         "description": "Page size (default: 25, max: 500)",
@@ -29281,6 +29525,10 @@ public enum RaviSchemas {
     "properties": {
       "entityType": {
         "description": "Filter by CRM entity type",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "includeArchived": {
@@ -31207,6 +31455,10 @@ public enum RaviSchemas {
         "description": "List jobs from all agents (requires authorization)",
         "type": "boolean"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -31312,6 +31564,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually delete the job; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Job ID",
         "type": "string"
@@ -31373,6 +31629,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually trigger the job now; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Job ID",
         "type": "string"
@@ -31655,6 +31915,10 @@ public enum RaviSchemas {
         "description": "Flush PM2 logs for ravi",
         "type": "boolean"
       },
+      "execute": {
+        "description": "Actually flush PM2 logs when --clear is set; ignored for read-only log requests",
+        "type": "boolean"
+      },
       "follow": {
         "description": "Follow log output",
         "type": "boolean"
@@ -31906,6 +32170,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually archive the external session; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "session": {
         "description": "Local id or devin-* id",
         "type": "string"
@@ -32258,6 +32526,10 @@ public enum RaviSchemas {
       "devinMode": {
         "description": "Agent mode: normal|fast|lite|ultra",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually create the Devin session; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "knowledge": {
         "description": "Knowledge note IDs",
@@ -32642,6 +32914,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually ask Devin to generate/update insights; ordinary insight reads run directly",
+        "type": "boolean"
+      },
       "generate": {
         "description": "Ask Devin to generate/update insights before reading",
         "type": "boolean"
@@ -32934,6 +33210,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each session",
+        "type": "string"
+      },
       "limit": {
         "description": "Max sessions to show (default: 20)",
         "type": "string"
@@ -33331,6 +33611,10 @@ public enum RaviSchemas {
       "asUser": {
         "description": "message_as_user_id",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually send the message to Devin; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "message": {
         "description": "Message text",
@@ -34416,6 +34700,10 @@ public enum RaviSchemas {
         "description": "Console base URL",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually submit the feedback to Ravi Console; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "kind": {
         "description": "bug|idea|ux|docs|performance|security|other",
         "type": "string"
@@ -35457,7 +35745,12 @@ public enum RaviSchemas {
   public static let HeartbeatStatusInputSchema = #"""
   {
     "additionalProperties": false,
-    "properties": {},
+    "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      }
+    },
     "type": "object"
   }
   """#
@@ -35631,6 +35924,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Queue the manual heartbeat agent run",
+        "type": "boolean"
+      },
       "id": {
         "description": "Agent ID",
         "type": "string"
@@ -35919,6 +36216,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -36024,6 +36325,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually delete the hook; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Hook ID",
         "type": "string"
@@ -36111,6 +36416,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually run a session-delivery hook; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Hook ID",
         "type": "string"
@@ -36154,6 +36463,10 @@ public enum RaviSchemas {
       "cols": {
         "description": "Grid columns (default: 3)",
         "type": "string"
+      },
+      "execute": {
+        "description": "Confirm delivery when --send is used; local atlas splitting runs immediately",
+        "type": "boolean"
       },
       "fit": {
         "description": "Trim mode square fit: contain or cover (default: contain)",
@@ -36307,6 +36620,10 @@ public enum RaviSchemas {
       "compression": {
         "description": "OpenAI jpeg/webp output compression",
         "type": "string"
+      },
+      "execute": {
+        "description": "Confirm delivery when the generated image will be sent; generation alone runs immediately",
+        "type": "boolean"
       },
       "format": {
         "description": "OpenAI output format: png, jpeg, webp",
@@ -36643,6 +36960,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Maximum items to return (default: 25, max: 500)",
         "type": "string"
@@ -36680,6 +37001,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "includeArchived": {
         "description": "Include done/archive/dismissed items",
         "type": "boolean"
@@ -36810,6 +37135,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually republish the stored NATS event; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "ref": {
         "description": "Local row id (number) or remote item id (uuid)",
         "type": "string"
@@ -37056,6 +37385,10 @@ public enum RaviSchemas {
         "description": "low|medium|high",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "importance": {
         "description": "low|normal|high",
         "type": "string"
@@ -37082,7 +37415,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "rich": {
-        "description": "Return rich projection with stats, decorated lineage (task/session/agent refs), and per-link metadata. Honors --limit only; other filters are ignored.",
+        "description": "Return rich projection with stats, decorated lineage (task/session/agent refs), and per-link metadata. Honors --limit only; other filters and --fields are ignored.",
         "type": "boolean"
       },
       "session": {
@@ -37242,6 +37575,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "default": "20",
         "description": "Result limit",
@@ -37518,6 +37855,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each instance",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -37615,6 +37956,10 @@ public enum RaviSchemas {
       "contact": {
         "description": "Contact identity or chat route pattern",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually reject and remove the pending entry; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "name": {
         "description": "Instance name",
@@ -38186,6 +38531,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Maximum records",
         "type": "string"
@@ -39115,6 +39464,10 @@ public enum RaviSchemas {
     "properties": {
       "account": {
         "description": "Local account id",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "limit": {
@@ -40170,6 +40523,10 @@ public enum RaviSchemas {
       "addresses": {
         "description": "Include local address rows",
         "type": "boolean"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
       },
       "limit": {
         "description": "Maximum records",
@@ -42376,6 +42733,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Maximum records",
         "type": "string"
@@ -42785,6 +43146,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Maximum records",
         "type": "string"
@@ -43358,6 +43723,10 @@ public enum RaviSchemas {
         "description": "Console base URL",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually send through Console; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "from": {
         "description": "Explicit provider sender mailbox id or address",
         "type": "string"
@@ -43443,6 +43812,10 @@ public enum RaviSchemas {
       "cc": {
         "description": "CC recipient or comma-separated recipients",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually queue the reply; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "from": {
         "description": "Local sender mailbox id or address",
@@ -44250,6 +44623,10 @@ public enum RaviSchemas {
       "body": {
         "description": "Message body",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually queue the send; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "from": {
         "description": "Local sender mailbox id or address",
@@ -45811,6 +46188,10 @@ public enum RaviSchemas {
         "description": "Target channel (informational override)",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually send the media; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "filePath": {
         "description": "Path to the file to send",
         "type": "string"
@@ -46082,6 +46463,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -46863,6 +47248,10 @@ public enum RaviSchemas {
         "description": "Last N days (default: 7)",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each row",
+        "type": "string"
+      },
       "since": {
         "description": "Override start date YYYY-MM-DD",
         "type": "string"
@@ -46960,6 +47349,10 @@ public enum RaviSchemas {
     "properties": {
       "agent": {
         "description": "Filter by observer agent id",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these top-level fields per item",
         "type": "string"
       },
       "limit": {
@@ -47114,6 +47507,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these top-level fields per item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -47577,6 +47974,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these top-level fields per item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -47678,6 +48079,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually delete the observer rule; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Observer rule id",
         "type": "string"
@@ -47952,6 +48357,10 @@ public enum RaviSchemas {
         "description": "Mark this as the project default site when available",
         "type": "boolean"
       },
+      "execute": {
+        "description": "Create the external Pages host record",
+        "type": "boolean"
+      },
       "project": {
         "description": "Console project id or slug; overrides saved Console scope",
         "type": "string"
@@ -48080,6 +48489,10 @@ public enum RaviSchemas {
         "description": "Console base URL",
         "type": "string"
       },
+      "execute": {
+        "description": "Bind hostnames through the external Pages provider",
+        "type": "boolean"
+      },
       "project": {
         "description": "Console project id or slug; overrides saved Console scope",
         "type": "string"
@@ -48197,6 +48610,10 @@ public enum RaviSchemas {
     "properties": {
       "console": {
         "description": "Console base URL",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Comma-separated fields to keep on each listed site",
         "type": "string"
       },
       "limit": {
@@ -48355,6 +48772,352 @@ public enum RaviSchemas {
   }
   """#
 
+  public static let PagesPasswordRemoveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "args": {
+        "description": "[project] <site>; project defaults to Ravi Console scope",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "execute": {
+        "description": "Actually remove the route password; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
+      "project": {
+        "description": "Console project id or slug; overrides saved Console scope",
+        "type": "string"
+      },
+      "route": {
+        "description": "Stable Pages route to update (default: /)",
+        "type": "string"
+      },
+      "visibility": {
+        "description": "Required replacement visibility: private|protected_link|public",
+        "type": "string"
+      }
+    },
+    "required": [
+      "args"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesPasswordRemoveReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "enum": [
+          "remove",
+          "set",
+          "status"
+        ],
+        "type": "string"
+      },
+      "configured": {
+        "type": "boolean"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "policy": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "release": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "route": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "scope": {
+        "const": "route",
+        "type": "string"
+      },
+      "site": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "siteRef": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "url": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "action",
+      "configured",
+      "consoleUrl",
+      "path",
+      "policy",
+      "projectRef",
+      "release",
+      "route",
+      "scope",
+      "site",
+      "siteRef",
+      "url"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesPasswordStatusInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "args": {
+        "description": "[project] <site>; project defaults to Ravi Console scope",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "console": {
+        "description": "Console base URL",
+        "type": "string"
+      },
+      "project": {
+        "description": "Console project id or slug; overrides saved Console scope",
+        "type": "string"
+      },
+      "route": {
+        "description": "Stable Pages route to inspect (default: /)",
+        "type": "string"
+      }
+    },
+    "required": [
+      "args"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let PagesPasswordStatusReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "enum": [
+          "remove",
+          "set",
+          "status"
+        ],
+        "type": "string"
+      },
+      "configured": {
+        "type": "boolean"
+      },
+      "consoleUrl": {
+        "type": "string"
+      },
+      "path": {
+        "type": "string"
+      },
+      "policy": {
+        "anyOf": [
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "projectRef": {
+        "type": "string"
+      },
+      "release": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "route": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "scope": {
+        "const": "route",
+        "type": "string"
+      },
+      "site": {
+        "additionalProperties": {
+          "$ref": "#/$defs/__schema0"
+        },
+        "propertyNames": {
+          "type": "string"
+        },
+        "type": "object"
+      },
+      "siteRef": {
+        "type": "string"
+      },
+      "success": {
+        "const": true,
+        "type": "boolean"
+      },
+      "url": {
+        "type": "string"
+      }
+    },
+    "required": [
+      "success",
+      "action",
+      "configured",
+      "consoleUrl",
+      "path",
+      "policy",
+      "projectRef",
+      "release",
+      "route",
+      "scope",
+      "site",
+      "siteRef",
+      "url"
+    ],
+    "type": "object"
+  }
+  """#
+
   public static let PagesPublishInputSchema = #"""
   {
     "additionalProperties": false,
@@ -48393,6 +49156,10 @@ public enum RaviSchemas {
       "entrypoint": {
         "description": "Package entrypoint path, usually index.html",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually upload/publish to Pages; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "idempotencyKey": {
         "description": "Idempotency key for Console retries",
@@ -48673,6 +49440,10 @@ public enum RaviSchemas {
         "description": "Console base URL",
         "type": "string"
       },
+      "fields": {
+        "description": "Comma-separated fields to keep on each listed page",
+        "type": "string"
+      },
       "limit": {
         "description": "Maximum pages to return (default: 50)",
         "type": "string"
@@ -48844,6 +49615,10 @@ public enum RaviSchemas {
         "description": "Console base URL",
         "type": "string"
       },
+      "execute": {
+        "description": "Required to switch a site to public visibility; other updates apply immediately",
+        "type": "boolean"
+      },
       "project": {
         "description": "Console project id or slug; overrides saved Console scope",
         "type": "string"
@@ -48964,6 +49739,10 @@ public enum RaviSchemas {
       "console": {
         "description": "Console base URL",
         "type": "string"
+      },
+      "execute": {
+        "description": "Required to switch a site to public visibility; other visibilities apply immediately",
+        "type": "boolean"
       },
       "project": {
         "description": "Console project id or slug; overrides saved Console scope",
@@ -50065,6 +50844,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually reset and seed the fixtures; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "ownerAgent": {
         "description": "Owner agent for the seeded projects",
         "type": "string"
@@ -50247,6 +51030,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -50362,6 +51149,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "status": {
         "description": "Filter by project status",
         "type": "string"
@@ -50530,6 +51321,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -50877,6 +51672,10 @@ public enum RaviSchemas {
         "description": "Override project owner agent",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually dispatch the task; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "project": {
         "description": "Project id or slug",
         "type": "string"
@@ -51039,6 +51838,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually start the workflow run; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "project": {
         "description": "Project id or slug",
         "type": "string"
@@ -51187,6 +51990,10 @@ public enum RaviSchemas {
         },
         "type": "array"
       },
+      "execute": {
+        "description": "Confirm provider synchronization; local-only updates run immediately",
+        "type": "boolean"
+      },
       "firstMessage": {
         "description": "Provider greeting/first message for this profile",
         "type": "string"
@@ -51260,6 +52067,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -51379,6 +52190,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually submit the call request; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "force": {
         "description": "Bypass call rules for an explicit operator-requested live call",
         "type": "boolean"
@@ -51678,6 +52493,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -52086,6 +52905,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -52542,6 +53365,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each route",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -52801,6 +53628,10 @@ public enum RaviSchemas {
     "properties": {
       "cwd": {
         "description": "Workspace cwd to inspect (default: current directory)",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each source",
         "type": "string"
       },
       "includeUser": {
@@ -53144,6 +53975,10 @@ public enum RaviSchemas {
       "all": {
         "description": "Include disabled credentials",
         "type": "boolean"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
       },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
@@ -54068,6 +54903,10 @@ public enum RaviSchemas {
         "description": "Only enabled presets",
         "type": "boolean"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -54787,6 +55626,10 @@ public enum RaviSchemas {
     "properties": {
       "depth": {
         "description": "Depth: summary, normal, or full",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these top-level packet sections (e.g. identity,session,actor)",
         "type": "string"
       },
       "limit": {
@@ -55790,6 +56633,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually delete the session; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "nameOrKey": {
         "description": "Session name or key",
         "type": "string"
@@ -55814,6 +56661,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually delete the message; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "messageRef": {
         "description": "Canonical or provider message id",
         "type": "string"
@@ -55870,6 +56721,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually edit the message; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "messageOrText": {
         "description": "Message id, or new text when running inside a session",
         "type": "string"
@@ -56992,6 +57847,10 @@ public enum RaviSchemas {
         "description": "Show only ephemeral sessions",
         "type": "boolean"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -57352,6 +58211,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually reset the session; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "nameOrKey": {
         "description": "Session name or key",
         "type": "string"
@@ -57376,6 +58239,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually queue the follow-up; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "expectedTurn": {
         "description": "Expected active runtime turn id",
         "type": "string"
@@ -57434,6 +58301,10 @@ public enum RaviSchemas {
       "cwd": {
         "description": "Working directory for the fork",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually fork the runtime thread; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "path": {
         "description": "Runtime fork path",
@@ -57631,6 +58502,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually roll back runtime turns; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "session": {
         "description": "Ravi session name or key",
         "type": "string"
@@ -59078,6 +59953,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually delete the setting; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "key": {
         "description": "Setting key",
         "type": "string"
@@ -59291,6 +60170,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "legacy": {
         "description": "Show legacy account.* settings shadowed by instances",
         "type": "boolean"
@@ -60162,6 +61045,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -60549,6 +61436,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually discard the override; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Rule id",
         "type": "string"
@@ -60585,6 +61476,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually remove/disable the gate; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Rule id",
         "type": "string"
@@ -61408,6 +62303,10 @@ public enum RaviSchemas {
         "description": "Install all skills found in source",
         "type": "boolean"
       },
+      "execute": {
+        "description": "Confirm installation from a Git source or replacement with --overwrite",
+        "type": "boolean"
+      },
       "name": {
         "description": "Skill name. Defaults to the Ravi catalog unless --source is passed",
         "type": "string"
@@ -61521,6 +62420,10 @@ public enum RaviSchemas {
       "codex": {
         "description": "Include materialized Codex skills",
         "type": "boolean"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
       },
       "installed": {
         "description": "List operator-installed skills instead of the Ravi catalog",
@@ -61978,6 +62881,10 @@ public enum RaviSchemas {
         "description": "List grants for a specific agent instead",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each grant",
+        "type": "string"
+      },
       "skill": {
         "description": "Skill name to look up",
         "type": "string"
@@ -62049,7 +62956,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "file": {
@@ -62177,7 +63084,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "threadTs": {
@@ -62296,7 +63203,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "file": {
@@ -62534,7 +63441,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "users": {
@@ -62665,7 +63572,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "users": {
@@ -62793,7 +63700,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "skipRefresh": {
@@ -63012,7 +63919,7 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "markdown": {
@@ -63143,7 +64050,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "title": {
@@ -63266,7 +64173,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "markdown": {
@@ -63402,7 +64309,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       }
     },
@@ -63525,7 +64432,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "markdown": {
@@ -63670,6 +64577,10 @@ public enum RaviSchemas {
       },
       "containsText": {
         "description": "Text that matching sections must contain",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "sectionTypes": {
@@ -63818,7 +64729,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "slackChannel": {
@@ -63941,7 +64852,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "name": {
@@ -64065,6 +64976,10 @@ public enum RaviSchemas {
       },
       "cursor": {
         "description": "Slack pagination cursor",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "inclusive": {
@@ -64318,7 +65233,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "users": {
@@ -64439,6 +65354,10 @@ public enum RaviSchemas {
       },
       "cursor": {
         "description": "Slack pagination cursor",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "includeArchived": {
@@ -64589,7 +65508,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "name": {
@@ -64710,6 +65629,10 @@ public enum RaviSchemas {
       },
       "cursor": {
         "description": "Slack pagination cursor",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "limit": {
@@ -64859,7 +65782,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "file": {
@@ -65226,7 +66149,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the replay; default is dry-run",
+        "description": "Perform the replay; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "force": {
@@ -65354,7 +66277,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "text": {
@@ -65478,7 +66401,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "file": {
@@ -65602,7 +66525,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "file": {
@@ -65726,7 +66649,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "externalId": {
@@ -66077,7 +67000,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "file": {
@@ -66205,7 +67128,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "file": {
@@ -66337,7 +67260,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "execute": {
-        "description": "Perform the mutation; default is dry-run",
+        "description": "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "file": {
@@ -66590,6 +67513,10 @@ public enum RaviSchemas {
     "properties": {
       "domain": {
         "description": "Filter by domain",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "kind": {
@@ -66941,6 +67868,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -67183,6 +68114,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually remove the sticker; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Sticker id",
         "type": "string"
@@ -67230,6 +68165,10 @@ public enum RaviSchemas {
       "channel": {
         "description": "Explicit target channel",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually send the sticker; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "id": {
         "description": "Sticker id",
@@ -67800,6 +68739,10 @@ public enum RaviSchemas {
         "description": "Filter one sync domain",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually download and apply the batch; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "limit": {
         "description": "Max events in batch",
         "type": "string"
@@ -67891,6 +68834,10 @@ public enum RaviSchemas {
       "domain": {
         "description": "Filter one sync domain",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually upload the batch; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "limit": {
         "description": "Max events in batch",
@@ -68426,6 +69373,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each rule",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50)",
         "type": "string"
@@ -69047,6 +69998,10 @@ public enum RaviSchemas {
         "description": "Opaque cursor returned by the previous page",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "kind": {
         "description": "Filter by kind: system|user",
         "type": "string"
@@ -69216,6 +70171,10 @@ public enum RaviSchemas {
       },
       "devinSession": {
         "description": "Filter by Devin session id",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "hook": {
@@ -69937,6 +70896,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually delete the automation; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Task automation ID",
         "type": "string"
@@ -70506,6 +71469,10 @@ public enum RaviSchemas {
         "description": "Upstream task id to remove from gating",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually remove the dependency; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "taskId": {
         "description": "Downstream task id",
         "type": "string"
@@ -70561,6 +71528,10 @@ public enum RaviSchemas {
       "effort": {
         "description": "Runtime effort: none|minimal|low|medium|high|xhigh|max|ultra",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually dispatch the task; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "model": {
         "description": "Dispatch runtime model override",
@@ -70734,6 +71705,10 @@ public enum RaviSchemas {
       },
       "cursor": {
         "description": "Opaque cursor returned by the previous page",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "last": {
@@ -71669,6 +72644,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size",
         "type": "string"
@@ -73025,6 +74004,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -73130,6 +74113,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually delete the trigger; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Trigger ID",
         "type": "string"
@@ -73295,6 +74282,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually emit the synthetic trigger event; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Trigger ID",
         "type": "string"
@@ -73753,6 +74744,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -73862,6 +74857,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually remove the watch; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Watch id",
         "type": "string"
@@ -73946,6 +74945,10 @@ public enum RaviSchemas {
         "description": "Specific event type for multi-event watches",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually create the trigger; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Watch id",
         "type": "string"
@@ -74005,6 +75008,10 @@ public enum RaviSchemas {
         "description": "Contact ID, phone, or WhatsApp identity",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually send the read receipt; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "messageId": {
         "description": "Message ID to mark as read",
         "type": "string"
@@ -74031,11 +75038,15 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "account": {
-        "description": "WhatsApp account ID",
+        "description": "WhatsApp account ID (accepted for compatibility; local history is account-independent)",
         "type": "string"
       },
       "contact": {
         "description": "Contact ID, phone, or WhatsApp identity",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each message",
         "type": "string"
       },
       "last": {
@@ -74044,7 +75055,7 @@ public enum RaviSchemas {
       },
       "noAck": {
         "default": false,
-        "description": "Don't send read receipt",
+        "description": "Deprecated compatibility no-op; dm read never sends a receipt",
         "type": "boolean"
       }
     },
@@ -74075,6 +75086,10 @@ public enum RaviSchemas {
         "description": "Contact ID, phone, or WhatsApp identity",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually send the message; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "message": {
         "description": "Message text",
         "type": "string"
@@ -74103,6 +75118,10 @@ public enum RaviSchemas {
       "account": {
         "description": "WhatsApp account ID",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually add the participants; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "groupId": {
         "description": "Group ID or JID",
@@ -74169,6 +75188,10 @@ public enum RaviSchemas {
       },
       "createAgent": {
         "description": "Create --agent first when it does not exist",
+        "type": "boolean"
+      },
+      "execute": {
+        "description": "Actually create the group; default is a dry-run that only shows the plan (exit 3)",
         "type": "boolean"
       },
       "name": {
@@ -74239,6 +75262,10 @@ public enum RaviSchemas {
       "account": {
         "description": "WhatsApp account ID",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually update the description; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "groupId": {
         "description": "Group ID or JID",
@@ -74332,6 +75359,10 @@ public enum RaviSchemas {
       "code": {
         "description": "Invite code or full link",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually join the group; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       }
     },
     "required": [
@@ -74356,6 +75387,10 @@ public enum RaviSchemas {
       "account": {
         "description": "WhatsApp account ID",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually leave the group; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "groupId": {
         "description": "Group ID or JID",
@@ -74383,6 +75418,10 @@ public enum RaviSchemas {
     "properties": {
       "account": {
         "description": "WhatsApp account ID",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each item",
         "type": "string"
       },
       "limit": {
@@ -74413,6 +75452,10 @@ public enum RaviSchemas {
       "account": {
         "description": "WhatsApp account ID",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually promote the participants; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "groupId": {
         "description": "Group ID or JID",
@@ -74447,6 +75490,10 @@ public enum RaviSchemas {
         "description": "WhatsApp account ID",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually remove the participants; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "groupId": {
         "description": "Group ID or JID",
         "type": "string"
@@ -74479,6 +75526,10 @@ public enum RaviSchemas {
       "account": {
         "description": "WhatsApp account ID",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually rename the group; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "groupId": {
         "description": "Group ID or JID",
@@ -74513,6 +75564,10 @@ public enum RaviSchemas {
         "description": "WhatsApp account ID",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually revoke the invite link; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "groupId": {
         "description": "Group ID or JID",
         "type": "string"
@@ -74540,6 +75595,10 @@ public enum RaviSchemas {
       "account": {
         "description": "WhatsApp account ID",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually send the message; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "groupId": {
         "description": "Group ID, JID, or 'here' for the current chat",
@@ -74581,6 +75640,10 @@ public enum RaviSchemas {
         "description": "WhatsApp account ID",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually apply the setting; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "groupId": {
         "description": "Group ID or JID",
         "type": "string"
@@ -74613,6 +75676,10 @@ public enum RaviSchemas {
       "actionId": {
         "description": "Action id, e.g. task.comment",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually execute the provider action; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "id": {
         "description": "External reference id",
@@ -75737,6 +76804,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually archive the node run; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "nodeKey": {
         "description": "Node key",
         "type": "string"
@@ -75813,6 +76884,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these top-level fields per item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -76014,6 +77089,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "execute": {
+        "description": "Actually start the workflow run; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "runId": {
         "description": "Optional workflow run id",
         "type": "string"
@@ -76193,6 +77272,10 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
+      "fields": {
+        "description": "Compact mode: keep only these top-level fields per item",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size (default: 50, max: 500)",
         "type": "string"
@@ -76981,6 +78064,10 @@ public enum RaviSchemas {
         "description": "Credential connection (default: default)",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each comment",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size, 1-100 (default: 20)",
         "pattern": "^\\d+$",
@@ -77220,6 +78307,10 @@ public enum RaviSchemas {
         "description": "Credential connection (default: default)",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each video",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size, 1-50 (default: 25)",
         "pattern": "^\\d+$",
@@ -77336,6 +78427,10 @@ public enum RaviSchemas {
         "description": "Credential connection (default: default)",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually add the video to the playlist; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "playlistId": {
         "description": "Target YouTube playlist ID",
         "minLength": 1,
@@ -77407,6 +78502,10 @@ public enum RaviSchemas {
       "description": {
         "description": "Playlist description",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually create the playlist; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "privacy": {
         "description": "public|private|unlisted (default: private)",
@@ -77495,6 +78594,10 @@ public enum RaviSchemas {
         "description": "Credential connection (default: default)",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually delete the playlist permanently; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "playlistId": {
         "description": "Owned YouTube playlist ID",
         "minLength": 1,
@@ -77536,6 +78639,10 @@ public enum RaviSchemas {
         "description": "Credential connection (default: default)",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually remove the playlist item; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "playlistItemId": {
         "description": "Playlist item ID, not video ID",
         "minLength": 1,
@@ -77575,6 +78682,10 @@ public enum RaviSchemas {
     "properties": {
       "connection": {
         "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each playlist",
         "type": "string"
       },
       "limit": {
@@ -77671,6 +78782,10 @@ public enum RaviSchemas {
         "description": "Credential connection (default: default)",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually publish the reply; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "text": {
         "description": "Exact approved reply text",
         "minLength": 1,
@@ -77711,6 +78826,10 @@ public enum RaviSchemas {
     "properties": {
       "connection": {
         "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each video",
         "type": "string"
       },
       "limit": {
@@ -77907,6 +79026,10 @@ public enum RaviSchemas {
         "description": "Credential connection (default: default)",
         "type": "string"
       },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each subscription",
+        "type": "string"
+      },
       "limit": {
         "description": "Page size, 1-50 (default: 25)",
         "pattern": "^\\d+$",
@@ -77994,6 +79117,10 @@ public enum RaviSchemas {
     "properties": {
       "connection": {
         "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each comment",
         "type": "string"
       },
       "limit": {
@@ -78256,6 +79383,10 @@ public enum RaviSchemas {
         "description": "Credential connection (default: default)",
         "type": "string"
       },
+      "execute": {
+        "description": "Actually delete the video permanently; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
+      },
       "id": {
         "description": "Owned YouTube video ID",
         "minLength": 1,
@@ -78304,6 +79435,10 @@ public enum RaviSchemas {
       "description": {
         "description": "Replacement description",
         "type": "string"
+      },
+      "execute": {
+        "description": "Actually update the video metadata; default is a dry-run that only shows the plan (exit 3)",
+        "type": "boolean"
       },
       "id": {
         "description": "Owned YouTube video ID",
@@ -78413,6 +79548,10 @@ public enum RaviSchemas {
     "properties": {
       "connection": {
         "description": "Credential connection (default: default)",
+        "type": "string"
+      },
+      "fields": {
+        "description": "Compact mode: keep only these fields of each video",
         "type": "string"
       },
       "limit": {

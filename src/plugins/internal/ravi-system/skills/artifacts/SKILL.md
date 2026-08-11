@@ -14,6 +14,52 @@ description: |
 
 Ele registra o arquivo bruto, metadata, métricas, lineage e relações com sessão/task/canal para que um artifact possa ser auditado, encontrado e reutilizado depois.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução (ex.: `ARTIFACT_NOT_FOUND`, `ARTIFACT_VERSION_NOT_FOUND`, `SITE_NOT_FOUND`, `ROUTE_NOT_FOUND`). O envelope traz `suggestions` com artifacts reais parecidos (ids/títulos do ledger local) ou `suggestedAction` apontando a listagem certa — consulte antes de concluir "não existe".
+- `2` erro de uso (flag\argumento inválido): corrija a chamada, não insista na mesma sintaxe.
+- `3` freio de escrita — não é erro. Nada foi enviado/exposto; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
+
+Onde o freio existe hoje (ops que expõem conteúdo externamente):
+
+- `artifacts publish` e `artifacts release activate` — dry-run por default; nada sobe para o Console sem `--execute`.
+- `pages publish` — dry-run por default; o upload/release só acontece com `--execute`.
+- `pages password set` e `pages password remove` — dry-run por default; o `set` freado nem pede a senha.
+- `pages update`/`pages visibility` PARA `public` — freado (expõe conteúdo já hospedado). Reduzir visibilidade (`private`/`protected_link`) grava na hora, sem freio: lockdown nunca é freado.
+
+Exemplos freados (repita com `--execute` após revisar o `plan`):
+
+```bash
+ravi artifacts publish ./site --project proj --site demo --route / --visibility public --json           # exit 3 (plano)
+ravi artifacts publish ./site --project proj --site demo --route / --visibility public --json --execute # publica
+ravi artifacts release activate art_xxx --release rel_xxx --json --execute
+ravi pages publish proj demo ./site --route / --visibility public --entrypoint index.html --execute
+ravi pages password set proj demo --route / --execute
+ravi pages password remove proj demo --route / --visibility private --execute
+ravi pages visibility proj demo public --execute
+ravi pages create proj demo --visibility private --execute
+ravi pages domains proj demo docs.example.com --execute
+```
+
+Escritas SEM freio (gravam na hora — o freio é você conferir o alvo antes):
+
+- `artifacts create`, `update`, `attach`, `event`, `snapshot`
+- `artifacts archive` e `artifacts restore` (par reversível: archive é soft-delete consultável com `--include-deleted`; restore recupera de versão imutável e registra nova versão)
+- reduções de visibilidade e `pages password status`
+
+Compact mode: `artifacts list`, `pages list` e `pages published` aceitam `--fields a,b,c` (ex.: `--fields id,kind`) — use em varredura para não arrastar o objeto inteiro.
+
+Checklist antes de responder sobre artifacts/pages:
+
+- Tratei exit 3 como freio (revisei o `plan`) e não como falha?
+- Consultei `suggestions`/`suggestedAction` do envelope antes de declarar not-found?
+- Confirmei que a operação que expõe conteúdo público levou `--execute` de propósito?
+
 ## Criar Artifact
 
 ```bash
@@ -122,27 +168,27 @@ Archive é soft-delete: o artifact sai da listagem padrão, mas continua consult
 Para subir HTML/site no Ravi Pages, use `ravi pages publish`. `ravi pages`
 cria/edita o site, mas não sobe bytes sem o publish.
 
-Fluxo canônico para diretório local:
+Fluxo canônico para diretório local (`publish` é freado: sem `--execute` é dry-run com exit 3):
 
 ```bash
-ravi pages create <project-ref> <site-slug> --visibility public
-ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html
+ravi pages create <project-ref> <site-slug> --visibility public --execute
+ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html --execute
 ```
 
 Se já existe artifact local:
 
 ```bash
-ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public
+ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public --execute
 ```
 
 O upload de conteúdo do Pages é `ravi pages publish`.
 
-Para proteger uma rota já publicada sem reenviar o conteúdo:
+Para proteger uma rota já publicada sem reenviar o conteúdo (`set`/`remove` são freados; o `set` sem `--execute` nem pede a senha):
 
 ```bash
-ravi pages password set <project-ref> <site-slug> --route /
+ravi pages password set <project-ref> <site-slug> --route / --execute
 ravi pages password status <project-ref> <site-slug> --route / --json
-ravi pages password remove <project-ref> <site-slug> --route / --visibility private
+ravi pages password remove <project-ref> <site-slug> --route / --visibility private --execute
 ```
 
 `password set` usa prompt oculto e confirmação. Em automação, use somente

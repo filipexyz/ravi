@@ -158,8 +158,8 @@ private func splitSseField(_ line: String) -> (field: String, value: String) {
   return (field, value)
 }
 
-#if os(Android)
-private final class RaviAndroidSseSessionDelegate<T: Decodable & Sendable>: NSObject, URLSessionDataDelegate, @unchecked Sendable {
+#if os(Android) || os(Linux)
+private final class RaviStreamingSessionDelegate<T: Decodable & Sendable>: NSObject, URLSessionDataDelegate, @unchecked Sendable {
   private let continuation: AsyncThrowingStream<RaviSseEvent<T>, Error>.Continuation
   private var parser: RaviSseParser<T>
   private var lineBuffer = Data()
@@ -707,16 +707,16 @@ ${methods}
     as type: T.Type
   ) -> AsyncThrowingStream<RaviSseEvent<T>, Error> {
     AsyncThrowingStream { continuation in
-#if os(Android)
-      let delegate = RaviAndroidSseSessionDelegate(dataType: type, continuation: continuation)
+#if os(Android) || os(Linux)
+      let delegate = RaviStreamingSessionDelegate(dataType: type, continuation: continuation)
       do {
         let request = try buildStreamRequest(pathSegments: pathSegments, queryItems: queryItems)
         let configuration = URLSessionConfiguration.default
-        let androidSession = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
-        let dataTask = androidSession.dataTask(with: request)
+        let streamSession = URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
+        let dataTask = streamSession.dataTask(with: request)
         continuation.onTermination = { _ in
           dataTask.cancel()
-          androidSession.invalidateAndCancel()
+          streamSession.invalidateAndCancel()
         }
         dataTask.resume()
       } catch {

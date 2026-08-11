@@ -6,6 +6,8 @@ import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { closeConsoleScopeStore, upsertConsoleScopeDefault } from "../../console-scope/store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { CloudAuthError } from "../../cloud-auth/errors.js";
+import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { getCliOnlyMetadata, getOptionsMetadata } from "../decorators.js";
 import { PagesCommands, PagesPasswordCommands } from "./pages.js";
@@ -55,7 +57,7 @@ describe("pages CLI commands", () => {
     });
 
     const { output } = await captureConsole(() =>
-      command.set(["proj", "demo"], undefined, "/report", false, undefined, true),
+      command.set(["proj", "demo"], undefined, "/report", false, undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -228,7 +230,7 @@ describe("pages CLI commands", () => {
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() =>
-      command.create(["proj", "demo"], undefined, "public", true, undefined, true),
+      command.create(["proj", "demo"], undefined, "public", true, undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -272,7 +274,7 @@ describe("pages CLI commands", () => {
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() =>
-      command.update(["proj", "demo"], undefined, "public", undefined, true),
+      command.update(["proj", "demo"], undefined, "public", undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -363,7 +365,7 @@ describe("pages CLI commands", () => {
     const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
 
     const { output } = await captureConsole(() =>
-      command.domains(["filipe-ai", "filipe-ai", "www.filipe.ai", "filipe.ai"], undefined, true, undefined, true),
+      command.domains(["filipe-ai", "filipe-ai", "www.filipe.ai", "filipe.ai"], undefined, true, undefined, true, true),
     );
     const payload = JSON.parse(output);
 
@@ -474,6 +476,8 @@ describe("pages CLI commands", () => {
         noActivate,
         undefined,
         true,
+        undefined,
+        true,
       );
 
     const defaultResult = await captureConsole(() => publish());
@@ -578,6 +582,8 @@ describe("pages CLI commands", () => {
         undefined,
         undefined,
         true,
+        undefined,
+        true,
       ),
     );
     const payload = JSON.parse(output);
@@ -628,6 +634,354 @@ describe("pages CLI commands", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Agent-first contract (Manual v2): write brake (exit 3), Console not-found
+// mapping (SITE_NOT_FOUND / ROUTE_NOT_FOUND, exit 1) and compact --fields.
+// The real context module is in play here, so braked calls run inside
+// runWithContext to make the contract helpers throw instead of process.exit.
+// ---------------------------------------------------------------------------
+
+describe("pages agent-first contract", () => {
+  it("create without --execute dry-runs before credentials or Console", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    let credentialReads = 0;
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return {};
+    });
+    const command = new PagesCommands({
+      client,
+      readCredentials: () => {
+        credentialReads += 1;
+        return makeCredentials();
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.create(["proj", "demo"], undefined, "private", true, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      slug: "demo",
+      defaultVisibility: "private",
+      defaultSite: true,
+    });
+    expect(credentialReads).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  it("domains without --execute dry-runs before credentials or Console", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    let credentialReads = 0;
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return {};
+    });
+    const command = new PagesCommands({
+      client,
+      readCredentials: () => {
+        credentialReads += 1;
+        return makeCredentials();
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.domains(["proj", "demo", "docs.example.com"], undefined, true, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      site: "demo",
+      hostnameCount: 1,
+      readinessCheck: true,
+    });
+    expect(credentialReads).toBe(0);
+    expect(calls).toEqual([]);
+  });
+
+  it("publish without --execute is a dry-run: exit 3 and no Console call at all", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return [];
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () =>
+        command.publish(
+          ["proj", "demo", "C:/sentinel/private"],
+          undefined,
+          "/guide",
+          "public",
+          "Docs",
+          undefined,
+          undefined,
+          "index.html",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.dryRun).toBe(true);
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      site: "demo",
+      sourceKind: "path",
+      sourceName: expect.stringContaining("[REDACTED:content"),
+      route: "/guide",
+      visibility: "public",
+      entrypointPresent: true,
+    });
+    expect(JSON.stringify(error.details.plan)).not.toContain("C:/sentinel/private");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("publish identifies a local artifact without exposing unrelated publish content", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return [];
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () =>
+        command.publish(
+          ["proj", "demo", "art_demo_123"],
+          undefined,
+          undefined,
+          "private",
+          "SENTINEL_SECRET_7M4Q",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      site: "demo",
+      sourceKind: "artifact",
+      sourceName: expect.stringContaining("[REDACTED:content"),
+      route: "/",
+      visibility: "private",
+      entrypointPresent: false,
+    });
+    expect(JSON.stringify(error.details.plan)).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("password set without --execute never prompts for the password nor calls Console", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return passwordResponse();
+    });
+    let prompted = false;
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async () => {
+        prompted = true;
+        return "never-used";
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.set(["proj", "demo"], undefined, "/sentinel/private", false, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      site: "demo",
+      routePresent: true,
+      action: "set",
+    });
+    expect(JSON.stringify(error.details.plan)).not.toContain("/sentinel/private");
+    expect(Object.keys(error.details.plan as Record<string, unknown>)).not.toContain("password");
+    expect(prompted).toBe(false);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("password remove keeps validation BEFORE the brake and exits 3 once the visibility is valid", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return passwordResponse();
+    });
+    const command = new PagesPasswordCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () => command.remove(["proj", "demo"], undefined, "/sentinel/private", "private", undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toEqual({
+      project: "proj",
+      site: "demo",
+      routePresent: true,
+      replacementVisibility: "private",
+    });
+    expect(JSON.stringify(error.details.plan)).not.toContain("/sentinel/private");
+    expect(calls).toHaveLength(0);
+  });
+
+  it("update to public without --execute exits 3; reducing visibility writes immediately", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return {
+        site: { id: "site_1", slug: "demo", defaultHostname: "demo.ravi.page", defaultVisibility: "private" },
+      };
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    await expectContractError(
+      () => command.update(["proj", "demo"], undefined, "public", undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+    expect(calls).toHaveLength(0);
+
+    await captureConsole(() => command.update(["proj", "demo"], undefined, "private", undefined, true));
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toMatchObject({ method: "PATCH" });
+  });
+
+  it("visibility shortcut to public is braked too", async () => {
+    const calls: Array<{ method: string; path: string }> = [];
+    const client = makeClient(async (method, path) => {
+      calls.push({ method, path });
+      return { site: { id: "site_1", slug: "demo" } };
+    });
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const error = await expectContractError(
+      () => command.visibility(["proj", "demo", "public"], undefined, undefined, true),
+      "WRITE_REQUIRES_EXECUTE",
+      3,
+    );
+
+    expect(error.details.plan).toMatchObject({ site: "demo", defaultVisibility: "public" });
+    expect(calls).toHaveLength(0);
+  });
+
+  it("maps a Console 'site not found' failure to the SITE_NOT_FOUND envelope (exit 1)", async () => {
+    const privateProviderMessage =
+      "Pages site not found: https://user:SENTINEL_PROVIDER_4Q7M@example.test/private?token=value";
+    const client = makeClient(async () => {
+      throw new CloudAuthError("PAYLOAD_INVALID", privateProviderMessage, { status: 404 });
+    });
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async () => {
+        throw new Error("unexpected password prompt");
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.status(["proj", "ghost"], undefined, undefined, undefined, true),
+      "SITE_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestedAction).toContain("ravi pages list");
+    const serialized = JSON.stringify(error.envelope());
+    expect(error.envelope().error.message).toBe("Pages site was not found.");
+    expect(serialized).not.toContain("SENTINEL_PROVIDER_4Q7M");
+    expect(serialized).not.toContain("user:");
+    expect(serialized).not.toContain("/private");
+  });
+
+  it("maps a Console 'route not found' failure to the ROUTE_NOT_FOUND envelope (exit 1)", async () => {
+    const client = makeClient(async () => {
+      throw new CloudAuthError("PAYLOAD_INVALID", "Route not found: /missing", { status: 404 });
+    });
+    const command = new PagesPasswordCommands({
+      client,
+      readCredentials: makeReadCredentials(),
+      readPassword: async () => {
+        throw new Error("unexpected password prompt");
+      },
+    });
+
+    const error = await expectContractError(
+      () => command.status(["proj", "demo"], undefined, "/missing", undefined, true),
+      "ROUTE_NOT_FOUND",
+      1,
+    );
+
+    expect(error.details.suggestedAction).toContain("ravi pages published");
+  });
+
+  it("list --fields narrows each site to the requested fields", async () => {
+    const client = makeClient(async () => [
+      { id: "site_1", slug: "demo", defaultHostname: "demo.ravi.page", defaultVisibility: "public", status: "active" },
+    ]);
+    const command = new PagesCommands({ client, readCredentials: makeReadCredentials() });
+
+    const { output } = await captureConsole(() =>
+      command.list("proj", undefined, undefined, undefined, undefined, true, "slug,status"),
+    );
+    const payload = JSON.parse(output);
+
+    expect(payload.sites).toEqual([{ slug: "demo", status: "active" }]);
+    expect(payload.items).toEqual([{ slug: "demo", status: "active" }]);
+  });
+});
+
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<ContractError> {
+  let caught: unknown;
+  await captureConsole(async () => {
+    try {
+      await runWithContext({}, run);
+    } catch (error) {
+      caught = error;
+    }
+  });
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as ContractError;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
 
 function passwordResponse(overrides: Record<string, unknown> = {}) {
   return {

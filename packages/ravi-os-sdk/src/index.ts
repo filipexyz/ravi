@@ -47,6 +47,7 @@ export {
 export type { Transport, TransportCallInput } from "./transport/types.js";
 export {
   RaviError,
+  RaviContractError,
   RaviAuthError,
   RaviPermissionError,
   RaviValidationError,
@@ -55,6 +56,11 @@ export {
   type AuthFailureReason,
   type RaviIssue,
   type RaviErrorBody,
+  type RaviContractErrorBody,
+  type RaviContractErrorPayload,
+  type RaviContractOutcome,
+  type RaviGatewayErrorBody,
+  isRaviContractErrorBody,
 } from "./errors.js";
 export { SDK_VERSION, REGISTRY_HASH, GIT_SHA } from "./version.js";
 export * from "./channel-backend.js";

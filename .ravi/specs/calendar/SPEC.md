@@ -149,17 +149,21 @@ The agent-facing CLI SHOULD evolve toward local-first commands:
 ravi calendars list
 ravi calendars create
 ravi calendars show <calendar>
-ravi calendars share <calendar>
+ravi calendars share <calendar> --execute
 ravi calendars events list --from <time> --to <time>
 ravi calendars events read <event>
 ravi calendars events create --calendar <calendar> --title <title> --start <time> --end <time>
 ravi calendars events update <event>
-ravi calendars events cancel <event>
-ravi calendars events respond <event> --status accepted
+ravi calendars events cancel <event> --execute
+ravi calendars events respond <event> --status accepted --execute
 ravi calendars availability --from <time> --to <time>
 ```
 
 All commands consumed by agents MUST support `--json`.
+
+`share`, `events cancel`, and `events respond` are write-braked under the
+agent-first CLI contract (`cli/calendar`): without `--execute` they print the
+planned write and exit 3 without writing.
 
 Provider-specific operations and outbox diagnostics are internal until cloud
 sync is introduced. Agent-facing read/write paths SHOULD go through the local

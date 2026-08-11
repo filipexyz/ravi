@@ -111,7 +111,7 @@ Ao ensinar agentes a usar contexto-filho, enfatize:
 
 - `ravi context list` para visao geral sem expor `contextKey`
 - `ravi context info <contextId>` para lineage detalhado
-- `ravi context revoke <contextId>` para encerrar contexto emitido
+- `ravi context revoke <contextId>` para encerrar imediatamente um contexto emitido
 
 Lineage esperado no metadata:
 
@@ -121,6 +121,42 @@ Lineage esperado no metadata:
 - `issuedAt`
 - `issuanceMode`
 - `approvalSource` (quando herdado)
+
+## Contrato Do CLI
+
+O dominio `context` segue o contrato agent-first (Manual v2). Regras compactas:
+
+**Exit codes:** `0` sucesso · `1` erro/not-found · `2` uso invalido · `3` freio de escrita (dry-run — nao e erro, e o sistema funcionando).
+
+**Confirmação baseada em risco:**
+
+- `ravi context revoke <id>` reduz autoridade e executa imediatamente. Cascateia para filhos salvo `--no-cascade`.
+- `ravi context credentials remove <key>` — dry-run por default; so remove com `--execute`.
+
+**Equivalentes locais (NAO renomear):**
+
+- `ravi context prune` — usa `--apply --confirm prune-contexts` (freio mais forte que o padrao).
+- `ravi context cleanup-agent-runtime` — dry-run por default; executa com `--revoke`.
+
+**Envelopes de erro (`--json`):**
+
+- `CONTEXT_NOT_FOUND` (info/lineage/revoke) — exit 1, com `suggestions` de contextIds reais.
+- `CREDENTIAL_NOT_FOUND` (credentials remove/set-default) — exit 1, sugestoes por contextId/label.
+- `WRITE_REQUIRES_EXECUTE` — exit 3, com `error.plan` do que seria escrito.
+
+**Invariante de seguranca:** chave `rctx_*` completa NUNCA aparece em envelope, plano de dry-run ou suggestions — so contextIds, labels e prefixo mascarado (8 chars). Se aparecer, e regressao de seguranca.
+
+**Modo compacto:** `ravi context list --fields contextId,kind --json` e `ravi context credentials list --fields contextId,label --json`.
+
+### Checklist do contrato
+
+1. Vai revogar? Confira o ID e execute uma vez; revoga imediatamente porque reduz exposicao.
+2. Not-found? Leia `error.suggestions` antes de tentar variantes do id.
+3. Prune/cleanup? Use os flags locais (`--apply --confirm` / `--revoke`), nao invente `--execute` neles.
+4. Nunca cole uma chave `rctx_*` em log, issue ou prompt — envelopes ja vem sem ela por design.
+5. Listagem para agente? Prefira `--json --fields ...` para reduzir tokens.
+
+Spec normativa: `.ravi/specs/cli/context/` (SPEC, WHY, RUNBOOK, CHECKS).
 
 ## Checklist de Ensino
 

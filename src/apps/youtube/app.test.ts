@@ -54,6 +54,7 @@ describe("YouTube Ravi App manifest", () => {
     }
     for (const operation of Object.values(manifest.operations)) {
       if (operation.command) expect(operation.command).toContain("--json");
+      if (operation.mutating && operation.command) expect(operation.command).toContain("--execute");
     }
 
     expect(manifest.storage).toEqual({ sqlite: [], files: [] });

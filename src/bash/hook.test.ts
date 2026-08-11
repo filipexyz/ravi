@@ -1,8 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
 import { runWithContext, type ToolContext } from "../cli/context.js";
 import { listPermissionDenials } from "../permissions/denials.js";
 import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { logger } from "../utils/logger.js";
 import { createBashPermissionHook, createToolPermissionHook, evaluateBashPermission } from "./hook.js";
 
 function makeToolContext(agentId: string, capabilities: ContextCapability[], kind = "test-runtime"): ToolContext {
@@ -126,13 +127,35 @@ describe("createBashPermissionHook", () => {
     });
 
     it("blocks without executable grant", async () => {
-      const result = await callBashHook(
-        "python3 --version",
-        "test",
-        makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "ls" }]),
-      );
+      const command = "python3 SENTINEL_COMMAND_6H3N --version";
+      const stderr: string[] = [];
+      const write = spyOn(process.stderr, "write").mockImplementation(((chunk: unknown) => {
+        stderr.push(String(chunk));
+        return true;
+      }) as never);
+
+      let result: Awaited<ReturnType<typeof callBashHook>> | undefined;
+      try {
+        logger.setLevel("warn");
+        result = await callBashHook(
+          command,
+          "test",
+          makeToolContext("test", [{ permission: "execute", objectType: "executable", objectId: "ls" }]),
+        );
+        expect(isDenied(result)).toBe(true);
+      } finally {
+        logger.setLevel("info");
+        write.mockRestore();
+      }
+
+      if (result === undefined) throw new Error("Bash hook did not return a result");
+      expect(stderr.join("\n")).not.toContain("SENTINEL_COMMAND_6H3N");
+      expect(result).toBeDefined();
       expect(isDenied(result)).toBe(true);
       expect(getDenyReason(result)).toContain("python3");
+      const denial = listPermissionDenials({ subjectType: "agent", subjectId: "test", resolved: false })[0];
+      expect(denial?.command).toBe(`[REDACTED:content length=${command.length}]`);
+      expect(JSON.stringify(denial)).not.toContain(command);
     });
 
     it("blocks unconditional blocks regardless of grants", async () => {

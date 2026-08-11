@@ -1,5 +1,6 @@
 import { getDb } from "../router/router-db.js";
 import { publish } from "../nats.js";
+import { sanitizePublicValue } from "../cli/redaction.js";
 import type { AuditContextProvenance } from "./audit-provenance.js";
 
 const MAX_REASON_LENGTH = 500;
@@ -95,7 +96,7 @@ export function recordPermissionDenial(input: PermissionDenialInput): Permission
   const objectId = normalizeText(input.objectId);
   if (!relation || !objectType || !objectId) return null;
 
-  const detailJson = input.detail ? safeStringify(input.detail) : null;
+  const detailJson = input.detail ? safeStringify(sanitizePublicValue(input.detail) as Record<string, unknown>) : null;
   const now = Date.now();
   const result = getDb()
     .prepare(
@@ -118,8 +119,8 @@ export function recordPermissionDenial(input: PermissionDenialInput): Permission
       normalizeNullableText(input.sessionKey),
       normalizeNullableText(input.sessionName),
       normalizeNullableText(input.contextId),
-      truncate(normalizeNullableText(input.reason), MAX_REASON_LENGTH),
-      truncate(normalizeNullableText(input.command), MAX_COMMAND_LENGTH),
+      truncate(sanitizeNullableText(input.reason, "reason"), MAX_REASON_LENGTH),
+      truncate(sanitizeNullableText(input.command, "command"), MAX_COMMAND_LENGTH),
       detailJson,
       now,
     );
@@ -140,10 +141,10 @@ export function recordAndEmitPermissionDenial(input: RecordAndEmitPermissionDeni
 
 export function emitPermissionDeniedAudit(event: PermissionDeniedAuditEvent): void {
   if (process.env.RAVI_SUPPRESS_AUDIT_EVENTS === "1") return;
-  const enriched = {
+  const enriched = sanitizePublicValue({
     ...event,
     dedupeKey: event.dedupeKey ?? buildAuditDeniedDedupeKey(event),
-  };
+  }) as PermissionDeniedAuditEvent;
 
   const p = Promise.resolve(permissionAuditPublisher("ravi.audit.denied", enriched as Record<string, unknown>))
     .then(() => {
@@ -151,8 +152,8 @@ export function emitPermissionDeniedAudit(event: PermissionDeniedAuditEvent): vo
         markPermissionDenialNotified(enriched.denialId);
       }
     })
-    .catch((err) => {
-      console.error("[audit] emitPermissionDeniedAudit failed", err);
+    .catch(() => {
+      console.error("[audit] permission denial event could not be emitted");
     });
 
   pendingPermissionAuditPublishes.push(p);
@@ -241,7 +242,9 @@ function buildAuditDeniedDedupeKey(event: {
   denied?: string | null;
   reason?: string | null;
 }): string {
-  return ["audit.denied", event.type, event.agentId, event.denied, event.reason].map(normalizeDedupePart).join(":");
+  const sanitizedReason = sanitizePublicValue(event.reason, "reason");
+  const reasonPart = typeof sanitizedReason === "string" ? sanitizedReason : null;
+  return ["audit.denied", event.type, event.agentId, event.denied, reasonPart].map(normalizeDedupePart).join(":");
 }
 
 function normalizeDedupePart(value: string | null | undefined): string {
@@ -250,6 +253,13 @@ function normalizeDedupePart(value: string | null | undefined): string {
 
 function normalizeNullableText(value: string | null | undefined): string | null {
   return normalizeText(value);
+}
+
+function sanitizeNullableText(value: string | null | undefined, key: string): string | null {
+  const normalized = normalizeNullableText(value);
+  if (!normalized) return null;
+  const sanitized = sanitizePublicValue(normalized, key);
+  return typeof sanitized === "string" ? sanitized : null;
 }
 
 function truncate(value: string | null, max: number): string | null {

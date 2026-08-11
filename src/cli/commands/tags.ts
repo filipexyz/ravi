@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option } from "../decorators.js";
+import { ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import {
   declareCommandReturns,
@@ -146,6 +147,7 @@ function buildTagsListNextCommand(input: {
   kind?: TagKind;
   source?: string;
   query?: string;
+  fields?: string;
 }): string {
   const args = [
     "ravi",
@@ -163,6 +165,7 @@ function buildTagsListNextCommand(input: {
   if (input.kind) args.push("--kind", input.kind);
   if (input.source) args.push("--source", quoteCliArg(input.source));
   if (input.query) args.push("--query", quoteCliArg(input.query));
+  if (input.fields) args.push("--fields", quoteCliArg(input.fields));
   return args.join(" ");
 }
 
@@ -175,6 +178,7 @@ function buildTagsSearchNextCommand(input: {
   target?: { assetType: TagAssetType; assetId: string };
   kind?: TagKind;
   source?: string;
+  fields?: string;
 }): string {
   const args = [
     "ravi",
@@ -193,6 +197,7 @@ function buildTagsSearchNextCommand(input: {
   if (input.target) args.push("--target", quoteCliArg(`${input.target.assetType}:${input.target.assetId}`));
   if (input.kind) args.push("--kind", input.kind);
   if (input.source) args.push("--source", quoteCliArg(input.source));
+  if (input.fields) args.push("--fields", quoteCliArg(input.fields));
   return args.join(" ");
 }
 
@@ -317,6 +322,37 @@ function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+function failTagNotFound(op: string, slug: string, asJson?: boolean): never {
+  const candidates = dbListTagDefinitions({ limit: 40 }).flatMap((tag) => [tag.slug, tag.label]);
+  contractFail(op, "TAG_NOT_FOUND", `Tag not found: ${slug}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the tag slug (see suggestions for similar tags, or run 'ravi tags list')",
+      suggestions: suggestSimilar(slug, candidates),
+    },
+  });
+}
+
+/**
+ * The tags DB layer throws `Tag not found: <slug>` on unknown definitions
+ * (`dbUpdateTagDefinition` on set, `dbUpsertTagBinding` on attach); map that
+ * throw to the contract envelope, let ContractError pass through untouched,
+ * and keep every other error (selector/validation) on the legacy fail() path.
+ */
+function rethrowTagCommandError(op: string, slug: string, err: unknown, asJson?: boolean): never {
+  if (err instanceof ContractError) throw err;
+  const message = err instanceof Error ? err.message : String(err);
+  if (/^tag not found:/i.test(message)) failTagNotFound(op, slug, asJson);
+  fail(message);
+}
+
 @Group({
   name: "tags",
   description: "Unified tags for Ravi assets",
@@ -400,6 +436,8 @@ export class TagCommands {
     sort?: string,
     @Option({ flags: "--order <dir>", description: "Sort direction: asc|desc" })
     order?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const parsedKind = kind?.trim() ? requireTagKind(kind) : undefined;
     const parsedSource = source?.trim() || undefined;
@@ -444,8 +482,10 @@ export class TagCommands {
           kind: parsedKind,
           source: parsedSource,
           query: parsedQuery,
+          fields,
         })
       : null;
+    const projectedTags = pickFields(tags, fields);
     const payload = {
       total: tags.length,
       page: {
@@ -462,8 +502,8 @@ export class TagCommands {
         source: parsedSource ?? null,
         query: parsedQuery ?? null,
       },
-      items: tags,
-      tags,
+      items: projectedTags,
+      tags: projectedTags,
     };
 
     if (asJson) {
@@ -497,18 +537,23 @@ export class TagCommands {
     const normalizedSlug = normalizeSlug(slug);
     const normalizedKey = key.trim();
     const base = { slug: normalizedSlug, updatedBy: resolveTagActor() };
-    const tag =
-      normalizedKey === "label"
-        ? dbUpdateTagDefinition({ ...base, label: value })
-        : normalizedKey === "description"
-          ? dbUpdateTagDefinition({ ...base, description: value })
-          : normalizedKey === "kind"
-            ? dbUpdateTagDefinition({ ...base, kind: requireTagKind(value) })
-            : normalizedKey === "source"
-              ? dbUpdateTagDefinition({ ...base, source: value })
-              : normalizedKey === "metadata" || normalizedKey === "meta"
-                ? dbUpdateTagDefinition({ ...base, metadata: parseMetadata(value) ?? {} })
-                : null;
+    const tag = (() => {
+      try {
+        return normalizedKey === "label"
+          ? dbUpdateTagDefinition({ ...base, label: value })
+          : normalizedKey === "description"
+            ? dbUpdateTagDefinition({ ...base, description: value })
+            : normalizedKey === "kind"
+              ? dbUpdateTagDefinition({ ...base, kind: requireTagKind(value) })
+              : normalizedKey === "source"
+                ? dbUpdateTagDefinition({ ...base, source: value })
+                : normalizedKey === "metadata" || normalizedKey === "meta"
+                  ? dbUpdateTagDefinition({ ...base, metadata: parseMetadata(value) ?? {} })
+                  : null;
+      } catch (error) {
+        rethrowTagCommandError("tags set", normalizedSlug, error, asJson);
+      }
+    })();
 
     if (!tag) {
       fail("Invalid tag property. Use label, description, kind, source, metadata.");
@@ -541,7 +586,7 @@ export class TagCommands {
     const normalizedSlug = normalizeSlug(slug);
     const tag = dbGetTagDefinition(normalizedSlug);
     if (!tag) {
-      fail(`Tag not found: ${normalizedSlug}`);
+      failTagNotFound("tags show", normalizedSlug, asJson);
     }
     const bindings = dbFindTagBindings({ slug: normalizedSlug });
     const behaviorConsumers = listTagBehaviorConsumers(normalizedSlug);
@@ -639,10 +684,11 @@ export class TagCommands {
     asJson?: boolean,
   ) {
     const metadata = parseMetadata(metadataJson);
+    const normalizedSlug = normalizeSlug(slug);
     const { binding } = (() => {
       try {
         return attachTagToSelector({
-          slug: normalizeSlug(slug),
+          slug: normalizedSlug,
           selector: buildTagTargetSelector({
             targetSelector,
             agentId,
@@ -677,7 +723,7 @@ export class TagCommands {
           actor: resolveTagActor(),
         });
       } catch (error) {
-        failFromError(error);
+        rethrowTagCommandError("tags attach", normalizedSlug, error, asJson);
       }
     })();
 
@@ -812,11 +858,16 @@ export class TagCommands {
           ...(source?.trim() ? { source: source.trim() } : {}),
         });
       } catch (error) {
-        failFromError(error);
+        rethrowTagCommandError("tags detach", normalizedSlug, error, asJson);
       }
     })();
 
     if (!removed) {
+      // dbDeleteTagBinding returns false both for an unknown tag and for a
+      // missing binding; only the unknown tag gets the contract envelope.
+      if (!dbGetTagDefinition(normalizedSlug)) {
+        failTagNotFound("tags detach", normalizedSlug, asJson);
+      }
       fail(`Binding not found for ${normalizedSlug} -> ${target.assetType}:${target.assetId}`);
     }
 
@@ -923,6 +974,8 @@ export class TagCommands {
     sort?: string,
     @Option({ flags: "--order <dir>", description: "Sort direction: asc|desc" })
     order?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const targetSelectorInput = buildTagTargetSelector({
       targetSelector,
@@ -1009,10 +1062,12 @@ export class TagCommands {
           target,
           kind: parsedKind,
           source: parsedSource,
+          fields,
         })
       : null;
 
     const behaviorConsumers = normalizedSlug ? listTagBehaviorConsumers(normalizedSlug) : [];
+    const projectedBindings = pickFields(bindings, fields);
     const payload = {
       total: bindings.length,
       page: {
@@ -1031,8 +1086,8 @@ export class TagCommands {
         kind: parsedKind ?? null,
         source: parsedSource ?? null,
       },
-      items: bindings,
-      bindings,
+      items: projectedBindings,
+      bindings: projectedBindings,
       behaviorConsumers,
     };
 

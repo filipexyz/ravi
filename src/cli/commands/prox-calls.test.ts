@@ -1,20 +1,34 @@
-import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { ContractError } from "../agent-contract.js";
+import { redactCommandAccessInput } from "../command-access.js";
+import { runWithContext } from "../context.js";
+import { getCommandAccessMetadata } from "../decorators.js";
 import { getDb } from "../../router/router-db.js";
 import { attachTagSlugsToAsset } from "../../tags/helpers.js";
-import { ProxCallsProfileCommands, ProxCallsToolCommands, ProxCallsVoiceAgentCommands } from "./prox-calls.js";
+import {
+  ProxCallsCommands,
+  ProxCallsProfileCommands,
+  ProxCallsToolCommands,
+  ProxCallsVoiceAgentCommands,
+} from "./prox-calls.js";
 
 const testDir = join(tmpdir(), `ravi-prox-calls-cli-test-${Date.now()}`);
 mkdirSync(testDir, { recursive: true });
 process.env.RAVI_STATE_DIR = testDir;
+const originalFetch = globalThis.fetch;
 
 afterAll(() => {
   mock.restore();
   try {
     rmSync(testDir, { recursive: true, force: true });
   } catch {}
+});
+
+afterEach(() => {
+  globalThis.fetch = originalFetch;
 });
 
 import {
@@ -953,6 +967,617 @@ describe("dry-run validation", () => {
     expect(runs.length).toBe(2);
     expect(runs[0].tool_id).toBe("call.end");
     expect(runs[1].tool_id).toBe("person.lookup");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Agent-first contract (Manual v2): write brake, not-found envelopes, --fields
+// ---------------------------------------------------------------------------
+
+/**
+ * Contract helpers throw ContractError (instead of process.exit) only when a
+ * tool context is present; runWithContext provides one without env mutation.
+ */
+async function expectContractError(
+  run: () => Promise<unknown> | unknown,
+  code: string,
+  exitCode: number,
+): Promise<InstanceType<typeof ContractError>> {
+  let caught: unknown;
+  await runWithContext({ sessionKey: "prox-test", sessionName: "prox-test", agentId: "prox-test" }, async () => {
+    await withoutLogsAsync(async () => {
+      try {
+        await run();
+      } catch (error) {
+        caught = error;
+      }
+    });
+  });
+  expect(caught).toBeInstanceOf(ContractError);
+  const contractError = caught as InstanceType<typeof ContractError>;
+  expect(contractError.code).toBe(code);
+  expect(contractError.exitCode).toBe(exitCode);
+  return contractError;
+}
+
+async function withoutLogsAsync<T>(run: () => Promise<T> | T): Promise<T> {
+  const originalLog = console.log;
+  const originalError = console.error;
+  console.log = () => {};
+  console.error = () => {};
+  try {
+    return await run();
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+}
+
+function installElevenLabsProfileFetch(): Array<{ method?: string; url: string }> {
+  const calls: Array<{ method?: string; url: string }> = [];
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    calls.push({ method: init?.method, url: String(input) });
+    if (init?.method === "GET") {
+      return new Response(
+        JSON.stringify({
+          conversation_config: {
+            agent: {
+              first_message: "old provider greeting",
+              prompt: { prompt: "old provider prompt" },
+            },
+          },
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    return new Response(JSON.stringify({ ok: true }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+  return calls;
+}
+
+function configureCheckinProfile(options: {
+  profileId?: string;
+  provider?: string;
+  agentId?: string;
+  firstMessage: string;
+  dynamicPlaceholder?: string | string[];
+  skipProviderSync?: boolean;
+  execute?: boolean;
+}) {
+  return new ProxCallsProfileCommands().configure(
+    options.profileId ?? "checkin",
+    options.provider,
+    options.agentId,
+    undefined,
+    undefined,
+    undefined,
+    options.firstMessage,
+    undefined,
+    options.dynamicPlaceholder,
+    options.skipProviderSync,
+    undefined,
+    true,
+    options.execute,
+  );
+}
+
+async function withFreshCallsState<T>(name: string, run: () => Promise<T>): Promise<T> {
+  const previousStateDir = process.env.RAVI_STATE_DIR;
+  const freshStateDir = join(testDir, name);
+  mkdirSync(freshStateDir, { recursive: true });
+  process.env.RAVI_STATE_DIR = freshStateDir;
+  resetCallsSchemaFlag();
+
+  try {
+    return await run();
+  } finally {
+    process.env.RAVI_STATE_DIR = previousStateDir;
+    resetCallsSchemaFlag();
+  }
+}
+
+describe("prox calls agent-first contract", () => {
+  it("redacts sensitive request and profile configuration inputs from audit metadata", () => {
+    const requestAccess = getCommandAccessMetadata(ProxCallsCommands).get("request");
+    const configureAccess = getCommandAccessMetadata(ProxCallsProfileCommands).get("configure");
+
+    expect(
+      redactCommandAccessInput(requestAccess, {
+        profileId: "checkin",
+        phone: "PHONE_AUDIT_SENTINEL",
+        reason: "REASON_AUDIT_SENTINEL",
+        var: ["account=DYNAMIC_AUDIT_SENTINEL"],
+      }),
+    ).toEqual({
+      profileId: "checkin",
+      phone: "[REDACTED]",
+      reason: "[REDACTED]",
+      var: "[REDACTED]",
+    });
+    expect(
+      redactCommandAccessInput(configureAccess, {
+        profileId: "checkin",
+        prompt: "PROMPT_AUDIT_SENTINEL",
+        firstMessage: "FIRST_MESSAGE_AUDIT_SENTINEL",
+        systemPromptPath: "SYSTEM_PROMPT_PATH_AUDIT_SENTINEL",
+        dynamicPlaceholder: ["account=DYNAMIC_PLACEHOLDER_AUDIT_SENTINEL"],
+      }),
+    ).toEqual({
+      profileId: "checkin",
+      prompt: "[REDACTED]",
+      firstMessage: "[REDACTED]",
+      systemPromptPath: "[REDACTED]",
+      dynamicPlaceholder: "[REDACTED]",
+    });
+  });
+
+  it("request dry-run exposes only safe indicators and persists no call request", async () => {
+    await withFreshCallsState("virgin-request-safe-plan", async () => {
+      const phoneSentinel = "+5511987654321";
+      const reasonSentinel = "REASON_PLAN_SENTINEL";
+      const dynamicValueSentinels = ["DYNAMIC_VALUE_Z_SENTINEL", "DYNAMIC_VALUE_A_SENTINEL"];
+
+      const error = await expectContractError(
+        () =>
+          new ProxCallsCommands().request(
+            "checkin",
+            "person_brake_1",
+            reasonSentinel,
+            phoneSentinel,
+            "normal",
+            [`zeta=${dynamicValueSentinels[0]}`, `alpha=${dynamicValueSentinels[1]}`],
+            undefined,
+            undefined,
+            true,
+            undefined,
+          ),
+        "WRITE_REQUIRES_EXECUTE",
+        3,
+      );
+
+      expect(error.details.dryRun).toBe(true);
+      expect(error.details.plan).toEqual({
+        profileId: "checkin",
+        profileProvider: "elevenlabs",
+        personIdPresent: true,
+        phoneProvided: true,
+        reasonProvided: true,
+        priority: "normal",
+        dynamicVariableCount: 2,
+        skipOriginNotify: false,
+        force: false,
+        profileResolution: "built-in-default",
+        providerMode: "stub",
+      });
+      const serializedPlan = JSON.stringify(error.details.plan);
+      expect(serializedPlan).not.toContain(phoneSentinel);
+      expect(serializedPlan).not.toContain(reasonSentinel);
+      expect(serializedPlan).not.toContain("person_brake_1");
+      for (const sentinel of dynamicValueSentinels) expect(serializedPlan).not.toContain(sentinel);
+      expect(serializedPlan).not.toContain("alpha");
+      expect(serializedPlan).not.toContain("zeta");
+      const tables = getDb()
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'call_requests'")
+        .all();
+      expect(tables).toEqual([]);
+    });
+  });
+
+  it("request dry-run does not initialize call schema or seed defaults", async () => {
+    await withFreshCallsState("virgin-request-dry-run", async () => {
+      const error = await expectContractError(
+        () =>
+          new ProxCallsCommands().request(
+            "checkin",
+            "person_virgin_dry_run",
+            "SENTINEL_CALL_REASON_DO_NOT_LEAK",
+            "+5511999999999",
+            undefined,
+            ["token=SENTINEL_CALL_VARIABLE_DO_NOT_LEAK"],
+            undefined,
+            undefined,
+            true,
+            undefined,
+          ),
+        "WRITE_REQUIRES_EXECUTE",
+        3,
+      );
+
+      expect(JSON.stringify(error.details.plan)).not.toContain("SENTINEL_CALL_REASON_DO_NOT_LEAK");
+      expect(JSON.stringify(error.details.plan)).not.toContain("SENTINEL_CALL_VARIABLE_DO_NOT_LEAK");
+      const tables = getDb()
+        .prepare(
+          `SELECT name FROM sqlite_master
+           WHERE type = 'table'
+             AND name IN ('call_profiles', 'call_rules', 'call_voice_agents', 'call_tools', 'call_requests')`,
+        )
+        .all() as Array<{ name: string }>;
+      expect(tables).toEqual([]);
+    });
+  });
+
+  it("request resolves an unknown profile before the brake without initializing call state", async () => {
+    await withFreshCallsState("virgin-request-unknown-profile", async () => {
+      const error = await expectContractError(
+        () =>
+          new ProxCallsCommands().request(
+            "missing-profile",
+            "person_virgin_dry_run",
+            "reason",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            undefined,
+          ),
+        "CALL_PROFILE_NOT_FOUND",
+        1,
+      );
+
+      expect(error.details.suggestions).toEqual(expect.arrayContaining(["checkin", "followup", "urgent-approval"]));
+      const tables = getDb()
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'call_profiles'")
+        .all();
+      expect(tables).toEqual([]);
+    });
+  });
+
+  it("request rejects a disabled profile before returning a confirmation plan", async () => {
+    initCallsDefaultsForDialing();
+    updateCallProfile("checkin", { enabled: false });
+
+    try {
+      const error = await expectContractError(
+        () =>
+          new ProxCallsCommands().request(
+            "checkin",
+            "person_disabled_profile",
+            "reason",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            undefined,
+          ),
+        "CALL_PROFILE_DISABLED",
+        1,
+      );
+
+      expect(error.details.suggestedAction).toContain("Enable 'checkin'");
+    } finally {
+      updateCallProfile("checkin", { enabled: true });
+    }
+  });
+
+  it("request rejects an invalid dynamic variable without echoing its value", async () => {
+    const secret = "SENTINEL_DYNAMIC_VARIABLE_DO_NOT_LEAK";
+    let caught: unknown;
+    await runWithContext({ sessionKey: "prox-test", sessionName: "prox-test", agentId: "prox-test" }, async () => {
+      try {
+        await new ProxCallsCommands().request(
+          "checkin",
+          "person_invalid_var",
+          "reason",
+          undefined,
+          undefined,
+          [secret],
+          undefined,
+          undefined,
+          true,
+          undefined,
+        );
+      } catch (error) {
+        caught = error;
+      }
+    });
+
+    expect(caught).toBeInstanceOf(Error);
+    expect((caught as Error).message).toContain("Invalid dynamic variable format");
+    expect((caught as Error).message).not.toContain(secret);
+  });
+
+  it("request with --execute submits the call request (stub provider)", async () => {
+    initCallsDefaultsForDialing();
+    updateCallProfile("checkin", { provider: "stub" });
+
+    const payload = await runWithContext(
+      { sessionKey: "prox-test", sessionName: "prox-test", agentId: "prox-test" },
+      () =>
+        withoutLogsAsync(() =>
+          new ProxCallsCommands().request(
+            "checkin",
+            "person_brake_2",
+            "Teste com execute",
+            "+5511999999999",
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            true,
+          ),
+        ),
+    );
+
+    expect(payload.request.target_person_id).toBe("person_brake_2");
+    expect(getCallRequest(payload.request.id as string)).not.toBeNull();
+  });
+
+  it("profiles configure dry-run blocks before local persistence and provider I/O", async () => {
+    initCallsDefaults();
+    updateCallProfile("checkin", {
+      provider: "elevenlabs",
+      provider_agent_id: "agent_contract_dry_run",
+      first_message: "local greeting before dry-run",
+    });
+    getDb().prepare("DELETE FROM call_rules WHERE id = 'rules-global-default'").run();
+    const rulesBefore = getDb().prepare("SELECT COUNT(*) AS c FROM call_rules").get() as { c: number };
+    expect(rulesBefore.c).toBe(0);
+    process.env.ELEVENLABS_API_KEY = "test-key";
+    const providerCalls = installElevenLabsProfileFetch();
+    const dynamicKeySentinel = "SENTINEL_PRIVATE_DYNAMIC_KEY";
+
+    let caught: unknown;
+    try {
+      await withoutLogsAsync(() =>
+        configureCheckinProfile({
+          firstMessage: "must not be persisted without execute",
+          dynamicPlaceholder: `${dynamicKeySentinel}=value`,
+        }),
+      );
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(providerCalls).toHaveLength(0);
+    const rulesAfter = getDb().prepare("SELECT COUNT(*) AS c FROM call_rules").get() as { c: number };
+    expect(rulesAfter.c).toBe(0);
+    expect(getCallProfile("checkin")?.first_message).toBe("local greeting before dry-run");
+    expect(caught).toBeInstanceOf(ContractError);
+    const contractError = caught as InstanceType<typeof ContractError>;
+    expect(contractError.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(contractError.exitCode).toBe(3);
+    expect(contractError.details.plan).toMatchObject({
+      profileId: "checkin",
+      provider: "elevenlabs",
+      providerAgentConfigured: true,
+      firstMessageChanged: true,
+      dynamicVariableCount: 1,
+    });
+    expect(JSON.stringify(contractError.details.plan)).not.toContain(dynamicKeySentinel);
+  });
+
+  it("profiles configure dry-run recognizes a default profile without seeding virgin state", async () => {
+    await withFreshCallsState("virgin-profile-dry-run", async () => {
+      process.env.ELEVENLABS_API_KEY = "test-key";
+      const providerCalls = installElevenLabsProfileFetch();
+
+      const error = await expectContractError(
+        () =>
+          configureCheckinProfile({
+            profileId: "followup",
+            provider: "elevenlabs",
+            agentId: "agent_virgin_dry_run",
+            firstMessage: "virgin dry-run greeting",
+          }),
+        "WRITE_REQUIRES_EXECUTE",
+        3,
+      );
+
+      expect(error.details.plan).toMatchObject({ profileId: "followup", provider: "elevenlabs" });
+      expect(providerCalls).toHaveLength(0);
+      for (const table of ["call_profiles", "call_rules", "call_voice_agents", "call_tools"]) {
+        const row = getDb().prepare(`SELECT COUNT(*) AS c FROM ${table}`).get() as { c: number };
+        expect(row.c).toBe(0);
+      }
+    });
+  });
+
+  it("profiles configure keeps a default profile's local-only first use unbraked", async () => {
+    await withFreshCallsState("virgin-profile-local", async () => {
+      const providerCalls = installElevenLabsProfileFetch();
+
+      const payload = await withoutLogsAsync(() =>
+        configureCheckinProfile({
+          profileId: "followup",
+          provider: "stub",
+          firstMessage: "virgin local greeting",
+        }),
+      );
+
+      expect(providerCalls).toHaveLength(0);
+      expect(getCallProfile("followup")).toMatchObject({
+        provider: "stub",
+        first_message: "virgin local greeting",
+      });
+      expect(payload.provider_sync).toBeNull();
+    });
+  });
+
+  it("profiles configure --execute seeds and synchronizes a default profile in virgin state", async () => {
+    await withFreshCallsState("virgin-profile-execute", async () => {
+      process.env.ELEVENLABS_API_KEY = "test-key";
+      const providerCalls = installElevenLabsProfileFetch();
+
+      const payload = await withoutLogsAsync(() =>
+        configureCheckinProfile({
+          profileId: "followup",
+          provider: "elevenlabs",
+          agentId: "agent_virgin_execute",
+          firstMessage: "virgin executed greeting",
+          execute: true,
+        }),
+      );
+
+      expect(providerCalls.map((call) => call.method)).toEqual(["GET", "PATCH"]);
+      expect(getCallProfile("followup")).toMatchObject({
+        provider: "elevenlabs",
+        provider_agent_id: "agent_virgin_execute",
+        first_message: "virgin executed greeting",
+      });
+      expect(payload.provider_sync).toMatchObject({ agentId: "agent_virgin_execute", firstMessageSynced: true });
+    });
+  });
+
+  it("profiles configure rejects an unknown profile before a dry-run in virgin state", async () => {
+    await withFreshCallsState("virgin-profile-unknown", async () => {
+      const error = await expectContractError(
+        () =>
+          configureCheckinProfile({
+            profileId: "unknown-profile",
+            provider: "elevenlabs",
+            agentId: "agent_unknown",
+            firstMessage: "must not reach a dry-run",
+          }),
+        "CALL_PROFILE_NOT_FOUND",
+        1,
+      );
+
+      expect(error.details.suggestions).toEqual([]);
+      const profiles = getDb().prepare("SELECT COUNT(*) AS c FROM call_profiles").get() as { c: number };
+      expect(profiles.c).toBe(0);
+    });
+  });
+
+  it("profiles configure with --execute persists and synchronizes the external provider", async () => {
+    initCallsDefaults();
+    updateCallProfile("checkin", {
+      provider: "elevenlabs",
+      provider_agent_id: "agent_contract_execute",
+      first_message: "local greeting before execute",
+    });
+    process.env.ELEVENLABS_API_KEY = "test-key";
+    const providerCalls = installElevenLabsProfileFetch();
+
+    const payload = await withoutLogsAsync(() =>
+      configureCheckinProfile({ firstMessage: "persisted with execute", execute: true }),
+    );
+
+    expect(providerCalls.map((call) => call.method)).toEqual(["GET", "PATCH"]);
+    expect(getCallProfile("checkin")?.first_message).toBe("persisted with execute");
+    expect(payload.provider_sync).toMatchObject({
+      agentId: "agent_contract_execute",
+      firstMessageSynced: true,
+    });
+  });
+
+  it("profiles configure --skip-provider-sync remains an unbraked local write", async () => {
+    initCallsDefaults();
+    updateCallProfile("checkin", {
+      provider: "elevenlabs",
+      provider_agent_id: "agent_contract_skip",
+      first_message: "local greeting before skip",
+    });
+    process.env.ELEVENLABS_API_KEY = "test-key";
+    const providerCalls = installElevenLabsProfileFetch();
+
+    const payload = await withoutLogsAsync(() =>
+      configureCheckinProfile({ firstMessage: "persisted without provider sync", skipProviderSync: true }),
+    );
+
+    expect(providerCalls).toHaveLength(0);
+    expect(getCallProfile("checkin")?.first_message).toBe("persisted without provider sync");
+    expect(payload.provider_sync).toBeNull();
+  });
+
+  it("request on an unknown profile exits 1 with CALL_PROFILE_NOT_FOUND before the brake", async () => {
+    initCallsDefaultsForDialing();
+    const error = await expectContractError(
+      () =>
+        new ProxCallsCommands().request(
+          "checkin-typo",
+          "person_brake_3",
+          "Perfil errado",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          undefined,
+        ),
+      "CALL_PROFILE_NOT_FOUND",
+      1,
+    );
+    expect(error.details.suggestions).toContain("checkin");
+  });
+
+  it("show and events on an unknown request exit 1 with CALL_REQUEST_NOT_FOUND", async () => {
+    initCallsDefaults();
+    const showError = await expectContractError(
+      () => new ProxCallsCommands().show("cr_nope", true),
+      "CALL_REQUEST_NOT_FOUND",
+      1,
+    );
+    expect(showError.details.suggestedAction).toContain("ravi prox calls request");
+    await expectContractError(() => new ProxCallsCommands().events("cr_nope", true), "CALL_REQUEST_NOT_FOUND", 1);
+  });
+
+  it("profiles/voice-agents/tools show unknown ids return typed envelopes with local suggestions", async () => {
+    initCallsDefaults();
+    const profileError = await expectContractError(
+      () => new ProxCallsProfileCommands().show("checkinn", true),
+      "CALL_PROFILE_NOT_FOUND",
+      1,
+    );
+    expect(profileError.details.suggestions).toContain("checkin");
+
+    const agentError = await expectContractError(
+      () => new ProxCallsVoiceAgentCommands().show("ravi-follow", true),
+      "VOICE_AGENT_NOT_FOUND",
+      1,
+    );
+    expect(agentError.details.suggestions).toContain("ravi-followup");
+
+    const toolError = await expectContractError(
+      () => new ProxCallsToolCommands().show("call.endd", true),
+      "CALL_TOOL_NOT_FOUND",
+      1,
+    );
+    expect(toolError.details.suggestions).toContain("call.end");
+  });
+
+  it("cancel is declared UNBRAKED (damage stop): it cancels without --execute", async () => {
+    initCallsDefaultsForDialing();
+    const request = createCallRequest({
+      profile_id: "checkin",
+      target_person_id: "person_cancel_unbraked",
+      reason: "Cancel contract test",
+    });
+
+    const payload = withoutLogs(() => new ProxCallsCommands().cancel(request.id, "parada de dano", true));
+
+    expect(payload.success).toBe(true);
+    expect(getCallRequest(request.id)!.status).toBe("canceled");
+  });
+
+  it("profiles list --fields narrows items and the profiles alias equally", () => {
+    initCallsDefaults();
+    const payload = withoutLogs(() =>
+      new ProxCallsProfileCommands().list(true, undefined, undefined, undefined, "id,name"),
+    );
+
+    expect(payload.items.length).toBeGreaterThan(0);
+    for (const item of payload.items as Array<Record<string, unknown>>) {
+      expect(Object.keys(item).sort()).toEqual(["id", "name"]);
+    }
+    expect(payload.profiles).toEqual(payload.items);
+  });
+
+  it("tools run --dry-run stays the documented write-brake equivalent (exit 0, no side effects)", () => {
+    initCallsDefaults();
+    const payload = withoutLogs(() =>
+      new ProxCallsToolCommands().run("person.lookup", '{"person_id":"p1"}', undefined, true, true),
+    );
+
+    expect(payload).toMatchObject({ ok: true, dry_run: true, tool_id: "person.lookup" });
   });
 });
 

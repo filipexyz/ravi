@@ -14,12 +14,15 @@ applies_to:
   - src/cloud-auth
   - src/cli/commands/cloud-auth.ts
   - src/cli/commands/cloud-projects.ts
+  - src/cli/commands/cloud-scope.ts
   - src/cli/commands/pages.ts
   - src/cli/commands/artifacts.ts
   - src/cli/commands/bridges.ts
   - src/cli/commands/connectors.ts
   - src/cli/commands/sync.ts
   - src/cli/commands/watch.ts
+  - src/cli/agent-contract.ts
+  - src/console-scope/resolver.ts
   - src/runtime/context-registry.ts
   - src/runtime/runtime-request-context.ts
   - src/router/router-db.ts
@@ -400,7 +403,7 @@ Pages command semantics MUST stay explicit:
 Canonical Pages content publish:
 
 ```bash
-ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html
+ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html --execute
 ```
 
 Highest-priority commands:
@@ -420,6 +423,32 @@ List/search commands whose product semantics are not project-scoped MUST NOT
 silently narrow to the default project. They SHOULD expose project filters while
 keeping "all visible resources" behavior unless the command name or help says it
 is project-scoped.
+
+## Agent-First CLI Contract (`ravi cloud scope`)
+
+The implemented `cloud scope` commands (`show`, `explain`, `set`, `clear`)
+follow the Manual v2 agent-first contract defined by `cli`:
+
+- `set` and `clear` are declared UNBRAKED (no `--execute`): they are a
+  reversible local-default pair (`set` ⇄ `clear`), write only non-secret local
+  scope state, and `set` validates the project against Console before saving.
+  The brake for the risky remote consequence lives on the consuming commands
+  (for example the braked `cloud projects create` in `cli/cloud-projects`).
+- A `ContractError` thrown inside a scope command MUST pass through
+  `runCloudScopeCommand` untouched — the legacy CloudAuthError funnel MUST NOT
+  rewrap it into `SERVER_UNAVAILABLE`.
+- Validation failures preserve the stable CloudAuthError code through the
+  global taxonomy. `PAYLOAD_INVALID` (for example "Choose only one scope
+  target" or a missing `--project`) exits `2`; only
+  `WRITE_REQUIRES_EXECUTE` exits `3`.
+- Unknown project refs on `set` fail as `PROJECT_ACCESS_DENIED` listing the
+  visible project refs (already safe, id/slug-only) — the resolver's message
+  is the suggestion surface for this remote resource.
+- Parser usage errors use the global exit-2 `USAGE_ERROR` envelope because the
+  `cloud` root is registered in `AGENT_CONTRACT_DOMAINS`.
+
+There is no shipped `cloud-scope` skill — lacuna registrada; the CLI `--help`
+plus this spec are the teaching surface.
 
 ## Errors
 
@@ -446,11 +475,11 @@ errors.
 ## Acceptance Criteria
 
 - A runtime command launched inside a session with a session Console scope can
-  run `ravi pages create <slug> --json` without passing a project.
+  run `ravi pages create <slug> --json --execute` without passing a project.
 - The same command with explicit `--project other-project` uses the explicit
   project and reports `source="explicit"` in JSON/debug output.
 - A child CLI using only `RAVI_CONTEXT_KEY` can recover the same effective scope.
-- `ravi pages publish docs ./dist --json` resolves the project from
+- `ravi pages publish docs ./dist --json --execute` resolves the project from
   the shared scope when no `--project` is passed.
 - `ravi connectors connect google` resolves a project from the shared scope or
   fails with a clear next command when ambiguous.

@@ -1,0 +1,410 @@
+/**
+ * Agent-first (Manual v2) CLI contract helpers, shared by every migrated
+ * `ravi` domain (implemented at the source, not as an emulation layer):
+ *
+ *  - Error envelope: with `--json`, failures print
+ *    `{success:false, op, error:{code, message, retryable, suggestedAction, ...}}`
+ *    on stdout — never plain text.
+ *  - Exit taxonomy (official): 0 success · 1 execution/not-found/provider error ·
+ *    2 usage error (invalid flag/arg, carries `acceptedFlags`) · 3 blocked by
+ *    policy (write brake / dry-run). 3 is NOT an error — it is the system working.
+ *  - Risk brake: only externally consequential, irreversible, triggered or
+ *    above-threshold operations dry-run by default; local reversible writes do
+ *    not inherit a brake merely because they mutate.
+ *  - Compact mode (7.9): listings accept `--fields a,b,c`.
+ *
+ * A `ContractError` is always thrown after rendering. Process, tool and gateway
+ * adapters own exit/status/audit translation so they can flush one consistent
+ * outcome before the process ends.
+ */
+import type { Command as CommanderCommand, CommanderError } from "commander";
+import { getContext } from "./context.js";
+import { CliExpectedError } from "./expected-error.js";
+import { sanitizePublicValue } from "./redaction.js";
+
+export const CONTRACT_EXIT_ERROR = 1;
+export const CONTRACT_EXIT_USAGE = 2;
+export const CONTRACT_EXIT_POLICY = 3;
+type ContractExitCode = typeof CONTRACT_EXIT_ERROR | typeof CONTRACT_EXIT_USAGE | typeof CONTRACT_EXIT_POLICY;
+
+export type ContractFailureOutcome = "blocked" | "usage_error" | "denied" | "failed";
+
+export interface ContractErrorDetails {
+  retryable?: boolean;
+  suggestedAction?: string;
+  suggestions?: string[];
+  acceptedFlags?: string[];
+  [key: string]: unknown;
+}
+
+export interface ContractErrorEnvelope {
+  success: false;
+  op: string;
+  error: { code: string; message: string; retryable: boolean } & ContractErrorDetails;
+}
+
+export class ContractError extends Error {
+  readonly op: string;
+  readonly code: string;
+  readonly exitCode: number;
+  readonly details: ContractErrorDetails;
+
+  constructor(op: string, code: string, message: string, exitCode: number, details: ContractErrorDetails = {}) {
+    super(message);
+    const canonicalExitCode = validateContractTaxonomy(code, exitCode);
+    this.name = "ContractError";
+    this.op = op;
+    this.code = code;
+    this.exitCode = canonicalExitCode;
+    this.details = sanitizePublicValue(details) as ContractErrorDetails;
+  }
+
+  envelope(): ContractErrorEnvelope {
+    const { retryable, ...rest } = this.details;
+    return {
+      success: false,
+      op: this.op,
+      error: {
+        code: this.code,
+        message: publicContractMessage(this.code, this.message),
+        retryable: retryable ?? false,
+        ...rest,
+      },
+    };
+  }
+}
+
+function validateContractTaxonomy(code: string, exitCode: number): ContractExitCode {
+  if (exitCode !== CONTRACT_EXIT_ERROR && exitCode !== CONTRACT_EXIT_USAGE && exitCode !== CONTRACT_EXIT_POLICY) {
+    throw new Error("Invalid CLI contract exit taxonomy");
+  }
+  if (code === "PERMISSION_DENIED" && exitCode !== CONTRACT_EXIT_ERROR) {
+    throw new Error("Invalid CLI contract exit taxonomy");
+  }
+  if (code === "WRITE_REQUIRES_EXECUTE" && exitCode !== CONTRACT_EXIT_POLICY) {
+    throw new Error("Invalid CLI contract exit taxonomy");
+  }
+  if (code === "USAGE_ERROR" && exitCode !== CONTRACT_EXIT_USAGE) {
+    throw new Error("Invalid CLI contract exit taxonomy");
+  }
+  return exitCode;
+}
+
+export function contractFailureOutcome(error: Pick<ContractError, "code" | "exitCode">): ContractFailureOutcome {
+  if (error.exitCode === CONTRACT_EXIT_POLICY) return "blocked";
+  if (error.exitCode === CONTRACT_EXIT_USAGE) return "usage_error";
+  if (error.code === "PERMISSION_DENIED") return "denied";
+  return "failed";
+}
+
+export function expectedErrorToContractError(op: string, error: unknown): ContractError | null {
+  if (!(error instanceof CliExpectedError)) return null;
+  return new ContractError(op, error.code, "Command could not be completed.", error.exitCode, {
+    suggestedAction: `Inspect the command input and retry '${op}'`,
+  });
+}
+
+export function unexpectedErrorToContractError(op: string): ContractError {
+  return new ContractError(op, "UNHANDLED_ERROR", "Command failed unexpectedly.", CONTRACT_EXIT_ERROR, {
+    suggestedAction: "Inspect redacted runtime logs and retry when the underlying cause is resolved",
+  });
+}
+
+export function permissionDeniedToContractError(op: string, reason: string): ContractError {
+  return new ContractError(op, "PERMISSION_DENIED", reason, CONTRACT_EXIT_ERROR, {
+    suggestedAction: "Request the required provider-owned permission and retry",
+  });
+}
+
+export function binaryResponseToContractError(op: string, status: number): ContractError {
+  const details = { status, suggestedAction: "Inspect the binary resource identifier and retry" };
+  if (status === 400) {
+    return new ContractError(op, "USAGE_ERROR", "Binary resource request was invalid.", CONTRACT_EXIT_USAGE, details);
+  }
+  if (status === 401) {
+    return new ContractError(
+      op,
+      "AUTH_REQUIRED",
+      "Binary resource authentication failed.",
+      CONTRACT_EXIT_ERROR,
+      details,
+    );
+  }
+  if (status === 403) {
+    return new ContractError(
+      op,
+      "PERMISSION_DENIED",
+      "Binary resource access was denied.",
+      CONTRACT_EXIT_ERROR,
+      details,
+    );
+  }
+  if (status === 404) {
+    return new ContractError(op, "RESOURCE_NOT_FOUND", "Binary resource was not found.", CONTRACT_EXIT_ERROR, details);
+  }
+  if (status === 429) {
+    return new ContractError(op, "RATE_LIMITED", "Binary resource request was rate limited.", CONTRACT_EXIT_ERROR, {
+      ...details,
+      retryable: true,
+    });
+  }
+  if (status >= 500) {
+    return new ContractError(
+      op,
+      "SERVER_UNAVAILABLE",
+      "Binary resource provider is unavailable.",
+      CONTRACT_EXIT_ERROR,
+      {
+        ...details,
+        retryable: true,
+      },
+    );
+  }
+  return new ContractError(op, "COMMAND_FAILED", "Binary resource request failed.", CONTRACT_EXIT_ERROR, details);
+}
+
+export function renderContractError(error: ContractError, asJson: boolean | undefined): void {
+  if (getContext({ localOnly: true })?.suppressCliOutput === true) return;
+  if (asJson) {
+    console.log(JSON.stringify(error.envelope(), null, 2));
+  } else {
+    console.error(error.envelope().error.message);
+  }
+}
+
+function publicContractMessage(code: string, message: string): string {
+  return code === "COMMAND_FAILED" ? "Command could not be completed." : message;
+}
+
+export interface ContractFailOptions {
+  asJson?: boolean;
+  exitCode?: number;
+  details?: ContractErrorDetails;
+}
+
+/**
+ * Fail a command under the Manual v2 contract.
+ * Rendering happens here exactly once; the active transport catches the
+ * structured error and owns process exit / protocol status / audit flushing.
+ */
+export function contractFail(op: string, code: string, message: string, options: ContractFailOptions = {}): never {
+  const exitCode = options.exitCode ?? CONTRACT_EXIT_ERROR;
+  const error = new ContractError(op, code, message, exitCode, options.details ?? {});
+  renderContractError(error, options.asJson);
+  throw error;
+}
+
+/**
+ * Write brake (freio): emit the dry-run plan and exit 3 BEFORE any write/DB
+ * mutation. The planned input is shown so the agent can inspect exactly what
+ * `--execute` would do.
+ */
+export function contractDryRun(op: string, plan: Record<string, unknown>, options: { asJson?: boolean } = {}): never {
+  const error = new ContractError(
+    op,
+    "WRITE_REQUIRES_EXECUTE",
+    `Dry-run: nothing was written. Re-run with --execute to perform the write.`,
+    CONTRACT_EXIT_POLICY,
+    {
+      suggestedAction: `Re-run '${op}' adding --execute to perform the write`,
+      dryRun: true,
+      plan,
+    },
+  );
+  if (getContext({ localOnly: true })?.suppressCliOutput !== true) {
+    if (options.asJson) {
+      console.log(JSON.stringify(error.envelope(), null, 2));
+    } else {
+      console.log(`[dry-run] ${op}: nothing was written.`);
+      console.log(`Planned input:`);
+      console.log(JSON.stringify(error.details.plan, null, 2));
+      console.log(`Re-run with --execute to perform the write.`);
+    }
+  }
+  throw error;
+}
+
+/**
+ * Commander exits that are NOT failures: help/version rendering and async
+ * sub-executable termination. They keep commander's own exit code.
+ */
+const COMMANDER_PASSTHROUGH_CODES = new Set([
+  "commander.help",
+  "commander.helpDisplayed",
+  "commander.version",
+  "commander.executeSubCommandAsync",
+]);
+
+/**
+ * Usage errors (7.x taxonomy, exit 2) raised by the commander PARSER — unknown
+ * flag, missing required argument, missing option value — never reach the
+ * command body, so `contractFail` alone cannot see them: they used to escape the
+ * contract as plain stderr text with exit 1. This installs the same envelope +
+ * exit 2 at the parser level.
+ *
+ * SCOPE: the commander program is shared by every CLI domain, so the hook is
+ * attached ONLY to the named `domain` node and its descendants. Sibling groups
+ * keep commander's default behavior until they are migrated.
+ */
+export function installUsageContract(program: CommanderCommand, domain: string): void {
+  const domainRoot = program.commands.find((command) => command.name() === domain);
+  if (!domainRoot) return;
+  for (const command of commandTree(domainRoot)) {
+    // Commander prints the plain-text error before exiting; the contract emits
+    // the envelope instead, so its writer is silenced on migrated nodes only.
+    command.configureOutput({ outputError: () => {} });
+    command.exitOverride((error) => failUsage(command, error));
+  }
+}
+
+/** Install the same usage taxonomy for errors raised by the CLI root parser. */
+export function installRootUsageContract(program: CommanderCommand): void {
+  program.configureOutput({ outputError: () => {} });
+  program.exitOverride((error) => failUsage(program, error));
+}
+
+function commandTree(root: CommanderCommand): CommanderCommand[] {
+  const nodes: CommanderCommand[] = [root];
+  for (const child of root.commands) nodes.push(...commandTree(child));
+  return nodes;
+}
+
+function failUsage(command: CommanderCommand, error: CommanderError): never {
+  if (COMMANDER_PASSTHROUGH_CODES.has(error.code)) process.exit(error.exitCode);
+  const commandPath = opPath(command);
+  const op = commandPath || "cli";
+  const usage = `ravi ${commandPath ? `${commandPath} ` : ""}${command.usage()}`.trim();
+  const acceptedFlags = collectAcceptedFlags(command);
+  const acceptedPositionals = collectAcceptedPositionals(command);
+  const asJson = wantsJson(command);
+  const safeMessage = sanitizeUsageErrorMessage(error.message);
+  // Text mode teaches the correct syntax inline; --json keeps the message on a
+  // single line because `usage`/`acceptedFlags` are already structured fields.
+  const textMessage = [
+    safeMessage,
+    `usage: ${usage}`,
+    acceptedFlags.length > 0 ? `accepted flags: ${acceptedFlags.join(", ")}` : null,
+  ]
+    .filter((line): line is string => line !== null)
+    .join("\n");
+  contractFail(op, "USAGE_ERROR", asJson ? safeMessage : textMessage, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: {
+      suggestedAction: `Fix the invocation and re-run: ${usage}`,
+      usage,
+      acceptedFlags,
+      acceptedPositionals,
+    },
+  });
+}
+
+/** Commander may echo an unknown option's inline value verbatim. */
+function sanitizeUsageErrorMessage(message: string): string {
+  return message
+    .replace(/(['"])(-{1,2}[A-Za-z0-9][A-Za-z0-9-]*)=([\s\S]*?)\1/g, "$1$2=[REDACTED]$1")
+    .replace(/(-{1,2}[A-Za-z0-9][A-Za-z0-9-]*)=([^\s'"]+)/g, "$1=[REDACTED]");
+}
+
+/** Operation path without the binary name, e.g. `crm opportunity show`. */
+function opPath(command: CommanderCommand): string {
+  const segments: string[] = [];
+  for (let node: CommanderCommand | null = command; node?.parent; node = node.parent) {
+    segments.unshift(node.name());
+  }
+  return segments.join(" ");
+}
+
+/** Flags the op really accepts, including the ones inherited from ancestors. */
+function collectAcceptedFlags(command: CommanderCommand): string[] {
+  const flags: string[] = [];
+  for (let node: CommanderCommand | null = command; node?.parent; node = node.parent) {
+    for (const option of node.options) {
+      const flag = option.long ?? option.short;
+      if (flag && !flags.includes(flag)) flags.push(flag);
+    }
+  }
+  return flags;
+}
+
+function collectAcceptedPositionals(command: CommanderCommand): string[] {
+  return command.registeredArguments.map((argument) => {
+    const name = `${argument.name()}${argument.variadic ? "..." : ""}`;
+    return argument.required ? `<${name}>` : `[${name}]`;
+  });
+}
+
+function wantsJson(command: CommanderCommand): boolean {
+  const options = command.optsWithGlobals() as Record<string, unknown>;
+  if (options.json === true) return true;
+  // The failing node may not declare --json itself (e.g. an unknown subcommand
+  // under the domain root), so fall back to the operands commander already
+  // classified.
+  if (command.args.includes("--json")) return true;
+  return command.parent === null && process.argv.slice(2).includes("--json");
+}
+
+function bigrams(value: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < value.length - 1; i++) out.push(value.slice(i, i + 2));
+  return out;
+}
+
+function similarity(a: string, b: string): number {
+  a = a.toLowerCase();
+  b = b.toLowerCase();
+  if (a === b) return 1;
+  if (b.includes(a) || a.includes(b)) return 0.8;
+  const ba = new Set(bigrams(a));
+  const bb = bigrams(b);
+  const intersection = bb.filter((x) => ba.has(x)).length;
+  return (2 * intersection) / Math.max(1, bigrams(a).length + bb.length);
+}
+
+/**
+ * Up to `max` real candidate entities most similar to `query` (Dice bigram
+ * similarity, same ranking as the validated POC). Used to enrich NOT_FOUND
+ * errors with actionable `suggestions`.
+ */
+export function suggestSimilar(query: string, candidates: Array<string | null | undefined>, max = 3): string[] {
+  const unique = [...new Set(candidates.filter((c): c is string => typeof c === "string" && c.length > 0))];
+  return unique
+    .map((candidate) => ({ candidate, score: similarity(query, candidate) }))
+    .sort((a, b) => b.score - a.score)
+    .slice(0, max)
+    .map((entry) => entry.candidate);
+}
+
+/**
+ * Compact mode (7.9): keep only the requested top-level fields of each item.
+ * Unknown fields are ignored; without `fields` the list passes through.
+ */
+export function pickFields<T>(items: T[], fields?: string): T[] {
+  const keys = (fields ?? "")
+    .split(",")
+    .map((key) => key.trim())
+    .filter(Boolean);
+  if (keys.length === 0) return items;
+  return items.map((item) => {
+    const record = item as Record<string, unknown>;
+    const picked: Record<string, unknown> = {};
+    const requested = new Set(keys);
+    for (const key of Object.keys(record)) {
+      if (requested.has(key)) {
+        picked[key] = record[key];
+        continue;
+      }
+
+      // Keep the complete row available to @Returns validation while exposing
+      // only requested fields through JSON/Object.keys. The gateway validates
+      // handlers before serializing their original return value.
+      Object.defineProperty(picked, key, {
+        value: record[key],
+        enumerable: false,
+        configurable: false,
+        writable: false,
+      });
+    }
+    return picked as T;
+  });
+}

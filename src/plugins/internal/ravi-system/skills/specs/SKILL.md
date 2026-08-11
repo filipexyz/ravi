@@ -14,6 +14,27 @@ description: |
 
 Use specs para registrar invariantes, decisões, runbooks e checks que agents devem consultar antes de mexer em uma área.
 
+## Contrato Do CLI
+
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedValues?}}`.
+
+Taxonomia de saída:
+
+- `0` sucesso.
+- `1` erro de execução (ex.: `SPEC_NOT_FOUND`). O envelope traz `suggestions` com ids reais parecidos do índice — consulte antes de concluir "não existe". `Spec already exists` no `new` também é exit 1: atualize a spec existente, não há overwrite.
+- `2` erro de uso: `--mode`/`--kind` inválidos e `--title`/`--kind` faltando no `new`. O envelope traz `acceptedValues` — corrija a chamada, não insista na mesma sintaxe.
+- `3` não existe neste domínio: NENHUMA op de specs tem freio.
+
+Sem freios (declarado): `new` só cria Markdown local e falha em id existente; `sync` é reindexação local idempotente (Markdown é a fonte de verdade) e é usada pelo quality gate de CI e por dezenas de CHECKS — os dois gravam na hora, sem `--execute`.
+
+Compact mode: `specs list` aceita `--fields a,b,c` (ex.: `--fields id,kind`) — use em varredura para não arrastar o registro inteiro de cada spec.
+
+Checklist antes de responder sobre specs:
+
+- Consultei `suggestions` do envelope antes de declarar que a spec não existe?
+- Se as suggestions vieram vazias, rodei `ravi specs sync --json` e tentei de novo?
+- Usei `acceptedValues` para corrigir `--mode`/`--kind` em vez de repetir a chamada?
+
 ## Workflow
 
 1. Antes de alterar uma área com regras conhecidas, consulte a spec explícita:

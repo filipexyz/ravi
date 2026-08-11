@@ -81,8 +81,8 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("## Extra Context\n\nInjected context text.");
     expect(prompt).toContain("ravi sessions unmute");
     expect(prompt).toContain("ravi sessions actions --json");
-    expect(prompt).toContain("ravi sessions delete-message <message-id>");
-    expect(prompt).toContain('ravi sessions edit-message <message-id> "novo texto"');
+    expect(prompt).toContain("ravi sessions delete-message <message-id> --execute");
+    expect(prompt).toContain('ravi sessions edit-message <message-id> "novo texto" --execute');
     expect(prompt).toContain("## Background Followup Automation");
     expect(prompt).toContain('ravi cron add "<name>" --at "<ISO time>"');
     expect(prompt).toContain("Do this in the background without announcing it in your visible response.");
@@ -129,6 +129,9 @@ describe("buildSystemPrompt", () => {
 
     expect(prompt).not.toContain("## Background Followup Automation");
     expect(prompt).not.toContain("ravi cron add");
+    expect(prompt).toContain("ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID");
+    expect(prompt).not.toContain("ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID --no-ack");
+    expect(prompt).toContain("ravi whatsapp dm ack <contact> <messageId> --account $RAVI_ACCOUNT_ID --execute");
   });
 
   it("keeps unprioritized legacy sections after typed sections when rendering mixed inputs", () => {

@@ -28,6 +28,18 @@ ravi specs sync --json
   command and static precedence prevents dynamic-router re-entry.
 - `--json` returns structured success and failure output.
 - Mutating operations require declared permissions and runtime authorization.
+- Read-only operations run without `--execute`.
+- Mutating operations with authority but without `--execute` return exit `3`
+  before permission-provider evaluation, child-context issuance, builtin
+  execution, or subprocess spawn.
+- The root alias and `apps run` both consume `--execute` without forwarding it
+  to the app argument list.
+- The blocked plan contains identifiers and argument count, never raw args.
+- Missing-app, provider, and subprocess failures remain one canonical envelope
+  in CLI, tool, and gateway responses and expose no raw stdout/stderr.
+- Provider `deny`, `needs_grant`, and `not_applicable` decisions remain
+  `PERMISSION_DENIED`/`denied`; timeout, process failure, invalid JSON, and
+  invalid schema remain `APP_PERMISSION_PROVIDER_FAILED`/`failed`.
 - Operation interfaces are limited to `builtin` and `cli`.
 - UI, SDK, tool, and automation callers route to the same declared operation.
 - Declared commands are spawned with `shell: false`.
@@ -38,8 +50,9 @@ ravi specs sync --json
 - Shell operators, substitutions, redirections, embedded placeholders, and
   repeated dynamic placeholders fail manifest validation before spawn.
 - The child working directory resolves to the bounded app root.
-- Router audit includes `appId`, `operationId`, `interface`, `mutating`, caller
-  context id, child context id, status, duration, and error class.
+- The active transport emits one terminal audit with requested app, operation,
+  outcome, exit code, and error code; raw args and process/provider output are
+  absent, and the internal router emits no duplicate.
 - Runtime CLI execution receives a fresh child `RAVI_CONTEXT_KEY`.
 - Child capabilities do not exceed manifest `context.allow`.
 - The child process does not receive the parent key or synthesized Ravi

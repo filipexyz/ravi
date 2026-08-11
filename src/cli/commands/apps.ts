@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
+import { enforceRaviAppRunResult, throwRaviAppContractError } from "../../apps/error-contract.js";
 import {
   buildAppsGuide,
   checkAppManifests,
@@ -23,6 +24,11 @@ import {
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function failAppsCommand(op: string, error: unknown, asJson?: boolean): never {
+  if (error instanceof RaviAppError) throwRaviAppContractError(op, error, asJson);
+  fail(error instanceof Error ? error.message : String(error));
 }
 
 const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
@@ -216,10 +222,21 @@ const appsRunReturnSchema = z.object({
   operationId: z.string().nullable(),
   interface: z.enum(["builtin", "cli"]).nullable(),
   mutating: z.boolean(),
-  status: z.enum(["completed", "failed"]),
+  status: z.enum(["completed", "blocked", "failed"]),
   durationMs: z.number(),
   result: z.unknown().optional(),
   error: z.string().optional(),
+  errorCode: z.string().optional(),
+  dryRun: z.literal(true).optional(),
+  plan: z
+    .object({
+      appId: z.string(),
+      operationId: z.string(),
+      interface: z.enum(["builtin", "cli"]),
+      mutating: z.literal(true),
+      argumentCount: z.number(),
+    })
+    .optional(),
   command: z.string().optional(),
   handler: z.string().optional(),
   channel: z.string().optional(),
@@ -238,13 +255,27 @@ const appsRunReturnSchema = z.object({
       decision: z.enum(["allow", "deny", "needs_grant", "not_applicable", "error", "invalid"]),
       reasonCode: z.string().nullable(),
       reason: z.string().optional(),
+      reasonPresent: z.boolean().optional(),
       durationMs: z.number(),
       cache: z.object({
         hit: z.boolean(),
         ttlSec: z.number().optional(),
       }),
-      grantSuggestion: jsonValueSchema.optional(),
-      audit: jsonValueSchema.optional(),
+      grantSuggestion: z
+        .object({
+          subject: z.object({ type: z.string(), id: z.string() }),
+          relation: z.string(),
+          object: z.object({ type: z.string(), id: z.string() }),
+          ttlSec: z.number().optional(),
+          reasonPresent: z.boolean().optional(),
+        })
+        .optional(),
+      audit: z
+        .object({
+          policyVersion: z.string().optional(),
+          evidenceCount: z.number(),
+        })
+        .optional(),
       error: z.string().optional(),
     })
     .optional(),
@@ -359,7 +390,7 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps list", error, asJson);
     }
   }
 
@@ -396,12 +427,7 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
-      if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
-        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
-        return;
-      }
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps show", error, asJson);
     }
   }
 
@@ -423,7 +449,7 @@ export class AppsCommands {
 
       if (asJson) {
         printJson(payload);
-        if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+        if (!payload.ok && getContext({ localOnly: true })?.suppressCliOutput !== true) process.exitCode = 1;
         return payload;
       }
 
@@ -445,37 +471,41 @@ export class AppsCommands {
         console.log(`warnings for ${result.id}:`);
         for (const warning of result.warnings) console.log(`  - ${warning}`);
       }
-      if (!payload.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
+      if (!payload.ok && getContext({ localOnly: true })?.suppressCliOutput !== true) process.exitCode = 1;
       return payload;
     } catch (error) {
-      if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
-        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
-        return;
-      }
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps check", error, asJson);
     }
   }
 
   @Command({ name: "run", description: "Run a Ravi app operation through the runtime app router" })
-  @CommandAccess({ kind: "mutate", resource: "apps", action: "run", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "apps",
+    action: "run",
+    risk: "high",
+    redactions: ["args"],
+    requiresConfirmation: true,
+  })
   @Returns(appsRunReturnSchema)
   async run(
     @Arg("id", { description: "App id" }) id: string,
     @Arg("operation", { required: false, description: "Operation name. Defaults to app help." }) operation?: string,
     @Arg("args", { required: false, variadic: true, description: "Operation arguments" }) rest?: string[],
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Execute a mutating app operation" }) execute?: boolean,
   ) {
-    const wantsJson = asJson === true || getContext()?.suppressCliOutput === true;
+    const wantsJson = asJson === true || getContext({ localOnly: true })?.suppressCliOutput === true;
     const result = await runAppOperation({
       appId: id,
       operation,
       args: rest ?? [],
       json: wantsJson,
+      execute: execute === true,
     });
 
+    enforceRaviAppRunResult(result, wantsJson);
     printAppRunResult(result, { json: wantsJson });
-    if (!result.ok && getContext()?.suppressCliOutput !== true) process.exitCode = 1;
     return result;
   }
 
@@ -528,12 +558,7 @@ export class AppsCommands {
       for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
       return payload;
     } catch (error) {
-      if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
-        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
-        return;
-      }
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps scaffold", error, asJson);
     }
   }
 
@@ -566,12 +591,7 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
-      if (error instanceof RaviAppError && asJson) {
-        printJson(error.toJSON());
-        if (getContext()?.suppressCliOutput !== true) process.exitCode = 1;
-        return;
-      }
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps delete", error, asJson);
     }
   }
 
@@ -628,7 +648,7 @@ export class AppsCommands {
       for (const nextCommand of payload.nextCommands) console.log(`  ${nextCommand}`);
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps import-cli", error, asJson);
     }
   }
 
@@ -679,7 +699,7 @@ export class AppsCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failAppsCommand("apps prompts", error, asJson);
     }
   }
 }

@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { z } from "zod";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cliOffsetPaginationSchema, commandTargetSchema } from "../return-schemas.js";
 import { nats } from "../../nats.js";
@@ -217,6 +218,26 @@ function serializeSetting(key: string, value: string | null) {
   };
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Exit taxonomy: 1 not-found · 2 usage · 3 policy (write brake).
+// ============================================================
+
+/** Real candidate keys for NOT_FOUND suggestions: known settings + keys actually set. */
+function settingKeyCandidates(): string[] {
+  return [...Object.keys(KNOWN_SETTINGS), ...Object.keys(dbListSettings())];
+}
+
+function failSettingNotFound(op: string, key: string, asJson?: boolean): never {
+  contractFail(op, "SETTING_NOT_FOUND", `Setting not found: ${key}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the setting key (see suggestions) or run `ravi settings list`",
+      suggestions: suggestSimilar(key, settingKeyCandidates()),
+    },
+  });
+}
+
 function buildSettingsListPayload(showLegacy: boolean) {
   const settings = dbListSettings();
   const customKeys = Object.keys(settings).filter((key) => !KNOWN_SETTINGS[key]);
@@ -251,6 +272,8 @@ export class SettingsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching settings to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const basePayload = buildSettingsListPayload(showLegacy);
     const settingItems = [
@@ -260,6 +283,7 @@ export class SettingsCommands {
     ];
     const page = paginateCliItems(settingItems, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "settings", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -271,7 +295,7 @@ export class SettingsCommands {
       ...basePayload,
       total: page.total,
       pagination,
-      items: page.items,
+      items: pickFields(page.items, fields),
     };
 
     if (asJson) {
@@ -308,6 +332,10 @@ export class SettingsCommands {
   ) {
     const value = dbGetSetting(key);
     const legacy = isLegacyAccountSetting(key);
+    if (value === null && !legacy && !KNOWN_SETTINGS[key]) {
+      // Not a known setting, not set, not a legacy account.* row: contract not-found.
+      failSettingNotFound("settings get", key, asJson);
+    }
     const payload = { setting: serializeSetting(key, value) };
 
     if (asJson) {
@@ -334,7 +362,7 @@ export class SettingsCommands {
   }
 
   @Command({ name: "set", description: "Set a setting value" })
-  @CommandAccess({ kind: "mutate", resource: "settings", action: "set", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "settings", action: "set", risk: "medium", redactions: ["value"] })
   @Returns(settingsMutationReturnSchema)
   set(
     @Arg("key", { description: "Setting key" }) key: string,
@@ -384,14 +412,43 @@ export class SettingsCommands {
     }
   }
 
-  @Command({ name: "delete", description: "Delete a setting" })
-  @CommandAccess({ kind: "mutate", resource: "settings", action: "delete", risk: "destructive" })
+  @Command({ name: "delete", description: "Delete a setting (dry-run by default; requires --execute)" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "settings",
+    action: "delete",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   @Returns(settingsMutationReturnSchema)
   delete(
     @Arg("key", { description: "Setting key" }) key: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the setting; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const legacy = isLegacyAccountSetting(key);
+    const currentValue = dbGetSetting(key);
+    // Not-found fires BEFORE the brake (exit 1, never 3).
+    if (currentValue === null) {
+      failSettingNotFound("settings delete", key, asJson);
+    }
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): destructive delete is dry-run by default, exit 3.
+      contractDryRun(
+        "settings delete",
+        {
+          key,
+          valuePresent: currentValue !== null,
+          legacy,
+          known: Boolean(KNOWN_SETTINGS[key]),
+        },
+        { asJson },
+      );
+    }
     const deleted = dbDeleteSetting(key);
     const payload = {
       status: deleted ? ("deleted" as const) : ("not_found" as const),

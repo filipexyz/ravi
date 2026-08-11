@@ -94,9 +94,11 @@ describe("gateway piloto — artifacts.show", () => {
     });
 
     expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string; issues: { path: string[]; code: string }[] };
-    expect(body.error).toBe("ValidationError");
-    expect(body.issues.some((i) => i.path[0] === "args" && i.code === "unrecognized_keys")).toBe(true);
+    const body = (await res.json()) as {
+      error: { code: string; issues: { path: string[]; code: string }[] };
+    };
+    expect(body.error.code).toBe("USAGE_ERROR");
+    expect(body.error.issues.some((i) => i.path[0] === "args" && i.code === "unrecognized_keys")).toBe(true);
   });
 
   it("strips rendering flags (asJson) from the contract", async () => {
@@ -107,12 +109,14 @@ describe("gateway piloto — artifacts.show", () => {
       body: JSON.stringify({ id: artifact.id, asJson: true }),
     });
     expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string; issues: { path: string[]; code: string }[] };
-    expect(body.error).toBe("ValidationError");
-    expect(body.issues.some((i) => i.path[0] === "asJson" && i.code === "unrecognized_keys")).toBe(true);
+    const body = (await res.json()) as {
+      error: { code: string; issues: { path: string[]; code: string }[] };
+    };
+    expect(body.error.code).toBe("USAGE_ERROR");
+    expect(body.error.issues.some((i) => i.path[0] === "asJson" && i.code === "unrecognized_keys")).toBe(true);
   });
 
-  it("returns 400 ValidationError when the body is empty", async () => {
+  it("returns the usage-error contract when the body is empty", async () => {
     const res = await fetch(`${handle!.url}/api/v1/artifacts/show`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -120,9 +124,21 @@ describe("gateway piloto — artifacts.show", () => {
     });
 
     expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string; issues: { path: string[] }[] };
-    expect(body.error).toBe("ValidationError");
-    expect(body.issues.some((i) => i.path[0] === "id")).toBe(true);
+    const body = (await res.json()) as {
+      success: boolean;
+      op: string;
+      exitCode: number;
+      outcome: string;
+      error: { code: string; issues: { path: string[] }[] };
+    };
+    expect(body).toMatchObject({
+      success: false,
+      op: "artifacts show",
+      exitCode: 2,
+      outcome: "usage_error",
+      error: { code: "USAGE_ERROR" },
+    });
+    expect(body.error.issues.some((i) => i.path[0] === "id")).toBe(true);
   });
 
   it("returns 404 for an unknown command path", async () => {

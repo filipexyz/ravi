@@ -6,6 +6,7 @@ import "reflect-metadata";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -394,7 +395,7 @@ function printJson(payload: unknown): void {
 }
 
 function shouldReturnStructuredResult(asJson?: boolean): boolean {
-  return asJson === true || getContext()?.suppressCliOutput === true;
+  return asJson === true || getContext({ localOnly: true })?.suppressCliOutput === true;
 }
 
 function returnStructuredResult<T>(payload: T, asJson?: boolean): T {
@@ -423,11 +424,11 @@ export function buildSessionActionsCommand(sessionRef: string): string {
 }
 
 export function buildCurrentSessionDeleteMessageCommand(messageRef: string): string {
-  return `ravi sessions delete-message ${messageRef}`;
+  return `ravi sessions delete-message ${messageRef} --execute`;
 }
 
 export function buildSessionDeleteMessageCommand(sessionRef: string, messageRef: string): string {
-  return `ravi sessions delete-message ${sessionRef} ${messageRef}`;
+  return `ravi sessions delete-message ${sessionRef} ${messageRef} --execute`;
 }
 
 function quoteCliArg(value: string): string {
@@ -435,11 +436,11 @@ function quoteCliArg(value: string): string {
 }
 
 export function buildCurrentSessionEditMessageCommand(messageRef: string, text = "<new-text>"): string {
-  return `ravi sessions edit-message ${messageRef} ${quoteCliArg(text)}`;
+  return `ravi sessions edit-message ${messageRef} ${quoteCliArg(text)} --execute`;
 }
 
 export function buildSessionEditMessageCommand(sessionRef: string, messageRef: string, text = "<new-text>"): string {
-  return `ravi sessions edit-message ${sessionRef} ${messageRef} ${quoteCliArg(text)}`;
+  return `ravi sessions edit-message ${sessionRef} ${messageRef} ${quoteCliArg(text)} --execute`;
 }
 
 export function buildCurrentSessionReactionCommand(messageRef = "<message-id>", emoji = "<emoji>"): string {
@@ -447,11 +448,11 @@ export function buildCurrentSessionReactionCommand(messageRef = "<message-id>", 
 }
 
 export function buildCurrentSessionStickerSendCommand(stickerId = "<sticker-id>"): string {
-  return `ravi stickers send ${stickerId}`;
+  return `ravi stickers send ${stickerId} --execute`;
 }
 
 export function buildCurrentSessionMediaSendCommand(filePath = "<file-path>"): string {
-  return `ravi media send ${quoteCliArg(filePath)}`;
+  return `ravi media send ${quoteCliArg(filePath)} --execute`;
 }
 
 export function buildCurrentSessionReadCommand(): string {
@@ -499,7 +500,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "Prefer the canonical item id when available.",
       ],
       promptHint:
-        "After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions delete-message <message-id>`.",
+        "After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions delete-message <message-id> --execute` (without --execute it is a dry-run, exit 3).",
     },
     editMessage: {
       id: "message.edit",
@@ -515,7 +516,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "Do not expose internal message IDs to users unless debugging requires it.",
       ],
       promptHint:
-        'After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions edit-message <message-id> "novo texto"`.',
+        'After `ravi sessions actions --json`, choose a message from recentOwnMessages.items and run `ravi sessions edit-message <message-id> "novo texto" --execute` (without --execute it is a dry-run, exit 3).',
     },
     reactMessage: {
       id: "message.react",
@@ -544,7 +545,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "Respect each sticker's description, avoid guidance, channel allowlist, and agent allowlist.",
       ],
       promptHint:
-        "Use `ravi stickers send <sticker-id>` after choosing an enabled catalog sticker for the current conversation.",
+        "Use `ravi stickers send <sticker-id> --execute` after choosing an enabled catalog sticker for the current conversation (without --execute it is a dry-run, exit 3).",
     },
     sendMedia: {
       id: "media.send",
@@ -559,7 +560,7 @@ function buildSessionActionToolHints(): Record<string, Record<string, unknown>> 
         "When not running from the desired chat context, pass an explicit `--account` and `--to` target after confirming it.",
       ],
       promptHint:
-        'Use `ravi media send "<file-path>"` to send an existing local file; add `--caption "..."` when useful.',
+        'Use `ravi media send "<file-path>" --execute` to send an existing local file; add `--caption "..."` when useful (without --execute it is a dry-run, exit 3).',
     },
     readSession: {
       id: "session.read",
@@ -2462,6 +2463,20 @@ function printSessionTraceExplanationHuman(explanation: SessionTraceExplanation)
   }
 }
 
+// ============================================================
+// Manual v2 contract helpers. Exit taxonomy: 1 not-found/provider ·
+// 2 usage · 3 policy (write brake / dry-run). SESSION_NOT_FOUND carries no
+// suggestions on purpose: scope isolation cloaks unauthorized sessions as
+// not-found, and suggesting real session names would defeat that cloak.
+// ============================================================
+
+function failSessionNotFound(op: string, ref: string, asJson?: boolean): never {
+  contractFail(op, "SESSION_NOT_FOUND", `Session not found: ${ref}`, {
+    asJson,
+    details: { suggestedAction: "List visible sessions with: ravi sessions list --json" },
+  });
+}
+
 @Group({
   name: "sessions",
   description: "Manage agent sessions",
@@ -2505,6 +2520,8 @@ export class SessionCommands {
       description: "Number of matching sessions to skip (default: 0)",
     })
     offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     let sessions = agentId ? getSessionsByAgent(agentId) : listSessions();
 
@@ -2523,6 +2540,7 @@ export class SessionCommands {
     const page = paginateCliItems(sessions, { limit, offset });
     const pageSessions = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "sessions", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -2547,8 +2565,14 @@ export class SessionCommands {
         live: Boolean(includeLive),
         tag: tagSlug?.trim() || null,
       },
-      items: pageSessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
-      sessions: pageSessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
+      items: pickFields(
+        pageSessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
+        fields,
+      ),
+      sessions: pickFields(
+        pageSessions.map((session) => buildSessionJson(session, { live: Boolean(includeLive) })),
+        fields,
+      ),
     };
 
     if (asJson) {
@@ -2629,15 +2653,13 @@ export class SessionCommands {
       if (match) s = match;
     }
     if (!s) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
+      failSessionNotFound("sessions info", nameOrKey, asJson);
     }
 
     // Scope: only accessible sessions
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx) && !canAccessSession(scopeCtx, s.name ?? s.sessionKey)) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
+      failSessionNotFound("sessions info", nameOrKey, asJson);
     }
 
     const config = loadRouterConfig();
@@ -2827,10 +2849,10 @@ export class SessionCommands {
     description: "Inspect or mutate persisted session goal state",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "goal",
-    risk: "low",
+    risk: "medium",
   })
   goal(
     @Arg("action", {
@@ -3461,23 +3483,33 @@ export class SessionCommands {
     resource: "sessions",
     action: "reset",
     risk: "medium",
+    requiresConfirmation: true,
   })
   async reset(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually reset the session; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
+      failSessionNotFound("sessions reset", nameOrKey, asJson);
     }
 
     // Scope: only own session can be modified
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
+      failSessionNotFound("sessions reset", nameOrKey, asJson);
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): the session context is irrecoverable after
+      // a reset, so dry-run by default and exit 3 before any state change.
+      contractDryRun("sessions reset", { session: s.name ?? s.sessionKey, sessionKey: s.sessionKey }, { asJson });
     }
 
     const cliInvocation = buildCliInvocationMetadata({
@@ -3546,23 +3578,33 @@ export class SessionCommands {
     resource: "sessions",
     action: "delete",
     risk: "destructive",
+    requiresConfirmation: true,
   })
   async delete(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the session; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const s = resolveSession(nameOrKey);
     if (!s) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
+      failSessionNotFound("sessions delete", nameOrKey, asJson);
     }
 
     // Scope: only own session can be modified
     const scopeCtx = getScopeContext();
     if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
-      fail(`Session not found: ${nameOrKey}`);
-      return;
+      failSessionNotFound("sessions delete", nameOrKey, asJson);
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): deletion is permanent, so dry-run by
+      // default and exit 3 before any state change.
+      contractDryRun("sessions delete", { session: s.name ?? s.sessionKey, sessionKey: s.sessionKey }, { asJson });
     }
 
     const cliInvocation = buildCliInvocationMetadata({
@@ -3631,6 +3673,7 @@ export class SessionCommands {
     resource: "sessions",
     action: "prune",
     risk: "destructive",
+    requiresConfirmation: true,
   })
   async prune(
     @Option({
@@ -3869,10 +3912,10 @@ export class SessionCommands {
 
   @Command({ name: "extend", description: "Extend an ephemeral session's TTL" })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "extend",
-    risk: "low",
+    risk: "medium",
   })
   extend(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -3933,10 +3976,10 @@ export class SessionCommands {
 
   @Command({ name: "keep", description: "Make an ephemeral session permanent" })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "keep",
-    risk: "low",
+    risk: "medium",
   })
   keep(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
@@ -4274,10 +4317,10 @@ export class SessionCommands {
     description: "Ask a question to another session (fire-and-forget)",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "ask",
-    risk: "low",
+    risk: "high",
   })
   async ask(
     @Arg("target", { description: "Target session name" }) target: string,
@@ -4355,10 +4398,10 @@ export class SessionCommands {
     description: "Answer a question from another session (fire-and-forget)",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "answer",
-    risk: "low",
+    risk: "high",
   })
   async answer(
     @Arg("target", { description: "Target session name (the one that asked)" })
@@ -4510,10 +4553,10 @@ export class SessionCommands {
     description: "Send an informational message to another session (fire-and-forget)",
   })
   @CommandAccess({
-    kind: "read",
+    kind: "mutate",
     resource: "sessions",
     action: "inform",
-    risk: "low",
+    risk: "high",
   })
   async inform(
     @Arg("target", { description: "Target session name" }) target: string,
@@ -6093,6 +6136,7 @@ export class SessionCommands {
     resource: "sessions",
     action: "delete-message",
     risk: "destructive",
+    requiresConfirmation: true,
   })
   async deleteMessage(
     @Arg("sessionOrMessage", {
@@ -6106,13 +6150,18 @@ export class SessionCommands {
     messageRef?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually delete the message; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const inferredSession = !messageRef?.trim();
     const target = messageRef?.trim() ? sessionOrMessage.trim() : resolveCurrentSessionRef();
     const ref = messageRef?.trim() || sessionOrMessage.trim();
     if (!target) {
       fail(
-        "No current session context found. Use ravi sessions delete-message <message-id> inside a session, or ravi sessions delete-message <session> <message-id> outside one.",
+        "No current session context found. Use ravi sessions delete-message <message-id> --execute inside a session, or ravi sessions delete-message <session> <message-id> --execute outside one.",
       );
       return;
     }
@@ -6127,8 +6176,7 @@ export class SessionCommands {
     const scopeCtx = getScopeContext();
     const sessionRef = sessionActionRef(session);
     if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionRef)) {
-      fail(`Session not found: ${target}`);
-      return;
+      failSessionNotFound("sessions delete-message", target, asJson);
     }
 
     const message = dbFindAgentChatMessageByRef({
@@ -6138,8 +6186,30 @@ export class SessionCommands {
       originSessionKey: session.sessionKey,
     });
     if (!message) {
-      fail(`Message not found or is not an own message for session: ${ref}`);
-      return;
+      contractFail(
+        "sessions delete-message",
+        "MESSAGE_NOT_FOUND",
+        `Message not found or is not an own message for session: ${ref}`,
+        {
+          asJson,
+          details: { suggestedAction: `List recent own messages with: ravi sessions actions ${sessionRef} --json` },
+        },
+      );
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): the provider deletion is irreversible, so
+      // dry-run by default and exit 3 before any queue/provider call.
+      contractDryRun(
+        "sessions delete-message",
+        {
+          session: sessionRef,
+          messageId: message.id,
+          providerMessageId: message.providerMessageId ?? null,
+          channel: message.channel,
+        },
+        { asJson },
+      );
     }
 
     if (message.channel.toLowerCase() === "slack") {
@@ -6233,6 +6303,7 @@ export class SessionCommands {
     resource: "sessions",
     action: "edit-message",
     risk: "high",
+    requiresConfirmation: true,
   })
   async editMessage(
     @Arg("sessionOrMessage", {
@@ -6253,6 +6324,11 @@ export class SessionCommands {
     textOption?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually edit the message; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const explicitText = textOption !== undefined;
     const inferredSession = !textArg?.trim() && (!explicitText || !messageOrText?.trim());
@@ -6262,7 +6338,7 @@ export class SessionCommands {
 
     if (!target) {
       fail(
-        'No current session context found. Use ravi sessions edit-message <message-id> "new text" inside a session, or ravi sessions edit-message <session> <message-id> "new text" outside one.',
+        'No current session context found. Use ravi sessions edit-message <message-id> "new text" --execute inside a session, or ravi sessions edit-message <session> <message-id> "new text" --execute outside one.',
       );
       return;
     }
@@ -6281,8 +6357,7 @@ export class SessionCommands {
     const scopeCtx = getScopeContext();
     const sessionRef = sessionActionRef(session);
     if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, sessionRef)) {
-      fail(`Session not found: ${target}`);
-      return;
+      failSessionNotFound("sessions edit-message", target, asJson);
     }
 
     const message = dbFindAgentChatMessageByRef({
@@ -6292,8 +6367,31 @@ export class SessionCommands {
       originSessionKey: session.sessionKey,
     });
     if (!message) {
-      fail(`Message not found or is not an own message for session: ${ref}`);
-      return;
+      contractFail(
+        "sessions edit-message",
+        "MESSAGE_NOT_FOUND",
+        `Message not found or is not an own message for session: ${ref}`,
+        {
+          asJson,
+          details: { suggestedAction: `List recent own messages with: ravi sessions actions ${sessionRef} --json` },
+        },
+      );
+    }
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): rewriting a delivered message is a live
+      // channel mutation, so dry-run by default and exit 3 before any call.
+      contractDryRun(
+        "sessions edit-message",
+        {
+          session: sessionRef,
+          messageId: message.id,
+          providerMessageIdPresent: Boolean(message.providerMessageId),
+          channel: message.channel,
+          newTextChars: nextText.length,
+        },
+        { asJson },
+      );
     }
 
     if (message.channel.toLowerCase() === "slack") {

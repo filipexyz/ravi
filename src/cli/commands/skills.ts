@@ -4,6 +4,7 @@
 
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { syncCodexSkills } from "../../plugins/codex-skills.js";
@@ -25,8 +26,10 @@ import {
   installSkills,
   listCatalogSkills,
   listInstalledSkills,
+  parseSkillSource,
   selectSkills,
   withResolvedSkillSource,
+  type InstalledRaviSkill,
   type RaviSkill,
 } from "../../skills/manager.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
@@ -62,6 +65,100 @@ function syncCodex(): string[] {
   return syncCodexSkills(discoverPlugins());
 }
 
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+// ============================================================
+
+/** Skill names a caller can actually reference: catalog ∪ installed. */
+function knownSkillNames(options: { includeCodex?: boolean } = {}): string[] {
+  const names = new Set<string>();
+  for (const skill of listCatalogSkills()) names.add(skill.name);
+  for (const skill of listInstalledSkills({ includeCodex: options.includeCodex === true })) names.add(skill.name);
+  return [...names];
+}
+
+interface SkillNotFoundOptions {
+  asJson?: boolean;
+  candidates?: string[];
+  suggestedAction?: string;
+}
+
+function failSkillNotFound(op: string, skillName: string, options: SkillNotFoundOptions = {}): never {
+  contractFail(op, "SKILL_NOT_FOUND", `Skill not found: ${skillName}`, {
+    asJson: options.asJson,
+    details: {
+      suggestedAction:
+        options.suggestedAction ?? "Check the skill name (see suggestions; list with: ravi skills list --json)",
+      suggestions: suggestSimilar(skillName, options.candidates ?? knownSkillNames({ includeCodex: true })),
+    },
+  });
+}
+
+/**
+ * Agent ids are public through `agents list`, so AGENT_NOT_FOUND enriches the
+ * envelope with real similar ids/names.
+ */
+function failAgentNotFound(op: string, agentId: string, asJson?: boolean): never {
+  const candidates = getAllAgents().flatMap((agent) => [agent.id, agent.name]);
+  contractFail(op, "AGENT_NOT_FOUND", `Agent not found: ${agentId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the agent id (see suggestions; list with: ravi agents list --json)",
+      suggestions: suggestSimilar(agentId, candidates),
+    },
+  });
+}
+
+/**
+ * `selectSkills` throws plain errors ("Skill not found: ...", "Source has N
+ * skills...") — survey the selection without throwing so the not-found case can
+ * be mapped to the contract envelope OUTSIDE `withResolvedSkillSource` (temp
+ * git clones are cleaned up before the process exits on brake/not-found).
+ */
+type InstallSelection = { ok: RaviSkill[] } | { notFound: string } | { error: string };
+type InstallSourceKind = "catalog" | "local" | "git";
+
+function surveyInstallSelection(
+  available: RaviSkill[],
+  requestedSkill: string | undefined,
+  all: boolean,
+): { selection: InstallSelection; names: string[] } {
+  const names = available.map((skill) => skill.name);
+  try {
+    const ok = selectSkills(available, { ...(requestedSkill ? { skill: requestedSkill } : {}), all });
+    return { selection: { ok }, names };
+  } catch (error) {
+    // Re-throw contract errors unchanged so their exit code is preserved.
+    if (error instanceof ContractError) throw error;
+    const message = error instanceof Error ? error.message : String(error);
+    if (requestedSkill && /^Skill not found/i.test(message)) {
+      return { selection: { notFound: requestedSkill }, names };
+    }
+    return { selection: { error: message }, names };
+  }
+}
+
+function failInstallSelection(
+  survey: { selection: InstallSelection; names: string[] },
+  options: { sourceKind: InstallSourceKind; asJson?: boolean },
+): never {
+  const { selection, names } = survey;
+  if ("notFound" in selection) {
+    failSkillNotFound("skills install", selection.notFound, {
+      asJson: options.asJson,
+      candidates: names,
+      suggestedAction:
+        options.sourceKind === "catalog"
+          ? "Check the skill name (list with: ravi skills list --json)"
+          : "Check the skill name in the same source (list with: ravi skills list --source <source> --json)",
+    });
+  }
+  fail("error" in selection ? selection.error : "Skill selection failed.");
+}
+
 const SKILLS_LIST_HELP_AFTER = `
 LEITURA — descobre skills. Três universos: catálogo (default), instaladas (--installed)
 e uma fonte externa (--source GitHub/git/path). Paginado (default 50, máx 500).
@@ -78,12 +175,13 @@ EXAMPLES
   ravi skills list                              # catálogo (primeira página)
   ravi skills list --installed --json           # instaladas, JSON
   ravi skills list --tag da/gtm --limit 100     # filtra por tag canônica
-  ravi skills list --source github:org/repo     # skills de uma fonte externa
+  ravi skills list --source org/repo            # skills de uma fonte externa
   ravi skills list --json --limit 50 --offset 50  # próxima página
 
 FORMATO
   Saída humana: "<nome> — <1ª linha da descrição>" + source/path. --json traz
   { total, pagination.nextCommand, items[] } — siga nextCommand pra paginar.
+  Compact: --fields name,source poda cada item pros campos pedidos.
 
 SEE ALSO
   ravi skills show <name>      (conteúdo completo de uma skill)
@@ -120,41 +218,54 @@ FONTES
 `;
 
 const SKILLS_INSTALL_HELP_AFTER = `
-MUTA — instala skill(s) no bucket de plugin do operador e sincroniza Codex.
-Destrutivo com --overwrite (substitui a instalada). Risco: high.
+MUTA (FREIO CONDICIONAL) — instala skills no bucket de plugin do operador e
+sincroniza Codex. Catálogo e fonte local, sem --overwrite, executam imediatamente.
+Fonte Git OU --overwrite exigem --execute. Git é bloqueado antes de resolver a
+fonte; overwrite local/catálogo valida a seleção antes do freio. Risco: high.
 
 USE
   ✓ trazer skill do catálogo Ravi ou de uma fonte (GitHub/git/path) pro sistema
   ✓ instalar em massa de uma fonte com --all
+  ✓ revisar o plano antes de buscar Git ou substituir uma skill instalada
 
 NÃO USE
   ✗ criar skill nova via loop de curadoria → \`ravi skills guard --op create\`
   ✗ dar visibilidade a um agente → isso é grant, não install (\`skills grant\`)
 
 REGRAS HARD (o comando bloqueia)
+  • Git sem --execute → dry-run exit 3 antes do clone; seleção adiada.
+  • --overwrite local/catálogo sem --execute → valida, conta e retorna exit 3.
+  • Catálogo/local sem --overwrite → instala imediatamente, sem --execute.
+  • Nome inexistente local/catálogo falha ANTES do freio; em Git, após --execute.
   • Exige um nome OU --all (senão fail "Pass a skill name or --all.").
   • --overwrite é a única forma de substituir uma já instalada (fail-safe).
 
 EXAMPLES
-  ravi skills install cli-creator                       # do catálogo
-  ravi skills install --source github:org/repo --all    # tudo de uma fonte
-  ravi skills install minha --source ./path --overwrite --json
+  ravi skills install cli-creator                       # catálogo aditivo: instala agora
+  ravi skills install minha --source ./path             # local aditivo: instala agora
+  ravi skills install --source org/repo --all           # Git: dry-run (exit 3)
+  ravi skills install --source org/repo --all --execute
+  ravi skills install cli-creator --overwrite           # dry-run (exit 3)
+  ravi skills install minha --source ./path --overwrite --execute --json
 
 ON ERROR (reason → fix)
-  Pass a skill name or --all → passe o nome ou --all.
-  já instalada (sem efeito)  → use --overwrite pra substituir.
+  exit 3 WRITE_REQUIRES_EXECUTE → fonte Git ou overwrite: revise o plano e confirme.
+  SKILL_NOT_FOUND (exit 1)      → cheque error.suggestions; liste com \`ravi skills list\`.
+  Pass a skill name or --all    → passe o nome ou --all.
+  já instalada (sem efeito)     → use --overwrite pra substituir.
 
 SEE ALSO
   ravi skills list --source <src>  (ver antes de instalar)
-  ravi skills sync                 (re-materializar Codex sem instalar)
+  ravi skills sync                 (re-materializar Codex sem instalar; sem freio)
 
 FONTES
-  src/cli/commands/skills.ts · src/skills/manager.ts · 2026-07-10
+  src/cli/commands/skills.ts · src/skills/manager.ts · 2026-08-06
 `;
 
 const SKILLS_SYNC_HELP_AFTER = `
-MUTA (idempotente) — materializa as skills dos plugins Ravi no diretório de skills
-do Codex. Não instala nada novo; só re-sincroniza o que já existe. Risco: high.
+MUTA (idempotente, SEM FREIO declarado) — materializa as skills dos plugins Ravi
+no diretório de skills do Codex. Não instala nada novo; só re-sincroniza o que já
+existe no repo local — reversível, roda na hora, sem --execute. Risco: high.
 
 USE
   ✓ reconciliar o diretório Codex depois de instalar/editar skills manualmente
@@ -197,8 +308,11 @@ EXAMPLES
   ravi skills grant jarvis-fiscal emissao-nf-sde --json
 
 ON ERROR (reason → fix)
-  Agent not found → confira \`ravi agents list\`.
-  Skill not found → confira \`ravi skills list\`; instale/publique antes de grantar.
+  AGENT_NOT_FOUND (exit 1) → error.suggestions traz ids parecidos; confira \`ravi agents list\`.
+  SKILL_NOT_FOUND (exit 1) → error.suggestions traz nomes parecidos; instale/publique antes.
+
+SEM FREIO (declarado)
+  grant e revoke são reversíveis entre si e têm efeito ao vivo — escrevem na hora.
 
 PIPELINE
   skills list (achar nome) → [skills grant] → skills inspect <agent> (verificar allowlist)
@@ -264,6 +378,9 @@ CUSTO / SEGURANÇA
   • --all-agents --all-skills escreve (nº de agentes × nº de skills) grants — costuma
     ser MUITA linha. O total exato é sempre o que o --dry-run reporta AGORA (fonte viva).
   • Sempre --dry-run antes do write real (mostra a contagem atual, não toca no DB).
+  • FREIO EQUIVALENTE: o --dry-run é anterior ao contrato agent-first e cumpre o papel
+    do freio aqui (preview sem escrita, exit 0 com contagem). NÃO existe --execute neste
+    comando; o nome --dry-run é mantido por compatibilidade.
   • Reversível: \`ravi skills revoke-batch\` com os MESMOS eixos.
 
 EXAMPLES
@@ -311,6 +428,8 @@ REGRAS HARD (o comando bloqueia)
 
 CUSTO / SEGURANÇA
   • --all-agents --all-skills zera TODOS os grants explícitos da frota. --dry-run antes.
+  • FREIO EQUIVALENTE: o --dry-run pré-existente é o freio deste comando (preview sem
+    escrita, exit 0). NÃO existe --execute aqui; o nome é mantido por compatibilidade.
   • Não destrói skills nem permissions — só os grants explícitos.
 
 EXAMPLES
@@ -380,6 +499,7 @@ EXAMPLES
 
 FORMATO
   --json: { skillName?, total, grants[] }. skillName omitido quando o escopo é por-agente.
+  Compact: --fields agentId,skillName poda cada grant pros campos pedidos.
 
 SEE ALSO
   ravi skills inspect <agent> (allowlist completa) · ravi skills grant/revoke
@@ -412,6 +532,8 @@ export class SkillsCommands {
     @Option({ flags: "--tag <slug>", description: "Filter by canonical skill tag" }) tagSlug?: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching skills to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const discovered = source
       ? withResolvedSkillSource(source, (resolved) => discoverSkills(resolved))
@@ -423,6 +545,7 @@ export class SkillsCommands {
     const page = paginateCliItems(skills, { limit, offset });
     const pageSkills = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "skills", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -440,13 +563,17 @@ export class SkillsCommands {
 
     const sourceLabel = source ?? (installed === true || includeCodex === true ? "installed" : "catalog");
 
+    const projectedItems = pickFields(
+      pageSkills.map((skill) => serializeSkill(skill)),
+      fields,
+    );
     const payload = {
       total: page.total,
       pagination,
       source: sourceLabel,
       ...(tagFilter ? { filters: { tag: tagFilter } } : {}),
-      items: pageSkills.map((skill) => serializeSkill(skill)),
-      skills: pageSkills.map((skill) => serializeSkill(skill)),
+      items: projectedItems,
+      skills: projectedItems,
     };
 
     if (asJson) {
@@ -483,17 +610,27 @@ export class SkillsCommands {
     installed?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const skill = source
-      ? withResolvedSkillSource(source, (resolved) => {
-          const skills = discoverSkills(resolved);
-          return selectSkills(skills, { skill: name })[0] ?? null;
-        })
-      : installed === true
-        ? findInstalledSkill(name)
-        : (findSkillByName(listCatalogSkills(), name) ?? findInstalledSkill(name));
+    let skill: RaviSkill | null;
+    let candidates: string[];
+    if (source) {
+      // Resolve inside the callback (temp clones are cleaned up on return) and
+      // fail with the envelope OUTSIDE it, keeping cleanup + exit code intact.
+      const resolved = withResolvedSkillSource(source, (resolvedSource) => {
+        const skills = discoverSkills(resolvedSource);
+        return { skill: findSkillByName(skills, name), names: skills.map((entry) => entry.name) };
+      });
+      skill = resolved.skill;
+      candidates = resolved.names;
+    } else if (installed === true) {
+      skill = findInstalledSkill(name);
+      candidates = listInstalledSkills({ includeCodex: true }).map((entry) => entry.name);
+    } else {
+      skill = findSkillByName(listCatalogSkills(), name) ?? findInstalledSkill(name);
+      candidates = knownSkillNames({ includeCodex: true });
+    }
 
     if (!skill) {
-      fail(`Skill not found: ${name}`);
+      failSkillNotFound("skills show", name, { asJson, candidates });
     }
 
     const payload = { skill: serializeSkill(skill, { includeContent: true }) };
@@ -511,10 +648,11 @@ export class SkillsCommands {
 
   @Command({
     name: "install",
-    description: "Install Ravi catalog skills or skills from an explicit source",
+    description:
+      "Install Ravi catalog skills or skills from an explicit source. Git sources and overwrites require --execute.",
     helpAfter: SKILLS_INSTALL_HELP_AFTER,
   })
-  @CommandAccess({ kind: "mutate", resource: "skills", action: "install", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "skills", action: "install", risk: "high", requiresConfirmation: true })
   @Returns(skillsInstallReturnSchema)
   install(
     @Arg("name", {
@@ -532,26 +670,77 @@ export class SkillsCommands {
     @Option({ flags: "--skip-codex-sync", description: "Do not immediately sync materialized Codex skills" })
     skipCodexSync?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Confirm installation from a Git source or replacement with --overwrite",
+    })
+    execute?: boolean,
   ) {
     const requestedSkill = normalizeRequestedSkillName(name, skillName);
     if (!requestedSkill && all !== true) {
       fail("Pass a skill name or --all.");
     }
 
-    const installSelected = (available: RaviSkill[]) => {
-      const selected = selectSkills(available, {
-        ...(requestedSkill ? { skill: requestedSkill } : {}),
-        all: all === true,
-      });
-      return installSkills(selected, {
-        ...(plugin ? { pluginName: plugin } : {}),
-        overwrite: overwrite === true,
-      });
-    };
+    const planSource = source ? parseSkillSource(source) : null;
+    const sourceKind = planSource?.type ?? "catalog";
+    const sourceLabel = sourceKind;
+    const requiresConfirmation = sourceKind === "git" || overwrite === true;
+    if (sourceKind === "git" && execute !== true) {
+      // Cloning a Git source is not a side-effect-free lookup. Defer source
+      // resolution and selection until the caller confirms the installation.
+      contractDryRun(
+        "skills install",
+        {
+          sourceKind,
+          sourceLabel,
+          selectionDeferred: true,
+          overwrite: overwrite === true,
+          codexSync: skipCodexSync !== true,
+        },
+        { asJson },
+      );
+    }
 
-    const installed = source
-      ? withResolvedSkillSource(source, (resolved) => installSelected(discoverSkills(resolved)))
-      : installSelected(listCatalogSkills());
+    const surveySelected = (available: RaviSkill[]) => surveyInstallSelection(available, requestedSkill, all === true);
+    if (requiresConfirmation && execute !== true) {
+      // Catalog and local discovery are side-effect-free. Validate the selected
+      // skill before the overwrite brake so not-found remains exit 1, not 3.
+      const survey = source
+        ? withResolvedSkillSource(source, (resolvedSource) => surveySelected(discoverSkills(resolvedSource)))
+        : surveySelected(listCatalogSkills());
+      const planned =
+        "ok" in survey.selection ? survey.selection.ok : failInstallSelection(survey, { sourceKind, asJson });
+      contractDryRun(
+        "skills install",
+        {
+          sourceKind,
+          sourceLabel,
+          skillCount: planned.length,
+          overwrite: overwrite === true,
+          codexSync: skipCodexSync !== true,
+        },
+        { asJson },
+      );
+    }
+
+    const installOptions = {
+      ...(plugin ? { pluginName: plugin } : {}),
+      overwrite: overwrite === true,
+    };
+    const runInstall = (
+      available: RaviSkill[],
+    ): { survey: ReturnType<typeof surveySelected>; installed?: InstalledRaviSkill[] } => {
+      const survey = surveySelected(available);
+      if (!("ok" in survey.selection)) return { survey };
+      return { survey, installed: installSkills(survey.selection.ok, installOptions) };
+    };
+    const outcome = source
+      ? withResolvedSkillSource(source, (resolvedSource) => runInstall(discoverSkills(resolvedSource)))
+      : runInstall(listCatalogSkills());
+    if (!outcome.installed) {
+      failInstallSelection(outcome.survey, { sourceKind, asJson });
+    }
+    const installed = outcome.installed;
 
     const codexSynced = skipCodexSync === true ? [] : syncCodex();
     const payload = {
@@ -619,13 +808,17 @@ export class SkillsCommands {
     if (!agentId) fail("Agent id is required.");
     if (!skillName) fail("Skill name is required.");
     if (!getAgent(agentId)) {
-      fail(`Agent not found: ${agentId}`);
+      failAgentNotFound("skills grant", agentId, asJson);
     }
     const resolved =
       findSkillByName(listCatalogSkills(), skillName) ??
       findSkillByName(listInstalledSkills({ includeCodex: false }), skillName);
     if (!resolved) {
-      fail(`Skill not found: ${skillName}. Install or publish it before granting.`);
+      failSkillNotFound("skills grant", skillName, {
+        asJson,
+        candidates: knownSkillNames({ includeCodex: false }),
+        suggestedAction: "Install or publish the skill before granting (list with: ravi skills list --json)",
+      });
     }
 
     const canonicalSkillName = resolved.name;
@@ -700,8 +893,8 @@ export class SkillsCommands {
     @Option({ flags: "--dry-run", description: "Preview counts without writing any grant" }) dryRun?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const agentIds = this.resolveAgentAxis(agent, allAgents);
-    const skillNames = this.resolveSkillAxis(skill, allSkills);
+    const agentIds = this.resolveAgentAxis("skills grant-batch", agent, allAgents, asJson);
+    const skillNames = this.resolveSkillAxis("skills grant-batch", skill, allSkills, asJson);
     const trimmedNote = note?.trim();
 
     const errors: Array<{ agentId: string; skillName: string; error: string }> = [];
@@ -755,8 +948,8 @@ export class SkillsCommands {
     @Option({ flags: "--dry-run", description: "Preview counts without removing any grant" }) dryRun?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const agentIds = this.resolveAgentAxis(agent, allAgents);
-    const skillNames = this.resolveSkillAxis(skill, allSkills);
+    const agentIds = this.resolveAgentAxis("skills revoke-batch", agent, allAgents, asJson);
+    const skillNames = this.resolveSkillAxis("skills revoke-batch", skill, allSkills, asJson);
 
     const errors: Array<{ agentId: string; skillName: string; error: string }> = [];
     let removed = 0;
@@ -793,7 +986,12 @@ export class SkillsCommands {
   }
 
   /** Resolve the agent axis: exactly one of --agent / --all-agents. */
-  private resolveAgentAxis(agent: string | undefined, allAgents: boolean | undefined): string[] {
+  private resolveAgentAxis(
+    op: string,
+    agent: string | undefined,
+    allAgents: boolean | undefined,
+    asJson?: boolean,
+  ): string[] {
     const single = agent?.trim();
     if (single && allAgents) fail("Use either --agent <id> or --all-agents, not both.");
     if (allAgents) {
@@ -802,7 +1000,7 @@ export class SkillsCommands {
       return ids;
     }
     if (single) {
-      if (!getAgent(single)) fail(`Agent not found: ${single}`);
+      if (!getAgent(single)) failAgentNotFound(op, single, asJson);
       return [single];
     }
     fail("Specify an agent axis: --agent <id> or --all-agents.");
@@ -810,7 +1008,12 @@ export class SkillsCommands {
   }
 
   /** Resolve the skill axis: exactly one of --skill / --all-skills. Returns canonical names. */
-  private resolveSkillAxis(skill: string | undefined, allSkills: boolean | undefined): string[] {
+  private resolveSkillAxis(
+    op: string,
+    skill: string | undefined,
+    allSkills: boolean | undefined,
+    asJson?: boolean,
+  ): string[] {
     const single = skill?.trim();
     if (single && allSkills) fail("Use either --skill <name> or --all-skills, not both.");
     if (allSkills) {
@@ -824,7 +1027,13 @@ export class SkillsCommands {
       const resolved =
         findSkillByName(listCatalogSkills(), single) ??
         findSkillByName(listInstalledSkills({ includeCodex: false }), single);
-      if (!resolved) fail(`Skill not found: ${single}. Install or publish it before granting.`);
+      if (!resolved) {
+        failSkillNotFound(op, single, {
+          asJson,
+          candidates: knownSkillNames({ includeCodex: false }),
+          suggestedAction: "Install or publish the skill first (list with: ravi skills list --json)",
+        });
+      }
       return [resolved.name];
     }
     fail("Specify a skill axis: --skill <name> or --all-skills.");
@@ -865,7 +1074,7 @@ export class SkillsCommands {
   ) {
     const agentId = agent?.trim();
     if (!agentId) fail("Agent id is required.");
-    if (!getAgent(agentId)) fail(`Agent not found: ${agentId}`);
+    if (!getAgent(agentId)) failAgentNotFound("skills inspect", agentId, asJson);
     const resolved = resolveAgentSkills(agentId);
     const payload = {
       agentId,
@@ -898,6 +1107,8 @@ export class SkillsCommands {
     @Arg("skill", { required: false, description: "Skill name to look up" }) skill?: string,
     @Option({ flags: "--agent <id>", description: "List grants for a specific agent instead" }) agentFilter?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each grant" })
+    fields?: string,
   ) {
     const agentId = agentFilter?.trim();
     const skillName = skill?.trim();
@@ -916,7 +1127,7 @@ export class SkillsCommands {
     const payload = {
       ...(skillName ? { skillName } : {}),
       total: grants.length,
-      grants,
+      grants: pickFields(grants, fields),
     };
     if (asJson) {
       printJson(payload);

@@ -182,7 +182,7 @@ function printSnapshot(snap: DbLockSnapshot): void {
 export class DbCommands {
   @Scope("superadmin")
   @Command({ name: "locks", description: "Snapshot of ravi.db locks, WAL state and process holders" })
-  @CommandAccess({ kind: "read", resource: "db", action: "locks", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "db", action: "locks", risk: "medium" })
   @CliOnly()
   async locks(
     @Option({ flags: "--probe-ms <n>", description: "Write-lock probe timeout (default: 1000ms)" })

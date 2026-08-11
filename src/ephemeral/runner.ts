@@ -56,7 +56,7 @@ async function tick(): Promise<void> {
       const prompt = `[System] Inform: ⏳ Esta sessão efêmera "${sessionName}" expira em ~${minutesLeft} minutos. Para agir, use os comandos CLI:
 - Estender +5h: ravi sessions extend ${sessionName}
 - Tornar permanente: ravi sessions keep ${sessionName}
-- Excluir agora: ravi sessions delete ${sessionName}
+- Excluir agora: ravi sessions delete ${sessionName} --execute
 Sem ação = sessão será excluída automaticamente.`;
 
       try {

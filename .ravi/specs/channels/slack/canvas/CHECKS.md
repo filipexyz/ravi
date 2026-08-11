@@ -6,6 +6,7 @@
 - `canvas-sections-lookup` MUST expose `section_types` and `contains_text`.
 - `canvas-access-set` and `canvas-access-delete` MUST reject simultaneous `--users` and `--channels`.
 - `canvas-access-set owner` MUST reject `--channels`; owner can target users only.
+- `canvas-access-delete` MUST execute immediately without `--execute` because it reduces sharing.
 - `canvas-showcase` MUST publish rich markdown and the current gap list.
 - `canvas-channel-showcase` MUST ensure the channel canvas before publishing the showcase.
 - `canvas-channel-showcase` MUST reuse an existing Canvas tab with the same title before creating a new tab.
@@ -15,5 +16,5 @@
 - Section patching with `--artifact` MUST NOT overwrite `slackCanvas.current`.
 - Publishing with `--artifact` MUST declare `syncDirection=artifact_to_slack` and `remoteContentExportSupported=false`.
 - `canvas-artifact-status` MUST show local hash, last published hash and known local drift without promising remote diff against Slack.
-- Mutations MUST default to dry-run and MUST execute only with `--execute`.
+- Risky mutations MUST default to dry-run and MUST execute only with `--execute`.
 - Tests MUST cover JSON serialization of complex Slack Web API arguments.

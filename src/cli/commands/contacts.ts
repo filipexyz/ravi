@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { Group, Command, CommandAccess, Scope, Arg, Option } from "../decorators.js";
 import { fail } from "../context.js";
+import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems, parseCliListLimit, parseCliListOffset } from "../pagination.js";
 import { commandEnvelopeReturnSchema, declareCommandReturns } from "./operational-return-schemas.js";
 import { nats } from "../../nats.js";
@@ -282,12 +283,14 @@ function formatMillis(value: number | null | undefined): string {
 }
 
 function resolveContactDetailsOrFail(
+  op: string,
   contactRef: string,
   options: { includeDuplicateCandidates?: boolean } = {},
+  asJson?: boolean,
 ): ContactDetails {
   const details = getContactDetails(contactRef, options);
-  if (!details) fail(`Contact not found: ${contactRef}`);
-  return details!;
+  if (!details) failContactNotFound(op, contactRef, asJson);
+  return details;
 }
 
 function metadataValue(
@@ -352,14 +355,14 @@ function getVisibleContactDetails(
   return { contact: null, details: null };
 }
 
-function assertCanReadContact(contactRef: string): void {
+function assertCanReadContact(op: string, contactRef: string, asJson?: boolean): void {
   const visible = getVisibleContactDetails(contactRef);
   if (visible.contact || visible.details) return;
-  fail(`Contact not found: ${contactRef}`);
+  failContactNotFound(op, contactRef, asJson);
 }
 
-function assertCanReadContactTimeline(contactRef: string): void {
-  assertCanReadContact(contactRef);
+function assertCanReadContactTimeline(op: string, contactRef: string, asJson?: boolean): void {
+  assertCanReadContact(op, contactRef, asJson);
 }
 
 function canViewPendingAccountEntry(entry: { phone: string; pendingKind?: string }): boolean {
@@ -368,6 +371,42 @@ function canViewPendingAccountEntry(entry: { phone: string; pendingKind?: string
   if (entry.pendingKind === "chat") return canWriteContacts(scopeCtx);
   const contact = getContact(entry.phone);
   return contact ? canReadContactRecord(scopeCtx, contact) : canWriteContacts(scopeCtx);
+}
+
+// ============================================================
+// Manual v2 contract helpers (error envelope + suggestions).
+// Text mode keeps the legacy `fail()` behavior; `--json` emits the
+// {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
+// 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
+//
+// SCOPE NOTE: contacts enforce contactScope (own/tagged/all), and reads cloak
+// out-of-scope contacts as not-found. Suggestions are therefore built ONLY
+// from `filterVisibleContacts(...)` — the exact caller-scope filter used by
+// `contacts list`/`find` — so a cloaked contact is never revealed.
+// ============================================================
+
+function failContactNotFound(op: string, contactRef: string, asJson?: boolean): never {
+  const candidates = filterVisibleContacts(getAllContacts()).flatMap((contact) => [contact.id, contact.name ?? ""]);
+  contractFail(op, "CONTACT_NOT_FOUND", `Contact not found: ${contactRef}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the contact id/identity (see suggestions for similar visible contacts)",
+      suggestions: suggestSimilar(contactRef, candidates),
+    },
+  });
+}
+
+/**
+ * The contacts service layer throws `Contact not found: <ref>` on unknown refs
+ * (e.g. addContactNote/setContactMetadata); map that throw to the contract
+ * envelope, let ContractError pass through untouched, and keep every other
+ * error on the legacy fail() path.
+ */
+function rethrowContactCommandError(op: string, contactRef: string, err: unknown, asJson?: boolean): never {
+  if (err instanceof ContractError) throw err;
+  const message = err instanceof Error ? err.message : String(err);
+  if (/^contact not found:/i.test(message)) failContactNotFound(op, contactRef, asJson);
+  fail(message);
 }
 
 @Group({
@@ -383,6 +422,8 @@ export class ContactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching contacts to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     let contacts = filterStatus ? getAllContacts().filter((c) => c.status === filterStatus) : getAllContacts();
     contacts = filterVisibleContacts(contacts);
@@ -390,6 +431,7 @@ export class ContactsCommands {
     const page = paginateCliItems(contacts, { limit, offset });
     const pageContacts = page.items;
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "contacts", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -398,13 +440,17 @@ export class ContactsCommands {
       options: ["--status", filterStatus],
     });
 
+    const serializedContacts = pickFields(
+      pageContacts.map((contact) => serializeContact(contact)),
+      fields,
+    );
     const payload = {
       filter: { status: filterStatus ?? null },
       counts: summarizeContacts(contacts),
       total: page.total,
       pagination,
-      items: pageContacts.map((contact) => serializeContact(contact)),
-      contacts: pageContacts.map((contact) => serializeContact(contact)),
+      items: serializedContacts,
+      contacts: serializedContacts,
     };
     if (asJson) {
       printJson(payload);
@@ -711,7 +757,7 @@ export class ContactsCommands {
 
     const contact = getContact(contactRef);
     if (!contact) {
-      fail(`Contact not found: ${contactRef}`);
+      failContactNotFound("contacts approve", contactRef, asJson);
     }
     failIfChatContact(contactRef, contact);
 
@@ -748,11 +794,40 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "remove", description: "Remove a contact" })
-  @CommandAccess({ kind: "mutate", resource: "contacts", action: "remove", risk: "destructive" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "contacts",
+    action: "remove",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   remove(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually remove the contact; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const contact = getContact(contactRef);
+    if (!contact) {
+      failContactNotFound("contacts remove", contactRef, asJson);
+    }
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): deletion is destructive, so dry-run by
+      // default and exit 3 before any state change.
+      contractDryRun(
+        "contacts remove",
+        {
+          contact: contact.id,
+          namePresent: Boolean(contact.name?.trim()),
+          phonePresent: Boolean(contact.phone?.trim()),
+          status: contact.status,
+        },
+        { asJson },
+      );
+    }
     const deleted = deleteContact(contactRef);
     const payload = {
       status: deleted ? ("removed" as const) : ("not_found" as const),
@@ -779,7 +854,7 @@ export class ContactsCommands {
     failIfChatContact(contactRef);
     const contact = getContact(contactRef);
     if (!contact) {
-      fail(`Contact not found: ${contactRef}`);
+      failContactNotFound("contacts allow", contactRef, asJson);
     }
     failIfChatContact(contactRef, contact);
     allowContact(contact.phone);
@@ -801,7 +876,7 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "block", description: "Block a contact" })
-  @CommandAccess({ kind: "mutate", resource: "contacts", action: "block", risk: "destructive" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "block", risk: "medium" })
   block(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -809,7 +884,7 @@ export class ContactsCommands {
     failIfChatContact(contactRef);
     const contact = getContact(contactRef);
     if (!contact) {
-      fail(`Contact not found: ${contactRef}`);
+      failContactNotFound("contacts block", contactRef, asJson);
     }
     failIfChatContact(contactRef, contact);
     blockContact(contact.phone);
@@ -840,7 +915,7 @@ export class ContactsCommands {
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
-      fail(`Contact not found: ${contactRef}`);
+      failContactNotFound("contacts set", contactRef, asJson);
     }
 
     let jsonValue: unknown = value;
@@ -940,13 +1015,7 @@ export class ContactsCommands {
     const { details, contact } = getVisibleContactDetails(contactRef, { includeDuplicateCandidates: true });
 
     if (!contact && !details) {
-      const payload = { found: false as const, target: contactRef, contact: null };
-      if (asJson) {
-        printJson(payload);
-      } else {
-        console.log(`\nContact not found: ${contactRef}`);
-      }
-      return payload;
+      failContactNotFound("contacts get", contactRef, asJson);
     }
 
     const payload = {
@@ -1070,7 +1139,7 @@ export class ContactsCommands {
   ) {
     const scopeFilter = parseScopeOption(scope);
     try {
-      assertCanReadContactTimeline(contactRef);
+      assertCanReadContactTimeline("contacts timeline", contactRef, asJson);
       const pageLimit = parseCliListLimit(limit);
       const pageOffset = parseCliListOffset(offset);
       const page = listContactEvents(contactRef, {
@@ -1118,7 +1187,7 @@ export class ContactsCommands {
       }
       return payload;
     } catch (err: any) {
-      fail(err.message);
+      rethrowContactCommandError("contacts timeline", contactRef, err, asJson);
     }
   }
 
@@ -1132,8 +1201,8 @@ export class ContactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      assertCanReadContactTimeline(contactRef);
-      const details = resolveContactDetailsOrFail(contactRef);
+      assertCanReadContactTimeline("contacts messages", contactRef, asJson);
+      const details = resolveContactDetailsOrFail("contacts messages", contactRef, {}, asJson);
       const page = dbListMessageMetaByContactId(details.contact.id, { limit, offset });
       const pagination = buildCliOffsetPagination({
         baseCommand: ["ravi", "contacts", "messages", contactRef],
@@ -1173,7 +1242,7 @@ export class ContactsCommands {
       }
       return payload;
     } catch (err: any) {
-      fail(err.message);
+      rethrowContactCommandError("contacts messages", contactRef, err, asJson);
     }
   }
 
@@ -1188,8 +1257,8 @@ export class ContactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      assertCanReadContactTimeline(contactRef);
-      const details = resolveContactDetailsOrFail(contactRef);
+      assertCanReadContactTimeline("contacts activity", contactRef, asJson);
+      const details = resolveContactDetailsOrFail("contacts activity", contactRef, {}, asJson);
       const page = listSessionEventsByContactId(details.contact.id, { limit, offset, includeLowLevel: Boolean(raw) });
       const pagination = buildCliOffsetPagination({
         baseCommand: ["ravi", "contacts", "activity", contactRef],
@@ -1232,7 +1301,7 @@ export class ContactsCommands {
       }
       return payload;
     } catch (err: any) {
-      fail(err.message);
+      rethrowContactCommandError("contacts activity", contactRef, err, asJson);
     }
   }
 
@@ -1246,8 +1315,8 @@ export class ContactsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      assertCanReadContactTimeline(contactRef);
-      const details = resolveContactDetailsOrFail(contactRef);
+      assertCanReadContactTimeline("contacts sessions", contactRef, asJson);
+      const details = resolveContactDetailsOrFail("contacts sessions", contactRef, {}, asJson);
       const page = listContactSessionSummaries(details.contact.id, { limit, offset });
       const pagination = buildCliOffsetPagination({
         baseCommand: ["ravi", "contacts", "sessions", contactRef],
@@ -1290,7 +1359,7 @@ export class ContactsCommands {
       }
       return payload;
     } catch (err: any) {
-      fail(err.message);
+      rethrowContactCommandError("contacts sessions", contactRef, err, asJson);
     }
   }
 
@@ -1305,9 +1374,14 @@ export class ContactsCommands {
     includeCrm?: boolean,
   ) {
     try {
-      assertCanReadContactTimeline(contactRef);
+      assertCanReadContactTimeline("contacts profile", contactRef, asJson);
       const evidenceLimit = parseCliListLimit(limit, { defaultLimit: 10, maxLimit: 50 });
-      const details = resolveContactDetailsOrFail(contactRef, { includeDuplicateCandidates: true });
+      const details = resolveContactDetailsOrFail(
+        "contacts profile",
+        contactRef,
+        { includeDuplicateCandidates: true },
+        asJson,
+      );
       const metadata = listContactMetadata(details.contact.id, {});
       const timeline = listContactEvents(details.contact.id, { limit: evidenceLimit });
       const messages = dbListMessageMetaByContactId(details.contact.id, { limit: evidenceLimit });
@@ -1413,13 +1487,13 @@ export class ContactsCommands {
       );
       return payload;
     } catch (err: any) {
-      fail(err.message);
+      rethrowContactCommandError("contacts profile", contactRef, err, asJson);
     }
   }
 
   @Scope("writeContacts")
   @Command({ name: "note", description: "Append a note to a contact timeline" })
-  @CommandAccess({ kind: "read", resource: "contacts", action: "note", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "note", risk: "medium" })
   note(
     @Arg("contact", { description: "Contact ID or identity" }) contactRef: string,
     @Arg("text", { description: "Note text" }) text: string,
@@ -1448,7 +1522,7 @@ export class ContactsCommands {
       }
       return payload;
     } catch (err: any) {
-      fail(err.message);
+      rethrowContactCommandError("contacts note", contactRef, err, asJson);
     }
   }
 
@@ -1459,13 +1533,18 @@ export class ContactsCommands {
     @Arg("query", { description: "Tag name (with --tag) or search query" }) query: string,
     @Option({ flags: "--tag", description: "Search by tag" }) byTag?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const contacts = filterVisibleContacts(byTag ? findContactsByTag(query) : searchContacts(query));
     const payload = {
       query,
       byTag: Boolean(byTag),
       total: contacts.length,
-      contacts: contacts.map((contact) => serializeContact(contact)),
+      contacts: pickFields(
+        contacts.map((contact) => serializeContact(contact)),
+        fields,
+      ),
     };
 
     if (asJson) {
@@ -1501,7 +1580,7 @@ export class ContactsCommands {
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
-      fail(`Contact not found: ${contactRef}`);
+      failContactNotFound("contacts tag", contactRef, asJson);
     }
 
     addContactTag(contact.phone, tag);
@@ -1530,7 +1609,7 @@ export class ContactsCommands {
   ) {
     const contact = getContact(contactRef);
     if (!contact) {
-      fail(`Contact not found: ${contactRef}`);
+      failContactNotFound("contacts untag", contactRef, asJson);
     }
 
     removeContactTag(contact.phone, tag);
@@ -1588,7 +1667,7 @@ export class ContactsCommands {
       }
       return payload;
     } catch (err: any) {
-      fail(err.message);
+      rethrowContactCommandError("contacts link", contactRef, err, asJson);
     }
   }
 
@@ -1666,16 +1745,37 @@ export class ContactsCommands {
 
   @Scope("writeContacts")
   @Command({ name: "merge", description: "Merge two contacts (move identities from source to target)" })
-  @CommandAccess({ kind: "mutate", resource: "contacts", action: "merge", risk: "medium" })
+  @CommandAccess({ kind: "mutate", resource: "contacts", action: "merge", risk: "medium", requiresConfirmation: true })
   merge(
     @Arg("source", { description: "Source contact ID (will be deleted)" }) sourceRef: string,
     @Arg("target", { description: "Target contact ID" }) targetRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually merge the contacts; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const target = getContact(targetRef);
     const source = getContact(sourceRef);
-    if (!target) fail(`Target not found: ${targetRef}`);
-    if (!source) fail(`Source not found: ${sourceRef}`);
+    if (!target) failContactNotFound("contacts merge", targetRef, asJson);
+    if (!source) failContactNotFound("contacts merge", sourceRef, asJson);
+
+    if (execute !== true) {
+      // Write brake (Manual v2 7.8): the merge deletes the source contact and
+      // is irreversible, so dry-run by default and exit 3 before any write.
+      contractDryRun(
+        "contacts merge",
+        {
+          source: source.id,
+          sourceNamePresent: Boolean(source.name?.trim()),
+          target: target.id,
+          targetNamePresent: Boolean(target.name?.trim()),
+          identitiesToMove: source.identities.length,
+        },
+        { asJson },
+      );
+    }
 
     try {
       const result = mergeContacts(target.id, source.id);
@@ -1719,7 +1819,7 @@ export class ContactsMetadataCommands {
   ) {
     const scopeInput = parseScopeOption(scope);
     try {
-      assertCanReadContactTimeline(contactRef);
+      assertCanReadContactTimeline("contacts metadata list", contactRef, asJson);
       const entries = listContactMetadata(contactRef, scopeInput);
       const page = paginateCliItems(entries, { limit, offset });
       const pagination = buildCliOffsetPagination({
@@ -1756,7 +1856,7 @@ export class ContactsMetadataCommands {
       }
       return payload;
     } catch (err: any) {
-      fail(err.message);
+      rethrowContactCommandError("contacts metadata list", contactRef, err, asJson);
     }
   }
 
@@ -1794,7 +1894,7 @@ export class ContactsMetadataCommands {
       }
       return payload;
     } catch (err: any) {
-      fail(err.message);
+      rethrowContactCommandError("contacts metadata set", contactRef, err, asJson);
     }
   }
 
@@ -1833,7 +1933,7 @@ export class ContactsMetadataCommands {
       }
       return payload;
     } catch (err: any) {
-      fail(err.message);
+      rethrowContactCommandError("contacts metadata remove", contactRef, err, asJson);
     }
   }
 }

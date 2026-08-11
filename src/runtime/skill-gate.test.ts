@@ -5,6 +5,11 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { createRuntimeContext } from "./context-registry.js";
 import { dbUpsertSkillGateRule, dbUpsertSkillGrant, getOrCreateSession, getSession } from "../router/index.js";
 import { dbUpdateAgent } from "../router/router-db.js";
+import {
+  flushPermissionAuditEvents,
+  listPermissionDenials,
+  setPermissionAuditPublisherForTest,
+} from "../permissions/denials.js";
 import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
@@ -19,6 +24,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  setPermissionAuditPublisherForTest();
   if (previousCodexHome === undefined) {
     delete process.env.CODEX_HOME;
   } else {
@@ -162,6 +168,46 @@ describe("evaluateSkillGate", () => {
 });
 
 describe("runtime host skill-gate enforcement", () => {
+  it("never persists or publishes the full command denied by native runtime policy", async () => {
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const auditEvents: Array<Record<string, unknown>> = [];
+    setPermissionAuditPublisherForTest(async (_topic, data) => {
+      auditEvents.push(data);
+    });
+    getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-gate-test",
+      runtimeProvider: "codex",
+    });
+    const context = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      sessionName: "skill-gate-test",
+      capabilities: [{ permission: "use", objectType: "tool", objectId: "Bash", source: "test" }],
+    });
+    const services = createRuntimeHostServices({
+      context,
+      agentId: "main",
+      sessionName: "skill-gate-test",
+      toolContext: {},
+    });
+    const command = 'bash -c "printf SENTINEL_SECRET_7M4Q"';
+
+    try {
+      const decision = await services.authorizeCommandExecution({ command, input: {} });
+      await flushPermissionAuditEvents();
+
+      expect(decision.approved).toBe(false);
+      expect(listPermissionDenials({ subjectType: "agent", subjectId: "main" })[0]?.command).toBe(
+        `[REDACTED:content length=${command.length}]`,
+      );
+      expect(auditEvents[0]?.command).toBe(`[REDACTED:content length=${command.length}]`);
+      expect(JSON.stringify(auditEvents)).not.toContain("SENTINEL_SECRET_7M4Q");
+    } finally {
+      setPermissionAuditPublisherForTest();
+    }
+  });
+
   it("delivers and marks a required skill loaded when a dynamic tool is attempted", async () => {
     writeCodexSkill("ravi-system-image");
     // System skills are visible through provider-owned group capabilities. The

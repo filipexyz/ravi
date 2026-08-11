@@ -83,7 +83,7 @@ export class ChannelBackendCommands {
 
     if (asJson) {
       console.log(JSON.stringify(result, null, 2));
-    } else if (!getContext()?.suppressCliOutput) {
+    } else if (!getContext({ localOnly: true })?.suppressCliOutput) {
       console.log(
         `${result.disposition === "rejected" ? "Rejected" : "Accepted"} channel ingress ${result.requestId}.`,
       );
@@ -219,7 +219,7 @@ function parseRuntimeRequest<T>(input: T | string, schema: { parse(value: unknow
 function printRuntimeResult(result: unknown, asJson: boolean | undefined, summary: string): void {
   if (asJson) {
     console.log(JSON.stringify(result, null, 2));
-  } else if (!getContext()?.suppressCliOutput) {
+  } else if (!getContext({ localOnly: true })?.suppressCliOutput) {
     console.log(summary);
   }
 }

@@ -3,7 +3,8 @@ import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option } from "../decorators.js";
-import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { ContractError, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
+import { cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import {
   execCapability,
   getConnectStatus,
@@ -14,7 +15,6 @@ import {
   type ConnectorDetail,
   type ConnectorListItem,
 } from "../../link/connectors.js";
-import { hasContext } from "../context.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
 const POLL_INTERVAL_MS = 2_000;
@@ -26,6 +26,10 @@ const POLL_TIMEOUT_MS = 5 * 60 * 1000;
   scope: "open",
 })
 export class ConnectorsCommands {
+  // Manual v2: `connect` is intentionally UNBRAKED — it is a human-in-the-loop
+  // browser OAuth flow (opens the provider consent page and polls until the
+  // human approves). A dry-run plan would add exit-3 friction without
+  // preventing any write: nothing is granted until the human consents.
   @Command({
     name: "connect",
     description: "Connect a new external service via OAuth",
@@ -50,9 +54,12 @@ export class ConnectorsCommands {
             .filter(Boolean)
         : undefined;
       const start = await startConnect({ provider, project, scopes, displayName: name });
-      if (asJson) {
-        console.log(JSON.stringify({ status: "started", ...start }, null, 2));
-      } else {
+      const started = { status: "started" as const, ...start };
+      if (asJson && noOpen) {
+        console.log(JSON.stringify(started, null, 2));
+        return started;
+      }
+      if (!asJson) {
         console.log(`Open the following URL to finish connecting ${provider}:`);
         console.log(`  ${start.connectUrl}`);
         console.log(`Pending grant id: ${start.pendingGrantId}`);
@@ -67,28 +74,50 @@ export class ConnectorsCommands {
       }
 
       const final = await pollUntilTerminal(start.pendingGrantId);
-      if (asJson) {
-        console.log(JSON.stringify({ status: final.status, connectorId: final.connectorId }, null, 2));
-      } else {
-        switch (final.status) {
-          case "consumed":
+      switch (final.status) {
+        case "consumed":
+          if (asJson) {
+            console.log(
+              JSON.stringify(
+                { status: final.status, provider: final.provider, connectorId: final.connectorId },
+                null,
+                2,
+              ),
+            );
+          } else {
             console.log(`Connected ${final.provider}. Connector id: ${final.connectorId ?? "(pending)"}`);
-            break;
-          case "expired":
-            console.error("Authorization timed out before the user completed the flow.");
-            process.exit(2);
-            return undefined;
-          case "rejected":
-            console.error("Authorization rejected by Console.");
-            process.exit(2);
-            return undefined;
-          default:
-            console.error(`Polling ended in unexpected state: ${final.status}`);
-            process.exit(2);
-            return undefined;
-        }
+          }
+          return final;
+        case "expired":
+          contractFail("connectors connect", "CONNECTOR_AUTH_EXPIRED", "Authorization expired before completion.", {
+            asJson,
+            details: {
+              retryable: true,
+              suggestedAction: `Start a new authorization flow with: ravi connectors connect ${provider}`,
+            },
+          });
+        case "rejected":
+          contractFail("connectors connect", "CONNECTOR_AUTH_REJECTED", "Authorization was rejected by Console.", {
+            asJson,
+            details: {
+              retryable: false,
+              suggestedAction: "Verify connector access in Console before starting a new authorization flow",
+            },
+          });
+        default:
+          contractFail(
+            "connectors connect",
+            "CONNECTOR_AUTH_STATE_INVALID",
+            "Authorization ended in an invalid state.",
+            {
+              asJson,
+              details: {
+                retryable: false,
+                suggestedAction: "Inspect connector status in Console before retrying",
+              },
+            },
+          );
       }
-      return final;
     });
   }
 
@@ -101,12 +130,14 @@ export class ConnectorsCommands {
     @Option({ flags: "--offset <n>", description: "Number of matching connectors to skip (default: 0)" })
     offsetOpt?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     return runConnectorCommand(asJson, async () => {
       const all = await listConnectors({ provider, project });
       const limit = Math.min(Math.max(Number.parseInt(limitOpt ?? "", 10) || 50, 1), 500);
       const offset = Math.max(Number.parseInt(offsetOpt ?? "", 10) || 0, 0);
-      const connections = all.slice(offset, offset + limit);
+      const connections = pickFields(all.slice(offset, offset + limit), fields);
       const payload = {
         connections,
         pagination: { total: all.length, limit, offset, returned: connections.length },
@@ -142,19 +173,30 @@ export class ConnectorsCommands {
   }
 
   @Command({ name: "revoke", description: "Revoke a connector and delete its stored credentials" })
-  @CommandAccess({ kind: "mutate", resource: "connectors", action: "revoke", risk: "destructive" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "connectors",
+    action: "revoke",
+    risk: "destructive",
+    requiresConfirmation: true,
+  })
   async revoke(
     @Arg("id", { description: "Connector id" }) id: string,
-    @Option({ flags: "--yes", description: "Skip confirmation prompt" }) yes?: boolean,
+    @Option({ flags: "--yes", description: "Skip confirmation (pre-existing equivalent of --execute)" }) yes?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Actually revoke the connector; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     return runConnectorCommand(asJson, async () => {
-      if (!yes) {
-        if (!asJson && !hasContext()) {
-          console.log(`This will revoke connector ${id} at the provider and delete its stored tokens.`);
-          console.log("Re-run with --yes to confirm.");
-        }
-        throw new CloudAuthError("PAYLOAD_INVALID", "Confirmation required: pass --yes to revoke this connector.");
+      if (yes !== true && execute !== true) {
+        // Write brake (Manual v2 7.8): revoking is destructive — it deletes the
+        // stored provider tokens at Console/Link — so dry-run by default and
+        // exit 3 before any remote call. The pre-existing `--yes` flag stays as
+        // the documented equivalent of `--execute` (not renamed).
+        contractDryRun("connectors revoke", { id, deletesStoredCredentials: true }, { asJson });
       }
       await revokeConnector(id);
       const payload = { revoked: true as const, id };
@@ -235,21 +277,15 @@ function printConnectorDetail(conn: ConnectorDetail): void {
   }
 }
 
-async function runConnectorCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<T | undefined> {
+async function runConnectorCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T | undefined> {
   try {
     return await fn();
   } catch (error) {
-    const cloudError = cloudAuthErrorFromUnknown(error);
-    if (asJson) {
-      console.log(JSON.stringify(formatCloudAuthError(cloudError), null, 2));
-    } else {
-      console.error(`${cloudError.code}: ${cloudError.message}`);
-      if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    if (hasContext()) throw cloudError;
-    process.exit(cloudError.exitCode);
+    // Manual v2 contract: contractFail/contractDryRun already emitted their
+    // envelope and carry the exit taxonomy (1/2/3). Never let the legacy
+    // CloudAuthError funnel swallow them.
+    if (error instanceof ContractError) throw error;
+    throw cloudAuthErrorFromUnknown(error);
   }
 }
 

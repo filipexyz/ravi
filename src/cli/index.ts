@@ -18,11 +18,19 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { registerCommands } from "./registry.js";
 import * as allCommands from "./commands/index.js";
+import {
+  ContractError,
+  contractFailureOutcome,
+  installRootUsageContract,
+  installUsageContract,
+  renderContractError,
+  unexpectedErrorToContractError,
+} from "./agent-contract.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
 import { runUpdate } from "./commands/update.js";
 import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
-import { emitCliAuditEvent, runWithCliAudit } from "./audit.js";
+import { emitCliAuditEvent, runWithCliAudit, wasContractErrorAudited } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
 import { maybeRunAppAliasRoute } from "../apps/router.js";
@@ -54,6 +62,72 @@ program.showSuggestionAfterError();
 
 // Register all command groups (auto-discovered from barrel)
 registerCommands(program, Object.values(allCommands) as Array<new () => object>);
+
+// Manual v2 contract, installed per migrated domain group: commander usage
+// errors (unknown flag, missing required argument) exit 2 with the error
+// envelope instead of plain text with exit 1. Unlisted groups keep commander's
+// default behavior until they are migrated.
+const AGENT_CONTRACT_DOMAINS = [
+  "agents",
+  "artifacts",
+  "audio",
+  "bridges",
+  "calendars",
+  "channels",
+  "chats",
+  "cloud",
+  "commands",
+  "connectors",
+  "contacts",
+  "context",
+  "costs",
+  "credentials",
+  "crm",
+  "cron",
+  "devin",
+  "feedback",
+  "gmail",
+  "heartbeat",
+  "hooks",
+  "image",
+  "inbox",
+  "insights",
+  "instances",
+  "mail",
+  "media",
+  "meetings",
+  "metrics",
+  "observers",
+  "pages",
+  "projects",
+  "prox",
+  "react",
+  "routes",
+  "rules",
+  "runtime",
+  "self",
+  "sessions",
+  "settings",
+  "skill-gates",
+  "skills",
+  "slack",
+  "specs",
+  "stickers",
+  "sync",
+  "tag-rules",
+  "tags",
+  "tasks",
+  "threads",
+  "transcribe",
+  "triggers",
+  "video",
+  "watch",
+  "whatsapp",
+  "work-objects",
+  "workflows",
+  "yt",
+];
+for (const domain of AGENT_CONTRACT_DOMAINS) installUsageContract(program, domain);
 
 // Top-level commands (not via decorator groups)
 program
@@ -238,12 +312,43 @@ program
     );
   });
 
-// Parse and execute
-maybeSuggestKnownRootCommand(process.argv.slice(2), program);
+// Parse and execute. Root parser failures use the same exit-2 contract as
+// migrated domain nodes, including unknown command suggestions.
+installRootUsageContract(program);
 
-void bootstrapCli().catch((error: unknown) => {
-  console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
-  process.exitCode = 1;
+void bootstrapCli().catch(async (error: unknown) => {
+  if (error instanceof ContractError) {
+    // Contract helpers render once and throw. Audit the semantic outcome before
+    // preserving the process taxonomy (1 failure · 2 usage · 3 blocked).
+    if (!wasContractErrorAudited(error)) {
+      const [group = "cli", ...operationParts] = error.op.trim().split(/\s+/);
+      await emitCliAuditEvent({
+        group,
+        name: operationParts.join("_") || "root",
+        tool: error.op.replace(/\s+/g, "_"),
+        outcome: contractFailureOutcome(error),
+        exitCode: error.exitCode,
+        errorCode: error.code,
+        status: "completed",
+        closeLazyConnection: true,
+      });
+    }
+    process.exitCode = error.exitCode;
+    return;
+  }
+  const contractError = unexpectedErrorToContractError("cli bootstrap");
+  renderContractError(contractError, process.argv.includes("--json"));
+  await emitCliAuditEvent({
+    group: "cli",
+    name: "bootstrap",
+    tool: "cli_bootstrap",
+    outcome: contractFailureOutcome(contractError),
+    exitCode: contractError.exitCode,
+    errorCode: contractError.code,
+    status: "completed",
+    closeLazyConnection: true,
+  });
+  process.exitCode = contractError.exitCode;
 });
 
 async function bootstrapCli(): Promise<void> {
@@ -254,35 +359,7 @@ async function bootstrapCli(): Promise<void> {
     process.exit(process.exitCode ?? 0);
   }
 
-  program.parse();
-}
-
-function maybeSuggestKnownRootCommand(args: string[], command: Command): void {
-  const requested = args[0];
-  if (!requested || requested.startsWith("-")) return;
-
-  const known = rootCommandNames(command);
-  if (known.has(requested)) return;
-
-  const suggestion = resolveKnownRootCommandSuggestion(requested, known);
-  if (!suggestion) return;
-
-  const suggestedArgs = [suggestion, ...args.slice(1)];
-  console.error(`Unknown command: ravi ${requested}`);
-  console.error(`Did you mean: ravi ${suggestedArgs.join(" ")}?`);
-  process.exit(1);
-}
-
-function resolveKnownRootCommandSuggestion(requested: string, known: Set<string>): string | undefined {
-  const explicit: Record<string, string> = {
-    task: "tasks",
-  };
-  const explicitSuggestion = explicit[requested];
-  if (explicitSuggestion && known.has(explicitSuggestion)) return explicitSuggestion;
-
-  const plural = `${requested}s`;
-  if (known.has(plural)) return plural;
-  return undefined;
+  await program.parseAsync();
 }
 
 function rootCommandNames(command: Command): Set<string> {

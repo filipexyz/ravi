@@ -3,6 +3,8 @@ import { mkdirSync, writeFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { homedir } from "node:os";
 
+const actualChildProcess = require("node:child_process");
+const actualNatsModule = await import("../nats.js");
 const RAVI_DIR = join(homedir(), ".ravi");
 const TOML_PATH = join(RAVI_DIR, "rtk-rewrite.toml");
 
@@ -33,24 +35,20 @@ function restoreToml() {
 const publishedEvents: Array<{ topic: string; data: Record<string, unknown> }> = [];
 
 mock.module("../nats.js", () => ({
+  ...actualNatsModule,
   publish: async (topic: string, data: Record<string, unknown>) => {
     publishedEvents.push({ topic, data });
   },
 }));
 
-// Mock logger
-mock.module("../utils/logger.js", () => ({
-  logger: {
-    child: () => ({
-      info: () => {},
-      warn: () => {},
-      error: () => {},
-      debug: () => {},
-    }),
-  },
-}));
-
 describe("createRtkRewriteHook", () => {
+  test("preserves unrelated NATS exports in the module mock", async () => {
+    const natsModule = await import("../nats.js");
+
+    expect(natsModule.nats).toBeDefined();
+    expect(typeof natsModule.ensureConnected).toBe("function");
+  });
+
   beforeEach(() => {
     publishedEvents.length = 0;
     backupToml();
@@ -64,8 +62,6 @@ describe("createRtkRewriteHook", () => {
   function buildHookWithRtk(rtkAvailable: boolean, tomlContent?: string) {
     // Reset module cache so loadRtkRewriteConfig re-runs
     // We mock execSync to control rtk detection
-    const { execSync: _orig } = require("node:child_process");
-
     if (tomlContent !== undefined) {
       mkdirSync(RAVI_DIR, { recursive: true });
       writeFileSync(TOML_PATH, tomlContent);
@@ -79,12 +75,13 @@ describe("createRtkRewriteHook", () => {
 
     // Use mock.module to mock child_process
     mock.module("node:child_process", () => ({
+      ...actualChildProcess,
       execSync: (cmd: string, opts?: unknown) => {
         if (typeof cmd === "string" && (cmd.includes("which rtk") || cmd.includes("command -v rtk"))) {
           if (rtkAvailable) return "/usr/local/bin/rtk\n";
           throw new Error("not found");
         }
-        return _orig(cmd, opts);
+        return actualChildProcess.execSync(cmd, opts);
       },
     }));
 

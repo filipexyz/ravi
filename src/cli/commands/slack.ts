@@ -40,11 +40,14 @@ import {
   createArtifactVersion,
   getArtifactDetails,
   getArtifactVersion,
+  inspectArtifactPublishStateReadOnly,
+  listArtifacts,
   updateArtifact,
   type ArtifactRecord,
   type ArtifactVersion,
 } from "../../artifacts/store.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { jsonObjectSchema, jsonValueSchema } from "../return-schemas.js";
 
@@ -130,8 +133,75 @@ interface SlackOpsContext {
   config: SlackCredentialConfig;
 }
 
+type SlackConnectionSummary = Pick<SlackCredentialConfig, "accountId" | "instanceId" | "source">;
+
+interface SlackOpsTarget {
+  channel: ChannelConfig;
+  channels: Record<string, ChannelConfig>;
+  summary: SlackConnectionSummary;
+}
+
+interface SlackMutationContextInput {
+  channelName?: string;
+  action: string;
+  op: string;
+  method: string;
+  request: Record<string, unknown>;
+  asJson?: boolean;
+  execute?: boolean;
+  item?: unknown;
+}
+
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
+}
+
+function summarizeSlackDryRunRequest(request: Record<string, unknown>): Record<string, unknown> {
+  const text = typeof request.text === "string" ? request.text : undefined;
+  const markdown = typeof request.markdown === "string" ? request.markdown : undefined;
+  const blocks = Array.isArray(request.blocks) ? request.blocks : undefined;
+  const changes = Array.isArray(request.changes) ? request.changes : undefined;
+  const name = typeof request.name === "string" ? request.name : undefined;
+  const userIds = Array.isArray(request.userIds) ? request.userIds : undefined;
+  const accessTargetIds = Array.isArray(request.userIds)
+    ? { kind: "users" as const, count: request.userIds.length }
+    : Array.isArray(request.channelIds)
+      ? { kind: "channels" as const, count: request.channelIds.length }
+      : undefined;
+  const destinationProvided = [request.channel, request.channelId, request.canvasId].some(
+    (value) => typeof value === "string" && value.trim().length > 0,
+  );
+
+  return {
+    ...(destinationProvided ? { destinationProvided: true } : {}),
+    ...(typeof request.ts === "string" ? { tsProvided: true } : {}),
+    ...(typeof request.threadTs === "string" ? { threadProvided: true } : {}),
+    ...(typeof request.viewId === "string" || typeof request.externalId === "string" ? { viewProvided: true } : {}),
+    ...(text !== undefined ? { textChars: text.length } : {}),
+    ...(markdown !== undefined ? { markdownChars: markdown.length } : {}),
+    ...(blocks ? { blockCount: blocks.length } : {}),
+    ...(changes ? { changeCount: changes.length } : {}),
+    ...(typeof request.file === "string" ? { fileProvided: true } : {}),
+    ...(name !== undefined
+      ? typeof request.channel === "string"
+        ? { newNameChars: name.length }
+        : { channelNameChars: name.length }
+      : {}),
+    ...(typeof request.isPrivate === "boolean" ? { isPrivate: request.isPrivate } : {}),
+    ...(userIds && typeof request.canvasId !== "string" ? { userCount: userIds.length } : {}),
+    ...(typeof request.accessLevel === "string" ? { accessLevel: request.accessLevel } : {}),
+    ...(typeof request.canvasId === "string" && accessTargetIds
+      ? { accessTargetKind: accessTargetIds.kind, accessTargetCount: accessTargetIds.count }
+      : {}),
+    ...(request.payload && typeof request.payload === "object" ? { payloadProvided: true } : {}),
+    fieldCount: Object.keys(request).length,
+  };
+}
+
+function summarizeSlackDryRunItem(item: unknown): Record<string, unknown> {
+  if (Array.isArray(item)) return { itemCount: item.length };
+  if (!item || typeof item !== "object") return { provided: item !== undefined };
+  return { fieldCount: Object.keys(item as Record<string, unknown>).length };
 }
 
 function parsePositiveInt(value: string | undefined, fallback: number): number {
@@ -152,16 +222,98 @@ function resolveSlackChannelConfig(channelName?: string): ChannelConfig | undefi
   );
 }
 
-async function createSlackOpsContext(channelName: string | undefined, action: string): Promise<SlackOpsContext> {
+/** Enabled Slack channel-config names from the LOCAL config store (cheap source for suggestions). */
+function listLocalSlackChannelNames(): string[] {
+  const channels = configStore.getConfig().channels ?? {};
+  return Object.values(channels)
+    .filter((channel) => channel.enabled !== false && channel.provider === "slack")
+    .map((channel) => channel.name)
+    .filter((name): name is string => typeof name === "string" && name.length > 0);
+}
+
+interface SlackContractContext {
+  readonly op: string;
+  readonly asJson?: boolean;
+}
+
+function resolveSlackOpsTarget(channelName: string | undefined, contract: SlackContractContext): SlackOpsTarget {
   const channels = configStore.getConfig().channels ?? {};
   const channel = resolveSlackChannelConfig(channelName);
   if (!channel) {
-    fail("Slack channel not resolved. Pass --channel <name> or run from a Slack-sourced context.");
+    const known = listLocalSlackChannelNames();
+    const requested = channelName?.trim();
+    contractFail(
+      contract.op,
+      "CHANNEL_NOT_FOUND",
+      requested
+        ? `Slack channel config not found: ${requested}`
+        : "Slack channel not resolved. Pass --channel <name> or run from a Slack-sourced context.",
+      {
+        asJson: contract.asJson,
+        details: {
+          suggestedAction: "List channel configs with: ravi channels list --json",
+          suggestions: requested ? suggestSimilar(requested, known) : known.slice(0, 3),
+        },
+      },
+    );
   }
+
+  if (!channel.credentialConnection?.trim()) {
+    contractFail(
+      contract.op,
+      "CREDENTIALS_NOT_CONFIGURED",
+      `Slack credentials not configured for channel ${channel.name}. Set channel credentialConnection first.`,
+      {
+        asJson: contract.asJson,
+        details: {
+          suggestedAction: `Set credentialConnection for channel ${channel.name} (see: ravi channels list --json)`,
+        },
+      },
+    );
+  }
+
+  return {
+    channel,
+    channels,
+    summary: {
+      accountId: channel.name,
+      instanceId: channel.name,
+      source: "broker",
+    },
+  };
+}
+
+async function resolveSlackCredentialContext(
+  target: SlackOpsTarget,
+  action: string,
+  contract: SlackContractContext,
+): Promise<SlackCredentialConfig> {
+  const { channel, channels } = target;
   const config = await resolveSlackCredentialConfigFromEnv(process.env, { action, channel, channels });
   if (!config) {
-    fail(`Slack credentials not configured for channel ${channel.name}. Set channel credentialConnection first.`);
+    contractFail(
+      contract.op,
+      "CREDENTIALS_NOT_CONFIGURED",
+      `Slack credentials not configured for channel ${channel.name}. Set channel credentialConnection first.`,
+      {
+        asJson: contract.asJson,
+        details: {
+          suggestedAction: `Set credentialConnection for channel ${channel.name} (see: ravi channels list --json)`,
+        },
+      },
+    );
   }
+  return config;
+}
+
+/** Resolve credentials and construct a Slack client for an executing/read operation. */
+async function createSlackOpsContext(
+  channelName: string | undefined,
+  action: string,
+  contract: SlackContractContext,
+): Promise<SlackOpsContext> {
+  const target = resolveSlackOpsTarget(channelName, contract);
+  const config = await resolveSlackCredentialContext(target, action, contract);
   return {
     config,
     client: new SlackWebApiClient({
@@ -171,7 +323,7 @@ async function createSlackOpsContext(channelName: string | undefined, action: st
   };
 }
 
-function connectionLabel(config: SlackCredentialConfig): string {
+function connectionLabel(config: SlackConnectionSummary): string {
   return config.accountId || config.instanceId;
 }
 
@@ -673,11 +825,35 @@ function createSlackCanvasMarkdownArtifact(filePath: string, title?: string): Ar
   });
 }
 
+/** Local (SQLite) artifact ids/titles most similar to the missing id — cheap NOT_FOUND suggestions. */
+function slackArtifactSuggestions(query: string): string[] {
+  const candidates = listArtifacts({ kind: SLACK_CANVAS_ARTIFACT_KIND, limit: 50 }).map((artifact) => artifact.id);
+  return suggestSimilar(query, candidates);
+}
+
+function failSlackArtifactNotFound(
+  artifactId: string,
+  contract?: SlackContractContext,
+  readOnlyCandidates?: string[],
+): never {
+  if (!contract) fail(`Artifact not found: ${artifactId}`);
+  contractFail(contract.op, "ARTIFACT_NOT_FOUND", `Artifact not found: ${artifactId}`, {
+    asJson: contract.asJson,
+    details: {
+      suggestedAction: "List local artifacts with: ravi artifacts list --json",
+      suggestions: readOnlyCandidates
+        ? suggestSimilar(artifactId, readOnlyCandidates)
+        : slackArtifactSuggestions(artifactId),
+    },
+  });
+}
+
 function resolveSlackCanvasArtifactSource(input: {
   readonly artifactOrFile: string;
   readonly title?: string;
   readonly execute: boolean;
   readonly refreshSource: boolean;
+  readonly contract?: SlackContractContext;
 }): SlackCanvasArtifactSource {
   const value = input.artifactOrFile.trim();
   if (!value) fail("Missing artifact id or markdown file path.");
@@ -700,10 +876,10 @@ function resolveSlackCanvasArtifactSource(input: {
     };
   }
 
-  const details = getArtifactDetails(value);
-  if (!details) fail(`Artifact not found: ${value}`);
-  let artifact = details.artifact;
-  let version = getArtifactVersion(artifact.id);
+  const inspection = inspectArtifactPublishStateReadOnly(value);
+  if (!inspection.artifact) failSlackArtifactNotFound(value, input.contract, inspection.candidates);
+  let artifact = inspection.artifact;
+  let version = inspection.version;
   let refreshed = false;
   const liveFileSha256 = artifact.filePath ? hashFileContent(artifact.filePath) : undefined;
   const sourceFileChanged = Boolean(liveFileSha256 && artifact.sha256 && liveFileSha256 !== artifact.sha256);
@@ -745,6 +921,7 @@ function resolveSlackCanvasMarkdownSource(input: {
   readonly artifactId?: string;
   readonly execute: boolean;
   readonly refreshSource: boolean;
+  readonly contract?: SlackContractContext;
 }): SlackCanvasMarkdownSource {
   validateSlackCanvasMarkdownSourceSelection(input.markdown, input.markdownFile, input.artifactId);
 
@@ -756,6 +933,7 @@ function resolveSlackCanvasMarkdownSource(input: {
       artifactOrFile: artifactId,
       execute: input.execute,
       refreshSource: input.refreshSource,
+      ...(input.contract ? { contract: input.contract } : {}),
     });
     return {
       artifact: source.artifact,
@@ -850,9 +1028,9 @@ function hashFileContent(path: string): string {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
 }
 
-function buildSlackCanvasArtifactStatus(artifactId: string): Record<string, unknown> {
+function buildSlackCanvasArtifactStatus(artifactId: string, contract?: SlackContractContext): Record<string, unknown> {
   const details = getArtifactDetails(artifactId);
-  if (!details) fail(`Artifact not found: ${artifactId}`);
+  if (!details) failSlackArtifactNotFound(artifactId, contract);
   const version = getArtifactVersion(artifactId);
   const source = readMarkdownFromArtifact(details.artifact, version);
   const markdownSha256 = hashSlackCanvasMarkdown(source.markdown);
@@ -1105,7 +1283,10 @@ export class SlackCommands {
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const { client, config } = await createSlackOpsContext(raviChannel, "auth.test");
+    const { client, config } = await createSlackOpsContext(raviChannel, "auth.test", {
+      op: "slack permissions-list",
+      asJson,
+    });
     const raw = await client.authTest();
     const scopes = raw.scopes ?? [];
     const payload = {
@@ -1132,7 +1313,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "channels-list", description: "List Slack conversations visible to the configured bot" })
-  @CommandAccess({ kind: "read", resource: "slack.channels", action: "list", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.channels",
+    action: "list",
+    risk: "low",
+    redactions: ["raviChannel", "cursor"],
+  })
   @Returns(slackListReturnSchema)
   async channelsList(
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
@@ -1145,10 +1332,15 @@ export class SlackCommands {
     @Option({ flags: "--limit <n>", description: "Page size", defaultValue: "100" }) limitValue?: string,
     @Option({ flags: "--cursor <cursor>", description: "Slack pagination cursor" }) cursor?: string,
     @Option({ flags: "--include-archived", description: "Include archived conversations" }) includeArchived?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const limit = parsePositiveInt(limitValue, 100);
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.list");
+    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.list", {
+      op: "slack channels-list",
+      asJson,
+    });
     const raw = await client.conversationsList({
       types,
       limit,
@@ -1161,7 +1353,9 @@ export class SlackCommands {
       provider: "slack" as const,
       connection: connectionLabel(config),
       source: config.source,
-      items,
+      // Compact mode (Manual v2 7.9): narrows the JSON items only; the text
+      // summary below keeps rendering from the full records.
+      items: pickFields(items, fields),
       pagination: pagination(limit, cursor, raw.response_metadata?.next_cursor),
       raw,
     };
@@ -1178,6 +1372,7 @@ export class SlackCommands {
     resource: "slack.messages",
     action: "send",
     risk: "high",
+    redactions: ["channel", "text", "raviChannel", "threadTs", "ephemeralUser"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1191,13 +1386,25 @@ export class SlackCommands {
       description: "Send as an ephemeral message visible only to this Slack user",
     })
     ephemeralUser?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack messages-send";
     const method = ephemeralUser ? "chat.postEphemeral" : "chat.postMessage";
     const request = { channel, text, ...(threadTs ? { threadTs } : {}), ...(ephemeralUser ? { ephemeralUser } : {}) };
-    const { client, config } = await createSlackOpsContext(raviChannel, method);
-    if (!execute) return this.printMutationDryRun(config, method, request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: method,
+      op,
+      method,
+      request,
+      asJson,
+      execute,
+    });
     const raw = ephemeralUser
       ? await client.postEphemeral({ channel, user: ephemeralUser, text, ...(threadTs ? { threadTs } : {}) })
       : await client.postMessage({ channel, text, ...(threadTs ? { threadTs } : {}) });
@@ -1208,7 +1415,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "blocks-validate", description: "Validate Slack Block Kit JSON with Slack blocks.validate" })
-  @CommandAccess({ kind: "read", resource: "slack.block-kit", action: "validate", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.block-kit",
+    action: "validate",
+    risk: "medium",
+    redactions: ["file", "raviChannel"],
+  })
   @Returns(slackObjectReturnSchema)
   async blocksValidate(
     @Arg("file", { description: "Path to a Block Kit JSON file" }) file: string,
@@ -1218,7 +1431,10 @@ export class SlackCommands {
   ) {
     const validation = normalizeSlackBlockKitValidationPayload(readSlackBlockKitJsonFile(file), target);
     const request = slackBlockKitValidationRequest(validation);
-    const { client, config } = await createSlackOpsContext(raviChannel, "blocks.validate");
+    const { client, config } = await createSlackOpsContext(raviChannel, "blocks.validate", {
+      op: "slack blocks-validate",
+      asJson,
+    });
     const raw = await client.blocksValidate(request);
     const payload = {
       ok: true,
@@ -1243,6 +1459,7 @@ export class SlackCommands {
     resource: "slack.block-kit",
     action: "send",
     risk: "high",
+    redactions: ["channel", "file", "raviChannel", "connection", "text", "blocks", "threadTs", "ephemeralUser"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1260,9 +1477,14 @@ export class SlackCommands {
       description: "Send as an ephemeral message visible only to this Slack user",
     })
     ephemeralUser?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack blocks-send";
     const message = normalizeSlackBlockKitMessagePayload(readSlackBlockKitJsonFile(file), text);
     const method = ephemeralUser ? "chat.postEphemeral" : "chat.postMessage";
     const request = {
@@ -1273,8 +1495,15 @@ export class SlackCommands {
       ...(threadTs ? { threadTs } : {}),
       ...(ephemeralUser ? { ephemeralUser } : {}),
     };
-    const { client, config } = await createSlackOpsContext(connection || raviChannel, method);
-    if (!execute) return this.printMutationDryRun(config, method, request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: connection || raviChannel,
+      action: method,
+      op,
+      method,
+      request,
+      asJson,
+      execute,
+    });
     const raw = ephemeralUser
       ? await client.postEphemeral({
           channel,
@@ -1304,6 +1533,7 @@ export class SlackCommands {
     resource: "slack.block-kit",
     action: "update",
     risk: "high",
+    redactions: ["channel", "ts", "file", "raviChannel", "text", "blocks"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1314,13 +1544,25 @@ export class SlackCommands {
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--text <text>", description: "Top-level fallback text for notifications/accessibility" })
     text?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack blocks-update";
     const message = normalizeSlackBlockKitMessagePayload(readSlackBlockKitJsonFile(file), text);
     const request = { channel, ts, file, text: message.text, blocks: message.blocks };
-    const { client, config } = await createSlackOpsContext(raviChannel, "chat.update");
-    if (!execute) return this.printMutationDryRun(config, "chat.update", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "chat.update",
+      op,
+      method: "chat.update",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.updateMessage({
       channel,
       ts,
@@ -1342,6 +1584,7 @@ export class SlackCommands {
     resource: "slack.interactions",
     action: "respond",
     risk: "high",
+    redactions: ["responseUrlId", "file", "payload", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1349,16 +1592,28 @@ export class SlackCommands {
     @Arg("responseUrlId", { description: "Opaque Slack interaction response URL handle" }) responseUrlId: string,
     @Arg("file", { description: "Path to a JSON response payload" }) file: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const responsePayload = readSlackBlockKitJsonFile(file);
     if (!responsePayload || typeof responsePayload !== "object" || Array.isArray(responsePayload)) {
       fail("Slack interaction response payload must be a JSON object");
     }
+    const op = "slack interactions-respond";
     const request = { responseUrlId, file, payload: responsePayload as Record<string, unknown> };
-    const { config } = await createSlackOpsContext(raviChannel, "slack.interactions.respond");
-    if (!execute) return this.printMutationDryRun(config, "slack.interactions.respond", request, asJson);
+    const config = await this.mutationCredentialContext({
+      channelName: raviChannel,
+      action: "slack.interactions.respond",
+      op,
+      method: "slack.interactions.respond",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await respondToSlackInteraction({
       responseUrlId,
       payload: responsePayload as Record<string, unknown>,
@@ -1378,6 +1633,7 @@ export class SlackCommands {
     resource: "slack.modals",
     action: "open",
     risk: "high",
+    redactions: ["triggerId", "file", "view", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1385,13 +1641,25 @@ export class SlackCommands {
     @Arg("triggerId", { description: "Slack interaction trigger_id" }) triggerId: string,
     @Arg("file", { description: "Path to a Block Kit view JSON file" }) file: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack modals-open";
     const view = readSlackViewJsonFile(file);
     const request = { triggerId, file, view: redactSlackPrivateMetadata(view) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "views.open");
-    if (!execute) return this.printMutationDryRun(config, "views.open", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "views.open",
+      op,
+      method: "views.open",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.viewsOpen({ triggerId, view });
     const safeRaw = redactSlackPrivateMetadata(raw) as Record<string, unknown>;
     const item = slackViewMutationItem(safeRaw);
@@ -1410,6 +1678,7 @@ export class SlackCommands {
     resource: "slack.modals",
     action: "update",
     risk: "high",
+    redactions: ["view", "file", "raviChannel", "externalId", "hash"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1421,9 +1690,14 @@ export class SlackCommands {
     useExternalId?: boolean,
     @Option({ flags: "--hash <hash>", description: "Slack view.hash for optimistic concurrency control" })
     hash?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack modals-update";
     const view = readSlackViewJsonFile(file);
     const request = {
       ...(useExternalId ? { externalId: viewTarget } : { viewId: viewTarget }),
@@ -1431,8 +1705,15 @@ export class SlackCommands {
       ...(hash ? { hash } : {}),
       view: redactSlackPrivateMetadata(view),
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, "views.update");
-    if (!execute) return this.printMutationDryRun(config, "views.update", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "views.update",
+      op,
+      method: "views.update",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.viewsUpdate({
       view,
       viewId: useExternalId ? undefined : viewTarget,
@@ -1456,6 +1737,7 @@ export class SlackCommands {
     resource: "slack.modals",
     action: "push",
     risk: "high",
+    redactions: ["triggerId", "file", "view", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1463,13 +1745,25 @@ export class SlackCommands {
     @Arg("triggerId", { description: "Slack interaction trigger_id" }) triggerId: string,
     @Arg("file", { description: "Path to a Block Kit view JSON file" }) file: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack modals-push";
     const view = readSlackViewJsonFile(file);
     const request = { triggerId, file, view: redactSlackPrivateMetadata(view) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "views.push");
-    if (!execute) return this.printMutationDryRun(config, "views.push", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "views.push",
+      op,
+      method: "views.push",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.viewsPush({ triggerId, view });
     const safeRaw = redactSlackPrivateMetadata(raw) as Record<string, unknown>;
     const item = slackViewMutationItem(safeRaw);
@@ -1485,6 +1779,7 @@ export class SlackCommands {
     resource: "slack.block-kit",
     action: "showcase",
     risk: "high",
+    redactions: ["channel", "raviChannel", "threadTs"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1492,13 +1787,25 @@ export class SlackCommands {
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--thread-ts <ts>", description: "Send inside a Slack thread" }) threadTs?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack blocks-showcase";
     const message = buildSlackBlockKitShowcasePayload();
     const request = { channel, text: message.text, blocks: message.blocks, ...(threadTs ? { threadTs } : {}) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "chat.postMessage");
-    if (!execute) return this.printMutationDryRun(config, "slack.block-kit.showcase", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "chat.postMessage",
+      op,
+      method: "slack.block-kit.showcase",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.postMessage({
       channel,
       text: message.text,
@@ -1512,7 +1819,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "work-objects-validate", description: "Validate Slack native Work Object metadata JSON" })
-  @CommandAccess({ kind: "read", resource: "slack.work-objects", action: "validate", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.work-objects",
+    action: "validate",
+    risk: "low",
+    redactions: ["file"],
+  })
   @Returns(slackWorkObjectReturnSchema)
   async workObjectsValidate(
     @Arg("file", { description: "Path to Slack native Work Object metadata JSON" }) file: string,
@@ -1556,6 +1869,7 @@ export class SlackCommands {
     resource: "slack.work-objects",
     action: "send",
     risk: "high",
+    redactions: ["channel", "file", "raviChannel", "connection", "text", "metadata", "threadTs"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1568,8 +1882,12 @@ export class SlackCommands {
     @Option({ flags: "--text <text>", description: "Top-level fallback text for notifications/accessibility" })
     text?: string,
     @Option({ flags: "--thread-ts <ts>", description: "Send inside a Slack thread" }) threadTs?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const message = normalizeSlackNativeWorkObjectMessagePayload(
       readJsonObjectFile(file, "Slack Work Object message payload"),
@@ -1582,8 +1900,17 @@ export class SlackCommands {
       metadata: message.metadata,
       ...(threadTs ? { threadTs } : {}),
     };
-    const { client, config } = await createSlackOpsContext(connection || raviChannel, "chat.postMessage");
-    if (!execute) return this.printMutationDryRun(config, "chat.postMessage", request, asJson, message.metadata);
+    const op = "slack work-objects-send";
+    const { client, config } = await this.mutationOpsContext({
+      channelName: connection || raviChannel,
+      action: "chat.postMessage",
+      op,
+      method: "chat.postMessage",
+      request,
+      asJson,
+      execute,
+      item: message.metadata,
+    });
     const raw = await client.postMessage({
       channel,
       text: message.text,
@@ -1605,6 +1932,7 @@ export class SlackCommands {
     resource: "slack.work-objects",
     action: "unfurl",
     risk: "high",
+    redactions: ["channel", "ts", "url", "file", "metadata", "unfurls", "raviChannel", "connection"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1616,16 +1944,29 @@ export class SlackCommands {
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--connection <name>", description: "Ravi channel config; SDK-safe alias for --channel" })
     connection?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const unfurl = normalizeSlackNativeWorkObjectUnfurlPayload(
       readJsonObjectFile(file, "Slack Work Object unfurl payload"),
       url,
     );
+    const op = "slack work-objects-unfurl";
     const request = { channel, ts, url, file, ...unfurl };
-    const { client, config } = await createSlackOpsContext(connection || raviChannel, "chat.unfurl");
-    if (!execute) return this.printMutationDryRun(config, "chat.unfurl", request, asJson, unfurl.metadata);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: connection || raviChannel,
+      action: "chat.unfurl",
+      op,
+      method: "chat.unfurl",
+      request,
+      asJson,
+      execute,
+      item: unfurl.metadata,
+    });
     let raw;
     try {
       raw = await client.unfurl({
@@ -1658,6 +1999,7 @@ export class SlackCommands {
     resource: "slack.work-objects",
     action: "present-details",
     risk: "high",
+    redactions: ["triggerId", "file", "metadata", "raviChannel", "connection"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1667,15 +2009,28 @@ export class SlackCommands {
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--connection <name>", description: "Ravi channel config; SDK-safe alias for --channel" })
     connection?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
     const metadata = normalizeSlackNativeWorkObjectDetailMetadata(
       readJsonObjectFile(file, "Slack Work Object detail metadata"),
     );
+    const op = "slack work-objects-present-details";
     const request = { triggerId, file, metadata };
-    const { client, config } = await createSlackOpsContext(connection || raviChannel, "entity.presentDetails");
-    if (!execute) return this.printMutationDryRun(config, "entity.presentDetails", request, asJson, metadata);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: connection || raviChannel,
+      action: "entity.presentDetails",
+      op,
+      method: "entity.presentDetails",
+      request,
+      asJson,
+      execute,
+      item: metadata,
+    });
     const raw = await client.entityPresentDetails({ triggerId, metadata });
     const payload = this.mutationPayload(config, false, "entity.presentDetails", request, raw, raw);
     if (asJson) printJson(payload);
@@ -1684,14 +2039,23 @@ export class SlackCommands {
   }
 
   @Command({ name: "channels-info", description: "Show Slack conversation metadata" })
-  @CommandAccess({ kind: "read", resource: "slack.channels", action: "info", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.channels",
+    action: "info",
+    risk: "low",
+    redactions: ["channel", "raviChannel"],
+  })
   @Returns(slackObjectReturnSchema)
   async channelsInfo(
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.info");
+    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.info", {
+      op: "slack channels-info",
+      asJson,
+    });
     const raw = await client.conversationsInfo({ channel });
     const payload = {
       ok: true,
@@ -1707,7 +2071,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "channels-history", description: "Read Slack conversation history" })
-  @CommandAccess({ kind: "read", resource: "slack.channels", action: "history", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.channels",
+    action: "history",
+    risk: "medium",
+    redactions: ["channel", "raviChannel", "cursor", "latest", "oldest"],
+  })
   @Returns(slackListReturnSchema)
   async channelsHistory(
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
@@ -1717,10 +2087,15 @@ export class SlackCommands {
     @Option({ flags: "--latest <ts>", description: "Latest Slack timestamp" }) latest?: string,
     @Option({ flags: "--oldest <ts>", description: "Oldest Slack timestamp" }) oldest?: string,
     @Option({ flags: "--inclusive", description: "Include boundary timestamps" }) inclusive?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const limit = parsePositiveInt(limitValue, 20);
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.history");
+    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.history", {
+      op: "slack channels-history",
+      asJson,
+    });
     const raw = await client.conversationsHistory({ channel, limit, cursor, latest, oldest, inclusive });
     const items = raw.messages ?? [];
     const payload = {
@@ -1728,7 +2103,8 @@ export class SlackCommands {
       provider: "slack" as const,
       connection: connectionLabel(config),
       source: config.source,
-      items,
+      // Compact mode (Manual v2 7.9): narrows the JSON items only.
+      items: pickFields(items, fields),
       pagination: pagination(limit, cursor, raw.response_metadata?.next_cursor, raw.has_more),
       raw,
     };
@@ -1740,7 +2116,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "messages-inspect", description: "Inspect whether a Slack message exists in Slack and Ravi" })
-  @CommandAccess({ kind: "read", resource: "slack.messages", action: "inspect", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.messages",
+    action: "inspect",
+    risk: "medium",
+    redactions: ["channel", "ts", "raviChannel"],
+  })
   @Returns(slackObjectReturnSchema)
   async messagesInspect(
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
@@ -1748,7 +2130,10 @@ export class SlackCommands {
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.history");
+    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.history", {
+      op: "slack messages-inspect",
+      asJson,
+    });
     const message = await fetchSlackMessageByTs(client, channel, ts);
     const local = message ? findLocalSlackMessage(config, channel, message) : { chat: null, message: null };
     const payload = {
@@ -1776,6 +2161,7 @@ export class SlackCommands {
     resource: "slack.messages",
     action: "replay",
     risk: "high",
+    redactions: ["channel", "ts", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1784,21 +2170,38 @@ export class SlackCommands {
     @Arg("ts", { description: "Slack message timestamp" }) ts: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--force", description: "Replay even when the message is already in Ravi" }) force?: boolean,
-    @Option({ flags: "--execute", description: "Perform the replay; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the replay; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
-    const { client, config } = await createSlackOpsContext(raviChannel, "slack.messages.replay");
+    const op = "slack messages-replay";
+    const request = { channel, ts, force: Boolean(force) };
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "slack.messages.replay",
+      op,
+      method: "slack.messages.replay",
+      request,
+      asJson,
+      execute,
+      item: {
+        note: "Inspect the message first with: ravi slack messages-inspect <channel> <ts> --json",
+      },
+    });
     const message = await fetchSlackMessageByTs(client, channel, ts);
-    if (!message) fail(`Slack message not found: ${channel} ${ts}`);
+    if (!message) {
+      contractFail(op, "MESSAGE_NOT_FOUND", `Slack message not found: ${channel} ${ts}`, {
+        asJson,
+        details: {
+          suggestedAction: `Check the timestamp with: ravi slack channels-history ${channel} --json`,
+        },
+      });
+    }
 
     const localBefore = findLocalSlackMessage(config, channel, message);
-    const request = { channel, ts, force: Boolean(force) };
-    const dryRunItem = {
-      status: localBefore.message && !force ? "already_ingested" : "ready",
-      slackMessage: summarizeSlackMessage(message),
-      localBefore,
-    };
-    if (!execute) return this.printMutationDryRun(config, "slack.messages.replay", request, asJson, dryRunItem);
 
     if (localBefore.message && !force) {
       const payload = this.mutationPayload(config, false, "slack.messages.replay", request, {
@@ -1839,7 +2242,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "members-list", description: "List Slack conversation members" })
-  @CommandAccess({ kind: "read", resource: "slack.members", action: "list", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.members",
+    action: "list",
+    risk: "medium",
+    redactions: ["channel", "raviChannel", "cursor"],
+  })
   @Returns(slackListReturnSchema)
   async membersList(
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
@@ -1849,7 +2258,10 @@ export class SlackCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const limit = parsePositiveInt(limitValue, 100);
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.members");
+    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.members", {
+      op: "slack members-list",
+      asJson,
+    });
     const raw = await client.conversationsMembers({ channel, limit, cursor });
     const items = raw.members ?? [];
     const payload = {
@@ -1869,7 +2281,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "files-list", description: "List Slack files visible to the configured bot" })
-  @CommandAccess({ kind: "read", resource: "slack.files", action: "list", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.files",
+    action: "list",
+    risk: "medium",
+    redactions: ["raviChannel", "channel", "user", "cursor"],
+  })
   @Returns(slackListReturnSchema)
   async filesList(
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
@@ -1878,10 +2296,15 @@ export class SlackCommands {
     @Option({ flags: "--user <id>", description: "Restrict to a Slack user ID" }) user?: string,
     @Option({ flags: "--limit <n>", description: "Page size", defaultValue: "20" }) limitValue?: string,
     @Option({ flags: "--cursor <cursor>", description: "Slack pagination cursor" }) cursor?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const limit = parsePositiveInt(limitValue, 20);
-    const { client, config } = await createSlackOpsContext(raviChannel, "files.list");
+    const { client, config } = await createSlackOpsContext(raviChannel, "files.list", {
+      op: "slack files-list",
+      asJson,
+    });
     const raw = await client.filesList({ channel, user, limit, cursor });
     const items = raw.files ?? [];
     const payload = {
@@ -1889,7 +2312,8 @@ export class SlackCommands {
       provider: "slack" as const,
       connection: connectionLabel(config),
       source: config.source,
-      items,
+      // Compact mode (Manual v2 7.9): narrows the JSON items only.
+      items: pickFields(items, fields),
       pagination: pagination(limit, cursor, raw.response_metadata?.next_cursor),
       raw,
     };
@@ -1901,7 +2325,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "topology", description: "Show Slack channels and Ravi route/session ownership" })
-  @CommandAccess({ kind: "read", resource: "slack.topology", action: "read", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.topology",
+    action: "read",
+    risk: "medium",
+    redactions: ["raviChannel", "cursor"],
+  })
   @Returns(slackTopologyReturnSchema)
   async topology(
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
@@ -1917,7 +2347,10 @@ export class SlackCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const limit = parsePositiveInt(limitValue, 200);
-    const { client, config } = await createSlackOpsContext(raviChannel, "slack.topology");
+    const { client, config } = await createSlackOpsContext(raviChannel, "slack.topology", {
+      op: "slack topology",
+      asJson,
+    });
     const accountId = connectionLabel(config);
     const conversations = await client.conversationsList({
       types,
@@ -1949,6 +2382,7 @@ export class SlackCommands {
     resource: "slack.channels",
     action: "create",
     risk: "high",
+    redactions: ["name", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1956,12 +2390,24 @@ export class SlackCommands {
     @Arg("name", { description: "New Slack channel name" }) name: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--private", description: "Create a private channel" }) isPrivate?: boolean,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack channels-create";
     const request = { name, isPrivate: Boolean(isPrivate) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.create");
-    if (!execute) return this.printMutationDryRun(config, "conversations.create", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "conversations.create",
+      op,
+      method: "conversations.create",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.conversationsCreate(request);
     const payload = this.mutationPayload(config, false, "conversations.create", request, raw.channel, raw);
     if (asJson) printJson(payload);
@@ -1975,6 +2421,7 @@ export class SlackCommands {
     resource: "slack.channels",
     action: "rename",
     risk: "high",
+    redactions: ["channel", "name", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -1982,12 +2429,24 @@ export class SlackCommands {
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
     @Arg("name", { description: "New Slack channel name" }) name: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack channels-rename";
     const request = { channel, name };
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.rename");
-    if (!execute) return this.printMutationDryRun(config, "conversations.rename", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "conversations.rename",
+      op,
+      method: "conversations.rename",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.conversationsRename(request);
     const payload = this.mutationPayload(config, false, "conversations.rename", request, raw.channel, raw);
     if (asJson) printJson(payload);
@@ -2001,6 +2460,7 @@ export class SlackCommands {
     resource: "slack.channels",
     action: "invite",
     risk: "high",
+    redactions: ["channel", "users", "raviChannel", "connection"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2010,12 +2470,24 @@ export class SlackCommands {
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--connection <name>", description: "Ravi channel config; SDK-safe alias for --channel" })
     connection?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack channels-invite";
     const request = { channel, userIds: parseRequiredCsvOption(usersValue, "Slack user ids") };
-    const { client, config } = await createSlackOpsContext(connection || raviChannel, "conversations.invite");
-    if (!execute) return this.printMutationDryRun(config, "conversations.invite", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: connection || raviChannel,
+      action: "conversations.invite",
+      op,
+      method: "conversations.invite",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.conversationsInvite(request);
     const payload = this.mutationPayload(config, false, "conversations.invite", request, raw.channel, raw);
     if (asJson) printJson(payload);
@@ -2029,6 +2501,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "create",
     risk: "high",
+    redactions: ["raviChannel", "title", "markdown", "markdownFile", "artifact", "channelId"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2046,15 +2519,21 @@ export class SlackCommands {
       description: "Do not refresh the artifact from its source file before publishing",
     })
     skipRefresh?: boolean,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack canvas-create";
     const source = resolveSlackCanvasMarkdownSource({
       markdown: markdownValue,
       markdownFile,
       artifactId,
       execute: Boolean(execute),
       refreshSource: !skipRefresh,
+      contract: { op, asJson },
     });
     const markdown = source.markdown;
     const request = {
@@ -2063,8 +2542,15 @@ export class SlackCommands {
       ...(channelId ? { channelId } : {}),
       ...slackCanvasMarkdownSourceRequest(source),
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.create");
-    if (!execute) return this.printMutationDryRun(config, "canvases.create", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "canvases.create",
+      op,
+      method: "canvases.create",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.canvasesCreate(request);
     const canvasId = raw.canvas_id ?? null;
     const artifactRecord =
@@ -2112,6 +2598,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "create",
     risk: "high",
+    redactions: ["channel", "raviChannel", "title", "markdown", "markdownFile", "artifact"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2131,15 +2618,21 @@ export class SlackCommands {
       description: "Do not refresh the artifact from its source file before publishing",
     })
     skipRefresh?: boolean,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack canvas-channel-create";
     const source = resolveSlackCanvasMarkdownSource({
       markdown: markdownValue,
       markdownFile,
       artifactId,
       execute: Boolean(execute),
       refreshSource: !skipRefresh,
+      contract: { op, asJson },
     });
     const markdown = source.markdown;
     const request = {
@@ -2149,8 +2642,15 @@ export class SlackCommands {
       ensure: Boolean(ensure),
       ...slackCanvasMarkdownSourceRequest(source),
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, "conversations.canvases.create");
-    if (!execute) return this.printMutationDryRun(config, "conversations.canvases.create", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "conversations.canvases.create",
+      op,
+      method: "conversations.canvases.create",
+      request,
+      asJson,
+      execute,
+    });
 
     const raw = await client.conversationsCanvasesCreate(request, {
       okErrors: ensure ? ["channel_canvas_already_exists"] : [],
@@ -2216,6 +2716,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "showcase",
     risk: "high",
+    redactions: ["canvas", "raviChannel", "channelId", "title"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2225,19 +2726,30 @@ export class SlackCommands {
     @Option({ flags: "--slack-channel <id>", description: "Slack channel/conversation ID for the showcase context" })
     channelId?: string,
     @Option({ flags: "--title <title>", description: "Canvas title" }) titleValue?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack canvas-showcase";
     const title = titleValue?.trim() || SLACK_CANVAS_SHOWCASE_TITLE;
     const markdown = buildSlackCanvasShowcaseMarkdown({ canvasId, channelId, title });
     const request = { canvasId, ...(channelId ? { channelId } : {}), title, markdown };
-    const { client, config } = await createSlackOpsContext(raviChannel, "slack.canvas.showcase");
-    if (!execute) {
-      return this.printMutationDryRun(config, "slack.canvas.showcase", request, asJson, {
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "slack.canvas.showcase",
+      op,
+      method: "slack.canvas.showcase",
+      request,
+      asJson,
+      execute,
+      item: {
         title,
         markdownChars: markdown.length,
-      });
-    }
+      },
+    });
 
     const published = await this.publishCanvasShowcase(client, { canvasId, channelId, title });
     const item = { status: "published", canvasId, channelId: channelId ?? null, title };
@@ -2256,6 +2768,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "showcase",
     risk: "high",
+    redactions: ["channel", "raviChannel", "title"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2263,19 +2776,30 @@ export class SlackCommands {
     @Arg("channel", { description: "Slack channel/conversation ID" }) channel: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--title <title>", description: "Canvas title" }) titleValue?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack canvas-channel-showcase";
     const title = titleValue?.trim() || SLACK_CANVAS_SHOWCASE_TITLE;
     const dryRunMarkdown = buildSlackCanvasShowcaseMarkdown({ channelId: channel, title });
     const request = { channelId: channel, title, markdown: dryRunMarkdown };
-    const { client, config } = await createSlackOpsContext(raviChannel, "slack.canvas.channelShowcase");
-    if (!execute) {
-      return this.printMutationDryRun(config, "slack.canvas.channelShowcase", request, asJson, {
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "slack.canvas.channelShowcase",
+      op,
+      method: "slack.canvas.channelShowcase",
+      request,
+      asJson,
+      execute,
+      item: {
         title,
         markdownChars: dryRunMarkdown.length,
-      });
-    }
+      },
+    });
 
     let info = await client.conversationsInfo({ channel });
     let canvasId = extractSlackCanvasIdFromConversationInfo(info.channel, title);
@@ -2293,7 +2817,14 @@ export class SlackCommands {
         canvasId = extractSlackCanvasIdFromConversationInfo(info.channel, title);
       }
     }
-    if (!canvasId) fail(`Could not resolve Slack channel canvas id for ${channel}`);
+    if (!canvasId) {
+      contractFail(op, "CANVAS_NOT_FOUND", `Could not resolve Slack channel canvas id for ${channel}`, {
+        asJson,
+        details: {
+          suggestedAction: `Inspect the channel canvas tabs with: ravi slack channels-info ${channel} --json`,
+        },
+      });
+    }
 
     const published = await this.publishCanvasShowcase(client, { canvasId, channelId: channel, title });
     const item = { status: "published", createStatus, canvasId, channelId: channel, title };
@@ -2323,6 +2854,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "publish-artifact",
     risk: "high",
+    redactions: ["artifactOrFile", "raviChannel", "canvasId", "channelId", "title"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2338,18 +2870,23 @@ export class SlackCommands {
       description: "Do not refresh the artifact from its source file before publishing",
     })
     skipRefresh?: boolean,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack canvas-artifact-publish";
     if (canvasIdValue?.trim() && channelId?.trim()) fail("Pass only one of --canvas or --slack-channel.");
     if (!canvasIdValue?.trim() && !channelId?.trim()) fail("Pass one of --canvas or --slack-channel.");
 
-    const { client, config } = await createSlackOpsContext(raviChannel, "slack.canvas.artifact.publish");
     const source = resolveSlackCanvasArtifactSource({
       artifactOrFile,
       title: titleValue,
       execute: Boolean(execute),
       refreshSource: !skipRefresh,
+      contract: { op, asJson },
     });
     const title =
       titleValue?.trim() || source.artifact?.title || (source.sourcePath ? basename(source.sourcePath) : "Ravi Canvas");
@@ -2367,19 +2904,30 @@ export class SlackCommands {
       refreshed: source.refreshed,
       sourceFileChanged: source.sourceFileChanged,
     };
-    if (!execute) {
-      return this.printMutationDryRun(config, "slack.canvas.artifact.publish", request, asJson, {
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "slack.canvas.artifact.publish",
+      op,
+      method: "slack.canvas.artifact.publish",
+      request,
+      asJson,
+      execute,
+      item: {
         ...request,
         limitation: SLACK_CANVAS_REMOTE_EXPORT_LIMITATION,
-      });
-    }
+      },
+    });
     if (!source.artifact) fail("Could not create or resolve Ravi artifact for Slack Canvas publish.");
 
-    const target = await this.resolveCanvasPublishTarget(client, {
-      canvasId: canvasIdValue?.trim(),
-      channelId: channelId?.trim(),
-      title,
-    });
+    const target = await this.resolveCanvasPublishTarget(
+      client,
+      {
+        canvasId: canvasIdValue?.trim(),
+        channelId: channelId?.trim(),
+        title,
+      },
+      { op, asJson },
+    );
     const published = await this.publishCanvasMarkdown(client, {
       canvasId: target.canvasId,
       title,
@@ -2422,13 +2970,19 @@ export class SlackCommands {
     name: "canvas-artifact-status",
     description: "Show local Slack Canvas publish status for a Ravi artifact",
   })
-  @CommandAccess({ kind: "read", resource: "slack.canvas", action: "artifact-status", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.canvas",
+    action: "artifact-status",
+    risk: "low",
+    redactions: ["artifact"],
+  })
   @Returns(slackCanvasArtifactStatusReturnSchema)
   canvasArtifactStatus(
     @Arg("artifact", { description: "Ravi artifact id" }) artifactId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const item = buildSlackCanvasArtifactStatus(artifactId);
+    const item = buildSlackCanvasArtifactStatus(artifactId, { op: "slack canvas-artifact-status", asJson });
     const payload = {
       ok: true as const,
       provider: "slack" as const,
@@ -2453,6 +3007,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "edit",
     risk: "high",
+    redactions: ["canvas", "operation", "raviChannel", "sectionId", "markdown", "markdownFile", "artifact", "title"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2474,21 +3029,35 @@ export class SlackCommands {
       description: "Do not refresh the artifact from its source file before publishing",
     })
     skipRefresh?: boolean,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack canvas-edit";
     const source = resolveSlackCanvasMarkdownSource({
       markdown: markdownValue,
       markdownFile,
       artifactId,
       execute: Boolean(execute),
       refreshSource: !skipRefresh,
+      contract: { op, asJson },
     });
     const markdown = source.markdown;
     const change = buildSlackCanvasEditChange({ operation, sectionId, markdown, title });
     const request = { canvasId, changes: [change], ...slackCanvasMarkdownSourceRequest(source) };
-    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.edit");
-    if (!execute) return this.printMutationDryRun(config, "canvases.edit", request, asJson, change);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "canvases.edit",
+      op,
+      method: "canvases.edit",
+      request,
+      asJson,
+      execute,
+      item: change,
+    });
     const raw = await client.canvasesEdit(request);
     const artifactRecord =
       isWholeCanvasReplace(change) && canRecordSlackCanvasArtifactPublish(source)
@@ -2525,7 +3094,13 @@ export class SlackCommands {
   }
 
   @Command({ name: "canvas-sections-lookup", description: "Lookup Slack canvas section IDs" })
-  @CommandAccess({ kind: "read", resource: "slack.canvas", action: "lookup", risk: "medium" })
+  @CommandAccess({
+    kind: "read",
+    resource: "slack.canvas",
+    action: "lookup",
+    risk: "medium",
+    redactions: ["canvas", "raviChannel", "cursor"],
+  })
   @Returns(slackListReturnSchema)
   async canvasSectionsLookup(
     @Arg("canvas", { description: "Slack canvas ID" }) canvasId: string,
@@ -2538,6 +3113,8 @@ export class SlackCommands {
     sectionTypesValue?: string,
     @Option({ flags: "--contains-text <text>", description: "Text that matching sections must contain" })
     containsText?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const sectionTypes = parseCsvOption(sectionTypesValue);
@@ -2546,7 +3123,10 @@ export class SlackCommands {
       ...(sectionTypes ? { sectionTypes } : {}),
       ...(containsText ? { containsText } : {}),
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.sections.lookup");
+    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.sections.lookup", {
+      op: "slack canvas-sections-lookup",
+      asJson,
+    });
     const raw = await client.canvasesSectionsLookup(request);
     const items = raw.sections ?? [];
     const payload = {
@@ -2554,7 +3134,8 @@ export class SlackCommands {
       provider: "slack" as const,
       connection: connectionLabel(config),
       source: config.source,
-      items,
+      // Compact mode (Manual v2 7.9): narrows the JSON items only.
+      items: pickFields(items, fields),
       pagination: pagination(items.length, undefined, undefined),
       raw,
     };
@@ -2574,6 +3155,7 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "share",
     risk: "high",
+    redactions: ["canvas", "access", "raviChannel", "users", "channels"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2583,9 +3165,14 @@ export class SlackCommands {
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--users <ids>", description: "Comma-separated Slack user IDs" }) usersValue?: string,
     @Option({ flags: "--channels <ids>", description: "Comma-separated Slack channel IDs" }) channelsValue?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack canvas-access-set";
     const accessLevel = parseSlackCanvasAccessLevel(access);
     const targets = parseSlackCanvasAccessTargets(usersValue, channelsValue);
     validateSlackCanvasAccessLevelTargets(accessLevel, targets);
@@ -2594,8 +3181,15 @@ export class SlackCommands {
       accessLevel,
       ...targets,
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.access.set");
-    if (!execute) return this.printMutationDryRun(config, "canvases.access.set", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "canvases.access.set",
+      op,
+      method: "canvases.access.set",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.canvasesAccessSet(request);
     const payload = this.mutationPayload(config, false, "canvases.access.set", request, { ok: raw.ok }, raw);
     if (asJson) printJson(payload);
@@ -2605,13 +3199,14 @@ export class SlackCommands {
 
   @Command({
     name: "canvas-access-delete",
-    description: "Delete Slack standalone canvas access; dry-run unless --execute is set",
+    description: "Revoke Slack standalone canvas access; dry-run unless --execute is set",
   })
   @CommandAccess({
     kind: "mutate",
     resource: "slack.canvas",
     action: "unshare",
     risk: "high",
+    redactions: ["canvas", "raviChannel", "users", "channels"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
@@ -2620,15 +3215,27 @@ export class SlackCommands {
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
     @Option({ flags: "--users <ids>", description: "Comma-separated Slack user IDs" }) usersValue?: string,
     @Option({ flags: "--channels <ids>", description: "Comma-separated Slack channel IDs" }) channelsValue?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack canvas-access-delete";
     const request = {
       canvasId,
       ...parseSlackCanvasAccessTargets(usersValue, channelsValue),
     };
-    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.access.delete");
-    if (!execute) return this.printMutationDryRun(config, "canvases.access.delete", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "canvases.access.delete",
+      op,
+      method: "canvases.access.delete",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.canvasesAccessDelete(request);
     const payload = this.mutationPayload(config, false, "canvases.access.delete", request, { ok: raw.ok }, raw);
     if (asJson) printJson(payload);
@@ -2642,18 +3249,31 @@ export class SlackCommands {
     resource: "slack.canvas",
     action: "delete",
     risk: "high",
+    redactions: ["canvas", "raviChannel"],
     requiresConfirmation: true,
   })
   @Returns(slackMutationReturnSchema)
   async canvasDelete(
     @Arg("canvas", { description: "Slack canvas ID" }) canvasId: string,
     @Option({ flags: "--channel <name>", description: "Ravi channel config" }) raviChannel?: string,
-    @Option({ flags: "--execute", description: "Perform the mutation; default is dry-run" }) execute?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Perform the mutation; default is a dry-run that only shows the plan (exit 3)",
+    })
+    execute?: boolean,
   ) {
+    const op = "slack canvas-delete";
     const request = { canvasId };
-    const { client, config } = await createSlackOpsContext(raviChannel, "canvases.delete");
-    if (!execute) return this.printMutationDryRun(config, "canvases.delete", request, asJson);
+    const { client, config } = await this.mutationOpsContext({
+      channelName: raviChannel,
+      action: "canvases.delete",
+      op,
+      method: "canvases.delete",
+      request,
+      asJson,
+      execute,
+    });
     const raw = await client.canvasesDelete(request);
     const payload = this.mutationPayload(config, false, "canvases.delete", request, { ok: raw.ok }, raw);
     if (asJson) printJson(payload);
@@ -2687,6 +3307,7 @@ export class SlackCommands {
   private async resolveCanvasPublishTarget(
     client: SlackWebApiClient,
     input: { readonly canvasId?: string; readonly channelId?: string; readonly title: string },
+    contract: SlackContractContext,
   ): Promise<{
     canvasId: string;
     channelId?: string;
@@ -2714,7 +3335,19 @@ export class SlackCommands {
       }
     }
 
-    if (!canvasId) fail(`Could not resolve Slack channel canvas id for ${input.channelId}`);
+    if (!canvasId) {
+      contractFail(
+        contract.op,
+        "CANVAS_NOT_FOUND",
+        `Could not resolve Slack channel canvas id for ${input.channelId}`,
+        {
+          asJson: contract.asJson,
+          details: {
+            suggestedAction: `Inspect the channel canvas tabs with: ravi slack channels-info ${input.channelId} --json`,
+          },
+        },
+      );
+    }
     return {
       canvasId,
       channelId: input.channelId,
@@ -2726,17 +3359,52 @@ export class SlackCommands {
     };
   }
 
-  private printMutationDryRun(
-    config: SlackCredentialConfig,
+  private async mutationCredentialContext(input: SlackMutationContextInput): Promise<SlackCredentialConfig> {
+    const contract = { op: input.op, asJson: input.asJson };
+    const target = resolveSlackOpsTarget(input.channelName, contract);
+    if (!input.execute) {
+      this.brakeDryRun(input.op, target.summary, input.method, input.request, input.asJson, input.item);
+    }
+    return resolveSlackCredentialContext(target, input.action, contract);
+  }
+
+  private async mutationOpsContext(input: SlackMutationContextInput): Promise<SlackOpsContext> {
+    const config = await this.mutationCredentialContext(input);
+    return {
+      config,
+      client: new SlackWebApiClient({
+        appToken: config.appToken,
+        botToken: config.botToken,
+      }),
+    };
+  }
+
+  /**
+   * Write brake (Manual v2 7.8): every confirmable Slack mutation routed here
+   * is a dry-run by default and exits 3 (WRITE_REQUIRES_EXECUTE) before credentials
+   * are hydrated, a client is constructed or any Slack Web API call is made.
+   * The plan carries safe request metadata only; message text, Block Kit
+   * payloads and other request bodies are never serialized.
+   */
+  private brakeDryRun(
+    op: string,
+    config: SlackConnectionSummary,
     method: string,
     request: Record<string, unknown>,
     asJson?: boolean,
     item?: unknown,
-  ) {
-    const payload = this.mutationPayload(config, true, method, request, item);
-    if (asJson) printJson(payload);
-    else console.log(`Dry-run ${method}: ${JSON.stringify(request)}`);
-    return payload;
+  ): never {
+    contractDryRun(
+      op,
+      {
+        connection: connectionLabel(config),
+        source: config.source,
+        method,
+        request: summarizeSlackDryRunRequest(request),
+        ...(item !== undefined ? { item: summarizeSlackDryRunItem(item) } : {}),
+      },
+      { asJson },
+    );
   }
 
   private mutationPayload(

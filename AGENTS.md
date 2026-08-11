@@ -51,25 +51,27 @@ domains, and site settings. It does not upload HTML or assets.
 Use the Pages publish command for content:
 
 ```bash
-ravi pages create <project-ref> <site-slug> --visibility public
-ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html
+ravi pages create <project-ref> <site-slug> --visibility public --execute
+ravi pages publish <project-ref> <site-slug> ./site --route / --visibility public --entrypoint index.html --execute
 ```
 
 If a local Ravi artifact already exists, publish the artifact id:
 
 ```bash
-ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public
+ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public --execute
 ```
 
 `ravi pages publish` is the user-facing Pages command. It delegates to the
-artifact upload/publish pipeline internally.
+artifact upload/publish pipeline internally. Host creation, domain binding,
+publishing and password changes are dry-run by default (exit 3): re-run with
+`--execute` to perform the external mutation.
 
 Protect an active route with a password without republishing its bytes:
 
 ```bash
-ravi pages password set <project-ref> <site-slug> --route /
+ravi pages password set <project-ref> <site-slug> --route / --execute
 ravi pages password status <project-ref> <site-slug> --route / --json
-ravi pages password remove <project-ref> <site-slug> --route / --visibility private
+ravi pages password remove <project-ref> <site-slug> --route / --visibility private --execute
 ```
 
 `password set` prompts invisibly and confirms by default. Non-interactive
@@ -135,7 +137,7 @@ ravi heartbeat set main model haiku           # Use cheaper model
 ravi heartbeat set main active-hours 09:00-22:00  # Only run during these hours
 
 # Manual trigger
-ravi heartbeat trigger main
+ravi heartbeat trigger main --execute
 
 # Status
 ravi heartbeat status   # All agents
@@ -160,7 +162,7 @@ ravi heartbeat show main
 **Triggers:**
 - `interval` - Timer-based (configurable)
 - `tool-complete` - After agent finishes using a tool (with 30s cooldown)
-- `manual` - Via `ravi heartbeat trigger`
+- `manual` - Via `ravi heartbeat trigger <id> --execute` when work is pending
 
 ## Cron Jobs
 
@@ -197,10 +199,10 @@ ravi cron set <id> session isolated
 ravi cron set <id> delete-after true
 
 # Manual run (ignores schedule)
-ravi cron run <id>
+ravi cron run <id> --execute
 
 # Delete
-ravi cron rm <id>
+ravi cron rm <id> --execute
 ```
 
 **Schedule Types:**
@@ -272,10 +274,10 @@ ravi triggers set <id> session main          # main or isolated
 ravi triggers set <id> cooldown 30s          # supports: 5s, 30s, 1m, 5m, 1h
 
 # Test trigger (fires with fake event data)
-ravi triggers test <id>
+ravi triggers test <id> --execute
 
 # Delete
-ravi triggers rm <id>
+ravi triggers rm <id> --execute
 ```
 
 **Topic Catalog:**
@@ -370,8 +372,8 @@ defaults:
 
 ```bash
 ravi agents permissions dev             # Show runtime profile
-ravi agents permissions dev full-access # Full Ravi permissions for agent + own automations
-ravi agents permissions dev none        # Return to bootstrap defaults
+ravi agents permissions dev full-access --execute # Full Ravi permissions (sem --execute e dry-run, exit 3)
+ravi agents permissions dev none                  # Reduce to bootstrap defaults immediately
 ```
 
 The legacy relation ledger remains available for audit/migration:
@@ -500,7 +502,7 @@ ravi daemon status     # Show status
 ravi daemon logs       # Show last 50 lines
 ravi daemon logs -f    # Follow mode (tail -f)
 ravi daemon logs -t 100  # Show last 100 lines
-ravi daemon logs --clear # Clear log file
+ravi daemon logs --clear --execute # Clear logs (dry-run without --execute)
 ravi daemon env        # Edit ~/.ravi/.env
 
 # WhatsApp
@@ -519,9 +521,9 @@ ravi agents debounce <id> <ms>      # Set debounce
 ravi agents run <id> "prompt"       # Send prompt and stream response
 ravi agents chat <id>               # Interactive chat mode (/reset, /session, /exit)
 ravi agents session <id>            # Check session status
-ravi agents reset <id>              # Reset main session
-ravi agents reset <id> <sessionKey> # Reset specific session
-ravi agents reset <id> all          # Reset ALL sessions for agent
+ravi agents reset <id> --execute              # Reset main session (sem --execute e dry-run, exit 3)
+ravi agents reset <id> <sessionKey> --execute # Reset specific session
+ravi agents reset <id> all --execute          # Reset ALL sessions for agent
 
 # Contacts
 ravi contacts list                   # List contacts
@@ -548,7 +550,7 @@ ravi sessions inform <session> "info"   # Send context info
 
 # Tasks
 ravi tasks create "Title" --instructions "..."  # Create tracked work
-ravi tasks dispatch <task-id> --agent <id>      # Dispatch to an agent/session
+ravi tasks dispatch <task-id> --agent <id> --execute # Dispatch to an agent/session
 ravi tasks watch [task-id]                      # Watch live task events
 ravi tasks report <task-id>                     # Read progress + progress_note from TASK.md
 ravi tasks report <task-id> --progress 30 --message "..."  # Report concrete progress
@@ -566,7 +568,7 @@ ravi heartbeat show <id>             # Show config
 ravi heartbeat enable <id> [interval]  # Enable (e.g., 30m, 1h)
 ravi heartbeat disable <id>          # Disable
 ravi heartbeat set <id> <key> <value>  # Set property
-ravi heartbeat trigger <id>          # Manual trigger
+ravi heartbeat trigger <id> --execute # Manual trigger (dry-run when work is pending)
 
 # Cron jobs
 ravi cron list                       # List all jobs
@@ -575,8 +577,8 @@ ravi cron add <name> [options]       # Add new job
 ravi cron enable <id>                # Enable job
 ravi cron disable <id>               # Disable job
 ravi cron set <id> <key> <value>     # Set property
-ravi cron run <id>                   # Manual trigger
-ravi cron rm <id>                    # Delete job
+ravi cron run <id> --execute         # Manual trigger (dry-run sem --execute)
+ravi cron rm <id> --execute          # Delete job (dry-run sem --execute)
 
 # Event triggers
 ravi triggers list                   # List all triggers
@@ -585,8 +587,8 @@ ravi triggers show <id>              # Show trigger details
 ravi triggers enable <id>            # Enable trigger
 ravi triggers disable <id>           # Disable trigger
 ravi triggers set <id> <key> <value> # Set property
-ravi triggers test <id>              # Test with fake event
-ravi triggers rm <id>                # Delete trigger
+ravi triggers test <id> --execute    # Test with fake event (dry-run without --execute)
+ravi triggers rm <id> --execute      # Delete trigger (dry-run sem --execute)
 
 # Permissions (REBAC)
 ravi permissions grant <subject> <relation> <object>
@@ -618,9 +620,9 @@ ravi agents chat main
 ravi agents session main
 
 # Reset session (clear context)
-ravi agents reset main                    # Reset main session
-ravi agents reset main <sessionKey>       # Reset specific session
-ravi agents reset main all                # Reset ALL sessions for agent
+ravi agents reset main --execute                    # Reset main session (dry-run sem --execute)
+ravi agents reset main <sessionKey> --execute       # Reset specific session
+ravi agents reset main all --execute                # Reset ALL sessions for agent
 ```
 
 ### CLI Tools
@@ -639,7 +641,7 @@ Tool and executable access is controlled via REBAC permissions:
 ravi permissions grant agent:main use tool:Bash          # Allow SDK tool
 ravi permissions grant agent:main execute executable:git  # Allow CLI executable
 ravi permissions grant agent:main execute group:contacts  # Allow CLI command group
-ravi agents permissions main full-access                  # Full Ravi runtime profile
+ravi agents permissions main full-access --execute        # Full Ravi runtime profile (dry-run sem --execute)
 ```
 
 ## Emoji Reactions

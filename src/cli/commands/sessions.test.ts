@@ -19,6 +19,9 @@ const publishedPrompts: Array<{
   payload: Record<string, unknown>;
 }> = [];
 const natsEmits: Array<{ topic: string; data: Record<string, unknown> }> = [];
+const resetSessionCalls: string[] = [];
+const revokedRuntimeContextCalls: Array<{ sessionKey: string; reason?: string }> = [];
+const providerRequestCalls: Array<{ topic: string; data: Record<string, unknown>; timeoutMs: number }> = [];
 let listedSessions: Array<Record<string, unknown>> = [];
 let resolvedSession: Record<string, unknown> | null = null;
 let sessionDerivedSource: { channel: string; accountId: string; chatId: string; threadId?: string } | undefined;
@@ -104,6 +107,9 @@ mock.module("../decorators.js", () => ({
 
 mock.module("../context.js", () => ({
   getContext: () => toolContext,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
@@ -207,7 +213,13 @@ mock.module("../../router/sessions.js", () => ({
     if (resolvedSession?.sessionKey === sessionKey) resolvedSession = null;
     return true;
   },
-  resetSession: () => {},
+  resetSession: (sessionKey: string) => {
+    resetSessionCalls.push(sessionKey);
+    if (resolvedSession?.sessionKey === sessionKey) {
+      resolvedSession = { ...resolvedSession, providerSessionId: undefined, sdkSessionId: undefined };
+    }
+    return true;
+  },
   resolveSession: () => resolvedSession,
   getSessionTurnUsageSummary: (sessionKey: string) =>
     sessionTurnUsageSummaries.get(sessionKey) ?? defaultTurnUsageSummary(),
@@ -355,7 +367,17 @@ mock.module("../../runtime/live-state.js", () => ({
 
 mock.module("../../runtime/context-registry.js", () => ({
   ...actualRuntimeContextRegistryModule,
-  revokeAgentRuntimeContextsForSession: () => [],
+  revokeAgentRuntimeContextsForSession: (sessionKey: string, options?: { reason?: string }) => {
+    revokedRuntimeContextCalls.push({ sessionKey, ...(options?.reason ? { reason: options.reason } : {}) });
+    return [];
+  },
+}));
+
+mock.module("../../utils/request-reply.js", () => ({
+  requestReply: mock(async (topic: string, data: Record<string, unknown>, timeoutMs: number) => {
+    providerRequestCalls.push({ topic, data, timeoutMs });
+    return { success: true };
+  }),
 }));
 
 mock.module("../../tags/helpers.js", () => ({
@@ -446,6 +468,10 @@ beforeEach(() => {
   renameRouteReferencesUpdated = 0;
   effortUpdates = [];
   runtimeLiveStates.clear();
+  natsEmits.length = 0;
+  resetSessionCalls.length = 0;
+  revokedRuntimeContextCalls.length = 0;
+  providerRequestCalls.length = 0;
 });
 
 describe("SessionCommands wait mode", () => {
@@ -872,11 +898,13 @@ describe("SessionCommands attach hints", () => {
 
   it("builds action discovery and own-message deletion commands", () => {
     expect(buildCurrentSessionActionsCommand()).toBe("ravi sessions actions --json");
-    expect(buildCurrentSessionDeleteMessageCommand("cm_123")).toBe("ravi sessions delete-message cm_123");
-    expect(buildCurrentSessionEditMessageCommand("cm_123")).toBe('ravi sessions edit-message cm_123 "<new-text>"');
+    expect(buildCurrentSessionDeleteMessageCommand("cm_123")).toBe("ravi sessions delete-message cm_123 --execute");
+    expect(buildCurrentSessionEditMessageCommand("cm_123")).toBe(
+      'ravi sessions edit-message cm_123 "<new-text>" --execute',
+    );
     expect(buildCurrentSessionReactionCommand("cm_123", "<emoji>")).toBe("ravi react send cm_123 <emoji>");
-    expect(buildCurrentSessionStickerSendCommand("wave")).toBe("ravi stickers send wave");
-    expect(buildCurrentSessionMediaSendCommand("/tmp/card.png")).toBe('ravi media send "/tmp/card.png"');
+    expect(buildCurrentSessionStickerSendCommand("wave")).toBe("ravi stickers send wave --execute");
+    expect(buildCurrentSessionMediaSendCommand("/tmp/card.png")).toBe('ravi media send "/tmp/card.png" --execute');
     expect(buildCurrentSessionReadCommand()).toBe("ravi sessions read --json");
     expect(buildCurrentSessionCreateThreadCommand("investigue", "gpt-5.6")).toBe(
       'ravi sessions create-thread "investigue" --model gpt-5.6',
@@ -884,8 +912,10 @@ describe("SessionCommands attach hints", () => {
     expect(buildCurrentSessionCloseThreadCommand()).toBe("ravi sessions close-thread");
     expect(buildCurrentSessionCloseThreadCommand("done")).toBe('ravi sessions close-thread --return "done"');
     expect(buildSessionActionsCommand("dev")).toBe("ravi sessions actions dev --json");
-    expect(buildSessionDeleteMessageCommand("dev", "cm_123")).toBe("ravi sessions delete-message dev cm_123");
-    expect(buildSessionEditMessageCommand("dev", "cm_123")).toBe('ravi sessions edit-message dev cm_123 "<new-text>"');
+    expect(buildSessionDeleteMessageCommand("dev", "cm_123")).toBe("ravi sessions delete-message dev cm_123 --execute");
+    expect(buildSessionEditMessageCommand("dev", "cm_123")).toBe(
+      'ravi sessions edit-message dev cm_123 "<new-text>" --execute',
+    );
   });
 
   it("builds a prompt-ready hint for session action tools", () => {
@@ -895,9 +925,9 @@ describe("SessionCommands attach hints", () => {
     expect(hint).toContain("recentOwnMessages.items");
     expect(hint).toContain("chatId");
     expect(hint).toContain("chatTitle");
-    expect(hint).toContain("ravi sessions delete-message <message-id>");
-    expect(hint).toContain('ravi sessions edit-message <message-id> "novo texto"');
-    expect(hint).toContain('ravi media send "<file-path>"');
+    expect(hint).toContain("ravi sessions delete-message <message-id> --execute");
+    expect(hint).toContain('ravi sessions edit-message <message-id> "novo texto" --execute');
+    expect(hint).toContain('ravi media send "<file-path>" --execute');
     expect(hint).toContain("ravi sessions create-thread");
     expect(hint).toContain("ravi sessions close-thread");
     expect(hint).toContain("usage.tools");
@@ -954,19 +984,19 @@ describe("SessionCommands attach hints", () => {
         expect.objectContaining({
           id: "sticker.send",
           status: "available",
-          command: "ravi stickers send <sticker-id>",
+          command: "ravi stickers send <sticker-id> --execute",
         }),
         expect.objectContaining({
           id: "media.send",
           status: "available",
-          command: 'ravi media send "<file-path>"',
+          command: 'ravi media send "<file-path>" --execute',
         }),
       ]),
     );
     expect(payload.usage.tools.sendMedia).toMatchObject({
       id: "media.send",
       tool: "ravi media send",
-      command: 'ravi media send "<file-path>"',
+      command: 'ravi media send "<file-path>" --execute',
     });
     expect(payload.surfaces.subscriptions[0]).toMatchObject({
       chatId: "chat_ae70f8bc7ec999d2e2048219",
@@ -1247,7 +1277,7 @@ describe("SessionCommands attach hints", () => {
     const commands = new SessionCommands();
     let deleted: Record<string, unknown> | undefined;
     await captureLogsAsync(async () => {
-      deleted = (await commands.deleteMessage("dev-slack", "cm_slack", true)) as Record<string, unknown>;
+      deleted = (await commands.deleteMessage("dev-slack", "cm_slack", true, true)) as Record<string, unknown>;
     });
     expect(deleted).toMatchObject({
       deleted: false,
@@ -1264,7 +1294,7 @@ describe("SessionCommands attach hints", () => {
 
     let edited: Record<string, unknown> | undefined;
     await captureLogsAsync(async () => {
-      edited = (await commands.editMessage("dev-slack", "cm_slack", "new text", undefined, true)) as Record<
+      edited = (await commands.editMessage("dev-slack", "cm_slack", "new text", undefined, true, true)) as Record<
         string,
         unknown
       >;
@@ -1289,6 +1319,72 @@ describe("SessionCommands attach hints", () => {
       providerMessageId: "1711111111.000100",
       text: "new text",
     });
+  });
+
+  it("minimizes edit-message dry-run text and provider identity without queueing", async () => {
+    const sessionKey = "agent:dev:slack:ravi-slack:C123";
+    resolvedSession = {
+      sessionKey,
+      name: "dev-slack",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+    };
+    sessionSubscriptions = [
+      {
+        id: "sub_slack",
+        sessionKey,
+        chatId: "chat_slack",
+        role: "primary",
+        speechMode: "speak",
+        outputAttachedAt: 1,
+      },
+    ];
+    chatRecords.set("chat_slack", {
+      id: "chat_slack",
+      title: "ravi",
+      channel: "slack",
+      instanceId: "ravi-slack",
+      platformChatId: "C123",
+    });
+    agentMessageByRef = {
+      id: "cm_slack",
+      chatId: "chat_slack",
+      channel: "slack",
+      instanceId: "ravi-slack",
+      providerMessageId: "1711111111.000100",
+      rawChatId: "C123",
+      actorType: "agent",
+      agentId: "dev",
+      originSessionKey: sessionKey,
+      messageType: "text",
+      content: { type: "text", text: "old text" },
+      ingestedAt: 1_711_111_111_000,
+      createdAt: 1_711_111_111_000,
+      updatedAt: 1_711_111_111_000,
+    };
+
+    let thrown: unknown;
+    await captureLogsAsync(async () => {
+      try {
+        await new SessionCommands().editMessage("dev-slack", "cm_slack", "PRIVATE_MESSAGE_8K2R", undefined, true);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    expect(contractError.envelope().error.plan).toEqual({
+      session: "dev-slack",
+      messageId: "cm_slack",
+      providerMessageIdPresent: true,
+      channel: "slack",
+      newTextChars: 20,
+    });
+    expect(JSON.stringify(contractError.envelope().error.plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
+    expect(JSON.stringify(contractError.envelope().error.plan)).not.toContain("1711111111.000100");
+    expect(publishedOutboundJobs).toHaveLength(0);
   });
 
   it("marks channel actions unavailable when the session has no chat surface", () => {
@@ -2095,5 +2191,171 @@ describe("extractNormalizedTranscriptMessages", () => {
       ["assistant", "Vou olhar isso agora."],
       ["assistant", "Feito."],
     ]);
+  });
+});
+
+const { ContractError } = await import("../agent-contract.js");
+
+describe("sessions agent-first contract", () => {
+  function configureMessageActionFixture(channel: "slack" | "whatsapp") {
+    agentMessageByRef = {
+      id: "cm_contract",
+      chatId: `chat_${channel}`,
+      channel,
+      instanceId: `${channel}-main`,
+      providerMessageId: "provider-message-private-123",
+      rawChatId: "provider-chat-private-456",
+      actorType: "agent",
+      agentId: "dev",
+      originSessionKey: "agent:dev:main",
+      messageType: "text",
+      content: { type: "text", text: "old private text" },
+      ingestedAt: 1_711_111_111_000,
+      createdAt: 1_711_111_111_000,
+      updatedAt: 1_711_111_111_000,
+    };
+  }
+
+  async function captureDryRunError(run: () => Promise<unknown>): Promise<InstanceType<typeof ContractError>> {
+    let thrown: unknown;
+    await captureLogsAsync(async () => {
+      try {
+        await run();
+      } catch (error) {
+        thrown = error;
+      }
+    });
+    expect(thrown).toBeInstanceOf(ContractError);
+    return thrown as InstanceType<typeof ContractError>;
+  }
+
+  beforeEach(() => {
+    deletedSessionKeys.length = 0;
+    listedSessions = [];
+    resolvedSession = {
+      sessionKey: "agent:dev:main",
+      name: "dev",
+      agentId: "dev",
+      agentCwd: "/tmp/dev",
+      providerSessionId: "provider-session-before-reset",
+      sdkSessionId: "sdk-session-before-reset",
+    };
+  });
+
+  it("emits SESSION_NOT_FOUND envelope without suggestions (exit 1)", async () => {
+    resolvedSession = null;
+    const commands = new SessionCommands();
+    let thrown: unknown;
+    await captureLogsAsync(async () => {
+      try {
+        await commands.reset("ghost", true);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("sessions reset");
+    expect(envelope.error.code).toBe("SESSION_NOT_FOUND");
+    expect(envelope.error.suggestions).toBeUndefined();
+  });
+
+  it("blocks sessions delete without --execute (dry-run, exit 3, no delete)", async () => {
+    const commands = new SessionCommands();
+    let thrown: unknown;
+    await captureLogsAsync(async () => {
+      try {
+        await commands.delete("dev", true);
+      } catch (error) {
+        thrown = error;
+      }
+    });
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    expect((envelope.error.plan as Record<string, unknown>).sessionKey).toBe("agent:dev:main");
+    expect(deletedSessionKeys).toHaveLength(0);
+  });
+
+  it("deletes the session with --execute", async () => {
+    const commands = new SessionCommands();
+    await captureLogsAsync(async () => {
+      await commands.delete("dev", true, true);
+    });
+    expect(deletedSessionKeys).toEqual(["agent:dev:main"]);
+  });
+
+  it("blocks sessions reset before abort, audit, storage reset or runtime-context revocation", async () => {
+    const commands = new SessionCommands();
+    const before = structuredClone(resolvedSession);
+
+    const error = await captureDryRunError(() => commands.reset("dev", true));
+
+    expect(error.exitCode).toBe(3);
+    expect(error.envelope().error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(error.envelope().error.dryRun).toBe(true);
+    expect(natsEmits).toHaveLength(0);
+    expect(resetSessionCalls).toHaveLength(0);
+    expect(revokedRuntimeContextCalls).toHaveLength(0);
+    expect(resolvedSession).toEqual(before);
+  });
+
+  for (const channel of ["slack", "whatsapp"] as const) {
+    it(`blocks sessions delete-message on ${channel} before queue/provider sinks or message state changes`, async () => {
+      configureMessageActionFixture(channel);
+      const before = structuredClone(agentMessageByRef);
+
+      const error = await captureDryRunError(() => new SessionCommands().deleteMessage("dev", "cm_contract", true));
+
+      expect(error.exitCode).toBe(3);
+      expect(error.envelope().error.code).toBe("WRITE_REQUIRES_EXECUTE");
+      expect(error.envelope().error.dryRun).toBe(true);
+      expect(JSON.stringify(error.envelope().error.plan)).not.toContain("old private text");
+      expect(publishedOutboundJobs).toHaveLength(0);
+      expect(providerRequestCalls).toHaveLength(0);
+      expect(agentMessageByRef).toEqual(before);
+    });
+
+    it(`blocks sessions edit-message on ${channel} before queue/provider sinks or message state changes`, async () => {
+      configureMessageActionFixture(channel);
+      const before = structuredClone(agentMessageByRef);
+
+      const error = await captureDryRunError(() =>
+        new SessionCommands().editMessage("dev", "cm_contract", "PRIVATE_EDIT_TEXT", undefined, true),
+      );
+
+      expect(error.exitCode).toBe(3);
+      expect(error.envelope().error.code).toBe("WRITE_REQUIRES_EXECUTE");
+      expect(error.envelope().error.dryRun).toBe(true);
+      expect(JSON.stringify(error.envelope().error.plan)).not.toContain("PRIVATE_EDIT_TEXT");
+      expect(publishedOutboundJobs).toHaveLength(0);
+      expect(providerRequestCalls).toHaveLength(0);
+      expect(agentMessageByRef).toEqual(before);
+    });
+  }
+
+  it("supports --fields compact mode on sessions list", () => {
+    listedSessions = [
+      {
+        sessionKey: "agent:main:main",
+        name: "main",
+        agentId: "main",
+        agentCwd: "/tmp/main",
+        createdAt: 1000,
+        updatedAt: 2000,
+      },
+    ];
+    const payload = JSON.parse(
+      captureLogs(() => {
+        new SessionCommands().list(undefined, false, true, false, undefined, undefined, undefined, "name,agentId");
+      }),
+    );
+    expect(payload.items).toHaveLength(1);
+    expect(Object.keys(payload.items[0]).sort()).toEqual(["agentId", "name"]);
   });
 });

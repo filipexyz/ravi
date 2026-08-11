@@ -1,7 +1,8 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Command, CommandAccess, Group, Option } from "../decorators.js";
-import { CloudAuthError, cloudAuthErrorFromUnknown, formatCloudAuthError } from "../../cloud-auth/errors.js";
+import { ContractError } from "../agent-contract.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown } from "../../cloud-auth/errors.js";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import { deleteCloudCredentials, readCloudCredentials, writeCloudCredentials } from "../../cloud-auth/storage.js";
 import {
@@ -19,7 +20,6 @@ import type {
   ResolvedConsoleScope,
 } from "../../console-scope/types.js";
 import { CONSOLE_SCOPE_KINDS } from "../../console-scope/types.js";
-import { hasContext } from "../context.js";
 import { declareCommandReturns } from "./operational-return-schemas.js";
 
 export interface CloudScopeCommandDeps extends ConsoleScopeResolverDeps {
@@ -65,6 +65,9 @@ export class CloudScopeCommands {
     });
   }
 
+  // Manual v2: `set` and `clear` are intentionally UNBRAKED — they are a
+  // reversible local-default pair (`set` ⇄ `clear`), write only non-secret
+  // local scope state, and validate the project against Console before saving.
   @Command({ name: "set", description: "Set a default Console project for a session, agent, workspace, or install" })
   @CommandAccess({ kind: "mutate", resource: "cloud.scope", action: "set", risk: "medium" })
   async set(
@@ -213,21 +216,15 @@ declareCommandReturns(CloudScopeCommands, {
   }),
 });
 
-async function runCloudScopeCommand<T>(asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
+async function runCloudScopeCommand<T>(_asJson: boolean | undefined, run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    const cloudError = cloudAuthErrorFromUnknown(error);
-    if (asJson) {
-      printJson(formatCloudAuthError(cloudError));
-    } else {
-      console.error(`${cloudError.code}: ${cloudError.message}`);
-      if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    if (hasContext()) throw cloudError;
-    process.exit(cloudError.exitCode);
+    // Manual v2 contract: contractFail/contractDryRun already emitted their
+    // envelope and carry the exit taxonomy (1/2/3). Never let the legacy
+    // CloudAuthError funnel swallow them.
+    if (error instanceof ContractError) throw error;
+    throw cloudAuthErrorFromUnknown(error);
   }
 }
 

@@ -4,10 +4,9 @@ import { hostname, userInfo } from "node:os";
 import { basename } from "node:path";
 import { getContext } from "./context.js";
 import { RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
+import { sanitizePublicValue } from "./redaction.js";
 
 const MAX_ARG_LENGTH = 240;
-const MAX_ARG_COUNT = 80;
-const SENSITIVE_KEY_PATTERN = /(token|secret|password|passwd|pwd|api[-_]?key|auth|bearer|credential|context[-_]?key)/i;
 
 export interface CliInvocationMetadata {
   invocationId: string;
@@ -78,39 +77,16 @@ export function hashForAudit(value: string | null | undefined, length = 16): str
   return createHash("sha256").update(value).digest("hex").slice(0, length);
 }
 
-export function sanitizeCliArgv(argv: readonly string[]): string[] {
-  const out: string[] = [];
-  let redactNext = false;
+export function sanitizeCliArgv(
+  argv: readonly string[],
+  _command?: { group?: string; name?: string; tool?: string },
+): string[] {
+  if (argv.length === 0) return [];
 
-  for (const rawArg of argv.slice(0, MAX_ARG_COUNT)) {
-    const arg = truncateAuditString(rawArg);
-
-    if (redactNext) {
-      out.push("[REDACTED]");
-      redactNext = false;
-      continue;
-    }
-
-    const eqIndex = arg.indexOf("=");
-    if (eqIndex > 0) {
-      const key = arg.slice(0, eqIndex);
-      if (SENSITIVE_KEY_PATTERN.test(key)) {
-        out.push(`${key}=[REDACTED]`);
-        continue;
-      }
-    }
-
-    if (SENSITIVE_KEY_PATTERN.test(arg.replace(/^--?/, ""))) {
-      out.push(arg);
-      redactNext = true;
-      continue;
-    }
-
-    out.push(arg);
-  }
-
-  if (argv.length > MAX_ARG_COUNT) out.push(`...[${argv.length - MAX_ARG_COUNT} more]`);
-  return out;
+  // The canonical command and redacted input already live beside this field in
+  // the audit event. Persisting raw argv values duplicates private content and
+  // cannot be made safe by maintaining an ever-growing list of option names.
+  return [`[REDACTED:argv count=${argv.length}]`];
 }
 
 export function buildCliInvocationMetadata(command?: {
@@ -125,14 +101,14 @@ export function buildCliInvocationMetadata(command?: {
   const user = safeUserInfo();
   const parentProcess = getParentProcessMetadata(process.ppid);
 
-  return {
+  const metadata: CliInvocationMetadata = {
     invocationId: randomUUID(),
     ...(command ? { command } : {}),
     process: {
       pid: process.pid,
       ppid: process.ppid,
       execPath: process.execPath,
-      argv: sanitizeCliArgv(process.argv),
+      argv: sanitizeCliArgv(process.argv, command),
       title: truncateAuditString(process.title),
       cwd: process.cwd(),
       ...(typeof process.getuid === "function" ? { uid: process.getuid() } : {}),
@@ -188,10 +164,12 @@ export function buildCliInvocationMetadata(command?: {
         : {}),
     },
   };
+
+  return sanitizePublicValue(metadata) as CliInvocationMetadata;
 }
 
 function truncateAuditString(value: string): string {
-  return value.length > MAX_ARG_LENGTH ? `${value.slice(0, MAX_ARG_LENGTH)}...` : value;
+  return value.length > MAX_ARG_LENGTH ? `${value.slice(0, MAX_ARG_LENGTH - 3)}...` : value;
 }
 
 function safeUserInfo(): string | undefined {

@@ -47,6 +47,7 @@ let stateDir: string | null = null;
 let agentCwd = "/tmp/ravi-agent";
 let contactIntakeMode: "off" | "discovered" | "pending" = "off";
 let routeResult: Record<string, unknown> | null = null;
+let configuredAgentMode: "active" | "sentinel" = "active";
 
 function defaultRouteResult(): Record<string, unknown> {
   return {
@@ -57,7 +58,7 @@ function defaultRouteResult(): Record<string, unknown> {
     agent: {
       id: "main",
       cwd: agentCwd,
-      mode: "active",
+      mode: configuredAgentMode,
     },
   };
 }
@@ -74,10 +75,12 @@ mock.module("../nats.js", () => ({
   getNats: () => {
     throw new Error("not used in this test");
   },
+  isExplicitConnect: () => false,
   publish: mock(async () => {}),
   nats: {
     emit: mock(async () => {}),
     subscribe: async function* () {},
+    close: mock(async () => {}),
   },
 }));
 
@@ -124,7 +127,7 @@ mock.module("../config-store.js", () => ({
           id: "main",
           cwd: agentCwd,
           dmScope: "main",
-          mode: "active",
+          mode: configuredAgentMode,
         },
       },
       defaultAgent: "main",
@@ -295,6 +298,7 @@ describe("OmniConsumer channel context", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-omni-consumer-context-");
     agentCwd = join(stateDir, "agent");
+    configuredAgentMode = "active";
     routeResult = defaultRouteResult();
     contactIntakeMode = "off";
     actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", agentCwd);
@@ -394,6 +398,46 @@ describe("OmniConsumer channel context", () => {
       groupId: "120363424772797713",
       groupMembers: ["Luis Filipe", "R M"],
     });
+  });
+
+  it("includes the required execution confirmation in sentinel reply guidance", async () => {
+    configuredAgentMode = "sentinel";
+    routeResult = defaultRouteResult();
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-sentinel-guidance",
+      type: "message.received",
+      payload: {
+        externalId: "msg-sentinel-guidance",
+        chatId: "120363424772797713@g.us",
+        from: "5511947879044@s.whatsapp.net",
+        content: { type: "text", text: "observe" },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: true,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    expect(promptCalls[0]?.[1].prompt).toContain("whatsapp dm send --execute to reply if instructed");
+    expect(sender.sendTyping).not.toHaveBeenCalled();
+    expect(sender.send).not.toHaveBeenCalled();
   });
 
   it("passes the provider message identifier to intercepted slash commands", async () => {

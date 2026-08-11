@@ -262,6 +262,8 @@ ravi chats lists delta <list> <chat> [--owner <type:id>] [--reader <type:id>] [-
 ravi chats lists mark-read <list> <chat> --message <message-id> [--owner <type:id>] [--reader <type:id>] [--json]
 ```
 
+`remove` is a local soft-deactivate operation: it takes effect immediately, does not accept `--execute`, and retains the membership record for audit/recovery.
+
 If `ravi chats` does not exist yet, the feature MAY start under an existing operational command, but public naming SHOULD converge on chats because the unit being read is a chat.
 
 API responses MUST expose structured cursors and messages, not formatting-only strings.

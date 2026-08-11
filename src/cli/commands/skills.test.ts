@@ -1,6 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
-import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import {
+  cleanupIsolatedRaviState,
+  createIsolatedRaviState,
+  withoutRaviRuntimeContextEnv,
+} from "../../test/ravi-state.js";
 import { dbCreateAgent, dbDeleteAgent, dbListSkillGrants, dbListSkillGrantsForAgent } from "../../router/router-db.js";
+import * as skillManager from "../../skills/manager.js";
+import type { ResolvedSkillSource } from "../../skills/manager.js";
+import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { SkillsCommands } from "./skills.js";
 
@@ -23,6 +34,31 @@ function withoutLogs<T>(run: () => T): T {
   } finally {
     console.log = originalLog;
   }
+}
+
+function captureLogs(run: () => void): string {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map((arg) => String(arg)).join(" "));
+  };
+  try {
+    run();
+  } finally {
+    console.log = originalLog;
+  }
+  return lines.join("\n");
+}
+
+function expectContractError(run: () => unknown): InstanceType<typeof ContractError> {
+  let thrown: unknown;
+  try {
+    withoutLogs(run);
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(ContractError);
+  return thrown as InstanceType<typeof ContractError>;
 }
 
 /**
@@ -228,5 +264,481 @@ describe("SkillsCommands — grant/revoke/who/inspect", () => {
       const payload = withoutLogs(() => runWithContext({}, () => commands.inspect("main", true)));
       expect(payload.provenance.fromGrants).toContain(KNOWN_CATALOG_SKILL);
     });
+  });
+});
+
+describe("skills agent-first contract", () => {
+  it("blocks a Git source before resolving it when --execute is absent", () => {
+    const resolveSpy = spyOn(skillManager, "withResolvedSkillSource").mockImplementation(() => {
+      throw new Error("Git source resolution must not run before confirmation");
+    });
+    try {
+      const contractError = expectContractError(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().install(
+            undefined,
+            "https://github.com/example/ravi-skills.git",
+            undefined,
+            true,
+            undefined,
+            undefined,
+            true,
+            true,
+            undefined,
+          ),
+        ),
+      );
+
+      expect(contractError).toMatchObject({
+        code: "WRITE_REQUIRES_EXECUTE",
+        exitCode: 3,
+        op: "skills install",
+      });
+      const plan = contractError.envelope().error.plan as Record<string, unknown>;
+      expect(plan).toEqual({
+        sourceKind: "git",
+        sourceLabel: "git",
+        selectionDeferred: true,
+        overwrite: false,
+        codexSync: false,
+      });
+      expect(JSON.stringify(plan)).not.toContain("https://github.com/example/ravi-skills.git");
+      expect(resolveSpy).toHaveBeenCalledTimes(0);
+    } finally {
+      resolveSpy.mockRestore();
+    }
+  });
+
+  it("uses a closed Git source label and removes URL query data", () => {
+    const repoName = `ravi-${"x".repeat(180)}`;
+    const source = `https://git.example/org/${repoName}.git?access=SENTINEL_PRIVATE`;
+    const resolveSpy = spyOn(skillManager, "withResolvedSkillSource").mockImplementation(() => {
+      throw new Error("Git source resolution must not run before confirmation");
+    });
+    try {
+      const contractError = expectContractError(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().install(undefined, source, undefined, true, undefined, undefined, true, true, undefined),
+        ),
+      );
+
+      const plan = contractError.envelope().error.plan as Record<string, unknown>;
+      expect(plan).toEqual({
+        sourceKind: "git",
+        sourceLabel: "git",
+        selectionDeferred: true,
+        overwrite: false,
+        codexSync: false,
+      });
+      expect(JSON.stringify(plan)).not.toContain("SENTINEL_PRIVATE");
+      expect(JSON.stringify(plan)).not.toContain("git.example");
+      expect(resolveSpy).toHaveBeenCalledTimes(0);
+    } finally {
+      resolveSpy.mockRestore();
+    }
+  });
+
+  it("installs a confirmed Git source after resolving it", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "skills-confirmed-git-"));
+    const gitSource = "https://github.com/example/ravi-skills.git";
+    let resolveSpy: ReturnType<typeof spyOn> | undefined;
+    let installSpy: ReturnType<typeof spyOn> | undefined;
+    let installedNames: string[] = [];
+    try {
+      writeFileSync(
+        join(sourceRoot, "SKILL.md"),
+        "---\nname: confirmed-git-skill\ndescription: Confirmed Git fixture\n---\n\nFixture content\n",
+      );
+      resolveSpy = spyOn(skillManager, "withResolvedSkillSource").mockImplementation(
+        <T>(input: string, run: (resolved: ResolvedSkillSource) => T): T =>
+          run({ source: skillManager.parseSkillSource(input), rootPath: sourceRoot }),
+      );
+      installSpy = spyOn(skillManager, "installSkills").mockImplementation((skills, options = {}) => {
+        installedNames = skills.map((skill) => skill.name);
+        return skills.map((skill) => ({
+          ...skill,
+          installPath: join(sourceRoot, ".test-install", skill.name),
+          pluginName: options.pluginName ?? "ravi-user-skills",
+        }));
+      });
+
+      const result = withoutLogs(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().install(undefined, gitSource, undefined, true, undefined, undefined, true, true, true),
+        ),
+      );
+
+      expect(result.success).toBe(true);
+      expect(installedNames).toEqual(["confirmed-git-skill"]);
+      expect(resolveSpy).toHaveBeenCalledTimes(1);
+      expect(installSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      installSpy?.mockRestore();
+      resolveSpy?.mockRestore();
+      rmSync(sourceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("does not echo a confirmed source URL or resolved path in SKILL_NOT_FOUND", () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), "SENTINEL_PRIVATE_PATH-"));
+    const gitSource = "https://git.example/org/repo.git?access=SENTINEL_PRIVATE_URL";
+    const resolveSpy = spyOn(skillManager, "withResolvedSkillSource").mockImplementation(
+      <T>(input: string, run: (resolved: ResolvedSkillSource) => T): T =>
+        run({ source: skillManager.parseSkillSource(input), rootPath: sourceRoot }),
+    );
+    try {
+      writeFileSync(
+        join(sourceRoot, "SKILL.md"),
+        "---\nname: available-skill\ndescription: Available fixture\n---\n\nFixture content\n",
+      );
+      const contractError = expectContractError(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().install(
+            "missing-skill",
+            gitSource,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            true,
+            true,
+          ),
+        ),
+      );
+
+      expect(contractError).toMatchObject({ code: "SKILL_NOT_FOUND", exitCode: 1, op: "skills install" });
+      const envelope = contractError.envelope();
+      const serialized = JSON.stringify(envelope);
+      expect(String(envelope.error.suggestedAction)).toContain("--source <source>");
+      expect(serialized).not.toContain("SENTINEL_PRIVATE_URL");
+      expect(serialized).not.toContain("SENTINEL_PRIVATE_PATH");
+      expect(serialized).not.toContain(gitSource);
+      expect(serialized).not.toContain(sourceRoot);
+      expect(resolveSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      resolveSpy.mockRestore();
+      rmSync(sourceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks a catalog overwrite without --execute with only minimal source metadata", () => {
+    const commands = new SkillsCommands();
+    const contractError = expectContractError(() =>
+      runWithContext({}, () =>
+        commands.install(
+          KNOWN_CATALOG_SKILL,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true, // --overwrite
+          true, // --skip-codex-sync
+          true, // --json
+          undefined, // no --execute → brake
+        ),
+      ),
+    );
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("skills install");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    const plan = envelope.error.plan as Record<string, unknown>;
+    expect(plan).toEqual({
+      sourceKind: "catalog",
+      sourceLabel: "catalog",
+      skillCount: 1,
+      overwrite: true,
+      codexSync: false,
+    });
+    expect(JSON.stringify(plan)).not.toContain(KNOWN_CATALOG_SKILL);
+  });
+
+  it("blocks a catalog overwrite before the file installation sink", () => {
+    let installState = "unchanged";
+    const installSpy = spyOn(skillManager, "installSkills").mockImplementation(() => {
+      installState = "changed";
+      return [];
+    });
+    try {
+      const contractError = expectContractError(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().install(
+            KNOWN_CATALOG_SKILL,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            true,
+            true,
+            undefined,
+          ),
+        ),
+      );
+
+      expect(contractError).toMatchObject({
+        code: "WRITE_REQUIRES_EXECUTE",
+        exitCode: 3,
+        op: "skills install",
+      });
+      expect(installSpy).toHaveBeenCalledTimes(0);
+      expect(installState).toBe("unchanged");
+    } finally {
+      installSpy.mockRestore();
+    }
+  });
+
+  it("validates a local overwrite before the brake and exposes only minimal source metadata", () => {
+    const source = mkdtempSync(join(tmpdir(), "sentinel-private-"));
+    const resolveSpy = spyOn(skillManager, "withResolvedSkillSource");
+    try {
+      writeFileSync(
+        join(source, "SKILL.md"),
+        "---\nname: PRIVATE_MESSAGE_8K2R\ndescription: SENTINEL_SECRET_7M4Q\n---\n\nPrivate content\n",
+      );
+      const commands = new SkillsCommands();
+      const contractError = expectContractError(() =>
+        runWithContext({}, () =>
+          commands.install(undefined, source, undefined, true, undefined, true, true, true, undefined),
+        ),
+      );
+
+      const plan = contractError.envelope().error.plan as Record<string, unknown>;
+      expect(plan).toEqual({
+        sourceKind: "local",
+        sourceLabel: "local",
+        skillCount: 1,
+        overwrite: true,
+        codexSync: false,
+      });
+      expect(JSON.stringify(plan)).not.toContain(source);
+      expect(JSON.stringify(plan)).not.toContain("PRIVATE_MESSAGE_8K2R");
+      expect(JSON.stringify(plan)).not.toContain("SENTINEL_SECRET_7M4Q");
+      expect(resolveSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      resolveSpy.mockRestore();
+      rmSync(source, { recursive: true, force: true });
+    }
+  });
+
+  it("installs an additive local source immediately without --execute", () => {
+    const source = mkdtempSync(join(tmpdir(), "skills-additive-local-"));
+    let installSpy: ReturnType<typeof spyOn> | undefined;
+    let installedNames: string[] = [];
+    try {
+      writeFileSync(
+        join(source, "SKILL.md"),
+        "---\nname: local-additive-skill\ndescription: Local additive fixture\n---\n\nFixture content\n",
+      );
+      installSpy = spyOn(skillManager, "installSkills").mockImplementation((skills, options = {}) => {
+        installedNames = skills.map((skill) => skill.name);
+        return skills.map((skill) => ({
+          ...skill,
+          installPath: join(source, ".test-install", skill.name),
+          pluginName: options.pluginName ?? "ravi-user-skills",
+        }));
+      });
+      const result = withoutLogs(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().install(undefined, source, undefined, true, undefined, undefined, true, true, undefined),
+        ),
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.installed).toHaveLength(1);
+      expect(installedNames).toEqual(["local-additive-skill"]);
+      expect(installSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      installSpy?.mockRestore();
+      rmSync(source, { recursive: true, force: true });
+    }
+  });
+
+  it("validates SKILL_NOT_FOUND before a catalog overwrite brake (exit 1, not 3)", () => {
+    const commands = new SkillsCommands();
+    const contractError = expectContractError(() =>
+      runWithContext({}, () =>
+        commands.install(
+          "definitely-not-a-real-skill",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+          true,
+          true,
+          undefined,
+        ),
+      ),
+    );
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("skills install");
+    expect(envelope.error.code).toBe("SKILL_NOT_FOUND");
+    expect(Array.isArray(envelope.error.suggestions)).toBe(true);
+    expect(String(envelope.error.suggestedAction)).toContain("ravi skills list --json");
+    expect(String(envelope.error.suggestedAction)).not.toContain("--source");
+  });
+
+  it("installs an additive catalog skill without --execute into the redirected user plugin bucket", () => {
+    const tempHome = mkdtempSync(join(tmpdir(), "skills-exec-home-"));
+    try {
+      const childEnv = {
+        ...withoutRaviRuntimeContextEnv(),
+        HOME: tempHome,
+        USERPROFILE: tempHome,
+        RAVI_TEST_EXPECTED_HOME: tempHome,
+        RAVI_LOG_LEVEL: "error",
+      };
+
+      // Bun 1.3.11/Linux does not update os.homedir() when HOME changes after
+      // process start. Validate the redirect and perform the write in that same
+      // fresh process so a runtime that cannot honor it exits before mutation.
+      const execution = spawnSync(
+        process.execPath,
+        [
+          "--eval",
+          `
+            import { homedir } from "node:os";
+            import { runWithContext } from "./src/cli/context.ts";
+            import { SkillsCommands } from "./src/cli/commands/skills.ts";
+
+            const expectedHome = process.env.RAVI_TEST_EXPECTED_HOME;
+            if (!expectedHome || homedir() !== expectedHome) {
+              console.error("Redirected home was not honored; refusing skills install");
+              process.exit(70);
+            }
+
+            const originalLog = console.log;
+            console.log = () => {};
+            try {
+              const result = runWithContext({}, () =>
+                new SkillsCommands().install(
+                  ${JSON.stringify(KNOWN_CATALOG_SKILL)},
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  undefined,
+                  true,
+                  true,
+                  undefined,
+                ),
+              );
+              process.stdout.write(JSON.stringify(result));
+            } finally {
+              console.log = originalLog;
+            }
+          `,
+        ],
+        { cwd: process.cwd(), encoding: "utf8", env: childEnv },
+      );
+      expect(execution.status).toBe(0);
+      expect(execution.stderr).toBe("");
+      const result = JSON.parse(execution.stdout) as {
+        success: boolean;
+        installed: Array<{ installPath?: string }>;
+      };
+      expect(result.success).toBe(true);
+      const installPath = String(result.installed[0]?.installPath ?? "");
+      expect(installPath.startsWith(tempHome)).toBe(true);
+      expect(existsSync(installPath)).toBe(true);
+    } finally {
+      rmSync(tempHome, { recursive: true, force: true });
+    }
+  }, 20_000);
+
+  it("installs a catalog overwrite when --execute is present", () => {
+    const installSpy = spyOn(skillManager, "installSkills").mockImplementation((skills, options = {}) =>
+      skills.map((skill) => ({
+        ...skill,
+        installPath: join(tmpdir(), "skills-overwrite-control", skill.name),
+        pluginName: options.pluginName ?? "ravi-user-skills",
+      })),
+    );
+    try {
+      const result = withoutLogs(() =>
+        runWithContext({}, () =>
+          new SkillsCommands().install(
+            KNOWN_CATALOG_SKILL,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            true,
+            true,
+            true,
+            true,
+          ),
+        ),
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.installed).toHaveLength(1);
+      expect(installSpy).toHaveBeenCalledTimes(1);
+      expect(installSpy.mock.calls[0]?.[1]).toMatchObject({ overwrite: true });
+    } finally {
+      installSpy.mockRestore();
+    }
+  });
+
+  it("emits SKILL_NOT_FOUND envelope with suggestions on skills show --json (exit 1)", () => {
+    const commands = new SkillsCommands();
+    const contractError = expectContractError(() =>
+      runWithContext({}, () => commands.show("agents-managerr", undefined, undefined, true)),
+    );
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("skills show");
+    expect(envelope.error.code).toBe("SKILL_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain(KNOWN_CATALOG_SKILL);
+    expect((envelope.error.suggestions as string[]).length).toBeLessThanOrEqual(3);
+  });
+
+  it("emits AGENT_NOT_FOUND envelope with suggestions on skills grant --json (exit 1)", () => {
+    const commands = new SkillsCommands();
+    const contractError = expectContractError(() =>
+      runWithContext({}, () => commands.grant("maim", KNOWN_CATALOG_SKILL, undefined, true)),
+    );
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("skills grant");
+    expect(envelope.error.code).toBe("AGENT_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain("main");
+  });
+
+  it("emits SKILL_NOT_FOUND envelope on skills grant of an unknown skill --json (exit 1)", () => {
+    const commands = new SkillsCommands();
+    const contractError = expectContractError(() =>
+      runWithContext({}, () => commands.grant("main", "agents-managerr", undefined, true)),
+    );
+    expect(contractError.exitCode).toBe(1);
+    const envelope = contractError.envelope();
+    expect(envelope.error.code).toBe("SKILL_NOT_FOUND");
+    expect(envelope.error.suggestions).toContain(KNOWN_CATALOG_SKILL);
+  });
+
+  it("supports --fields compact mode on skills list", () => {
+    const commands = new SkillsCommands();
+    const logs = captureLogs(() =>
+      runWithContext({}, () =>
+        commands.list(undefined, undefined, undefined, true, undefined, undefined, undefined, "name,source"),
+      ),
+    );
+    const payload = JSON.parse(logs) as { items: Array<Record<string, unknown>> };
+    expect(payload.items.length).toBeGreaterThan(0);
+    expect(Object.keys(payload.items[0] ?? {}).sort()).toEqual(["name", "source"]);
+  });
+
+  it("supports --fields compact mode on skills who", () => {
+    const commands = new SkillsCommands();
+    withoutLogs(() => runWithContext({}, () => commands.grant("main", KNOWN_CATALOG_SKILL, undefined, true)));
+    const payload = withoutLogs(() =>
+      runWithContext({}, () => commands.who(KNOWN_CATALOG_SKILL, undefined, true, "agentId")),
+    );
+    expect(payload.total).toBe(1);
+    expect(Object.keys(payload.grants[0] ?? {})).toEqual(["agentId"]);
   });
 });

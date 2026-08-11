@@ -5,6 +5,7 @@
 import "reflect-metadata";
 import { z } from "zod";
 import { Command, CommandAccess, Group, Option, Scope } from "../decorators.js";
+import { CONTRACT_EXIT_USAGE, contractFail, pickFields } from "../agent-contract.js";
 import {
   type DailyMetricsRow,
   getDailyMetrics,
@@ -99,6 +100,37 @@ function resolveSinceArg(daysOrDate: string | undefined): string | undefined {
   return utcDateString(Date.now() - days * DAY_MS);
 }
 
+// ============================================================
+// Manual v2 contract notes (error envelope + exit taxonomy).
+// Exit taxonomy: 1 error · 2 usage · 3 policy (write brake / dry-run).
+//
+// Metrics deliberately declares NO braked op: `rollup` writes ONLY derived
+// data (daily_metrics), is idempotent per day and fully recomputable from
+// cost_events/session_events — an obvious reverse path, so no `--execute`.
+// The daemon also calls rollupDailyMetrics() directly through the service
+// layer (src/ephemeral/runner.ts), so a CLI brake would not gate the write
+// anyway. `rollup` is still authorized as mutate because it persists derived
+// rows; authorization and confirmation are independent controls.
+//
+// No op resolves an entity by id (`--agent` is a filter; an empty window is
+// a legitimate empty result), so no *_NOT_FOUND envelope applies — declared.
+// Numeric flags (--days) keep their lenient legacy normalization; only the
+// enum flag --by fails as a usage error.
+// ============================================================
+
+const METRICS_BY_DIMENSIONS = ["agent", "agent-model", "date"] as const;
+
+function failMetricsUsage(op: string, message: string, acceptedValues: readonly string[], asJson?: boolean): never {
+  contractFail(op, "USAGE_ERROR", message, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: {
+      suggestedAction: `Re-run '${op}' with one of: ${acceptedValues.join(", ")}`,
+      acceptedValues: [...acceptedValues],
+    },
+  });
+}
+
 @Group({
   name: "metrics",
   description: "Daily metrics rollup and reporting",
@@ -109,7 +141,7 @@ export class MetricsCommands {
     name: "rollup",
     description: "Aggregate cost_events + session_events into daily_metrics for a date range",
   })
-  @CommandAccess({ kind: "read", resource: "metrics", action: "rollup", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "metrics", action: "rollup", risk: "medium" })
   async rollup(
     @Option({ flags: "--since <date|days>", description: "Start date YYYY-MM-DD or N days ago" })
     sinceRaw?: string,
@@ -147,7 +179,17 @@ export class MetricsCommands {
     })
     byRaw?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each row" })
+    fields?: string,
   ): Promise<DailyMetricsRow[]> {
+    if (byRaw?.trim() && !METRICS_BY_DIMENSIONS.includes(byRaw.trim() as (typeof METRICS_BY_DIMENSIONS)[number])) {
+      failMetricsUsage(
+        "metrics show",
+        `Invalid --by: ${byRaw}. Use agent|agent-model|date.`,
+        METRICS_BY_DIMENSIONS,
+        asJson,
+      );
+    }
     const days = daysRaw ? Math.max(1, Number.parseInt(daysRaw, 10) || 7) : 7;
     const since = sinceRaw ?? utcDateString(Date.now() - days * DAY_MS);
     const by = byRaw === "agent" || byRaw === "date" ? byRaw : "agent-model";
@@ -157,10 +199,11 @@ export class MetricsCommands {
       since,
       ...(through ? { through } : {}),
     });
+    const projectedRows = pickFields(rows, fields);
 
     if (asJson) {
-      console.log(JSON.stringify(rows, null, 2));
-      return rows;
+      console.log(JSON.stringify(projectedRows, null, 2));
+      return projectedRows;
     }
 
     if (rows.length === 0) {
@@ -188,7 +231,7 @@ export class MetricsCommands {
     console.log(`Total cost: ${formatCost(totalCost)} across ${rows.length} rolled-up rows`);
     console.log(`Range: ${since} → ${through ?? utcDateString(Date.now())}`);
 
-    return rows;
+    return projectedRows;
   }
 
   @Scope("superadmin")

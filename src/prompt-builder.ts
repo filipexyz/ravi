@@ -143,7 +143,7 @@ function sessionAttachText(): string {
 
 **Anti-patterns:**
 
-- ❌ Adicionar route pra "mover" chat já atachado em outra sessão — subscription override puxa de volta. Detach (ou \`sessions delete\` da sessão antiga) primeiro.
+- ❌ Adicionar route pra "mover" chat já atachado em outra sessão — subscription override puxa de volta. Detach (ou \`sessions delete --execute\` da sessão antiga) primeiro.
 - ❌ Tentar redirecionar output com \`focus\` — focus não existe; use \`attach\` para escolher o chat que recebe as respostas da sessão.
 - ❌ Externalizar para o usuário que você está mutando, desmutando ou roteando uma resposta.
 - ❌ Esperar attach trocar o agent. Attach decide sessão; agent vem da route ou default da instance.`;
@@ -159,9 +159,9 @@ Leia os campos \`promptHint\` e \`usage.tools\` retornados por \`actions --json\
 
 O CLI infere a sessão pelo contexto de execução do agent. Não passe o nome da sessão quando estiver rodando dentro do Ravi; use \`ravi sessions actions ${sessionRef} --json\` apenas para depuração fora do runtime.
 
-Para apagar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions delete-message <message-id>\`.
+Para apagar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions delete-message <message-id> --execute\` (sem \`--execute\` é dry-run, exit 3).
 
-Para editar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions edit-message <message-id> "novo texto"\`.
+Para editar uma mensagem própria enviada por engano, primeiro descubra o ID em \`recentOwnMessages\` e depois rode \`ravi sessions edit-message <message-id> "novo texto" --execute\` (sem \`--execute\` é dry-run, exit 3).
 
 Só apague ou edite mensagens próprias quando estiver corrigindo ou removendo uma saída acidental. Não exponha IDs internos ao usuário a menos que isso seja útil para depuração.`;
 }
@@ -377,8 +377,9 @@ Sugira isso especialmente quando o assunto tiver:
 
 Formato preferido:
 - "Isso parece um fio próprio. Quer que eu crie um agent/grupo dedicado para <tema>?"
-- Se o usuário confirmar e você tiver permissão, use \`ravi whatsapp group create "<nome>" --agent <agent>\`.
-- Se o agent ainda não existir, use o fluxo transacional em uma chamada: \`ravi whatsapp group create "<nome>" --agent <agent> --create-agent\`.
+- Se o usuário confirmar e você tiver permissão, use \`ravi whatsapp group create "<nome>" --agent <agent> --execute\`.
+- Se o agent ainda não existir, use o fluxo transacional em uma chamada: \`ravi whatsapp group create "<nome>" --agent <agent> --create-agent --execute\`.
+- Sem \`--execute\`, \`group create\` é dry-run (exit 3): mostra o plano e não cria nada.
 - Se o usuário pedir diretamente para criar, aja sem rediscutir.
 
 Interprete pedidos como "cria um grupo", "criei um grupo para isso", "vamos abrir um grupo", "novo agent/grupo" como intenção de criar/rotear um novo workspace, a menos que o usuário traga explicitamente um JID, link de convite ou diga que o grupo já existe.
@@ -445,9 +446,9 @@ export function buildSystemPromptSections(
       `You are a sentinel agent — you observe messages silently and never auto-reply.
 When instructed via [System] Execute or [System] Ask, you CAN send messages explicitly:
 
-- \`ravi whatsapp dm send <contact> "message" --account $RAVI_ACCOUNT_ID\` — send a WhatsApp message
-- \`ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID\` — read recent messages from a contact
-- \`ravi whatsapp dm ack <contact> <messageId> --account $RAVI_ACCOUNT_ID\` — send read receipt (blue ticks)
+- \`ravi whatsapp dm send <contact> "message" --account $RAVI_ACCOUNT_ID --execute\` — send a WhatsApp message (without \`--execute\` it is a dry-run, exit 3)
+- \`ravi whatsapp dm read <contact> --account $RAVI_ACCOUNT_ID\` — read recent messages locally; this command never sends a receipt
+- \`ravi whatsapp dm ack <contact> <messageId> --account $RAVI_ACCOUNT_ID --execute\` — send a confirmed read receipt (blue ticks; without \`--execute\` it is a dry-run, exit 3)
 
 The env var $RAVI_ACCOUNT_ID is set automatically with your WhatsApp account. Always use it.
 Your text output is NOT sent to the channel. Use these tools to send explicitly.`,

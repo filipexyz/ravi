@@ -1,0 +1,31 @@
+# Context agent-first CLI contract / WHY
+
+Contexts are the auth substrate every other surface stands on: an `rctx_*` key
+IS the credential a session, worker or external CLI uses to act as itself. That
+shapes this migration in two ways the other domains did not need.
+
+First, `context revoke` is an emergency containment operation. It cascades to
+descendant contexts by default, but its material effect is reducing active
+authority and exposure; requiring a second call would delay the safety action.
+It therefore executes immediately while remaining authorized as `mutate`.
+`context credentials remove` deletes a stored key from the local store;
+the key cannot be recovered from the store afterwards (only re-issued), so it
+brakes too. `prune` was NOT touched: it already shipped with a stronger brake
+than the standard one (`--apply` plus a literal `--confirm prune-contexts`),
+and renaming working safety flags would break every caller for zero gain.
+`cleanup-agent-runtime` likewise already defaults to dry-run with an opt-in
+`--revoke` — same local equivalent, documented instead of renamed.
+
+Second, the not-found envelope had to be designed around secret hygiene.
+Everywhere else, suggestions echo entity ids and titles. Here, the natural
+"candidates" for a credentials-store miss would be the stored `rctx_*` keys —
+which must never enter an envelope that gets logged, relayed to models, or
+pasted into issues. So `CREDENTIAL_NOT_FOUND` suggests context IDs and labels
+instead, and when the user's own input is a key a not-found response echoes at
+most its masked prefix. Credential-removal dry-run plans go further: they carry
+only IDs plus path/key/label presence flags.
+
+`issue`, `credentials add` and `set-default` stay unbraked: issuing a child
+context is revocable by definition, and the two local-store writes are
+reversible one-liners. Braking them would put exit-3 friction inside the
+canonical "issue → export → whoami" flow that the context-cli skill teaches.

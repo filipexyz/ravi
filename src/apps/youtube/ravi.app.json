@@ -115,7 +115,7 @@
     },
     "youtube.reply": {
       "interface": "cli",
-      "command": "ravi yt reply --json {args}",
+      "command": "ravi yt reply --execute --json {args}",
       "mutating": true,
       "permission": "youtube:comments:write"
     },
@@ -199,37 +199,37 @@
     },
     "youtube.video-update": {
       "interface": "cli",
-      "command": "ravi yt video-update --json {args}",
+      "command": "ravi yt video-update --execute --json {args}",
       "mutating": true,
       "permission": "youtube:videos:write"
     },
     "youtube.video-delete": {
       "interface": "cli",
-      "command": "ravi yt video-delete --json {args}",
+      "command": "ravi yt video-delete --execute --json {args}",
       "mutating": true,
       "permission": "youtube:videos:delete"
     },
     "youtube.playlist-create": {
       "interface": "cli",
-      "command": "ravi yt playlist-create --json {args}",
+      "command": "ravi yt playlist-create --execute --json {args}",
       "mutating": true,
       "permission": "youtube:playlists:write"
     },
     "youtube.playlist-delete": {
       "interface": "cli",
-      "command": "ravi yt playlist-delete --json {args}",
+      "command": "ravi yt playlist-delete --execute --json {args}",
       "mutating": true,
       "permission": "youtube:playlists:delete"
     },
     "youtube.playlist-add": {
       "interface": "cli",
-      "command": "ravi yt playlist-add --json {args}",
+      "command": "ravi yt playlist-add --execute --json {args}",
       "mutating": true,
       "permission": "youtube:playlists:write"
     },
     "youtube.playlist-remove": {
       "interface": "cli",
-      "command": "ravi yt playlist-remove --json {args}",
+      "command": "ravi yt playlist-remove --execute --json {args}",
       "mutating": true,
       "permission": "youtube:playlists:delete"
     }

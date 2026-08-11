@@ -156,6 +156,8 @@ ravi instances delete <name>
 ravi instances restore <name>
 ```
 
+`instances delete` performs a recoverable local soft-delete immediately.
+
 ### Instance Fields
 
 | Field | Type | Default | Description |
@@ -212,6 +214,8 @@ ravi instances routes remove <instance> <pattern>
 ravi instances routes restore <instance> <pattern>
 ```
 
+`routes remove` performs a recoverable local soft-delete immediately.
+
 ### Route Fields
 
 | Field | Type | Default | Description |
@@ -254,7 +258,8 @@ ravi settings list
 ravi settings list --legacy
 ravi settings get <key>
 ravi settings set <key> <value>
-ravi settings delete <key>
+ravi settings delete <key>            # dry-run: shows the delete plan (exit 3)
+ravi settings delete <key> --execute  # actually delete the setting
 ```
 
 ### Available Settings

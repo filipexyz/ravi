@@ -6,6 +6,7 @@ import {
   getGroupMetadata,
   getCommandsMetadata,
   getCommandAccessMetadata,
+  getCliOnlyMetadata,
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
@@ -16,9 +17,20 @@ import {
 } from "./decorators.js";
 import { extractOptionName, inferOptionType } from "./utils.js";
 import { nats } from "../nats.js";
-import { getContext } from "./context.js";
-import { enforceCliCommandAuthorization } from "./command-access.js";
+import { getContext, runWithContext } from "./context.js";
+import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./command-access.js";
 import { resolveCommandSkillGate, type SkillGateMetadata } from "./skill-gates.js";
+import {
+  ContractError,
+  binaryResponseToContractError,
+  contractFailureOutcome,
+  expectedErrorToContractError,
+  permissionDeniedToContractError,
+  unexpectedErrorToContractError,
+} from "./agent-contract.js";
+import { isCloudAuthError } from "../cloud-auth/errors.js";
+import { cloudErrorToContractError, commandOperation } from "./cloud-error-contract.js";
+import { sanitizeCliAuditValue } from "./audit.js";
 
 // ============================================================================
 // Types
@@ -47,6 +59,9 @@ export interface ExportedTool {
 export interface ToolResult {
   content: Array<{ type: "text"; text: string }>;
   isError?: boolean;
+  outcome?: "succeeded" | "blocked" | "usage_error" | "denied" | "failed";
+  /** CLI-compatible exit taxonomy for structured contract failures. */
+  exitCode?: number;
 }
 
 /** Manifest entry for documentation/inspection */
@@ -84,8 +99,10 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
     // Resolve scope: command-level > group-level > "admin" (fail-secure default)
     const scopeMap = getScopeMetadata(cls);
     const commandAccessMap = getCommandAccessMetadata(cls);
+    const cliOnlySet = getCliOnlyMetadata(cls);
 
     for (const cmdMeta of commandsMeta) {
+      if (cliOnlySet.has(cmdMeta.method)) continue;
       const argsMeta = getArgsMetadata(instance, cmdMeta.method);
       const optionsMeta = getOptionsMetadata(instance, cmdMeta.method);
 
@@ -200,6 +217,11 @@ function buildHandler(
   access: CommandAccessOptions | undefined,
 ): (args: Record<string, unknown>) => Promise<ToolResult> {
   return async (toolArgs: Record<string, unknown>): Promise<ToolResult> => {
+    const ctx = getContext();
+    const sessionKey = ctx?.sessionKey ?? "_cli";
+    const agentId = ctx?.agentId;
+    const startTime = Date.now();
+    const auditInput = redactCommandAccessInput(access, toolArgs);
     const accessResult = enforceCliCommandAuthorization({
       group,
       command,
@@ -209,17 +231,33 @@ function buildHandler(
       scope,
     });
     if (!accessResult.allowed) {
+      const contractError = permissionDeniedToContractError(
+        commandOperation(group, command),
+        accessResult.errorMessage,
+      );
+      const envelope = JSON.stringify(contractError.envelope());
+      nats
+        .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
+          tool: toolName,
+          input: truncateForEvent(sanitizeCliAuditValue(auditInput)),
+          output: sanitizeCliAuditValue(accessResult.errorMessage, "output"),
+          isError: true,
+          outcome: "denied",
+          exitCode: 1,
+          errorCode: "PERMISSION_DENIED",
+          durationMs: Date.now() - startTime,
+          timestamp: new Date().toISOString(),
+          sessionKey,
+          agentId,
+        })
+        .catch(() => {});
       return {
-        content: [{ type: "text", text: accessResult.errorMessage }],
+        content: [{ type: "text", text: envelope }],
         isError: true,
+        outcome: "denied",
+        exitCode: contractError.exitCode,
       };
     }
-
-    const ctx = getContext();
-    const sessionKey = ctx?.sessionKey ?? "_cli";
-    const agentId = ctx?.agentId;
-
-    const startTime = Date.now();
 
     // Capture console output
     const output: string[] = [];
@@ -234,6 +272,9 @@ function buildHandler(
     };
 
     let isError = false;
+    let outcome: "succeeded" | "blocked" | "usage_error" | "denied" | "failed" = "succeeded";
+    let contractExitCode: number | undefined;
+    let contractErrorCode: string | undefined;
 
     try {
       // Build args array in parameter order
@@ -256,14 +297,45 @@ function buildHandler(
 
       // Call the method
       const method = (instance as Record<string, Function>)[methodName];
-      const result = method.apply(instance, finalArgs);
-
-      if (result instanceof Promise) {
-        await result;
+      const result = runWithContext({ ...(ctx ?? {}), transport: "tool" }, () => method.apply(instance, finalArgs));
+      const returnValue = result instanceof Promise ? await result : result;
+      if (returnValue instanceof Response) {
+        if (!returnValue.ok) {
+          throw binaryResponseToContractError(commandOperation(group, command), returnValue.status);
+        }
+        output.push(
+          JSON.stringify({
+            success: true,
+            op: commandOperation(group, command),
+            binary: true,
+            status: returnValue.status,
+            contentType: returnValue.headers.get("content-type"),
+            contentLength: returnValue.headers.get("content-length"),
+            suggestedAction: "Use the SDK or gateway binary response to consume the bytes",
+          }),
+        );
       }
     } catch (err) {
       isError = true;
-      output.push(`Error: ${err instanceof Error ? err.message : String(err)}`);
+      const contractError =
+        err instanceof ContractError
+          ? err
+          : isCloudAuthError(err)
+            ? cloudErrorToContractError(commandOperation(group, command), err)
+            : (expectedErrorToContractError(commandOperation(group, command), err) ??
+              unexpectedErrorToContractError(commandOperation(group, command)));
+      if (contractError) {
+        contractExitCode = contractError.exitCode;
+        contractErrorCode = contractError.code;
+        outcome = contractFailureOutcome(contractError);
+        isError = outcome !== "blocked";
+        // A tool result must contain exactly one machine-readable envelope.
+        // Preserve an already-emitted envelope; otherwise replace any captured
+        // human rendering or incidental output with the canonical structure.
+        const envelope = contractError.envelope();
+        const renderedEnvelope = output.find((line) => isSameContractEnvelope(line, envelope));
+        output.splice(0, output.length, renderedEnvelope ?? JSON.stringify(envelope));
+      }
     } finally {
       console.log = originalLog;
       console.error = originalError;
@@ -274,9 +346,14 @@ function buildHandler(
     nats
       .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
         tool: toolName,
-        input: truncateForEvent(toolArgs),
-        output: truncateForEvent(text),
+        input: truncateForEvent(sanitizeCliAuditValue(auditInput)),
+        // Tool output may contain message bodies or provider payloads. Audit
+        // the semantic outcome, never the full returned content.
+        output: truncateForEvent(sanitizeCliAuditValue(text, "output")),
         isError,
+        outcome,
+        ...(contractExitCode !== undefined ? { exitCode: contractExitCode } : {}),
+        ...(contractErrorCode !== undefined ? { errorCode: contractErrorCode } : {}),
         durationMs: Date.now() - startTime,
         timestamp: new Date().toISOString(),
         sessionKey,
@@ -287,6 +364,17 @@ function buildHandler(
     return {
       content: [{ type: "text", text }],
       isError,
+      outcome,
+      ...(contractExitCode !== undefined ? { exitCode: contractExitCode } : {}),
     };
   };
+}
+
+function isSameContractEnvelope(line: string, expected: ReturnType<ContractError["envelope"]>): boolean {
+  try {
+    const parsed = JSON.parse(line) as unknown;
+    return JSON.stringify(parsed) === JSON.stringify(expected);
+  } catch {
+    return false;
+  }
 }

@@ -68,7 +68,7 @@ export function buildStickerPromptSection(
     content: [
       "Stickers are a separate response surface from text replies, emoji reactions, and silent replies.",
       "Use stickers sparingly when a lightweight visual acknowledgment is better than text.",
-      "To send one, run `ravi stickers send <id>`.",
+      "To send one, run `ravi stickers send <id> --execute` (without --execute it is a dry-run that only shows the plan).",
       "If the sticker is the whole response, send the sticker and then reply with exactly `@@SILENT@@`; do not also send text.",
       "",
       "Available sticker ids:",

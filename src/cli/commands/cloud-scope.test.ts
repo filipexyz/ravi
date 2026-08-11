@@ -3,6 +3,7 @@ import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
 import { closeConsoleScopeStore } from "../../console-scope/store.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import { ContractError } from "../agent-contract.js";
 import { CloudScopeCommands } from "./cloud-scope.js";
 
 let stateDir: string | null = null;
@@ -120,6 +121,32 @@ describe("cloud scope CLI commands", () => {
     expect(JSON.stringify(payload)).toContain("rbbt-ravi");
     expect(JSON.stringify(payload)).toContain("filipe-ai");
     expect(payload.missingProjectCommand).toContain("ravi cloud scope set --project <project-ref>");
+  });
+
+  // Manual v2 agent-first contract: set/clear are declared UNBRAKED (reversible
+  // local-default pair), and the legacy CloudAuthError funnel must never
+  // swallow a ContractError raised by the contract layer.
+  it("rethrows ContractError instead of wrapping it in the CloudAuthError funnel", async () => {
+    stateDir = await createIsolatedRaviState("ravi-cloud-scope-contract-test-");
+    const boom = new ContractError("cloud scope set", "SOME_CONTRACT_CODE", "boom", 3, { dryRun: true });
+    const command = new CloudScopeCommands({
+      client: makeClient(),
+      readCredentials: makeReadCredentials(),
+      listProjects: async () => {
+        throw boom;
+      },
+      getContext: () => ({ sessionName: "ravi-console" }),
+    });
+
+    let caught: unknown;
+    try {
+      await captureConsole(() => command.set("rbbt-ravi", true, undefined, undefined, undefined, undefined, true));
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBe(boom);
+    expect((caught as ContractError).exitCode).toBe(3);
   });
 });
 

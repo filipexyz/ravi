@@ -68,6 +68,64 @@ describe("permission denials", () => {
     expect(listPermissionDenials()).toEqual([]);
   });
 
+  it("sanitizes nested denial details before persistence", () => {
+    const denial = recordPermissionDenial({
+      subjectType: "agent",
+      subjectId: "worker",
+      relation: "mutate",
+      objectType: "work-objects",
+      objectId: "update",
+      detail: {
+        operation: {
+          input: {
+            values: {
+              nested: { prompt: "PRIVATE_PROMPT_7YQ4" },
+              apiKey: "sk-abcdefghijklmnop",
+            },
+          },
+        },
+      },
+    });
+
+    expect(denial?.detail).toEqual({
+      operation: {
+        input: {
+          values: {
+            nested: { prompt: "[REDACTED:content length=19]" },
+            apiKey: "[REDACTED]",
+          },
+        },
+      },
+    });
+    expect(JSON.stringify(denial)).not.toContain("PRIVATE_PROMPT_7YQ4");
+    expect(JSON.stringify(denial)).not.toContain("sk-abcdefghijklmnop");
+  });
+
+  it("never persists or publishes the full denied command", async () => {
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    const command = "ravi settings set custom.password SENTINEL_SECRET_7M4Q";
+
+    const denial = recordAndEmitPermissionDenial({
+      subjectType: "agent",
+      subjectId: "worker",
+      relation: "execute",
+      objectType: "executable",
+      objectId: "ravi",
+      command,
+      audit: {
+        type: "executable",
+        agentId: "worker",
+        denied: "ravi",
+        command,
+      },
+    });
+    await flushPermissionAuditEvents();
+
+    expect(denial?.command).toBe(`[REDACTED:content length=${command.length}]`);
+    expect(auditEvents[0]?.data.command).toBe(`[REDACTED:content length=${command.length}]`);
+    expect(JSON.stringify({ denial, auditEvents })).not.toContain("SENTINEL_SECRET_7M4Q");
+  });
+
   it("records and publishes denied audit events with the same denial id", async () => {
     delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
 
@@ -95,9 +153,9 @@ describe("permission denials", () => {
           type: "tool",
           agentId: "worker",
           denied: "tool:Bash",
-          reason: "missing tool grant",
+          reason: "[REDACTED:content length=18]",
           denialId: denial?.id,
-          dedupeKey: "audit.denied:tool:worker:tool:Bash:missing tool grant",
+          dedupeKey: "audit.denied:tool:worker:tool:Bash:[REDACTED:content length=18]",
         }),
       },
     ]);
@@ -136,9 +194,9 @@ describe("permission denials", () => {
           type: "sdk_gateway_command",
           agentId: null,
           denied: "read:agents:list",
-          reason: "permission_denied",
+          reason: "[REDACTED:content length=17]",
           denialId: denial?.id,
-          dedupeKey: "audit.denied:sdk_gateway_command:-:read:agents:list:permission_denied",
+          dedupeKey: "audit.denied:sdk_gateway_command:-:read:agents:list:[REDACTED:content length=17]",
         }),
       },
     ]);

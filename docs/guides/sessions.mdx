@@ -251,7 +251,7 @@ Also takes effect on the next session start.
 ### Reset
 
 ```bash
-ravi sessions reset <name>
+ravi sessions reset <name> --execute
 ```
 
 Clears the conversation history but preserves the session configuration (name, routing, model, etc.). The next message starts a fresh conversation. The active SDK subprocess is aborted first.
@@ -259,7 +259,7 @@ Clears the conversation history but preserves the session configuration (name, r
 ### Delete
 
 ```bash
-ravi sessions delete <name>
+ravi sessions delete <name> --execute
 ```
 
 Permanently removes the session. The SDK subprocess is aborted, then the session record is deleted from the database.

@@ -2,12 +2,21 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
+import { RaviAppError } from "../../apps/types.js";
+import { CloudAuthError } from "../../cloud-auth/errors.js";
+import { pickFields } from "../../cli/agent-contract.js";
+import { AppsCommands } from "../../cli/commands/apps.js";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../../cli/decorators.js";
-import { getContext } from "../../cli/context.js";
+import { contractFail } from "../../cli/agent-contract.js";
+import { fail, getContext } from "../../cli/context.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import type { ContextCapability, ContextRecord } from "../../router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
 import { dispatch, type AuditEvent } from "./dispatcher.js";
+
+const rejectedSensitiveInput = z.string().superRefine((value, ctx) => {
+  ctx.addIssue({ code: "custom", message: `Rejected sensitive input: ${value}` });
+});
 
 @Group({ name: "demo", description: "Gateway demo commands", scope: "open" })
 class GatewayDemoCommands {
@@ -57,6 +66,34 @@ class GatewayDemoCommands {
     return { ok: true as const };
   }
 
+  @Command({ name: "setting-audit", description: "Redact dynamic setting values from audits" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "settings",
+    action: "set",
+    risk: "medium",
+    input: ["key", "value"],
+  })
+  @Returns(z.object({ ok: z.literal(true) }))
+  settingAudit(@Arg("key") key: string, @Arg("value") value: string) {
+    void key;
+    void value;
+    return { ok: true as const };
+  }
+
+  @Command({ name: "redacted-invalid", description: "Reject sensitive command input" })
+  @CommandAccess({
+    kind: "read",
+    resource: "demo",
+    action: "redacted-invalid",
+    risk: "low",
+    input: ["content"],
+    redactions: ["content"],
+  })
+  redactedInvalid(@Arg("content", { schema: rejectedSensitiveInput }) content: string) {
+    void content;
+  }
+
   @Command({ name: "void", description: "Returns nothing" })
   @CommandAccess({ kind: "read", resource: "demo", action: "void", risk: "low" })
   voidNoop(): void {
@@ -77,10 +114,76 @@ class GatewayDemoCommands {
     return { ok: false } as unknown as { ok: true };
   }
 
+  @Command({ name: "fields", description: "Return a projected typed list" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "fields", risk: "low" })
+  @Returns(
+    z
+      .object({
+        items: z.array(z.object({ id: z.string(), label: z.string() }).strict()),
+      })
+      .strict(),
+  )
+  fields(@Option({ flags: "--fields <a,b,c>", description: "Fields to expose" }) fields?: string) {
+    return { items: pickFields([{ id: "demo-1", label: "Private label" }], fields) };
+  }
+
+  @Command({ name: "cloud-auth-error", description: "Throws an authentication error" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "cloud-auth-error", risk: "low" })
+  cloudAuthError() {
+    throw new CloudAuthError("AUTH_REQUIRED", "private provider authentication response", { status: 401 });
+  }
+
+  @Command({ name: "cloud-access-error", description: "Throws an access error" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "cloud-access-error", risk: "low" })
+  cloudAccessError() {
+    throw new CloudAuthError("PROJECT_ACCESS_DENIED", "private provider access response", { status: 403 });
+  }
+
+  @Command({ name: "cloud-rate-error", description: "Throws a rate limit error" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "cloud-rate-error", risk: "low" })
+  cloudRateError() {
+    throw new CloudAuthError("RATE_LIMITED", "private provider rate limit response", { status: 429 });
+  }
+
+  @Command({ name: "cloud-invalid-status", description: "Throws an auth error with an invalid HTTP status" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "cloud-invalid-status", risk: "low" })
+  cloudInvalidStatus() {
+    throw new CloudAuthError("AUTH_REQUIRED", "private provider response", { status: 999 });
+  }
+
   @Command({ name: "boom", description: "Throws" })
   @CommandAccess({ kind: "read", resource: "demo", action: "boom", risk: "low" })
   boom() {
     throw new Error("kaboom");
+  }
+
+  @Command({ name: "app-error", description: "Throws an app-domain expected error" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "app-error", risk: "low" })
+  appError() {
+    throw new RaviAppError("not_found", "Missing app at private-path/app-secret", [
+      { kind: "manifest", detail: "private-path/app-secret" },
+    ]);
+  }
+
+  @Command({ name: "legacy", description: "Throws a legacy expected failure" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "legacy", risk: "low" })
+  legacy() {
+    fail("legacy validation failed");
+  }
+
+  @Command({ name: "contract", description: "Throws a structured contract error" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "contract", risk: "low", input: ["exitCode"] })
+  contract(@Arg("exitCode", { description: "Contract exit taxonomy code" }) exitCode: string) {
+    const numericExitCode = Number(exitCode);
+    const code =
+      numericExitCode === 2 ? "USAGE_ERROR" : numericExitCode === 3 ? "WRITE_REQUIRES_EXECUTE" : "DEMO_NOT_FOUND";
+    contractFail("demo contract", code, "contract stopped execution", {
+      exitCode: numericExitCode,
+      details: {
+        retryable: false,
+        suggestedAction: "inspect the structured response",
+      },
+    });
   }
 
   @Command({ name: "blob", description: "Returns raw binary Response" })
@@ -94,6 +197,13 @@ class GatewayDemoCommands {
         "content-length": "3",
       },
     });
+  }
+
+  @Command({ name: "missing-blob", description: "Returns a non-success binary response" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "missing-blob", risk: "low" })
+  @Returns.binary()
+  missingBlob() {
+    return Response.json({ error: "NotFound", detail: "private storage path and provider response" }, { status: 404 });
   }
 
   @Command({
@@ -173,10 +283,17 @@ const registry = buildRegistry([
   GatewayTasksCommands,
   GatewayGatedCommands,
 ]);
+const appsRegistry = buildRegistry([AppsCommands]);
 
 function findCmd(fullName: string) {
   const cmd = registry.commands.find((c) => c.fullName === fullName);
   if (!cmd) throw new Error(`fixture missing: ${fullName}`);
+  return cmd;
+}
+
+function findAppCmd(fullName: string) {
+  const cmd = appsRegistry.commands.find((candidate) => candidate.fullName === fullName);
+  if (!cmd) throw new Error(`app fixture missing: ${fullName}`);
   return cmd;
 }
 
@@ -213,6 +330,14 @@ function adminSystem(): ContextCapability {
 }
 
 const demoContext = gatewayContext([executeGroup("demo")]);
+const appsContext = gatewayContext(
+  [
+    semanticCap("read", "apps", "show"),
+    semanticCap("mutate", "apps", "run"),
+    semanticCap("use", "app", "contract-missing-app"),
+  ],
+  "gateway-apps",
+);
 const sessionsContext = gatewayContext([executeGroup("sessions")]);
 const tasksContext = gatewayContext([executeGroup("tasks")]);
 const secretContext = gatewayContext([executeGroup("secret"), adminSystem()]);
@@ -259,6 +384,21 @@ describe("dispatch — body shape (flat-only)", () => {
     expect(JSON.stringify(audits.events)).not.toContain("private message body");
   });
 
+  it("redacts a custom setting value from gateway audits", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.setting-audit"),
+      { key: "custom.password", value: "SENTINEL_SECRET_7M4Q" },
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(200);
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]?.input).toEqual({ key: "custom.password", value: "[REDACTED]" });
+    expect(JSON.stringify(audits.events)).not.toContain("SENTINEL_SECRET_7M4Q");
+  });
+
   it("rejects the wrapped {args, options} form as unknown keys", async () => {
     const audits = captureAudits();
     const result = await dispatch(
@@ -269,35 +409,45 @@ describe("dispatch — body shape (flat-only)", () => {
     );
     expect(result.response.status).toBe(400);
     const body = (await result.response.json()) as {
-      error: string;
-      issues: { path: string[]; code: string }[];
+      error: { code: string; issues: { path: string[]; code: string }[] };
     };
-    expect(body.error).toBe("ValidationError");
-    expect(body.issues.some((i) => i.path[0] === "args" && i.code === "unrecognized_keys")).toBe(true);
-    expect(body.issues.some((i) => i.path[0] === "options" && i.code === "unrecognized_keys")).toBe(true);
-    expect(audits.events).toHaveLength(0);
+    expect(body.error.code).toBe("USAGE_ERROR");
+    expect(body.error.issues).toHaveLength(2);
+    expect(body.error.issues.every((issue) => issue.path[0] === "<unknown>")).toBe(true);
+    expect(JSON.stringify(body)).not.toContain('"args"');
+    expect(JSON.stringify(body)).not.toContain('"options"');
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]?.outcome).toBe("usage_error");
   });
 
   it("rejects bodies that are JSON arrays", async () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.echo"), [1, 2, 3], {}, { emitAudit: audits.emit });
     expect(result.response.status).toBe(400);
-    expect(audits.events).toHaveLength(0);
-    const body = (await result.response.json()) as { error: string };
-    expect(body.error).toBe("BadRequest");
+    expect(audits.events).toHaveLength(1);
+    const body = (await result.response.json()) as { error: { code: string; issues: { path: string[] }[] } };
+    expect(body.error.code).toBe("USAGE_ERROR");
+    expect(body.error.issues[0]?.path).toEqual([]);
   });
 
-  it("rejects unknown flat keys with structured issues", async () => {
+  it("rejects unknown flat keys without echoing their names", async () => {
     const audits = captureAudits();
-    const result = await dispatch(findCmd("demo.echo"), { name: "luis", bogus: true }, {}, { emitAudit: audits.emit });
+    const sentinel = "PRIVATE_EXTRA_FIELD_6JQ8";
+    const result = await dispatch(
+      findCmd("demo.echo"),
+      { name: "luis", [sentinel]: true },
+      {},
+      { emitAudit: audits.emit },
+    );
     expect(result.response.status).toBe(400);
     const body = (await result.response.json()) as {
-      error: string;
-      issues: { path: string[]; code: string }[];
+      error: { code: string; issues: { path: string[]; code: string }[] };
     };
-    expect(body.error).toBe("ValidationError");
-    expect(body.issues.some((i) => i.path[0] === "bogus" && i.code === "unrecognized_keys")).toBe(true);
-    expect(audits.events).toHaveLength(0);
+    expect(body.error.code).toBe("USAGE_ERROR");
+    expect(body.error.issues).toEqual([expect.objectContaining({ path: ["<unknown>"], code: "unrecognized_keys" })]);
+    expect(JSON.stringify(body)).not.toContain(sentinel);
+    expect(audits.events).toHaveLength(1);
+    expect(JSON.stringify(audits.events)).not.toContain(sentinel);
   });
 });
 
@@ -330,20 +480,61 @@ describe("dispatch — validation", () => {
     expect(await disabledResult.response.json()).toEqual({ noCache: true });
   });
 
-  it("returns 400 ValidationError when required arg is missing", async () => {
+  it("preserves early validation as a usage-error contract and audit", async () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.echo"), {}, {}, { emitAudit: audits.emit });
+
     expect(result.response.status).toBe(400);
-    const body = (await result.response.json()) as {
-      error: string;
-      issues: { path: string[] }[];
-    };
-    expect(body.error).toBe("ValidationError");
-    expect(body.issues[0]?.path[0]).toBe("name");
-    expect(audits.events).toHaveLength(0);
+    expect(await result.response.json()).toMatchObject({
+      success: false,
+      op: "demo echo",
+      exitCode: 2,
+      outcome: "usage_error",
+      error: {
+        code: "USAGE_ERROR",
+        message: "Invalid input for demo echo.",
+        retryable: false,
+        suggestedAction: "Correct the request body and retry demo echo",
+        issues: [{ path: ["name"], code: "invalid_type", message: "[REDACTED:content length=50]" }],
+      },
+    });
+    expect(result.audit).not.toBeNull();
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]).toMatchObject({
+      group: "demo",
+      name: "echo",
+      tool: "demo_echo",
+      input: {},
+      isError: true,
+      outcome: "usage_error",
+      exitCode: 2,
+      errorCode: "USAGE_ERROR",
+    });
   });
 
-  it("returns 500 ReturnShapeError when handler return shape is wrong", async () => {
+  it("redacts sensitive values from validation errors and their audit", async () => {
+    const secret = "token-private-value";
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.redacted-invalid"),
+      { content: secret },
+      {},
+      { emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(400);
+    const body = await result.response.json();
+    expect(body).toMatchObject({
+      error: {
+        code: "USAGE_ERROR",
+        issues: [{ path: ["content"], code: "custom", message: "[REDACTED:content length=23]" }],
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain(secret);
+    expect(JSON.stringify(audits.events)).not.toContain(secret);
+  });
+
+  it("returns a canonical HTTP 500 contract when handler return shape is wrong", async () => {
     const audits = captureAudits();
     const result = await dispatch(
       findCmd("demo.broken"),
@@ -352,26 +543,219 @@ describe("dispatch — validation", () => {
       { contextRecord: demoContext, emitAudit: audits.emit },
     );
     expect(result.response.status).toBe(500);
-    const body = (await result.response.json()) as { error: string };
-    expect(body.error).toBe("ReturnShapeError");
+    const body = (await result.response.json()) as {
+      success: boolean;
+      op: string;
+      exitCode: number;
+      outcome: string;
+      error: { code: string; message: string };
+    };
+    expect(body).toMatchObject({
+      success: false,
+      op: "demo broken",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "RETURN_SHAPE_ERROR", message: "Command returned an invalid response shape." },
+    });
     expect(audits.events).toHaveLength(1);
-    expect(audits.events[0]?.isError).toBe(true);
+    expect(audits.events[0]).toMatchObject({
+      isError: true,
+      outcome: "failed",
+      exitCode: 1,
+      errorCode: "RETURN_SHAPE_ERROR",
+    });
+  });
+
+  it("validates full projected rows while serializing only requested fields", async () => {
+    const result = await dispatch(findCmd("demo.fields"), { fields: "id" }, {}, { contextRecord: demoContext });
+
+    expect(result.response.status).toBe(200);
+    expect(await result.response.json()).toEqual({ items: [{ id: "demo-1" }] });
   });
 });
 
 describe("dispatch — error path", () => {
-  it("returns 500 InternalError when handler throws", async () => {
+  it.each([
+    ["demo.cloud-auth-error", 401, "AUTH_REQUIRED"],
+    ["demo.cloud-access-error", 403, "PROJECT_ACCESS_DENIED"],
+    ["demo.cloud-rate-error", 429, "RATE_LIMITED"],
+  ] as const)("preserves CloudAuthError HTTP status for %s", async (command, status, code) => {
+    const result = await dispatch(findCmd(command), {}, {}, { contextRecord: demoContext });
+
+    expect(result.response.status).toBe(status);
+    const body = await result.response.json();
+    expect(body).toMatchObject({
+      success: false,
+      exitCode: 1,
+      outcome: "failed",
+      error: { code },
+    });
+    expect(JSON.stringify(body)).not.toContain("private provider");
+  });
+
+  it("falls back to the contract status for an invalid provider HTTP status", async () => {
+    const result = await dispatch(findCmd("demo.cloud-invalid-status"), {}, {}, { contextRecord: demoContext });
+
+    expect(result.response.status).toBe(422);
+    expect(await result.response.json()).toMatchObject({
+      success: false,
+      error: { code: "AUTH_REQUIRED" },
+    });
+  });
+
+  it("preserves a real AppsCommands failure as a redacted canonical response", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findAppCmd("apps.show"),
+      { id: "contract-missing-app" },
+      {},
+      { contextRecord: appsContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(422);
+    const body = await result.response.json();
+    expect(body).toMatchObject({
+      success: false,
+      op: "apps show",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "not_found", message: "Ravi app was not found." },
+    });
+    expect(JSON.stringify(body)).not.toContain("evidence");
+    expect(audits.events[0]).toMatchObject({ outcome: "failed", exitCode: 1, errorCode: "not_found" });
+  });
+
+  it("does not turn an apps run failure into an HTTP success", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findAppCmd("apps.run"),
+      { id: "contract-missing-app", operation: "check", args: ["PRIVATE_ARGUMENT_SENTINEL"] },
+      {},
+      { contextRecord: appsContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(422);
+    const body = await result.response.json();
+    expect(body).toMatchObject({
+      success: false,
+      op: "apps run",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "not_found", message: "Ravi app was not found." },
+    });
+    expect(JSON.stringify(body)).not.toContain("contract-missing-app");
+    expect(JSON.stringify(body)).not.toContain("PRIVATE_ARGUMENT_SENTINEL");
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]).toMatchObject({
+      input: { id: "contract-missing-app", operation: "check", args: "[REDACTED]" },
+      outcome: "failed",
+      exitCode: 1,
+      errorCode: "not_found",
+    });
+  });
+
+  it("normalizes RaviAppError as a redacted canonical contract and audit", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.app-error"),
+      {},
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(404);
+    const body = await result.response.json();
+    expect(body).toMatchObject({
+      success: false,
+      op: "demo app-error",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "not_found", message: "Ravi app was not found." },
+    });
+    expect(JSON.stringify(body)).not.toContain("private-path");
+    expect(JSON.stringify(body)).not.toContain("app-secret");
+    expect(audits.events[0]).toMatchObject({ outcome: "failed", exitCode: 1, errorCode: "not_found" });
+  });
+
+  it("preserves a legacy expected failure as a non-500 contract response", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.legacy"),
+      {},
+      {},
+      {
+        contextRecord: demoContext,
+        emitAudit: audits.emit,
+      },
+    );
+
+    expect(result.response.status).toBe(422);
+    expect(await result.response.json()).toMatchObject({
+      success: false,
+      op: "demo legacy",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "COMMAND_FAILED", message: "Command could not be completed." },
+    });
+    expect(audits.events[0]).toMatchObject({ outcome: "failed", exitCode: 1, errorCode: "COMMAND_FAILED" });
+  });
+
+  it("returns a redacted canonical envelope with HTTP 500 when handler throws", async () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("demo.boom"), {}, {}, { contextRecord: demoContext, emitAudit: audits.emit });
     expect(result.response.status).toBe(500);
     const body = (await result.response.json()) as {
-      error: string;
-      message: string;
+      success: boolean;
+      op: string;
+      exitCode: number;
+      error: { code: string; message: string };
     };
-    expect(body.error).toBe("InternalError");
-    expect(body.message).toContain("kaboom");
+    expect(body).toMatchObject({
+      success: false,
+      op: "demo boom",
+      exitCode: 1,
+      error: { code: "UNHANDLED_ERROR", message: "Command failed unexpectedly." },
+    });
+    expect(JSON.stringify(body)).not.toContain("kaboom");
     expect(audits.events).toHaveLength(1);
-    expect(audits.events[0]?.isError).toBe(true);
+    expect(audits.events[0]).toMatchObject({ isError: true, errorCode: "UNHANDLED_ERROR", exitCode: 1 });
+  });
+
+  it.each([
+    ["1", 422, "DEMO_NOT_FOUND", "failed", true],
+    ["2", 400, "USAGE_ERROR", "usage_error", true],
+    ["3", 409, "WRITE_REQUIRES_EXECUTE", "blocked", false],
+  ])("preserves ContractError exit %s as a non-500 structured response", async (exitCode, status, code, outcome, isError) => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.contract"),
+      { exitCode },
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(status);
+    const body = (await result.response.json()) as {
+      success: boolean;
+      op: string;
+      exitCode: number;
+      outcome: string;
+      error: { code: string; message: string; retryable: boolean; suggestedAction: string };
+    };
+    expect(body).toEqual({
+      success: false,
+      op: "demo contract",
+      exitCode: Number(exitCode),
+      outcome,
+      error: {
+        code,
+        message: "contract stopped execution",
+        retryable: false,
+        suggestedAction: "inspect the structured response",
+      },
+    });
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]).toMatchObject({ isError, outcome, exitCode: Number(exitCode), errorCode: code });
   });
 
   it("returns 200 with empty object when handler returns undefined and no @Returns", async () => {
@@ -390,13 +774,28 @@ describe("dispatch — scope and superadmin gating", () => {
     const audits = captureAudits();
     const result = await dispatch(findCmd("secret.ping"), {}, {}, { emitAudit: audits.emit });
     expect(result.response.status).toBe(403);
-    const body = (await result.response.json()) as {
-      error: string;
-      reason: string;
-    };
-    expect(body.error).toBe("PermissionDenied");
-    expect(body.reason).toContain("superadmin");
-    expect(audits.events).toHaveLength(0);
+    const body = (await result.response.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      success: false,
+      op: "secret ping",
+      exitCode: 1,
+      outcome: "denied",
+      error: { code: "PERMISSION_DENIED" },
+    });
+    const serialized = JSON.stringify(body);
+    expect(serialized).not.toContain("superadmin");
+    expect(serialized).not.toContain("allow-superadmin");
+    expect(audits.events).toHaveLength(1);
+    expect(result.audit).toEqual(audits.events[0]);
+    expect(audits.events[0]).toMatchObject({
+      tool: "secret_ping",
+      input: {},
+      isError: true,
+      outcome: "denied",
+      exitCode: 1,
+      errorCode: "PERMISSION_DENIED",
+    });
+    expect(JSON.stringify(audits.events)).not.toContain("allow-superadmin");
   });
 
   it("admits superadmin commands when allowSuperadmin is on and context has system admin", async () => {
@@ -428,13 +827,22 @@ describe("dispatch — scope and superadmin gating", () => {
 
       expect(result.response.status).toBe(403);
       const body = (await result.response.json()) as {
-        error: string;
-        reason: string;
+        success: boolean;
+        op: string;
+        exitCode: number;
+        outcome: string;
+        error: { code: string; message: string };
       };
-      expect(body.error).toBe("PermissionDenied");
-      expect(body.reason).toContain("cannot execute");
+      expect(body).toMatchObject({
+        success: false,
+        op: "gated ping",
+        exitCode: 1,
+        outcome: "denied",
+        error: { code: "PERMISSION_DENIED" },
+      });
+      expect(body.error.message).toContain("cannot execute");
       expect(audits.events).toHaveLength(1);
-      expect(audits.events[0]?.tool).toBe("gated_ping");
+      expect(audits.events[0]).toMatchObject({ tool: "gated_ping", outcome: "denied", errorCode: "PERMISSION_DENIED" });
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
@@ -469,8 +877,9 @@ describe("dispatch — scope and superadmin gating", () => {
 
       expect(result.response.status).toBe(200);
       expect(await result.response.json()).toEqual({ ok: true });
-      expect(result.audit).toBeNull();
-      expect(audits.events).toHaveLength(0);
+      expect(audits.events).toHaveLength(1);
+      expect(result.audit).toEqual(audits.events[0]);
+      expect(audits.events[0]).toMatchObject({ tool: "tasks_list", outcome: "succeeded", isError: false });
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }
@@ -493,13 +902,15 @@ describe("dispatch — audit", () => {
     expect(audits.events).toHaveLength(1);
   });
 
-  it("does not emit audit for validation errors (request never reached the handler)", async () => {
+  it("emits one usage_error audit when input validation rejects before the handler", async () => {
     const audits = captureAudits();
-    await dispatch(findCmd("demo.echo"), {}, {}, { emitAudit: audits.emit });
-    expect(audits.events).toHaveLength(0);
+    const result = await dispatch(findCmd("demo.echo"), {}, {}, { emitAudit: audits.emit });
+    expect(audits.events).toHaveLength(1);
+    expect(result.audit).toEqual(audits.events[0]);
+    expect(audits.events[0]).toMatchObject({ outcome: "usage_error", exitCode: 2, errorCode: "USAGE_ERROR" });
   });
 
-  it("suppresses successful high-frequency read audits", async () => {
+  it("emits one audit for a successful high-frequency read", async () => {
     const audits = captureAudits();
     const result = await dispatch(
       findCmd("sessions.list"),
@@ -510,8 +921,13 @@ describe("dispatch — audit", () => {
         emitAudit: audits.emit,
       },
     );
-    expect(result.audit).toBeNull();
-    expect(audits.events).toHaveLength(0);
+    expect(result.audit).toEqual(audits.events[0]);
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]).toMatchObject({
+      tool: "sessions_list",
+      outcome: "succeeded",
+      isError: false,
+    });
   });
 
   it("still emits audit when a high-frequency read fails", async () => {
@@ -545,6 +961,24 @@ describe("dispatch — CLI output", () => {
       suppressCliOutput: boolean;
     };
     expect(body.suppressCliOutput).toBe(true);
+  });
+
+  it("does not render a ContractError into gateway process logs", async () => {
+    const rendered: string[] = [];
+    const originalError = console.error;
+    console.error = (...args: unknown[]) => rendered.push(args.map(String).join(" "));
+    try {
+      const result = await dispatch(
+        findCmd("demo.contract"),
+        { exitCode: "2" },
+        {},
+        { contextRecord: demoContext, emitAudit: captureAudits().emit },
+      );
+      expect(result.response.status).toBe(400);
+      expect(rendered).toEqual([]);
+    } finally {
+      console.error = originalError;
+    }
   });
 });
 
@@ -585,14 +1019,61 @@ describe("dispatch — @Returns.binary() escape hatch", () => {
 
     expect(result.response.status).toBe(500);
     const body = (await result.response.json()) as {
-      error: string;
-      issues: { message: string }[];
+      success: boolean;
+      op: string;
+      exitCode: number;
+      outcome: string;
+      error: { code: string; message: string; issues: { message: string }[] };
     };
-    expect(body.error).toBe("ReturnShapeError");
-    expect(body.issues[0]?.message).toContain("@Returns.binary()");
-    expect(body.issues[0]?.message).toContain("instead of a Response");
+    expect(body).toMatchObject({
+      success: false,
+      op: "demo wrong-blob",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "RETURN_SHAPE_ERROR", message: "Command returned an invalid response shape." },
+    });
+    expect(body.error.issues[0]?.message).toBe("[REDACTED:content length=106]");
 
     expect(audits.events).toHaveLength(1);
-    expect(audits.events[0]?.isError).toBe(true);
+    expect(audits.events[0]).toMatchObject({
+      isError: true,
+      outcome: "failed",
+      exitCode: 1,
+      errorCode: "RETURN_SHAPE_ERROR",
+    });
+  });
+
+  it("normalizes non-2xx binary responses and audits them as failed", async () => {
+    const audits = captureAudits();
+    const result = await dispatch(
+      findCmd("demo.missing-blob"),
+      {},
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+
+    expect(result.response.status).toBe(404);
+    const body = (await result.response.json()) as {
+      success: boolean;
+      op: string;
+      exitCode: number;
+      outcome: string;
+      error: { code: string; message: string };
+    };
+    expect(body).toMatchObject({
+      success: false,
+      op: "demo missing-blob",
+      exitCode: 1,
+      outcome: "failed",
+      error: { code: "RESOURCE_NOT_FOUND", message: "Binary resource was not found." },
+    });
+    expect(JSON.stringify(body)).not.toContain("private storage path");
+    expect(audits.events).toHaveLength(1);
+    expect(audits.events[0]).toMatchObject({
+      isError: true,
+      outcome: "failed",
+      exitCode: 1,
+      errorCode: "RESOURCE_NOT_FOUND",
+    });
   });
 });

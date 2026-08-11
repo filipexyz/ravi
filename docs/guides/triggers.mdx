@@ -332,7 +332,7 @@ ravi triggers set <id> filter -          # Remove filter
 Fires the trigger with synthetic event data, bypassing the normal event flow:
 
 ```bash
-ravi triggers test <id>
+ravi triggers test <id> --execute
 ```
 
 The test event contains:
@@ -349,8 +349,10 @@ Check results with `ravi daemon logs -f`.
 
 ### Delete a trigger
 
+Without `--execute` this is a dry-run (exit 3); nothing is deleted:
+
 ```bash
-ravi triggers rm <id>
+ravi triggers rm <id> --execute
 ```
 
 ## Practical Examples
@@ -476,7 +478,7 @@ This emits `ravi.triggers.refresh`, causing the runner to tear down and rebuild 
 Use the test command to fire a trigger with synthetic data:
 
 ```bash
-ravi triggers test <id>
+ravi triggers test <id> --execute
 ravi daemon logs -f
 ```
 

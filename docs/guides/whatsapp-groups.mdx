@@ -7,6 +7,8 @@ description: Creating, managing, and routing WhatsApp groups with Ravi.
 
 Ravi can create and manage WhatsApp groups programmatically through the CLI. Groups are managed via the `ravi whatsapp group` commands, which communicate with the WhatsApp instance through NATS request/reply. All commands require the daemon to be running with a connected WhatsApp account.
 
+Risky external mutations (`create`, `add`, `remove`, `promote`, `revoke-invite`, `join`, `leave`, `rename`, `description`, `settings`) are **dry-run by default**: without `--execute` the command exits 3 and only prints the plan — nothing reaches WhatsApp. Re-run with `--execute` to perform the write. `demote` reduces authority and executes immediately. Read-only commands (`list`, `info`, `invite`) take no `--execute`.
+
 ## Prerequisites
 
 - Daemon running: `ravi daemon start`
@@ -18,7 +20,7 @@ Ravi can create and manage WhatsApp groups programmatically through the CLI. Gro
 ### Basic Group Creation
 
 ```bash
-ravi whatsapp group create "Team Marketing" "5511999999999,5511888888888"
+ravi whatsapp group create "Team Marketing" "5511999999999,5511888888888" --execute
 ```
 
 Participants are specified as a comma-separated list of phone numbers. Every participant must already exist in your contacts database -- the command validates this before creating the group and will fail with suggestions if any number is unknown.
@@ -28,7 +30,7 @@ Participants are specified as a comma-separated list of phone numbers. Every par
 The `--agent` flag is the recommended approach. It creates the group, approves the group contact, sets up the route, creates the session, and sends an introductory prompt to the agent -- all in one command:
 
 ```bash
-ravi whatsapp group create "Finance Team" "5511999999999" --agent financas
+ravi whatsapp group create "Finance Team" "5511999999999" --agent financas --execute
 ```
 
 This single command:
@@ -54,7 +56,7 @@ Group created: Finance Team
 Without `--agent`, the group contact is still auto-approved, but routing must be configured manually:
 
 ```bash
-ravi whatsapp group create "Ad-hoc Group" "5511999999999"
+ravi whatsapp group create "Ad-hoc Group" "5511999999999" --execute
 ravi instances routes add main "group:120363405113391144" my-agent
 ```
 
@@ -67,7 +69,7 @@ When creating a group, Ravi automatically promotes any contacts tagged with `adm
 ravi contacts tag 5511999999999 admin
 
 # This contact will be auto-promoted when added to any new group
-ravi whatsapp group create "New Project" "5511999999999,5511888888888"
+ravi whatsapp group create "New Project" "5511999999999,5511888888888" --execute
 ```
 
 ## Managing Members
@@ -75,7 +77,7 @@ ravi whatsapp group create "New Project" "5511999999999,5511888888888"
 ### Adding Participants
 
 ```bash
-ravi whatsapp group add group:120363425628305127 "5511999999999,5511888888888"
+ravi whatsapp group add group:120363425628305127 "5511999999999,5511888888888" --execute
 ```
 
 Participants are validated against your contacts database before being added.
@@ -83,13 +85,13 @@ Participants are validated against your contacts database before being added.
 ### Removing Participants
 
 ```bash
-ravi whatsapp group remove group:120363425628305127 "5511999999999"
+ravi whatsapp group remove group:120363425628305127 "5511999999999" --execute
 ```
 
 ### Promoting to Admin
 
 ```bash
-ravi whatsapp group promote group:120363425628305127 "5511999999999"
+ravi whatsapp group promote group:120363425628305127 "5511999999999" --execute
 ```
 
 ### Demoting from Admin
@@ -146,7 +148,7 @@ ravi whatsapp group invite group:120363425628305127
 Revoking invalidates the current invite link and generates a new one:
 
 ```bash
-ravi whatsapp group revoke-invite group:120363425628305127
+ravi whatsapp group revoke-invite group:120363425628305127 --execute
 # -> New link: https://chat.whatsapp.com/XYZ789...
 ```
 
@@ -154,10 +156,10 @@ ravi whatsapp group revoke-invite group:120363425628305127
 
 ```bash
 # Full link
-ravi whatsapp group join "https://chat.whatsapp.com/ABC123"
+ravi whatsapp group join "https://chat.whatsapp.com/ABC123" --execute
 
 # Or just the code
-ravi whatsapp group join ABC123
+ravi whatsapp group join ABC123 --execute
 ```
 
 ## Group Settings
@@ -168,10 +170,10 @@ Controls who can send messages in the group:
 
 ```bash
 # Only admins can send messages
-ravi whatsapp group settings group:120363425628305127 announcement
+ravi whatsapp group settings group:120363425628305127 announcement --execute
 
 # Everyone can send messages
-ravi whatsapp group settings group:120363425628305127 not_announcement
+ravi whatsapp group settings group:120363425628305127 not_announcement --execute
 ```
 
 ### Locked Mode
@@ -180,28 +182,28 @@ Controls who can edit group info (name, description, picture):
 
 ```bash
 # Only admins can edit group info
-ravi whatsapp group settings group:120363425628305127 locked
+ravi whatsapp group settings group:120363425628305127 locked --execute
 
 # Everyone can edit group info
-ravi whatsapp group settings group:120363425628305127 unlocked
+ravi whatsapp group settings group:120363425628305127 unlocked --execute
 ```
 
 ### Renaming a Group
 
 ```bash
-ravi whatsapp group rename group:120363425628305127 "New Group Name"
+ravi whatsapp group rename group:120363425628305127 "New Group Name" --execute
 ```
 
 ### Updating the Description
 
 ```bash
-ravi whatsapp group description group:120363425628305127 "Updated description for the group"
+ravi whatsapp group description group:120363425628305127 "Updated description for the group" --execute
 ```
 
 ## Leaving a Group
 
 ```bash
-ravi whatsapp group leave group:120363425628305127
+ravi whatsapp group leave group:120363425628305127 --execute
 ```
 
 ## Group Routing
@@ -213,7 +215,7 @@ Groups are routed to agents through the same mechanism as direct messages -- via
 Use `--agent` when creating the group:
 
 ```bash
-ravi whatsapp group create "Support Team" "5511999999999" --agent suporte
+ravi whatsapp group create "Support Team" "5511999999999" --agent suporte --execute
 ```
 
 ### Manual Routing
@@ -241,10 +243,10 @@ All group commands accept `--account` to specify which WhatsApp account to use. 
 ravi whatsapp group list --account business
 
 # Create a group on a specific account
-ravi whatsapp group create "Sales Team" "5511999999999" --account business --agent vendas
+ravi whatsapp group create "Sales Team" "5511999999999" --account business --agent vendas --execute
 
 # Manage members on a specific account
-ravi whatsapp group add group:120363425628305127 "5511888888888" --account business
+ravi whatsapp group add group:120363425628305127 "5511888888888" --account business --execute
 ```
 
 When `--account` is omitted, the first connected WhatsApp instance is used.
@@ -259,10 +261,10 @@ ravi contacts add 5511999999999 "Alice"
 ravi contacts add 5511888888888 "Bob"
 
 # 2. Create the group with agent routing
-ravi whatsapp group create "Project Alpha" "5511999999999,5511888888888" --agent main
+ravi whatsapp group create "Project Alpha" "5511999999999,5511888888888" --agent main --execute
 
 # 3. Lock down group settings
-ravi whatsapp group settings group:120363405113391144 locked
+ravi whatsapp group settings group:120363405113391144 locked --execute
 ```
 
 ### Distribute a Temporary Invite
@@ -273,7 +275,7 @@ ravi whatsapp group invite group:120363425628305127
 # -> https://chat.whatsapp.com/ABC123
 
 # After everyone joins, revoke to prevent further access
-ravi whatsapp group revoke-invite group:120363425628305127
+ravi whatsapp group revoke-invite group:120363425628305127 --execute
 ```
 
 ### Reorganize Group Members
@@ -282,12 +284,12 @@ ravi whatsapp group revoke-invite group:120363425628305127
 # Check current members
 ravi whatsapp group info group:120363425628305127
 
-# Remove a member
-ravi whatsapp group remove group:120363425628305127 "5511777777777"
+# Remove a member (dry-run first if you want to inspect the plan)
+ravi whatsapp group remove group:120363425628305127 "5511777777777" --execute
 
 # Add a replacement
-ravi whatsapp group add group:120363425628305127 "5511666666666"
+ravi whatsapp group add group:120363425628305127 "5511666666666" --execute
 
 # Promote the new member to admin
-ravi whatsapp group promote group:120363425628305127 "5511666666666"
+ravi whatsapp group promote group:120363425628305127 "5511666666666" --execute
 ```

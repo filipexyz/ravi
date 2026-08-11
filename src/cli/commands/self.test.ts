@@ -38,6 +38,9 @@ mock.module("../context.js", () => ({
   fail: (message: string) => {
     throw new Error(message);
   },
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   getContext: () => (inlineContext ? { context: inlineContext } : undefined),
 }));
 
@@ -310,5 +313,45 @@ describe("SelfCommands", () => {
     delete process.env.RAVI_CONTEXT_KEY;
 
     expect(() => new SelfCommands().whoami(true)).toThrow("Missing RAVI_CONTEXT_KEY");
+  });
+});
+
+// Manual v2 contract: `self` is a read-only orientation domain — no write
+// brakes and no per-entity not-found envelope apply. The contract surface here
+// is compact mode on the largest payload (`self context --fields`).
+describe("self agent-first contract", () => {
+  beforeEach(() => {
+    seedLinkedContext();
+  });
+
+  afterEach(() => {
+    inlineContext = undefined;
+  });
+
+  it("supports --fields compact mode on self context (top-level sections)", () => {
+    const { output, result } = captureConsole(() =>
+      new SelfCommands().context("summary", "2", true, "identity,session"),
+    );
+    const payload = JSON.parse(output) as Record<string, unknown>;
+
+    expect(Object.keys(payload).sort()).toEqual(["identity", "session"]);
+    expect((payload.identity as Record<string, unknown>).contextId).toBe("ctx_self_123");
+    expect(result as unknown as Record<string, unknown>).toEqual(payload);
+  });
+
+  it("prints the projected packet as JSON even without --json when --fields is set", () => {
+    const { output } = captureConsole(() => new SelfCommands().context("summary", "2", false, "identity"));
+    const payload = JSON.parse(output) as Record<string, unknown>;
+
+    expect(Object.keys(payload)).toEqual(["identity"]);
+  });
+
+  it("keeps the full packet when --fields is absent", () => {
+    const { output } = captureConsole(() => new SelfCommands().context("summary", "2", true));
+    const payload = JSON.parse(output) as Record<string, unknown>;
+
+    for (const key of ["identity", "actor", "session", "chat", "route", "recent", "permissions", "knowledge"]) {
+      expect(payload).toHaveProperty(key);
+    }
   });
 });

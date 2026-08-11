@@ -7,8 +7,12 @@ import { getCommandsMetadata } from "../decorators.js";
 import { cleanupIsolatedRaviState } from "../../test/ravi-state.js";
 import { evaluateRaviAppsContract } from "../../apps/contract-eval.js";
 import { RAVI_APPS_COMMAND_GUIDANCE } from "../../apps/guide.js";
+import { dispatch, type AuditEvent } from "../../sdk/gateway/dispatcher.js";
+import { buildRegistry } from "../registry-snapshot.js";
+import { extractTools } from "../tools-export.js";
 import { AppsCommands } from "./apps.js";
 import type { ContextCapability, ContextRecord } from "../../router/router-db.js";
+import { ContractError, contractFailureOutcome } from "../agent-contract.js";
 
 const tempRoots: string[] = [];
 const tempStateDirs: string[] = [];
@@ -96,6 +100,33 @@ function makeRepo(): string {
   );
   process.chdir(root);
   return root;
+}
+
+function writeWriterApp(root: string): void {
+  const appDir = join(root, "src", "apps", "writer");
+  mkdirSync(appDir, { recursive: true });
+  writeFileSync(
+    join(appDir, "ravi.app.json"),
+    JSON.stringify({
+      schema: "ravi.app/v1",
+      id: "writer",
+      name: "Writer",
+      version: "0.1.0",
+      description: "Mutation brake fixture.",
+      interfaces: { cli: { command: "ravi writer", json: true } },
+      context: { allow: [] },
+      operations: {
+        "writer.create": {
+          interface: "builtin",
+          handler: "apps.stub.list",
+          mutating: true,
+          permission: "writer:write",
+        },
+      },
+      permissions: { required: [], optional: [], mutating: ["writer:write"] },
+      health: { checks: [] },
+    }),
+  );
 }
 
 function captureJson(fn: () => unknown): unknown {
@@ -258,7 +289,7 @@ describe("AppsCommands", () => {
 
     expect(() =>
       runWithContext({ agentId: "app-agent" }, () => captureJson(() => commands.show("apps", true))),
-    ).toThrow(/App not found: apps/);
+    ).toThrow("Ravi app was not found.");
 
     const appContext = contextWithCapabilities([
       { permission: "use", objectType: "app", objectId: "apps", source: "test" },
@@ -740,5 +771,124 @@ exit 1
       interface: "cli",
       result: { items: [], total: 0, args: ["alpha", "beta"] },
     });
+  });
+
+  it("raises a stable contract error at the public command boundary", async () => {
+    makeRepo();
+    const commands = new AppsCommands();
+
+    try {
+      await commands.run("missing-app", "check", [], true);
+      throw new Error("expected apps run to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ContractError);
+      expect(error).toMatchObject({
+        op: "apps run",
+        code: "not_found",
+        exitCode: 1,
+      });
+      expect(JSON.stringify((error as ContractError).envelope())).not.toContain("App not found: missing-app");
+    }
+  });
+
+  it("returns a minimal policy envelope before a mutating app operation", async () => {
+    const root = makeRepo();
+    writeWriterApp(root);
+    const commands = new AppsCommands();
+    const originalLog = console.log;
+    const output: string[] = [];
+    console.log = (...args: unknown[]) => output.push(args.map(String).join(" "));
+
+    let error: unknown;
+    try {
+      await commands.run("writer", "create", ["PRIVATE_ARGUMENT_SENTINEL"], true);
+    } catch (caught) {
+      error = caught;
+    } finally {
+      console.log = originalLog;
+    }
+
+    expect(error).toBeInstanceOf(ContractError);
+    expect(error).toMatchObject({ code: "WRITE_REQUIRES_EXECUTE", exitCode: 3 });
+    expect(output).toHaveLength(1);
+    const envelope = JSON.parse(output[0] ?? "{}");
+    expect(envelope).toMatchObject({
+      success: false,
+      op: "apps run",
+      error: {
+        code: "WRITE_REQUIRES_EXECUTE",
+        plan: {
+          appId: "writer",
+          operationId: "writer.create",
+          interface: "builtin",
+          mutating: true,
+          argumentCount: 1,
+        },
+      },
+    });
+    expect(JSON.stringify(envelope)).not.toContain("PRIVATE_ARGUMENT_SENTINEL");
+
+    const executed = (await captureJsonAsync(() =>
+      commands.run("writer", "create", ["PRIVATE_ARGUMENT_SENTINEL"], true, true),
+    )) as { ok: boolean; operationId: string };
+    expect(executed).toMatchObject({ ok: true, operationId: "writer.create" });
+  });
+
+  it("keeps an app REBAC denial as denied in CLI, tool, gateway, and audit", async () => {
+    const root = makeRepo();
+    writeWriterApp(root);
+    const deniedContext = contextWithCapabilities([
+      { permission: "mutate", objectType: "apps", objectId: "run", source: "test" },
+      { permission: "use", objectType: "app", objectId: "writer", source: "test" },
+    ]);
+    const toolContext = { agentId: deniedContext.agentId, context: deniedContext, suppressCliOutput: true };
+    const commands = new AppsCommands();
+
+    let cliError: unknown;
+    try {
+      await runWithContext(toolContext, () => commands.run("writer", "create", [], true, true));
+    } catch (error) {
+      cliError = error;
+    }
+    expect(cliError).toBeInstanceOf(ContractError);
+    expect(cliError).toMatchObject({ code: "PERMISSION_DENIED", exitCode: 1 });
+    expect(contractFailureOutcome(cliError as ContractError)).toBe("denied");
+
+    const tool = extractTools([AppsCommands]).find((candidate) => candidate.name === "apps_run");
+    expect(tool).toBeDefined();
+    const toolResult = await runWithContext(toolContext, () =>
+      tool!.handler({ id: "writer", operation: "create", args: [], execute: true }),
+    );
+    expect(toolResult).toMatchObject({ isError: true, outcome: "denied", exitCode: 1 });
+    expect(JSON.parse(toolResult.content[0]?.text ?? "{}")).toMatchObject({
+      success: false,
+      op: "apps run",
+      error: { code: "PERMISSION_DENIED", message: "Ravi app operation was denied." },
+    });
+
+    const command = buildRegistry([AppsCommands]).commands.find((candidate) => candidate.fullName === "apps.run");
+    expect(command).toBeDefined();
+    const audits: AuditEvent[] = [];
+    const gatewayResult = await dispatch(
+      command!,
+      { id: "writer", operation: "create", args: [], execute: true },
+      {},
+      {
+        contextRecord: deniedContext,
+        emitAudit: (event) => {
+          audits.push(event);
+        },
+      },
+    );
+    expect(gatewayResult.response.status).toBe(403);
+    expect(await gatewayResult.response.json()).toMatchObject({
+      success: false,
+      op: "apps run",
+      exitCode: 1,
+      outcome: "denied",
+      error: { code: "PERMISSION_DENIED", message: "Ravi app operation was denied." },
+    });
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ outcome: "denied", exitCode: 1, errorCode: "PERMISSION_DENIED" });
   });
 });

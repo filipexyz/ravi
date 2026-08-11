@@ -38,7 +38,7 @@ function buildBashDeniedAuditEvent(
   agentId: string;
   denied: string;
   reason: string;
-  detail?: string;
+  detail?: { commandChars: number };
   context?: AuditContextProvenance;
 } | null {
   if (decision.allowed || !decision.denialType) {
@@ -46,7 +46,7 @@ function buildBashDeniedAuditEvent(
   }
 
   const resolvedAgentId = agentId ?? "unknown";
-  const detail = command.slice(0, 200);
+  const detail = { commandChars: command.length };
   const provenance = buildAuditContextProvenance(ctx);
   const contextFields = provenance ? { context: provenance } : {};
 
@@ -395,7 +395,7 @@ function recordAndEmitBashPermissionDenial(
       objectType: denied.objectType,
       objectId: denied.objectId,
       reason: decision.reason,
-      command,
+      command: `[REDACTED:content length=${command.length}]`,
       detail: provenance ? { context: provenance } : undefined,
       audit,
     });
@@ -478,7 +478,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
 
     if (!decision.allowed && decision.denialType === "env_spoofing") {
       log.warn("Env spoofing blocked", {
-        command: command.slice(0, 200),
+        commandChars: command.length,
         reason: decision.reason,
       });
       recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
@@ -488,7 +488,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
 
     if (!decision.allowed && decision.denialType === "executable") {
       log.warn("Executable blocked", {
-        command: command.slice(0, 200),
+        commandChars: command.length,
         reason: decision.reason,
       });
       recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
@@ -498,7 +498,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
 
     if (!decision.allowed && decision.denialType === "session_scope") {
       log.warn("Scope check blocked", {
-        command: command.slice(0, 200),
+        commandChars: command.length,
         reason: decision.reason,
       });
       recordAndEmitBashPermissionDenial(command, decision, bashContext, agentId);
@@ -507,7 +507,7 @@ export function createBashPermissionHook(options: BashHookOptions): HookCallback
     }
 
     log.debug("Bash command allowed", {
-      command: command.slice(0, 100),
+      commandChars: command.length,
       raviTool: decision.toolName,
     });
 

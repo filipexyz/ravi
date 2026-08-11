@@ -277,6 +277,7 @@ export interface RaviAppRunOptions extends RaviAppDiscoveryOptions {
   operation?: string;
   args?: string[];
   json?: boolean;
+  execute?: boolean;
   staticRootCommands?: Set<string>;
   runtime?: {
     execPath?: string;
@@ -291,10 +292,19 @@ export interface RaviAppRunResult {
   operationId: string | null;
   interface: RaviAppOperationInterface | null;
   mutating: boolean;
-  status: "completed" | "failed";
+  status: "completed" | "blocked" | "failed";
   durationMs: number;
   result?: unknown;
   error?: string;
+  errorCode?: string;
+  dryRun?: true;
+  plan?: {
+    appId: string;
+    operationId: string;
+    interface: RaviAppOperationInterface;
+    mutating: true;
+    argumentCount: number;
+  };
   command?: string;
   handler?: string;
   channel?: string;
@@ -311,9 +321,28 @@ export interface RaviAppAliasInvocation {
   operation?: string;
   args: string[];
   json: boolean;
+  execute?: boolean;
 }
 
 export type RaviAppPermissionDecision = "allow" | "deny" | "needs_grant" | "not_applicable";
+
+export interface RaviAppPermissionGrantPrincipal {
+  type: string;
+  id: string;
+}
+
+export interface RaviAppPermissionGrantSuggestion {
+  subject: RaviAppPermissionGrantPrincipal;
+  relation: string;
+  object: RaviAppPermissionGrantPrincipal;
+  ttlSec?: number;
+  reasonPresent?: boolean;
+}
+
+export interface RaviAppPermissionProviderAuditSummary {
+  policyVersion?: string;
+  evidenceCount: number;
+}
 
 export interface RaviAppPermissionProviderAudit {
   providerId: string;
@@ -323,13 +352,15 @@ export interface RaviAppPermissionProviderAudit {
   requestId: string;
   decision: RaviAppPermissionDecision | "error" | "invalid";
   reasonCode: string | null;
+  /** Deprecated compatibility marker. Provider-supplied reason text is never exposed. */
   reason?: string;
+  reasonPresent?: boolean;
   durationMs: number;
   cache: {
     hit: boolean;
     ttlSec?: number;
   };
-  grantSuggestion?: unknown;
-  audit?: unknown;
+  grantSuggestion?: RaviAppPermissionGrantSuggestion;
+  audit?: RaviAppPermissionProviderAuditSummary;
   error?: string;
 }

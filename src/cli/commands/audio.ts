@@ -7,6 +7,7 @@ import { readFileSync, statSync } from "node:fs";
 import { basename, extname, isAbsolute, normalize, relative, resolve } from "node:path";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { fail, getContext } from "../context.js";
+import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields } from "../agent-contract.js";
 import { generateAudio, listElevenLabsVoices } from "../../audio/generator.js";
 import { getAgent } from "../../router/config.js";
 import { sendMediaWithOmniCli } from "../media-send.js";
@@ -27,6 +28,40 @@ import {
 } from "./operational-return-schemas.js";
 
 const TEXT_FILE_EXTENSIONS = new Set([".md", ".txt"]);
+
+function summarizeMediaSendContext(context: ReturnType<typeof getContext>) {
+  const source = context?.source;
+  return {
+    channel: source?.channel ?? null,
+    accountId: source?.accountId ?? null,
+    chatIdPresent: Boolean(source?.chatId),
+    threadIdPresent: Boolean(source?.threadId),
+  };
+}
+
+function summarizeTtsTarget(target: RaviTtsRequest["target"]) {
+  if (!target) return null;
+  return {
+    ...(target.channel ? { channel: target.channel } : {}),
+    ...(target.accountId ? { accountId: target.accountId } : {}),
+    chatIdPresent: Boolean(target.chatId),
+    threadIdPresent: Boolean(target.threadId),
+  };
+}
+
+function summarizeTtsVoice(voice: RaviTtsRequest["voice"]) {
+  if (!voice) return null;
+  return {
+    ...(voice.provider ? { provider: voice.provider } : {}),
+    ...(voice.voiceId ? { voiceId: voice.voiceId } : {}),
+    ...(voice.modelId ? { modelId: voice.modelId } : {}),
+    ...(voice.speed !== undefined ? { speed: voice.speed } : {}),
+    ...(voice.lang ? { lang: voice.lang } : {}),
+    ...(voice.outputFormat ? { outputFormat: voice.outputFormat } : {}),
+    voiceSettingsPresent: Boolean(voice.voiceSettings),
+    elevenlabsPresent: Boolean(voice.elevenlabs),
+  };
+}
 
 function readTextFileOption(path: string | undefined): string | undefined {
   if (path === undefined) return undefined;
@@ -78,7 +113,7 @@ export class AudioCommands {
     name: "generate",
     description: "Generate speech from text using ElevenLabs TTS",
   })
-  @CommandAccess({ kind: "mutate", resource: "audio", action: "generate", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "audio", action: "generate", risk: "high", requiresConfirmation: true })
   @Returns(audioGenerateReturnSchema)
   async generate(
     @Arg("text", { required: false, description: "Text to convert to speech" })
@@ -109,14 +144,53 @@ export class AudioCommands {
       description: "Relative .md or .txt file to convert to speech",
     })
     textFile?: string,
+    @Option({
+      flags: "--execute",
+      description: "Confirm delivery when --send is used; local generation runs immediately",
+    })
+    execute?: boolean,
   ) {
+    // Validation BEFORE the brake: text/--text-file resolution fails with the
+    // legacy messages, no plan is shown for a call that could never happen.
     const fileText = readTextFileOption(textFile);
     const inlineText = text?.trim();
     if (fileText && inlineText) fail("Use either text or --text-file, not both.");
     const resolvedText = fileText ?? inlineText;
-    if (!resolvedText) fail("Provide text or --text-file.");
+    if (!resolvedText) {
+      contractFail("audio generate", "USAGE_ERROR", "Provide text or --text-file.", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Pass inline text or --text-file <relative .md/.txt path>",
+          acceptedFlags: ["--text-file", "--json"],
+          acceptedPositionals: ["[text]"],
+        },
+      });
+    }
 
-    // Resolve agent defaults (CLI flags take precedence)
+    if (send === true && execute !== true) {
+      // The paid generation itself is routine processing and runs directly.
+      // Only the externally visible delivery is braked, before both the
+      // provider call and all state resolution so a dry-run has no effects.
+      contractDryRun(
+        "audio generate",
+        {
+          textChars: resolvedText.length,
+          voice: voice ?? null,
+          model: model ?? null,
+          speed: speed ? Number.parseFloat(speed) : null,
+          lang: lang ?? null,
+          format: format ?? null,
+          outputDirPresent: Boolean(output),
+          send: true,
+          target: summarizeMediaSendContext(getContext()),
+          captionPresent: Boolean(caption),
+        },
+        { asJson },
+      );
+    }
+
+    // Resolve agent defaults only after any delivery confirmation barrier.
     const agentId = getContext()?.agentId;
     const defaults = agentId ? getAgent(agentId)?.defaults : undefined;
 
@@ -139,7 +213,7 @@ export class AudioCommands {
       ptt: !!send,
     });
 
-    const sendCommand = `ravi media send "${result.filePath}"`;
+    const sendCommand = `ravi media send "${result.filePath}" --execute`;
     const payload: {
       success: true;
       audio: {
@@ -234,7 +308,7 @@ export class AudioCommands {
     name: "tts",
     description: "Publish a ravi.tts request for ElevenLabs generation and extension playback",
   })
-  @CommandAccess({ kind: "mutate", resource: "audio", action: "tts", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "audio", action: "tts", risk: "high", requiresConfirmation: true })
   @Returns(audioTtsReturnSchema)
   async tts(
     @Arg("text", { description: "Text to convert to speech" })
@@ -273,7 +347,13 @@ export class AudioCommands {
     noAutoplay?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Confirm publishing work that triggers downstream TTS generation and playback",
+    })
+    execute?: boolean,
   ) {
+    // Validation BEFORE the brake: malformed JSON options fail immediately.
     const contextAgentId = getContext()?.agentId;
     const resolvedAgentId = agentId ?? contextAgentId;
     const voiceSettings = parseJsonObjectOption(voiceSettingsJson, "voice-settings");
@@ -313,6 +393,26 @@ export class AudioCommands {
       createdAt: Date.now(),
       metadata: { origin: "cli.audio.tts" },
     };
+    if (execute !== true) {
+      // The ravi.tts request triggers downstream generation and playback.
+      // Confirm before the NATS emit; cost alone is not the brake criterion.
+      contractDryRun(
+        "audio tts",
+        {
+          textChars: text.length,
+          agentId: resolvedAgentId ?? null,
+          target: summarizeTtsTarget(request.target),
+          playback: {
+            target: request.playback?.target ?? null,
+            autoplay: request.playback?.autoplay ?? null,
+            clientIdPresent: Boolean(request.playback?.clientId),
+          },
+          voice: summarizeTtsVoice(request.voice),
+          topic: RAVI_TTS_TOPIC,
+        },
+        { asJson },
+      );
+    }
     await nats.emit(RAVI_TTS_TOPIC, request as unknown as Record<string, unknown>);
     const payload = { ok: true, topic: RAVI_TTS_TOPIC, request };
     if (asJson) console.log(JSON.stringify(payload, null, 2));
@@ -336,6 +436,8 @@ export class AudioCommands {
     voiceType?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each voice" })
+    fields?: string,
   ) {
     const result = await listElevenLabsVoices({
       search,
@@ -348,6 +450,8 @@ export class AudioCommands {
       provider: "elevenlabs" as const,
       generatedAt: Date.now(),
       ...result,
+      // Compact mode (Manual v2 7.9): narrows the voice objects only.
+      voices: pickFields(result.voices, fields),
     };
     if (asJson) console.log(JSON.stringify(payload, null, 2));
     return payload;
@@ -382,22 +486,28 @@ export class AudioCommands {
     includeFailed?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const payload = {
       ok: true,
       generatedAt: Date.now(),
-      items: listTtsPlaybackItems({
-        id,
-        requestId,
-        since: since ? Number.parseFloat(since) : undefined,
-        sessionName,
-        sessionKey,
-        chatId,
-        agentId,
-        clientId,
-        limit: limit ? Number.parseInt(limit, 10) : undefined,
-        includeFailed,
-      }),
+      // Compact mode (Manual v2 7.9): narrows the playback items only.
+      items: pickFields(
+        listTtsPlaybackItems({
+          id,
+          requestId,
+          since: since ? Number.parseFloat(since) : undefined,
+          sessionName,
+          sessionKey,
+          chatId,
+          agentId,
+          clientId,
+          limit: limit ? Number.parseInt(limit, 10) : undefined,
+          includeFailed,
+        }),
+        fields,
+      ),
     };
     if (asJson) console.log(JSON.stringify(payload, null, 2));
     return payload;

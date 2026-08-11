@@ -1,10 +1,26 @@
-import { describe, expect, it, mock } from "bun:test";
+import { afterAll, describe, expect, it, mock } from "bun:test";
 import type { ConsoleApiClient } from "../../cloud-auth/client.js";
 import type { CloudCredentials } from "../../cloud-auth/types.js";
-import { FeedbackCommands } from "./feedback.js";
+
+afterAll(() => mock.restore());
+const actualCliContextModule = await import("../context.js");
+
+mock.module("../context.js", () => ({
+  ...actualCliContextModule,
+  getContext: () => undefined,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
+  fail: (message: string) => {
+    throw new Error(message);
+  },
+}));
+
+const { FeedbackCommands } = await import("./feedback.js");
+const { ContractError } = await import("../agent-contract.js");
 
 describe("feedback CLI commands", () => {
-  it("submits structured feedback through the Console CLI API", async () => {
+  it("submits structured feedback through the Console CLI API with --execute", async () => {
     const calls: Array<{ method: string; path: string; body: unknown; accessToken: string }> = [];
     const client = makeClient(async (method, path, body, accessToken) => {
       calls.push({ method, path, body, accessToken });
@@ -29,6 +45,7 @@ describe("feedback CLI commands", () => {
         "pages,ux",
         '{"route":"/p/rbbt/pages"}',
         undefined,
+        true,
         true,
       ),
     );
@@ -63,6 +80,139 @@ describe("feedback CLI commands", () => {
       },
       url: "https://console.example/org/feedback",
     });
+  });
+});
+
+describe("feedback agent-first contract", () => {
+  it("blocks feedback send without --execute (dry-run, exit 3, nothing leaves the machine)", async () => {
+    const sensitiveMessage = "PRIVATE_MESSAGE_8K2R";
+    const calls: unknown[] = [];
+    const client = makeClient(async (...args) => {
+      calls.push(args);
+      return {};
+    });
+    let credentialReads = 0;
+    const command = new FeedbackCommands({
+      client,
+      readCredentials: () => {
+        credentialReads += 1;
+        return makeCredentials();
+      },
+    });
+
+    let thrown: unknown;
+    try {
+      await captureConsole(() =>
+        command.send(
+          [sensitiveMessage],
+          "bug",
+          "high",
+          "SENTINEL_SECRET_7M4Q",
+          "console/pages",
+          "PRIVATE_PROJECT_3P9X",
+          "https://sentinel.invalid/private",
+          "private-tag,secret-tag",
+          '{"route":"C:/sentinel/private","alpha":"private metadata"}',
+          "https://private-console.invalid",
+          true,
+        ),
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const contractError = thrown as InstanceType<typeof ContractError>;
+    expect(contractError.exitCode).toBe(3);
+    const envelope = contractError.envelope();
+    expect(envelope.op).toBe("feedback send");
+    expect(envelope.error.code).toBe("WRITE_REQUIRES_EXECUTE");
+    expect(envelope.error.dryRun).toBe(true);
+    const plan = envelope.error.plan as Record<string, unknown>;
+    expect(plan).toEqual({
+      kind: "bug",
+      severity: "high",
+      titlePresent: true,
+      messageChars: sensitiveMessage.length,
+      surface: "console/pages",
+      projectPresent: true,
+      urlPresent: true,
+      tagsCount: 2,
+      metadataKeys: ["alpha", "route"],
+    });
+    const serializedPlan = JSON.stringify(plan);
+    expect(serializedPlan).not.toContain(sensitiveMessage);
+    expect(serializedPlan).not.toContain("SENTINEL_SECRET_7M4Q");
+    expect(serializedPlan).not.toContain("PRIVATE_PROJECT_3P9X");
+    expect(serializedPlan).not.toContain("C:/sentinel/private");
+    expect(serializedPlan).not.toContain("https://sentinel.invalid/private");
+    expect(serializedPlan).not.toContain("https://private-console.invalid");
+    expect(serializedPlan).not.toContain("private-tag");
+    expect(serializedPlan).not.toContain("private metadata");
+    // The brake fires before auth or any network call.
+    expect(calls).toHaveLength(0);
+    expect(credentialReads).toBe(0);
+  });
+
+  it("fails fast on invalid --kind even in dry-run (PAYLOAD_INVALID, not exit 3)", async () => {
+    const command = new FeedbackCommands({
+      client: makeClient(async () => ({})),
+      readCredentials: makeReadCredentials(),
+    });
+
+    let thrown: unknown;
+    try {
+      await captureConsole(() =>
+        command.send(
+          ["oi"],
+          "bogus",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).not.toBeInstanceOf(ContractError);
+    expect((thrown as { code?: string }).code).toBe("PAYLOAD_INVALID");
+  });
+
+  it("fails fast on an empty message (PAYLOAD_INVALID)", async () => {
+    const command = new FeedbackCommands({
+      client: makeClient(async () => ({})),
+      readCredentials: makeReadCredentials(),
+    });
+
+    let thrown: unknown;
+    try {
+      await captureConsole(() =>
+        command.send(
+          [],
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          true,
+        ),
+      );
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect((thrown as { code?: string }).code).toBe("PAYLOAD_INVALID");
   });
 });
 

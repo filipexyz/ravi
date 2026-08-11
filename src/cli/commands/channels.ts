@@ -12,7 +12,7 @@ import {
   type ChannelRunnerHealthSnapshot,
 } from "../../channels/health.js";
 import { ChannelRunner, runChannelRunnerFromEnv } from "../../channels/runner.js";
-import { getCredentialConnection } from "../../credentials/index.js";
+import { getCredentialConnection, listCredentialConnections } from "../../credentials/index.js";
 import { nats } from "../../nats.js";
 import {
   CHANNELS_PM2_PROCESS_NAME,
@@ -24,6 +24,7 @@ import {
   runPm2,
 } from "../../pm2.js";
 import { dbGetChannel, dbListChannels, dbUpdateChannel, dbUpsertChannel } from "../../router/router-db.js";
+import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns, Scope } from "../decorators.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
@@ -195,12 +196,44 @@ function emitConfigChanged() {
   nats.emit("ravi.config.changed", {}).catch(() => {});
 }
 
-function requireCredentialConnectionForChannel(provider: string, connection: string): void {
+/**
+ * Manual v2 not-found envelope (exit 1) for the native channel CONFIG domain.
+ * `CHANNEL_NOT_FOUND` here refers to a Ravi channel config record in the local
+ * router DB — not to a Slack workspace channel (the `slack` domain reuses the
+ * same code for that distinct resource). Config names feed `suggestions`.
+ */
+function failChannelNotFound(op: string, name: string, asJson?: boolean): never {
+  const candidates = dbListChannels().map((channel) => channel.name);
+  contractFail(op, "CHANNEL_NOT_FOUND", `Channel not found: ${name}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check the channel config name (see suggestions; list with: ravi channels list --json)",
+      suggestions: suggestSimilar(name, candidates),
+    },
+  });
+}
+
+function requireCredentialConnectionForChannel(
+  op: string,
+  provider: string,
+  connection: string,
+  asJson?: boolean,
+): void {
   const record = getCredentialConnection(provider, connection);
   if (!record) {
-    fail(
-      `Credential connection not found: ${provider}:${connection}. Add it with: ravi credentials connections add --provider ${provider} --connection ${connection}`,
+    // Cross-domain not-found envelope: the referenced Credential Manager
+    // connection does not exist. Suggestions carry only provider:connection
+    // ids — never secret values or secret refs.
+    const candidates = listCredentialConnections({ includeDisabled: true, limit: 100 }).items.map(
+      (item) => `${item.provider}:${item.connection}`,
     );
+    contractFail(op, "CREDENTIAL_CONNECTION_NOT_FOUND", `Credential connection not found: ${provider}:${connection}`, {
+      asJson,
+      details: {
+        suggestedAction: `Add it with: ravi credentials connections add --provider ${provider} --connection ${connection}`,
+        suggestions: suggestSimilar(`${provider}:${connection}`, candidates),
+      },
+    });
   }
   if (record.status !== "active") {
     fail(`Credential connection is not active: ${provider}:${connection}`);
@@ -497,11 +530,14 @@ export class ChannelsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching channels to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    fields?: string,
   ) {
     const providerFilter = provider?.trim();
     const channels = dbListChannels().filter((channel) => !providerFilter || channel.provider === providerFilter);
     const page = paginateCliItems(channels, { limit, offset });
     const pagination = buildCliOffsetPagination({
+      fields,
       baseCommand: ["ravi", "channels", "list"],
       limit: page.limit,
       offset: page.offset,
@@ -509,11 +545,12 @@ export class ChannelsCommands {
       total: page.total,
       options: [providerFilter ? "--provider" : null, providerFilter],
     });
+    const items = pickFields(page.items, fields);
     const payload = {
       total: page.total,
       pagination,
-      channels: page.items,
-      items: page.items,
+      channels: items,
+      items,
     };
     if (asJson) printJson(payload);
     else if (page.total === 0) {
@@ -543,7 +580,7 @@ export class ChannelsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const channel = dbGetChannel(name);
-    if (!channel) fail(`Channel not found: ${name}`);
+    if (!channel) failChannelNotFound("channels show", name, asJson);
     if (asJson) printJson(channel);
     else {
       console.log(`Channel: ${channel.name}`);
@@ -554,6 +591,9 @@ export class ChannelsCommands {
     return channel;
   }
 
+  // Manual v2: `create` and `set` are intentionally UNBRAKED — they only write
+  // reversible local channel CONFIG rows (create ⇄ set enabled=false, set has
+  // an inverse `set` for every key); nothing starts or stops the runner.
   @Command({ name: "create", description: "Create or update a native channel config" })
   @CommandAccess({ kind: "mutate", resource: "channels", action: "create", risk: "medium" })
   @Returns(channelMutationReturnSchema)
@@ -567,7 +607,7 @@ export class ChannelsCommands {
     const resolvedProvider = provider?.trim();
     if (!resolvedProvider) fail("Missing --provider <provider>");
     const connection = credentialConnection?.trim();
-    if (connection) requireCredentialConnectionForChannel(resolvedProvider, connection);
+    if (connection) requireCredentialConnectionForChannel("channels create", resolvedProvider, connection, asJson);
     const channel = dbUpsertChannel({
       name,
       provider: resolvedProvider,
@@ -590,7 +630,7 @@ export class ChannelsCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     const existing = dbGetChannel(name);
-    if (!existing) fail(`Channel not found: ${name}`);
+    if (!existing) failChannelNotFound("channels set", name, asJson);
     const clear = isClearValue(value);
     if (key === "provider") {
       if (clear) fail("provider cannot be cleared");
@@ -604,7 +644,7 @@ export class ChannelsCommands {
       } else {
         const connection = value.trim();
         if (!connection) fail("credentialConnection cannot be empty");
-        requireCredentialConnectionForChannel(existing.provider, connection);
+        requireCredentialConnectionForChannel("channels set", existing.provider, connection, asJson);
         dbUpdateChannel(name, { credentialConnection: connection });
       }
     } else if (key === "defaults") {
@@ -801,7 +841,7 @@ export class ChannelsCommands {
   }
 
   @Command({ name: "probe", description: "Start channel runner infrastructure and print foreground status" })
-  @CommandAccess({ kind: "read", resource: "channels", action: "probe", risk: "low" })
+  @CommandAccess({ kind: "mutate", resource: "channels", action: "probe", risk: "high" })
   @Returns(channelsRunStatusReturnSchema)
   async probe(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     const runner = new ChannelRunner({ consumeOutbound: false });

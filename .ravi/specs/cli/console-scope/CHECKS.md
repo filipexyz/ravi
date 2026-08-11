@@ -12,6 +12,20 @@ owners:
 
 # Checks
 
+## Agent-First CLI Contract (`ravi cloud scope`)
+
+- `cloud scope set` and `cloud scope clear` are declared unbraked and MUST
+  keep immediate-write behavior (no `--execute` requirement): they form a
+  reversible local-default pair over non-secret state.
+- A `ContractError` thrown inside a `cloud scope` command MUST pass through
+  `runCloudScopeCommand` with its exit code intact — never rewrapped as
+  `SERVER_UNAVAILABLE` by the legacy CloudAuthError funnel.
+- CloudAuthError validation failures MUST preserve their stable codes under
+  the global exit map (`PAYLOAD_INVALID` → `2`; only
+  `WRITE_REQUIRES_EXECUTE` exits `3`).
+- `bun test src/cli/commands/cloud-scope.test.ts` SHOULD pass after any change
+  to the scope command surface.
+
 ## Unit Coverage
 
 - Cloud-auth profile store:
@@ -66,9 +80,9 @@ owners:
 - `ravi pages list --json` can omit project when a default is set.
 - `ravi pages list --json` fails with a clear missing project message when no
   project default exists and more than one remote project is visible.
-- `ravi pages create <slug> --json` uses the default project when project is
+- `ravi pages create <slug> --json --execute` uses the default project when project is
   omitted and explicit project when provided.
-- `ravi pages publish <site> <target> --json` uses the default
+- `ravi pages publish <site> <target> --json --execute` uses the default
   project when `--project` is omitted.
 - `ravi bridges create --json` uses the default project when `--project` is
   omitted.

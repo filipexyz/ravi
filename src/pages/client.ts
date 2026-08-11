@@ -517,7 +517,9 @@ function contentPublishCommandForSite(projectRef: string, site: PageSitePayload)
   const siteRef = stringValue(site.slug) ?? stringValue(site.id);
   if (!siteRef) return null;
   const visibility = stringValue(site.defaultVisibility) ?? stringValue(site.visibility) ?? "public";
-  return `ravi pages publish ${projectRef} ${siteRef} ./site --route / --visibility ${visibility} --entrypoint index.html`;
+  // The publish op is braked (Manual v2 write brake): teach the flag that
+  // actually performs the upload, so agents don't stop at the dry-run.
+  return `ravi pages publish ${projectRef} ${siteRef} ./site --route / --visibility ${visibility} --entrypoint index.html --execute`;
 }
 
 function requireText(value: string | undefined, label: string): string {

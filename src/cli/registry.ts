@@ -17,12 +17,28 @@ import {
   type ScopeType,
 } from "./decorators.js";
 import { extractOptionName } from "./utils.js";
-import { enforceCliCommandAuthorization } from "./command-access.js";
+import {
+  ContractError,
+  binaryResponseToContractError,
+  contractFailureOutcome,
+  expectedErrorToContractError,
+  permissionDeniedToContractError,
+  renderContractError,
+  unexpectedErrorToContractError,
+} from "./agent-contract.js";
+import { isCloudAuthError } from "../cloud-auth/errors.js";
+import { cloudErrorToContractError, commandOperation, renderCloudContractError } from "./cloud-error-contract.js";
+import { enforceCliCommandAuthorization, redactCommandAccessInput } from "./command-access.js";
 import { emitCliAuditEvent } from "./audit.js";
+import { getContext, runWithContext } from "./context.js";
 import {
   dispatchRemote,
   getRemoteGatewayConfig,
+  remoteGatewayErrorToContractError,
+  remoteGatewayExitCode,
+  remoteDispatchOutput,
   resolveContextKeyForRemote,
+  type RemoteDispatchResult,
   type RemoteGatewayConfig,
 } from "./remote-gateway.js";
 
@@ -208,23 +224,18 @@ function registerCommand(
       }
     }
 
-    const accessResult = enforceCliCommandAuthorization({
-      group: groupName,
-      command: cmdMeta.name,
-      access,
-      input,
-      source: "cli",
-      scope,
-    });
-    if (!accessResult.allowed) {
-      console.error(accessResult.errorMessage);
-      const { flushAuditAndExit } = await import("../permissions/scope.js");
-      await flushAuditAndExit(1);
+    let remoteConfig: RemoteGatewayConfig | null;
+    try {
+      remoteConfig = getRemoteGatewayConfig(process.env, commandOperation(groupName, cmdMeta.name));
+    } catch (error) {
+      if (!(error instanceof ContractError)) throw error;
+      renderContractError(error, input.json === true);
+      process.exit(error.exitCode);
     }
 
-    // Remote gateway mode: forward the invocation to the configured gateway
-    // instead of executing in-process. Local mode is unchanged.
-    const remoteConfig = getRemoteGatewayConfig();
+    // The target gateway owns authorization for its context key. Performing a
+    // local authorization first can reject a valid remote-only credential or
+    // authorize a different local default principal.
     if (remoteConfig) {
       await dispatchRemoteCommand({
         config: remoteConfig,
@@ -236,31 +247,88 @@ function registerCommand(
       return;
     }
 
+    const accessResult = enforceCliCommandAuthorization({
+      group: groupName,
+      command: cmdMeta.name,
+      access,
+      input,
+      source: "cli",
+      scope,
+    });
+    const auditInput = redactCommandAccessInput(access, input);
+    if (!accessResult.allowed) {
+      const contractError = permissionDeniedToContractError(
+        commandOperation(groupName, cmdMeta.name),
+        accessResult.errorMessage,
+      );
+      renderContractError(contractError, input.json === true);
+      await emitCliAuditEvent({
+        group: groupName,
+        name: cmdMeta.name,
+        tool: toolName,
+        input: auditInput,
+        outcome: "denied",
+        exitCode: 1,
+        errorCode: "PERMISSION_DENIED",
+        status: "completed",
+        closeLazyConnection: false,
+      });
+      const { flushAuditAndExit } = await import("../permissions/scope.js");
+      await flushAuditAndExit(1);
+    }
+
     // Execute and emit single event with input + output
     const startTime = Date.now();
-    let isError = false;
+    let outcome: "succeeded" | "blocked" | "usage_error" | "denied" | "failed" = "succeeded";
+    let contractExitCode: number | null = null;
+    let contractErrorCode: string | undefined;
 
     try {
       const method = (instance as Record<string, Function>)[cmdMeta.method];
-      const result = method.apply(instance, finalArgs);
-      if (result instanceof Promise) await result;
+      const result = runWithContext(getContext() ?? {}, () => method.apply(instance, finalArgs));
+      const returnValue = result instanceof Promise ? await result : result;
+      if (returnValue instanceof Response) {
+        if (!returnValue.ok) {
+          const error = binaryResponseToContractError(commandOperation(groupName, cmdMeta.name), returnValue.status);
+          renderContractError(error, input.json === true);
+          throw error;
+        }
+        process.stdout.write(new Uint8Array(await returnValue.arrayBuffer()));
+      }
     } catch (err) {
-      isError = true;
-      console.error(`Error: ${err instanceof Error ? err.message : err}`);
+      const op = commandOperation(groupName, cmdMeta.name);
+      const contractError =
+        err instanceof ContractError
+          ? err
+          : isCloudAuthError(err)
+            ? cloudErrorToContractError(op, err)
+            : (expectedErrorToContractError(op, err) ?? unexpectedErrorToContractError(op));
+      if (contractError) {
+        if (isCloudAuthError(err)) renderCloudContractError(contractError, input.json === true);
+        else if (!(err instanceof ContractError)) renderContractError(contractError, input.json === true);
+        // contractFail/contractDryRun already emitted the envelope (or the
+        // legacy text); preserve the Manual v2 exit taxonomy (1 error ·
+        // 2 usage · 3 policy brake) instead of the generic error path.
+        contractExitCode = contractError.exitCode;
+        contractErrorCode = contractError.code;
+        outcome = contractFailureOutcome(contractError);
+      }
     }
 
     await emitCliAuditEvent({
       group: groupName,
       name: cmdMeta.name,
       tool: toolName,
-      input,
-      isError,
+      input: auditInput,
+      outcome,
+      exitCode: contractExitCode ?? undefined,
+      errorCode: contractErrorCode,
       status: "completed",
       durationMs: Date.now() - startTime,
       closeLazyConnection: true,
     });
 
-    if (isError) process.exit(1);
+    if (contractExitCode !== null) process.exit(contractExitCode);
   });
 }
 
@@ -302,13 +370,20 @@ interface DispatchRemoteCommandInput {
 }
 
 async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise<void> {
+  const op = commandOperation(input.groupName, input.command);
   const contextKey = resolveContextKeyForRemote();
   if (!contextKey) {
-    console.error(
-      `Remote gateway mode is enabled (RAVI_GATEWAY_URL=${input.config.url}) but no runtime context-key is available. ` +
-        "Set RAVI_CONTEXT_KEY or run 'ravi daemon init-admin-key' on the gateway host and 'ravi context credentials add <rctx>' locally.",
+    const error = new ContractError(
+      op,
+      "REMOTE_CONTEXT_REQUIRED",
+      "Remote gateway mode requires a runtime context key.",
+      1,
+      {
+        suggestedAction: "Set RAVI_CONTEXT_KEY or add a local Ravi context credential issued by the target gateway",
+      },
     );
-    process.exit(1);
+    renderContractError(error, input.input.json === true);
+    process.exit(error.exitCode);
   }
 
   let result;
@@ -320,29 +395,27 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
       config: input.config,
       contextKey,
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error(`Remote gateway request failed: ${message}`);
-    process.exit(1);
+  } catch {
+    const error = new ContractError(op, "SERVER_UNAVAILABLE", "Remote gateway request failed.", 1, {
+      retryable: true,
+      suggestedAction: "Check gateway availability and retry",
+    });
+    renderContractError(error, input.input.json === true);
+    process.exit(error.exitCode);
   }
 
+  const remoteError = remoteGatewayErrorToContractError(op, result);
+  if (remoteError) {
+    renderContractError(remoteError, input.input.json === true);
+    process.exit(remoteError.exitCode);
+  }
   printRemoteResponse(result);
   if (!result.ok) {
-    process.exit(1);
+    process.exit(remoteGatewayExitCode(result));
   }
 }
 
-function printRemoteResponse(result: { body: string; contentType: string | null }): void {
-  if (result.body.length === 0) return;
-  const isJson = result.contentType?.includes("application/json") ?? false;
-  if (!isJson) {
-    process.stdout.write(result.body.endsWith("\n") ? result.body : `${result.body}\n`);
-    return;
-  }
-  try {
-    const parsed = JSON.parse(result.body);
-    console.log(JSON.stringify(parsed, null, 2));
-  } catch {
-    process.stdout.write(result.body.endsWith("\n") ? result.body : `${result.body}\n`);
-  }
+function printRemoteResponse(result: RemoteDispatchResult): void {
+  const output = remoteDispatchOutput(result);
+  if (output.value.length > 0) process.stdout.write(output.value);
 }

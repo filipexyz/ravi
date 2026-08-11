@@ -52,9 +52,16 @@ let firstAccountName = "main";
 
 mock.module("../context.js", () => ({
   getContext: () => toolContext,
+  // Real hasContext checks RAVI_* envs; the contract helpers use it to throw
+  // ContractError instead of process.exit, which is what tests need.
+  hasContext: () => true,
   fail: (message: string) => {
     throw new Error(message);
   },
+}));
+
+mock.module("../../runtime/context-registry.js", () => ({
+  RAVI_CONTEXT_KEY_ENV: "RAVI_CONTEXT_KEY",
 }));
 
 mock.module("../../utils/request-reply.js", () => ({
@@ -193,6 +200,7 @@ mock.module("../../contacts.js", () => ({
       identities: [{ platform: "phone", value: ref, isPrimary: true }],
     };
   },
+  getContactDetails: () => null,
   getContactById: (id: string) => ({
     id,
     phone: "5511888888888",
@@ -212,6 +220,7 @@ mock.module("../../contacts.js", () => ({
 }));
 
 mock.module("../../router/router-db.js", () => ({
+  getRaviDbPath: () => "/tmp/ravi.db",
   getDb: () => ({
     prepare: () => ({
       all: () => [],
@@ -423,7 +432,9 @@ describe("channel command --json output", () => {
   });
 
   it("prints WhatsApp group member mutations as typed JSON", async () => {
-    const payload = await captureJson(() => new GroupCommands().add("120363@g.us", "5511999999999", "main", true));
+    const payload = await captureJson(() =>
+      new GroupCommands().add("120363@g.us", "5511999999999", "main", true, true),
+    );
 
     expect(payload.status).toBe("added");
     expect(payload.changedCount).toBe(1);
@@ -439,16 +450,18 @@ describe("channel command --json output", () => {
   it("uses Omni REST for all WhatsApp group operations instead of the legacy NATS bridge", async () => {
     const commands = new GroupCommands();
 
-    const remove = await captureJson(() => commands.remove("120363@g.us", "5511999999999", "main", true));
-    const promote = await captureJson(() => commands.promote("120363@g.us", "5511999999999", "main", true));
+    const remove = await captureJson(() => commands.remove("120363@g.us", "5511999999999", "main", true, true));
+    const promote = await captureJson(() => commands.promote("120363@g.us", "5511999999999", "main", true, true));
     const demote = await captureJson(() => commands.demote("120363@g.us", "5511999999999", "main", true));
     const invite = await captureJson(() => commands.invite("120363@g.us", "main", true));
-    const revoke = await captureJson(() => commands.revokeInvite("120363@g.us", "main", true));
-    const join = await captureJson(() => commands.join("https://chat.whatsapp.com/invite-code", "main", true));
-    const leave = await captureJson(() => commands.leave("120363@g.us", "main", true));
-    const rename = await captureJson(() => commands.rename("120363@g.us", "Renamed", "main", true));
-    const description = await captureJson(() => commands.description("120363@g.us", "New description", "main", true));
-    const settings = await captureJson(() => commands.settings("120363@g.us", "announcement", "main", true));
+    const revoke = await captureJson(() => commands.revokeInvite("120363@g.us", "main", true, true));
+    const join = await captureJson(() => commands.join("https://chat.whatsapp.com/invite-code", "main", true, true));
+    const leave = await captureJson(() => commands.leave("120363@g.us", "main", true, true));
+    const rename = await captureJson(() => commands.rename("120363@g.us", "Renamed", "main", true, true));
+    const description = await captureJson(() =>
+      commands.description("120363@g.us", "New description", "main", true, true),
+    );
+    const settings = await captureJson(() => commands.settings("120363@g.us", "announcement", "main", true, true));
 
     expect(remove).toMatchObject({ status: "removed", source: "omni.rest.group_participants" });
     expect(promote).toMatchObject({ status: "promoted", source: "omni.rest.group_participants" });
@@ -510,6 +523,7 @@ describe("channel command --json output", () => {
         "gpt-5.5",
         undefined,
         undefined,
+        true,
         true,
         true,
       ),
@@ -608,6 +622,7 @@ describe("channel command --json output", () => {
         undefined,
         true,
         true,
+        true,
       ),
     );
 
@@ -652,6 +667,7 @@ describe("channel command --json output", () => {
         undefined,
         true,
         true,
+        true,
       ),
     );
 
@@ -676,7 +692,9 @@ describe("channel command --json output", () => {
   });
 
   it("prints WhatsApp DM send results as typed JSON", async () => {
-    const payload = await captureJson(() => new WhatsAppDmCommands().send("5511999999999", "hello\\!", "main", true));
+    const payload = await captureJson(() =>
+      new WhatsAppDmCommands().send("5511999999999", "hello\\!", "main", true, true),
+    );
 
     expect(payload.status).toBe("sent");
     expect(payload.to).toBe("5511999999999@s.whatsapp.net");
@@ -684,11 +702,13 @@ describe("channel command --json output", () => {
     expect(emitted[0].topic).toBe("ravi.outbound.deliver");
   });
 
-  it("prints WhatsApp DM reads and auto-ack metadata as typed JSON", async () => {
-    const payload = await captureJson(() => new WhatsAppDmCommands().read("5511999999999", "5", false, "main", true));
+  it("prints WhatsApp DM reads as typed JSON without emitting a receipt", async () => {
+    const payload = await captureJson(() =>
+      new WhatsAppDmCommands().read("5511999999999", "5", "main", true, undefined),
+    );
 
     expect(payload.total).toBe(2);
-    expect(payload.ackedMessageId).toBe("msg-1");
-    expect(emitted[0].topic).toBe("ravi.outbound.receipt");
+    expect(payload).not.toHaveProperty("ackedMessageId");
+    expect(emitted).toHaveLength(0);
   });
 });

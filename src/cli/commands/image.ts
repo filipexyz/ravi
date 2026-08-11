@@ -5,9 +5,11 @@
 import "reflect-metadata";
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 import { resolve, basename } from "node:path";
 import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { getContext, fail, type ToolContext } from "../context.js";
+import { contractDryRun, contractFail } from "../agent-contract.js";
 import { generateImage, normalizeImageProvider, type ImageMode } from "../../image/generator.js";
 import { getAgent } from "../../router/config.js";
 import { dbGetInstance, dbGetInstanceByInstanceId, dbGetSetting } from "../../router/router-db.js";
@@ -19,13 +21,48 @@ import {
   updateArtifact,
   type ArtifactRecord,
 } from "../../artifacts/store.js";
-import { splitImageAtlas, type AtlasSplitFit, type AtlasSplitMode } from "../../image/atlas.js";
-import { sendMediaWithOmniCli, type MediaSendTargetInput } from "../media-send.js";
+import { sanitizeAtlasCellName, splitImageAtlas, type AtlasSplitFit, type AtlasSplitMode } from "../../image/atlas.js";
+import { resolveMediaSendTarget, sendMediaWithOmniCli, type MediaSendTargetInput } from "../media-send.js";
 import { imageAtlasSplitReturnSchema, imageGenerateReturnSchema } from "./operational-return-schemas.js";
 
 function stringDefault(defaults: Record<string, unknown> | undefined, key: string): string | undefined {
   const value = defaults?.[key];
   return typeof value === "string" && value.trim() ? value : undefined;
+}
+
+function summarizeMediaSendTarget(target: ReturnType<typeof resolveMediaSendTarget>) {
+  return {
+    channel: target.channel ?? null,
+    accountId: target.accountId,
+    chatIdPresent: Boolean(target.chatId),
+    threadIdPresent: Boolean(target.threadId),
+  };
+}
+
+function summarizeMediaSendContext(context: ReturnType<typeof getContext>) {
+  const source = context?.source;
+  return {
+    channel: source?.channel ?? null,
+    accountId: source?.accountId ?? null,
+    chatIdPresent: Boolean(source?.chatId),
+    threadIdPresent: Boolean(source?.threadId),
+  };
+}
+
+function failImageProviderNotConfigured(asJson?: boolean): never {
+  return contractFail(
+    "image generate",
+    "IMAGE_PROVIDER_NOT_CONFIGURED",
+    "No image provider configured. Pass --provider openai|gemini or set image_provider on the agent/instance/default settings.",
+    {
+      asJson,
+      details: {
+        suggestedAction:
+          "Pass --provider openai|gemini or configure image_provider on the agent, instance or global settings",
+        acceptedValues: ["openai", "gemini"],
+      },
+    },
+  );
 }
 
 function parseCompression(value?: string): number | undefined {
@@ -193,7 +230,7 @@ export class ImageCommands {
     name: "generate",
     description: "Generate an image from a text prompt",
   })
-  @CommandAccess({ kind: "mutate", resource: "image", action: "generate", risk: "high" })
+  @CommandAccess({ kind: "mutate", resource: "image", action: "generate", risk: "high", requiresConfirmation: true })
   @Returns(imageGenerateReturnSchema)
   async generate(
     @Arg("prompt", { description: "Text prompt describing the image to generate" })
@@ -234,11 +271,59 @@ export class ImageCommands {
     asyncWorker?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Confirm delivery when the generated image will be sent; generation alone runs immediately",
+    })
+    execute?: boolean,
   ) {
+    const ctx = getContext();
+    const sourcePath = source ? resolve(source) : undefined;
+    if (sourcePath && !existsSync(sourcePath)) fail(`Source image not found: ${sourcePath}`);
+    const outputDir = output ? resolve(output) : undefined;
+    const compressionValue = parseCompression(compression);
+    if (asyncMode && syncMode) {
+      fail("--async and --sync cannot be used together. Async is already the default; use --sync only when needed.");
+    }
+    if (artifactId && !asyncWorker) {
+      fail("--artifact-id is reserved for internal image async workers.");
+    }
+    const explicitProvider = provider ? normalizeImageProvider(provider) : undefined;
+    if (provider && !explicitProvider) failImageProviderNotConfigured(asJson);
+    const shouldRunAsync = syncMode !== true && asyncWorker !== true;
+    const hasOriginChat = Boolean(ctx?.source?.accountId && ctx.source.chatId);
+    const shouldSend = send === true || hasOriginChat;
+
+    if (shouldSend && execute !== true) {
+      // Confirmation must precede defaults/settings/artifact/provider/target
+      // resolution. The plan uses only explicit inputs and context presence.
+      contractDryRun(
+        "image generate",
+        {
+          promptChars: prompt.length,
+          provider: explicitProvider ?? null,
+          model: model ?? null,
+          mode: mode === "quality" ? "quality" : "fast",
+          aspect: aspect ?? null,
+          size: size ?? null,
+          quality: quality ?? null,
+          format: format ?? null,
+          compression: compressionValue ?? null,
+          background: background ?? null,
+          sourceName: sourcePath ? basename(sourcePath) : null,
+          outputDirPresent: Boolean(outputDir),
+          async: shouldRunAsync,
+          send: shouldSend,
+          target: summarizeMediaSendContext(ctx),
+          captionPresent: Boolean(caption),
+        },
+        { asJson },
+      );
+    }
+
     // Resolve defaults: explicit flag > agent > instance > global setting > env.
     // There is intentionally no implicit provider fallback: if the selected
     // provider fails, the command fails. Operators can retry with --provider.
-    const ctx = getContext();
     const agentId = ctx?.agentId;
     const defaults = (agentId ? getAgent(agentId)?.defaults : undefined) ?? undefined;
     const accountId = ctx?.source?.accountId;
@@ -252,11 +337,7 @@ export class ImageCommands {
       dbGetSetting("image.provider") ??
       process.env.RAVI_IMAGE_PROVIDER;
     const normalizedProvider = normalizeImageProvider(resolvedProvider);
-    if (!normalizedProvider) {
-      fail(
-        "No image provider configured. Pass --provider openai|gemini or set image_provider on the agent/instance/default settings.",
-      );
-    }
+    if (!normalizedProvider) failImageProviderNotConfigured(asJson);
 
     const resolvedModel =
       model ??
@@ -309,16 +390,8 @@ export class ImageCommands {
       dbGetSetting("image.background") ??
       undefined;
 
-    const sourcePath = source ? resolve(source) : undefined;
-    const outputDir = output ? resolve(output) : undefined;
-    const compressionValue = parseCompression(compressionDefault);
+    const resolvedCompressionValue = parseCompression(compressionDefault);
     const artifactContext = contextArtifactFields(ctx);
-    if (asyncMode && syncMode) {
-      fail("--async and --sync cannot be used together. Async is already the default; use --sync only when needed.");
-    }
-    const shouldRunAsync = syncMode !== true && asyncWorker !== true;
-    const hasOriginChat = Boolean(ctx?.source?.accountId && ctx.source.chatId);
-    const shouldSend = send === true || hasOriginChat;
     const asyncHint = shouldSend
       ? "No polling needed: this artifact emits lifecycle events and will be sent to the origin chat when completed. Use events only for manual inspection or debugging."
       : ctx?.sessionName || ctx?.sessionKey
@@ -332,7 +405,7 @@ export class ImageCommands {
       ...(resolvedSize ? { size: resolvedSize } : {}),
       ...(resolvedQuality ? { quality: resolvedQuality } : {}),
       ...(resolvedFormat ? { format: resolvedFormat } : {}),
-      ...(compressionValue !== undefined ? { compression: compressionValue } : {}),
+      ...(resolvedCompressionValue !== undefined ? { compression: resolvedCompressionValue } : {}),
       ...(resolvedBackground ? { background: resolvedBackground } : {}),
       ...(sourcePath ? { source: sourcePath } : {}),
       ...(outputDir ? { outputDir } : {}),
@@ -372,10 +445,6 @@ export class ImageCommands {
       tags: ["generated", "image", normalizedProvider],
     };
 
-    if (artifactId && !asyncWorker) {
-      fail("--artifact-id is reserved for internal image async workers.");
-    }
-
     if (shouldRunAsync) {
       const artifact = createArtifact(baseArtifactInput);
       appendArtifactEvent(artifact.id, {
@@ -395,11 +464,12 @@ export class ImageCommands {
       pushOption(workerArgs, "--size", resolvedSize);
       pushOption(workerArgs, "--quality", resolvedQuality);
       pushOption(workerArgs, "--format", resolvedFormat);
-      pushOption(workerArgs, "--compression", compressionValue);
+      pushOption(workerArgs, "--compression", resolvedCompressionValue);
       pushOption(workerArgs, "--background", resolvedBackground);
       if (shouldSend) workerArgs.push("--send");
       pushOption(workerArgs, "--caption", caption);
       workerArgs.push("--artifact-id", artifact.id, "--async-worker", "--json");
+      if (shouldSend) workerArgs.push("--execute");
 
       const pid = spawnDetachedCli(workerArgs);
       appendArtifactEvent(artifact.id, {
@@ -497,7 +567,7 @@ export class ImageCommands {
         size: resolvedSize,
         quality: resolvedQuality,
         format: resolvedFormat,
-        compression: compressionValue,
+        compression: resolvedCompressionValue,
         background: resolvedBackground,
         source: sourcePath,
         outputDir,
@@ -680,7 +750,7 @@ export class ImageCommands {
         ...(img.outputFormat ? { outputFormat: img.outputFormat } : {}),
         ...(img.usage ? { usage: img.usage } : {}),
         artifactId: artifacts[index]?.id ?? "",
-        sendCommand: `ravi media send "${img.filePath}"`,
+        sendCommand: `ravi media send "${img.filePath}" --execute`,
       })),
       options: {
         ...optionsPayload,
@@ -693,7 +763,7 @@ export class ImageCommands {
         console.log(`\n✓ Image saved: ${img.filePath}`);
         const artifact = artifacts.find((item) => item.filePath === img.filePath);
         if (artifact) console.log(`  Artifact: ${artifact.id}`);
-        console.log(`  Send to chat: ravi media send "${img.filePath}"`);
+        console.log(`  Send to chat: ravi media send "${img.filePath}" --execute`);
       }
 
       console.log(`\nPrompt: ${prompt}`);
@@ -783,7 +853,13 @@ export class ImageAtlasCommands {
     name: "split",
     description: "Split an image atlas/contact sheet into deterministic crop artifacts",
   })
-  @CommandAccess({ kind: "read", resource: "image.atlas", action: "split", risk: "low" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "image.atlas",
+    action: "split",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
   @Returns(imageAtlasSplitReturnSchema)
   async split(
     @Arg("input", { description: "Atlas/contact sheet image path" })
@@ -824,28 +900,67 @@ export class ImageAtlasCommands {
     threadId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" })
     asJson?: boolean,
+    @Option({
+      flags: "--execute",
+      description: "Confirm delivery when --send is used; local atlas splitting runs immediately",
+    })
+    execute?: boolean,
   ) {
     const ctx = getContext();
     const artifactContext = contextArtifactFields(ctx);
     const resolvedCols = parsePositiveInteger(cols, "--cols", 3);
     const resolvedRows = parsePositiveInteger(rows, "--rows", 2);
     const resolvedMode = parseAtlasMode(mode);
+    const inputPath = resolve(input);
+    if (!existsSync(inputPath)) fail(`Input image not found: ${inputPath}`);
     const outputDir = output ? resolve(output) : resolve(`/tmp/ravi-image-atlas-${Date.now()}`);
     const parentArtifact = parentArtifactId ? getArtifact(parentArtifactId) : null;
     if (parentArtifactId && !parentArtifact) fail(`Parent artifact not found: ${parentArtifactId}`);
+    const resolvedNames = parseAtlasNames(names);
+    if (resolvedNames && resolvedNames.length !== resolvedCols * resolvedRows) {
+      fail(`--names must include exactly ${resolvedCols * resolvedRows} values.`);
+    }
+    const sanitizedNames = resolvedNames?.map(sanitizeAtlasCellName);
+    if (sanitizedNames && new Set(sanitizedNames).size !== sanitizedNames.length) {
+      fail("--names must be unique after sanitization.");
+    }
+    const resolvedSize = parsePositiveInteger(size, "--size", 512);
+    const resolvedFuzz = Number(fuzz ?? "3");
+    if (!Number.isFinite(resolvedFuzz) || resolvedFuzz < 0) fail("--fuzz must be a number >= 0.");
+    const resolvedPad = parseNonNegativeInteger(pad, "--pad", 0);
+    const resolvedFit = parseAtlasFit(fit);
+    const resolvedBackground = background ?? "auto";
+
+    if (send === true && execute !== true) {
+      const target = resolveMediaSendTarget({ channel, accountId, chatId, threadId });
+      contractDryRun(
+        "image atlas split",
+        {
+          inputName: basename(inputPath),
+          outputDirMode: output ? "explicit" : "generated",
+          cols: resolvedCols,
+          rows: resolvedRows,
+          mode: resolvedMode,
+          send: true,
+          target: summarizeMediaSendTarget(target),
+          captionPresent: Boolean(caption),
+        },
+        { asJson },
+      );
+    }
 
     const manifest = splitImageAtlas({
-      input,
+      input: inputPath,
       outputDir,
       cols: resolvedCols,
       rows: resolvedRows,
-      names: parseAtlasNames(names),
+      names: resolvedNames,
       mode: resolvedMode,
-      size: parsePositiveInteger(size, "--size", 512),
-      fuzz: Number(fuzz ?? "3"),
-      pad: parseNonNegativeInteger(pad, "--pad", 0),
-      fit: parseAtlasFit(fit),
-      background: background ?? "auto",
+      size: resolvedSize,
+      fuzz: resolvedFuzz,
+      pad: resolvedPad,
+      fit: resolvedFit,
+      background: resolvedBackground,
     });
 
     const splitArtifact = createArtifact({

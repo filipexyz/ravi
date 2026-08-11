@@ -1548,7 +1548,7 @@ export class OmniConsumer {
       );
       // Sentinel: observe silently, no typing indicator, no source
       try {
-        const sentinelPrompt = `${sentinelEnvelope}\n(sentinel — observe, use whatsapp dm send to reply if instructed)`;
+        const sentinelPrompt = `${sentinelEnvelope}\n(sentinel — observe, use whatsapp dm send --execute to reply if instructed)`;
         await publishSessionPrompt(sessionName, {
           prompt: sentinelPrompt,
           _humanUrgent: humanUrgent,

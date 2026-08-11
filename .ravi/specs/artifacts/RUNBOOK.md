@@ -66,20 +66,20 @@ $EDITOR /tmp/ravi-page/index.html
 2. Ensure the target site exists. This only creates/updates the site record.
 
 ```bash
-ravi pages create <project-ref> <site-slug> --visibility public
+ravi pages create <project-ref> <site-slug> --visibility public --execute
 ```
 
 3. Publish content through the Pages command.
 
 ```bash
-ravi pages publish <project-ref> <site-slug> /tmp/ravi-page --route / --visibility public --entrypoint index.html
+ravi pages publish <project-ref> <site-slug> /tmp/ravi-page --route / --visibility public --entrypoint index.html --execute
 ```
 
 4. If the HTML was already registered as an artifact package, publish the
 artifact id instead of the directory.
 
 ```bash
-ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public
+ravi pages publish <project-ref> <site-slug> <artifact-id> --route / --visibility public --execute
 ```
 
 Pages publishing is handled through `ravi pages publish`.

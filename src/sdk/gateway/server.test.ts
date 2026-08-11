@@ -207,7 +207,7 @@ describe("gateway server — dispatch over HTTP", () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
-  it("POST with empty body returns 400 ValidationError with structured issues", async () => {
+  it("POST with empty body preserves the usage-error contract over HTTP", async () => {
     const res = await fetch(`${handle.url}/api/v1/demo/echo`, {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -215,12 +215,21 @@ describe("gateway server — dispatch over HTTP", () => {
     });
     expect(res.status).toBe(400);
     const body = (await res.json()) as {
-      error: string;
-      issues: { path: string[] }[];
+      success: boolean;
+      op: string;
+      exitCode: number;
+      outcome: string;
+      error: { code: string; issues: { path: string[] }[] };
     };
-    expect(body.error).toBe("ValidationError");
-    expect(Array.isArray(body.issues)).toBe(true);
-    expect(body.issues.some((i) => i.path[0] === "name")).toBe(true);
+    expect(body).toMatchObject({
+      success: false,
+      op: "demo echo",
+      exitCode: 2,
+      outcome: "usage_error",
+      error: { code: "USAGE_ERROR" },
+    });
+    expect(Array.isArray(body.error.issues)).toBe(true);
+    expect(body.error.issues.some((i) => i.path[0] === "name")).toBe(true);
   });
 
   it("POST with malformed JSON returns 400 BadRequest", async () => {

@@ -1,5 +1,10 @@
 import { randomUUID } from "node:crypto";
+import {
+  CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS,
+  migratePermissionTagMetadata,
+} from "../permissions/command-access-kind-migration.js";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
+import { logger } from "../utils/logger.js";
 import {
   TAG_ASSET_TYPES,
   TAG_KINDS,
@@ -77,6 +82,7 @@ export interface EnsureTagBindingInput extends UpsertTagBindingInput {
 
 let schemaReady = false;
 let schemaDbPath: string | null = null;
+const log = logger.child("tags:db");
 
 const TAG_SLUG_RE = /^[a-z0-9][a-z0-9._:-]*$/;
 const TAG_SOURCE_RE = /^[a-z0-9][a-z0-9._:-]*$/;
@@ -325,6 +331,62 @@ export function ensureTagSchema(): void {
   `);
   schemaReady = true;
   schemaDbPath = dbPath;
+  try {
+    ensurePermissionTagCommandAccessGrantMigration();
+  } catch (error) {
+    schemaReady = false;
+    schemaDbPath = null;
+    throw error;
+  }
+}
+
+export function ensurePermissionTagCommandAccessGrantMigration(): void {
+  const db = getDb();
+  const existing = db
+    .prepare("SELECT value FROM router_meta WHERE key = ?")
+    .get(CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.permissionTags) as { value: string } | undefined;
+  if (existing?.value === "done") return;
+
+  const rows = db
+    .prepare("SELECT slug, metadata_json FROM tag_definitions WHERE kind = 'system' AND source = 'permissions'")
+    .all() as Array<{ slug: string; metadata_json: string | null }>;
+  let changedDefinitions = 0;
+  let addedGrants = 0;
+  let ambiguousGrants = 0;
+
+  db.transaction(() => {
+    for (const row of rows) {
+      const metadata = parseRecord(row.metadata_json);
+      if (!metadata) continue;
+      const migration = migratePermissionTagMetadata(metadata);
+      ambiguousGrants += migration.ambiguous;
+      if (!migration.changed) continue;
+      dbUpdateTagDefinition({
+        slug: row.slug,
+        metadata: migration.metadata,
+        updatedBy: "migration:command-access-kind-v1",
+      });
+      changedDefinitions += 1;
+      addedGrants += migration.added;
+    }
+  })();
+
+  if (changedDefinitions > 0) {
+    log.info("Migrated CLI read grants for reclassified commands", {
+      store: "permission-tags",
+      changedDefinitions,
+      addedGrants,
+      ambiguousGrants,
+    });
+  } else if (ambiguousGrants > 0) {
+    log.debug("Found broad permission-tag read grants requiring manual review", { ambiguousGrants });
+  }
+
+  db.prepare("INSERT OR REPLACE INTO router_meta (key, value, updated_at) VALUES (?, ?, ?)").run(
+    CLI_COMMAND_ACCESS_KIND_MIGRATION_KEYS.permissionTags,
+    "done",
+    Date.now(),
+  );
 }
 
 function getTagDefinitionRowBySlug(slug: string): TagDefinitionRow | undefined {

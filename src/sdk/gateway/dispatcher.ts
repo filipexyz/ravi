@@ -8,10 +8,9 @@
  * (e.g. `{ id, limit }`). The wrapped CLI invocation form (`{ args, options }`)
  * is intentionally rejected because it leaks CLI grammar into the API surface.
  *
- * Audit emit lives here on purpose. The transport layer (server.ts) never
- * emits command audits, which prevents drift between CLI and gateway tool
- * naming. High-frequency successful read calls may be suppressed here; errors
- * still emit audit.
+ * Gateway dispatches emit audits through the central audit path here. The
+ * transport layer (server.ts) never emits command audits, so transport does
+ * not duplicate gateway audit events.
  *
  * Context binding: when the gateway resolves a runtime context-key, it threads
  * the resolved `ContextRecord` into the dispatcher so audit events carry the
@@ -22,22 +21,24 @@
 import { ZodError, type ZodTypeAny, type ZodIssue } from "zod";
 import type { CommandRegistryEntry } from "../../cli/registry-snapshot.js";
 import { runWithContext, type ToolContext } from "../../cli/context.js";
-import { enforceCliCommandAuthorization } from "../../cli/command-access.js";
-import { emitCliAuditEvent } from "../../cli/audit.js";
+import { enforceCliCommandAuthorization, redactCommandAccessInput } from "../../cli/command-access.js";
+import { emitCliAuditEvent, sanitizeCliAuditValue, type CliAuditOutcome } from "../../cli/audit.js";
 import type { ScopeContext } from "../../permissions/scope.js";
 import type { ContextRecord } from "../../router/router-db.js";
 import { RaviAppError } from "../../apps/types.js";
+import { raviAppErrorToContractError } from "../../apps/error-contract.js";
 import {
-  errorResponse,
-  internalError,
-  json,
-  permissionDenied,
-  returnShapeError,
-  validationError,
-  type JsonIssue,
-} from "./errors.js";
-
-const QUIET_SUCCESS_AUDIT_TOOLS = new Set(["sessions_list", "tasks_list", "tasks_show"]);
+  ContractError,
+  binaryResponseToContractError,
+  CONTRACT_EXIT_USAGE,
+  contractFailureOutcome,
+  expectedErrorToContractError,
+  permissionDeniedToContractError,
+  unexpectedErrorToContractError,
+} from "../../cli/agent-contract.js";
+import { isCloudAuthError } from "../../cloud-auth/errors.js";
+import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
+import { contractErrorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
 
 export interface DispatchOptions {
   /** Allow `superadmin`-scoped commands. Off by default. */
@@ -54,6 +55,9 @@ export interface AuditEvent {
   tool: string;
   input: Record<string, unknown>;
   isError: boolean;
+  outcome: CliAuditOutcome;
+  exitCode?: number;
+  errorCode?: string;
   durationMs: number;
   contextId: string | null;
   parentContextId: string | null;
@@ -62,7 +66,7 @@ export interface AuditEvent {
 
 export interface DispatchResult {
   response: Response;
-  /** Audit event emitted for this dispatch, or null when validation/quiet-success policy suppressed it. */
+  /** Audit event emitted for this dispatch, or null when exposure gating/quiet-success policy suppressed it. */
   audit: AuditEvent | null;
 }
 
@@ -78,7 +82,7 @@ interface NormalizeOk {
 
 interface NormalizeErr {
   ok: false;
-  response: Response;
+  issues: JsonIssue[];
 }
 
 type NormalizeResult = NormalizeOk | NormalizeErr;
@@ -90,31 +94,33 @@ export async function dispatch(
   opts: DispatchOptions = {},
 ): Promise<DispatchResult> {
   const tool = `${cmd.groupSegments.join("_")}_${cmd.command}`;
+  const group = cmd.groupSegments.join("_");
   const lineage = extractLineage(opts.contextRecord);
+  const startedAt = Date.now();
 
   if (cmd.scope === "superadmin" && !opts.allowSuperadmin) {
-    return {
-      response: errorResponse(403, "PermissionDenied", {
-        reason: `superadmin commands are not exposed by this gateway. Pass --allow-superadmin to opt in.`,
-      }),
-      audit: null,
-    };
+    const error = permissionDeniedToContractError(
+      commandOperation(group, cmd.command),
+      "Gateway access to this command was denied.",
+    );
+    const response = contractErrorResponse(error, 403, "denied");
+    const audit = buildAuditEvent(cmd, tool, {}, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
+    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+    return { response, audit: auditEmitted ? audit : null };
   }
 
   const normalized = normalizeBody(cmd, body);
   if (!normalized.ok) {
-    return { response: normalized.response, audit: null };
+    return usageErrorResult(cmd, tool, group, normalized.issues, startedAt, lineage, opts.emitAudit);
   }
 
   const validation = validateAndPack(cmd, normalized.input);
   if (!validation.ok) {
-    return { response: validationError(validation.issues), audit: null };
+    return usageErrorResult(cmd, tool, group, validation.issues, startedAt, lineage, opts.emitAudit);
   }
-  const auditInput = redactCommandInput(cmd, validation.inputForAudit);
+  const auditInput = redactCommandAccessInput(cmd.access, validation.inputForAudit);
 
-  const startedAt = Date.now();
   const toolContext = asToolContext(scopeContext, opts.contextRecord ?? null);
-  const group = cmd.groupSegments.join("_");
   const accessResult = runWithContext(toolContext, () =>
     enforceCliCommandAuthorization({
       group,
@@ -126,13 +132,16 @@ export async function dispatch(
     }),
   );
   if (!accessResult.allowed) {
-    const response = permissionDenied(accessResult.errorMessage);
-    const audit = buildAuditEvent(cmd, tool, auditInput, true, startedAt, lineage);
+    const error = permissionDeniedToContractError(commandOperation(group, cmd.command), accessResult.errorMessage);
+    const response = contractErrorResponse(error, 403, "denied");
+    const audit = buildAuditEvent(cmd, tool, auditInput, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit: auditEmitted ? audit : null };
   }
 
-  let isError = false;
+  let outcome: CliAuditOutcome = "succeeded";
+  let auditExitCode: number | undefined;
+  let auditErrorCode: string | undefined;
   let response: Response;
   let returnValue: unknown;
 
@@ -156,35 +165,75 @@ export async function dispatch(
         }),
     );
   } catch (err) {
-    isError = true;
-    if (err instanceof RaviAppError) {
-      response = errorResponse(err.status, err.code, {
-        message: err.message,
-        evidence: err.evidence,
-      });
+    const knownContractError =
+      err instanceof ContractError
+        ? err
+        : isCloudAuthError(err)
+          ? cloudErrorToContractError(commandOperation(group, cmd.command), err)
+          : expectedErrorToContractError(commandOperation(group, cmd.command), err);
+    if (knownContractError) {
+      outcome = contractFailureOutcome(knownContractError);
+      auditExitCode = knownContractError.exitCode;
+      auditErrorCode = knownContractError.code;
+      const providerStatus = isCloudAuthError(err) ? err.status : undefined;
+      const cloudStatus =
+        typeof providerStatus === "number" &&
+        Number.isInteger(providerStatus) &&
+        providerStatus >= 400 &&
+        providerStatus <= 599
+          ? providerStatus
+          : undefined;
+      response = contractErrorResponse(knownContractError, cloudStatus);
+    } else if (err instanceof RaviAppError) {
+      const appError = raviAppErrorToContractError(commandOperation(group, cmd.command), err);
+      outcome = contractFailureOutcome(appError);
+      auditExitCode = appError.exitCode;
+      auditErrorCode = appError.code;
+      response = contractErrorResponse(appError, err.status);
     } else {
-      const message = err instanceof Error ? err.message : String(err);
-      response = internalError(message);
+      const unexpectedError = unexpectedErrorToContractError(commandOperation(group, cmd.command));
+      outcome = contractFailureOutcome(unexpectedError);
+      auditExitCode = unexpectedError.exitCode;
+      auditErrorCode = unexpectedError.code;
+      response = contractErrorResponse(unexpectedError, 500);
     }
-    const audit = buildAuditEvent(cmd, tool, auditInput, isError, startedAt, lineage);
+    const audit = buildAuditEvent(cmd, tool, auditInput, outcome, startedAt, lineage, auditExitCode, auditErrorCode);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response, audit: auditEmitted ? audit : null };
   }
 
   if (cmd.binary) {
     if (!(returnValue instanceof Response)) {
-      response = returnShapeError([
+      response = returnShapeError(commandOperation(group, cmd.command), [
         {
           path: [],
           code: "invalid_type",
           message: `Command "${cmd.fullName}" is declared @Returns.binary() but handler returned ${describeReturnValue(returnValue)} instead of a Response.`,
         },
       ]);
-      const audit = buildAuditEvent(cmd, tool, auditInput, true, startedAt, lineage);
+      const audit = buildAuditEvent(cmd, tool, auditInput, "failed", startedAt, lineage, 1, "RETURN_SHAPE_ERROR");
       const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
       return { response, audit: auditEmitted ? audit : null };
     }
-    const audit = buildAuditEvent(cmd, tool, auditInput, isError, startedAt, lineage);
+    if (!returnValue.ok) {
+      const error = binaryResponseToContractError(commandOperation(group, cmd.command), returnValue.status);
+      const binaryOutcome = error.code === "PERMISSION_DENIED" ? "denied" : contractFailureOutcome(error);
+      const responseStatus = returnValue.status >= 400 ? returnValue.status : 502;
+      response = contractErrorResponse(error, responseStatus, binaryOutcome);
+      const audit = buildAuditEvent(
+        cmd,
+        tool,
+        auditInput,
+        binaryOutcome,
+        startedAt,
+        lineage,
+        error.exitCode,
+        error.code,
+      );
+      const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+      return { response, audit: auditEmitted ? audit : null };
+    }
+    const audit = buildAuditEvent(cmd, tool, auditInput, "succeeded", startedAt, lineage);
     const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
     return { response: returnValue, audit: auditEmitted ? audit : null };
   }
@@ -194,15 +243,15 @@ export async function dispatch(
   if (cmd.returns) {
     const returnIssues = checkReturnShape(cmd.returns, responseValue);
     if (returnIssues) {
-      response = returnShapeError(returnIssues);
-      const audit = buildAuditEvent(cmd, tool, auditInput, true, startedAt, lineage);
+      response = returnShapeError(commandOperation(group, cmd.command), returnIssues);
+      const audit = buildAuditEvent(cmd, tool, auditInput, "failed", startedAt, lineage, 1, "RETURN_SHAPE_ERROR");
       const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
       return { response, audit: auditEmitted ? audit : null };
     }
   }
 
   response = json(200, responseValue);
-  const audit = buildAuditEvent(cmd, tool, auditInput, isError, startedAt, lineage);
+  const audit = buildAuditEvent(cmd, tool, auditInput, "succeeded", startedAt, lineage);
   const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
   return { response, audit: auditEmitted ? audit : null };
 }
@@ -230,35 +279,63 @@ function extractLineage(record: ContextRecord | null | undefined): AuditLineage 
   };
 }
 
-function redactCommandInput(cmd: CommandRegistryEntry, input: Record<string, unknown>): Record<string, unknown> {
-  const redactions = new Set(cmd.access?.redactions ?? []);
-  if (redactions.size === 0) return input;
-  const redacted = { ...input };
-  for (const field of redactions) {
-    if (field in redacted) redacted[field] = "[REDACTED]";
-  }
-  return redacted;
-}
-
 function buildAuditEvent(
   cmd: CommandRegistryEntry,
   tool: string,
   input: Record<string, unknown>,
-  isError: boolean,
+  outcome: CliAuditOutcome,
   startedAt: number,
   lineage: AuditLineage,
+  exitCode?: number,
+  errorCode?: string,
 ): AuditEvent {
   return {
     group: cmd.groupSegments.join("_"),
     name: cmd.command,
     tool,
-    input,
-    isError,
+    input: sanitizeCliAuditValue(input) as Record<string, unknown>,
+    isError: outcome !== "succeeded" && outcome !== "blocked",
+    outcome,
+    ...(exitCode !== undefined ? { exitCode } : {}),
+    ...(errorCode !== undefined ? { errorCode } : {}),
     durationMs: Date.now() - startedAt,
     contextId: lineage.contextId,
     parentContextId: lineage.parentContextId,
     agentId: lineage.agentId,
   };
+}
+
+async function usageErrorResult(
+  cmd: CommandRegistryEntry,
+  tool: string,
+  group: string,
+  issues: JsonIssue[],
+  startedAt: number,
+  lineage: AuditLineage,
+  emitAudit: DispatchOptions["emitAudit"],
+): Promise<DispatchResult> {
+  const op = commandOperation(group, cmd.command);
+  const error = new ContractError(op, "USAGE_ERROR", `Invalid input for ${op}.`, CONTRACT_EXIT_USAGE, {
+    suggestedAction: `Correct the request body and retry ${op}`,
+    issues: redactValidationIssues(cmd, issues),
+  });
+  const outcome = contractFailureOutcome(error);
+  const audit = buildAuditEvent(cmd, tool, {}, outcome, startedAt, lineage, error.exitCode, error.code);
+  const auditEmitted = await emitDispatchAudit(audit, emitAudit);
+  return {
+    response: contractErrorResponse(error),
+    audit: auditEmitted ? audit : null,
+  };
+}
+
+function redactValidationIssues(cmd: CommandRegistryEntry, issues: JsonIssue[]): JsonIssue[] {
+  const redactions = new Set(cmd.access?.redactions ?? []);
+  if (redactions.size === 0) return issues;
+  return issues.map((issue) =>
+    typeof issue.path[0] === "string" && redactions.has(issue.path[0])
+      ? { ...issue, message: "Invalid redacted value." }
+      : issue,
+  );
 }
 
 function normalizeBody(cmd: CommandRegistryEntry, body: unknown): NormalizeResult {
@@ -268,9 +345,13 @@ function normalizeBody(cmd: CommandRegistryEntry, body: unknown): NormalizeResul
   if (typeof body !== "object" || Array.isArray(body)) {
     return {
       ok: false,
-      response: errorResponse(400, "BadRequest", {
-        message: "Request body must be a JSON object.",
-      }),
+      issues: [
+        {
+          path: [],
+          code: "invalid_type",
+          message: "Request body must be a JSON object.",
+        },
+      ],
     };
   }
   const obj = body as Record<string, unknown>;
@@ -291,12 +372,12 @@ function normalizeBody(cmd: CommandRegistryEntry, body: unknown): NormalizeResul
   }
 
   if (unknownKeys.length > 0) {
-    const issues: JsonIssue[] = unknownKeys.map((k) => ({
-      path: [k],
+    const issues: JsonIssue[] = unknownKeys.map(() => ({
+      path: ["<unknown>"],
       code: "unrecognized_keys",
-      message: `Unknown field "${k}" for ${cmd.fullName}.`,
+      message: `Unknown field for ${cmd.fullName}.`,
     }));
-    return { ok: false, response: validationError(issues) };
+    return { ok: false, issues };
   }
 
   for (const arg of cmd.args) {
@@ -399,7 +480,7 @@ function checkReturnShape(schema: ZodTypeAny, value: unknown): JsonIssue[] | nul
 }
 
 function asToolContext(scope: ScopeContext, record: ContextRecord | null): ToolContext {
-  const ctx: ToolContext = { suppressCliOutput: true };
+  const ctx: ToolContext = { suppressCliOutput: true, transport: "gateway" };
   if (scope.agentId ?? record?.agentId) ctx.agentId = scope.agentId ?? record?.agentId;
   if (scope.sessionKey ?? record?.sessionKey) ctx.sessionKey = scope.sessionKey ?? record?.sessionKey;
   if (scope.sessionName ?? record?.sessionName) ctx.sessionName = scope.sessionName ?? record?.sessionName;
@@ -411,7 +492,6 @@ function asToolContext(scope: ScopeContext, record: ContextRecord | null): ToolC
 }
 
 async function emitDispatchAudit(event: AuditEvent, override: DispatchOptions["emitAudit"]): Promise<boolean> {
-  if (!event.isError && QUIET_SUCCESS_AUDIT_TOOLS.has(event.tool)) return false;
   if (override) {
     await override(event);
     return true;
@@ -422,6 +502,9 @@ async function emitDispatchAudit(event: AuditEvent, override: DispatchOptions["e
     tool: event.tool,
     input: event.input,
     isError: event.isError,
+    outcome: event.outcome,
+    exitCode: event.exitCode,
+    errorCode: event.errorCode,
     status: "completed",
     durationMs: event.durationMs,
     contextId: event.contextId,

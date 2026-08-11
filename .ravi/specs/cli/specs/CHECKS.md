@@ -1,0 +1,25 @@
+# Specs agent-first CLI contract / CHECKS
+
+## Checks
+
+- `specs get <unknown-id> --json` MUST exit 1 with the `SPEC_NOT_FOUND`
+  envelope and up to three `suggestions` of real spec ids, even though
+  `getSpecContext` throws plain errors on unknown ids.
+- `specs get <id> --mode <bogus> --json` MUST exit 2 with `USAGE_ERROR` and
+  `acceptedValues` of `rules|full|checks|why|runbook`.
+- `specs list --kind <bogus> --json` and `specs new <id> --kind <bogus>`
+  MUST exit 2 with `USAGE_ERROR` and `acceptedValues` of
+  `domain|capability|feature`; `specs new` without `--title` or `--kind` MUST
+  exit 2 too.
+- `specs list --fields a,b,c --json` MUST return both `items` and `specs`
+  containing only the requested fields.
+- `specs new` MUST stay unbraked: it creates local files immediately, and an
+  existing id MUST keep failing with `Spec already exists` (exit 1) — no
+  overwrite path may be added without revisiting this spec.
+- `specs sync` MUST stay unbraked and idempotent: no `--execute`, exit 0 on
+  success — the CI quality gate (`syncSpecs()` in `src/ci/quality-gate.ts`)
+  and the many spec CHECKS embedding `ravi specs sync --json` depend on it.
+- The suggestions helper MUST tolerate a missing/unreadable index by
+  returning empty suggestions instead of throwing a second error.
+- `bun test src/cli/commands/specs.test.ts` SHOULD pass after any change to
+  the specs contract surface.

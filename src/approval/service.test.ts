@@ -277,9 +277,9 @@ describe("approval service", () => {
           type: "scope",
           agentId: "dev",
           denied: "group:daemon",
-          reason: "No approval source available.",
+          reason: "[REDACTED:content length=29]",
           denialId: expect.any(Number),
-          dedupeKey: "audit.denied:scope:dev:group:daemon:No approval source available.",
+          dedupeKey: "audit.denied:scope:dev:group:daemon:[REDACTED:content length=29]",
           context: expect.objectContaining({
             contextId: "ctx_audit_denied",
             sessionName: "dev-main",

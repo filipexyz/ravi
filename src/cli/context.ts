@@ -10,11 +10,14 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { getRuntimeContextFromEnv, resolveRuntimeContext, RAVI_CONTEXT_KEY_ENV } from "../runtime/context-registry.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { readCredentialsFile, selectDefaultCredentialsKey } from "../runtime/credentials-store.js";
+import { CliExpectedError } from "./expected-error.js";
 
 /**
  * Context available to CLI tools during execution
  */
 export interface ToolContext {
+  /** Execution surface for commands that have transport-specific interaction constraints. */
+  transport?: "tool" | "gateway";
   /** Current runtime context ID */
   contextId?: string;
   /** Resolved context registry record */
@@ -73,9 +76,10 @@ export function runWithContext<T>(context: ToolContext, fn: () => T): T {
  * const ctx = getContext();
  * const sessionKey = ctx?.sessionKey ?? "unknown";
  */
-export function getContext(): ToolContext | undefined {
+export function getContext(options: { localOnly?: boolean } = {}): ToolContext | undefined {
   const store = contextStorage.getStore();
   if (store) return store;
+  if (options.localOnly === true) return undefined;
 
   const env = process.env;
 
@@ -195,7 +199,7 @@ function installContextualConsoleGate(): void {
  */
 export function fail(message: string): never {
   if (hasContext()) {
-    throw new Error(message);
+    throw new CliExpectedError(message);
   }
   console.error(message);
   process.exit(1);

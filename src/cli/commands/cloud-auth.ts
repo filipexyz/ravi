@@ -7,12 +7,7 @@ import {
   normalizeConsoleUrl,
   refreshCredentialsForStore,
 } from "../../cloud-auth/client.js";
-import {
-  CloudAuthError,
-  cloudAuthErrorFromUnknown,
-  formatCloudAuthError,
-  isCloudAuthError,
-} from "../../cloud-auth/errors.js";
+import { CloudAuthError, cloudAuthErrorFromUnknown, isCloudAuthError } from "../../cloud-auth/errors.js";
 import { redactCloudAuthPayload } from "../../cloud-auth/redaction.js";
 import {
   deleteCloudCredentials,
@@ -146,7 +141,7 @@ export async function runLogout(options: CloudLogoutOptions = {}, deps: CloudAut
       loggedOut: true,
       consoleUrl: normalizeConsoleUrl(options.console ?? DEFAULT_CONSOLE_URL),
       revoked: false,
-      revokeError: cloudError.toJSON(),
+      revokeError: toSafeCloudLogoutError(cloudError),
     };
     printPayload(payload, options.json, () => {
       console.log("Invalid Ravi Cloud credentials were removed locally.");
@@ -169,7 +164,7 @@ export async function runLogout(options: CloudLogoutOptions = {}, deps: CloudAut
 
   const client = deps.client ?? new ConsoleApiClient({ consoleUrl: credentials.consoleUrl });
   let revoked = false;
-  let revokeError: ReturnType<CloudAuthError["toJSON"]> | null = null;
+  let revokeError: ReturnType<typeof toSafeCloudLogoutError> | null = null;
   let logoutCredentials = credentials;
   try {
     await client.logout(
@@ -192,10 +187,10 @@ export async function runLogout(options: CloudLogoutOptions = {}, deps: CloudAut
         );
         revoked = true;
       } catch (refreshOrLogoutError) {
-        revokeError = cloudAuthErrorFromUnknown(refreshOrLogoutError).toJSON();
+        revokeError = toSafeCloudLogoutError(refreshOrLogoutError);
       }
     } else {
-      revokeError = cloudAuthErrorFromUnknown(error).toJSON();
+      revokeError = toSafeCloudLogoutError(error);
     }
   } finally {
     del();
@@ -215,21 +210,16 @@ export async function runLogout(options: CloudLogoutOptions = {}, deps: CloudAut
   return payload;
 }
 
-export async function runCloudAuthRootCommand<T>(asJson: boolean | undefined, fn: () => Promise<T>): Promise<void> {
-  try {
-    await fn();
-  } catch (error) {
-    const cloudError = cloudAuthErrorFromUnknown(error);
-    if (asJson) {
-      console.log(JSON.stringify(formatCloudAuthError(cloudError), null, 2));
-    } else {
-      console.error(`${cloudError.code}: ${cloudError.message}`);
-      if (cloudError.code === "AUTH_REQUIRED" || cloudError.code === "AUTH_EXPIRED") {
-        console.error("Next: run `ravi login`.");
-      }
-    }
-    process.exit(cloudError.exitCode);
-  }
+function toSafeCloudLogoutError(error: unknown): { code: CloudAuthError["code"]; status?: number } {
+  const cloudError = cloudAuthErrorFromUnknown(error);
+  return {
+    code: cloudError.code,
+    ...(cloudError.status !== undefined ? { status: cloudError.status } : {}),
+  };
+}
+
+export async function runCloudAuthRootCommand<T>(_asJson: boolean | undefined, fn: () => Promise<T>): Promise<T> {
+  return fn();
 }
 
 function requireStoredCredentials(credentials: CloudCredentials | null, consoleUrl?: string): CloudCredentials {
