@@ -229,8 +229,9 @@ therefore remain pending; the skipped scaffold is not live-release evidence.
 
 ### Final Important-finding fix-wave record (2026-08-11)
 
-Verified implementation candidate `234da3f` without a live credential or Kimi
-network request:
+Verified code candidate `b76f4b8` (implementation `234da3f` plus the mandated
+session-trace coverage-map regression) without a live credential or Kimi network
+request:
 
 - the mandated 12-file provider/integration command passed 229 tests with 0
   failures and 1,105 expectations at the default per-test timeout;
