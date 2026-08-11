@@ -13,7 +13,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
-import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import {
+  cleanupIsolatedRaviState,
+  createIsolatedRaviState,
+  withoutRaviRuntimeContextEnv,
+} from "../../test/ravi-state.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
 import { DaemonCommands, findSourceProjectRoot, resolveDaemonRuntimeTarget } from "./daemon.js";
@@ -111,7 +115,7 @@ describe("daemon runtime target", () => {
       cwd: tempRoot,
       encoding: "utf8",
       env: {
-        ...process.env,
+        ...withoutRaviRuntimeContextEnv(process.env),
         PATH: `${fakeBinDir}:${process.env.PATH ?? ""}`,
         RAVI_STATE_DIR: join(tempRoot, "state"),
         RAVI_TEST_BUNDLE: bundlePath,
@@ -121,7 +125,7 @@ describe("daemon runtime target", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Ravi Daemon Status");
     expect(result.stderr).not.toContain("require() async module");
-  });
+  }, 20_000);
 
   it("restarts the installed runtime from any operator cwd without requiring a source project root", () => {
     const tempRoot = makeTempDir("ravi-daemon-runtime-");
@@ -187,6 +191,61 @@ describe("daemon runtime target", () => {
       sourceProjectRoot: realpathSync(sourceRoot),
     });
   });
+
+  it("executes a direct CLI restart once instead of handing off recursively", async () => {
+    const tempRoot = makeTempDir("ravi-daemon-restart-once-");
+    const fakeBinDir = join(tempRoot, "bin");
+    const fakePm2Path = join(fakeBinDir, "pm2");
+    const fakeBundlePath = join(tempRoot, "runtime", "index.js");
+    const pm2LogPath = join(tempRoot, "pm2.log");
+    const childMarkerPath = join(tempRoot, "handoff-child.log");
+
+    mkdirSync(fakeBinDir, { recursive: true });
+    mkdirSync(join(fakeBundlePath, ".."), { recursive: true });
+    writeFileSync(
+      fakePm2Path,
+      [
+        "#!/bin/sh",
+        'printf "%s\\n" "$*" >> "$DAEMON_TEST_PM2_LOG"',
+        'if [ "$1" = "jlist" ]; then printf "[]\\n"; fi',
+        "exit 0",
+      ].join("\n"),
+      "utf8",
+    );
+    chmodSync(fakePm2Path, 0o755);
+    writeFileSync(
+      fakeBundlePath,
+      [
+        'import { appendFileSync } from "node:fs";',
+        'appendFileSync(process.env.DAEMON_TEST_CHILD_MARKER, process.argv.slice(2).join(" "));',
+      ].join("\n"),
+      "utf8",
+    );
+
+    const result = spawnSync("bun", ["src/cli/index.ts", "daemon", "restart", "-m", "restart once", "--json"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...withoutRaviRuntimeContextEnv(process.env),
+        HOME: join(tempRoot, "home"),
+        PATH: `${fakeBinDir}${delimiter}${process.env.PATH ?? ""}`,
+        RAVI_STATE_DIR: join(tempRoot, "state"),
+        RAVI_CREDENTIALS_PATH: join(tempRoot, "missing-credentials.json"),
+        RAVI_BUNDLE: fakeBundlePath,
+        RAVI_DAEMON_CWD: tempRoot,
+        RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+        DAEMON_TEST_PM2_LOG: pm2LogPath,
+        DAEMON_TEST_CHILD_MARKER: childMarkerPath,
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).not.toContain('"mode": "handoff"');
+    expect(readFileSync(pm2LogPath, "utf8")).toContain(`start ${realpathSync(fakeBundlePath)}`);
+    expect(existsSync(childMarkerPath)).toBe(false);
+  }, 20_000);
 });
 
 describe("DaemonCommands --json", () => {

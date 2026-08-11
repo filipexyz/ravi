@@ -9,7 +9,7 @@ import { existsSync, writeFileSync, readFileSync, mkdirSync, realpathSync, statS
 import { homedir, hostname } from "node:os";
 import { dirname, join } from "node:path";
 import { Group, Command, CommandAccess, CliOnly, Option, Returns } from "../decorators.js";
-import { getContext, hasContext, fail } from "../context.js";
+import { getContext, hasRuntimeInvocationContext, fail } from "../context.js";
 import { CONTRACT_EXIT_POLICY, CONTRACT_EXIT_USAGE, contractDryRun, contractFail } from "../agent-contract.js";
 import {
   daemonEnvReturnSchema,
@@ -428,8 +428,8 @@ export class DaemonCommands {
       fail('Flag -m é obrigatória. Use: ravi daemon restart -m "motivo"');
     }
 
-    // When called inside daemon, spawn detached restart and return immediately
-    if (hasContext()) {
+    // Runtime callers hand off so the daemon can stop after the current command returns.
+    if (hasRuntimeInvocationContext()) {
       const target = this.requireRuntimeTarget({ build });
 
       // Save restart reason with session context
