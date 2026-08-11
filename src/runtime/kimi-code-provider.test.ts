@@ -771,6 +771,43 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(requests).toBe(0);
   });
 
+  test("interrupt wins when resume state becomes invalid during asynchronous load", async () => {
+    const fixture = isolatedStateEnv();
+    const seed = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("seed")) });
+    const seedEvents = await collectEvents(
+      seed,
+      startRequest({ cwd: join(fixture.root, "workspace"), env: fixture.env }),
+    );
+    const seedTerminal = seedEvents.at(-1);
+    if (seedTerminal?.type !== "turn.complete" || !seedTerminal.session) throw new Error("missing seed session");
+    rmSync(String(seedTerminal.session.params?.sessionFile), { force: true });
+
+    let requests = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        requests += 1;
+        return transportFrom(finalTurn("must not run"));
+      },
+    });
+    const handle = provider.startSession(
+      startRequest({
+        prompt: prompts("resume race"),
+        cwd: join(fixture.root, "workspace"),
+        env: fixture.env,
+        resumeSession: seedTerminal.session,
+      }),
+    );
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    const terminal = iterator.next();
+    await handle.interrupt();
+
+    expect((await terminal).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).done).toBe(true);
+    expect(requests).toBe(0);
+  });
+
   test("closes every active transport exactly once after each terminal path (catches transport leaks)", async () => {
     const cases: Array<{ name: string; events: KimiCodeStreamEvent[]; abort?: boolean }> = [
       { name: "success", events: [{ type: "done" }] },

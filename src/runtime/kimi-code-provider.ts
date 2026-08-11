@@ -199,6 +199,12 @@ function createKimiCodeSession(
             continuityInvalid = true;
           }
         }
+        if (turn.interrupted || closed || input.abortController.signal.aborted) {
+          turn.phase = "interrupted";
+          const terminal = terminalTracker.interrupt({ metadata });
+          if (terminal) yield terminal;
+          continue;
+        }
         if (continuityInvalid) {
           turn.phase = "failed";
           const terminal = terminalTracker.fail({ error: "Kimi Code session state is invalid", metadata });
