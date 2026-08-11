@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { chmod, link, lstat, mkdir, open, realpath, stat, unlink } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, open, readdir, realpath, rmdir, stat, unlink } from "node:fs/promises";
 import { isAbsolute, basename, dirname, join, parse, relative, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
@@ -9,7 +9,7 @@ import type { KimiCodeConversationMessage } from "./kimi-code-turn.js";
 import type { RuntimeSessionState } from "./types.js";
 
 const KIMI_CODE_STATE_SCHEMA_VERSION = 1 as const;
-const KIMI_CODE_MAX_STATE_BYTES = 4 * 1024 * 1024;
+const KIMI_CODE_MAX_STATE_BYTES = 1 * 1024 * 1024;
 const KIMI_CODE_MAX_WORKSPACE_REALPATH_BYTES = 64 * 1024;
 const execFileAsync = promisify(execFile);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -174,6 +174,11 @@ export async function commitKimiCodeSessionState(
     throw error;
   }
 
+  // A failed best-effort prune must never invalidate the newly promoted locator.
+  await pruneUnpublishedSessionArtifacts(sessionDirectory, basename(finalPath), snapshot.revision).catch(
+    () => undefined,
+  );
+
   return {
     snapshot,
     session: {
@@ -191,6 +196,52 @@ export async function commitKimiCodeSessionState(
       displayId: snapshot.sessionId,
     },
   };
+}
+
+/**
+ * Removes provider-owned state after its host session has been deleted. The
+ * supplied locator is treated as untrusted: it can only select its own UUID
+ * directory below this provider's derived state root.
+ */
+export async function cleanupKimiCodeSessionState(
+  session: RuntimeSessionState,
+  env?: NodeJS.ProcessEnv,
+): Promise<void> {
+  const locator = parseLocator(session, env);
+  if (locator.provider !== KIMI_CODE_PROVIDER_ID || locator.schemaVersion !== KIMI_CODE_STATE_SCHEMA_VERSION) {
+    throw stateError("locator is invalid");
+  }
+  if (!UUID_PATTERN.test(locator.sessionId) || !Number.isSafeInteger(locator.revision) || locator.revision < 1) {
+    throw stateError("locator is invalid");
+  }
+
+  const root = stateRoot(env);
+  const sessionDirectory = join(root, locator.sessionId);
+  if (
+    !isAbsolute(locator.sessionFile) ||
+    hasTraversalSegment(locator.sessionFile) ||
+    !samePath(dirname(locator.sessionFile), sessionDirectory) ||
+    !isRevisionFilename(basename(locator.sessionFile), locator.revision) ||
+    !isPathInside(root, locator.sessionFile)
+  ) {
+    throw stateError("session path is invalid");
+  }
+
+  const directoryInfo = await lstat(sessionDirectory).catch(() => undefined);
+  if (!directoryInfo) return;
+  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) throw stateError("session directory is invalid");
+  await assertNoExistingReparsePoints(sessionDirectory);
+  const rootRealPath = await realpath(root).catch(() => undefined);
+  const directoryRealPath = await realpath(sessionDirectory).catch(() => undefined);
+  if (!rootRealPath || !directoryRealPath || !isPathInside(rootRealPath, directoryRealPath)) {
+    throw stateError("session path escaped its root");
+  }
+
+  await removeOwnedSessionArtifacts(sessionDirectory);
+  await rmdir(sessionDirectory).catch((error) => {
+    if (isRecord(error) && (error.code === "ENOENT" || error.code === "ENOTEMPTY")) return;
+    throw error;
+  });
 }
 
 export async function loadKimiCodeSessionState(input: LoadKimiCodeSessionStateInput): Promise<KimiCodeSessionSnapshot> {
@@ -272,6 +323,55 @@ export async function loadKimiCodeSessionState(input: LoadKimiCodeSessionStateIn
     throw stateError("snapshot binding mismatch");
   }
   return snapshot;
+}
+
+async function pruneUnpublishedSessionArtifacts(
+  sessionDirectory: string,
+  liveFilename: string,
+  liveRevision: number,
+): Promise<void> {
+  await assertNoExistingReparsePoints(sessionDirectory);
+  for (const entry of await readdir(sessionDirectory, { withFileTypes: true })) {
+    if (entry.name === liveFilename) continue;
+    const path = join(sessionDirectory, entry.name);
+    const revision = revisionFromFilename(entry.name);
+    const temporary = isTemporaryRevisionFilename(entry.name);
+    if (!revision && !temporary) continue;
+    const info = await lstat(path);
+    if (!info.isFile() || info.isSymbolicLink()) throw stateError("session path uses a reparse point");
+    // A same/newer revision can still be a live locator from a concurrent
+    // publisher. A fresh temporary file can still be in that publisher's
+    // write/link window, so only reap abandoned temporaries.
+    if (revision !== undefined && revision >= liveRevision) continue;
+    if (temporary && Date.now() - info.mtimeMs < 60_000) continue;
+    await unlink(path);
+  }
+}
+
+async function removeOwnedSessionArtifacts(sessionDirectory: string): Promise<void> {
+  await assertNoExistingReparsePoints(sessionDirectory);
+  for (const entry of await readdir(sessionDirectory, { withFileTypes: true })) {
+    if (!isOwnedSessionArtifactFilename(entry.name)) continue;
+    const path = join(sessionDirectory, entry.name);
+    const info = await lstat(path);
+    if (!info.isFile() || info.isSymbolicLink()) throw stateError("session path uses a reparse point");
+    await unlink(path);
+  }
+}
+
+function isOwnedSessionArtifactFilename(filename: string): boolean {
+  return revisionFromFilename(filename) !== undefined || isTemporaryRevisionFilename(filename);
+}
+
+function revisionFromFilename(filename: string): number | undefined {
+  const revision = /^revision-(\d{8})-([0-9a-f-]{36})\.json$/i.exec(filename);
+  if (revision === null || !UUID_PATTERN.test(revision[2])) return undefined;
+  return Number(revision[1]);
+}
+
+function isTemporaryRevisionFilename(filename: string): boolean {
+  const temporary = /^\.revision-\d{8}-([0-9a-f-]{36})\.json\.([0-9a-f-]{36})\.tmp$/i.exec(filename);
+  return temporary !== null && UUID_PATTERN.test(temporary[1]) && UUID_PATTERN.test(temporary[2]);
 }
 
 function stateRoot(env?: NodeJS.ProcessEnv): string {
@@ -624,7 +724,6 @@ async function resolveWorkspaceIdentity(cwd: string): Promise<KimiCodeWorkspaceI
     throw stateError("workspace identity is unavailable");
   });
   if (
-    info.dev < 0n ||
     info.ino <= 0n ||
     !isAbsolute(canonical) ||
     Buffer.byteLength(canonical, "utf8") > KIMI_CODE_MAX_WORKSPACE_REALPATH_BYTES
@@ -642,7 +741,7 @@ function isWorkspaceIdentity(value: unknown): value is KimiCodeWorkspaceIdentity
     isAbsolute(value.realpath) &&
     Buffer.byteLength(value.realpath, "utf8") <= KIMI_CODE_MAX_WORKSPACE_REALPATH_BYTES &&
     typeof value.device === "string" &&
-    /^(?:0|[1-9]\d{0,39})$/.test(value.device) &&
+    /^-?(?:0|[1-9]\d{0,39})$/.test(value.device) &&
     typeof value.inode === "string" &&
     /^[1-9]\d{0,39}$/.test(value.inode)
   );

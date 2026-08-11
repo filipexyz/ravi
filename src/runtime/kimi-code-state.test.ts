@@ -13,13 +13,19 @@ import {
   statSync,
   symlinkSync,
   unlinkSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js";
-import { commitKimiCodeSessionState, createKimiCodeSessionId, loadKimiCodeSessionState } from "./kimi-code-state.js";
+import {
+  cleanupKimiCodeSessionState,
+  commitKimiCodeSessionState,
+  createKimiCodeSessionId,
+  loadKimiCodeSessionState,
+} from "./kimi-code-state.js";
 import {
   emptySkillVisibilitySnapshot,
   markLoadedFromRaviSkillToolCall,
@@ -140,7 +146,6 @@ describe("Kimi Code immutable session state", () => {
   test("commits monotonic immutable revisions atomically with private permissions", async () => {
     const first = await firstCommit();
     const firstFile = String(first.session.params?.sessionFile);
-    const firstBytes = readFileSync(firstFile, "utf8");
     const second = await commitKimiCodeSessionState({
       sessionId: first.snapshot.sessionId,
       model: "k3",
@@ -151,7 +156,6 @@ describe("Kimi Code immutable session state", () => {
       env: first.env,
     });
     const secondFile = String(second.session.params?.sessionFile);
-    const secondBytes = readFileSync(secondFile, "utf8");
 
     const sibling = await commitKimiCodeSessionState({
       sessionId: first.snapshot.sessionId,
@@ -168,8 +172,9 @@ describe("Kimi Code immutable session state", () => {
     expect(secondFile).not.toBe(firstFile);
     expect(sibling.snapshot.revision).toBe(2);
     expect(String(sibling.session.params?.sessionFile)).not.toBe(secondFile);
-    expect(readFileSync(firstFile, "utf8")).toBe(firstBytes);
-    expect(readFileSync(secondFile, "utf8")).toBe(secondBytes);
+    expect(existsSync(firstFile)).toBe(false);
+    expect(existsSync(secondFile)).toBe(true);
+    expect(readFileSync(String(sibling.session.params?.sessionFile), "utf8")).toContain("answer-collision");
     expect(readdirSync(dirname(secondFile)).filter((name) => name.includes(".tmp"))).toEqual([]);
     if (process.platform !== "win32") {
       expect(lstatSync(secondFile).mode & 0o777).toBe(0o600);
@@ -177,7 +182,56 @@ describe("Kimi Code immutable session state", () => {
     }
   });
 
-  test("keeps the previous locator byte-faithful when a newer orphan is never published", async () => {
+  test("retains only the published revision and clears unpublished temporary artifacts", async () => {
+    const first = await firstCommit();
+    const firstFile = String(first.session.params?.sessionFile);
+    const sessionDirectory = dirname(firstFile);
+    const staleTemporary = join(
+      sessionDirectory,
+      ".revision-00000099-123e4567-e89b-42d3-a456-426614174000.json.223e4567-e89b-42d3-a456-426614174000.tmp",
+    );
+    writeFileSync(staleTemporary, "unpublished", { encoding: "utf8", mode: 0o600 });
+    utimesSync(staleTemporary, new Date(0), new Date(0));
+
+    const second = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-pruned",
+      messages: nativeMessages("pruned"),
+      previousSnapshot: first.snapshot,
+      env: first.env,
+    });
+    const liveFile = String(second.session.params?.sessionFile);
+
+    expect(existsSync(firstFile)).toBe(false);
+    expect(existsSync(staleTemporary)).toBe(false);
+    expect(existsSync(liveFile)).toBe(true);
+    expect(readdirSync(sessionDirectory)).toEqual([basename(liveFile)]);
+  });
+
+  test("cleans only a validated Kimi session directory and is idempotent", async () => {
+    const committed = await firstCommit();
+    const sessionFile = String(committed.session.params?.sessionFile);
+    const sessionDirectory = dirname(sessionFile);
+    const foreign = join(committed.root, "foreign-state");
+    mkdirSync(foreign);
+    writeFileSync(join(foreign, "keep.txt"), "keep");
+    const invalid = cloneSession(committed.session);
+    Object.assign(invalid.params ?? {}, { sessionFile: join(foreign, "keep.txt") });
+
+    await expect(cleanupKimiCodeSessionState(invalid, committed.env)).rejects.toThrow("session path is invalid");
+    expect(existsSync(join(foreign, "keep.txt"))).toBe(true);
+
+    const signedDevice = cloneSession(committed.session);
+    Object.assign((signedDevice.params?.workspaceIdentity as Record<string, unknown>) ?? {}, { device: "-42" });
+    await cleanupKimiCodeSessionState(signedDevice, committed.env);
+    await cleanupKimiCodeSessionState(signedDevice, committed.env);
+    expect(existsSync(sessionFile)).toBe(false);
+    expect(existsSync(sessionDirectory)).toBe(false);
+  });
+
+  test("rejects a superseded locator after its newer revision is published", async () => {
     const first = await firstCommit();
     await commitKimiCodeSessionState({
       sessionId: first.snapshot.sessionId,
@@ -189,14 +243,9 @@ describe("Kimi Code immutable session state", () => {
       env: first.env,
     });
 
-    const loaded = await loadKimiCodeSessionState({
-      session: first.session,
-      model: "k3",
-      cwd: first.cwd,
-      env: first.env,
-    });
-    expect(loaded).toEqual(first.snapshot);
-    expect(loaded.messages).toEqual(nativeMessages());
+    await expect(
+      loadKimiCodeSessionState({ session: first.session, model: "k3", cwd: first.cwd, env: first.env }),
+    ).rejects.toThrow("session file is missing");
   });
 
   test("cleans an unpublished temporary revision and permits retry after a pre-publication crash", async () => {
@@ -619,7 +668,7 @@ describe("Kimi Code immutable session state", () => {
         lastCommittedTurnId: "turn-large",
         messages: [
           { role: "user", content: "oversized" },
-          { role: "assistant", content: "x".repeat(5 * 1024 * 1024), reasoning_content: "", tool_calls: [] },
+          { role: "assistant", content: "x".repeat(1024 * 1024), reasoning_content: "", tool_calls: [] },
         ],
         env: fixture.env,
       }),
