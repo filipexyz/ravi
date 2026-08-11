@@ -8,6 +8,9 @@ normative source. This document records how the confirmed adversarial findings o
 PR #406 will be corrected without widening the provider's advertised capability
 surface.
 
+Execution is tracked in the [Kimi Code Provider Hardening Implementation
+Plan](../plans/2026-08-11-kimi-code-provider-hardening.md).
+
 The implementation must remain additive. Claude, Codex, and Pi behavior must not
 change unless a generic host defect is demonstrated by a provider-independent
 regression.
