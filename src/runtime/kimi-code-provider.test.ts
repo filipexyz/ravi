@@ -235,6 +235,7 @@ describe("createKimiCodeRuntimeProvider", () => {
                   delta: {
                     content: "lo",
                   },
+                  finish_reason: "stop",
                 },
               ],
             },
@@ -506,7 +507,7 @@ describe("createKimiCodeRuntimeProvider", () => {
     const provider = createKimiCodeRuntimeProvider({
       transportFactory: () => {
         calls += 1;
-        return transportFrom([{ type: "done" }]);
+        return transportFrom(finalTurn(""));
       },
     });
     const handle = provider.startSession(startRequest({ prompt: prompts("first", "second") }));
@@ -649,11 +650,18 @@ describe("createKimiCodeRuntimeProvider", () => {
     ).toMatchObject({ kind: "accepted", reasoningDelta: true, finished: false });
     expect(
       accumulator.accept({
-        choices: [{ index: 0, delta: { tool_calls: [{ index: 2, function: { arguments: "}" } }] } }],
+        choices: [
+          {
+            index: 0,
+            delta: { tool_calls: [{ index: 2, function: { arguments: "}" } }] },
+            finish_reason: "tool_calls",
+          },
+        ],
       }),
-    ).toMatchObject({ kind: "accepted", finished: false });
+    ).toMatchObject({ kind: "accepted", finished: true });
 
     expect(accumulator.complete()).toEqual({
+      finishReason: "tool_calls",
       text: "answer",
       reasoning: "reason-1reason-2",
       toolCalls: [
@@ -885,6 +893,7 @@ describe("createKimiCodeRuntimeProvider", () => {
     const invalidCases: Array<{
       name: string;
       calls: Array<{ index: number; id: string; name: string; arguments: string }>;
+      error?: string;
     }> = [
       {
         name: "malformed JSON",
@@ -892,8 +901,16 @@ describe("createKimiCodeRuntimeProvider", () => {
       },
       { name: "array arguments", calls: [{ index: 0, id: "call-1", name: "lookup_order", arguments: "[]" }] },
       { name: "null arguments", calls: [{ index: 0, id: "call-1", name: "lookup_order", arguments: "null" }] },
-      { name: "empty id", calls: [{ index: 0, id: " ", name: "lookup_order", arguments: "{}" }] },
-      { name: "empty name", calls: [{ index: 0, id: "call-1", name: " ", arguments: "{}" }] },
+      {
+        name: "empty id",
+        calls: [{ index: 0, id: " ", name: "lookup_order", arguments: "{}" }],
+        error: "Kimi Code protocol error: malformed response chunk",
+      },
+      {
+        name: "empty name",
+        calls: [{ index: 0, id: "call-1", name: " ", arguments: "{}" }],
+        error: "Kimi Code protocol error: malformed response chunk",
+      },
       {
         name: "duplicate id",
         calls: [
@@ -925,7 +942,7 @@ describe("createKimiCodeRuntimeProvider", () => {
       ).toBe(false);
       expect(events.at(-1), testCase.name).toMatchObject({
         type: "turn.failed",
-        error: "Kimi Code tool call was invalid",
+        error: testCase.error ?? "Kimi Code tool call was invalid",
       });
     }
   });
@@ -1097,7 +1114,7 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code tool loop limit exceeded" });
   });
 
-  test("rejects an oversized tool-call batch before any host dispatch", async () => {
+  test("rejects a tool fragment index outside the native bound before any host dispatch", async () => {
     let dispatches = 0;
     const provider = createKimiCodeRuntimeProvider({
       transportFactory: () =>
@@ -1125,7 +1142,10 @@ describe("createKimiCodeRuntimeProvider", () => {
 
     expect(dispatches).toBe(0);
     expect(events.some((event) => event.type === "tool.started")).toBe(false);
-    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code tool loop limit exceeded" });
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code protocol error: malformed response chunk",
+    });
   });
 
   test("commits complete private native state and publishes its locator only at successful terminal", async () => {

@@ -15,8 +15,37 @@ export interface KimiCodeToolCallFragment {
   arguments: string;
 }
 
+export type KimiCodeTerminalFinishReason = "stop" | "tool_calls";
+
+export interface KimiCodeNativeError {
+  status?: number;
+  code?: string;
+  type?: string;
+  requestId?: string;
+}
+
+export type KimiCodeNativeProtocolCode =
+  | "incomplete_tool_call"
+  | "inconsistent_finish_reason"
+  | "invalid_finish_reason"
+  | "invalid_tool_index"
+  | "invalid_usage"
+  | "missing_finish_reason"
+  | "terminal_content_filter"
+  | "terminal_length"
+  | "tool_identity_mutation"
+  | "unrecognized_event";
+
+export class KimiCodeNativeProtocolError extends Error {
+  constructor(readonly code: KimiCodeNativeProtocolCode) {
+    super(code);
+    this.name = "KimiCodeNativeProtocolError";
+  }
+}
+
 /** @internal Completed provider-native state for tool and session continuation. */
 export interface KimiCodeCompletedTurn {
+  finishReason: KimiCodeTerminalFinishReason;
   text: string;
   reasoning: string;
   toolCalls: KimiCodeToolCallFragment[];
@@ -54,14 +83,23 @@ interface ParsedKimiCodeChoice {
 
 interface ParsedKimiCodeChunk {
   choices: ParsedKimiCodeChoice[];
-  usage?: Record<string, unknown>;
-  error: boolean;
+  usage?: KimiCodeUsagePatch;
+  nativeError?: KimiCodeNativeError;
+}
+
+interface KimiCodeUsagePatch {
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
 }
 
 export type KimiCodeTurnChunkResult =
   | { kind: "accepted"; textDeltas: string[]; reasoningDelta: boolean; finished: boolean }
+  | { kind: "malformed"; code: KimiCodeNativeProtocolCode }
+  | { kind: "provider_error"; nativeError: KimiCodeNativeError }
   | {
-      kind: "malformed" | "provider_error" | "post_finish" | "response_limit" | "tool_argument_limit";
+      kind: "post_finish" | "response_limit" | "tool_argument_limit";
     };
 
 /** @internal Deterministic Kimi chunk assembly boundary for Tasks 4 and 5. */
@@ -72,20 +110,40 @@ export function createKimiCodeCompletedTurnAccumulator(): {
   let text = "";
   let reasoning = "";
   let usage: KimiCodeCompletedTurn["usage"] = { inputTokens: 0, outputTokens: 0 };
-  let finished = false;
+  let finishReason: KimiCodeTerminalFinishReason | undefined;
   let accumulatedResponseBytes = 0;
   const toolCalls = new Map<number, KimiCodeToolCallFragment>();
 
   return {
     accept(data) {
       const chunk = parseKimiCodeChunk({ type: "message", data });
-      if (!chunk) return { kind: "malformed" };
-      if (chunk.error) return { kind: "provider_error" };
+      if ("code" in chunk) return { kind: "malformed", code: chunk.code };
+      if (chunk.nativeError) return { kind: "provider_error", nativeError: chunk.nativeError };
       const textDeltas = chunk.choices.flatMap((choice) => (choice.content ? [choice.content] : []));
       const reasoningDelta = chunk.choices.some((choice) => Boolean(choice.reasoning));
       const hasPostFinishDelta =
         textDeltas.length > 0 || reasoningDelta || chunk.choices.some((choice) => choice.toolCalls.length > 0);
-      if (finished && hasPostFinishDelta) return { kind: "post_finish" };
+      if (finishReason && hasPostFinishDelta) return { kind: "post_finish" };
+      const nextToolCalls = new Map([...toolCalls.entries()].map(([index, fragment]) => [index, { ...fragment }]));
+      for (const choice of chunk.choices) {
+        const mergeError = mergeToolCallFragments(nextToolCalls, choice.toolCalls);
+        if (mergeError) return { kind: "malformed", code: mergeError };
+      }
+      const terminalReasons = chunk.choices.flatMap((choice) => (choice.finishReason ? [choice.finishReason] : []));
+      for (const terminalReason of terminalReasons) {
+        if (terminalReason === "length" || terminalReason === "content_filter") {
+          return { kind: "malformed", code: `terminal_${terminalReason}` };
+        }
+        if (finishReason && finishReason !== terminalReason) {
+          return { kind: "malformed", code: "inconsistent_finish_reason" };
+        }
+        if (terminalReason === "tool_calls" && !hasCompleteToolCalls(nextToolCalls)) {
+          return { kind: "malformed", code: "incomplete_tool_call" };
+        }
+        if (terminalReason === "stop" && nextToolCalls.size > 0) {
+          return { kind: "malformed", code: "inconsistent_finish_reason" };
+        }
+      }
       const fragmentBytes = chunk.choices.reduce(
         (total, choice) =>
           total +
@@ -119,14 +177,16 @@ export function createKimiCodeCompletedTurnAccumulator(): {
       for (const choice of chunk.choices) {
         if (choice.content) text += choice.content;
         if (choice.reasoning) reasoning += choice.reasoning;
-        mergeToolCallFragments(toolCalls, choice.toolCalls);
-        if (choice.finishReason) finished = true;
+        if (choice.finishReason === "stop" || choice.finishReason === "tool_calls") finishReason = choice.finishReason;
       }
+      toolCalls.clear();
+      for (const [index, fragment] of nextToolCalls) toolCalls.set(index, fragment);
       accumulatedResponseBytes += fragmentBytes;
-      return { kind: "accepted", textDeltas, reasoningDelta, finished };
+      return { kind: "accepted", textDeltas, reasoningDelta, finished: finishReason !== undefined };
     },
     complete() {
-      return completeKimiCodeTurn({ text, reasoning, toolCalls, usage });
+      if (!finishReason) throw protocol("missing_finish_reason");
+      return completeKimiCodeTurn({ finishReason, text, reasoning, toolCalls, usage });
     },
   };
 }
@@ -191,11 +251,11 @@ export function addKimiCodeUsage(
   current: KimiCodeCompletedTurn["usage"],
   next: KimiCodeCompletedTurn["usage"],
 ): KimiCodeCompletedTurn["usage"] {
-  const cacheReadTokens = (current.cacheReadTokens ?? 0) + (next.cacheReadTokens ?? 0);
-  const cacheCreationTokens = (current.cacheCreationTokens ?? 0) + (next.cacheCreationTokens ?? 0);
+  const cacheReadTokens = checkedAddTokenCounts(current.cacheReadTokens ?? 0, next.cacheReadTokens ?? 0);
+  const cacheCreationTokens = checkedAddTokenCounts(current.cacheCreationTokens ?? 0, next.cacheCreationTokens ?? 0);
   return {
-    inputTokens: current.inputTokens + next.inputTokens,
-    outputTokens: current.outputTokens + next.outputTokens,
+    inputTokens: checkedAddTokenCounts(current.inputTokens, next.inputTokens),
+    outputTokens: checkedAddTokenCounts(current.outputTokens, next.outputTokens),
     ...(cacheReadTokens > 0 ? { cacheReadTokens } : {}),
     ...(cacheCreationTokens > 0 ? { cacheCreationTokens } : {}),
   };
@@ -226,27 +286,37 @@ function utf8Length(value: string): number {
   return new TextEncoder().encode(value).byteLength;
 }
 
-function parseKimiCodeChunk(event: Extract<KimiCodeStreamEvent, { type: "message" }>): ParsedKimiCodeChunk | null {
-  if (!isRecord(event.data)) return null;
-  if (event.data.error !== undefined) return { choices: [], error: true };
-  const choicesValue = event.data.choices;
-  if (choicesValue === undefined) {
-    return { choices: [], usage: isRecord(event.data.usage) ? event.data.usage : undefined, error: false };
+function parseKimiCodeChunk(
+  event: Extract<KimiCodeStreamEvent, { type: "message" }>,
+): ParsedKimiCodeChunk | { code: KimiCodeNativeProtocolCode } {
+  if (!isRecord(event.data)) return { code: "unrecognized_event" };
+  if (event.data.error !== undefined) {
+    if (!isRecord(event.data.error)) return { code: "unrecognized_event" };
+    return { choices: [], nativeError: projectKimiCodeNativeError(event.data.error) };
   }
-  if (!Array.isArray(choicesValue)) return null;
-  if (choicesValue.length > 1) return null;
+  const choicesValue = event.data.choices;
+  const usageValue = event.data.usage;
+  if (choicesValue === undefined && usageValue === undefined) return { code: "unrecognized_event" };
+  if (choicesValue !== undefined && !Array.isArray(choicesValue)) return { code: "unrecognized_event" };
+  const usage = usageValue === undefined ? undefined : parseKimiCodeUsage(usageValue);
+  if (usage && "code" in usage) return usage;
+  if (choicesValue === undefined) return { choices: [], ...(usage ? { usage } : {}) };
+  if (choicesValue.length > 1) return { code: "unrecognized_event" };
   const choices: ParsedKimiCodeChoice[] = [];
   for (const rawChoice of choicesValue) {
-    if (!isRecord(rawChoice)) return null;
-    if (rawChoice.index !== undefined && rawChoice.index !== 0) return null;
+    if (!isRecord(rawChoice)) return { code: "unrecognized_event" };
+    if (rawChoice.index !== undefined && rawChoice.index !== 0) return { code: "unrecognized_event" };
     const delta = rawChoice.delta === undefined ? {} : rawChoice.delta;
-    if (!isRecord(delta)) return null;
+    if (!isRecord(delta)) return { code: "unrecognized_event" };
     const toolCalls = parseToolCallFragments(delta.tool_calls);
-    if (!toolCalls) return null;
-    if (delta.content !== undefined && typeof delta.content !== "string") return null;
-    if (delta.reasoning_content !== undefined && typeof delta.reasoning_content !== "string") return null;
+    if (!toolCalls || "code" in toolCalls) return toolCalls ?? { code: "unrecognized_event" };
+    if (delta.content !== undefined && typeof delta.content !== "string") return { code: "unrecognized_event" };
+    if (delta.reasoning_content !== undefined && typeof delta.reasoning_content !== "string")
+      return { code: "unrecognized_event" };
     const finishReason = rawChoice.finish_reason;
-    if (finishReason !== undefined && finishReason !== null && !isKimiCodeFinishReason(finishReason)) return null;
+    if (finishReason !== undefined && finishReason !== null && !isKimiCodeFinishReason(finishReason)) {
+      return { code: "invalid_finish_reason" };
+    }
     choices.push({
       ...(typeof delta.content === "string" ? { content: delta.content } : {}),
       ...(typeof delta.reasoning_content === "string" ? { reasoning: delta.reasoning_content } : {}),
@@ -254,14 +324,16 @@ function parseKimiCodeChunk(event: Extract<KimiCodeStreamEvent, { type: "message
       ...(typeof finishReason === "string" ? { finishReason } : {}),
     });
   }
-  return { choices, usage: isRecord(event.data.usage) ? event.data.usage : undefined, error: false };
+  return { choices, ...(usage ? { usage } : {}) };
 }
 
 function isKimiCodeFinishReason(value: unknown): value is "stop" | "length" | "tool_calls" | "content_filter" {
   return value === "stop" || value === "length" || value === "tool_calls" || value === "content_filter";
 }
 
-function parseToolCallFragments(value: unknown): KimiCodeToolCallFragment[] | null {
+function parseToolCallFragments(
+  value: unknown,
+): KimiCodeToolCallFragment[] | { code: KimiCodeNativeProtocolCode } | null {
   if (value === undefined) return [];
   if (!Array.isArray(value)) return null;
   const fragments: KimiCodeToolCallFragment[] = [];
@@ -270,7 +342,10 @@ function parseToolCallFragments(value: unknown): KimiCodeToolCallFragment[] | nu
     if (!isRecord(raw)) return null;
     const fn = raw.function === undefined ? {} : raw.function;
     if (!isRecord(fn)) return null;
-    const index = typeof raw.index === "number" && Number.isInteger(raw.index) ? raw.index : position;
+    const index = raw.index === undefined ? position : raw.index;
+    if (typeof index !== "number" || !Number.isSafeInteger(index) || index < 0 || index >= KIMI_CODE_MAX_TOOL_CALLS) {
+      return { code: "invalid_tool_index" };
+    }
     if (raw.id !== undefined && typeof raw.id !== "string") return null;
     if (fn.name !== undefined && typeof fn.name !== "string") return null;
     if (fn.arguments !== undefined && typeof fn.arguments !== "string") return null;
@@ -287,9 +362,15 @@ function parseToolCallFragments(value: unknown): KimiCodeToolCallFragment[] | nu
 function mergeToolCallFragments(
   toolCalls: Map<number, KimiCodeToolCallFragment>,
   fragments: readonly KimiCodeToolCallFragment[],
-): void {
+): "tool_identity_mutation" | undefined {
   for (const fragment of fragments) {
     const current = toolCalls.get(fragment.index) ?? { index: fragment.index, arguments: "" };
+    if (
+      (current.id && fragment.id && current.id !== fragment.id) ||
+      (current.name && fragment.name && current.name !== fragment.name)
+    ) {
+      return "tool_identity_mutation";
+    }
     toolCalls.set(fragment.index, {
       index: fragment.index,
       ...((fragment.id ?? current.id) ? { id: fragment.id ?? current.id } : {}),
@@ -297,15 +378,27 @@ function mergeToolCallFragments(
       arguments: current.arguments + fragment.arguments,
     });
   }
+  return undefined;
+}
+
+function hasCompleteToolCalls(toolCalls: ReadonlyMap<number, KimiCodeToolCallFragment>): boolean {
+  return (
+    toolCalls.size > 0 &&
+    [...toolCalls.values()].every(
+      (toolCall) => Boolean(toolCall.id?.trim()) && Boolean(toolCall.name?.trim()) && toolCall.arguments.length > 0,
+    )
+  );
 }
 
 function completeKimiCodeTurn(input: {
+  finishReason: KimiCodeTerminalFinishReason;
   text: string;
   reasoning: string;
   toolCalls: ReadonlyMap<number, KimiCodeToolCallFragment>;
   usage: KimiCodeCompletedTurn["usage"];
 }): KimiCodeCompletedTurn {
   return {
+    finishReason: input.finishReason,
     text: input.text,
     reasoning: input.reasoning,
     toolCalls: [...input.toolCalls.values()].sort((left, right) => left.index - right.index),
@@ -315,25 +408,71 @@ function completeKimiCodeTurn(input: {
 
 function mergeKimiCodeUsage(
   current: KimiCodeCompletedTurn["usage"],
-  value: Record<string, unknown>,
+  value: KimiCodeUsagePatch,
 ): KimiCodeCompletedTurn["usage"] {
-  const details = isRecord(value.prompt_tokens_details) ? value.prompt_tokens_details : {};
-  const cacheReadTokens = readTokenCount(details.cached_tokens) ?? readTokenCount(value.cache_read_input_tokens);
-  const cacheCreationTokens = readTokenCount(value.cache_creation_input_tokens);
   return {
-    inputTokens: readTokenCount(value.prompt_tokens) ?? current.inputTokens,
-    outputTokens: readTokenCount(value.completion_tokens) ?? current.outputTokens,
-    ...((cacheReadTokens ?? current.cacheReadTokens) !== undefined
-      ? { cacheReadTokens: cacheReadTokens ?? current.cacheReadTokens }
+    inputTokens: value.inputTokens ?? current.inputTokens,
+    outputTokens: value.outputTokens ?? current.outputTokens,
+    ...((value.cacheReadTokens ?? current.cacheReadTokens) !== undefined
+      ? { cacheReadTokens: value.cacheReadTokens ?? current.cacheReadTokens }
       : {}),
-    ...((cacheCreationTokens ?? current.cacheCreationTokens) !== undefined
-      ? { cacheCreationTokens: cacheCreationTokens ?? current.cacheCreationTokens }
+    ...((value.cacheCreationTokens ?? current.cacheCreationTokens) !== undefined
+      ? { cacheCreationTokens: value.cacheCreationTokens ?? current.cacheCreationTokens }
       : {}),
   };
 }
 
-function readTokenCount(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+function parseKimiCodeUsage(value: unknown): KimiCodeUsagePatch | { code: KimiCodeNativeProtocolCode } {
+  if (!isRecord(value)) return { code: "invalid_usage" };
+  try {
+    const details = value.prompt_tokens_details;
+    if (details !== undefined && !isRecord(details)) throw protocol("invalid_usage");
+    return {
+      ...(value.prompt_tokens !== undefined ? { inputTokens: checkedTokenCount(value.prompt_tokens) } : {}),
+      ...(value.completion_tokens !== undefined ? { outputTokens: checkedTokenCount(value.completion_tokens) } : {}),
+      ...((details?.cached_tokens ?? value.cache_read_input_tokens) !== undefined
+        ? { cacheReadTokens: checkedTokenCount(details?.cached_tokens ?? value.cache_read_input_tokens) }
+        : {}),
+      ...(value.cache_creation_input_tokens !== undefined
+        ? { cacheCreationTokens: checkedTokenCount(value.cache_creation_input_tokens) }
+        : {}),
+    };
+  } catch (error) {
+    if (error instanceof KimiCodeNativeProtocolError) return { code: error.code };
+    throw error;
+  }
+}
+
+function checkedTokenCount(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) throw protocol("invalid_usage");
+  return value as number;
+}
+
+function checkedAddTokenCounts(left: unknown, right: unknown): number {
+  const total = checkedTokenCount(left) + checkedTokenCount(right);
+  if (!Number.isSafeInteger(total)) throw protocol("invalid_usage");
+  return total;
+}
+
+function projectKimiCodeNativeError(error: Record<string, unknown>): KimiCodeNativeError {
+  const status = error.status;
+  const code = safeNativeToken(error.code);
+  const type = safeNativeToken(error.type);
+  const requestId = safeNativeToken(error.request_id) ?? safeNativeToken(error.requestId);
+  return {
+    ...(typeof status === "number" && Number.isInteger(status) && status >= 400 && status <= 599 ? { status } : {}),
+    ...(code ? { code } : {}),
+    ...(type ? { type } : {}),
+    ...(requestId ? { requestId } : {}),
+  };
+}
+
+function safeNativeToken(value: unknown): string | undefined {
+  return typeof value === "string" && /^[A-Za-z0-9._:-]{1,64}$/.test(value) ? value : undefined;
+}
+
+function protocol(code: KimiCodeNativeProtocolCode): KimiCodeNativeProtocolError {
+  return new KimiCodeNativeProtocolError(code);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
