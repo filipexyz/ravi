@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, it, test } from "bun:test";
 import packageJson from "../../package.json" with { type: "json" };
 import type { RuntimeStartRequest } from "./types.js";
 import {
@@ -39,7 +39,7 @@ function response(chunks: string[], status = 200): Response {
   });
 }
 
-function syntheticFetch(handler: () => Promise<Response>): typeof fetch {
+function syntheticFetch(handler: (...args: Parameters<typeof fetch>) => Promise<Response>): typeof fetch {
   return handler as unknown as typeof fetch;
 }
 
@@ -64,8 +64,8 @@ describe("buildKimiCodeRequest", () => {
     expect(built.body).toEqual({
       model: "k3",
       messages: [
-        { role: "user", content: "hello" },
         { role: "system", content: "Ravi policy." },
+        { role: "user", content: "hello" },
       ],
       stream: true,
       stream_options: { include_usage: true },
@@ -111,17 +111,79 @@ describe("buildKimiCodeRequest", () => {
 
   test("enforces the 2 MiB UTF-8 limit for each input message", () => {
     expect(() =>
-      buildKimiCodeRequest(request(), [{ role: "user", content: "a".repeat(2 * 1024 * 1024) }], sessionId),
+      buildKimiCodeRequest(request(), [{ role: "user", content: "a".repeat(2 * 1024 * 1024 - 1024) }], sessionId),
     ).not.toThrow();
     expect(() => buildKimiCodeRequest(request(), [{ role: "user", content: "😀".repeat(524_289) }], sessionId)).toThrow(
       "2 MiB",
     );
   });
+
+  it("places system policy before the transcript on first and tool-continuation requests", () => {
+    const firstRequest = buildKimiCodeRequest(request(), [{ role: "user", content: "first prompt" }], sessionId);
+    const continuationRequest = buildKimiCodeRequest(
+      request(),
+      [
+        { role: "user", content: "first prompt" },
+        { role: "assistant", content: "I'll use a tool." },
+        { role: "tool", content: "tool result" },
+      ] as never,
+      sessionId,
+    );
+
+    expect(firstRequest.body.messages.map((message) => message.role)).toEqual(["system", "user"]);
+    expect(continuationRequest.body.messages.map((message) => message.role)).toEqual([
+      "system",
+      "user",
+      "assistant",
+      "tool",
+    ]);
+  });
+
+  it("rejects a serialized native body larger than 2 MiB even when each message is smaller", () => {
+    const error = expect(() =>
+      buildKimiCodeRequest(
+        request(),
+        [
+          { role: "user", content: "a".repeat(Math.floor(1.1 * 1024 * 1024)) },
+          { role: "user", content: "b".repeat(Math.floor(1.1 * 1024 * 1024)) },
+        ],
+        sessionId,
+      ),
+    );
+
+    error.toThrow("request_too_large");
+  });
+
+  it("returns typed non-recoverable preflight failures for key model effort and size", () => {
+    const cases: Array<[string, () => unknown, string]> = [
+      ["key", () => buildKimiCodeRequest(request({ env: {} }), [], sessionId), "missing_api_key"],
+      ["model", () => buildKimiCodeRequest(request({ model: "other" }), [], sessionId), "unknown_model"],
+      [
+        "effort",
+        () => buildKimiCodeRequest(request({ effort: "none" }), [{ role: "user", content: "x" }], sessionId),
+        "unsupported_effort",
+      ],
+      [
+        "size",
+        () => buildKimiCodeRequest(request(), [{ role: "user", content: "😀".repeat(524_289) }], sessionId),
+        "message_too_large",
+      ],
+    ];
+
+    for (const [_caseName, invoke, code] of cases) {
+      try {
+        invoke();
+        throw new Error("expected preflight failure");
+      } catch (error) {
+        expect(error).toMatchObject({ name: "KimiCodePreflightError", code, recoverable: false });
+      }
+    }
+  });
 });
 
 describe("createKimiCodeHttpTransport", () => {
   const transportRequest: KimiCodeTransportRequest = {
-    url: "https://example.invalid/test",
+    url: "https://api.kimi.com/coding/v1/chat/completions",
     headers: { Authorization: "Bearer synthetic-key" },
     body: {
       model: "k3",
@@ -318,4 +380,190 @@ describe("createKimiCodeHttpTransport", () => {
     await transport.close();
     expect(events).toEqual([]);
   });
+
+  it("never attaches authorization to a non-Kimi production origin", async () => {
+    const built = buildKimiCodeRequest(request(), [{ role: "user", content: "hello" }], sessionId);
+    const received: { url?: string; headers?: unknown } = {};
+    const transport = createKimiCodeHttpTransport({
+      fetch: syntheticFetch(async (url, init) => {
+        received.url = String(url);
+        received.headers = init?.headers;
+        return response(["data: [DONE]\n\n"]);
+      }),
+      baseUrl: "https://not-kimi.invalid/coding/v1",
+    } as never);
+
+    for await (const _event of transport.stream(built)) {
+      /* consume */
+    }
+
+    expect(received.url).toBe("https://api.kimi.com/coding/v1/chat/completions");
+    expect(new Headers(received.headers as never).get("authorization")).toBe("Bearer synthetic-key");
+  });
+
+  it("classifies a fetch rejection before acceptance as request_not_sent", async () => {
+    const transport = createKimiCodeHttpTransport({
+      fetch: syntheticFetch(async () => {
+        throw new Error("network unavailable");
+      }),
+    });
+
+    await expect(consume(transport, transportRequest)).rejects.toMatchObject({
+      name: "KimiCodeTransportError",
+      phase: "request_not_sent",
+    });
+  });
+
+  it("classifies an unowned AbortError before acceptance as request_not_sent", async () => {
+    const transport = createKimiCodeHttpTransport({
+      fetch: syntheticFetch(async () => {
+        throw new DOMException("remote cancellation", "AbortError");
+      }),
+    });
+
+    await expect(consume(transport, transportRequest)).rejects.toMatchObject({
+      name: "KimiCodeTransportError",
+      phase: "request_not_sent",
+    });
+  });
+
+  it("classifies failure after response acceptance as acceptance_ambiguous", async () => {
+    const transport = createKimiCodeHttpTransport({
+      fetch: syntheticFetch(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new Error("connection lost after acceptance"));
+              },
+            }),
+          ),
+      ),
+    });
+
+    await expect(consume(transport, transportRequest)).rejects.toMatchObject({
+      name: "KimiCodeTransportError",
+      phase: "acceptance_ambiguous",
+    });
+  });
+
+  it("classifies an unowned AbortError after acceptance as acceptance_ambiguous", async () => {
+    const transport = createKimiCodeHttpTransport({
+      fetch: syntheticFetch(
+        async () =>
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new DOMException("remote cancellation", "AbortError"));
+              },
+            }),
+          ),
+      ),
+    });
+
+    await expect(consume(transport, transportRequest)).rejects.toMatchObject({
+      name: "KimiCodeTransportError",
+      phase: "acceptance_ambiguous",
+    });
+  });
+
+  it("classifies malformed accepted SSE as provider_protocol", async () => {
+    const transport = createKimiCodeHttpTransport({ fetch: syntheticFetch(async () => response(["data: {bad}\n\n"])) });
+
+    await expect(consume(transport, transportRequest)).rejects.toMatchObject({
+      name: "KimiCodeProtocolError",
+      phase: "provider_protocol",
+    });
+  });
+
+  it("removes combined abort listeners after every stream round", async () => {
+    const requestAbort = new AbortController();
+    const signal = requestAbort.signal;
+    const originalAdd = signal.addEventListener.bind(signal);
+    const originalRemove = signal.removeEventListener.bind(signal);
+    let added = 0;
+    let removed = 0;
+    Object.defineProperty(signal, "addEventListener", {
+      configurable: true,
+      value: ((...args: Parameters<AbortSignal["addEventListener"]>) => {
+        const [type] = args;
+        if (type === "abort") added += 1;
+        return originalAdd(...args);
+      }) as AbortSignal["addEventListener"],
+    });
+    Object.defineProperty(signal, "removeEventListener", {
+      configurable: true,
+      value: ((...args: Parameters<AbortSignal["removeEventListener"]>) => {
+        const [type] = args;
+        if (type === "abort") removed += 1;
+        return originalRemove(...args);
+      }) as AbortSignal["removeEventListener"],
+    });
+    const nativeAny = Object.getOwnPropertyDescriptor(AbortSignal, "any");
+    Object.defineProperty(AbortSignal, "any", { configurable: true, value: undefined });
+    try {
+      const transport = createKimiCodeHttpTransport({
+        fetch: syntheticFetch(async () => response(["data: [DONE]\n\n"])),
+      });
+      await consume(transport, { ...transportRequest, signal });
+      const rejectedTransport = createKimiCodeHttpTransport({
+        fetch: syntheticFetch(async () => {
+          throw new Error("connection refused");
+        }),
+      });
+      await expect(consume(rejectedTransport, { ...transportRequest, signal })).rejects.toThrow(
+        "Kimi Code request could not be completed",
+      );
+    } finally {
+      if (nativeAny) Object.defineProperty(AbortSignal, "any", nativeAny);
+      else Reflect.deleteProperty(AbortSignal, "any");
+      Reflect.deleteProperty(signal, "addEventListener");
+      Reflect.deleteProperty(signal, "removeEventListener");
+    }
+
+    expect(added).toBeGreaterThan(0);
+    expect(removed).toBe(added);
+  });
+
+  it("ends an aborted pending reader without converting it to eof", async () => {
+    let readStarted!: () => void;
+    const readerStarted = new Promise<void>((resolve) => {
+      readStarted = resolve;
+    });
+    const abortController = new AbortController();
+    const transport = createKimiCodeHttpTransport({
+      fetch: syntheticFetch(
+        async () =>
+          new Response(
+            new ReadableStream({
+              pull() {
+                readStarted();
+              },
+            }),
+          ),
+      ),
+    });
+    const iterator = transport.stream({ ...transportRequest, signal: abortController.signal })[Symbol.asyncIterator]();
+    const next = iterator.next();
+    await readerStarted;
+    abortController.abort();
+
+    await expect(
+      Promise.race([
+        next,
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error("reader remained pending after abort")), 100);
+        }),
+      ]),
+    ).resolves.toEqual({ value: undefined, done: true });
+  });
 });
+
+async function consume(
+  transport: ReturnType<typeof createKimiCodeHttpTransport>,
+  transportRequest: KimiCodeTransportRequest,
+) {
+  for await (const _event of transport.stream(transportRequest)) {
+    /* consume */
+  }
+}

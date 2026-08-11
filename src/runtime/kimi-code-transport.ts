@@ -15,10 +15,10 @@ const MAX_SSE_EVENT_BYTES = 1024 * 1024;
 const MAX_ERROR_BODY_BYTES = 64 * 1024;
 const trustedKimiCodeHttpErrors = new WeakSet<KimiCodeHttpError>();
 
-export interface KimiCodeRequestMessage {
-  role: "system" | "user";
-  content: string;
-}
+export type KimiCodeRequestMessage =
+  | { role: "system" | "user"; content: string }
+  | { role: "assistant"; content: string; reasoning_content?: string; tool_calls?: unknown[] }
+  | { role: "tool"; content: string; tool_call_id?: string };
 
 export interface KimiCodeTransportRequest {
   url: string;
@@ -43,8 +43,39 @@ export interface KimiCodeTransport {
 
 export interface CreateKimiCodeHttpTransportOptions {
   fetch?: typeof fetch;
-  baseUrl?: string;
   userAgent?: string;
+}
+
+export type KimiCodePreflightErrorCode =
+  | "message_too_large"
+  | "missing_api_key"
+  | "request_too_large"
+  | "unknown_model"
+  | "untrusted_origin"
+  | "unsupported_effort";
+
+export class KimiCodePreflightError extends Error {
+  readonly recoverable = false;
+
+  constructor(
+    readonly code: KimiCodePreflightErrorCode,
+    message: string = code,
+  ) {
+    super(`[${code}] ${message}`);
+    this.name = "KimiCodePreflightError";
+  }
+}
+
+export type KimiCodeTransportPhase = "request_not_sent" | "acceptance_ambiguous" | "provider_protocol";
+
+export class KimiCodeTransportError extends Error {
+  constructor(
+    readonly phase: KimiCodeTransportPhase,
+    message: string,
+  ) {
+    super(message);
+    this.name = "KimiCodeTransportError";
+  }
 }
 
 export interface KimiCodeHttpErrorInput {
@@ -78,7 +109,7 @@ export type KimiCodeProtocolErrorCode =
   | "sse_event_limit"
   | "malformed_json";
 
-export class KimiCodeProtocolError extends Error {
+export class KimiCodeProtocolError extends KimiCodeTransportError {
   readonly code: KimiCodeProtocolErrorCode;
 
   constructor(code: KimiCodeProtocolErrorCode) {
@@ -88,7 +119,7 @@ export class KimiCodeProtocolError extends Error {
       sse_event_limit: "Kimi Code protocol error: SSE event limit exceeded",
       malformed_json: "Kimi Code protocol error: malformed JSON event",
     };
-    super(messages[code]);
+    super("provider_protocol", messages[code]);
     this.name = "KimiCodeProtocolError";
     this.code = code;
   }
@@ -132,24 +163,43 @@ export function buildKimiCodeRequest(
   userAgent = `ravi/${packageJson.version}`,
 ): KimiCodeTransportRequest {
   if (!isKimiCodeModel(input.model)) {
-    throw new Error(`Unknown Kimi Code model '${input.model}'`);
+    throw new KimiCodePreflightError("unknown_model", `Unknown Kimi Code model '${input.model}'`);
   }
   const apiKey = input.env?.[KIMI_CODE_CREDENTIAL_ENV_KEY]?.trim();
   if (!apiKey) {
-    throw new Error(`${KIMI_CODE_CREDENTIAL_ENV_KEY} is required for Kimi Code`);
+    throw new KimiCodePreflightError("missing_api_key", `${KIMI_CODE_CREDENTIAL_ENV_KEY} is required for Kimi Code`);
   }
 
-  const nativeMessages = [
-    ...messages,
-    ...(input.systemPromptAppend ? [{ role: "system" as const, content: input.systemPromptAppend }] : []),
-  ];
+  const nativeMessages = input.systemPromptAppend
+    ? [{ role: "system" as const, content: input.systemPromptAppend }, ...messages]
+    : [...messages];
   for (const message of nativeMessages) {
     if (new TextEncoder().encode(message.content).byteLength > MAX_MESSAGE_BYTES) {
-      throw new Error("Kimi Code input message exceeds the 2 MiB UTF-8 limit");
+      throw new KimiCodePreflightError("message_too_large", "Kimi Code input message exceeds the 2 MiB UTF-8 limit");
     }
   }
 
-  const effort = resolveKimiCodeEffort(input.model, input.effort);
+  let effort: "low" | "high" | "max" | undefined;
+  try {
+    effort = resolveKimiCodeEffort(input.model, input.effort);
+  } catch {
+    throw new KimiCodePreflightError(
+      "unsupported_effort",
+      `Kimi Code model '${input.model}' does not support effort '${input.effort}'`,
+    );
+  }
+  const body = {
+    model: input.model,
+    messages: nativeMessages,
+    stream: true as const,
+    stream_options: { include_usage: true as const },
+    prompt_cache_key: sessionId,
+    ...(effort ? { thinking: { type: "enabled" as const, effort } } : {}),
+  };
+  const serializedBody = JSON.stringify(body);
+  if (new TextEncoder().encode(serializedBody).byteLength > MAX_MESSAGE_BYTES) {
+    throw new KimiCodePreflightError("request_too_large");
+  }
   return {
     url: KIMI_CODE_CHAT_COMPLETIONS_URL,
     headers: {
@@ -158,14 +208,7 @@ export function buildKimiCodeRequest(
       Accept: "text/event-stream",
       "User-Agent": userAgent,
     },
-    body: {
-      model: input.model,
-      messages: nativeMessages,
-      stream: true,
-      stream_options: { include_usage: true },
-      prompt_cache_key: sessionId,
-      ...(effort ? { thinking: { type: "enabled" as const, effort } } : {}),
-    },
+    body,
   };
 }
 
@@ -177,63 +220,78 @@ export function createKimiCodeHttpTransport(options: CreateKimiCodeHttpTransport
   return {
     async *stream(request: KimiCodeTransportRequest): AsyncGenerator<KimiCodeStreamEvent> {
       if (closed || request.signal?.aborted) return;
+      assertKimiCodeOrigin(request.url);
+      const combined = combineSignals(request.signal, controller.signal);
+      let phase: KimiCodeTransportPhase = "request_not_sent";
       let response: Response;
       try {
-        response = await fetchImpl(resolveTransportUrl(request.url, options.baseUrl), {
-          method: "POST",
-          headers: { ...request.headers, ...(options.userAgent ? { "User-Agent": options.userAgent } : {}) },
-          body: JSON.stringify(request.body),
-          signal: combineSignals(request.signal, controller.signal),
-        });
-      } catch (error) {
-        if (isAbortError(error) || closed || request.signal?.aborted) return;
-        throw new Error("Kimi Code request could not be completed");
-      }
-      if (!response.ok) {
-        throw await createKimiCodeHttpError(response);
-      }
-      if (!response.body) {
-        throw new KimiCodeProtocolError("missing_stream_body");
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let retained = "";
-      let done = false;
-      try {
-        while (!closed && !request.signal?.aborted) {
-          let chunk;
-          try {
-            chunk = await reader.read();
-          } catch (error) {
-            if (isAbortError(error) || closed || request.signal?.aborted || controller.signal.aborted) return;
-            throw new Error("Kimi Code stream could not be read");
-          }
-          if (chunk.done) break;
-          retained += decoder.decode(chunk.value, { stream: true });
-          const parsed = extractSseEvents(retained);
-          retained = parsed.remainder;
-          assertBoundedBuffer(retained);
-          for (const payload of parsed.payloads) {
-            if (payload === "[DONE]") {
-              done = true;
-              yield { type: "done" };
-              return;
-            }
-            try {
-              yield { type: "message", data: JSON.parse(payload) };
-            } catch {
-              throw new KimiCodeProtocolError("malformed_json");
-            }
-          }
-        }
-        if (!closed && !request.signal?.aborted && !done) yield { type: "eof" };
-      } finally {
         try {
-          await reader.cancel();
+          response = await fetchImpl(request.url, {
+            method: "POST",
+            headers: { ...request.headers, ...(options.userAgent ? { "User-Agent": options.userAgent } : {}) },
+            body: JSON.stringify(request.body),
+            signal: combined.signal,
+          });
         } catch {
-          // The stream may already be complete or aborted.
+          if (closed || request.signal?.aborted || controller.signal.aborted || combined.signal.aborted) return;
+          throw new KimiCodeTransportError(phase, "Kimi Code request could not be completed");
         }
+        phase = "acceptance_ambiguous";
+        if (!response.ok) {
+          throw await createKimiCodeHttpError(response);
+        }
+        if (!response.body) {
+          throw new KimiCodeProtocolError("missing_stream_body");
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        const cancelReader = () => {
+          void reader.cancel();
+        };
+        let retained = "";
+        let done = false;
+        combined.signal.addEventListener("abort", cancelReader, { once: true });
+        try {
+          while (!closed && !request.signal?.aborted && !combined.signal.aborted) {
+            let chunk;
+            try {
+              chunk = await reader.read();
+            } catch {
+              if (closed || request.signal?.aborted || controller.signal.aborted || combined.signal.aborted) return;
+              throw new KimiCodeTransportError(phase, "Kimi Code stream could not be read");
+            }
+            if (chunk.done) break;
+            retained += decoder.decode(chunk.value, { stream: true });
+            phase = "provider_protocol";
+            const parsed = extractSseEvents(retained);
+            retained = parsed.remainder;
+            assertBoundedBuffer(retained);
+            for (const payload of parsed.payloads) {
+              if (payload === "[DONE]") {
+                done = true;
+                yield { type: "done" };
+                return;
+              }
+              try {
+                yield { type: "message", data: JSON.parse(payload) };
+              } catch {
+                throw new KimiCodeProtocolError("malformed_json");
+              }
+            }
+            phase = "acceptance_ambiguous";
+          }
+          if (!closed && !request.signal?.aborted && !combined.signal.aborted && !done) yield { type: "eof" };
+        } finally {
+          combined.signal.removeEventListener("abort", cancelReader);
+          try {
+            await reader.cancel();
+          } catch {
+            // The stream may already be complete or aborted.
+          }
+        }
+      } finally {
+        combined.cleanup();
       }
     },
     async close(): Promise<void> {
@@ -365,19 +423,35 @@ function safeProviderToken(value: unknown): string | undefined {
   return typeof value === "string" && /^[A-Za-z0-9._:-]{1,64}$/.test(value) ? value : undefined;
 }
 
-function resolveTransportUrl(requestUrl: string, baseUrl?: string): string {
-  if (!baseUrl) return requestUrl;
-  return `${baseUrl.replace(/\/$/, "")}/chat/completions`;
+function assertKimiCodeOrigin(requestUrl: string): void {
+  try {
+    if (new URL(requestUrl).origin === "https://api.kimi.com") return;
+  } catch {
+    // Fall through to the fixed preflight error.
+  }
+  throw new KimiCodePreflightError("untrusted_origin");
 }
 
-function combineSignals(primary: AbortSignal | undefined, secondary: AbortSignal): AbortSignal {
-  if (!primary) return secondary;
-  if (primary.aborted || secondary.aborted) return AbortSignal.abort();
+function combineSignals(
+  primary: AbortSignal | undefined,
+  secondary: AbortSignal,
+): { signal: AbortSignal; cleanup: () => void } {
+  if (!primary) return { signal: secondary, cleanup: () => undefined };
+  if (primary.aborted || secondary.aborted) return { signal: AbortSignal.abort(), cleanup: () => undefined };
+  if (typeof AbortSignal.any === "function") {
+    return { signal: AbortSignal.any([primary, secondary]), cleanup: () => undefined };
+  }
   const controller = new AbortController();
   const abort = () => controller.abort();
   primary.addEventListener("abort", abort, { once: true });
   secondary.addEventListener("abort", abort, { once: true });
-  return controller.signal;
+  return {
+    signal: controller.signal,
+    cleanup: () => {
+      primary.removeEventListener("abort", abort);
+      secondary.removeEventListener("abort", abort);
+    },
+  };
 }
 
 function assertBoundedBuffer(value: string): void {
@@ -401,10 +475,6 @@ function extractSseEvents(source: string): { payloads: string[]; remainder: stri
     if (data.length > 0) payloads.push(data.join("\n"));
   }
   return { payloads, remainder };
-}
-
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === "AbortError";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
