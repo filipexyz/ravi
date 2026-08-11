@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createKimiCodeCompletedTurnAccumulator, createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
 import { commitKimiCodeSessionState, createKimiCodeSessionId, loadKimiCodeSessionState } from "./kimi-code-state.js";
-import { buildKimiCodeRequest } from "./kimi-code-transport.js";
+import { buildKimiCodeRequest, createKimiCodeHttpTransport, KimiCodeHttpError } from "./kimi-code-transport.js";
 import { listRegisteredRuntimeProviderIds, unregisterRuntimeProvider } from "./provider-registry.js";
 import type { KimiCodeStreamEvent, KimiCodeTransport, KimiCodeTransportRequest } from "./kimi-code-transport.js";
 import type {
@@ -307,6 +307,74 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(providerErrorEvents.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code stream failed" });
     expect(JSON.stringify(providerErrorEvents)).not.toContain("synthetic provider secret");
     expect(eofEvents.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code stream ended before completion" });
+  });
+
+  test("projects only classified Kimi HTTP metadata into the canonical failure", async () => {
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        createKimiCodeHttpTransport({
+          fetch: (async () =>
+            new Response(
+              JSON.stringify({
+                error: {
+                  message: "We're receiving too many requests at the moment. Please wait a moment and try again.",
+                  code: "concurrency_limit",
+                  type: "rate_limit_error",
+                },
+              }),
+              {
+                status: 429,
+                headers: { "retry-after": "2", "x-request-id": "req-provider" },
+              },
+            )) as unknown as typeof fetch,
+        }),
+    });
+
+    const events = await collectEvents(provider, startRequest());
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "We're receiving too many requests at the moment. Please wait a moment and try again.",
+      rawEvent: {
+        status: 429,
+        code: "concurrency_limit",
+        type: "rate_limit_error",
+        headers: { "retry-after": "2", "x-request-id": "req-provider" },
+        requestId: "req-provider",
+      },
+    });
+  });
+
+  test("re-sanitizes a custom transport Kimi HTTP error at the provider boundary", async () => {
+    const sentinel = "PRIVATE_CUSTOM_TRANSPORT_SENTINEL";
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => ({
+        async *stream() {
+          yield await Promise.reject(
+            new KimiCodeHttpError({
+              status: 429,
+              publicMessage: sentinel,
+              code: sentinel,
+              type: sentinel,
+              headers: { authorization: `Bearer ${sentinel}`, "x-request-id": sentinel },
+              requestId: sentinel,
+            }),
+          );
+        },
+        async close() {},
+      }),
+    });
+
+    const events = await collectEvents(provider, startRequest());
+    const serialized = JSON.stringify(events.at(-1));
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code membership request failed (HTTP 429)",
+      rawEvent: { status: 429 },
+    });
+    expect(serialized).not.toContain(sentinel);
+    expect(serialized).not.toContain("authorization");
   });
 
   test("emits interruption before or after output without a second terminal (catches abort terminal replay)", async () => {

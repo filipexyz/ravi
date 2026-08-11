@@ -3,6 +3,7 @@ import type { RuntimeStartRequest } from "./types.js";
 import {
   buildKimiCodeRequest,
   createKimiCodeHttpTransport,
+  KimiCodeHttpError,
   type KimiCodeTransportRequest,
 } from "./kimi-code-transport.js";
 
@@ -181,16 +182,77 @@ describe("createKimiCodeHttpTransport", () => {
   });
 
   test("reports a redacted non-2xx failure", async () => {
+    const sentinel = "PRIVATE_RESPONSE_BODY_MUST_NOT_ESCAPE";
     const transport = createKimiCodeHttpTransport({
-      fetch: syntheticFetch(async () => response(["private failure"], 401)),
+      fetch: syntheticFetch(
+        async () =>
+          new Response(
+            JSON.stringify({
+              error: {
+                code: "usage_limit",
+                type: "membership_error",
+                message:
+                  "You've reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle.",
+              },
+              sentinel,
+            }),
+            {
+              status: 403,
+              headers: {
+                "content-type": "application/json",
+                "retry-after": "120",
+                "x-request-id": "req-synthetic",
+                authorization: "Bearer secret-must-not-escape",
+              },
+            },
+          ),
+      ),
     });
-    await expect(
-      (async () => {
+    let caught: unknown;
+    try {
+      for await (const _event of transport.stream(transportRequest)) {
+        /* consume */
+      }
+    } catch (error) {
+      caught = error;
+    }
+
+    expect(caught).toBeInstanceOf(KimiCodeHttpError);
+    if (!(caught instanceof KimiCodeHttpError)) throw new Error("missing structured Kimi failure");
+    expect(caught.message).toBe(
+      "You've reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle.",
+    );
+    expect(caught.rawEvent).toEqual({
+      status: 403,
+      code: "usage_limit",
+      type: "membership_error",
+      headers: { "retry-after": "120", "x-request-id": "req-synthetic" },
+      requestId: "req-synthetic",
+    });
+    expect(JSON.stringify(caught)).not.toContain(sentinel);
+    expect(JSON.stringify(caught)).not.toContain("secret-must-not-escape");
+  });
+
+  test("canonicalizes generalized Kimi membership quota windows", async () => {
+    for (const message of [
+      "You've reached your weekly usage limit.",
+      "Your 5-hour usage limit has been reached.",
+      "The monthly usage limit has been reached.",
+    ]) {
+      const transport = createKimiCodeHttpTransport({
+        fetch: syntheticFetch(async () => response([JSON.stringify({ error: { message } })], 429)),
+      });
+      let caught: unknown;
+      try {
         for await (const _event of transport.stream(transportRequest)) {
           /* consume */
         }
-      })(),
-    ).rejects.toThrow("Kimi Code request failed (HTTP 401)");
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(KimiCodeHttpError);
+      expect((caught as KimiCodeHttpError).message).toBe("Kimi Code membership quota is exhausted.");
+    }
   });
 
   test("redacts a fetch failure instead of propagating external transport text", async () => {

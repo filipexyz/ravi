@@ -11,6 +11,8 @@ const KIMI_CODE_BASE_URL = "https://api.kimi.com/coding/v1";
 const KIMI_CODE_CHAT_COMPLETIONS_URL = `${KIMI_CODE_BASE_URL}/chat/completions`;
 const MAX_MESSAGE_BYTES = 2 * 1024 * 1024;
 const MAX_SSE_BUFFER_BYTES = 1024 * 1024;
+const MAX_ERROR_BODY_BYTES = 64 * 1024;
+const trustedKimiCodeHttpErrors = new WeakSet<KimiCodeHttpError>();
 
 export interface KimiCodeRequestMessage {
   role: "system" | "user";
@@ -42,6 +44,62 @@ export interface CreateKimiCodeHttpTransportOptions {
   fetch?: typeof fetch;
   baseUrl?: string;
   userAgent?: string;
+}
+
+export interface KimiCodeHttpErrorInput {
+  status: number;
+  publicMessage: string;
+  code?: string;
+  type?: string;
+  headers?: Record<string, string>;
+  requestId?: string;
+}
+
+export class KimiCodeHttpError extends Error {
+  readonly rawEvent: Record<string, unknown>;
+
+  constructor(input: KimiCodeHttpErrorInput) {
+    super(input.publicMessage);
+    this.name = "KimiCodeHttpError";
+    this.rawEvent = {
+      status: input.status,
+      ...(input.code ? { code: input.code } : {}),
+      ...(input.type ? { type: input.type } : {}),
+      ...(input.headers && Object.keys(input.headers).length > 0 ? { headers: input.headers } : {}),
+      ...(input.requestId ? { requestId: input.requestId } : {}),
+    };
+  }
+}
+
+export function projectKimiCodeHttpError(error: KimiCodeHttpError): {
+  message: string;
+  rawEvent: Record<string, unknown>;
+} {
+  const source = isRecord(error.rawEvent) ? error.rawEvent : {};
+  const status =
+    typeof source.status === "number" && Number.isInteger(source.status) && source.status >= 400 && source.status <= 599
+      ? source.status
+      : 500;
+  if (!trustedKimiCodeHttpErrors.has(error)) {
+    return {
+      message: `Kimi Code membership request failed (HTTP ${status})`,
+      rawEvent: { status },
+    };
+  }
+  const code = safeProviderToken(source.code);
+  const type = safeProviderToken(source.type);
+  const headers = safeFailureHeaderRecord(source.headers);
+  const requestId = headers["x-request-id"] ?? headers["request-id"];
+  return {
+    message: safeKimiCodeFailureMessage(status, error.message),
+    rawEvent: {
+      status,
+      ...(code ? { code } : {}),
+      ...(type ? { type } : {}),
+      ...(Object.keys(headers).length > 0 ? { headers } : {}),
+      ...(requestId ? { requestId } : {}),
+    },
+  };
 }
 
 export function buildKimiCodeRequest(
@@ -109,7 +167,7 @@ export function createKimiCodeHttpTransport(options: CreateKimiCodeHttpTransport
         throw new Error("Kimi Code request could not be completed");
       }
       if (!response.ok) {
-        throw new Error(`Kimi Code request failed (HTTP ${response.status})`);
+        throw await createKimiCodeHttpError(response);
       }
       if (!response.body) {
         throw new Error("Kimi Code response did not include a stream body");
@@ -163,6 +221,127 @@ export function createKimiCodeHttpTransport(options: CreateKimiCodeHttpTransport
   };
 }
 
+async function createKimiCodeHttpError(response: Response): Promise<KimiCodeHttpError> {
+  const body = await readBoundedErrorBody(response);
+  let decoded: unknown;
+  try {
+    decoded = body ? JSON.parse(body) : undefined;
+  } catch {
+    decoded = undefined;
+  }
+  const error = isRecord(decoded) && isRecord(decoded.error) ? decoded.error : isRecord(decoded) ? decoded : undefined;
+  const providerMessage = typeof error?.message === "string" ? error.message : undefined;
+  const code = safeProviderToken(error?.code);
+  const type = safeProviderToken(error?.type);
+  const headers = safeFailureHeaders(response.headers);
+  const requestId = headers["x-request-id"] ?? headers["request-id"];
+  const failure = new KimiCodeHttpError({
+    status: response.status,
+    publicMessage: safeKimiCodeFailureMessage(response.status, providerMessage),
+    ...(code ? { code } : {}),
+    ...(type ? { type } : {}),
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
+    ...(requestId ? { requestId } : {}),
+  });
+  trustedKimiCodeHttpErrors.add(failure);
+  return failure;
+}
+
+async function readBoundedErrorBody(response: Response): Promise<string> {
+  if (!response.body) return "";
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let retained = "";
+  let byteLength = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      byteLength += chunk.value.byteLength;
+      if (byteLength > MAX_ERROR_BODY_BYTES) return "";
+      retained += decoder.decode(chunk.value, { stream: true });
+    }
+    return retained + decoder.decode();
+  } catch {
+    return "";
+  } finally {
+    await reader.cancel().catch(() => undefined);
+  }
+}
+
+function safeKimiCodeFailureMessage(status: number, message: string | undefined): string {
+  const text = message?.toLowerCase() ?? "";
+  const known: Array<[string, string]> = [
+    ["api key appears to be invalid", "The API Key appears to be invalid or may have expired."],
+    ["invalid authentication", "Invalid Authentication"],
+    ["subscription does not have access to k3", "Your current subscription does not have access to k3."],
+    ["supports only kimi-k3 up to 256k context", "Your current plan supports only kimi-k3 up to 256K context."],
+    [
+      "subscription does not have access to kimi-for-coding-highspeed",
+      "Your current subscription does not have access to kimi-for-coding-highspeed.",
+    ],
+    ["model id does not exist", "Your model id does not exist."],
+    ["unable to verify your membership benefits", "We're unable to verify your membership benefits at this time."],
+    [
+      "usage limit for this billing cycle",
+      "You've reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle.",
+    ],
+    ["access terminated", "Access terminated."],
+    ["engine is currently overloaded", "The engine is currently overloaded, please try again later."],
+    [
+      "receiving too many requests",
+      "We're receiving too many requests at the moment. Please wait a moment and try again.",
+    ],
+    [
+      "usage limit for this period",
+      "You've reached your usage limit for this period. Your quota will be refreshed in the next period.",
+    ],
+    [
+      "kimi monthly usage limit",
+      "You've reached kimi monthly usage limit for this billing cycle. Your quota will be refreshed in the next cycle.",
+    ],
+    ["total message size", "Kimi Code total message size exceeds the service limit."],
+    ["exceeded model token limit", "Kimi Code request exceeded the model token limit."],
+    ["reasoning_content is missing", "Kimi Code request is missing required reasoning content."],
+  ];
+  for (const [needle, safeMessage] of known) {
+    if (text.includes(needle)) return safeMessage;
+  }
+  if (/(?:weekly|monthly|5[- ]hour).*usage limit|usage limit.*(?:weekly|monthly|5[- ]hour)/.test(text)) {
+    return "Kimi Code membership quota is exhausted.";
+  }
+  return `Kimi Code membership request failed (HTTP ${status})`;
+}
+
+function safeFailureHeaders(headers: Headers): Record<string, string> {
+  return safeFailureHeaderRecord(Object.fromEntries(headers.entries()));
+}
+
+function safeFailureHeaderRecord(value: unknown): Record<string, string> {
+  const safe: Record<string, string> = {};
+  if (!isRecord(value)) return safe;
+  for (const key of [
+    "retry-after",
+    "x-request-id",
+    "request-id",
+    "x-ratelimit-reset-requests",
+    "x-ratelimit-reset-tokens",
+  ]) {
+    const headerValue = typeof value[key] === "string" ? value[key].trim() : undefined;
+    if (!headerValue || headerValue.length > 128) continue;
+    if (key.includes("request-id")) {
+      if (/^[A-Za-z0-9._:-]+$/.test(headerValue)) safe[key] = headerValue;
+      continue;
+    }
+    if (/^\d+(?:\.\d+)?$/.test(headerValue) || Number.isFinite(Date.parse(headerValue))) safe[key] = headerValue;
+  }
+  return safe;
+}
+
+function safeProviderToken(value: unknown): string | undefined {
+  return typeof value === "string" && /^[A-Za-z0-9._:-]{1,64}$/.test(value) ? value : undefined;
+}
+
 function resolveTransportUrl(requestUrl: string, baseUrl?: string): string {
   if (!baseUrl) return requestUrl;
   return `${baseUrl.replace(/\/$/, "")}/chat/completions`;
@@ -200,4 +379,8 @@ function extractSseEvents(source: string): { payloads: string[]; remainder: stri
 
 function isAbortError(error: unknown): boolean {
   return error instanceof Error && error.name === "AbortError";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

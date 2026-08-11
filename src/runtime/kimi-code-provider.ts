@@ -16,7 +16,12 @@ import {
   type KimiCodeConversationMessage,
   validateKimiCodeToolCalls,
 } from "./kimi-code-turn.js";
-import { createKimiCodeHttpTransport, type KimiCodeTransport } from "./kimi-code-transport.js";
+import {
+  createKimiCodeHttpTransport,
+  KimiCodeHttpError,
+  projectKimiCodeHttpError,
+  type KimiCodeTransport,
+} from "./kimi-code-transport.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import type {
   RuntimeDynamicToolCallResult,
@@ -38,6 +43,7 @@ export {
 export {
   buildKimiCodeRequest,
   createKimiCodeHttpTransport,
+  KimiCodeHttpError,
   type KimiCodeStreamEvent,
   type KimiCodeTransport,
   type KimiCodeTransportRequest,
@@ -388,11 +394,14 @@ function createKimiCodeSession(
               messages.push({ role: "tool", tool_call_id: call.id, content: providerContent });
             }
           }
-        } catch {
+        } catch (error) {
+          const kimiFailure = error instanceof KimiCodeHttpError ? projectKimiCodeHttpError(error) : undefined;
           const terminal =
             turn.interrupted || closed || input.abortController.signal.aborted
               ? terminalTracker.interrupt({ metadata })
-              : terminalTracker.fail({ error: "Kimi Code stream failed", recoverable: true, metadata });
+              : kimiFailure
+                ? terminalTracker.fail({ error: kimiFailure.message, rawEvent: kimiFailure.rawEvent, metadata })
+                : terminalTracker.fail({ error: "Kimi Code stream failed", recoverable: true, metadata });
           if (terminal) yield terminal;
         } finally {
           await closeTurnTransport(turn);
