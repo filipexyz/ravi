@@ -178,5 +178,5 @@ export {
   findSessionByAttachedChat,
   SessionAttachConflictError,
   SessionAttachInstanceMismatchError,
-  subscriptionAllowsCrossInstance,
+  isChatCompatibleWithSession,
 } from "./sessions.js";

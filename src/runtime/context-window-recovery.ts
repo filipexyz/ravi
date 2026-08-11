@@ -186,7 +186,7 @@ function findLatestUserRequest(messages: Message[]): string | undefined {
 
 function sanitizeHistoryContent(content: string): string {
   return content
-    .replace(/^\[session surfaces\].*$/gm, "")
+    .replace(/^\[session surfaces?\].*$/gm, "")
     .replace(/^\[origin\].*$/gm, "")
     .replace(/\[WhatsApp[^\]]+\]\s*/g, "")
     .replace(/\bmid:[^\s\]]+/g, "mid:<message>")

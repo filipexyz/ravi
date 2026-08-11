@@ -1621,13 +1621,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     let resolvedTarget = undefined as ReturnType<typeof resolveSessionOutputTarget>["target"] | undefined;
     let resolvedSource: ReturnType<typeof resolveSessionOutputTarget>["source"] = "unresolved";
     if (streaming.agentMode !== "sentinel") {
-      const resolution = resolveSessionOutputTarget({
-        sessionKey: session.sessionKey,
-        fallback: streaming.currentSource,
-      });
-      resolvedTarget = resolution.target;
-      resolvedSource = resolution.source;
-      if (!resolution.target) {
+      if (streaming.currentReplyTarget !== undefined) {
+        resolvedTarget = streaming.currentReplyTarget;
+        resolvedSource = resolvedTarget ? (streaming.currentSource ? "source-chat" : "attached-output") : "unresolved";
+      } else {
+        const resolution = resolveSessionOutputTarget({
+          sessionKey: session.sessionKey,
+          fallback: streaming.currentSource,
+        });
+        resolvedTarget = resolution.target;
+        resolvedSource = resolution.source;
+      }
+      if (!resolvedTarget) {
         log.warn("Response target unresolved — dropping emit", {
           sessionName,
           source: resolvedSource,

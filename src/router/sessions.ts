@@ -10,7 +10,6 @@ import { toPersistedChannelContext, type ChannelContext } from "../channels/cont
 import type { SessionEntry } from "./types.js";
 import {
   dbCreateSessionChatSubscription,
-  dbClearSessionOutputAttachment,
   dbDetachSessionChatSubscription,
   dbFindActiveSubscriptionByChat,
   dbGetChat,
@@ -18,7 +17,6 @@ import {
   dbGetInstanceByInstanceId,
   dbListSessionChatSubscriptions,
   dbRenameRouteSessionName,
-  dbSetSessionChatSpeechMode,
   dbSetSessionOutputAttachment,
   getDb,
   getDbChanges,
@@ -27,7 +25,6 @@ import {
   type AttachedByType,
   type CreateSessionChatSubscriptionInput,
   type SessionChatSubscriptionRecord,
-  type SubscriptionSpeechMode,
 } from "./router-db.js";
 import { executeWrite } from "../db/write-retry.js";
 import { logger } from "../utils/logger.js";
@@ -1083,7 +1080,7 @@ export class SessionAttachInstanceMismatchError extends Error {
  * no per-account binding) are treated as instance-agnostic and the
  * check is a no-op.
  */
-function isChatOnSameInstanceAsSession(
+function checkChatSessionInstanceCompatibility(
   chatId: string,
   sessionKey: string,
 ): { ok: true } | { ok: false; chatInstance: string; sessionInstance: string } {
@@ -1112,7 +1109,7 @@ function canonicalAttachChannel(value: string | null | undefined): string | null
  * Throwing wrapper for attach write paths.
  */
 function assertChatInstanceMatchesSession(chatId: string, sessionKey: string): void {
-  const check = isChatOnSameInstanceAsSession(chatId, sessionKey);
+  const check = checkChatSessionInstanceCompatibility(chatId, sessionKey);
   if (!check.ok) {
     throw new SessionAttachInstanceMismatchError(chatId, check.chatInstance, check.sessionInstance);
   }
@@ -1123,8 +1120,8 @@ function assertChatInstanceMatchesSession(chatId: string, sessionKey: string): v
  * applying the subscription would jump instances, so the caller can fall
  * back to the route-derived sessionKey instead of crossing the boundary.
  */
-export function subscriptionAllowsCrossInstance(chatId: string, sessionKey: string): boolean {
-  return isChatOnSameInstanceAsSession(chatId, sessionKey).ok;
+export function isChatCompatibleWithSession(chatId: string, sessionKey: string): boolean {
+  return checkChatSessionInstanceCompatibility(chatId, sessionKey).ok;
 }
 
 export interface AttachChatToSessionInput {
@@ -1136,8 +1133,6 @@ export interface AttachChatToSessionInput {
   attachedReason?: string | null;
   contextSnapshotAtAttach?: Record<string, unknown> | null;
   setOutputTarget?: boolean;
-  speechMode?: SubscriptionSpeechMode;
-  speechReason?: string | null;
 }
 
 export interface AttachChatToSessionResult {
@@ -1172,19 +1167,6 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
       const subscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
       return { subscription, created: false, outputAttached: true };
     }
-    if (input.speechMode && input.speechMode !== ownActive.speechMode) {
-      const subscription = dbSetSessionChatSpeechMode(
-        input.sessionKey,
-        input.chatId,
-        input.speechMode,
-        input.speechReason ?? input.attachedReason ?? "attach-speech-update",
-      );
-      return {
-        subscription,
-        created: false,
-        outputAttached: subscription.outputAttachedAt !== undefined,
-      };
-    }
     return { subscription: ownActive, created: false, outputAttached: false };
   }
 
@@ -1197,12 +1179,7 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
   }
   try {
     const setOutputTarget = input.setOutputTarget ?? true;
-    const speechMode = input.speechMode ?? (setOutputTarget || input.role === "primary" ? "speak" : "muted");
-    const subscription = dbCreateSessionChatSubscription({
-      ...(input as CreateSessionChatSubscriptionInput),
-      speechMode,
-      speechReason: input.speechReason ?? input.attachedReason ?? null,
-    });
+    const subscription = dbCreateSessionChatSubscription(input as CreateSessionChatSubscriptionInput);
     if (setOutputTarget) {
       const outputSubscription = dbSetSessionOutputAttachment(input.sessionKey, input.chatId);
       return {
@@ -1232,19 +1209,7 @@ export function attachChatToSession(input: AttachChatToSessionInput): AttachChat
   }
 }
 
-export function setSessionChatSpeechMode(input: {
-  sessionKey: string;
-  chatId: string;
-  speechMode: SubscriptionSpeechMode;
-  reason?: string | null;
-}): SessionChatSubscriptionRecord {
-  return dbSetSessionChatSpeechMode(input.sessionKey, input.chatId, input.speechMode, input.reason ?? null);
-}
-
-/**
- * Detach a chat from a session. Prevents removing the last active primary
- * subscription (which would orphan the session).
- */
+/** Detach a chat from a session, including the final active subscription. */
 export function detachChatFromSession(
   sessionKey: string,
   chatId: string,
@@ -1252,14 +1217,6 @@ export function detachChatFromSession(
   const active = dbListSessionChatSubscriptions(sessionKey);
   const target = active.find((s) => s.chatId === chatId);
   if (!target) return { detached: false, outputDetached: false };
-
-  const remainingPrimaries = active.filter((s) => s.role === "primary" && s.chatId !== chatId).length;
-  if (target.role === "primary" && remainingPrimaries === 0) {
-    return {
-      detached: false,
-      outputDetached: dbClearSessionOutputAttachment(sessionKey, chatId),
-    };
-  }
 
   return {
     detached: dbDetachSessionChatSubscription(sessionKey, chatId),

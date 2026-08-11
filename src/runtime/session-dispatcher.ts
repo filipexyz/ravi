@@ -55,7 +55,9 @@ import {
   type PendingRuntimeSessionStart,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { isSameRuntimeTurnSurface } from "./turn-surface.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
+import { withSessionSurfaceHint } from "./session-surface-hint.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
   buildRuntimeSessionPoolSnapshot,
@@ -767,6 +769,9 @@ export class RuntimeSessionDispatcher {
         appendUniqueRuntimeMessages(existing.pendingMessages, daemonRestartMessages);
       }
     }
+    if (!prompt._resumeStashedMessages) {
+      prompt = withSessionSurfaceHint(prompt);
+    }
     const agentId = prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
     const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
     if (!agent) {
@@ -937,9 +942,6 @@ export class RuntimeSessionDispatcher {
           sessionEntry?.sessionKey,
         );
         if (nativeSteer === "accepted") {
-          if (prompt.source) {
-            existing.currentSource = prompt.source;
-          }
           updateRuntimeLiveState(sessionName, {
             activity: "thinking",
             summary: "runtime control accepted",
@@ -988,9 +990,6 @@ export class RuntimeSessionDispatcher {
         if (existing.pushMessage) {
           const deliverableNow = hasDeliverableRuntimeMessages(sessionName, existing);
           if (deliverableNow) {
-            if (!existing.turnActive && prompt.source) {
-              existing.currentSource = prompt.source;
-            }
             log.info("Streaming: waking generator", {
               sessionName,
               queueSize: existing.pendingMessages.length,
@@ -1094,10 +1093,11 @@ export class RuntimeSessionDispatcher {
           } else {
             const successor = prepareRuntimeInterruptSuccessor(sessionName, existing);
             if (!successor) {
-              log.warn("Streaming: interrupt requested without a releasable successor", {
+              log.info("Streaming: keeping successor queued behind the active turn", {
                 sessionName,
                 queueSize: existing.pendingMessages.length,
                 barrier: describeDeliveryBarrier(barrier),
+                reason: "turn_surface_or_delivery_boundary",
               });
               return;
             }
@@ -1898,7 +1898,7 @@ export class RuntimeSessionDispatcher {
     barrier: DeliveryBarrier,
     sessionKey = sessionName,
   ): Promise<"accepted" | "fallback"> {
-    if (!canUseNativeRuntimeSteer(existing, barrier)) {
+    if (!canUseNativeRuntimeSteer(existing, barrier, prompt)) {
       return "fallback";
     }
 
@@ -1996,13 +1996,19 @@ export function fenceRuntimeNativeSteerInput(
   return true;
 }
 
-export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, barrier: DeliveryBarrier): boolean {
+export function canUseNativeRuntimeSteer(
+  session: RuntimeHostStreamingSession,
+  barrier: DeliveryBarrier,
+  prompt?: RuntimeLaunchPrompt,
+): boolean {
   const supportsNativeSteer =
     session.queryHandle.concurrentInputStrategy === "native_steer" && Boolean(session.queryHandle.control);
   const activeTurnIsFresh = Date.now() - session.lastActivity <= NATIVE_STEER_ACTIVE_TURN_MAX_IDLE_MS;
 
   return (
     barrier === "after_tool" &&
+    !hasIsolatedRuntimeTurnEnvelope(prompt) &&
+    isSameRuntimeTurnSurface(session.currentSource, prompt?.source) &&
     supportsNativeSteer &&
     session.turnActive &&
     Boolean(session.currentCrashRecoveryAttemptId) &&

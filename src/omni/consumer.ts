@@ -29,7 +29,7 @@ import {
   getSession,
   listSessionSubscriptions,
   matchRoute,
-  subscriptionAllowsCrossInstance,
+  isChatCompatibleWithSession,
 } from "../router/index.js";
 import { configStore } from "../config-store.js";
 import {
@@ -50,14 +50,12 @@ import {
   dbCanonicalizeDmChatForContact,
   dbContactDmNormalizedChatId,
   dbFindChat,
-  dbGetChat,
   dbGetMessageMeta,
   dbSaveMessageMeta,
   dbUpsertChat,
   dbUpsertChatMessage,
   dbUpsertChatParticipant,
   dbUpsertSessionParticipant,
-  type SessionChatSubscriptionRecord,
 } from "../router/router-db.js";
 import { resetSession } from "../router/sessions.js";
 import {
@@ -1043,8 +1041,8 @@ export class OmniConsumer {
       // hitting a different WhatsApp account entirely. The 2026-05-21
       // production loop was caused by exactly this jump. Fall back to
       // the route-derived session when this is detected.
-      const sameInstance = subscriptionAllowsCrossInstance(canonicalChat.id, existingSubscription.sessionKey);
-      if (!sameInstance) {
+      const compatibleSession = isChatCompatibleWithSession(canonicalChat.id, existingSubscription.sessionKey);
+      if (!compatibleSession) {
         log.warn("Subscription override would jump instances — ignoring subscription, using route resolution", {
           chatId: canonicalChat.id,
           subscriptionSessionKey: existingSubscription.sessionKey,
@@ -1350,27 +1348,12 @@ export class OmniConsumer {
         existingSubscription?.outputAttachedAt !== undefined ||
         (!existingSubscription && role === "primary") ||
         (!hasOutputTarget && role === "primary");
-      const shouldEnableSpeech = setOutputTarget || (!existingSubscription && role === "primary");
       attachChatToSession({
         sessionKey: resolved.sessionKey,
         chatId: canonicalChat.id,
         role,
         attachedByType: "system",
         attachedReason: "inbound-route",
-        speechMode: existingSubscription
-          ? shouldEnableSpeech
-            ? "speak"
-            : undefined
-          : role === "primary"
-            ? "speak"
-            : "muted",
-        speechReason: existingSubscription
-          ? shouldEnableSpeech
-            ? "primary-inbound-route"
-            : undefined
-          : role === "primary"
-            ? "primary-inbound-route"
-            : "listen-only-inbound-route",
         // Inbound routing keeps the subscription index warm, but it must not
         // steal the session's output attachment after an operator attached a
         // different chat as the output surface.
@@ -1603,17 +1586,6 @@ export class OmniConsumer {
       return;
     }
 
-    // Session surface hint: attach makes one session listen to multiple
-    // chats. Every inbound prompt carries source/default/speech state so
-    // the agent can adjust speech internally without exposing routing
-    // mechanics to users. See .ravi/specs/sessions/attach/SPEC.md.
-    const subs = listSessionSubscriptions(resolved.sessionKey);
-    const originHint = this.formatSessionSurfaceHint({
-      sessionRef: resolved.sessionName ?? resolved.sessionKey,
-      sourceChatId: canonicalChat.id,
-      subscriptions: subs,
-    });
-
     const envelope = this.formatEnvelope(
       channelType,
       payload,
@@ -1628,7 +1600,6 @@ export class OmniConsumer {
       replyContext,
       replyMediaPath,
       commandExpansion.content,
-      originHint,
     );
     const editRebasePlan = editInfo
       ? buildRuntimeMessageEditRebasePlan({
@@ -2562,42 +2533,6 @@ export class OmniConsumer {
     return parts.join("\n");
   }
 
-  private formatSessionSurfaceHint(input: {
-    sessionRef: string;
-    sourceChatId: string;
-    subscriptions: SessionChatSubscriptionRecord[];
-  }): string | undefined {
-    if (input.subscriptions.length === 0) return undefined;
-
-    const sourceSub = input.subscriptions.find((sub) => sub.chatId === input.sourceChatId);
-    const defaultOutputSub = input.subscriptions.find((sub) => sub.outputAttachedAt !== undefined);
-    const sourceSpeech = sourceSub?.speechMode ?? "unattached";
-    const defaultSpeakOutput = defaultOutputSub?.speechMode === "speak";
-    const defaultOutput = defaultSpeakOutput
-      ? `${defaultOutputSub.chatId} speech=${defaultOutputSub.speechMode}`
-      : "none";
-    const surfaces = input.subscriptions
-      .map((sub) => {
-        const chat = dbGetChat(sub.chatId);
-        const title = chat?.title ? ` title=${JSON.stringify(chat.title)}` : "";
-        const output = sub.outputAttachedAt !== undefined ? " defaultOutput=true" : "";
-        return `${sub.chatId} role=${sub.role} speech=${sub.speechMode}${output}${title}`;
-      })
-      .join("; ");
-    const instruction =
-      sourceSub?.speechMode === "muted"
-        ? defaultSpeakOutput
-          ? `source_chat is muted/listen-only. If a public reply must go to source_chat, internally run \`ravi sessions unmute ${input.sessionRef} --chat ${input.sourceChatId}\` before your final response. Otherwise answer normally and Ravi will use the default speak chat.`
-          : `source_chat is muted/listen-only and there is no default speak chat. If a public reply must go to source_chat, internally run \`ravi sessions unmute ${input.sessionRef} --chat ${input.sourceChatId}\` before your final response.`
-        : "source_chat is speak-enabled; a normal response can be emitted there.";
-
-    return [
-      `[session surfaces] session=${input.sessionRef} source_chat=${input.sourceChatId} source_speech=${sourceSpeech} default_speak_chat=${defaultOutput}`,
-      `[session surfaces] ${surfaces}`,
-      `[session surfaces] ${instruction} Do not mention mute, unmute, attach, subscriptions, routing, or output mechanics to users.`,
-    ].join("\n");
-  }
-
   private formatEnvelope(
     channelType: string,
     payload: MessageReceivedPayload,
@@ -2612,7 +2547,6 @@ export class OmniConsumer {
     replyContext?: { quotedText?: string; quotedSender?: string; quotedId?: string; quotedMediaType?: string } | null,
     replyMediaPath?: string,
     contentOverride?: string,
-    originHint?: string,
   ): string {
     const channelName = this.channelDisplayName(channelType);
     const dt = new Date(timestamp);
@@ -2646,15 +2580,14 @@ export class OmniConsumer {
       replyBlock = `\n[Replying to ${sender} mid:${replyContext.quotedId}]\n${quotedContent}${mediaLine}\n[/Replying]\n`;
     }
 
-    const hintPrefix = originHint ? `${originHint}\n` : "";
     if (isGroup) {
       const groupLabel = groupName || stripJid(chatJid);
       const header = `[${channelName} ${groupLabel} id:${chatJid}${threadTag}${midTag} ${ts} ${dow}] ${senderName}:`;
-      return replyBlock ? `${hintPrefix}${header}${replyBlock}${content}` : `${hintPrefix}${header} ${content}`;
+      return replyBlock ? `${header}${replyBlock}${content}` : `${header} ${content}`;
     } else {
       const nameTag = senderName !== senderPhone ? ` ${senderName}` : "";
       const header = `[${channelName} +${senderPhone}${nameTag}${midTag} ${ts} ${dow}]`;
-      return replyBlock ? `${hintPrefix}${header}${replyBlock}${content}` : `${hintPrefix}${header} ${content}`;
+      return replyBlock ? `${header}${replyBlock}${content}` : `${header} ${content}`;
     }
   }
 

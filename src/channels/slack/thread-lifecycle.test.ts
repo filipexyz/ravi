@@ -113,7 +113,6 @@ describe("Slack thread lifecycle", () => {
     expect(listSessionSubscriptions(child!.sessionKey)).toEqual([
       expect.objectContaining({
         role: "primary",
-        speechMode: "speak",
         outputAttachedAt: expect.any(Number),
       }),
     ]);

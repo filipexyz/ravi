@@ -16,10 +16,9 @@ import {
   findSessionByAttachedChat,
   getOrCreateSession,
   listSessionSubscriptions,
-  setSessionChatSpeechMode,
   SessionAttachConflictError,
   SessionAttachInstanceMismatchError,
-  subscriptionAllowsCrossInstance,
+  isChatCompatibleWithSession,
 } from "./sessions.js";
 import {
   dbBindSessionToChat,
@@ -63,7 +62,6 @@ describe("sessions/attach — subscriptions + output attachment", () => {
     expect(result.subscription.role).toBe("input");
     expect(result.subscription.sessionKey).toBe(session.sessionKey);
     expect(result.subscription.chatId).toBe(chat.id);
-    expect(result.subscription.speechMode).toBe("speak");
     expect(result.subscription.outputAttachedAt).toBeNumber();
   });
 
@@ -152,17 +150,13 @@ describe("sessions/attach — subscriptions + output attachment", () => {
     expect(second.created).toBe(true);
   });
 
-  it("detaching the only primary clears output but preserves input subscription", () => {
+  it("detaches the only primary subscription", () => {
     const session = makeSession("solo");
     const chat = makeChat("solo-chat");
     attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id, role: "primary" });
     const result = detachChatFromSession(session.sessionKey, chat.id);
-    expect(result).toEqual({ detached: false, outputDetached: true });
-    const subs = listSessionSubscriptions(session.sessionKey);
-    expect(subs).toHaveLength(1);
-    expect(subs[0].role).toBe("primary");
-    expect(subs[0].speechMode).toBe("muted");
-    expect(subs[0].outputAttachedAt).toBeUndefined();
+    expect(result).toEqual({ detached: true, outputDetached: true });
+    expect(listSessionSubscriptions(session.sessionKey)).toHaveLength(0);
   });
 
   it("inbound bookkeeping can subscribe without stealing the output attachment", () => {
@@ -181,50 +175,7 @@ describe("sessions/attach — subscriptions + output attachment", () => {
     const outputSub = subs.find((s) => s.chatId === outputChat.id);
     const inputSub = subs.find((s) => s.chatId === inputChat.id);
     expect(outputSub?.outputAttachedAt).toBeNumber();
-    expect(outputSub?.speechMode).toBe("speak");
     expect(inputSub?.outputAttachedAt).toBeUndefined();
-    expect(inputSub?.speechMode).toBe("muted");
-  });
-
-  it("can toggle speech mode without detaching the input subscription", () => {
-    const session = makeSession("speech-toggle");
-    const chat = makeChat("speech-toggle-chat");
-    attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id, setOutputTarget: false });
-
-    const unmuted = setSessionChatSpeechMode({
-      sessionKey: session.sessionKey,
-      chatId: chat.id,
-      speechMode: "speak",
-      reason: "test-unmute",
-    });
-    expect(unmuted.speechMode).toBe("speak");
-
-    const muted = setSessionChatSpeechMode({
-      sessionKey: session.sessionKey,
-      chatId: chat.id,
-      speechMode: "muted",
-      reason: "test-mute",
-    });
-    expect(muted.speechMode).toBe("muted");
-    expect(findSessionByAttachedChat(chat.id)?.sessionKey).toBe(session.sessionKey);
-  });
-
-  it("muting the default output clears output while preserving the input subscription", () => {
-    const session = makeSession("mute-output");
-    const chat = makeChat("mute-output-chat");
-    attachChatToSession({ sessionKey: session.sessionKey, chatId: chat.id });
-
-    const muted = setSessionChatSpeechMode({
-      sessionKey: session.sessionKey,
-      chatId: chat.id,
-      speechMode: "muted",
-      reason: "test-mute-output",
-    });
-
-    expect(muted.speechMode).toBe("muted");
-    expect(muted.outputAttachedAt).toBeUndefined();
-    expect(findSessionByAttachedChat(chat.id)?.sessionKey).toBe(session.sessionKey);
-    expect(listSessionSubscriptions(session.sessionKey)).toHaveLength(1);
   });
 
   it("findSessionByAttachedChat returns the owner subscription", () => {
@@ -300,10 +251,10 @@ describe("sessions/attach — instance isolation", () => {
     );
   });
 
-  it("subscriptionAllowsCrossInstance returns false for chat on a different instance", () => {
+  it("reports a same-channel chat on a different instance as incompatible", () => {
     const session = sessionOnInstance("iso-2", "main");
     const fgnChat = chatOnInstance("iso-2", "luis");
-    expect(subscriptionAllowsCrossInstance(fgnChat.id, session.sessionKey)).toBe(false);
+    expect(isChatCompatibleWithSession(fgnChat.id, session.sessionKey)).toBe(false);
   });
 
   it("allows cross-channel attach even when instances differ", () => {
@@ -311,7 +262,7 @@ describe("sessions/attach — instance isolation", () => {
     const slackChat = chatOnChannelInstance("C0BG33ZUWJC", "slack", "ravi-rbbt-slack");
     const result = attachChatToSession({ sessionKey: session.sessionKey, chatId: slackChat.id });
     expect(result.created).toBe(true);
-    expect(subscriptionAllowsCrossInstance(slackChat.id, session.sessionKey)).toBe(true);
+    expect(isChatCompatibleWithSession(slackChat.id, session.sessionKey)).toBe(true);
   });
 
   it("attachChatToSession allows chat on the same instance", () => {

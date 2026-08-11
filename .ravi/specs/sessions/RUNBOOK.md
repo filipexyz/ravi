@@ -28,6 +28,6 @@
 
 ## Output Delivery
 
-Prefer the current source chat when its subscription is `speak`; otherwise
-resolve to the default output attachment when it is `speak`. If neither is
-speak-enabled, the response MUST NOT emit externally.
+An inbound turn returns to its attached source chat or thread. The default
+output attachment is used only for a turn with no inbound source. An
+unattached inbound source MUST fail closed instead of falling back elsewhere.

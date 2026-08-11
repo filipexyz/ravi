@@ -61,7 +61,7 @@ triggered runtime execution use risk-based confirmation.
    branch. `interrupt` and `steer` remain immediate because delaying emergency
    containment or active correction can increase harm.
 9. Unbraked writes (send/ask/answer/inform/execute, rename, set-*, ttl ops,
-   attach/detach, mute/unmute and threads) keep immediate behavior and MUST be
+   attach/detach and threads) keep immediate behavior and MUST be
    listed as unbraked in the shipped skill.
 
 ## Write classification (brake decision per op)
@@ -74,7 +74,7 @@ triggered runtime execution use risk-based confirmation.
 | prune | bulk permanent removal | native dry-run + `--execute` (pre-existing) |
 | send / ask / answer / inform / execute | core messaging loop | not braked (declared) |
 | rename / set-* / extend / keep / set-ttl | reversible config | not braked (declared) |
-| attach / detach / mute / unmute / threads / followups | reversible state | not braked (declared) |
+| attach / detach / threads / followups | reversible state | not braked (declared) |
 | runtime follow-up | queues triggered work | dry-run + `--execute` |
 | runtime rollback | changes completed history | dry-run + `--execute` |
 | runtime fork | creates a provider/runtime branch | dry-run + `--execute` |

@@ -108,45 +108,12 @@ function systemCommandsText(): string {
  * See .ravi/specs/sessions/attach/SPEC.md
  */
 function sessionAttachText(): string {
-  return `Sessões podem participar de múltiplos chats ao mesmo tempo. Cada chat atachado alimenta o mesmo histórico da sessão, mas cada superfície tem um estado de fala:
+  return `A session can be attached to multiple chats, and all attached chats share the same history.
 
-- \`speech=speak\` — a sessão pode emitir resposta externa nesse chat.
-- \`speech=muted\` — a sessão escuta esse chat em modo listen-only; inbound entra no histórico, mas uma resposta normal sai pelo chat default com fala habilitada.
-
-**Quando usar:**
-- "Fazer esta sessão participar e responder em um chat específico" → \`attach\`
-- "Escutar um chat sem falar nele" → \`mute\`
-- "Permitir fala em um chat já inscrito" → \`unmute\`
-- "Parar participação externa em um chat" → \`detach\`
-- "Listar/inspecionar wiring e fala" → \`subscriptions\`
-
-**Comandos:**
-
-- \`ravi sessions attach <session> --chat <chat-id> [--reason "..."]\` — inscreve o chat no mesmo histórico, habilita fala nele e o seleciona como default output.
-- \`ravi sessions mute <session> --chat <chat-id>\` — mantém a inscrição como listen-only; inbound continua entrando, mas respostas normais não saem nesse chat.
-- \`ravi sessions unmute <session> --chat <chat-id>\` — habilita fala em um chat já inscrito. Use internamente antes da resposta final se o header indicar que o \`source_chat\` está muted e a resposta precisa sair ali.
-- \`ravi sessions detach <session> --chat <chat-id>\` — remove a inscrição quando possível; se for o primary único, o input fica, mas a resposta externa para. **Detach é durável** até novo attach explícito.
-- \`ravi sessions subscriptions <session>\` — lista chats inscritos, qual é default output e o \`speech\` de cada um.
-
-**Resposta em múltiplas superfícies:**
-
-- Cada inbound traz um header interno com \`source_chat\`, \`source_speech\`, default output e subscriptions.
-- Se \`source_speech=speak\`, uma resposta normal pode sair no chat de origem.
-- Se \`source_speech=muted\`, uma resposta normal sai pelo default output. Se for necessário responder publicamente no chat de origem, rode \`ravi sessions unmute <session> --chat <source_chat>\` antes da resposta final.
-- Não explique mute, unmute, attach, subscriptions, routing ou output mechanics para usuários; trate isso como controle interno transparente.
-
-**${SILENT_TOKEN} vs \`mute\` vs \`detach\`** (complementares, não substitutos):
-
-- \`${SILENT_TOKEN}\` = **one-shot**, esse turn específico não fala. Próxima inbound, agent volta a responder normalmente. Use quando "li, mas não tenho nada a dizer agora".
-- \`mute\` = **estado durável listen-only**, a sessão continua escutando o chat, mas não fala nele até \`unmute\`.
-- \`detach\` = **estado durável de remoção**, a sessão deixa de participar daquele chat quando possível.
-
-**Anti-patterns:**
-
-- ❌ Adicionar route pra "mover" chat já atachado em outra sessão — subscription override puxa de volta. Detach (ou \`sessions delete --execute\` da sessão antiga) primeiro.
-- ❌ Tentar redirecionar output com \`focus\` — focus não existe; use \`attach\` para escolher o chat que recebe as respostas da sessão.
-- ❌ Externalizar para o usuário que você está mutando, desmutando ou roteando uma resposta.
-- ❌ Esperar attach trocar o agent. Attach decide sessão; agent vem da route ou default da instance.`;
+- A normal reply returns to the chat or thread that supplied the current turn.
+- \`ravi sessions attach <session> --chat <chat-id>\` adds a chat and selects it as the default for turns with no inbound chat.
+- \`ravi sessions detach <session> --chat <chat-id>\` removes a chat; \`ravi sessions subscriptions <session>\` lists them.
+- Use an explicit channel command to intentionally send somewhere else. Use \`${SILENT_TOKEN}\` to suppress only the current reply.`;
 }
 
 function sessionActionsText(sessionName?: string): string {

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { getRecentHistory, saveMessage } from "../db.js";
 import { nats } from "../nats.js";
-import { attachChatToSession } from "../router/sessions.js";
+import { attachChatToSession, detachChatFromSession } from "../router/sessions.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import {
   getOrCreateSession,
@@ -38,6 +38,7 @@ import { getRuntimeLiveStateForSession } from "./live-state.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import { buildRuntimeStartRequest, resolveRuntimeCredentialUpstreamProvider } from "./runtime-request-builder.js";
 import { RuntimeSessionDispatcher } from "./session-dispatcher.js";
+import { resolveSessionOutputTarget } from "./session-output-target.js";
 import type {
   RuntimeCapabilities,
   RuntimeEvent,
@@ -404,8 +405,13 @@ describe("runtime session trace instrumentation", () => {
       pendingMessages: [
         createQueuedRuntimeUserMessage({
           prompt: "hello trace",
+          source,
           deliveryBarrier: "after_tool",
           taskBarrierTaskId: "task-1",
+        }),
+        createQueuedRuntimeUserMessage({
+          prompt: "source-less follow-up",
+          deliveryBarrier: "after_tool",
         }),
       ],
     });
@@ -474,10 +480,6 @@ describe("runtime session trace instrumentation", () => {
       startedTool: false,
       materializedOutput: false,
     });
-    streaming.done = true;
-    streaming.onTurnComplete?.();
-    await runtimeRequest.prompt.return?.(undefined);
-
     const events = listSessionEvents(SESSION_KEY);
     const adapterRequest = events.find((event) => event.eventType === "adapter.request");
     expect(adapterRequest?.messageId).toBe("wamid-1");
@@ -554,6 +556,101 @@ describe("runtime session trace instrumentation", () => {
         }),
       ]),
     });
+
+    streaming.turnActive = false;
+    streaming.onTurnComplete?.();
+    const sourceLessTurn = await runtimeRequest.prompt.next();
+    expect(sourceLessTurn.value?.message.content).toBe("source-less follow-up");
+    expect(streaming.currentSource).toBeUndefined();
+
+    streaming.done = true;
+    streaming.onTurnComplete?.();
+    await runtimeRequest.prompt.return?.(undefined);
+  });
+
+  it("serializes attached surfaces and snapshots the reply target for each turn", async () => {
+    const slackChat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "slack-main",
+      platformChatId: "C123",
+      chatType: "group",
+      title: "Slack test",
+    });
+    const whatsappChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "whatsapp-main",
+      platformChatId: "wa-test@s.whatsapp.net",
+      chatType: "dm",
+      title: "WhatsApp test",
+    });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: slackChat.id, setOutputTarget: true });
+    attachChatToSession({ sessionKey: SESSION_KEY, chatId: whatsappChat.id, setOutputTarget: false });
+
+    const slackSource: RuntimeMessageTarget = {
+      channel: "slack",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      chatId: slackChat.platformChatId,
+      canonicalChatId: slackChat.id,
+    };
+    const whatsappSource: RuntimeMessageTarget = {
+      channel: "whatsapp",
+      accountId: "whatsapp-main",
+      instanceId: "whatsapp-main",
+      chatId: whatsappChat.platformChatId,
+      canonicalChatId: whatsappChat.id,
+    };
+    const streaming = makeStreamingSession({
+      pendingMessages: [
+        createQueuedRuntimeUserMessage({ prompt: "from Slack", source: slackSource }),
+        createQueuedRuntimeUserMessage({ prompt: "from WhatsApp", source: whatsappSource }),
+      ],
+    });
+    const provider: SessionRuntimeProvider = {
+      id: PROVIDER,
+      getCapabilities: () => capabilities,
+      startSession: () => makeRuntimeSession([]),
+    };
+    const { runtimeRequest } = await buildRuntimeStartRequest({
+      runId: "run-surface-order",
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "from Slack", source: slackSource },
+      session: makeSession(),
+      agent: makeAgent(),
+      runtimeProviderId: PROVIDER,
+      runtimeProvider: provider,
+      runtimeCapabilities: capabilities,
+      sessionCwd: stateDir ?? "/tmp",
+      dbSessionKey: SESSION_KEY,
+      model: MODEL,
+      runtimeResolution: {
+        options: { model: MODEL },
+        sources: { model: "agent_default", effort: null, thinking: null },
+        hasTaskRuntimeContext: false,
+      },
+      storedRuntimeSessionParams: undefined,
+      canResumeStoredSession: false,
+      resolvedSource: slackSource,
+      streamingSession: streaming,
+      stashedMessages: new Map(),
+      defaultRuntimeProviderId: "claude",
+      crashRecovery,
+    });
+
+    expect((await runtimeRequest.prompt.next()).value?.message.content).toBe("from Slack");
+    expect(streaming.currentSource?.canonicalChatId).toBe(slackChat.id);
+    expect(streaming.currentReplyTarget?.canonicalChatId).toBe(slackChat.id);
+
+    streaming.turnActive = false;
+    streaming.onTurnComplete?.();
+
+    expect((await runtimeRequest.prompt.next()).value?.message.content).toBe("from WhatsApp");
+    expect(streaming.currentSource?.canonicalChatId).toBe(whatsappChat.id);
+    expect(streaming.currentReplyTarget?.canonicalChatId).toBe(whatsappChat.id);
+
+    streaming.done = true;
+    streaming.onTurnComplete?.();
+    await runtimeRequest.prompt.return?.(undefined);
   });
 
   it("blocks invisible provider env fallback when a managed credential pool cannot resolve", async () => {
@@ -1032,7 +1129,7 @@ describe("runtime session trace instrumentation", () => {
       });
   }
 
-  function attachSpeakingOutputChat(): void {
+  function attachSpeakingOutputChat(): RuntimeMessageTarget {
     const outputChat = dbUpsertChat({
       channel: "whatsapp",
       instanceId: "main",
@@ -1041,6 +1138,13 @@ describe("runtime session trace instrumentation", () => {
       title: "compaction-gate",
     });
     attachChatToSession({ sessionKey: SESSION_KEY, chatId: outputChat.id, setOutputTarget: true });
+    return {
+      ...source,
+      accountId: "main",
+      instanceId: "main",
+      chatId: outputChat.platformChatId,
+      canonicalChatId: outputChat.id,
+    };
   }
 
   const compactingThenIdle: RuntimeEvent[] = [
@@ -1155,10 +1259,11 @@ describe("runtime session trace instrumentation", () => {
   });
 
   it("emits external compaction announcements for a human/channel turn", async () => {
-    attachSpeakingOutputChat();
+    const attachedSource = attachSpeakingOutputChat();
     const streaming = makeStreamingSession({
       agentMode: "active",
-      currentTurnProvenance: classifyTurnProvenance({ source }),
+      currentSource: attachedSource,
+      currentTurnProvenance: classifyTurnProvenance({ source: attachedSource }),
     });
     seedAdapterTrace(streaming);
     const attemptId = streaming.currentCrashRecoveryAttemptId!;
@@ -1186,6 +1291,53 @@ describe("runtime session trace instrumentation", () => {
     });
   });
 
+  it("keeps the turn-start reply target when subscriptions change mid-turn", async () => {
+    const attachedSource = attachSpeakingOutputChat();
+    const capturedTarget = resolveSessionOutputTarget({
+      sessionKey: SESSION_KEY,
+      fallback: attachedSource,
+    }).target;
+    expect(capturedTarget).not.toBeNull();
+    detachChatFromSession(SESSION_KEY, attachedSource.canonicalChatId!);
+    expect(resolveSessionOutputTarget({ sessionKey: SESSION_KEY, fallback: attachedSource }).target).toBeNull();
+
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentSource: attachedSource,
+      currentReplyTarget: capturedTarget,
+      currentTurnProvenance: classifyTurnProvenance({ source: attachedSource }),
+    });
+    seedAdapterTrace(streaming, "turn-reply-target-snapshot");
+    const responses: Array<{ response?: unknown; target?: unknown }> = [];
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as { response?: unknown; target?: unknown });
+      }
+    });
+
+    try {
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          { type: "assistant.message", text: "captured response" },
+          {
+            type: "turn.complete",
+            providerSessionId: "provider-after",
+            usage: { inputTokens: 1, outputTokens: 1 },
+          },
+        ]),
+      );
+    } finally {
+      emitSpy.mockRestore();
+    }
+
+    expect(responses).toHaveLength(1);
+    expect(responses[0]).toMatchObject({
+      response: "captured response",
+      target: { canonicalChatId: attachedSource.canonicalChatId },
+    });
+  });
+
   for (const scenario of [
     { name: "cron", prompt: { _cron: true } },
     { name: "trigger", prompt: { _trigger: true } },
@@ -1193,12 +1345,13 @@ describe("runtime session trace instrumentation", () => {
     { name: "heartbeat", prompt: { _heartbeat: true } },
   ] as const) {
     it(`suppresses external compaction announcements for a ${scenario.name} turn while preserving trace observability`, async () => {
-      attachSpeakingOutputChat();
+      const attachedSource = attachSpeakingOutputChat();
       const streaming = makeStreamingSession({
         agentMode: "active",
+        currentSource: attachedSource,
         currentTurnProvenance: classifyTurnProvenance({
           prompt: scenario.prompt,
-          source,
+          source: attachedSource,
         }),
       });
       seedAdapterTrace(streaming);
@@ -2428,10 +2581,10 @@ describe("runtime session trace instrumentation", () => {
   });
 
   it("keeps raw failure diagnostics internal while sanitizing the external response and live state", async () => {
-    attachSpeakingOutputChat();
+    const attachedSource = attachSpeakingOutputChat();
     const rawError =
       "ENOENT: no such file or directory, scandir '/Users/luis/.cache/ravi/plugins/ravi-system/skills/slack'";
-    const streaming = makeStreamingSession({ agentMode: "active" });
+    const streaming = makeStreamingSession({ agentMode: "active", currentSource: attachedSource });
     seedAdapterTrace(streaming, "turn-internal-failure");
     const responses: string[] = [];
     const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {

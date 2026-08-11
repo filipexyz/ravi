@@ -11,7 +11,7 @@ import {
   getSession,
   listSessionSubscriptions,
   matchRoute,
-  subscriptionAllowsCrossInstance,
+  isChatCompatibleWithSession,
 } from "../../router/index.js";
 import {
   dbBindSessionToChat,
@@ -1360,8 +1360,8 @@ export class SlackSocketModeService {
     if (existingSubscription && (!matched || existingSubscription.sessionKey !== matched.sessionKey)) {
       const ownerSession = getSession(existingSubscription.sessionKey);
       const ownerAgent = ownerSession ? routerConfig.agents[ownerSession.agentId] : undefined;
-      const sameInstance = subscriptionAllowsCrossInstance(canonicalChat.id, existingSubscription.sessionKey);
-      if (!sameInstance) {
+      const compatibleSession = isChatCompatibleWithSession(canonicalChat.id, existingSubscription.sessionKey);
+      if (!compatibleSession) {
         log.warn("Slack subscription override would jump instances - ignoring subscription, using route resolution", {
           chatId: canonicalChat.id,
           subscriptionSessionKey: existingSubscription.sessionKey,
@@ -2190,28 +2190,12 @@ function syncSlackSessionSubscription(
       existingSubscription?.outputAttachedAt !== undefined ||
       (!existingSubscription && role === "primary") ||
       (!hasOutputTarget && role === "primary");
-    const shouldEnableSpeech = setOutputTarget || (!existingSubscription && role === "primary");
-
     attachChatToSession({
       sessionKey,
       chatId,
       role,
       attachedByType: "system",
       attachedReason: "slack-socket-mode",
-      speechMode: existingSubscription
-        ? shouldEnableSpeech
-          ? "speak"
-          : undefined
-        : role === "primary"
-          ? "speak"
-          : "muted",
-      speechReason: existingSubscription
-        ? shouldEnableSpeech
-          ? "primary-slack-socket-mode"
-          : undefined
-        : role === "primary"
-          ? "primary-slack-socket-mode"
-          : "listen-only-slack-socket-mode",
       setOutputTarget,
     });
   } catch (error) {
