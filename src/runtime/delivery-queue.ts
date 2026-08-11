@@ -8,7 +8,7 @@ import {
   type RuntimeHostStreamingSession,
   type RuntimeUserMessage,
 } from "./host-session.js";
-import type { RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
+import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimePromptMessage } from "./types.js";
 
 const log = logger.child("runtime:delivery-queue");
@@ -46,6 +46,71 @@ export function hasIsolatedRuntimeTurnEnvelope(
   return prompt?._channelBackend !== undefined || prompt?._turnOrigin !== undefined;
 }
 
+export interface RuntimeInterruptSuccessorPreparation {
+  message: RuntimeUserMessage;
+  coalescedMessages: RuntimeUserMessage[];
+}
+
+/**
+ * Prepare the first releasable successor for an intentional interrupt.
+ * Compatible human channel prompts at the front of that lane are folded into
+ * one input in their original order so they are neither lost nor replayed
+ * later as stale work.
+ */
+export function prepareRuntimeInterruptSuccessor(
+  sessionName: string,
+  session: RuntimeHostStreamingSession,
+): RuntimeInterruptSuccessorPreparation | null {
+  const activePendingIds = new Set(session.currentTurnPendingIds ?? []);
+  if (activePendingIds.size === 0) return null;
+
+  const successors = session.pendingMessages.filter(
+    (message) => !message.pendingId || !activePendingIds.has(message.pendingId),
+  );
+  const eligible = successors.filter(
+    (message) =>
+      shouldInterruptRuntimeForIncoming(
+        sessionName,
+        session,
+        message.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER,
+        message.taskBarrierTaskId,
+      ).interrupt,
+  );
+  if (eligible.length === 0) return null;
+
+  // Preserve FIFO across different actors and authority envelopes. A burst of
+  // compatible channel messages at the front of the releasable lane can share
+  // one physical provider turn, with the newest envelope owning that turn.
+  const firstEligible = eligible[0];
+  if (!firstEligible) return null;
+  const compatibilityKey = channelSteeringCompatibilityKey(firstEligible);
+  const cohort = [firstEligible];
+  if (compatibilityKey) {
+    for (const candidate of eligible.slice(1)) {
+      if (channelSteeringCompatibilityKey(candidate) !== compatibilityKey) break;
+      cohort.push(candidate);
+    }
+  }
+
+  const interrupting = cohort[cohort.length - 1];
+  if (!interrupting?.pendingId) return null;
+
+  const merged = mergeRuntimeSteeringCohort(cohort, interrupting);
+  const cohortSet = new Set(cohort);
+  const active = session.pendingMessages.filter(
+    (message) => message.pendingId !== undefined && activePendingIds.has(message.pendingId),
+  );
+  const remaining = session.pendingMessages.filter(
+    (message) => !cohortSet.has(message) && (!message.pendingId || !activePendingIds.has(message.pendingId)),
+  );
+  session.pendingMessages = [...active, merged, ...remaining];
+
+  return {
+    message: merged,
+    coalescedMessages: cohort.filter((message) => message !== interrupting),
+  };
+}
+
 function cloneRuntimeLaunchPrompt(prompt: RuntimePromptDeliveryMessage): RuntimeLaunchPrompt {
   return {
     ...prompt,
@@ -54,6 +119,139 @@ function cloneRuntimeLaunchPrompt(prompt: RuntimePromptDeliveryMessage): Runtime
     _approvalSource: prompt._approvalSource ? { ...prompt._approvalSource } : undefined,
     commands: prompt.commands ? prompt.commands.map((command) => ({ ...command })) : undefined,
   };
+}
+
+function mergeRuntimeSteeringCohort(
+  cohort: RuntimeUserMessage[],
+  interrupting: RuntimeUserMessage,
+): RuntimeUserMessage {
+  if (cohort.length <= 1) return interrupting;
+
+  const content = cohort.map((message) => message.message.content).join("\n\n");
+  return {
+    ...interrupting,
+    message: {
+      ...interrupting.message,
+      content,
+    },
+    launchPrompt: interrupting.launchPrompt
+      ? {
+          ...interrupting.launchPrompt,
+          prompt: content,
+        }
+      : undefined,
+  };
+}
+
+function steeringActorIdentity(metadata: MessageActorMetadata) {
+  return {
+    actorType: metadata.actorType ?? "",
+    contactId: metadata.contactId ?? "",
+    actorAgentId: metadata.actorAgentId ?? "",
+    automationId: metadata.automationId ?? "",
+    platformIdentityId: metadata.platformIdentityId ?? "",
+    normalizedSenderId: metadata.normalizedSenderId ?? "",
+    rawSenderId: metadata.rawSenderId ?? "",
+  };
+}
+
+function channelSteeringCompatibilityKey(message: RuntimeUserMessage): string | null {
+  const prompt = message.launchPrompt;
+  const backend = prompt?._channelBackend;
+  const source = prompt?.source;
+  const context = prompt?.context;
+  const barrier = message.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
+  if (
+    !backend ||
+    !source ||
+    !context ||
+    prompt._turnOrigin ||
+    message.replay === true ||
+    message.clientMessageId ||
+    (message.commands?.length ?? 0) > 0 ||
+    (prompt.commands?.length ?? 0) > 0 ||
+    context.isEditedMessage === true ||
+    Boolean(context.editedMessageId) ||
+    Boolean(context.editEventId) ||
+    (barrier !== "after_tool" && barrier !== "immediate_interrupt") ||
+    message.taskBarrierTaskId ||
+    prompt._observation ||
+    prompt._heartbeat ||
+    prompt._cron ||
+    prompt._trigger ||
+    prompt._sessionFollowup ||
+    prompt._thread ||
+    prompt._resumeStashedMessages ||
+    prompt._daemonRestartResume
+  ) {
+    return null;
+  }
+
+  const sourceActor = steeringActorIdentity(source);
+  const contextActor = steeringActorIdentity(context);
+  if (sourceActor.actorType && contextActor.actorType && sourceActor.actorType !== contextActor.actorType) return null;
+  const actorType = sourceActor.actorType || contextActor.actorType || "unknown";
+  if (actorType !== "contact" && actorType !== "unknown") return null;
+  const principal =
+    sourceActor.contactId ||
+    contextActor.contactId ||
+    sourceActor.platformIdentityId ||
+    contextActor.platformIdentityId ||
+    sourceActor.normalizedSenderId ||
+    contextActor.normalizedSenderId ||
+    sourceActor.rawSenderId ||
+    contextActor.rawSenderId ||
+    context.senderId;
+  if (!principal) return null;
+
+  return JSON.stringify({
+    barrier,
+    agentId: prompt._agentId ?? backend.binding.agentId,
+    runtimeProviderId: prompt._runtimeProviderId ?? "",
+    runtimeModel: prompt._runtimeModel ?? "",
+    backend: {
+      protocol: backend.protocol,
+      schemaVersion: backend.schemaVersion,
+      channelInstanceId: backend.binding.channelInstanceId,
+      agentId: backend.binding.agentId,
+      chatId: backend.binding.chatId,
+      sessionId: backend.binding.sessionId,
+      target: backend.target,
+    },
+    source: {
+      channel: source.channel,
+      accountId: source.accountId,
+      instanceId: source.instanceId ?? "",
+      chatId: source.chatId,
+      threadId: source.threadId ?? "",
+      canonicalChatId: source.canonicalChatId ?? "",
+      statusAnchorKind: source.statusAnchorKind ?? "",
+      suppressPresence: source.suppressPresence ?? false,
+      actor: sourceActor,
+    },
+    context: {
+      channelId: context.channelId,
+      accountId: context.accountId,
+      instanceId: context.instanceId ?? "",
+      chatId: context.chatId,
+      canonicalChatId: context.canonicalChatId ?? "",
+      senderId: context.senderId,
+      isGroup: context.isGroup,
+      groupId: context.groupId ?? "",
+      actor: contextActor,
+    },
+    principal,
+    approvalSource: prompt._approvalSource
+      ? {
+          channel: prompt._approvalSource.channel,
+          accountId: prompt._approvalSource.accountId,
+          instanceId: prompt._approvalSource.instanceId ?? "",
+          chatId: prompt._approvalSource.chatId,
+          threadId: prompt._approvalSource.threadId ?? "",
+          actor: steeringActorIdentity(prompt._approvalSource),
+        }
+      : null,
+  });
 }
 
 function isGeneratingText(session: RuntimeHostStreamingSession): boolean {
@@ -67,6 +265,8 @@ export function canReleaseRuntimeDeliveryBarrier(
   taskBarrierTaskId?: string,
   hasActiveTask = dbHasActiveTaskForSession(sessionName, taskBarrierTaskId),
 ): boolean {
+  if (session.toolResultDeliveryPending) return false;
+
   switch (barrier) {
     case "immediate_interrupt":
       if (session.starting || session.compacting) return false;
@@ -158,6 +358,9 @@ export function shouldInterruptRuntimeForIncoming(
   }
   if (barrier === "after_task" && dbHasActiveTaskForSession(sessionName, taskBarrierTaskId)) {
     return { interrupt: false, reason: "active_task" };
+  }
+  if (session.toolResultDeliveryPending) {
+    return { interrupt: false, reason: "tool_result_delivery" };
   }
   if (session.toolRunning) {
     if (barrier !== "immediate_interrupt") {

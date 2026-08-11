@@ -801,6 +801,86 @@ describe("runtime session trace instrumentation", () => {
     });
   });
 
+  it("releases queued delivery barriers after a tool completes without exposing callback failures", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-tool-barrier-release");
+    const releasedWithToolRunning: boolean[] = [];
+
+    await runTraceLoop(
+      streaming,
+      makeRuntimeSession([
+        {
+          type: "tool.started",
+          toolUse: { id: "tool-release", name: "Bash", input: { cmd: "true" } },
+        },
+        {
+          type: "tool.completed",
+          toolUseId: "tool-release",
+          toolName: "Bash",
+          content: "ok",
+        },
+        { type: "turn.interrupted" },
+      ]),
+      {
+        onToolBarrierReleased: () => {
+          releasedWithToolRunning.push(streaming.toolRunning);
+          streaming.currentTurnSuperseded = true;
+          streaming.interrupted = true;
+          throw new Error("synthetic barrier release failure");
+        },
+      },
+    );
+
+    expect(releasedWithToolRunning).toEqual([false]);
+  });
+
+  it("waits for a Codex dynamic tool result to cross JSON-RPC before releasing the barrier", async () => {
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-tool-result-delivery");
+    const afterCompletion: Array<{ toolRunning: boolean; deliveryPending: boolean }> = [];
+    const released: Array<{ resultDelivered: boolean; toolRunning: boolean; deliveryPending: boolean }> = [];
+    let resultDelivered = false;
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: "codex",
+      events: (async function* () {
+        yield {
+          type: "tool.started",
+          toolUse: { id: "tool-delivery", name: "tools_invoke", input: {} },
+        } satisfies RuntimeEvent;
+        yield {
+          type: "tool.completed",
+          toolUseId: "tool-delivery",
+          toolName: "tools_invoke",
+          content: "ok",
+          metadata: { item: { id: "tool-delivery", type: "dynamic_tool_call", status: "completed" } },
+        } satisfies RuntimeEvent;
+        afterCompletion.push({
+          toolRunning: streaming.toolRunning,
+          deliveryPending: Boolean(streaming.toolResultDeliveryPending),
+        });
+        resultDelivered = true;
+        yield { type: "tool.result_delivered", toolCallId: "tool-delivery" } satisfies RuntimeEvent;
+        yield { type: "turn.interrupted" } satisfies RuntimeEvent;
+      })(),
+      interrupt: async () => {},
+    };
+
+    await runTraceLoop(streaming, runtimeSession, {
+      onToolBarrierReleased: () => {
+        released.push({
+          resultDelivered,
+          toolRunning: streaming.toolRunning,
+          deliveryPending: Boolean(streaming.toolResultDeliveryPending),
+        });
+        streaming.currentTurnSuperseded = true;
+        streaming.interrupted = true;
+      },
+    });
+
+    expect(afterCompletion).toEqual([{ toolRunning: true, deliveryPending: true }]);
+    expect(released).toEqual([{ resultDelivered: true, toolRunning: false, deliveryPending: false }]);
+  });
+
   it("marks the active credential attempt succeeded on a successful terminal turn", async () => {
     const streaming = makeStreamingSession({
       currentRuntimeCredential: seedRuntimeCredentialAttempt("rcred_success"),

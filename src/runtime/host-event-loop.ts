@@ -562,6 +562,7 @@ export interface RunRuntimeEventLoopOptions {
   safeEmit: RuntimeSafeEmit;
   drainPendingStarts(): void;
   restartStashedSession?(input: { sessionName: string; reason: string }): void | Promise<void>;
+  onToolBarrierReleased?(sessionName: string): void | Promise<void>;
 }
 
 /** Process provider events from a streaming runtime session. */
@@ -582,6 +583,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     safeEmit,
     drainPendingStarts,
     restartStashedSession,
+    onToolBarrierReleased,
   } = options;
   prewarmPricingCatalog();
   const recordTraceEvent = (
@@ -928,11 +930,69 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       toolStuckTimer = undefined;
     }
     streaming.toolRunning = false;
+    streaming.toolResultDeliveryPending = false;
     streaming.currentToolId = undefined;
     streaming.currentToolName = undefined;
     streaming.currentToolInput = undefined;
     streaming.toolStartTime = undefined;
     streaming.currentToolSafety = null;
+  };
+  const finishActiveToolBarrier = async () => {
+    clearActiveToolState();
+
+    if (streaming.pendingAbort) {
+      if (streaming.pendingMessages.length > 0) {
+        log.info("Stashing aborted messages (deferred)", {
+          sessionName,
+          count: streaming.pendingMessages.length,
+        });
+        stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
+      }
+      log.info("Executing deferred abort after tool barrier released", {
+        sessionName,
+      });
+      streaming.internalAbortReason = streaming.internalAbortReason ?? "deferred_abort";
+      recordTraceEvent({
+        turnId: streaming.currentTraceTurnId,
+        provider: runtimeSession.provider,
+        model,
+        eventType: "session.abort",
+        eventGroup: "session",
+        status: "requested",
+        source: streaming.currentSource,
+        payloadJson: {
+          reason: streaming.internalAbortReason,
+          deferred: true,
+          toolCompleted: true,
+        },
+      });
+      recordTerminalTraceOnce({
+        status: "aborted",
+        eventType: "turn.interrupted",
+        abortReason: streaming.internalAbortReason,
+        payloadJson: {
+          reason: streaming.internalAbortReason,
+          deferred: true,
+        },
+      });
+      revokeAgentRuntimeContextsForSession(session.sessionKey, {
+        reason: streaming.internalAbortReason,
+      });
+      streaming.abortController.abort();
+      if (streamingSessions.delete(sessionName)) {
+        drainPendingStarts();
+      }
+      return;
+    }
+
+    try {
+      await onToolBarrierReleased?.(sessionName);
+    } catch (error) {
+      log.warn("Failed to release queued prompts after tool completion", {
+        sessionName,
+        error,
+      });
+    }
   };
   const signalTurnComplete = () => {
     clearProviderInactivityWatch();
@@ -1580,6 +1640,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       if (streaming.done) {
         break;
       }
+      const awaitsToolResultDelivery =
+        event.type === "tool.completed" &&
+        runtimeSession.provider === "codex" &&
+        event.metadata?.item?.type === "dynamic_tool_call";
+      if (awaitsToolResultDelivery) {
+        // Codex queues the synthetic completion before its JSON-RPC callback
+        // write resolves. Close every interrupt lane before asynchronous event
+        // projection gives another inbound dispatch a chance to run.
+        streaming.toolResultDeliveryPending = true;
+      }
       providerRawEventCount++;
       streaming.lastActivity = Date.now();
 
@@ -2052,6 +2122,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Arm provider inactivity watchdog: catches cases where the provider
         // (e.g. codex's API call to OpenAI) hangs silently with no further events.
         armProviderInactivityWatch();
+        if (streaming.toolResultDeliveryPending || streaming.toolRunning) {
+          await finishActiveToolBarrier();
+        }
+        continue;
       }
 
       if (event.type === "tool.completed") {
@@ -2172,51 +2246,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               metadata: event.metadata,
             }
           : undefined;
-        clearActiveToolState();
-
-        // Execute deferred abort now that unsafe tool has completed
-        if (streaming.pendingAbort) {
-          if (streaming.pendingMessages.length > 0) {
-            log.info("Stashing aborted messages (deferred)", {
-              sessionName,
-              count: streaming.pendingMessages.length,
-            });
-            stashPendingRuntimeMessages(sessionName, streaming, stashedMessages, { crashRecovery });
-          }
-          log.info("Executing deferred abort after unsafe tool completed", {
-            sessionName,
-          });
-          streaming.internalAbortReason = streaming.internalAbortReason ?? "deferred_abort";
-          recordTraceEvent({
-            turnId: streaming.currentTraceTurnId,
-            provider: runtimeSession.provider,
-            model,
-            eventType: "session.abort",
-            eventGroup: "session",
-            status: "requested",
-            source: streaming.currentSource,
-            payloadJson: {
-              reason: streaming.internalAbortReason,
-              deferred: true,
-              toolCompleted: true,
-            },
-          });
-          recordTerminalTraceOnce({
-            status: "aborted",
-            eventType: "turn.interrupted",
-            abortReason: streaming.internalAbortReason,
-            payloadJson: {
-              reason: streaming.internalAbortReason,
-              deferred: true,
-            },
-          });
-          revokeAgentRuntimeContextsForSession(session.sessionKey, {
-            reason: streaming.internalAbortReason,
-          });
-          streaming.abortController.abort();
-          if (streamingSessions.delete(sessionName)) {
-            drainPendingStarts();
-          }
+        // Dynamic Codex callbacks finish on the later result-delivered marker.
+        if (!awaitsToolResultDelivery) {
+          await finishActiveToolBarrier();
         }
         continue;
       }

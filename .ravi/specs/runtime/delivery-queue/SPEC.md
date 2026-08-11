@@ -106,6 +106,22 @@ Within the same barrier lane, delivery SHOULD be FIFO.
 
 `after_tool` and `immediate_interrupt` prompt atoms MAY request interruption only through the session dispatcher's interrupt path, with trace events that explain the source, barrier, and safety state.
 
+When a running tool's result has crossed its provider callback boundary, the
+dispatcher MUST immediately re-evaluate queued `after_tool` and
+`immediate_interrupt` atoms. The callback write is an atomic safety barrier:
+even the immediate lane MUST wait for its delivery acknowledgement. Releasing a
+tool barrier MUST NOT depend on another inbound message arriving.
+
+The runtime MAY fold the leading run of compatible human channel steer atoms
+into one physical successor turn. Compatibility requires the same channel
+backend session and target, reply surface and thread, human actor identity,
+runtime selection, approval route, and barrier. Replay attempts, Ravi Commands,
+task-gated atoms, and internal producer envelopes MUST remain isolated. Folded
+text MUST preserve chronological order, the newest atom MUST own the successor
+envelope, and the older channel bindings MUST reach a terminal interrupted
+state. An incompatible actor, channel, thread, authority, or barrier ends the
+run and retains FIFO ownership.
+
 When a later prompt atom intentionally interrupts an active provider turn, the
 atoms already yielded to that turn MUST be dequeued before the next provider
 turn. The interrupting atom MUST become the next eligible work according to its
@@ -210,6 +226,9 @@ Each queued, released, batched, bypassed, or interrupted prompt SHOULD include:
 - `sessions answer` enters the follow-up lane by default, unless the call explicitly opts into immediate or belongs to a traced synchronous unblock flow.
 - Operational execute/heartbeat/trigger prompts do not interrupt active task work by default.
 - Human channel messages can still interrupt after safe tool barriers.
+- Human channel messages queued during a tool are reconsidered as soon as its result is delivered to the provider, without requiring another inbound message.
+- A compatible burst from the same human, channel, and thread is delivered as one chronological steering input using the newest envelope.
+- Bursts are never folded across actors, channels, threads, authority envelopes, Ravi Commands, or replay ownership.
 - A human channel message that interrupts an active turn is the next provider input; the superseded turn is not replayed ahead of it.
 - A provider interruption without a newer prompt reconciles the active prompt atom when the provider advertises support; otherwise it retries the atom only when generic replay remains durably safe.
 - Ambiguous recovery reuses one logical delivery id; intentional restarts create a new delivery id and preserve normal batching.

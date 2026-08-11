@@ -106,6 +106,8 @@ export interface RuntimeHostStreamingSession {
   currentTaskBarrierTaskId?: string;
   /** Tool tracking */
   toolRunning: boolean;
+  /** A completed dynamic tool result is still being written to the provider callback. */
+  toolResultDeliveryPending?: boolean;
   currentToolId?: string;
   currentToolName?: string;
   currentToolInput?: unknown;

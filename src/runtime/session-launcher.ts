@@ -50,6 +50,7 @@ export interface StartRuntimeSessionOptions {
   safeEmit: RuntimeSafeEmit;
   drainPendingStarts(): void;
   restartStashedSession?(input: { sessionName: string; reason: string }): void | Promise<void>;
+  onToolBarrierReleased?(sessionName: string): void | Promise<void>;
   crashRecovery: RuntimeCrashRecoveryCoordinator;
 }
 
@@ -77,6 +78,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     safeEmit,
     drainPendingStarts,
     restartStashedSession,
+    onToolBarrierReleased,
     crashRecovery,
   } = options;
   const runId = createSessionTraceRunId();
@@ -183,6 +185,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     currentThinking: runtimeResolution.options.thinking,
     currentTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId),
     toolRunning: false,
+    toolResultDeliveryPending: false,
     lastActivity: Date.now(),
     done: false,
     interrupted: false,
@@ -330,6 +333,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         safeEmit,
         drainPendingStarts,
         restartStashedSession,
+        onToolBarrierReleased,
         crashRecovery,
       }),
     ).catch((err) => {
