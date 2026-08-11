@@ -26,7 +26,7 @@ import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { shouldUseTurnScopedAuthorityForPrompt } from "./runtime-request-context.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
-import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
+import { markRuntimeTaskAcceptedForPrompt } from "./task-runtime-context.js";
 import { updateRuntimeLiveState } from "./live-state.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
@@ -87,6 +87,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   const resolvedSession = resolveRuntimeSession({
     sessionName,
     prompt,
+    configModel,
     defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
   });
   if (!resolvedSession) {
@@ -98,6 +99,8 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     runtimeProviderId,
     runtimeProvider,
     runtimeCapabilities,
+    runtimeResolution,
+    model,
     session,
     sessionCwd,
     dbSessionKey,
@@ -131,14 +134,6 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     });
   }
 
-  const runtimeResolution = resolveRuntimeForPrompt({
-    sessionName,
-    prompt,
-    session,
-    agent,
-    configModel,
-  });
-  const model = runtimeResolution.options.model ?? configModel;
   try {
     const observation = ensureObserverBindingsForSession({
       sessionName,

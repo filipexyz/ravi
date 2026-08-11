@@ -8,6 +8,7 @@ import {
   type SessionEntry,
 } from "../router/index.js";
 import { logger } from "../utils/logger.js";
+import type { TaskRuntimeResolution } from "../tasks/types.js";
 import { createRuntimeProvider } from "./provider-registry.js";
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import type { RuntimeProviderId } from "./types.js";
@@ -15,6 +16,7 @@ import { resolveStoredRuntimeProvider } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
 import { validateRuntimeSessionState, type RuntimeSessionStateInvalidReason } from "./session-state.js";
+import { resolveRuntimeForPrompt } from "./task-runtime-context.js";
 
 const log = logger.child("runtime:session-resolver");
 
@@ -26,6 +28,8 @@ export interface RuntimeSessionResolution {
   runtimeProviderId: RuntimeProviderId;
   runtimeProvider: SessionRuntimeProvider;
   runtimeCapabilities: RuntimeCapabilities;
+  runtimeResolution: TaskRuntimeResolution;
+  model: string;
   session: SessionEntry;
   sessionCwd: string;
   dbSessionKey: string;
@@ -59,6 +63,7 @@ export interface RuntimeResumeDecision {
 export function resolveRuntimeSession(options: {
   sessionName: string;
   prompt: RuntimeLaunchPrompt;
+  configModel: string;
   defaultRuntimeProviderId: RuntimeProviderId;
 }): RuntimeSessionResolution | null {
   const routerConfig = configStore.getConfig();
@@ -100,10 +105,14 @@ export function resolveRuntimeSession(options: {
     session.runtimeSessionDisplayId ?? session.providerSessionId ?? session.sdkSessionId ?? undefined;
   const storedRuntimeProvider = resolveStoredRuntimeProvider(session);
   const providerMatches = storedRuntimeProvider === runtimeProviderId;
-  const model =
-    options.prompt._observation && options.prompt._runtimeModel
-      ? options.prompt._runtimeModel
-      : (session.modelOverride ?? agentSelection.effectiveModel ?? undefined);
+  const runtimeResolution = resolveRuntimeForPrompt({
+    sessionName: options.sessionName,
+    prompt: options.prompt,
+    session,
+    agent,
+    configModel: options.configModel,
+  });
+  const model = runtimeResolution.options.model ?? options.configModel;
   const sessionStateValidation = validateRuntimeSessionState({
     capabilities: runtimeCapabilities,
     storedProviderSessionId,
@@ -164,6 +173,8 @@ export function resolveRuntimeSession(options: {
     runtimeProviderId,
     runtimeProvider,
     runtimeCapabilities,
+    runtimeResolution,
+    model,
     session,
     sessionCwd: expandHome(session.agentCwd),
     dbSessionKey: session.sessionKey,

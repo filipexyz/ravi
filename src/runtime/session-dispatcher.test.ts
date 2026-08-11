@@ -2053,6 +2053,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         nextResolution = resolveRuntimeSession({
           sessionName: restartedName,
           prompt,
+          configModel: "global-model",
           defaultRuntimeProviderId: "codex",
         });
       });

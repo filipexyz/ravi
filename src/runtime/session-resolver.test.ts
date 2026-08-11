@@ -10,6 +10,13 @@ import {
 } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { configStore } from "../config-store.js";
+import { dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
+import { buildTaskProfileSnapshot, resolveTaskProfile } from "../tasks/profiles.js";
+import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
+import { createPendingRuntimeHandle, type RuntimeHostStreamingSession } from "./host-session.js";
+import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { buildRuntimeStartRequest } from "./runtime-request-builder.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
 import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
@@ -60,6 +67,85 @@ function registerFileBackedProvider(): void {
   );
 }
 
+function persistKimiK3Session(): void {
+  const cwd = stateDir ?? "/tmp";
+  const sessionFile = join(cwd, "kimi-k3-session.json");
+  writeFileSync(sessionFile, '{"messages":["old-k3-transcript"]}');
+  getOrCreateSession(SESSION_KEY, "main", cwd, { name: SESSION_NAME });
+  updateSessionRuntimeProviderOverride(SESSION_KEY, "kimi-code");
+  updateProviderSession(SESSION_KEY, "kimi-code", "kimi-k3-locator", {
+    runtimeSessionParams: {
+      provider: "kimi-code",
+      model: "k3",
+      sessionFile,
+      cwd,
+    },
+    runtimeSessionDisplayId: "kimi-k3-locator",
+  });
+}
+
+function createRequestStreamingSession(model: string, prompt: RuntimeLaunchPrompt): RuntimeHostStreamingSession {
+  return {
+    agentId: "main",
+    queryHandle: createPendingRuntimeHandle("kimi-code"),
+    starting: true,
+    abortController: new AbortController(),
+    pushMessage: null,
+    pendingWake: false,
+    pendingMessages: [createQueuedRuntimeUserMessage(prompt)],
+    currentModel: model,
+    toolRunning: false,
+    lastActivity: Date.now(),
+    done: false,
+    interrupted: false,
+    turnActive: false,
+    compacting: false,
+    onTurnComplete: null,
+    currentToolSafety: null,
+    pendingAbort: false,
+    agentMode: "interactive",
+    traceRunId: "run-kimi-model-continuity",
+  };
+}
+
+async function buildKimiRequestThroughRuntimeBoundary(prompt: RuntimeLaunchPrompt, configModel: string) {
+  const resolutionInput = {
+    sessionName: SESSION_NAME,
+    prompt,
+    defaultRuntimeProviderId: "codex" as const,
+    configModel,
+  } satisfies Parameters<typeof resolveRuntimeSession>[0];
+  const resolved = resolveRuntimeSession(resolutionInput);
+  if (!resolved) {
+    throw new Error("expected runtime session resolution");
+  }
+  const { runtimeResolution, model } = resolved;
+  const { runtimeRequest } = await buildRuntimeStartRequest({
+    runId: "run-kimi-model-continuity",
+    sessionName: SESSION_NAME,
+    prompt,
+    session: resolved.session,
+    agent: resolved.agent,
+    runtimeProviderId: resolved.runtimeProviderId,
+    runtimeProvider: resolved.runtimeProvider,
+    runtimeCapabilities: resolved.runtimeCapabilities,
+    sessionCwd: resolved.sessionCwd,
+    dbSessionKey: resolved.dbSessionKey,
+    model,
+    runtimeResolution,
+    storedRuntimeSessionParams: resolved.storedRuntimeSessionParams,
+    storedProviderSessionId: resolved.storedProviderSessionId,
+    canResumeStoredSession: resolved.canResumeStoredSession,
+    streamingSession: createRequestStreamingSession(model, prompt),
+    stashedMessages: new Map(),
+    defaultRuntimeProviderId: "codex",
+    crashRecovery: {
+      markTurnAttemptSafety: () => {},
+    } as unknown as RuntimeCrashRecoveryCoordinator,
+  });
+  return { resolved, runtimeRequest, runtimeResolution };
+}
+
 describe("runtime session resolver", () => {
   beforeEach(async () => {
     stateDir = await createIsolatedRaviState("ravi-runtime-session-resolver-");
@@ -81,6 +167,7 @@ describe("runtime session resolver", () => {
 
     const resolved = resolveRuntimeSession({
       sessionName: SESSION_NAME,
+      configModel: "global-model",
       prompt: { prompt: "Qual o melhor pro nosso cenário?" },
       defaultRuntimeProviderId: "codex",
     });
@@ -104,6 +191,7 @@ describe("runtime session resolver", () => {
 
     const resolved = resolveRuntimeSession({
       sessionName: SESSION_NAME,
+      configModel: "global-model",
       prompt: { prompt: "fresh start" },
       defaultRuntimeProviderId: "claude",
     });
@@ -127,6 +215,7 @@ describe("runtime session resolver", () => {
 
     const resolved = resolveRuntimeSession({
       sessionName: SESSION_NAME,
+      configModel: "global-model",
       prompt: { prompt: "use session provider override" },
       defaultRuntimeProviderId: "codex",
     });
@@ -155,6 +244,7 @@ describe("runtime session resolver", () => {
 
     const resolved = resolveRuntimeSession({
       sessionName: SESSION_NAME,
+      configModel: "global-model",
       prompt: { prompt: "resume file-backed provider" },
       defaultRuntimeProviderId: FILE_BACKED_PROVIDER,
     });
@@ -185,6 +275,7 @@ describe("runtime session resolver", () => {
 
     const resolved = resolveRuntimeSession({
       sessionName: SESSION_NAME,
+      configModel: "global-model",
       prompt: { prompt: "do not resume stale file" },
       defaultRuntimeProviderId: FILE_BACKED_PROVIDER,
     });
@@ -221,6 +312,7 @@ describe("runtime session resolver", () => {
 
     const matching = resolveRuntimeSession({
       sessionName: SESSION_NAME,
+      configModel: "global-model",
       prompt: { prompt: "continue k3" },
       defaultRuntimeProviderId: "codex",
     });
@@ -230,6 +322,7 @@ describe("runtime session resolver", () => {
     updateSessionModelOverride(SESSION_KEY, "k3-256k");
     const changed = resolveRuntimeSession({
       sessionName: SESSION_NAME,
+      configModel: "global-model",
       prompt: { prompt: "restart on k3-256k" },
       defaultRuntimeProviderId: "codex",
     });
@@ -273,6 +366,7 @@ describe("runtime session resolver", () => {
 
       const resolved = resolveRuntimeSession({
         sessionName,
+        configModel: "global-model",
         prompt: { prompt: `continue ${provider}` },
         defaultRuntimeProviderId: "codex",
       });
@@ -284,5 +378,90 @@ describe("runtime session resolver", () => {
         staleCleared: false,
       });
     }
+  });
+
+  it("does not forward k3 continuity when the real request uses the global k3-256k default", async () => {
+    persistKimiK3Session();
+
+    const { resolved, runtimeRequest, runtimeResolution } = await buildKimiRequestThroughRuntimeBoundary(
+      { prompt: "use the global model" },
+      "k3-256k",
+    );
+
+    expect(runtimeResolution.sources.model).toBe("global_default");
+    expect(runtimeRequest.model).toBe("k3-256k");
+    expect(runtimeRequest.resume).toBeUndefined();
+    expect(runtimeRequest.resumeSession).toBeUndefined();
+    expect(resolved.resumeDecision).toMatchObject({
+      sessionStateInvalidReason: "model_mismatch",
+      staleCleared: true,
+    });
+  });
+
+  it("does not forward k3 continuity when a task override selects k3-256k", async () => {
+    persistKimiK3Session();
+    const created = dbCreateTask({
+      title: "Kimi model continuity",
+      instructions: "Use the task model without the old transcript.",
+      createdBy: "test",
+      runtimeOverride: { model: "k3-256k" },
+    });
+    dbDispatchTask(created.task.id, {
+      agentId: "main",
+      sessionName: SESSION_NAME,
+      assignedBy: "test",
+    });
+    const prompt = { prompt: "use the task model", taskBarrierTaskId: created.task.id };
+
+    const { resolved, runtimeRequest, runtimeResolution } = await buildKimiRequestThroughRuntimeBoundary(
+      prompt,
+      "global-fallback",
+    );
+
+    expect(runtimeResolution.sources.model).toBe("task_override");
+    expect(runtimeRequest.model).toBe("k3-256k");
+    expect(runtimeRequest.resume).toBeUndefined();
+    expect(runtimeRequest.resumeSession).toBeUndefined();
+    expect(resolved.resumeDecision).toMatchObject({
+      sessionStateInvalidReason: "model_mismatch",
+      staleCleared: true,
+    });
+  });
+
+  it("does not forward k3 continuity when a task profile defaults to k3-256k", async () => {
+    persistKimiK3Session();
+    const profileSnapshot = {
+      ...buildTaskProfileSnapshot(resolveTaskProfile("default")),
+      runtimeDefaults: { model: "k3-256k" },
+    };
+    const created = dbCreateTask({
+      title: "Kimi profile continuity",
+      instructions: "Use the profile model without the old transcript.",
+      createdBy: "test",
+      profileId: profileSnapshot.id,
+      profileVersion: profileSnapshot.version,
+      profileSource: profileSnapshot.source,
+      profileSnapshot,
+    });
+    dbDispatchTask(created.task.id, {
+      agentId: "main",
+      sessionName: SESSION_NAME,
+      assignedBy: "test",
+    });
+    const prompt = { prompt: "use the profile model", taskBarrierTaskId: created.task.id };
+
+    const { resolved, runtimeRequest, runtimeResolution } = await buildKimiRequestThroughRuntimeBoundary(
+      prompt,
+      "global-fallback",
+    );
+
+    expect(runtimeResolution.sources.model).toBe("profile_default");
+    expect(runtimeRequest.model).toBe("k3-256k");
+    expect(runtimeRequest.resume).toBeUndefined();
+    expect(runtimeRequest.resumeSession).toBeUndefined();
+    expect(resolved.resumeDecision).toMatchObject({
+      sessionStateInvalidReason: "model_mismatch",
+      staleCleared: true,
+    });
   });
 });
