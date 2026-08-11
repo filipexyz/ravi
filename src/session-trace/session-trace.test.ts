@@ -6,9 +6,11 @@ import { querySessionTrace } from "./query.js";
 import { recordAdapterRequestTrace } from "./runtime-trace.js";
 import {
   getSessionTraceBlob,
+  getSessionTurn,
   listRecentSessionEventsByType,
   listSessionEvents,
   recordSessionEvent,
+  upsertSessionTurn,
 } from "./session-trace-db.js";
 
 let stateDir: string | null = null;
@@ -131,6 +133,31 @@ describe("session trace query", () => {
       thinking_source: "runtime_default",
       turn_provenance: { origin: "cron", background: true, automationId: "cron:job-1" },
     });
+  });
+
+  it("keeps unavailable usage null through the public trace query boundary", () => {
+    upsertSessionTurn({
+      turnId: "turn-query-usage-unavailable",
+      sessionKey: "agent:main:trace-limit",
+      sessionName: "trace-limit",
+      status: "complete",
+      startedAt: 100,
+      completedAt: 200,
+    });
+
+    expect(getSessionTurn("turn-query-usage-unavailable")).toMatchObject({
+      inputTokens: null,
+      outputTokens: null,
+      costUsd: null,
+    });
+    expect(querySessionTrace({ session: "trace-limit" }).turns).toEqual([
+      expect.objectContaining({
+        turnId: "turn-query-usage-unavailable",
+        inputTokens: null,
+        outputTokens: null,
+        costUsd: null,
+      }),
+    ]);
   });
 
   it("records canonical and provider delivery receipt identity", () => {
