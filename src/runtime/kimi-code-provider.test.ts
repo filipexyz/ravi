@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
+import { createKimiCodeCompletedTurnAccumulator, createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
 import { buildKimiCodeRequest } from "./kimi-code-transport.js";
 import { listRegisteredRuntimeProviderIds, unregisterRuntimeProvider } from "./provider-registry.js";
 import type { KimiCodeStreamEvent, KimiCodeTransport } from "./kimi-code-transport.js";
@@ -320,5 +320,168 @@ describe("createKimiCodeRuntimeProvider", () => {
     await collectEvents(provider, input);
 
     expect(receivedSignal).toBe(input.abortController.signal);
+  });
+
+  test("interrupts only the active turn and accepts a successor prompt (catches session-wide interruption latching)", async () => {
+    let calls = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        calls += 1;
+        return transportFrom([{ type: "done" }]);
+      },
+    });
+    const handle = provider.startSession(startRequest({ prompt: prompts("first", "second") }));
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    await handle.interrupt();
+    expect((await iterator.next()).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    expect((await iterator.next()).value?.type).toBe("assistant.message");
+    expect((await iterator.next()).value?.type).toBe("turn.complete");
+    expect(calls).toBe(1);
+  });
+
+  test("does not start a transport after interrupt or close immediately follows turn.started (catches pre-transport race)", async () => {
+    for (const action of ["interrupt", "close"] as const) {
+      let calls = 0;
+      const provider = createKimiCodeRuntimeProvider({
+        transportFactory: () => {
+          calls += 1;
+          return transportFrom([{ type: "done" }]);
+        },
+      });
+      const handle = provider.startSession(startRequest());
+      const iterator = handle.events[Symbol.asyncIterator]();
+
+      expect((await iterator.next()).value?.type).toBe("turn.started");
+      await handle[action]?.();
+      expect((await iterator.next()).value?.type).toBe("turn.interrupted");
+      expect(calls).toBe(0);
+    }
+  });
+
+  test("closes every active transport exactly once after each terminal path (catches transport leaks)", async () => {
+    const cases: Array<{ name: string; events: KimiCodeStreamEvent[]; abort?: boolean }> = [
+      { name: "success", events: [{ type: "done" }] },
+      { name: "provider failure", events: [{ type: "message", data: { error: { message: "secret" } } }] },
+      { name: "eof", events: [{ type: "eof" }] },
+      {
+        name: "host abort",
+        events: [{ type: "message", data: { choices: [{ delta: { content: "partial" } }] } }, { type: "done" }],
+        abort: true,
+      },
+    ];
+
+    for (const testCase of cases) {
+      let closeCalls = 0;
+      const input = startRequest();
+      const provider = createKimiCodeRuntimeProvider({
+        transportFactory: () => ({
+          async *stream() {
+            for (const event of testCase.events) {
+              yield event;
+              if (testCase.abort) input.abortController.abort();
+            }
+          },
+          async close() {
+            closeCalls += 1;
+          },
+        }),
+      });
+
+      await collectEvents(provider, input);
+      expect(closeCalls, testCase.name).toBe(1);
+    }
+  });
+
+  test("rejects unsupported choices and post-finish deltas while retaining a usage-only tail (catches choice-state corruption)", async () => {
+    const unsupportedIndex = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([{ type: "message", data: { choices: [{ index: 1, delta: {} }] } }, { type: "done" }]),
+    });
+    const multipleChoices = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([{ type: "message", data: { choices: [{ delta: {} }, { delta: {} }] } }, { type: "done" }]),
+    });
+    const malformedFinish = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          { type: "message", data: { choices: [{ index: 0, delta: {}, finish_reason: {} }] } },
+          { type: "done" },
+        ]),
+    });
+    const postFinish = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          { type: "message", data: { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] } },
+          { type: "message", data: { choices: [{ index: 0, delta: { content: "late" } }] } },
+          { type: "done" },
+        ]),
+    });
+    const usageTail = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          { type: "message", data: { choices: [{ index: 0, delta: { content: "ok" }, finish_reason: "stop" }] } },
+          { type: "message", data: { choices: [], usage: { prompt_tokens: 1, completion_tokens: 2 } } },
+          { type: "done" },
+        ]),
+    });
+
+    expect((await collectEvents(unsupportedIndex, startRequest())).at(-1)?.type).toBe("turn.failed");
+    expect((await collectEvents(multipleChoices, startRequest())).at(-1)?.type).toBe("turn.failed");
+    expect((await collectEvents(malformedFinish, startRequest())).at(-1)?.type).toBe("turn.failed");
+    expect((await collectEvents(postFinish, startRequest())).at(-1)?.type).toBe("turn.failed");
+    expect((await collectEvents(usageTail, startRequest())).at(-1)).toMatchObject({
+      type: "turn.complete",
+      usage: { inputTokens: 1, outputTokens: 2 },
+    });
+  });
+
+  test("reconstructs private reasoning and indexed tool fragments independently of public events (catches accumulator loss)", () => {
+    const accumulator = createKimiCodeCompletedTurnAccumulator();
+
+    expect(
+      accumulator.accept({
+        choices: [
+          {
+            index: 0,
+            delta: {
+              reasoning_content: "reason-1",
+              content: "answer",
+              tool_calls: [{ index: 2, id: "tool-2", function: { name: "later", arguments: "{" } }],
+            },
+          },
+        ],
+      }),
+    ).toMatchObject({ kind: "accepted", textDeltas: ["answer"], reasoningDelta: true, finished: false });
+    expect(
+      accumulator.accept({
+        choices: [
+          {
+            index: 0,
+            delta: {
+              reasoning_content: "reason-2",
+              tool_calls: [{ index: 1, id: "tool-1", function: { name: "first", arguments: "{}" } }],
+            },
+          },
+        ],
+      }),
+    ).toMatchObject({ kind: "accepted", reasoningDelta: true, finished: false });
+    expect(
+      accumulator.accept({
+        choices: [{ index: 0, delta: { tool_calls: [{ index: 2, function: { arguments: "}" } }] } }],
+      }),
+    ).toMatchObject({ kind: "accepted", finished: false });
+
+    expect(accumulator.complete()).toEqual({
+      text: "answer",
+      reasoning: "reason-1reason-2",
+      toolCalls: [
+        { index: 1, id: "tool-1", name: "first", arguments: "{}" },
+        { index: 2, id: "tool-2", name: "later", arguments: "{}" },
+      ],
+      usage: { inputTokens: 0, outputTokens: 0 },
+    });
   });
 });
