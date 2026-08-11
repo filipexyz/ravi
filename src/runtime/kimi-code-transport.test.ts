@@ -85,6 +85,48 @@ describe("buildKimiCodeRequest", () => {
     );
   });
 
+  test("serializes an assistant tool-call message without content when its public text is empty", () => {
+    const built = buildKimiCodeRequest(
+      request(),
+      [
+        {
+          role: "assistant",
+          content: "",
+          reasoning_content: "private tool reasoning",
+          tool_calls: [
+            {
+              id: "call-42",
+              type: "function",
+              function: { name: "lookup_order", arguments: '{"id":42}' },
+            },
+          ],
+        },
+      ],
+      sessionId,
+    );
+
+    expect(built.body.messages).toEqual([
+      { role: "system", content: "Ravi policy." },
+      {
+        role: "assistant",
+        reasoning_content: "private tool reasoning",
+        tool_calls: [
+          {
+            id: "call-42",
+            type: "function",
+            function: { name: "lookup_order", arguments: '{"id":42}' },
+          },
+        ],
+      },
+    ]);
+  });
+
+  test("rejects an empty assistant message without tool calls", () => {
+    expect(() => buildKimiCodeRequest(request(), [{ role: "assistant", content: "" }], sessionId)).toThrow(
+      "Assistant messages without tool calls require non-empty content",
+    );
+  });
+
   test("maps K3 effort and omits thinking for fixed-thinking models", () => {
     expect(
       buildKimiCodeRequest(request({ effort: "ultra" }), [{ role: "user", content: "x" }], sessionId).body.thinking,

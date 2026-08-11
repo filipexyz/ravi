@@ -1145,7 +1145,6 @@ describe("createKimiCodeRuntimeProvider", () => {
       { role: "user", content: "hello" },
       {
         role: "assistant",
-        content: "",
         reasoning_content: "private lookup plan",
         tool_calls: [
           {
@@ -1645,7 +1644,8 @@ describe("createKimiCodeRuntimeProvider", () => {
     );
 
     const continuation = requests[1]?.body as unknown as { messages: Array<Record<string, unknown>> };
-    const content = continuation.messages[2]?.content;
+    expect(continuation.messages[2]).not.toHaveProperty("content");
+    const content = continuation.messages[3]?.content;
     expect(typeof content).toBe("string");
     expect(new TextEncoder().encode(String(content)).byteLength).toBeLessThanOrEqual(64 * 1024);
     expect(content).not.toContain("signed-token");

@@ -18,6 +18,7 @@ const trustedKimiCodeHttpErrors = new WeakSet<KimiCodeHttpError>();
 export type KimiCodeRequestMessage =
   | { role: "system" | "user"; content: string }
   | { role: "assistant"; content: string; reasoning_content?: string; tool_calls?: unknown[] }
+  | { role: "assistant"; content?: undefined; reasoning_content?: string; tool_calls: [unknown, ...unknown[]] }
   | { role: "tool"; content: string; tool_call_id?: string };
 
 export interface KimiCodeTransportRequest {
@@ -47,6 +48,7 @@ export interface CreateKimiCodeHttpTransportOptions {
 }
 
 export type KimiCodePreflightErrorCode =
+  | "invalid_assistant_message"
   | "message_too_large"
   | "missing_api_key"
   | "request_too_large"
@@ -170,11 +172,13 @@ export function buildKimiCodeRequest(
     throw new KimiCodePreflightError("missing_api_key", `${KIMI_CODE_CREDENTIAL_ENV_KEY} is required for Kimi Code`);
   }
 
-  const nativeMessages = input.systemPromptAppend
-    ? [{ role: "system" as const, content: input.systemPromptAppend }, ...messages]
-    : [...messages];
+  const nativeMessages = normalizeKimiCodeRequestMessages(
+    input.systemPromptAppend
+      ? [{ role: "system" as const, content: input.systemPromptAppend }, ...messages]
+      : [...messages],
+  );
   for (const message of nativeMessages) {
-    if (new TextEncoder().encode(message.content).byteLength > MAX_MESSAGE_BYTES) {
+    if (message.content !== undefined && new TextEncoder().encode(message.content).byteLength > MAX_MESSAGE_BYTES) {
       throw new KimiCodePreflightError("message_too_large", "Kimi Code input message exceeds the 2 MiB UTF-8 limit");
     }
   }
@@ -210,6 +214,20 @@ export function buildKimiCodeRequest(
     },
     body,
   };
+}
+
+function normalizeKimiCodeRequestMessages(messages: readonly KimiCodeRequestMessage[]): KimiCodeRequestMessage[] {
+  return messages.map((message) => {
+    if (message.role !== "assistant" || message.content) return message;
+    if (!message.tool_calls?.length) {
+      throw new KimiCodePreflightError(
+        "invalid_assistant_message",
+        "Assistant messages without tool calls require non-empty content",
+      );
+    }
+    const { content: _content, ...toolCallMessage } = message;
+    return toolCallMessage as KimiCodeRequestMessage;
+  });
 }
 
 export function createKimiCodeHttpTransport(options: CreateKimiCodeHttpTransportOptions = {}): KimiCodeTransport {
