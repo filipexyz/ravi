@@ -1,6 +1,7 @@
 import { KIMI_CODE_PROVIDER_ID, type KimiCodeModel } from "./kimi-code-models.js";
 import {
   commitKimiCodeSessionState,
+  createKimiCodeSessionId,
   loadKimiCodeSessionState,
   type KimiCodeSessionSnapshot,
 } from "./kimi-code-state.js";
@@ -107,6 +108,7 @@ function createKimiCodeSession(
   let committedSnapshot: KimiCodeSessionSnapshot | undefined;
   let continuityInitialized = false;
   let continuityInvalid = false;
+  let providerSessionId = createKimiCodeSessionId();
   const stateEnv: NodeJS.ProcessEnv = { ...process.env, ...input.env };
   const closeTurnTransport = async (turn: KimiCodeActiveTurn) => {
     if (!turn.transport || turn.transportClosed) return;
@@ -152,6 +154,13 @@ function createKimiCodeSession(
                 cwd: input.cwd,
                 env: stateEnv,
               });
+              providerSessionId = committedSnapshot.sessionId;
+              if (
+                (input.resume && input.resume !== committedSnapshot.sessionId) ||
+                input.resumeSession.displayId !== committedSnapshot.sessionId
+              ) {
+                throw new Error("Kimi Code session identifiers do not match");
+              }
             } catch {
               continuityInvalid = true;
             }
@@ -192,7 +201,7 @@ function createKimiCodeSession(
 
             const accumulator = createKimiCodeCompletedTurnAccumulator();
             let providerDone = false;
-            const request = createKimiCodeTurnRequest(input, messages, prompt.session_id);
+            const request = createKimiCodeTurnRequest(input, messages, providerSessionId);
             try {
               for await (const event of turn.transport.stream(request)) {
                 if (turn.interrupted || closed || input.abortController.signal.aborted) {
@@ -265,6 +274,7 @@ function createKimiCodeSession(
               let committed: Awaited<ReturnType<typeof commitKimiCodeSessionState>>;
               try {
                 committed = await commitKimiCodeSessionState({
+                  sessionId: providerSessionId,
                   model: input.model,
                   cwd: input.cwd,
                   lastCommittedTurnId: prompt.clientMessageId ?? prompt.session_id,

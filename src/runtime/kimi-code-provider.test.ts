@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createKimiCodeCompletedTurnAccumulator, createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
-import { commitKimiCodeSessionState, loadKimiCodeSessionState } from "./kimi-code-state.js";
+import { commitKimiCodeSessionState, createKimiCodeSessionId, loadKimiCodeSessionState } from "./kimi-code-state.js";
 import { buildKimiCodeRequest } from "./kimi-code-transport.js";
 import { listRegisteredRuntimeProviderIds, unregisterRuntimeProvider } from "./provider-registry.js";
 import type { KimiCodeStreamEvent, KimiCodeTransport, KimiCodeTransportRequest } from "./kimi-code-transport.js";
@@ -1074,7 +1074,6 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(events.slice(0, -1).every((event) => !("session" in event))).toBe(true);
     expect(terminal).toMatchObject({
       type: "turn.complete",
-      providerSessionId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       session: { params: { revision: 1, provider: "kimi-code", model: "k3" } },
     });
     expect(JSON.stringify(events)).not.toContain("private tool reasoning");
@@ -1082,6 +1081,12 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(JSON.stringify(events)).not.toContain("provider-key-must-stay-private");
 
     if (terminal?.type !== "turn.complete" || !terminal.session) throw new Error("missing committed test state");
+    const providerSessionId = terminal.providerSessionId;
+    if (!providerSessionId) throw new Error("missing provider session id");
+    expect(providerSessionId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(requests).not.toHaveLength(0);
+    expect(requests.map((request) => request.body.prompt_cache_key)).toEqual(requests.map(() => providerSessionId));
+    expect(terminal.session.displayId).toBe(providerSessionId);
     const snapshot = await loadKimiCodeSessionState({
       session: terminal.session,
       model: "k3",
@@ -1287,6 +1292,44 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code session state is invalid" });
   });
 
+  test("rejects conflicting canonical resume identifiers before opening a provider request", async () => {
+    const fixture = isolatedStateEnv();
+    const seedProvider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("seed")) });
+    const seedEvents = await collectEvents(
+      seedProvider,
+      startRequest({ cwd: join(fixture.root, "workspace"), env: fixture.env }),
+    );
+    const seedTerminal = seedEvents.at(-1);
+    if (seedTerminal?.type !== "turn.complete" || !seedTerminal.session) throw new Error("missing seed state");
+
+    for (const conflict of [
+      { resume: "00000000-0000-4000-8000-000000000000" },
+      { resumeSession: { ...seedTerminal.session, displayId: "00000000-0000-4000-8000-000000000000" } },
+      { resumeSession: { ...seedTerminal.session, displayId: undefined } },
+    ]) {
+      let requests = 0;
+      const provider = createKimiCodeRuntimeProvider({
+        transportFactory: () => {
+          requests += 1;
+          return transportFrom(finalTurn("must not run"));
+        },
+      });
+      const events = await collectEvents(
+        provider,
+        startRequest({
+          prompt: prompts("resume conflicting id"),
+          cwd: join(fixture.root, "workspace"),
+          env: fixture.env,
+          resumeSession: seedTerminal.session,
+          ...conflict,
+        }),
+      );
+
+      expect(requests).toBe(0);
+      expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code session state is invalid" });
+    }
+  }, 15_000);
+
   test("rejects fork state without opening a provider request", async () => {
     const fixture = isolatedStateEnv();
     let requests = 0;
@@ -1309,6 +1352,7 @@ describe("createKimiCodeRuntimeProvider", () => {
   test("fails the terminal instead of publishing a commit when state exceeds its bound", async () => {
     const fixture = isolatedStateEnv();
     const nearlyFull = await commitKimiCodeSessionState({
+      sessionId: createKimiCodeSessionId(),
       model: "k3",
       cwd: join(fixture.root, "workspace"),
       lastCommittedTurnId: "seed-large",

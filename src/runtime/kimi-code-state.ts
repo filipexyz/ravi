@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
-import { chmod, link, lstat, mkdir, open, readFile, realpath, unlink } from "node:fs/promises";
-import { userInfo } from "node:os";
-import { isAbsolute, join, parse, relative, resolve, sep } from "node:path";
+import { chmod, link, lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
+import { isAbsolute, dirname, join, parse, relative, resolve, sep } from "node:path";
 import { randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -46,12 +45,15 @@ export interface KimiCodeSessionSnapshot {
 }
 
 export interface CommitKimiCodeSessionStateInput {
+  sessionId: string;
   model: string;
   cwd: string;
   lastCommittedTurnId: string;
   messages: readonly KimiCodeConversationMessage[];
   previousSnapshot?: KimiCodeSessionSnapshot;
   env?: NodeJS.ProcessEnv;
+  /** Test-only crash boundary; production callers must omit it. */
+  faultInjection?: { beforePublish?: () => void | Promise<void> };
 }
 
 export interface CommittedKimiCodeSessionState {
@@ -70,46 +72,44 @@ export async function commitKimiCodeSessionState(
   input: CommitKimiCodeSessionStateInput,
 ): Promise<CommittedKimiCodeSessionState> {
   const cwd = normalizeCwd(input.cwd);
+  if (!UUID_PATTERN.test(input.sessionId)) throw stateError("session id is invalid");
   const previous = input.previousSnapshot;
   if (previous) validatePreviousSnapshot(previous, input.model, cwd);
+  if (previous && previous.sessionId !== input.sessionId) throw stateError("session id mismatch");
   if (!input.lastCommittedTurnId.trim()) throw stateError("turn id is invalid");
+  if (containsConfiguredCredential(input.messages, input.env)) {
+    throw new Error("Kimi Code session state contains configured credential");
+  }
   const messages = validateMessages(input.messages);
   const snapshot: KimiCodeSessionSnapshot = {
     schemaVersion: KIMI_CODE_STATE_SCHEMA_VERSION,
     provider: KIMI_CODE_PROVIDER_ID,
     model: input.model,
-    sessionId: previous?.sessionId ?? randomUUID(),
+    sessionId: input.sessionId,
     revision: (previous?.revision ?? 0) + 1,
     cwd,
     lastCommittedTurnId: input.lastCommittedTurnId,
     messages,
   };
-  const serialized = JSON.stringify(snapshot);
-  if (containsConfiguredCredential(serialized, input.env)) {
+  if (containsConfiguredCredential(snapshot, input.env)) {
     throw new Error("Kimi Code session state contains configured credential");
   }
+  const serialized = JSON.stringify(snapshot);
   if (Buffer.byteLength(serialized, "utf8") > KIMI_CODE_MAX_STATE_BYTES) {
     throw new Error("Kimi Code session state exceeds maximum size");
   }
 
   const root = stateRoot(input.env);
+  if (containsConfiguredCredential(root, input.env)) {
+    throw new Error("Kimi Code session state contains configured credential");
+  }
   const sessionDirectory = join(root, snapshot.sessionId);
-  await assertNoExistingReparsePoints(sessionDirectory);
-  await mkdir(sessionDirectory, { recursive: true, mode: 0o700 });
-  await assertNoExistingReparsePoints(sessionDirectory);
-  await applyPrivatePermissions(sessionDirectory, true);
+  await ensureDurablePrivateStateDirectories(root, sessionDirectory);
 
   const finalPath = join(sessionDirectory, revisionFilename(snapshot.revision));
-  const reservationPath = `${finalPath}.lock`;
   const temporaryPath = join(sessionDirectory, `.${revisionFilename(snapshot.revision)}.${randomUUID()}.tmp`);
-  let reserved = false;
   let temporaryCreated = false;
   try {
-    const reservation = await open(reservationPath, "wx", 0o600);
-    reserved = true;
-    await reservation.close();
-    if (await pathExists(finalPath)) throw stateError("revision already exists");
-
     const file = await open(temporaryPath, "wx", 0o600);
     temporaryCreated = true;
     try {
@@ -120,16 +120,15 @@ export async function commitKimiCodeSessionState(
       await file.close();
     }
     await assertNoExistingReparsePoints(sessionDirectory);
+    await input.faultInjection?.beforePublish?.();
     await link(temporaryPath, finalPath);
     await unlink(temporaryPath);
     temporaryCreated = false;
     await syncDirectory(sessionDirectory);
   } catch (error) {
     if (temporaryCreated) await unlink(temporaryPath).catch(() => undefined);
-    if (reserved) await unlink(reservationPath).catch(() => undefined);
     throw error;
   }
-  await unlink(reservationPath).catch(() => undefined);
 
   return {
     snapshot,
@@ -155,7 +154,7 @@ export async function loadKimiCodeSessionState(input: LoadKimiCodeSessionStateIn
   if (params.provider !== KIMI_CODE_PROVIDER_ID) throw stateError("provider mismatch");
   if (params.schemaVersion !== KIMI_CODE_STATE_SCHEMA_VERSION) throw stateError("schema mismatch");
   if (params.model !== input.model) throw stateError("model mismatch");
-  if (!samePath(params.cwd, expectedCwd)) throw stateError("cwd mismatch");
+  if (!sameCwd(params.cwd, expectedCwd)) throw stateError("cwd mismatch");
   if (!UUID_PATTERN.test(params.sessionId)) throw stateError("session id is invalid");
   if (!Number.isSafeInteger(params.revision) || params.revision < 1) throw stateError("revision is invalid");
   if (!params.lastCommittedTurnId.trim()) throw stateError("turn id is invalid");
@@ -180,16 +179,29 @@ export async function loadKimiCodeSessionState(input: LoadKimiCodeSessionStateIn
     throw stateError("session path escaped its root");
   }
 
-  const bytes = await readFile(params.sessionFile);
-  if (bytes.byteLength > KIMI_CODE_MAX_STATE_BYTES) throw stateError("session file is oversized");
-  if (containsConfiguredCredential(bytes.toString("utf8"), input.env)) {
-    throw stateError("session file contains configured credential");
+  const file = await open(params.sessionFile, "r").catch(() => undefined);
+  if (!file) throw stateError("session file is missing");
+  let bytes: Buffer;
+  try {
+    const openedInfo = await file.stat();
+    if (!openedInfo.isFile() || openedInfo.size > KIMI_CODE_MAX_STATE_BYTES) {
+      throw stateError(
+        openedInfo.size > KIMI_CODE_MAX_STATE_BYTES ? "session file is oversized" : "session file is missing",
+      );
+    }
+    bytes = await file.readFile();
+  } finally {
+    await file.close().catch(() => undefined);
   }
+  if (bytes.byteLength > KIMI_CODE_MAX_STATE_BYTES) throw stateError("session file is oversized");
   let decoded: unknown;
   try {
     decoded = JSON.parse(bytes.toString("utf8"));
   } catch {
     throw stateError("session file is corrupt");
+  }
+  if (containsConfiguredCredential(decoded, input.env)) {
+    throw stateError("session file contains configured credential");
   }
   const snapshot = parseSnapshot(decoded);
   if (
@@ -198,7 +210,7 @@ export async function loadKimiCodeSessionState(input: LoadKimiCodeSessionStateIn
     snapshot.model !== params.model ||
     snapshot.sessionId !== params.sessionId ||
     snapshot.revision !== params.revision ||
-    !samePath(snapshot.cwd, params.cwd) ||
+    !sameCwd(snapshot.cwd, params.cwd) ||
     snapshot.lastCommittedTurnId !== params.lastCommittedTurnId
   ) {
     throw stateError("snapshot binding mismatch");
@@ -284,7 +296,7 @@ function validatePreviousSnapshot(snapshot: KimiCodeSessionSnapshot, model: stri
     !UUID_PATTERN.test(snapshot.sessionId) ||
     !Number.isSafeInteger(snapshot.revision) ||
     snapshot.revision < 1 ||
-    !samePath(snapshot.cwd, cwd) ||
+    !sameCwd(snapshot.cwd, cwd) ||
     !snapshot.lastCommittedTurnId.trim()
   ) {
     throw stateError("previous snapshot is invalid");
@@ -293,7 +305,7 @@ function validatePreviousSnapshot(snapshot: KimiCodeSessionSnapshot, model: stri
 }
 
 function validateMessages(messages: readonly unknown[]): KimiCodeConversationMessage[] {
-  return messages.map((message) => {
+  const validated: KimiCodeConversationMessage[] = messages.map((message): KimiCodeConversationMessage => {
     if (!isRecord(message) || typeof message.role !== "string") throw stateError("native messages are invalid");
     if (message.role === "user" && hasExactKeys(message, ["role", "content"])) {
       if (typeof message.content !== "string") throw stateError("native messages are invalid");
@@ -338,6 +350,42 @@ function validateMessages(messages: readonly unknown[]): KimiCodeConversationMes
     }
     throw stateError("native messages are invalid");
   });
+  validateMessageSequence(validated);
+  return validated;
+}
+
+function validateMessageSequence(messages: readonly KimiCodeConversationMessage[]): void {
+  let expected: "user" | "assistant" | "tool" = "user";
+  let pendingToolIds: string[] = [];
+  const seenToolIds = new Set<string>();
+
+  for (const message of messages) {
+    if (message.role !== expected) throw stateError("native messages are invalid");
+    if (message.role === "user") {
+      seenToolIds.clear();
+      expected = "assistant";
+      continue;
+    }
+    if (message.role === "assistant") {
+      for (const call of message.tool_calls) {
+        if (!call.id.trim() || seenToolIds.has(call.id) || !call.function.name.trim()) {
+          throw stateError("native messages are invalid");
+        }
+        seenToolIds.add(call.id);
+      }
+      pendingToolIds = message.tool_calls.map((call) => call.id);
+      expected = pendingToolIds.length > 0 ? "tool" : "user";
+      continue;
+    }
+    if (message.tool_call_id !== pendingToolIds[0]) throw stateError("native messages are invalid");
+    pendingToolIds.shift();
+    expected = pendingToolIds.length > 0 ? "tool" : "assistant";
+  }
+
+  const last = messages.at(-1);
+  if (!last || last.role !== "assistant" || last.tool_calls.length > 0 || expected !== "user") {
+    throw stateError("native messages are invalid");
+  }
 }
 
 async function assertNoExistingReparsePoints(target: string): Promise<void> {
@@ -353,22 +401,56 @@ async function assertNoExistingReparsePoints(target: string): Promise<void> {
   }
 }
 
-async function applyPrivatePermissions(path: string, directory: boolean): Promise<void> {
-  await chmod(path, directory ? 0o700 : 0o600);
+async function applyPrivatePermissions(pathOrPaths: string | readonly string[], directory: boolean): Promise<void> {
+  const paths = typeof pathOrPaths === "string" ? [pathOrPaths] : [...pathOrPaths];
+  await Promise.all(paths.map((path) => chmod(path, directory ? 0o700 : 0o600)));
   if (process.platform !== "win32") return;
-  const username = process.env.USERNAME?.trim() || userInfo().username;
-  const domain = process.env.USERDOMAIN?.trim();
-  const account = domain ? `${domain}\\${username}` : username;
-  const inheritance = directory ? "(OI)(CI)F" : "(F)";
-  await execFileAsync("icacls", [
-    path,
-    "/inheritance:r",
-    "/grant:r",
-    `${account}:${inheritance}`,
-    `*S-1-5-18:${inheritance}`,
-    `*S-1-5-32-544:${inheritance}`,
-    "/Q",
-  ]);
+  const script = [
+    "$isDirectory = $env:RAVI_KIMI_ACL_DIRECTORY -eq '1'",
+    "$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()",
+    "$inheritance = if ($isDirectory) { [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit } else { [System.Security.AccessControl.InheritanceFlags]::None }",
+    "$sids = @($identity.User, (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-18')), (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')))",
+    "$sections = [System.Security.AccessControl.AccessControlSections]::Access",
+    "foreach ($target in (ConvertFrom-Json $env:RAVI_KIMI_ACL_PATHS)) { $security = if ($isDirectory) { [System.IO.Directory]::GetAccessControl($target, $sections) } else { [System.IO.File]::GetAccessControl($target, $sections) }; $security.SetAccessRuleProtection($true, $false); @($security.Access) | ForEach-Object { [void]$security.RemoveAccessRuleSpecific($_) }; foreach ($sid in $sids) { $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, [System.Security.AccessControl.FileSystemRights]::FullControl, $inheritance, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow); [void]$security.AddAccessRule($rule) }; if ($isDirectory) { [System.IO.Directory]::SetAccessControl($target, $security) } else { [System.IO.File]::SetAccessControl($target, $security) } }",
+  ].join("; ");
+  await execFileAsync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    env: aclProcessEnv(paths, directory),
+    windowsHide: true,
+  });
+}
+
+async function ensureDurablePrivateStateDirectories(root: string, sessionDirectory: string): Promise<void> {
+  const stateDirectory = dirname(dirname(dirname(root)));
+  const runtimeDirectory = join(stateDirectory, "runtime");
+  const providerDirectory = join(runtimeDirectory, "kimi-code");
+  const directories = [stateDirectory, runtimeDirectory, providerDirectory, root, sessionDirectory];
+  const privateDirectories: string[] = [];
+  for (const directory of directories) {
+    await assertNoExistingReparsePoints(directory);
+    await mkdir(directory, { recursive: false, mode: 0o700 }).catch((error) => {
+      if (!isRecord(error) || error.code !== "EEXIST") throw error;
+    });
+    await assertNoExistingReparsePoints(directory);
+    const info = await lstat(directory).catch(() => undefined);
+    if (!info?.isDirectory() || info.isSymbolicLink()) throw stateError("session directory is invalid");
+    if (directory === providerDirectory || directory === root || directory === sessionDirectory) {
+      privateDirectories.push(directory);
+    }
+    await syncDirectory(dirname(directory));
+  }
+  await applyPrivatePermissions(privateDirectories, true);
+}
+
+function aclProcessEnv(paths: readonly string[], directory: boolean): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {
+    RAVI_KIMI_ACL_PATHS: JSON.stringify(paths),
+    RAVI_KIMI_ACL_DIRECTORY: directory ? "1" : "0",
+  };
+  for (const key of ["SystemRoot", "WINDIR", "PATH", "PATHEXT", "ComSpec", "TEMP", "TMP"] as const) {
+    const value = process.env[key];
+    if (value) env[key] = value;
+  }
+  return env;
 }
 
 async function syncDirectory(directory: string): Promise<void> {
@@ -402,28 +484,42 @@ function isPathInside(parent: string, child: string): boolean {
 function samePath(left: string, right: string): boolean {
   const normalizedLeft = resolve(left);
   const normalizedRight = resolve(right);
+  return normalizedLeft === normalizedRight;
+}
+
+function sameCwd(left: string, right: string): boolean {
+  const normalizedLeft = resolve(left);
+  const normalizedRight = resolve(right);
   return process.platform === "win32"
     ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
     : normalizedLeft === normalizedRight;
+}
+
+export function createKimiCodeSessionId(): string {
+  return randomUUID();
 }
 
 function hasTraversalSegment(path: string): boolean {
   return path.split(/[\\/]+/).some((segment) => segment === "." || segment === "..");
 }
 
-function containsConfiguredCredential(serialized: string, env?: NodeJS.ProcessEnv): boolean {
+function containsConfiguredCredential(value: unknown, env?: NodeJS.ProcessEnv): boolean {
   const apiKey = env?.KIMI_API_KEY ?? process.env.KIMI_API_KEY;
-  return typeof apiKey === "string" && apiKey.length > 0 && serialized.includes(apiKey);
+  if (typeof apiKey !== "string" || apiKey.length === 0) return false;
+  return containsStringValue(value, apiKey);
+}
+
+function containsStringValue(value: unknown, needle: string): boolean {
+  if (typeof value === "string") return value.includes(needle);
+  if (Array.isArray(value)) return value.some((item) => containsStringValue(item, needle));
+  if (!isRecord(value)) return false;
+  return Object.values(value).some((item) => containsStringValue(item, needle));
 }
 
 function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}
-
-async function pathExists(path: string): Promise<boolean> {
-  return Boolean(await lstat(path).catch(() => undefined));
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

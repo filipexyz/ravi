@@ -15,7 +15,7 @@ import {
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
-import { commitKimiCodeSessionState, loadKimiCodeSessionState } from "./kimi-code-state.js";
+import { commitKimiCodeSessionState, createKimiCodeSessionId, loadKimiCodeSessionState } from "./kimi-code-state.js";
 import type { KimiCodeConversationMessage } from "./kimi-code-turn.js";
 import type { RuntimeSessionState } from "./types.js";
 
@@ -56,6 +56,7 @@ function nativeMessages(label = "one"): KimiCodeConversationMessage[] {
 async function firstCommit() {
   const fixture = temporaryState();
   const committed = await commitKimiCodeSessionState({
+    sessionId: createKimiCodeSessionId(),
     model: "k3",
     cwd: fixture.cwd,
     lastCommittedTurnId: "turn-1",
@@ -106,6 +107,7 @@ describe("Kimi Code immutable session state", () => {
     const firstFile = String(first.session.params?.sessionFile);
     const firstBytes = readFileSync(firstFile, "utf8");
     const second = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
       model: "k3",
       cwd: first.cwd,
       lastCommittedTurnId: "turn-2",
@@ -118,6 +120,7 @@ describe("Kimi Code immutable session state", () => {
 
     await expect(
       commitKimiCodeSessionState({
+        sessionId: first.snapshot.sessionId,
         model: "k3",
         cwd: first.cwd,
         lastCommittedTurnId: "turn-collision",
@@ -142,6 +145,7 @@ describe("Kimi Code immutable session state", () => {
   test("keeps the previous locator byte-faithful when a newer orphan is never published", async () => {
     const first = await firstCommit();
     await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
       model: "k3",
       cwd: first.cwd,
       lastCommittedTurnId: "turn-orphan",
@@ -158,6 +162,40 @@ describe("Kimi Code immutable session state", () => {
     });
     expect(loaded).toEqual(first.snapshot);
     expect(loaded.messages).toEqual(nativeMessages());
+  });
+
+  test("cleans an unpublished temporary revision and permits retry after a pre-publication crash", async () => {
+    const first = await firstCommit();
+    const sessionDirectory = dirname(String(first.session.params?.sessionFile));
+    await expect(
+      commitKimiCodeSessionState({
+        sessionId: first.snapshot.sessionId,
+        model: "k3",
+        cwd: first.cwd,
+        lastCommittedTurnId: "turn-crash",
+        messages: nativeMessages("crash"),
+        previousSnapshot: first.snapshot,
+        env: first.env,
+        faultInjection: {
+          beforePublish: () => {
+            throw new Error("synthetic crash");
+          },
+        },
+      }),
+    ).rejects.toThrow("synthetic crash");
+
+    expect(readdirSync(sessionDirectory).filter((name) => name.includes(".tmp"))).toEqual([]);
+    expect(readdirSync(sessionDirectory).filter((name) => name === "revision-00000002.json")).toEqual([]);
+    const retry = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-retry",
+      messages: nativeMessages("retry"),
+      previousSnapshot: first.snapshot,
+      env: first.env,
+    });
+    expect(retry.snapshot.revision).toBe(2);
   });
 
   test("round-trips complete reasoning and tool pairings without persisting the API key", async () => {
@@ -179,6 +217,7 @@ describe("Kimi Code immutable session state", () => {
     const fixture = temporaryState();
     await expect(
       commitKimiCodeSessionState({
+        sessionId: createKimiCodeSessionId(),
         model: "k3",
         cwd: fixture.cwd,
         lastCommittedTurnId: "turn-key",
@@ -192,14 +231,69 @@ describe("Kimi Code immutable session state", () => {
     expect(existsSync(join(fixture.env.RAVI_STATE_DIR, "runtime", "kimi-code", "sessions"))).toBe(false);
   });
 
+  test("rejects escaped credential values and credential-bearing public locator paths", async () => {
+    const fixture = temporaryState();
+    const escapedKey = 'key-with-"quote\\slash\nand-control';
+    await expect(
+      commitKimiCodeSessionState({
+        sessionId: createKimiCodeSessionId(),
+        model: "k3",
+        cwd: fixture.cwd,
+        lastCommittedTurnId: "turn-escaped-key",
+        messages: [{ role: "user", content: escapedKey }],
+        env: { ...fixture.env, KIMI_API_KEY: escapedKey },
+      }),
+    ).rejects.toThrow("Kimi Code session state contains configured credential");
+
+    const keyInPath = "key-in-public-locator";
+    await expect(
+      commitKimiCodeSessionState({
+        sessionId: createKimiCodeSessionId(),
+        model: "k3",
+        cwd: fixture.cwd,
+        lastCommittedTurnId: "turn-key-path",
+        messages: nativeMessages(),
+        env: {
+          ...fixture.env,
+          KIMI_API_KEY: keyInPath,
+          RAVI_STATE_DIR: join(fixture.root, keyInPath, "state"),
+        },
+      }),
+    ).rejects.toThrow("Kimi Code session state contains configured credential");
+  });
+
+  test("does not let a stale reservation artifact block the next immutable revision", async () => {
+    const first = await firstCommit();
+    const firstFile = String(first.session.params?.sessionFile);
+    const staleReservation = join(dirname(firstFile), "revision-00000002.json.lock");
+    writeFileSync(staleReservation, "stale", { encoding: "utf8", mode: 0o600 });
+
+    const second = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-after-crash",
+      messages: nativeMessages("after-crash"),
+      previousSnapshot: first.snapshot,
+      env: first.env,
+    });
+
+    expect(second.snapshot.revision).toBe(2);
+    expect(readFileSync(String(second.session.params?.sessionFile), "utf8")).toContain("answer-after-crash");
+  });
+
   test("rejects oversized state deterministically without lossy compaction", async () => {
     const fixture = temporaryState();
     await expect(
       commitKimiCodeSessionState({
+        sessionId: createKimiCodeSessionId(),
         model: "k3",
         cwd: fixture.cwd,
         lastCommittedTurnId: "turn-large",
-        messages: [{ role: "user", content: "x".repeat(5 * 1024 * 1024) }],
+        messages: [
+          { role: "user", content: "oversized" },
+          { role: "assistant", content: "x".repeat(5 * 1024 * 1024), reasoning_content: "", tool_calls: [] },
+        ],
         env: fixture.env,
       }),
     ).rejects.toThrow("Kimi Code session state exceeds maximum size");
@@ -240,6 +334,81 @@ describe("Kimi Code immutable session state", () => {
     ).rejects.toThrow();
   });
 
+  test("rejects corrupt native tool pairing and message ordering", async () => {
+    const fixture = temporaryState();
+    const invalidMessages: KimiCodeConversationMessage[][] = [
+      [{ role: "tool", tool_call_id: "orphan", content: "result" }],
+      [
+        { role: "user", content: "question" },
+        {
+          role: "assistant",
+          content: "",
+          reasoning_content: "private",
+          tool_calls: [{ id: "", type: "function", function: { name: "lookup", arguments: "{}" } }],
+        },
+      ],
+      [
+        { role: "user", content: "question" },
+        {
+          role: "assistant",
+          content: "",
+          reasoning_content: "private",
+          tool_calls: [
+            { id: "duplicate", type: "function", function: { name: "lookup", arguments: "{}" } },
+            { id: "duplicate", type: "function", function: { name: "lookup", arguments: "{}" } },
+          ],
+        },
+        { role: "tool", tool_call_id: "duplicate", content: "one" },
+        { role: "tool", tool_call_id: "duplicate", content: "two" },
+        { role: "assistant", content: "answer", reasoning_content: "private", tool_calls: [] },
+      ],
+    ];
+
+    for (const messages of invalidMessages) {
+      await expect(
+        commitKimiCodeSessionState({
+          sessionId: createKimiCodeSessionId(),
+          model: "k3",
+          cwd: fixture.cwd,
+          lastCommittedTurnId: "turn-corrupt-pairing",
+          messages,
+          env: fixture.env,
+        }),
+      ).rejects.toThrow("native messages are invalid");
+    }
+  });
+
+  test("allows a provider tool-call id to be reused in a later completed turn", async () => {
+    const fixture = temporaryState();
+    const repeated = nativeMessages("reused");
+    await expect(
+      commitKimiCodeSessionState({
+        sessionId: createKimiCodeSessionId(),
+        model: "k3",
+        cwd: fixture.cwd,
+        lastCommittedTurnId: "turn-reused-id",
+        messages: [...repeated, ...repeated],
+        env: fixture.env,
+      }),
+    ).resolves.toMatchObject({ snapshot: { revision: 1 } });
+  });
+
+  test("keeps conventional Windows cwd matching separate from exact locator matching", async () => {
+    if (process.platform !== "win32") return;
+    const committed = await firstCommit();
+    const changedCaseCwd = committed.cwd.replace(/[a-z]/, (character) => character.toUpperCase());
+    if (changedCaseCwd === committed.cwd) return;
+
+    await expect(
+      loadKimiCodeSessionState({
+        session: committed.session,
+        model: "k3",
+        cwd: changedCaseCwd,
+        env: committed.env,
+      }),
+    ).resolves.toEqual(committed.snapshot);
+  });
+
   test("rejects missing, corrupt, traversal, and absolute-escape state files", async () => {
     const committed = await firstCommit();
     const originalFile = String(committed.session.params?.sessionFile);
@@ -273,6 +442,19 @@ describe("Kimi Code immutable session state", () => {
         env: committed.env,
       }),
     ).rejects.toThrow();
+  });
+
+  test("requires the generated session locator path to match exact normalized casing", async () => {
+    const committed = await firstCommit();
+    const altered = cloneSession(committed.session);
+    const original = String(altered.params?.sessionFile);
+    const changedCase = original.replace(/[a-z]/, (character) => character.toUpperCase());
+    if (changedCase === original) return;
+    Object.assign(altered.params ?? {}, { sessionFile: changedCase });
+
+    await expect(
+      loadKimiCodeSessionState({ session: altered, model: "k3", cwd: committed.cwd, env: committed.env }),
+    ).rejects.toThrow("session path is invalid");
   });
 
   test("rejects a symlink or reparse-point escape where the platform permits creating one", async () => {
@@ -313,6 +495,7 @@ describe("Kimi Code immutable session state", () => {
 
     await expect(
       commitKimiCodeSessionState({
+        sessionId: createKimiCodeSessionId(),
         model: "k3",
         cwd: fixture.cwd,
         lastCommittedTurnId: "turn-ancestor-link",
@@ -323,14 +506,54 @@ describe("Kimi Code immutable session state", () => {
     expect(existsSync(join(outsideState, "runtime"))).toBe(false);
   });
 
-  test("removes inherited Windows ACLs from the private session directory and snapshot", async () => {
+  test("installs an exact private Windows ACL on the stable parent, session, and snapshot", async () => {
     if (process.platform !== "win32") return;
     const committed = await firstCommit();
     const sessionFile = String(committed.session.params?.sessionFile);
-    const directoryAcl = execFileSync("icacls", [dirname(sessionFile)], { encoding: "utf8" });
-    const fileAcl = execFileSync("icacls", [sessionFile], { encoding: "utf8" });
+    const sessionDirectory = dirname(sessionFile);
+    const sessionsParent = dirname(sessionDirectory);
+    execFileSync("icacls", [sessionDirectory, "/grant", "*S-1-1-0:(OI)(CI)R", "/Q"]);
 
-    expect(directoryAcl).not.toContain("(I)");
-    expect(fileAcl).not.toContain("(I)");
+    const hardened = await commitKimiCodeSessionState({
+      sessionId: committed.snapshot.sessionId,
+      model: "k3",
+      cwd: committed.cwd,
+      lastCommittedTurnId: "turn-acl",
+      messages: nativeMessages("acl"),
+      previousSnapshot: committed.snapshot,
+      env: committed.env,
+    });
+    const allowed = new Set([currentWindowsSid(), "S-1-5-18", "S-1-5-32-544"]);
+
+    expect(new Set(windowsAclSids(sessionsParent))).toEqual(allowed);
+    expect(new Set(windowsAclSids(sessionDirectory))).toEqual(allowed);
+    expect(new Set(windowsAclSids(String(hardened.session.params?.sessionFile)))).toEqual(allowed);
   });
 });
+
+function currentWindowsSid(): string {
+  return execFileSync(
+    "powershell",
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-Command",
+      "[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value",
+    ],
+    { encoding: "utf8" },
+  ).trim();
+}
+
+function windowsAclSids(path: string): string[] {
+  const script = [
+    "$acl = Get-Acl -LiteralPath $env:RAVI_TEST_ACL_PATH",
+    "$acl.Access | ForEach-Object { $_.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value }",
+  ].join("; ");
+  return execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    encoding: "utf8",
+    env: { ...process.env, RAVI_TEST_ACL_PATH: path },
+  })
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
