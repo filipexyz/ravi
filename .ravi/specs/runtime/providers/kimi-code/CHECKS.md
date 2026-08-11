@@ -227,6 +227,37 @@ Verified candidate `1b97430df3d7d947d46a469448f0b152636ea276`:
 No fresh private credential was available for this verification. L-01 through L-04
 therefore remain pending; the skipped scaffold is not live-release evidence.
 
+### Final Important-finding fix-wave record (2026-08-11)
+
+Verified implementation candidate `234da3f` without a live credential or Kimi
+network request:
+
+- the mandated 12-file provider/integration command passed 229 tests with 0
+  failures and 1,105 expectations at the default per-test timeout;
+- `rtk bun test src/session-trace/session-trace-db.test.ts` passed 10/10;
+- `rtk bun run typecheck` and `rtk bun run build` exited 0;
+- both required `specs get runtime/providers/kimi-code` commands exited 0;
+- the quality gate with `GITHUB_BASE_REF=dev` passed;
+- Biome on all 26 touched source/test files, `rtk git diff --check
+  origin/dev...HEAD`, and public-diff sanitization all passed with zero sensitive
+  matches.
+
+The aggregate `rtk bun run test` is BLOCKED on this Windows host. A fresh run with
+unchanged repository per-test timeouts reached a 600-second outer command ceiling
+without producing a Bun assertion result. It is not counted as PASS. The focused
+runtime/state/trace gates above are authoritative changed-area evidence; Linux CI
+remains the repository-wide gate.
+The isolated first underlying group, `rtk bun test src/channels/`, likewise reached
+a 120-second outer host ceiling without a test assertion result, reproducing the
+unchanged channels limitation recorded by the earlier implementation verification.
+
+The Windows provider root and its private descendants now receive the final
+protected owner/DACL atomically at directory creation through .NET, followed by
+exact ACL and non-reparse validation. This closes unauthorized other-SID first-use
+races below the provider root. It does not claim same-SID ABA protection because
+the current Node/Bun Windows filesystem API lacks handle-relative `openat` and
+`O_NOFOLLOW` primitives.
+
 ## Private live release checks
 
 Live checks require explicit operator opt-in and must never run in public CI. They
