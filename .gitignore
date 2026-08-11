@@ -34,6 +34,7 @@ coverage/
 
 # Local scratch
 .tmp/
+.worktrees/
 
 # Codex/Electron runtime bundles accidentally dropped in repo root
 /app-session-*.js
