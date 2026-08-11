@@ -42,6 +42,7 @@ import { getAgent } from "../../router/config.js";
 import { expandHome, getOrCreateSession, resolveSession } from "../../router/index.js";
 import { getSpec } from "../../specs/index.js";
 import { getWorkflowRunDetails } from "../../workflows/index.js";
+import { parseProfileInputs } from "./tasks.js";
 import {
   projectDetailsReturnSchema,
   projectFixturesSeedReturnSchema,
@@ -1386,6 +1387,8 @@ export class ProjectTaskCommands {
     @Option({ flags: "--agent <id>", description: "Override project owner agent for dispatch" }) agentId?: string,
     @Option({ flags: "--session <name>", description: "Override project operator session for dispatch" })
     sessionName?: string,
+    @Option({ flags: "--input <key=value...>", description: "Profile input values pinned to the task" })
+    profileInputRaw?: string[] | string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!instructions?.trim()) {
@@ -1393,6 +1396,7 @@ export class ProjectTaskCommands {
     }
 
     try {
+      const profileInput = parseProfileInputs(profileInputRaw);
       const actor = resolveActor();
       const result = await createProjectTask({
         projectRef,
@@ -1402,6 +1406,7 @@ export class ProjectTaskCommands {
         ...(workflowRunId?.trim() ? { workflowRunId: workflowRunId.trim() } : {}),
         ...(priority?.trim() ? { priority: parseTaskPriority(priority) } : {}),
         ...(profileId?.trim() ? { profileId: profileId.trim() } : {}),
+        ...(profileInput ? { profileInput } : {}),
         dispatch: shouldDispatchProjectTask(dispatch, agentId, sessionName),
         ...(agentId?.trim() ? { agentId: agentId.trim() } : {}),
         ...(sessionName?.trim() ? { sessionName: sessionName.trim() } : {}),
