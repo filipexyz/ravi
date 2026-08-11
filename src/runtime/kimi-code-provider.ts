@@ -163,6 +163,12 @@ function createKimiCodeSession(
           turn: { id: prompt.clientMessageId ?? prompt.session_id, status: "in_progress" },
           metadata,
         };
+        if (turn.interrupted || closed || input.abortController.signal.aborted) {
+          turn.phase = "interrupted";
+          const terminal = terminalTracker.interrupt({ metadata });
+          if (terminal) yield terminal;
+          continue;
+        }
         if (input.forkSession) {
           turn.phase = "failed";
           const terminal = terminalTracker.fail({ error: "Kimi Code session fork is unsupported", metadata });

@@ -733,6 +733,44 @@ describe("createKimiCodeRuntimeProvider", () => {
     }
   });
 
+  test("interrupt wins over unsupported fork after turn.started", async () => {
+    let requests = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        requests += 1;
+        return transportFrom(finalTurn("must not run"));
+      },
+    });
+    const handle = provider.startSession(startRequest({ forkSession: true }));
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    await handle.interrupt();
+
+    expect((await iterator.next()).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).done).toBe(true);
+    expect(requests).toBe(0);
+  });
+
+  test("interrupt wins over invalid resume after turn.started", async () => {
+    let requests = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        requests += 1;
+        return transportFrom(finalTurn("must not run"));
+      },
+    });
+    const handle = provider.startSession(startRequest({ resume: "invalid-session-id" }));
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    await handle.interrupt();
+
+    expect((await iterator.next()).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).done).toBe(true);
+    expect(requests).toBe(0);
+  });
+
   test("closes every active transport exactly once after each terminal path (catches transport leaks)", async () => {
     const cases: Array<{ name: string; events: KimiCodeStreamEvent[]; abort?: boolean }> = [
       { name: "success", events: [{ type: "done" }] },
