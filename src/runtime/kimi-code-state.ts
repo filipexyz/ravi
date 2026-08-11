@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { chmod, link, lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
-import { isAbsolute, dirname, join, parse, relative, resolve, sep } from "node:path";
+import { chmod, link, lstat, mkdir, open, realpath, stat, unlink } from "node:fs/promises";
+import { isAbsolute, basename, dirname, join, parse, relative, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { getRaviStateDir } from "../utils/paths.js";
@@ -10,6 +10,7 @@ import type { RuntimeSessionState } from "./types.js";
 
 const KIMI_CODE_STATE_SCHEMA_VERSION = 1 as const;
 const KIMI_CODE_MAX_STATE_BYTES = 4 * 1024 * 1024;
+const KIMI_CODE_MAX_WORKSPACE_REALPATH_BYTES = 64 * 1024;
 const execFileAsync = promisify(execFile);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const LOCATOR_KEYS = [
@@ -19,6 +20,7 @@ const LOCATOR_KEYS = [
   "sessionId",
   "revision",
   "cwd",
+  "workspaceIdentity",
   "sessionFile",
   "lastCommittedTurnId",
 ] as const;
@@ -30,10 +32,23 @@ const SNAPSHOT_KEYS = [
   "sessionId",
   "revision",
   "cwd",
+  "workspaceIdentity",
   "lastCommittedTurnId",
   "credentialProfileFingerprint",
   "messages",
 ] as const;
+const WORKSPACE_IDENTITY_KEYS = ["realpath", "device", "inode"] as const;
+
+export interface KimiCodeWorkspaceIdentity {
+  realpath: string;
+  device: string;
+  inode: string;
+}
+
+interface PrivatePermissionTarget {
+  path: string;
+  directory: boolean;
+}
 
 export interface KimiCodeSessionSnapshot {
   schemaVersion: typeof KIMI_CODE_STATE_SCHEMA_VERSION;
@@ -42,6 +57,7 @@ export interface KimiCodeSessionSnapshot {
   sessionId: string;
   revision: number;
   cwd: string;
+  workspaceIdentity: KimiCodeWorkspaceIdentity;
   lastCommittedTurnId: string;
   credentialProfileFingerprint: string;
   messages: KimiCodeConversationMessage[];
@@ -58,6 +74,7 @@ export interface CommitKimiCodeSessionStateInput {
   /** Test-only crash boundary; production callers must omit it. */
   faultInjection?: {
     beforePublish?: () => void | Promise<void>;
+    beforePromote?: () => void | Promise<void>;
     observeAclProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void;
   };
 }
@@ -78,10 +95,13 @@ export async function commitKimiCodeSessionState(
   input: CommitKimiCodeSessionStateInput,
 ): Promise<CommittedKimiCodeSessionState> {
   const cwd = normalizeCwd(input.cwd);
+  const workspaceIdentity = await resolveWorkspaceIdentity(cwd);
   const credentialProfileFingerprint = resolveCredentialProfileFingerprint(input.env);
   if (!UUID_PATTERN.test(input.sessionId)) throw stateError("session id is invalid");
   const previous = input.previousSnapshot;
-  if (previous) validatePreviousSnapshot(previous, input.model, cwd, credentialProfileFingerprint);
+  if (previous) {
+    validatePreviousSnapshot(previous, input.model, cwd, workspaceIdentity, credentialProfileFingerprint);
+  }
   if (previous && previous.sessionId !== input.sessionId) throw stateError("session id mismatch");
   if (!input.lastCommittedTurnId.trim()) throw stateError("turn id is invalid");
   if (containsConfiguredCredential(input.messages, input.env)) {
@@ -95,6 +115,7 @@ export async function commitKimiCodeSessionState(
     sessionId: input.sessionId,
     revision: (previous?.revision ?? 0) + 1,
     cwd,
+    workspaceIdentity,
     lastCommittedTurnId: input.lastCommittedTurnId,
     credentialProfileFingerprint,
     messages,
@@ -112,16 +133,20 @@ export async function commitKimiCodeSessionState(
     throw new Error("Kimi Code session state contains configured credential");
   }
   const sessionDirectory = join(root, snapshot.sessionId);
-  await ensureDurablePrivateStateDirectories(root, sessionDirectory, input.faultInjection?.observeAclProcessEnv);
+  const privateDirectories = await ensureDurablePrivateStateDirectories(root, sessionDirectory);
 
-  const finalPath = join(sessionDirectory, revisionFilename(snapshot.revision));
-  const temporaryPath = join(sessionDirectory, `.${revisionFilename(snapshot.revision)}.${randomUUID()}.tmp`);
+  const filename = revisionFilename(snapshot.revision);
+  const finalPath = join(sessionDirectory, filename);
+  const temporaryPath = join(sessionDirectory, `.${filename}.${randomUUID()}.tmp`);
   let temporaryCreated = false;
   try {
     const file = await open(temporaryPath, "wx", 0o600);
     temporaryCreated = true;
     try {
-      await applyPrivatePermissions(temporaryPath, false, input.faultInjection?.observeAclProcessEnv);
+      await applyPrivatePermissions(
+        [...privateDirectories.map((path) => ({ path, directory: true })), { path: temporaryPath, directory: false }],
+        input.faultInjection?.observeAclProcessEnv,
+      );
       await file.writeFile(serialized, "utf8");
       await file.sync();
     } finally {
@@ -133,6 +158,7 @@ export async function commitKimiCodeSessionState(
     await unlink(temporaryPath);
     temporaryCreated = false;
     await syncDirectory(sessionDirectory);
+    await input.faultInjection?.beforePromote?.();
   } catch (error) {
     if (temporaryCreated) await unlink(temporaryPath).catch(() => undefined);
     throw error;
@@ -148,6 +174,7 @@ export async function commitKimiCodeSessionState(
         sessionId: snapshot.sessionId,
         revision: snapshot.revision,
         cwd: snapshot.cwd,
+        workspaceIdentity: snapshot.workspaceIdentity,
         sessionFile: finalPath,
         lastCommittedTurnId: snapshot.lastCommittedTurnId,
       },
@@ -163,6 +190,10 @@ export async function loadKimiCodeSessionState(input: LoadKimiCodeSessionStateIn
   if (params.schemaVersion !== KIMI_CODE_STATE_SCHEMA_VERSION) throw stateError("schema mismatch");
   if (params.model !== input.model) throw stateError("model mismatch");
   if (!sameCwd(params.cwd, expectedCwd)) throw stateError("cwd mismatch");
+  const expectedWorkspaceIdentity = await resolveWorkspaceIdentity(expectedCwd);
+  if (!sameWorkspaceIdentity(params.workspaceIdentity, expectedWorkspaceIdentity)) {
+    throw stateError("workspace identity mismatch");
+  }
   if (!UUID_PATTERN.test(params.sessionId)) throw stateError("session id is invalid");
   if (!Number.isSafeInteger(params.revision) || params.revision < 1) throw stateError("revision is invalid");
   if (!params.lastCommittedTurnId.trim()) throw stateError("turn id is invalid");
@@ -172,8 +203,11 @@ export async function loadKimiCodeSessionState(input: LoadKimiCodeSessionStateIn
 
   const root = stateRoot(input.env);
   const sessionDirectory = join(root, params.sessionId);
-  const expectedFile = join(sessionDirectory, revisionFilename(params.revision));
-  if (!samePath(params.sessionFile, expectedFile) || !isPathInside(root, params.sessionFile)) {
+  if (
+    !samePath(dirname(params.sessionFile), sessionDirectory) ||
+    !isRevisionFilename(basename(params.sessionFile), params.revision) ||
+    !isPathInside(root, params.sessionFile)
+  ) {
     throw stateError("session path is invalid");
   }
 
@@ -222,6 +256,7 @@ export async function loadKimiCodeSessionState(input: LoadKimiCodeSessionStateIn
     snapshot.sessionId !== params.sessionId ||
     snapshot.revision !== params.revision ||
     !sameCwd(snapshot.cwd, params.cwd) ||
+    !sameWorkspaceIdentity(snapshot.workspaceIdentity, params.workspaceIdentity) ||
     snapshot.lastCommittedTurnId !== params.lastCommittedTurnId
   ) {
     throw stateError("snapshot binding mismatch");
@@ -234,7 +269,17 @@ function stateRoot(env?: NodeJS.ProcessEnv): string {
 }
 
 function revisionFilename(revision: number): string {
-  return `revision-${revision.toString().padStart(8, "0")}.json`;
+  return `revision-${revision.toString().padStart(8, "0")}-${randomUUID()}.json`;
+}
+
+function isRevisionFilename(filename: string, revision: number): boolean {
+  const prefix = `revision-${revision.toString().padStart(8, "0")}-`;
+  const suffix = ".json";
+  return (
+    filename.startsWith(prefix) &&
+    filename.endsWith(suffix) &&
+    UUID_PATTERN.test(filename.slice(prefix.length, -suffix.length))
+  );
 }
 
 function parseLocator(
@@ -247,6 +292,7 @@ function parseLocator(
   sessionId: string;
   revision: number;
   cwd: string;
+  workspaceIdentity: KimiCodeWorkspaceIdentity;
   sessionFile: string;
   lastCommittedTurnId: string;
 } {
@@ -267,6 +313,7 @@ function parseLocator(
     typeof params.sessionId !== "string" ||
     typeof params.revision !== "number" ||
     typeof params.cwd !== "string" ||
+    !isWorkspaceIdentity(params.workspaceIdentity) ||
     typeof params.sessionFile !== "string" ||
     typeof params.lastCommittedTurnId !== "string"
   ) {
@@ -279,6 +326,7 @@ function parseLocator(
     sessionId: params.sessionId,
     revision: params.revision,
     cwd: params.cwd,
+    workspaceIdentity: copyWorkspaceIdentity(params.workspaceIdentity),
     sessionFile: params.sessionFile,
     lastCommittedTurnId: params.lastCommittedTurnId,
   };
@@ -293,6 +341,7 @@ function parseSnapshot(value: unknown): KimiCodeSessionSnapshot {
     typeof value.sessionId !== "string" ||
     typeof value.revision !== "number" ||
     typeof value.cwd !== "string" ||
+    !isWorkspaceIdentity(value.workspaceIdentity) ||
     typeof value.lastCommittedTurnId !== "string" ||
     typeof value.credentialProfileFingerprint !== "string" ||
     !/^sha256:[0-9a-f]{64}$/.test(value.credentialProfileFingerprint) ||
@@ -307,6 +356,7 @@ function parseSnapshot(value: unknown): KimiCodeSessionSnapshot {
     sessionId: value.sessionId,
     revision: value.revision,
     cwd: value.cwd,
+    workspaceIdentity: copyWorkspaceIdentity(value.workspaceIdentity),
     lastCommittedTurnId: value.lastCommittedTurnId,
     credentialProfileFingerprint: value.credentialProfileFingerprint,
     messages: validateMessages(value.messages),
@@ -317,6 +367,7 @@ function validatePreviousSnapshot(
   snapshot: KimiCodeSessionSnapshot,
   model: string,
   cwd: string,
+  workspaceIdentity: KimiCodeWorkspaceIdentity,
   credentialProfileFingerprint: string,
 ): void {
   if (
@@ -327,6 +378,8 @@ function validatePreviousSnapshot(
     !Number.isSafeInteger(snapshot.revision) ||
     snapshot.revision < 1 ||
     !sameCwd(snapshot.cwd, cwd) ||
+    !isWorkspaceIdentity(snapshot.workspaceIdentity) ||
+    !sameWorkspaceIdentity(snapshot.workspaceIdentity, workspaceIdentity) ||
     snapshot.credentialProfileFingerprint !== credentialProfileFingerprint ||
     !snapshot.lastCommittedTurnId.trim()
   ) {
@@ -439,22 +492,18 @@ async function assertNoExistingReparsePoints(target: string): Promise<void> {
 }
 
 async function applyPrivatePermissions(
-  pathOrPaths: string | readonly string[],
-  directory: boolean,
+  targets: readonly PrivatePermissionTarget[],
   observeAclProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void,
 ): Promise<void> {
-  const paths = typeof pathOrPaths === "string" ? [pathOrPaths] : [...pathOrPaths];
-  await Promise.all(paths.map((path) => chmod(path, directory ? 0o700 : 0o600)));
+  await Promise.all(targets.map((target) => chmod(target.path, target.directory ? 0o700 : 0o600)));
   if (process.platform !== "win32") return;
   const script = [
-    "$isDirectory = $env:RAVI_KIMI_ACL_DIRECTORY -eq '1'",
     "$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()",
-    "$inheritance = if ($isDirectory) { [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit } else { [System.Security.AccessControl.InheritanceFlags]::None }",
     "$sids = @($identity.User, (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-18')), (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')))",
     "$sections = [System.Security.AccessControl.AccessControlSections]::Access",
-    "foreach ($target in (ConvertFrom-Json $env:RAVI_KIMI_ACL_PATHS)) { $security = if ($isDirectory) { [System.IO.Directory]::GetAccessControl($target, $sections) } else { [System.IO.File]::GetAccessControl($target, $sections) }; $security.SetAccessRuleProtection($true, $false); @($security.Access) | ForEach-Object { [void]$security.RemoveAccessRuleSpecific($_) }; foreach ($sid in $sids) { $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, [System.Security.AccessControl.FileSystemRights]::FullControl, $inheritance, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow); [void]$security.AddAccessRule($rule) }; if ($isDirectory) { [System.IO.Directory]::SetAccessControl($target, $security) } else { [System.IO.File]::SetAccessControl($target, $security) } }",
+    "foreach ($entry in (ConvertFrom-Json $env:RAVI_KIMI_ACL_TARGETS)) { $target = [string]$entry.path; $isDirectory = [bool]$entry.directory; $inheritance = if ($isDirectory) { [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit } else { [System.Security.AccessControl.InheritanceFlags]::None }; $security = if ($isDirectory) { [System.IO.Directory]::GetAccessControl($target, $sections) } else { [System.IO.File]::GetAccessControl($target, $sections) }; $security.SetAccessRuleProtection($true, $false); @($security.Access) | ForEach-Object { [void]$security.RemoveAccessRuleSpecific($_) }; foreach ($sid in $sids) { $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, [System.Security.AccessControl.FileSystemRights]::FullControl, $inheritance, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow); [void]$security.AddAccessRule($rule) }; if ($isDirectory) { [System.IO.Directory]::SetAccessControl($target, $security) } else { [System.IO.File]::SetAccessControl($target, $security) } }",
   ].join("; ");
-  const childEnv = aclProcessEnv(paths, directory);
+  const childEnv = aclProcessEnv(targets);
   observeAclProcessEnv?.({ ...childEnv });
   await execFileAsync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
     env: childEnv,
@@ -462,11 +511,7 @@ async function applyPrivatePermissions(
   });
 }
 
-async function ensureDurablePrivateStateDirectories(
-  root: string,
-  sessionDirectory: string,
-  observeAclProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void,
-): Promise<void> {
+async function ensureDurablePrivateStateDirectories(root: string, sessionDirectory: string): Promise<string[]> {
   const stateDirectory = dirname(dirname(dirname(root)));
   const runtimeDirectory = join(stateDirectory, "runtime");
   const providerDirectory = join(runtimeDirectory, "kimi-code");
@@ -485,13 +530,12 @@ async function ensureDurablePrivateStateDirectories(
     }
     await syncDirectory(dirname(directory));
   }
-  await applyPrivatePermissions(privateDirectories, true, observeAclProcessEnv);
+  return privateDirectories;
 }
 
-function aclProcessEnv(paths: readonly string[], directory: boolean): NodeJS.ProcessEnv {
+function aclProcessEnv(targets: readonly PrivatePermissionTarget[]): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
-    RAVI_KIMI_ACL_PATHS: JSON.stringify(paths),
-    RAVI_KIMI_ACL_DIRECTORY: directory ? "1" : "0",
+    RAVI_KIMI_ACL_TARGETS: JSON.stringify(targets),
   };
   for (const key of ["SystemRoot", "WINDIR", "PATH", "PATHEXT", "ComSpec", "TEMP", "TMP"] as const) {
     const value = process.env[key];
@@ -516,6 +560,50 @@ async function syncDirectory(directory: string): Promise<void> {
 function normalizeCwd(cwd: string): string {
   if (!cwd.trim()) throw stateError("cwd is invalid");
   return resolve(cwd);
+}
+
+async function resolveWorkspaceIdentity(cwd: string): Promise<KimiCodeWorkspaceIdentity> {
+  const canonical = await realpath(cwd).catch(() => {
+    throw stateError("workspace identity is unavailable");
+  });
+  const info = await stat(canonical, { bigint: true }).catch(() => {
+    throw stateError("workspace identity is unavailable");
+  });
+  if (
+    info.dev < 0n ||
+    info.ino <= 0n ||
+    !isAbsolute(canonical) ||
+    Buffer.byteLength(canonical, "utf8") > KIMI_CODE_MAX_WORKSPACE_REALPATH_BYTES
+  ) {
+    throw stateError("workspace identity is unavailable");
+  }
+  return { realpath: canonical, device: String(info.dev), inode: String(info.ino) };
+}
+
+function isWorkspaceIdentity(value: unknown): value is KimiCodeWorkspaceIdentity {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, WORKSPACE_IDENTITY_KEYS) &&
+    typeof value.realpath === "string" &&
+    isAbsolute(value.realpath) &&
+    Buffer.byteLength(value.realpath, "utf8") <= KIMI_CODE_MAX_WORKSPACE_REALPATH_BYTES &&
+    typeof value.device === "string" &&
+    /^(?:0|[1-9]\d{0,39})$/.test(value.device) &&
+    typeof value.inode === "string" &&
+    /^[1-9]\d{0,39}$/.test(value.inode)
+  );
+}
+
+function copyWorkspaceIdentity(identity: KimiCodeWorkspaceIdentity): KimiCodeWorkspaceIdentity {
+  return { realpath: identity.realpath, device: identity.device, inode: identity.inode };
+}
+
+function sameWorkspaceIdentity(left: KimiCodeWorkspaceIdentity, right: KimiCodeWorkspaceIdentity): boolean {
+  const sameRealpath =
+    process.platform === "win32"
+      ? left.realpath.toLowerCase() === right.realpath.toLowerCase()
+      : left.realpath === right.realpath;
+  return sameRealpath && left.device === right.device && left.inode === right.inode;
 }
 
 function isPathInside(parent: string, child: string): boolean {

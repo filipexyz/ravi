@@ -8,8 +8,10 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
   symlinkSync,
+  unlinkSync,
   writeFileSync,
 } from "node:fs";
 import { execFileSync } from "node:child_process";
@@ -36,9 +38,28 @@ afterEach(() => {
 function temporaryState() {
   const root = mkdtempSync(join(tmpdir(), "ravi-kimi-state-"));
   const cwd = join(root, "workspace");
+  mkdirSync(cwd);
   temporaryRoots.add(root);
   return { root, cwd, env: { RAVI_STATE_DIR: join(root, "state"), KIMI_API_KEY: "never-persist-this-key" } };
 }
+
+function detectWorkspaceRetargetCapability(): { available: true } | { available: false; reason: string } {
+  const root = mkdtempSync(join(tmpdir(), "ravi-kimi-retarget-capability-"));
+  const target = join(root, "target");
+  const alias = join(root, "alias");
+  mkdirSync(target);
+  try {
+    symlinkSync(target, alias, process.platform === "win32" ? "junction" : "dir");
+    return { available: true };
+  } catch (error) {
+    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "unknown";
+    return { available: false, reason: `${process.platform} symlink/junction unavailable (${code})` };
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+const workspaceRetargetCapability = detectWorkspaceRetargetCapability();
 
 function nativeMessages(label = "one"): KimiCodeConversationMessage[] {
   return [
@@ -94,6 +115,7 @@ describe("Kimi Code immutable session state", () => {
       "schemaVersion",
       "sessionFile",
       "sessionId",
+      "workspaceIdentity",
     ]);
     expect(params).toMatchObject({
       schemaVersion: 1,
@@ -103,6 +125,11 @@ describe("Kimi Code immutable session state", () => {
       revision: 1,
       cwd: first.cwd,
       lastCommittedTurnId: "turn-1",
+      workspaceIdentity: {
+        realpath: realpathSync(first.cwd),
+        device: expect.stringMatching(/^\d+$/),
+        inode: expect.stringMatching(/^[1-9]\d*$/),
+      },
     });
     expect(String(params.sessionFile)).toContain(join("runtime", "kimi-code", "sessions", first.snapshot.sessionId));
     expect(JSON.stringify(first.session)).not.toContain("private-reasoning");
@@ -125,21 +152,21 @@ describe("Kimi Code immutable session state", () => {
     const secondFile = String(second.session.params?.sessionFile);
     const secondBytes = readFileSync(secondFile, "utf8");
 
-    await expect(
-      commitKimiCodeSessionState({
-        sessionId: first.snapshot.sessionId,
-        model: "k3",
-        cwd: first.cwd,
-        lastCommittedTurnId: "turn-collision",
-        messages: nativeMessages("collision"),
-        previousSnapshot: first.snapshot,
-        env: first.env,
-      }),
-    ).rejects.toThrow();
+    const sibling = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-collision",
+      messages: nativeMessages("collision"),
+      previousSnapshot: first.snapshot,
+      env: first.env,
+    });
 
     expect(second.snapshot.sessionId).toBe(first.snapshot.sessionId);
     expect(second.snapshot.revision).toBe(2);
     expect(secondFile).not.toBe(firstFile);
+    expect(sibling.snapshot.revision).toBe(2);
+    expect(String(sibling.session.params?.sessionFile)).not.toBe(secondFile);
     expect(readFileSync(firstFile, "utf8")).toBe(firstBytes);
     expect(readFileSync(secondFile, "utf8")).toBe(secondBytes);
     expect(readdirSync(dirname(secondFile)).filter((name) => name.includes(".tmp"))).toEqual([]);
@@ -192,7 +219,9 @@ describe("Kimi Code immutable session state", () => {
     ).rejects.toThrow("synthetic crash");
 
     expect(readdirSync(sessionDirectory).filter((name) => name.includes(".tmp"))).toEqual([]);
-    expect(readdirSync(sessionDirectory).filter((name) => name === "revision-00000002.json")).toEqual([]);
+    expect(readdirSync(sessionDirectory).filter((name) => name.endsWith(".json"))).toEqual([
+      basename(String(first.session.params?.sessionFile)),
+    ]);
     const retry = await commitKimiCodeSessionState({
       sessionId: first.snapshot.sessionId,
       model: "k3",
@@ -203,6 +232,121 @@ describe("Kimi Code immutable session state", () => {
       env: first.env,
     });
     expect(retry.snapshot.revision).toBe(2);
+  });
+
+  test("commits after an orphaned next-revision snapshot without overwriting the orphan", async () => {
+    const first = await firstCommit();
+    const sessionDirectory = dirname(String(first.session.params?.sessionFile));
+
+    await expect(
+      commitKimiCodeSessionState({
+        sessionId: first.snapshot.sessionId,
+        model: "k3",
+        cwd: first.cwd,
+        lastCommittedTurnId: "turn-orphaned",
+        messages: nativeMessages("orphaned"),
+        previousSnapshot: first.snapshot,
+        env: first.env,
+        faultInjection: {
+          beforePromote: () => {
+            throw new Error("synthetic promotion abort");
+          },
+        },
+      }),
+    ).rejects.toThrow("synthetic promotion abort");
+
+    const orphan = readdirSync(sessionDirectory)
+      .filter((name) => name.endsWith(".json") && name !== basename(String(first.session.params?.sessionFile)))
+      .map((name) => join(sessionDirectory, name));
+    expect(orphan).toHaveLength(1);
+    const orphanBytes = readFileSync(orphan[0]!, "utf8");
+
+    const retry = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-retry-after-orphan",
+      messages: nativeMessages("retry-after-orphan"),
+      previousSnapshot: first.snapshot,
+      env: first.env,
+    });
+
+    expect(retry.snapshot.revision).toBe(2);
+    expect(String(retry.session.params?.sessionFile)).not.toBe(orphan[0]);
+    expect(readFileSync(orphan[0]!, "utf8")).toBe(orphanBytes);
+    expect(readFileSync(String(retry.session.params?.sessionFile), "utf8")).toContain("answer-retry-after-orphan");
+  });
+
+  test("keeps the previous locator authoritative when promotion aborts", async () => {
+    const first = await firstCommit();
+    const locatorBefore = JSON.stringify(first.session);
+
+    await expect(
+      commitKimiCodeSessionState({
+        sessionId: first.snapshot.sessionId,
+        model: "k3",
+        cwd: first.cwd,
+        lastCommittedTurnId: "turn-not-promoted",
+        messages: nativeMessages("not-promoted"),
+        previousSnapshot: first.snapshot,
+        env: first.env,
+        faultInjection: {
+          beforePromote: () => {
+            throw new Error("synthetic promotion abort");
+          },
+        },
+      }),
+    ).rejects.toThrow("synthetic promotion abort");
+
+    expect(JSON.stringify(first.session)).toBe(locatorBefore);
+    await expect(
+      loadKimiCodeSessionState({ session: first.session, model: "k3", cwd: first.cwd, env: first.env }),
+    ).resolves.toEqual(first.snapshot);
+  });
+
+  if (workspaceRetargetCapability.available) {
+    test("rejects resume after the same cwd pathname is retargeted", async () => {
+      const fixture = temporaryState();
+      const firstWorkspace = join(fixture.root, "workspace-one");
+      const secondWorkspace = join(fixture.root, "workspace-two");
+      const linkedWorkspace = join(fixture.root, "workspace-link");
+      mkdirSync(firstWorkspace);
+      mkdirSync(secondWorkspace);
+      symlinkSync(firstWorkspace, linkedWorkspace, process.platform === "win32" ? "junction" : "dir");
+      const committed = await commitKimiCodeSessionState({
+        sessionId: createKimiCodeSessionId(),
+        model: "k3",
+        cwd: linkedWorkspace,
+        lastCommittedTurnId: "turn-before-retarget",
+        messages: nativeMessages("before-retarget"),
+        env: fixture.env,
+      });
+
+      unlinkSync(linkedWorkspace);
+      symlinkSync(secondWorkspace, linkedWorkspace, process.platform === "win32" ? "junction" : "dir");
+
+      await expect(
+        loadKimiCodeSessionState({ session: committed.session, model: "k3", cwd: linkedWorkspace, env: fixture.env }),
+      ).rejects.toThrow("workspace identity mismatch");
+    });
+  } else {
+    test.skip(`rejects resume after the same cwd pathname is retargeted [${workspaceRetargetCapability.reason}]`, () => {});
+  }
+
+  test("fails closed when canonical workspace identity cannot be established", async () => {
+    const fixture = temporaryState();
+    const missingWorkspace = join(fixture.root, "missing-workspace");
+
+    await expect(
+      commitKimiCodeSessionState({
+        sessionId: createKimiCodeSessionId(),
+        model: "k3",
+        cwd: missingWorkspace,
+        lastCommittedTurnId: "turn-missing-workspace",
+        messages: nativeMessages("missing-workspace"),
+        env: fixture.env,
+      }),
+    ).rejects.toThrow("workspace identity is unavailable");
   });
 
   test("round-trips complete reasoning and tool pairings without persisting the API key", async () => {
@@ -349,7 +493,7 @@ describe("Kimi Code immutable session state", () => {
       faultInjection: { observeAclProcessEnv: (env) => observed.push(env) },
     });
 
-    if (process.platform === "win32") expect(observed.length).toBeGreaterThan(0);
+    if (process.platform === "win32") expect(observed).toHaveLength(1);
     for (const env of observed) {
       expect(env.KIMI_API_KEY).toBeUndefined();
       expect(JSON.stringify(env)).not.toContain(fixture.env.KIMI_API_KEY);

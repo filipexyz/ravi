@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createKimiCodeCompletedTurnAccumulator, createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
@@ -34,8 +34,10 @@ afterEach(() => {
 
 function isolatedStateEnv() {
   const root = mkdtempSync(join(tmpdir(), "ravi-kimi-provider-state-"));
+  const cwd = join(root, "workspace");
+  mkdirSync(cwd);
   temporaryStateRoots.add(root);
-  return { root, env: { RAVI_STATE_DIR: join(root, "state"), KIMI_API_KEY: "provider-key-must-stay-private" } };
+  return { root, cwd, env: { RAVI_STATE_DIR: join(root, "state"), KIMI_API_KEY: "provider-key-must-stay-private" } };
 }
 
 function prompts(...content: string[]): AsyncGenerator<RuntimePromptMessage> {
@@ -52,13 +54,14 @@ function prompts(...content: string[]): AsyncGenerator<RuntimePromptMessage> {
 }
 
 function startRequest(overrides: Partial<RuntimeStartRequest> = {}): RuntimeStartRequest {
+  const fixture = isolatedStateEnv();
   return {
     prompt: prompts("hello"),
     model: "k3",
-    cwd: "C:/synthetic",
+    cwd: fixture.cwd,
     abortController: new AbortController(),
     systemPromptAppend: "Ravi policy.",
-    env: isolatedStateEnv().env,
+    env: fixture.env,
     ...overrides,
   };
 }
@@ -1789,6 +1792,18 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(privateState).not.toContain(managedKey);
     expect(privateState).toContain(promptSentinel);
     expect(privateState).toContain(reasoningSentinel);
+  });
+
+  test("does not expose canonical absolute paths in public provider events", async () => {
+    const fixture = isolatedStateEnv();
+    const unavailableWorkspace = join(fixture.root, "canonical-absolute-path-sentinel");
+    const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
+
+    const events = await collectEvents(provider, startRequest({ cwd: unavailableWorkspace, env: fixture.env }));
+
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code session state commit failed" });
+    expect(JSON.stringify(events)).not.toContain(unavailableWorkspace);
+    expect(JSON.stringify(events)).not.toContain(fixture.root);
   });
 
   test("omits unsupported attachments and host integrations from native requests", async () => {
