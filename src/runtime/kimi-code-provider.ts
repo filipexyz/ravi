@@ -7,6 +7,8 @@ import {
 } from "./kimi-code-transport.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import type {
+  RuntimeDynamicToolCallResult,
+  RuntimeDynamicToolSpec,
   RuntimeEvent,
   RuntimePrepareSessionRequest,
   RuntimePrepareSessionResult,
@@ -14,6 +16,10 @@ import type {
   RuntimeStartRequest,
   SessionRuntimeProvider,
 } from "./types.js";
+
+const MAX_KIMI_TOOL_ROUNDS = 8;
+const MAX_KIMI_TOOL_CALLS = 32;
+const MAX_KIMI_TOOL_RESULT_BYTES = 64 * 1024;
 
 export { KIMI_CODE_CREDENTIAL_ENV_KEY } from "./kimi-code-models.js";
 export {
@@ -131,33 +137,77 @@ function createKimiCodeSession(
           metadata,
         };
         let thinkingPublished = false;
-        const accumulator = createKimiCodeCompletedTurnAccumulator();
+        let completedUsage: KimiCodeCompletedTurn["usage"] = { inputTokens: 0, outputTokens: 0 };
+        let toolRounds = 0;
+        let totalToolCalls = 0;
+        const seenToolCallIds = new Set<string>();
+        const messages: KimiCodeConversationMessage[] = [{ role: "user", content: prompt.message.content }];
 
         try {
-          if (turn.interrupted || closed || input.abortController.signal.aborted) {
-            const terminal = terminalTracker.interrupt({ metadata });
-            if (terminal) yield terminal;
-            continue;
-          }
-
-          turn.transport = transportFactory();
-          if (turn.interrupted || closed || input.abortController.signal.aborted) {
-            const terminal = terminalTracker.interrupt({ metadata });
-            if (terminal) yield terminal;
-            continue;
-          }
-          const request = {
-            ...buildKimiCodeRequest(input, [{ role: "user", content: prompt.message.content }], prompt.session_id),
-            signal: input.abortController.signal,
-          };
-          for await (const event of turn.transport.stream(request)) {
+          turnLoop: while (!terminalTracker.terminalEmitted) {
             if (turn.interrupted || closed || input.abortController.signal.aborted) {
               const terminal = terminalTracker.interrupt({ metadata });
               if (terminal) yield terminal;
               break;
             }
 
-            if (event.type === "eof") {
+            turn.transport = transportFactory();
+            turn.transportClosed = false;
+            if (turn.interrupted || closed || input.abortController.signal.aborted) {
+              const terminal = terminalTracker.interrupt({ metadata });
+              if (terminal) yield terminal;
+              break;
+            }
+
+            const accumulator = createKimiCodeCompletedTurnAccumulator();
+            let providerDone = false;
+            const request = createKimiCodeTurnRequest(input, messages, prompt.session_id);
+            try {
+              for await (const event of turn.transport.stream(request)) {
+                if (turn.interrupted || closed || input.abortController.signal.aborted) {
+                  const terminal = terminalTracker.interrupt({ metadata });
+                  if (terminal) yield terminal;
+                  break;
+                }
+
+                if (event.type === "eof") {
+                  const terminal = terminalTracker.fail({
+                    error: "Kimi Code stream ended before completion",
+                    recoverable: true,
+                    metadata,
+                  });
+                  if (terminal) yield terminal;
+                  break;
+                }
+                if (event.type === "done") {
+                  providerDone = true;
+                  break;
+                }
+
+                const accepted = accumulator.accept(event.data);
+                if (accepted.kind !== "accepted") {
+                  const terminal = terminalTracker.fail({
+                    error: "Kimi Code stream failed",
+                    recoverable: true,
+                    metadata,
+                  });
+                  if (terminal) yield terminal;
+                  break;
+                }
+                if (accepted.reasoningDelta && !thinkingPublished) {
+                  thinkingPublished = true;
+                  yield { type: "status", status: "thinking", metadata };
+                }
+                for (const text of accepted.textDeltas) {
+                  if (text) yield { type: "text.delta", text, metadata };
+                }
+              }
+            } finally {
+              await closeTurnTransport(turn);
+            }
+
+            if (terminalTracker.terminalEmitted) break;
+            if (!providerDone) {
               const terminal = terminalTracker.fail({
                 error: "Kimi Code stream ended before completion",
                 recoverable: true,
@@ -166,45 +216,97 @@ function createKimiCodeSession(
               if (terminal) yield terminal;
               break;
             }
-            if (event.type === "done") {
-              const completed = accumulator.complete();
+
+            const completed = accumulator.complete();
+            completedUsage = addKimiCodeUsage(completedUsage, completed.usage);
+            if (completed.toolCalls.length === 0) {
               yield { type: "assistant.message", text: completed.text, metadata };
               const terminal: RuntimeEvent = {
                 type: "turn.complete",
                 execution: { provider: KIMI_CODE_PROVIDER_ID, model: input.model, billingType: "subscription" },
-                usage: completed.usage,
+                usage: completedUsage,
                 metadata,
               };
               if (terminalTracker.accept(terminal)) yield terminal;
               break;
             }
 
-            const accepted = accumulator.accept(event.data);
-            if (accepted.kind !== "accepted") {
-              const terminal = terminalTracker.fail({ error: "Kimi Code stream failed", recoverable: true, metadata });
+            if (
+              toolRounds >= MAX_KIMI_TOOL_ROUNDS ||
+              totalToolCalls + completed.toolCalls.length > MAX_KIMI_TOOL_CALLS
+            ) {
+              const terminal = terminalTracker.fail({ error: "Kimi Code tool loop limit exceeded", metadata });
               if (terminal) yield terminal;
               break;
             }
-            if (accepted.reasoningDelta && !thinkingPublished) {
-              thinkingPublished = true;
-              yield { type: "status", status: "thinking", metadata };
+
+            const toolCalls = validateKimiCodeToolCalls(completed.toolCalls, seenToolCallIds);
+            if (!toolCalls || !input.handleRuntimeToolCall) {
+              const terminal = terminalTracker.fail({
+                error: toolCalls ? "Kimi Code dynamic tool handler is unavailable" : "Kimi Code tool call was invalid",
+                metadata,
+              });
+              if (terminal) yield terminal;
+              break;
             }
-            for (const text of accepted.textDeltas) {
-              if (text) {
-                yield { type: "text.delta", text, metadata };
+
+            toolRounds += 1;
+            totalToolCalls += toolCalls.length;
+            for (const call of toolCalls) seenToolCallIds.add(call.id);
+            messages.push({
+              role: "assistant",
+              content: completed.text,
+              reasoning_content: completed.reasoning,
+              tool_calls: toolCalls.map((call) => ({
+                id: call.id,
+                type: "function",
+                function: { name: call.name, arguments: call.rawArguments },
+              })),
+            });
+
+            for (const call of toolCalls) {
+              if (turn.interrupted || closed || input.abortController.signal.aborted) {
+                const terminal = terminalTracker.interrupt({ metadata });
+                if (terminal) yield terminal;
+                break turnLoop;
               }
+
+              yield {
+                type: "tool.started",
+                toolUse: { id: call.id, name: call.name, input: call.arguments },
+                metadata,
+              };
+              if (turn.interrupted || closed || input.abortController.signal.aborted) {
+                const terminal = terminalTracker.interrupt({ metadata });
+                if (terminal) yield terminal;
+                break turnLoop;
+              }
+
+              let result: RuntimeDynamicToolCallResult;
+              try {
+                result = await input.handleRuntimeToolCall({
+                  toolName: call.name,
+                  callId: call.id,
+                  arguments: call.arguments,
+                });
+              } catch {
+                result = {
+                  success: false,
+                  contentItems: [{ type: "inputText", text: "Tool execution failed." }],
+                };
+              }
+              const content = kimiCodeToolResultText(result);
+              yield {
+                type: "tool.completed",
+                toolUseId: call.id,
+                toolName: call.name,
+                content,
+                isError: !result.success,
+                metadata,
+              };
+              yield { type: "tool.result_delivered", toolCallId: call.id, metadata };
+              messages.push({ role: "tool", tool_call_id: call.id, content });
             }
-          }
-          if (!terminalTracker.terminalEmitted) {
-            const terminal =
-              turn.interrupted || closed || input.abortController.signal.aborted
-                ? terminalTracker.interrupt({ metadata })
-                : terminalTracker.fail({
-                    error: "Kimi Code stream ended before completion",
-                    recoverable: true,
-                    metadata,
-                  });
-            if (terminal) yield terminal;
           }
         } catch {
           const terminal =
@@ -237,6 +339,108 @@ interface KimiCodeActiveTurn {
   interrupted: boolean;
   transport?: KimiCodeTransport;
   transportClosed: boolean;
+}
+
+type KimiCodeConversationMessage =
+  | { role: "user"; content: string }
+  | {
+      role: "assistant";
+      content: string;
+      reasoning_content: string;
+      tool_calls: Array<{
+        id: string;
+        type: "function";
+        function: { name: string; arguments: string };
+      }>;
+    }
+  | { role: "tool"; tool_call_id: string; content: string };
+
+interface ValidKimiCodeToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+  rawArguments: string;
+}
+
+function createKimiCodeTurnRequest(
+  input: RuntimeStartRequest,
+  messages: readonly KimiCodeConversationMessage[],
+  sessionId: string,
+) {
+  const request = buildKimiCodeRequest(input, messages as Parameters<typeof buildKimiCodeRequest>[1], sessionId);
+  return {
+    ...request,
+    body: {
+      ...request.body,
+      ...(input.dynamicTools?.length ? { tools: input.dynamicTools.map(toKimiCodeToolSpec) } : {}),
+    },
+    signal: input.abortController.signal,
+  };
+}
+
+function toKimiCodeToolSpec(tool: RuntimeDynamicToolSpec) {
+  return {
+    type: "function" as const,
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema,
+    },
+  };
+}
+
+function validateKimiCodeToolCalls(
+  toolCalls: readonly KimiCodeToolCallFragment[],
+  seenIds: ReadonlySet<string>,
+): ValidKimiCodeToolCall[] | null {
+  const batchIds = new Set<string>();
+  const valid: ValidKimiCodeToolCall[] = [];
+  for (const toolCall of toolCalls) {
+    const id = toolCall.id;
+    const name = toolCall.name;
+    if (!id?.trim() || !name?.trim() || seenIds.has(id) || batchIds.has(id)) return null;
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(toolCall.arguments);
+    } catch {
+      return null;
+    }
+    if (!isRecord(parsed)) return null;
+    batchIds.add(id);
+    valid.push({ id, name, arguments: parsed, rawArguments: toolCall.arguments });
+  }
+  return valid;
+}
+
+function kimiCodeToolResultText(result: RuntimeDynamicToolCallResult): string {
+  const text = result.contentItems
+    .map((item) => (item.type === "inputText" ? item.text : "[image omitted]"))
+    .join("\n");
+  return boundUtf8(text, MAX_KIMI_TOOL_RESULT_BYTES);
+}
+
+function boundUtf8(value: string, maximumBytes: number): string {
+  const encoder = new TextEncoder();
+  const encoded = encoder.encode(value);
+  if (encoded.byteLength <= maximumBytes) return value;
+  const suffix = "\n[truncated]";
+  const suffixBytes = encoder.encode(suffix);
+  const prefixLimit = Math.max(0, maximumBytes - suffixBytes.byteLength - 3);
+  return `${new TextDecoder().decode(encoded.slice(0, prefixLimit))}${suffix}`;
+}
+
+function addKimiCodeUsage(
+  current: KimiCodeCompletedTurn["usage"],
+  next: KimiCodeCompletedTurn["usage"],
+): KimiCodeCompletedTurn["usage"] {
+  const cacheReadTokens = (current.cacheReadTokens ?? 0) + (next.cacheReadTokens ?? 0);
+  const cacheCreationTokens = (current.cacheCreationTokens ?? 0) + (next.cacheCreationTokens ?? 0);
+  return {
+    inputTokens: current.inputTokens + next.inputTokens,
+    outputTokens: current.outputTokens + next.outputTokens,
+    ...(cacheReadTokens > 0 ? { cacheReadTokens } : {}),
+    ...(cacheCreationTokens > 0 ? { cacheCreationTokens } : {}),
+  };
 }
 
 interface ParsedKimiCodeChoice {

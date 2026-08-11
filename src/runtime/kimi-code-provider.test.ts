@@ -2,8 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { createKimiCodeCompletedTurnAccumulator, createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
 import { buildKimiCodeRequest } from "./kimi-code-transport.js";
 import { listRegisteredRuntimeProviderIds, unregisterRuntimeProvider } from "./provider-registry.js";
-import type { KimiCodeStreamEvent, KimiCodeTransport } from "./kimi-code-transport.js";
-import type { RuntimeEvent, RuntimeHostServices, RuntimePromptMessage, RuntimeStartRequest } from "./types.js";
+import type { KimiCodeStreamEvent, KimiCodeTransport, KimiCodeTransportRequest } from "./kimi-code-transport.js";
+import type {
+  RuntimeDynamicToolCallRequest,
+  RuntimeEvent,
+  RuntimeHostServices,
+  RuntimePromptMessage,
+  RuntimeStartRequest,
+} from "./types.js";
 
 function prompts(...content: string[]): AsyncGenerator<RuntimePromptMessage> {
   return (async function* () {
@@ -36,6 +42,65 @@ function transportFrom(events: readonly KimiCodeStreamEvent[]): KimiCodeTranspor
       yield* events;
     },
     async close() {},
+  };
+}
+
+function toolTurn(
+  calls: Array<{ index: number; id: string; name: string; arguments: string }>,
+  options: { content?: string; reasoning?: string } = {},
+): KimiCodeStreamEvent[] {
+  return [
+    {
+      type: "message",
+      data: {
+        choices: [
+          {
+            index: 0,
+            delta: {
+              content: options.content ?? "",
+              reasoning_content: options.reasoning ?? "",
+              tool_calls: calls.map((call) => ({
+                index: call.index,
+                id: call.id,
+                type: "function",
+                function: { name: call.name, arguments: call.arguments },
+              })),
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+      },
+    },
+    { type: "done" },
+  ];
+}
+
+function finalTurn(content: string): KimiCodeStreamEvent[] {
+  return [
+    {
+      type: "message",
+      data: { choices: [{ index: 0, delta: { content }, finish_reason: "stop" }] },
+    },
+    { type: "done" },
+  ];
+}
+
+function transportSequence(
+  turns: readonly (readonly KimiCodeStreamEvent[])[],
+  requests: KimiCodeTransportRequest[],
+): () => KimiCodeTransport {
+  let turnIndex = 0;
+  return () => {
+    const events = turns[turnIndex];
+    turnIndex += 1;
+    if (!events) throw new Error("unexpected synthetic provider request");
+    return {
+      async *stream(request) {
+        requests.push(request);
+        yield* events;
+      },
+      async close() {},
+    };
   };
 }
 
@@ -122,7 +187,7 @@ describe("createKimiCodeRuntimeProvider", () => {
     );
   });
 
-  test("normalizes stream chunks without exposing reasoning or indexed tool fragments (catches public raw-chunk leakage)", async () => {
+  test("normalizes stream chunks without exposing private reasoning (catches public raw-chunk leakage)", async () => {
     const provider = createKimiCodeRuntimeProvider({
       transportFactory: () =>
         transportFrom([
@@ -134,7 +199,6 @@ describe("createKimiCodeRuntimeProvider", () => {
                   delta: {
                     reasoning_content: "private chain of thought",
                     content: "Hel",
-                    tool_calls: [{ index: 1, id: "call-2", function: { name: "lookup", arguments: '{"id":' } }],
                   },
                 },
               ],
@@ -147,7 +211,6 @@ describe("createKimiCodeRuntimeProvider", () => {
                 {
                   delta: {
                     content: "lo",
-                    tool_calls: [{ index: 1, function: { arguments: '"42"}' } }],
                   },
                 },
               ],
@@ -187,7 +250,6 @@ describe("createKimiCodeRuntimeProvider", () => {
       usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 },
     });
     expect(JSON.stringify(events)).not.toContain("private chain of thought");
-    expect(JSON.stringify(events)).not.toContain("call-2");
   });
 
   test("emits one terminal event for duplicate provider finish chunks (catches duplicate terminal replay)", async () => {
@@ -483,5 +545,406 @@ describe("createKimiCodeRuntimeProvider", () => {
       ],
       usage: { inputTokens: 0, outputTokens: 0 },
     });
+  });
+
+  test("routes one tool call through the host and preserves the native assistant continuation shape", async () => {
+    const requests: KimiCodeTransportRequest[] = [];
+    const hostCalls: RuntimeDynamicToolCallRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [
+          toolTurn([{ index: 0, id: "call-order-42", name: "lookup_order", arguments: '{"id":42}' }], {
+            reasoning: "private lookup plan",
+          }),
+          finalTurn("Order found"),
+        ],
+        requests,
+      ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        dynamicTools: createHostServices().listDynamicTools(),
+        handleRuntimeToolCall: async (request) => {
+          hostCalls.push(request);
+          return { success: true, contentItems: [{ type: "inputText", text: "order:42" }] };
+        },
+      }),
+    );
+
+    expect(hostCalls).toEqual([{ toolName: "lookup_order", callId: "call-order-42", arguments: { id: 42 } }]);
+    expect(events.map((event) => event.type)).toEqual([
+      "turn.started",
+      "status",
+      "tool.started",
+      "tool.completed",
+      "tool.result_delivered",
+      "text.delta",
+      "assistant.message",
+      "turn.complete",
+    ]);
+    expect(events[2]).toMatchObject({
+      type: "tool.started",
+      toolUse: { id: "call-order-42", name: "lookup_order", input: { id: 42 } },
+    });
+    expect(events[3]).toMatchObject({
+      type: "tool.completed",
+      toolUseId: "call-order-42",
+      toolName: "lookup_order",
+      content: "order:42",
+      isError: false,
+    });
+    expect(events[4]).toMatchObject({ type: "tool.result_delivered", toolCallId: "call-order-42" });
+    expect(JSON.stringify(events)).not.toContain("private lookup plan");
+
+    const firstBody = requests[0]?.body as unknown as Record<string, unknown>;
+    expect(firstBody.tools).toEqual([
+      {
+        type: "function",
+        function: {
+          name: "lookup_order",
+          description: "Looks up a synthetic order.",
+          parameters: { type: "object" },
+        },
+      },
+    ]);
+    const continuation = requests[1]?.body as unknown as { messages: unknown[] };
+    expect(continuation.messages.slice(0, 3)).toEqual([
+      { role: "user", content: "hello" },
+      {
+        role: "assistant",
+        content: "",
+        reasoning_content: "private lookup plan",
+        tool_calls: [
+          {
+            id: "call-order-42",
+            type: "function",
+            function: { name: "lookup_order", arguments: '{"id":42}' },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "call-order-42", content: "order:42" },
+    ]);
+  });
+
+  test("preserves a failed tool result as binary error semantics and continues", async () => {
+    const requests: KimiCodeTransportRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [
+          toolTurn([{ index: 0, id: "call-denied", name: "lookup_order", arguments: "{}" }]),
+          finalTurn("Cannot access that order"),
+        ],
+        requests,
+      ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async () => ({
+          success: false,
+          reason: "denied",
+          contentItems: [{ type: "inputText", text: "access denied" }],
+        }),
+      }),
+    );
+
+    expect(events.find((event) => event.type === "tool.completed")).toMatchObject({
+      type: "tool.completed",
+      toolUseId: "call-denied",
+      content: "access denied",
+      isError: true,
+    });
+    const continuation = requests[1]?.body as unknown as { messages: Array<Record<string, unknown>> };
+    expect(continuation.messages[2]).toEqual({
+      role: "tool",
+      tool_call_id: "call-denied",
+      content: "access denied",
+    });
+    expect(events.at(-1)?.type).toBe("turn.complete");
+  });
+
+  test("turns a thrown tool handler into one redacted failed result without replaying the call", async () => {
+    const requests: KimiCodeTransportRequest[] = [];
+    let dispatches = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [toolTurn([{ index: 0, id: "call-throw", name: "lookup_order", arguments: "{}" }]), finalTurn("Recovered")],
+        requests,
+      ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async () => {
+          dispatches += 1;
+          throw new Error("synthetic handler secret");
+        },
+      }),
+    );
+
+    expect(dispatches).toBe(1);
+    expect(events.filter((event) => event.type === "tool.started")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "tool.completed")).toEqual([
+      expect.objectContaining({
+        type: "tool.completed",
+        toolUseId: "call-throw",
+        content: "Tool execution failed.",
+        isError: true,
+      }),
+    ]);
+    expect(events.filter((event) => event.type === "tool.result_delivered")).toHaveLength(1);
+    expect(JSON.stringify(events)).not.toContain("synthetic handler secret");
+    expect(JSON.stringify(requests[1]?.body)).not.toContain("synthetic handler secret");
+  });
+
+  test("rejects malformed, non-object, empty, and duplicate tool calls before host dispatch", async () => {
+    const invalidCases: Array<{
+      name: string;
+      calls: Array<{ index: number; id: string; name: string; arguments: string }>;
+    }> = [
+      {
+        name: "malformed JSON",
+        calls: [{ index: 0, id: "call-1", name: "lookup_order", arguments: '{"id":' }],
+      },
+      { name: "array arguments", calls: [{ index: 0, id: "call-1", name: "lookup_order", arguments: "[]" }] },
+      { name: "null arguments", calls: [{ index: 0, id: "call-1", name: "lookup_order", arguments: "null" }] },
+      { name: "empty id", calls: [{ index: 0, id: " ", name: "lookup_order", arguments: "{}" }] },
+      { name: "empty name", calls: [{ index: 0, id: "call-1", name: " ", arguments: "{}" }] },
+      {
+        name: "duplicate id",
+        calls: [
+          { index: 0, id: "duplicate", name: "lookup_order", arguments: "{}" },
+          { index: 1, id: "duplicate", name: "lookup_order", arguments: "{}" },
+        ],
+      },
+    ];
+
+    for (const testCase of invalidCases) {
+      let dispatches = 0;
+      const provider = createKimiCodeRuntimeProvider({
+        transportFactory: () => transportFrom(toolTurn(testCase.calls)),
+      });
+      const events = await collectEvents(
+        provider,
+        startRequest({
+          handleRuntimeToolCall: async () => {
+            dispatches += 1;
+            return { success: true, contentItems: [] };
+          },
+        }),
+      );
+
+      expect(dispatches, testCase.name).toBe(0);
+      expect(
+        events.some((event) => event.type === "tool.started"),
+        testCase.name,
+      ).toBe(false);
+      expect(events.at(-1), testCase.name).toMatchObject({
+        type: "turn.failed",
+        error: "Kimi Code tool call was invalid",
+      });
+    }
+  });
+
+  test("executes two tool calls serially in provider index order with exact paired events", async () => {
+    const requests: KimiCodeTransportRequest[] = [];
+    const dispatchOrder: string[] = [];
+    let releaseFirst!: () => void;
+    let firstStarted!: () => void;
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstDispatched = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [
+          toolTurn([
+            { index: 1, id: "call-second", name: "second", arguments: '{"step":2}' },
+            { index: 0, id: "call-first", name: "first", arguments: '{"step":1}' },
+          ]),
+          finalTurn("Both complete"),
+        ],
+        requests,
+      ),
+    });
+    const collecting = collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async (request) => {
+          dispatchOrder.push(request.callId ?? "missing");
+          if (request.callId === "call-first") {
+            firstStarted();
+            await firstBlocked;
+          }
+          return { success: true, contentItems: [{ type: "inputText", text: request.callId ?? "missing" }] };
+        },
+      }),
+    );
+
+    await Promise.race([firstDispatched, collecting]);
+    expect(dispatchOrder).toEqual(["call-first"]);
+    releaseFirst();
+    const events = await collecting;
+
+    expect(dispatchOrder).toEqual(["call-first", "call-second"]);
+    expect(
+      events
+        .filter(
+          (
+            event,
+          ): event is Extract<RuntimeEvent, { type: "tool.started" | "tool.completed" | "tool.result_delivered" }> =>
+            event.type === "tool.started" || event.type === "tool.completed" || event.type === "tool.result_delivered",
+        )
+        .map((event) =>
+          event.type === "tool.started"
+            ? `${event.type}:${event.toolUse.id}`
+            : event.type === "tool.completed"
+              ? `${event.type}:${event.toolUseId}`
+              : `${event.type}:${event.toolCallId}`,
+        ),
+    ).toEqual([
+      "tool.started:call-first",
+      "tool.completed:call-first",
+      "tool.result_delivered:call-first",
+      "tool.started:call-second",
+      "tool.completed:call-second",
+      "tool.result_delivered:call-second",
+    ]);
+  });
+
+  test("stops tool dispatch between calls when the turn is aborted", async () => {
+    const abortController = new AbortController();
+    const dispatches: string[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom(
+          toolTurn([
+            { index: 0, id: "call-first", name: "first", arguments: "{}" },
+            { index: 1, id: "call-second", name: "second", arguments: "{}" },
+          ]),
+        ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        abortController,
+        handleRuntimeToolCall: async (request) => {
+          dispatches.push(request.callId ?? "missing");
+          abortController.abort();
+          return { success: true, contentItems: [{ type: "inputText", text: "done" }] };
+        },
+      }),
+    );
+
+    expect(dispatches).toEqual(["call-first"]);
+    expect(events.map((event) => event.type)).toEqual([
+      "turn.started",
+      "tool.started",
+      "tool.completed",
+      "tool.result_delivered",
+      "turn.interrupted",
+    ]);
+  });
+
+  test("bounds tool result text before the next provider request", async () => {
+    const requests: KimiCodeTransportRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [toolTurn([{ index: 0, id: "call-large", name: "lookup_order", arguments: "{}" }]), finalTurn("ok")],
+        requests,
+      ),
+    });
+
+    await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async () => ({
+          success: true,
+          contentItems: [
+            { type: "inputText", text: "x".repeat(80 * 1024) },
+            { type: "inputImage", imageUrl: "https://secret.invalid/signed-token" },
+          ],
+        }),
+      }),
+    );
+
+    const continuation = requests[1]?.body as unknown as { messages: Array<Record<string, unknown>> };
+    const content = continuation.messages[2]?.content;
+    expect(typeof content).toBe("string");
+    expect(new TextEncoder().encode(String(content)).byteLength).toBeLessThanOrEqual(64 * 1024);
+    expect(content).not.toContain("signed-token");
+  });
+
+  test("fails deterministically when the tool loop exceeds its finite round bound", async () => {
+    let providerRounds = 0;
+    let dispatches = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        providerRounds += 1;
+        if (providerRounds > 20) throw new Error("synthetic unbounded loop");
+        return transportFrom(
+          toolTurn([
+            {
+              index: 0,
+              id: `loop-${providerRounds}`,
+              name: "lookup_order",
+              arguments: "{}",
+            },
+          ]),
+        );
+      },
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async () => {
+          dispatches += 1;
+          return { success: true, contentItems: [{ type: "inputText", text: "again" }] };
+        },
+      }),
+    );
+
+    expect(providerRounds).toBeLessThanOrEqual(20);
+    expect(dispatches).toBeLessThan(20);
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code tool loop limit exceeded" });
+  });
+
+  test("rejects an oversized tool-call batch before any host dispatch", async () => {
+    let dispatches = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom(
+          toolTurn(
+            Array.from({ length: 33 }, (_, index) => ({
+              index,
+              id: `batch-${index}`,
+              name: "lookup_order",
+              arguments: "{}",
+            })),
+          ),
+        ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async () => {
+          dispatches += 1;
+          return { success: true, contentItems: [] };
+        },
+      }),
+    );
+
+    expect(dispatches).toBe(0);
+    expect(events.some((event) => event.type === "tool.started")).toBe(false);
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code tool loop limit exceeded" });
   });
 });
