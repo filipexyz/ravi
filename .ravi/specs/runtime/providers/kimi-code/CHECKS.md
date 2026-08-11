@@ -204,6 +204,23 @@ skill-visibility resume metadata, complete SSE event bounds, accumulated respons
 and tool-argument bounds, and redacted protocol diagnostics. Each finding was
 captured by a failing regression before its correction.
 
+### Rollout-gate verification record (2026-08-11)
+
+Verified candidate `1b97430df3d7d947d46a469448f0b152636ea276`:
+
+- `rtk bun test src/runtime/kimi-code-provider.live.test.ts`: 0 passed, 2 skipped,
+  0 failed; the default opt-in gate did not make a network request;
+- `rtk bun run typecheck`: exited 0;
+- `rtk bun run docs:check-links`: all links OK (47 files checked);
+- repository-local broken-reference and credential-prefix scan for the Kimi scope:
+  zero matches;
+- `rtk git diff --check HEAD^ HEAD`: exited 0;
+- markdownlint on the changed WHY, RUNBOOK, CHECKS, and hardening-plan documents:
+  0 issues.
+
+No fresh private credential was available for this verification. L-01 through L-04
+therefore remain pending; the skipped scaffold is not live-release evidence.
+
 ## Private live release checks
 
 Live checks require explicit operator opt-in and must never run in public CI. They
