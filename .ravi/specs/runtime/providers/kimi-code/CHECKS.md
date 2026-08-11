@@ -212,8 +212,15 @@ Verified candidate `1b97430df3d7d947d46a469448f0b152636ea276`:
   0 failed; the default opt-in gate did not make a network request;
 - `rtk bun run typecheck`: exited 0;
 - `rtk bun run docs:check-links`: all links OK (47 files checked);
-- repository-local broken-reference and credential-prefix scan for the Kimi scope:
-  zero matches;
+- sanitization command, which returned zero matches:
+
+  ```powershell
+  rtk powershell -NoProfile -Command '$diff = git diff --unified=0 origin/dev...HEAD -- .ravi/specs/runtime/providers/kimi-code docs/superpowers src/runtime/kimi-code-*; $patterns = ''sk[-]kimi-|C:[/\\]Users[/\\]|(?:raw[Pp]rompt|raw[_-]prompt|raw[Rr]easoning|raw[_-]reasoning)\\s*[:=]|account(?:[Ii][Dd]|[_-]id)\\s*[:=]''; $matches = $diff | Select-String -Pattern $patterns; if ($matches) { $matches; exit 1 }'
+  ```
+- the sanitization scan deliberately targets credential-shaped strings, local
+  personal paths, and raw-prompt/raw-reasoning/account-value field assignments. It
+  excludes policy prose and ordinary runtime `accountId` plumbing outside the Kimi
+  diff because those are not exposed values;
 - `rtk git diff --check HEAD^ HEAD`: exited 0;
 - markdownlint on the changed WHY, RUNBOOK, CHECKS, and hardening-plan documents:
   0 issues.

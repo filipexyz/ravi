@@ -115,6 +115,30 @@ translate, or migrate existing Kimi provider state.
 
 No existing provider or model selector should require migration.
 
+## Dedicated credential rotation
+
+This procedure operationalizes the [SPEC's credential and quota rules](SPEC.md#service-and-credentials)
+and [usage and quota rules](SPEC.md#usage-and-quota); the SPEC remains normative.
+
+1. Decide rotation is required for expiry, scheduled replacement, or suspected
+   exposure. Quota, rate limits, and membership windows never authorize rotation or
+   a second key to bypass the limit.
+2. Obtain a newly issued replacement key through the provider console and transfer
+   it only through the approved private channel. An exposed key is never reused.
+3. Update the RAVI secret store or managed credential record without placing either
+   key in git, shell history, application logs, traces, prompts, screenshots, or
+   public reports. Verify only non-secret credential metadata.
+4. Set `RAVI_KIMI_CODE_ENABLED=1` only for the one dev-agent canary before it starts
+   a new session, then run the applicable private checks with the replacement key.
+5. After the canary succeeds, revoke the previous key in the provider console and
+   remove its secret-store/managed-credential record. Record only redacted evidence
+   in [`CHECKS.md`](CHECKS.md).
+6. If the replacement canary fails before revocation, remove the enable flag (or set
+   it to a value other than `1`) before new sessions and investigate without logging
+   either key. If exposure is suspected, revoke the old key immediately and keep
+   Kimi disabled until a newly issued replacement completes the canary; never roll
+   back by re-enabling an exposed key.
+
 ## Canary and incident response
 
 Before wider use:

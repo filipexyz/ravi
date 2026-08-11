@@ -18,7 +18,7 @@
 - The request limit is 2 MiB over the UTF-8 encoding of the complete serialized native request body, not per message.
 - Provider id, models, effort mapping, capabilities, subscription billing, serial tool execution, and unsupported features remain unchanged.
 - Preserved reasoning, prompts, tool inputs/results, bearer values, response bodies, personal paths, and the credential disclosed in chat must not enter events, errors, fixtures, reports, commits, or PR comments.
-- The normative session-start gate and rollback procedure are in [the Kimi Code SPEC](../../../.ravi/specs/runtime/providers/kimi-code/SPEC.md) and [runbook](../../../.ravi/specs/runtime/providers/kimi-code/RUNBOOK.md); this plan does not restate them.
+- [The Kimi Code SPEC](../../../.ravi/specs/runtime/providers/kimi-code/SPEC.md) is the only normative source for the session-start gate and rollback policy. The [runbook](../../../.ravi/specs/runtime/providers/kimi-code/RUNBOOK.md) is an operational guide aligned to the SPEC, and [CHECKS](../../../.ravi/specs/runtime/providers/kimi-code/CHECKS.md) records verification evidence; this plan does not restate policy.
 - A native success committed before a later abort wins; an ambiguous network handoff is never replayed automatically.
 - Every published `tool.started` has exactly one matching `tool.completed`, including cancellation before host dispatch.
 - Offline gates must pass on Windows and Linux. Private live gates require a newly issued credential supplied outside chat and remain merge-blocking until recorded.
@@ -454,8 +454,8 @@ rtk git commit -m "fix(runtime): gate kimi sessions and reset model state"
 - Modify: `docs/superpowers/plans/2026-08-11-kimi-code-provider-hardening.md`
 
 **Interfaces:**
-- Documents: use the normative [SPEC](../../../.ravi/specs/runtime/providers/kimi-code/SPEC.md), [RUNBOOK](../../../.ravi/specs/runtime/providers/kimi-code/RUNBOOK.md), and [CHECKS](../../../.ravi/specs/runtime/providers/kimi-code/CHECKS.md) for rollout, rollback, and fresh-secret requirements.
-- Preserves: see the normative CHECKS live-test gate; this plan does not redefine it.
+- Documents: the [SPEC](../../../.ravi/specs/runtime/providers/kimi-code/SPEC.md) is the sole normative source for rollout, rollback, and fresh-secret requirements. The [RUNBOOK](../../../.ravi/specs/runtime/providers/kimi-code/RUNBOOK.md) is operational guidance and [CHECKS](../../../.ravi/specs/runtime/providers/kimi-code/CHECKS.md) is the evidence record.
+- Preserves: the SPEC's live-test gate; this plan does not redefine it.
 
 - [ ] **Step 1: Reproduce documentation drift and inspect live-test behavior.**
 
@@ -469,11 +469,11 @@ Expected: test file exits 0 with live cases explicitly skipped when gates are ab
 
 - [ ] **Step 2: Replace broken references and make rollout commands exact.**
 
-Replace absent document paths with links to the existing Kimi `SPEC.md`, `WHY.md`, `RUNBOOK.md`, `CHECKS.md`, hardening design, or hardening plan according to ownership. Keep exact rollout behavior solely in the normative SPEC and RUNBOOK; design and plan documents link there.
+Replace absent document paths with links to the existing Kimi `SPEC.md`, `WHY.md`, `RUNBOOK.md`, `CHECKS.md`, hardening design, or hardening plan according to ownership. Keep exact rollout behavior solely in the SPEC; the RUNBOOK operationalizes it and design/plan documents link there.
 
 - [ ] **Step 3: Keep release evidence honest.**
 
-Update `CHECKS.md` only with commands actually executed and their final SHA. Leave L-01 through L-04 marked pending until a fresh private credential runs them. The live scaffold requirements are normative in CHECKS.
+Update `CHECKS.md` only with commands actually executed and their final SHA. Leave L-01 through L-04 marked pending until a fresh private credential runs them. The live scaffold requirements are normative in the SPEC and CHECKS records the result.
 
 - [ ] **Step 4: Validate docs, live skip, and secret hygiene.**
 

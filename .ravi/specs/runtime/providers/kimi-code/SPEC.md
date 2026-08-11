@@ -535,8 +535,10 @@ generic classifier can classify at least:
 
 ## Validation
 
-The canonical validation matrix is in [`CHECKS.md`](CHECKS.md). Rationale and
-rejected alternatives are in [`WHY.md`](WHY.md). The hardening design and plan are
+This SPEC is the sole normative source for the provider. [`CHECKS.md`](CHECKS.md)
+records validation commands and evidence; [`RUNBOOK.md`](RUNBOOK.md) is operational
+guidance and MUST remain aligned to this SPEC. Rationale and rejected alternatives
+are in [`WHY.md`](WHY.md). The hardening design and plan are
 [linked from the design](../../../../../docs/superpowers/specs/2026-08-11-kimi-code-provider-hardening-design.md)
 and [implementation plan](../../../../../docs/superpowers/plans/2026-08-11-kimi-code-provider-hardening.md);
-they refine implementation only. Operational setup is in [`RUNBOOK.md`](RUNBOOK.md).
+they refine implementation only.
