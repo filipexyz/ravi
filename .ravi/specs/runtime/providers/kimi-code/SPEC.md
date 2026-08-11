@@ -29,7 +29,7 @@ applies_to:
   - src/costs/pricing-catalog.ts
 owners:
   - ravi-dev
-status: ready-for-plan
+status: active
 normative: true
 ---
 
