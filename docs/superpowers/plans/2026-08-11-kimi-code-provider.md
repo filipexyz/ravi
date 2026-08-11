@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+**Hardening design:** [Kimi Code Provider Hardening Design](../specs/2026-08-11-kimi-code-provider-hardening-design.md)
+
 **Goal:** Add a first-class, additive `kimi-code` runtime provider that uses the Kimi Code membership Chat Completions endpoint without changing Claude, Codex, Pi, or the existing Kimi-through-Pi path.
 
 **Architecture:** The adapter owns an injectable HTTP/SSE transport, a model/request mapper, and immutable file-backed transcript snapshots. It converts provider chunks into canonical runtime events, executes tools serially through Ravi host services, preserves provider reasoning privately for protocol continuity, and delegates credentials, replay, cooldown, and terminal arbitration to existing Ravi authorities.
