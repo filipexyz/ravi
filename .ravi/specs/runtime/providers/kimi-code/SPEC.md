@@ -111,6 +111,26 @@ It covers:
   generic, validated provider endpoint policy.
 - All logged headers and request summaries MUST redact authorization values.
 
+## Credential Rotation
+
+- Rotation MAY occur for scheduled replacement, expiry, or suspected exposure; it
+  MUST NOT be used to bypass quota, rate limits, or membership windows.
+- A replacement credential MUST be newly issued and supplied only through an
+  approved private channel. A credential exposed in chat or another public artifact
+  MUST NOT be reused.
+- The replacement MUST be written to the RAVI secret store or managed credential
+  record without entering git, shell history, logs, traces, prompts, screenshots, or
+  public reports. Only non-secret credential metadata MAY be verified or recorded.
+- Validation of a replacement MUST use exactly one dev-agent canary. The process MUST
+  set `RAVI_KIMI_CODE_ENABLED=1` before it starts a new session; all other/default
+  agents remain disabled until promotion.
+- The previous credential MUST be revoked only after the replacement canary succeeds.
+  The release evidence MUST remain redacted.
+- If replacement validation fails, new Kimi sessions MUST be disabled before further
+  investigation. An exposed previous credential MUST NOT be re-enabled; if exposure
+  is suspected it MUST be revoked and Kimi remains disabled until a newly issued
+  replacement succeeds.
+
 ## Models
 
 The accepted v1 provider MUST expose exactly these four model IDs documented by the
@@ -535,10 +555,10 @@ generic classifier can classify at least:
 
 ## Validation
 
-This SPEC is the sole normative source for the provider. [`CHECKS.md`](CHECKS.md)
-records validation commands and evidence; [`RUNBOOK.md`](RUNBOOK.md) is operational
-guidance and MUST remain aligned to this SPEC. Rationale and rejected alternatives
-are in [`WHY.md`](WHY.md). The hardening design and plan are
+The requirements in this document are normative. [`CHECKS.md`](CHECKS.md) records
+validation commands and evidence; [`RUNBOOK.md`](RUNBOOK.md) is operational guidance
+aligned to these requirements. Rationale and rejected alternatives are in
+[`WHY.md`](WHY.md). The hardening design and plan are
 [linked from the design](../../../../../docs/superpowers/specs/2026-08-11-kimi-code-provider-hardening-design.md)
 and [implementation plan](../../../../../docs/superpowers/plans/2026-08-11-kimi-code-provider-hardening.md);
 they refine implementation only.

@@ -1,10 +1,9 @@
 # Kimi Code Provider Checks
 
-All default checks must run without a live Kimi credential. Live tests are opt-in
-and must use synthetic prompts. A live run is allowed only when
-`RAVI_LIVE_TESTS=1`, `RAVI_KIMI_CODE_ENABLED=1` for the single dev-agent canary, and
-a newly issued `KIMI_API_KEY` is supplied through an approved private channel. Never
-use a credential exposed in chat or another public artifact.
+This document records verification commands and evidence for the
+[SPEC release gates](SPEC.md#release-gates). The default local live-test invocation
+records skipped cases when its opt-in environment is absent; private-live procedure
+and credential handling are defined by the SPEC, not by this evidence record.
 
 ## Contract checks
 
