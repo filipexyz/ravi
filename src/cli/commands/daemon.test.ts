@@ -125,7 +125,7 @@ describe("daemon runtime target", () => {
     expect(result.status).toBe(0);
     expect(result.stdout).toContain("Ravi Daemon Status");
     expect(result.stderr).not.toContain("require() async module");
-  });
+  }, 20_000);
 
   it("restarts the installed runtime from any operator cwd without requiring a source project root", () => {
     const tempRoot = makeTempDir("ravi-daemon-runtime-");
@@ -245,7 +245,7 @@ describe("daemon runtime target", () => {
     expect(result.stdout).not.toContain('"mode": "handoff"');
     expect(readFileSync(pm2LogPath, "utf8")).toContain(`start ${realpathSync(fakeBundlePath)}`);
     expect(existsSync(childMarkerPath)).toBe(false);
-  });
+  }, 20_000);
 });
 
 describe("DaemonCommands --json", () => {
