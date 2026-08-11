@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, spyOn } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getRecentHistory, saveMessage } from "../db.js";
 import { nats } from "../nats.js";
@@ -1052,6 +1052,107 @@ describe("runtime session trace instrumentation", () => {
       usage: { inputTokens: 1, outputTokens: 1 },
     },
   ];
+
+  it("projects a Codex imageGeneration completion into ordered response media without persisting base64", async () => {
+    attachSpeakingOutputChat();
+    const imageBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+    const streaming = makeStreamingSession({
+      agentMode: "active",
+      currentTurnProvenance: classifyTurnProvenance({ source }),
+    });
+    seedAdapterTrace(streaming, "turn-generated-image");
+
+    const responses: Array<{
+      response?: string;
+      content?: Array<{
+        type?: string;
+        text?: string;
+        media?: { type?: string; filePath?: string; filename?: string; mimeType?: string; source?: string };
+      }>;
+    }> = [];
+    const emitted: Array<{ topic: string; data: unknown }> = [];
+    let generatedFilePath: string | undefined;
+    const emitSpy = spyOn(nats, "emit").mockImplementation(async (topic: string, data: unknown) => {
+      if (topic === `ravi.session.${SESSION_NAME}.response` && data && typeof data === "object") {
+        responses.push(data as (typeof responses)[number]);
+      }
+    });
+
+    try {
+      await runTraceLoop(
+        streaming,
+        {
+          ...makeRuntimeSession([
+            {
+              type: "tool.started",
+              toolUse: { id: "image-gen-1", name: "image_gen.imagegen", input: { prompt: "tiny image" } },
+            },
+            {
+              type: "tool.completed",
+              toolUseId: "image-gen-1",
+              toolName: "image_gen.imagegen",
+              content: { id: "generated-image-1", result: imageBase64 },
+              rawEvent: {
+                type: "item.completed",
+                item: { id: "provider-item-1", type: "imageGeneration", result: imageBase64 },
+              },
+              metadata: {
+                provider: "codex",
+                nativeEvent: "item.completed",
+                item: { id: "provider-item-1", type: "imageGeneration", status: "completed" },
+              },
+            },
+            {
+              type: "assistant.message",
+              text: "imagem pronta",
+              metadata: {
+                provider: "codex",
+                nativeEvent: "item.completed",
+                item: { id: "assistant-item-1", type: "message", phase: "final_answer" },
+              },
+            },
+            {
+              type: "turn.complete",
+              providerSessionId: "codex-session-after",
+              usage: { inputTokens: 1, outputTokens: 1 },
+            },
+          ]),
+          provider: "codex",
+        },
+        {
+          safeEmit: async (topic, data) => {
+            emitted.push({ topic, data });
+          },
+        },
+      );
+
+      expect(responses).toHaveLength(1);
+      expect(responses[0]?.response).toBe("imagem pronta");
+      expect(responses[0]?.content).toEqual([
+        {
+          type: "media",
+          media: expect.objectContaining({
+            type: "image",
+            filename: expect.stringContaining("ravi-generated-media"),
+            mimeType: "image/png",
+            source: "runtime.generated_media",
+          }),
+        },
+        { type: "text", text: "imagem pronta" },
+      ]);
+
+      generatedFilePath = responses[0]?.content?.[0]?.media?.filePath;
+      expect(generatedFilePath).toBeDefined();
+      expect(existsSync(generatedFilePath!)).toBe(true);
+      expect(readFileSync(generatedFilePath!).subarray(0, 8)).toEqual(
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      );
+      expect(JSON.stringify({ emitted, trace: listSessionEvents(SESSION_KEY) })).not.toContain(imageBase64);
+    } finally {
+      emitSpy.mockRestore();
+      if (generatedFilePath) rmSync(generatedFilePath, { force: true });
+    }
+  });
 
   it("emits external compaction announcements for a human/channel turn", async () => {
     attachSpeakingOutputChat();

@@ -221,10 +221,35 @@ export interface PromptMessage {
 
 export type RuntimeLaunchPrompt = PromptMessage;
 
+export type ResponseMediaType = "image" | "video" | "audio" | "document";
+
+export interface ResponseMediaAttachment {
+  type: ResponseMediaType;
+  filePath: string;
+  filename: string;
+  mimeType?: string;
+  caption?: string;
+  voiceNote?: boolean;
+  idempotencyKey?: string;
+  source?: "runtime.generated_media" | (string & {});
+  metadata?: Record<string, unknown>;
+}
+
+export type ResponseContentPart =
+  | {
+      type: "text";
+      text: string;
+    }
+  | {
+      type: "media";
+      media: ResponseMediaAttachment;
+    };
+
 /** Response message structure */
 export interface ResponseMessage {
   response?: string;
   error?: string;
+  content?: ResponseContentPart[];
   target?: MessageTarget;
   metadata?: RuntimeEventMetadata | null;
   /** Unique emit ID to detect ghost/duplicate responses */

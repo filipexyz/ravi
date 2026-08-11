@@ -794,6 +794,120 @@ function attachOutputForSession(sessionKey: string): void {
   });
 }
 
+function ensureSessionRow(sessionKey: string): void {
+  const now = Date.now();
+  actualRouterDbModule
+    .getDb()
+    .prepare(
+      `
+      INSERT OR IGNORE INTO sessions (session_key, name, agent_id, agent_cwd, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    )
+    .run(sessionKey, sessionKey, "main", "/tmp/ravi-test-bot/main", now, now);
+}
+
+function makeRuntimeGuardChat(input: {
+  suffix: string;
+  channel: string;
+  accountId: string;
+  platformChatId: string;
+  chatType?: "dm" | "group" | "thread";
+}) {
+  return actualRouterDbModule.dbUpsertChat({
+    channel: input.channel,
+    instanceId: input.accountId,
+    platformChatId: input.platformChatId,
+    chatType: input.chatType ?? "dm",
+    title: `test-${input.suffix}`,
+  });
+}
+
+function attachMultiSurfaceOutputForSession(input: {
+  sessionKey: string;
+  defaultChat: ReturnType<typeof makeRuntimeGuardChat>;
+  sourceChat: ReturnType<typeof makeRuntimeGuardChat>;
+}): void {
+  ensureSessionRow(input.sessionKey);
+  actualRouterDbModule.dbCreateSessionChatSubscription({
+    sessionKey: input.sessionKey,
+    chatId: input.defaultChat.id,
+    attachedReason: "runtime-guard-test-default-output",
+    outputAttachedAt: Date.now(),
+    speechMode: "speak",
+    speechReason: "runtime-guard-test-default-output",
+  });
+  actualRouterDbModule.dbCreateSessionChatSubscription({
+    sessionKey: input.sessionKey,
+    chatId: input.sourceChat.id,
+    attachedReason: "runtime-guard-test-source-speak",
+    speechMode: "speak",
+    speechReason: "runtime-guard-test-source-speak",
+  });
+}
+
+function promptForChat(text: string, chat: ReturnType<typeof makeRuntimeGuardChat>) {
+  const separator = chat.platformChatId.indexOf("#");
+  const chatId = separator === -1 ? chat.platformChatId : chat.platformChatId.slice(0, separator);
+  const threadId = separator === -1 ? undefined : chat.platformChatId.slice(separator + 1);
+  return {
+    prompt: text,
+    source: {
+      channel: chat.channel,
+      accountId: chat.instanceId,
+      instanceId: chat.instanceId,
+      chatId,
+      ...(threadId ? { threadId } : {}),
+      canonicalChatId: chat.id,
+      actorType: "contact",
+    },
+  };
+}
+
+const TINY_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+
+function streamGeneratedImageTurn(finalText: string, options: { duplicateCompletion?: boolean } = {}) {
+  runtimeStartImpl = (providerId, request) => ({
+    provider: providerId,
+    events: (async function* () {
+      await request.prompt.next();
+      yield {
+        type: "tool.started",
+        toolUse: { id: "image-gen", name: "image_gen.imagegen", input: { prompt: "test image" } },
+      };
+      const completion = {
+        type: "tool.completed",
+        toolUseId: "image-gen",
+        toolName: "image_gen.imagegen",
+        content: { id: "generated-image-1", result: TINY_PNG_BASE64 },
+        isError: false,
+        metadata: {
+          provider: "codex",
+          nativeEvent: "item.completed",
+          item: { id: "item-generated-image-1", type: "imageGeneration", status: "completed" },
+        },
+      };
+      yield completion;
+      if (options.duplicateCompletion) yield { ...completion };
+      yield {
+        type: "assistant.message",
+        text: finalText,
+        metadata: {
+          provider: "codex",
+          nativeEvent: "item.completed",
+          item: { id: "item-final-answer-1", type: "message", phase: "final_answer" },
+        },
+      };
+      yield {
+        type: "turn.complete",
+        providerSessionId: `${providerId}-session`,
+        usage: { inputTokens: 1, outputTokens: 1 },
+      };
+    })(),
+    interrupt: async () => {},
+  });
+}
+
 async function waitFor(condition: () => boolean, timeoutMs = 1_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -2383,6 +2497,199 @@ describe("RaviBot streaming session lifecycle", () => {
     await (bot as any).handlePromptImmediate(sessionKey, prompt);
 
     expect(streamingSession.currentSource?.chatId).toBe("new-chat");
+  });
+
+  it("attaches generated media to the WhatsApp response target even when Slack is the default output", async () => {
+    const sessionKey = "agent:main:generated-media-wa-source";
+    const slackDefault = makeRuntimeGuardChat({
+      suffix: "generated-media-slack-default",
+      channel: "slack",
+      accountId: "slack-main",
+      platformChatId: "DDEFAULT#1781574894.010449",
+      chatType: "thread",
+    });
+    const whatsappSource = makeRuntimeGuardChat({
+      suffix: "generated-media-whatsapp-source",
+      channel: "whatsapp",
+      accountId: "main",
+      platformChatId: "5511999999999@s.whatsapp.net",
+    });
+    attachMultiSurfaceOutputForSession({ sessionKey, defaultChat: slackDefault, sourceChat: whatsappSource });
+    streamGeneratedImageTurn("imagem pronta");
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, promptForChat("gera imagem", whatsappSource));
+    await waitFor(() => emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionKey}.response`));
+
+    const response = emittedEvents.find((entry) => entry.topic === `ravi.session.${sessionKey}.response`)?.data;
+    expect(response?.target).toMatchObject({
+      channel: "whatsapp",
+      accountId: "main",
+      chatId: "5511999999999@s.whatsapp.net",
+      canonicalChatId: whatsappSource.id,
+    });
+    expect(response?.target?.channel).not.toBe("slack");
+    expect(response?.content).toEqual([
+      expect.objectContaining({
+        type: "media",
+        media: expect.objectContaining({
+          type: "image",
+          filename: expect.stringContaining("ravi-generated-media"),
+          mimeType: "image/png",
+          source: "runtime.generated_media",
+        }),
+      }),
+      { type: "text", text: "imagem pronta" },
+    ]);
+    const generatedMediaEvents = emittedEvents.filter(
+      (entry) =>
+        entry.topic === `ravi.session.${sessionKey}.runtime` || entry.topic === `ravi.session.${sessionKey}.tool`,
+    );
+    expect(JSON.stringify(generatedMediaEvents)).not.toContain(TINY_PNG_BASE64);
+    const persistedTracePayloads = actualRouterDbModule
+      .getDb()
+      .prepare("SELECT payload_json FROM session_events WHERE session_key = ?")
+      .all(sessionKey);
+    expect(JSON.stringify(persistedTracePayloads)).not.toContain(TINY_PNG_BASE64);
+  });
+
+  it("attaches generated media to the Slack response target even when WhatsApp is the default output", async () => {
+    const sessionKey = "agent:main:generated-media-slack-source";
+    const whatsappDefault = makeRuntimeGuardChat({
+      suffix: "generated-media-whatsapp-default",
+      channel: "whatsapp",
+      accountId: "main",
+      platformChatId: "5511888888888@s.whatsapp.net",
+    });
+    const slackSource = makeRuntimeGuardChat({
+      suffix: "generated-media-slack-source",
+      channel: "slack",
+      accountId: "slack-main",
+      platformChatId: "CSOURCE#1781575000.010449",
+      chatType: "thread",
+    });
+    attachMultiSurfaceOutputForSession({ sessionKey, defaultChat: whatsappDefault, sourceChat: slackSource });
+    streamGeneratedImageTurn("slack pronto");
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, promptForChat("gera imagem no slack", slackSource));
+    await waitFor(() => emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionKey}.response`));
+
+    const response = emittedEvents.find((entry) => entry.topic === `ravi.session.${sessionKey}.response`)?.data;
+    expect(response?.target).toMatchObject({
+      channel: "slack",
+      accountId: "slack-main",
+      chatId: "CSOURCE",
+      threadId: "1781575000.010449",
+      canonicalChatId: slackSource.id,
+    });
+    expect(response?.target?.channel).not.toBe("whatsapp");
+    expect(response?.content).toEqual([
+      expect.objectContaining({
+        type: "media",
+        media: expect.objectContaining({
+          type: "image",
+          filename: expect.stringContaining("ravi-generated-media"),
+          mimeType: "image/png",
+          source: "runtime.generated_media",
+        }),
+      }),
+      { type: "text", text: "slack pronto" },
+    ]);
+  });
+
+  it("emits generated media on a native Slack backend turn without duplicating the backend-owned text", async () => {
+    const sessionKey = "agent:main:generated-media-slack-backend";
+    const whatsappDefault = makeRuntimeGuardChat({
+      suffix: "generated-media-backend-whatsapp-default",
+      channel: "whatsapp",
+      accountId: "main",
+      platformChatId: "5511777777777@s.whatsapp.net",
+    });
+    const slackSource = makeRuntimeGuardChat({
+      suffix: "generated-media-slack-backend-source",
+      channel: "slack",
+      accountId: "slack-main",
+      platformChatId: "CBACKEND#1781576000.010449",
+      chatType: "thread",
+    });
+    attachMultiSurfaceOutputForSession({ sessionKey, defaultChat: whatsappDefault, sourceChat: slackSource });
+    streamGeneratedImageTurn("texto do backend");
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, {
+      ...promptForChat("gera imagem no backend slack", slackSource),
+      _channelBackend: {
+        protocol: "ravi.channel.backend",
+        schemaVersion: 1,
+        ingressRequestId: "request-generated-media-slack-backend",
+        correlationId: "correlation-generated-media-slack-backend",
+        binding: {
+          channelInstanceId: "slack-main",
+          agentId: "main",
+          chatId: slackSource.id,
+          messageId: "message-generated-media-slack-backend",
+          sessionId: sessionKey,
+          turnId: "turn-generated-media-slack-backend",
+        },
+        target: {
+          channelKind: "slack",
+          connectionId: "slack-main",
+          conversationId: "CBACKEND",
+        },
+      },
+    });
+    await waitFor(() => emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionKey}.response`));
+
+    const responses = emittedEvents.filter((entry) => entry.topic === `ravi.session.${sessionKey}.response`);
+    expect(responses).toHaveLength(1);
+    expect(responses[0]?.data).toMatchObject({
+      response: "",
+      target: {
+        channel: "slack",
+        accountId: "slack-main",
+        chatId: "CBACKEND",
+        threadId: "1781576000.010449",
+        canonicalChatId: slackSource.id,
+      },
+      content: [
+        {
+          type: "media",
+          media: {
+            type: "image",
+            mimeType: "image/png",
+            source: "runtime.generated_media",
+          },
+        },
+      ],
+    });
+    expect(responses[0]?.data.content.some((part: { type?: string }) => part.type === "text")).toBe(false);
+  });
+
+  it("deduplicates repeated generated-image completions inside the runtime turn", async () => {
+    const sessionKey = "agent:main:generated-media-duplicate-completion";
+    const whatsappSource = makeRuntimeGuardChat({
+      suffix: "generated-media-duplicate-source",
+      channel: "whatsapp",
+      accountId: "main",
+      platformChatId: "5511666666666@s.whatsapp.net",
+    });
+    attachOutputForSession(sessionKey);
+    actualRouterDbModule.dbCreateSessionChatSubscription({
+      sessionKey,
+      chatId: whatsappSource.id,
+      attachedReason: "runtime-guard-test-generated-media-dedupe",
+      speechMode: "speak",
+      speechReason: "runtime-guard-test-generated-media-dedupe",
+    });
+    streamGeneratedImageTurn("imagem única", { duplicateCompletion: true });
+
+    const bot = createBot();
+    await (bot as any).handlePromptImmediate(sessionKey, promptForChat("gera uma imagem", whatsappSource));
+    await waitFor(() => emittedEvents.some((entry) => entry.topic === `ravi.session.${sessionKey}.response`));
+
+    const response = emittedEvents.find((entry) => entry.topic === `ravi.session.${sessionKey}.response`)?.data;
+    expect(response?.content.filter((part: { type?: string }) => part.type === "media")).toHaveLength(1);
   });
 
   it("routes runtime control requests to the active session handle", async () => {
