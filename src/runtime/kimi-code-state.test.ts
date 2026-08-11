@@ -10,6 +10,7 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  statSync,
   symlinkSync,
   unlinkSync,
   writeFileSync,
@@ -329,8 +330,47 @@ describe("Kimi Code immutable session state", () => {
         loadKimiCodeSessionState({ session: committed.session, model: "k3", cwd: linkedWorkspace, env: fixture.env }),
       ).rejects.toThrow("workspace identity mismatch");
     });
+
+    test("does not alias public workspace identity into the retained snapshot", async () => {
+      const fixture = temporaryState();
+      const firstWorkspace = join(fixture.root, "alias-workspace-one");
+      const secondWorkspace = join(fixture.root, "alias-workspace-two");
+      const linkedWorkspace = join(fixture.root, "alias-workspace-link");
+      mkdirSync(firstWorkspace);
+      mkdirSync(secondWorkspace);
+      symlinkSync(firstWorkspace, linkedWorkspace, process.platform === "win32" ? "junction" : "dir");
+      const committed = await commitKimiCodeSessionState({
+        sessionId: createKimiCodeSessionId(),
+        model: "k3",
+        cwd: linkedWorkspace,
+        lastCommittedTurnId: "turn-before-public-mutation",
+        messages: nativeMessages("before-public-mutation"),
+        env: fixture.env,
+      });
+      const publicIdentity = committed.session.params?.workspaceIdentity as Record<string, unknown>;
+
+      unlinkSync(linkedWorkspace);
+      symlinkSync(secondWorkspace, linkedWorkspace, process.platform === "win32" ? "junction" : "dir");
+      const canonical = realpathSync(linkedWorkspace);
+      const info = statSync(canonical, { bigint: true });
+      Object.assign(publicIdentity, { realpath: canonical, device: String(info.dev), inode: String(info.ino) });
+
+      await expect(
+        commitKimiCodeSessionState({
+          sessionId: committed.snapshot.sessionId,
+          model: "k3",
+          cwd: linkedWorkspace,
+          lastCommittedTurnId: "turn-after-public-mutation",
+          messages: nativeMessages("after-public-mutation"),
+          previousSnapshot: committed.snapshot,
+          env: fixture.env,
+        }),
+      ).rejects.toThrow("previous snapshot is invalid");
+      expect(publicIdentity).not.toBe(committed.snapshot.workspaceIdentity);
+    });
   } else {
     test.skip(`rejects resume after the same cwd pathname is retargeted [${workspaceRetargetCapability.reason}]`, () => {});
+    test.skip(`does not alias public workspace identity into the retained snapshot [${workspaceRetargetCapability.reason}]`, () => {});
   }
 
   test("fails closed when canonical workspace identity cannot be established", async () => {
@@ -493,7 +533,7 @@ describe("Kimi Code immutable session state", () => {
       faultInjection: { observeAclProcessEnv: (env) => observed.push(env) },
     });
 
-    if (process.platform === "win32") expect(observed).toHaveLength(1);
+    if (process.platform === "win32") expect(observed).toHaveLength(2);
     for (const env of observed) {
       expect(env.KIMI_API_KEY).toBeUndefined();
       expect(JSON.stringify(env)).not.toContain(fixture.env.KIMI_API_KEY);
@@ -792,6 +832,41 @@ describe("Kimi Code immutable session state", () => {
     ).rejects.toThrow();
     expect(existsSync(join(outsideState, "runtime"))).toBe(false);
   });
+
+  test.skipIf(process.platform !== "win32")(
+    "does not transiently open a snapshot under a permissive inherited Windows ACL",
+    async () => {
+      const fixture = temporaryState();
+      mkdirSync(fixture.env.RAVI_STATE_DIR);
+      execFileSync("icacls", [fixture.env.RAVI_STATE_DIR, "/grant", "*S-1-1-0:(OI)(CI)R", "/Q"]);
+      const allowed = new Set([currentWindowsSid(), "S-1-5-18", "S-1-5-32-544"]);
+      let inspectedOpenSnapshot = false;
+
+      await commitKimiCodeSessionState({
+        sessionId: createKimiCodeSessionId(),
+        model: "k3",
+        cwd: fixture.cwd,
+        lastCommittedTurnId: "turn-transient-acl",
+        messages: nativeMessages("transient-acl"),
+        env: fixture.env,
+        faultInjection: {
+          observeAclProcessEnv: (env) => {
+            const targets = JSON.parse(env.RAVI_KIMI_ACL_TARGETS ?? "[]") as Array<{
+              path: string;
+              directory: boolean;
+            }>;
+            const snapshot = targets.find((target) => !target.directory);
+            if (!snapshot) return;
+            inspectedOpenSnapshot = true;
+            expect(new Set(windowsAclSids(dirname(snapshot.path)))).toEqual(allowed);
+            expect(new Set(windowsAclSids(snapshot.path))).toEqual(allowed);
+          },
+        },
+      });
+
+      expect(inspectedOpenSnapshot).toBe(true);
+    },
+  );
 
   test("installs an exact private Windows ACL on the stable parent, session, and snapshot", async () => {
     if (process.platform !== "win32") return;

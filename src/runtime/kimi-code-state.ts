@@ -134,6 +134,10 @@ export async function commitKimiCodeSessionState(
   }
   const sessionDirectory = join(root, snapshot.sessionId);
   const privateDirectories = await ensureDurablePrivateStateDirectories(root, sessionDirectory);
+  await applyPrivatePermissions(
+    privateDirectories.map((path) => ({ path, directory: true })),
+    input.faultInjection?.observeAclProcessEnv,
+  );
 
   const filename = revisionFilename(snapshot.revision);
   const finalPath = join(sessionDirectory, filename);
@@ -144,7 +148,7 @@ export async function commitKimiCodeSessionState(
     temporaryCreated = true;
     try {
       await applyPrivatePermissions(
-        [...privateDirectories.map((path) => ({ path, directory: true })), { path: temporaryPath, directory: false }],
+        [{ path: temporaryPath, directory: false }],
         input.faultInjection?.observeAclProcessEnv,
       );
       await file.writeFile(serialized, "utf8");
@@ -174,7 +178,7 @@ export async function commitKimiCodeSessionState(
         sessionId: snapshot.sessionId,
         revision: snapshot.revision,
         cwd: snapshot.cwd,
-        workspaceIdentity: snapshot.workspaceIdentity,
+        workspaceIdentity: copyWorkspaceIdentity(snapshot.workspaceIdentity),
         sessionFile: finalPath,
         lastCommittedTurnId: snapshot.lastCommittedTurnId,
       },
