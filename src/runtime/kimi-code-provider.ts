@@ -14,12 +14,15 @@ import {
   KIMI_CODE_MAX_TOOL_ROUNDS,
   type KimiCodeCompletedTurn,
   type KimiCodeConversationMessage,
+  type KimiCodeTurnChunkResult,
   validateKimiCodeToolCalls,
 } from "./kimi-code-turn.js";
 import {
   createKimiCodeHttpTransport,
   KimiCodeHttpError,
+  KimiCodePreflightError,
   KimiCodeProtocolError,
+  KimiCodeTransportError,
   projectKimiCodeHttpError,
   type KimiCodeTransport,
 } from "./kimi-code-transport.js";
@@ -116,6 +119,7 @@ function createKimiCodeSession(
   let continuityInitialized = false;
   let continuityInvalid = false;
   let providerSessionId = createKimiCodeSessionId();
+  let threadStartedEmitted = false;
   const stateEnv: NodeJS.ProcessEnv = { ...process.env, ...input.env };
   const closeTurnTransport = async (turn: KimiCodeActiveTurn) => {
     if (!turn.transport || turn.transportClosed) return;
@@ -139,14 +143,28 @@ function createKimiCodeSession(
           continue;
         }
 
-        const turn: KimiCodeActiveTurn = { interrupted: false, transportClosed: false };
+        const turn: KimiCodeActiveTurn = {
+          phase: "initializing",
+          interrupted: false,
+          transportClosed: false,
+        };
         activeTurn = turn;
+        if (
+          !threadStartedEmitted &&
+          !input.forkSession &&
+          input.resume === undefined &&
+          input.resumeSession === undefined
+        ) {
+          threadStartedEmitted = true;
+          yield { type: "thread.started", thread: { id: providerSessionId }, metadata };
+        }
         yield {
           type: "turn.started",
           turn: { id: prompt.clientMessageId ?? prompt.session_id, status: "in_progress" },
           metadata,
         };
         if (input.forkSession) {
+          turn.phase = "failed";
           const terminal = terminalTracker.fail({ error: "Kimi Code session fork is unsupported", metadata });
           if (terminal) yield terminal;
           continue;
@@ -163,7 +181,7 @@ function createKimiCodeSession(
               });
               providerSessionId = committedSnapshot.sessionId;
               if (
-                (input.resume && input.resume !== committedSnapshot.sessionId) ||
+                (input.resume !== undefined && input.resume !== committedSnapshot.sessionId) ||
                 input.resumeSession.displayId !== committedSnapshot.sessionId
               ) {
                 throw new Error("Kimi Code session identifiers do not match");
@@ -171,11 +189,12 @@ function createKimiCodeSession(
             } catch {
               continuityInvalid = true;
             }
-          } else if (input.resume) {
+          } else if (input.resume !== undefined) {
             continuityInvalid = true;
           }
         }
         if (continuityInvalid) {
+          turn.phase = "failed";
           const terminal = terminalTracker.fail({ error: "Kimi Code session state is invalid", metadata });
           if (terminal) yield terminal;
           continue;
@@ -193,14 +212,17 @@ function createKimiCodeSession(
         try {
           turnLoop: while (!terminalTracker.terminalEmitted) {
             if (turn.interrupted || closed || input.abortController.signal.aborted) {
+              turn.phase = "interrupted";
               const terminal = terminalTracker.interrupt({ metadata });
               if (terminal) yield terminal;
               break;
             }
 
+            turn.phase = "requesting";
             turn.transport = transportFactory();
             turn.transportClosed = false;
             if (turn.interrupted || closed || input.abortController.signal.aborted) {
+              turn.phase = "interrupted";
               const terminal = terminalTracker.interrupt({ metadata });
               if (terminal) yield terminal;
               break;
@@ -210,14 +232,17 @@ function createKimiCodeSession(
             let providerDone = false;
             const request = createKimiCodeTurnRequest(input, messages, providerSessionId);
             try {
+              turn.phase = "streaming";
               for await (const event of turn.transport.stream(request)) {
                 if (turn.interrupted || closed || input.abortController.signal.aborted) {
+                  turn.phase = "interrupted";
                   const terminal = terminalTracker.interrupt({ metadata });
                   if (terminal) yield terminal;
                   break;
                 }
 
                 if (event.type === "eof") {
+                  turn.phase = "failed";
                   const terminal = terminalTracker.fail({
                     error: "Kimi Code stream ended before completion",
                     recoverable: true,
@@ -233,10 +258,11 @@ function createKimiCodeSession(
 
                 const accepted = accumulator.accept(event.data);
                 if (accepted.kind !== "accepted") {
-                  const protocolFailure = projectAccumulatorProtocolFailure(accepted.kind);
+                  turn.phase = "failed";
+                  const protocolFailure = projectAccumulatorProtocolFailure(accepted);
                   const terminal = terminalTracker.fail({
                     error: protocolFailure.message,
-                    rawEvent: { protocol: protocolFailure.code },
+                    rawEvent: protocolFailure.rawEvent,
                     metadata,
                   });
                   if (terminal) yield terminal;
@@ -255,7 +281,14 @@ function createKimiCodeSession(
             }
 
             if (terminalTracker.terminalEmitted) break;
+            if (turn.interrupted || closed || input.abortController.signal.aborted) {
+              turn.phase = "interrupted";
+              const terminal = terminalTracker.interrupt({ metadata });
+              if (terminal) yield terminal;
+              break;
+            }
             if (!providerDone) {
+              turn.phase = "failed";
               const terminal = terminalTracker.fail({
                 error: "Kimi Code stream ended before completion",
                 recoverable: true,
@@ -267,7 +300,7 @@ function createKimiCodeSession(
 
             const completed = accumulator.complete();
             completedUsage = addKimiCodeUsage(completedUsage, completed.usage);
-            if (completed.toolCalls.length === 0) {
+            if (completed.finishReason === "stop") {
               messages.push({
                 role: "assistant",
                 content: completed.text,
@@ -275,11 +308,13 @@ function createKimiCodeSession(
                 tool_calls: [],
               });
               if (turn.interrupted || closed || input.abortController.signal.aborted) {
+                turn.phase = "interrupted";
                 const terminal = terminalTracker.interrupt({ metadata });
                 if (terminal) yield terminal;
                 break;
               }
               let committed: Awaited<ReturnType<typeof commitKimiCodeSessionState>>;
+              turn.phase = "committing";
               try {
                 committed = await commitKimiCodeSessionState({
                   sessionId: providerSessionId,
@@ -291,19 +326,18 @@ function createKimiCodeSession(
                   env: stateEnv,
                 });
               } catch {
-                const terminal = terminalTracker.fail({ error: "Kimi Code session state commit failed", metadata });
+                const interrupted = turn.interrupted || closed || input.abortController.signal.aborted;
+                turn.phase = interrupted ? "interrupted" : "failed";
+                const terminal = interrupted
+                  ? terminalTracker.interrupt({ metadata })
+                  : terminalTracker.fail({ error: "Kimi Code session state commit failed", metadata });
                 if (terminal) yield terminal;
                 break;
               }
               if (turn.interrupted || closed || input.abortController.signal.aborted) {
-                const terminal = terminalTracker.interrupt({ metadata });
-                if (terminal) yield terminal;
-                break;
-              }
-              yield { type: "assistant.message", text: completed.text, metadata };
-              if (turn.interrupted || closed || input.abortController.signal.aborted) {
-                const terminal = terminalTracker.interrupt({ metadata });
-                if (terminal) yield terminal;
+                turn.phase = "interrupted";
+                const interruptedTerminal = terminalTracker.interrupt({ metadata });
+                if (interruptedTerminal) yield interruptedTerminal;
                 break;
               }
               committedSnapshot = committed.snapshot;
@@ -315,14 +349,20 @@ function createKimiCodeSession(
                 usage: completedUsage,
                 metadata,
               };
-              if (terminalTracker.accept(terminal)) yield terminal;
+              turn.committedTerminal = terminal;
+              turn.phase = "completed";
+              if (!terminalTracker.accept(terminal)) break;
+              if (completed.text) yield { type: "assistant.message", text: completed.text, metadata };
+              yield terminal;
               break;
             }
 
+            turn.phase = "tool-fenced";
             if (
               toolRounds >= KIMI_CODE_MAX_TOOL_ROUNDS ||
               totalToolCalls + completed.toolCalls.length > KIMI_CODE_MAX_TOOL_CALLS
             ) {
+              turn.phase = "failed";
               const terminal = terminalTracker.fail({ error: "Kimi Code tool loop limit exceeded", metadata });
               if (terminal) yield terminal;
               break;
@@ -330,6 +370,7 @@ function createKimiCodeSession(
 
             const toolCalls = validateKimiCodeToolCalls(completed.toolCalls, seenToolCallIds);
             if (!toolCalls || !input.handleRuntimeToolCall) {
+              turn.phase = "failed";
               const terminal = terminalTracker.fail({
                 error: toolCalls ? "Kimi Code dynamic tool handler is unavailable" : "Kimi Code tool call was invalid",
                 metadata,
@@ -354,6 +395,7 @@ function createKimiCodeSession(
 
             for (const call of toolCalls) {
               if (turn.interrupted || closed || input.abortController.signal.aborted) {
+                turn.phase = "interrupted";
                 const terminal = terminalTracker.interrupt({ metadata });
                 if (terminal) yield terminal;
                 break turnLoop;
@@ -365,12 +407,14 @@ function createKimiCodeSession(
                 metadata,
               };
               if (turn.interrupted || closed || input.abortController.signal.aborted) {
+                turn.phase = "interrupted";
                 const terminal = terminalTracker.interrupt({ metadata });
                 if (terminal) yield terminal;
                 break turnLoop;
               }
 
               let result: RuntimeDynamicToolCallResult;
+              turn.phase = "tool-running";
               try {
                 result = await input.handleRuntimeToolCall({
                   toolName: call.name,
@@ -395,25 +439,38 @@ function createKimiCodeSession(
               yield { type: "tool.result_delivered", toolCallId: call.id, metadata };
               messages.push({ role: "tool", tool_call_id: call.id, content: providerContent });
             }
+            if (!isKimiCodeTerminalPhase(turn.phase)) turn.phase = "continuing";
           }
         } catch (error) {
           const kimiFailure = error instanceof KimiCodeHttpError ? projectKimiCodeHttpError(error) : undefined;
+          const preflightFailure =
+            error instanceof KimiCodePreflightError ? projectKimiCodePreflightError(error) : undefined;
           const protocolFailure =
             error instanceof KimiCodeProtocolError
               ? { message: error.message, rawEvent: { protocol: error.code } }
               : undefined;
+          const transportFailure =
+            error instanceof KimiCodeTransportError ? projectKimiCodeTransportError(error) : undefined;
+          const interrupted = turn.interrupted || closed || input.abortController.signal.aborted;
+          if (turn.phase !== "completed") turn.phase = interrupted ? "interrupted" : "failed";
           const terminal =
-            turn.interrupted || closed || input.abortController.signal.aborted
-              ? terminalTracker.interrupt({ metadata })
-              : kimiFailure
-                ? terminalTracker.fail({ error: kimiFailure.message, rawEvent: kimiFailure.rawEvent, metadata })
-                : protocolFailure
-                  ? terminalTracker.fail({
-                      error: protocolFailure.message,
-                      rawEvent: protocolFailure.rawEvent,
-                      metadata,
-                    })
-                  : terminalTracker.fail({ error: "Kimi Code stream failed", recoverable: true, metadata });
+            turn.phase === "completed"
+              ? turn.committedTerminal
+              : interrupted
+                ? terminalTracker.interrupt({ metadata })
+                : kimiFailure
+                  ? terminalTracker.fail({ error: kimiFailure.message, rawEvent: kimiFailure.rawEvent, metadata })
+                  : preflightFailure
+                    ? terminalTracker.fail({ ...preflightFailure, metadata })
+                    : protocolFailure
+                      ? terminalTracker.fail({
+                          error: protocolFailure.message,
+                          rawEvent: protocolFailure.rawEvent,
+                          metadata,
+                        })
+                      : transportFailure
+                        ? terminalTracker.fail({ ...transportFailure, metadata })
+                        : terminalTracker.fail({ error: "Kimi Code stream failed", recoverable: true, metadata });
           if (terminal) yield terminal;
         } finally {
           await closeTurnTransport(turn);
@@ -423,37 +480,103 @@ function createKimiCodeSession(
     })(),
     interrupt: async () => {
       if (!activeTurn || activeTurn.interrupted) return;
+      if (isKimiCodeTerminalPhase(activeTurn.phase)) {
+        await closeTurnTransport(activeTurn);
+        return;
+      }
       activeTurn.interrupted = true;
+      activeTurn.phase = "interrupted";
       await closeTurnTransport(activeTurn);
     },
     close: async () => {
       if (closed) return;
       closed = true;
       if (!activeTurn) return;
+      if (isKimiCodeTerminalPhase(activeTurn.phase)) {
+        await closeTurnTransport(activeTurn);
+        return;
+      }
       activeTurn.interrupted = true;
+      activeTurn.phase = "interrupted";
       await closeTurnTransport(activeTurn);
     },
   };
 }
 
-function projectAccumulatorProtocolFailure(
-  kind: Exclude<ReturnType<ReturnType<typeof createKimiCodeCompletedTurnAccumulator>["accept"]>["kind"], "accepted">,
-): { message: string; code: string } {
+function projectAccumulatorProtocolFailure(failure: Exclude<KimiCodeTurnChunkResult, { kind: "accepted" }>): {
+  message: string;
+  rawEvent: Record<string, unknown>;
+} {
+  if (failure.kind === "malformed") {
+    return {
+      message: "Kimi Code protocol error: malformed response chunk",
+      rawEvent: { protocol: failure.code },
+    };
+  }
+  if (failure.kind === "provider_error") {
+    return {
+      message: "Kimi Code provider returned an error",
+      rawEvent: { ...failure.nativeError },
+    };
+  }
   const failures = {
-    malformed: { message: "Kimi Code protocol error: malformed response chunk", code: "malformed_chunk" },
-    provider_error: { message: "Kimi Code protocol error: provider error event", code: "provider_error" },
-    post_finish: { message: "Kimi Code protocol error: data after finish", code: "post_finish_data" },
-    response_limit: { message: "Kimi Code protocol error: response limit exceeded", code: "response_limit" },
+    post_finish: {
+      message: "Kimi Code protocol error: data after finish",
+      rawEvent: { protocol: "post_finish_data" },
+    },
+    response_limit: {
+      message: "Kimi Code protocol error: response limit exceeded",
+      rawEvent: { protocol: "response_limit" },
+    },
     tool_argument_limit: {
       message: "Kimi Code protocol error: tool argument limit exceeded",
-      code: "tool_argument_limit",
+      rawEvent: { protocol: "tool_argument_limit" },
     },
   } as const;
-  return failures[kind];
+  return failures[failure.kind];
+}
+
+function projectKimiCodePreflightError(error: KimiCodePreflightError) {
+  return {
+    error: "Kimi Code request preflight failed",
+    recoverable: false,
+    rawEvent: { preflight: error.code },
+  } as const;
+}
+
+function projectKimiCodeTransportError(error: KimiCodeTransportError) {
+  const messages = {
+    request_not_sent: "Kimi Code request was not sent",
+    acceptance_ambiguous: "Kimi Code request delivery is ambiguous",
+    provider_protocol: "Kimi Code transport protocol failed",
+  } as const;
+  return {
+    error: messages[error.phase],
+    recoverable: error.phase === "request_not_sent",
+    rawEvent: { phase: error.phase },
+  };
+}
+
+type KimiCodeTurnPhase =
+  | "initializing"
+  | "requesting"
+  | "streaming"
+  | "committing"
+  | "tool-fenced"
+  | "tool-running"
+  | "continuing"
+  | "completed"
+  | "failed"
+  | "interrupted";
+
+function isKimiCodeTerminalPhase(phase: KimiCodeTurnPhase): boolean {
+  return phase === "completed" || phase === "failed" || phase === "interrupted";
 }
 
 interface KimiCodeActiveTurn {
+  phase: KimiCodeTurnPhase;
   interrupted: boolean;
+  committedTerminal?: Extract<RuntimeEvent, { type: "turn.complete" }>;
   transport?: KimiCodeTransport;
   transportClosed: boolean;
 }

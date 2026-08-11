@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createKimiCodeCompletedTurnAccumulator, createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
@@ -8,7 +8,10 @@ import {
   buildKimiCodeRequest,
   createKimiCodeHttpTransport,
   KimiCodeHttpError,
+  KimiCodePreflightError,
   KimiCodeProtocolError,
+  KimiCodeTransportError,
+  type KimiCodePreflightErrorCode,
 } from "./kimi-code-transport.js";
 import { listRegisteredRuntimeProviderIds, unregisterRuntimeProvider } from "./provider-registry.js";
 import type { KimiCodeStreamEvent, KimiCodeTransport, KimiCodeTransportRequest } from "./kimi-code-transport.js";
@@ -154,6 +157,54 @@ function createHostServices(): RuntimeHostServices {
 }
 
 describe("createKimiCodeRuntimeProvider", () => {
+  test("emits thread.started before the first turn of a new transcript and never on resume", async () => {
+    const fixture = isolatedStateEnv();
+    const fresh = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("seed")) });
+    const freshEvents = await collectEvents(
+      fresh,
+      startRequest({ cwd: join(fixture.root, "workspace"), env: fixture.env }),
+    );
+    const freshTerminal = freshEvents.at(-1);
+    if (freshTerminal?.type !== "turn.complete" || !freshTerminal.session) throw new Error("missing fresh state");
+
+    const resumed = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("resumed")) });
+    const resumedEvents = await collectEvents(
+      resumed,
+      startRequest({
+        prompt: prompts("resume"),
+        cwd: join(fixture.root, "workspace"),
+        env: fixture.env,
+        resumeSession: freshTerminal.session,
+      }),
+    );
+
+    expect(freshEvents.filter((event) => event.type === "thread.started" || event.type === "turn.started")).toEqual([
+      expect.objectContaining({ type: "thread.started", thread: { id: expect.any(String) } }),
+      expect.objectContaining({ type: "turn.started" }),
+    ]);
+    const thread = freshEvents.find((event) => event.type === "thread.started");
+    expect(thread?.type === "thread.started" ? thread.thread.id : undefined).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(resumedEvents.some((event) => event.type === "thread.started")).toBe(false);
+
+    const forkEvents = await collectEvents(
+      createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("unused")) }),
+      startRequest({ forkSession: true }),
+    );
+    const emptyResumeEvents = await collectEvents(
+      createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("unused")) }),
+      startRequest({ resume: "" }),
+    );
+
+    expect(forkEvents.some((event) => event.type === "thread.started")).toBe(false);
+    expect(emptyResumeEvents.some((event) => event.type === "thread.started")).toBe(false);
+    expect(emptyResumeEvents.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code session state is invalid",
+    });
+  });
+
   test("exports the transport request boundary for its provider-specific mapping", () => {
     expect(typeof buildKimiCodeRequest).toBe("function");
   });
@@ -259,6 +310,7 @@ describe("createKimiCodeRuntimeProvider", () => {
     const events = await collectEvents(provider, startRequest());
 
     expect(events.map((event) => event.type)).toEqual([
+      "thread.started",
       "turn.started",
       "status",
       "text.delta",
@@ -266,9 +318,9 @@ describe("createKimiCodeRuntimeProvider", () => {
       "assistant.message",
       "turn.complete",
     ]);
-    expect(events[1]).toMatchObject({ type: "status", status: "thinking" });
-    expect(events[4]).toMatchObject({ type: "assistant.message", text: "Hello" });
-    expect(events[5]).toMatchObject({
+    expect(events[2]).toMatchObject({ type: "status", status: "thinking" });
+    expect(events[5]).toMatchObject({ type: "assistant.message", text: "Hello" });
+    expect(events[6]).toMatchObject({
       type: "turn.complete",
       execution: { provider: "kimi-code", model: "k3", billingType: "subscription" },
       usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 },
@@ -312,12 +364,12 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(malformedEvents.at(-1)).toMatchObject({
       type: "turn.failed",
       error: "Kimi Code protocol error: malformed response chunk",
-      rawEvent: { protocol: "malformed_chunk" },
+      rawEvent: { protocol: "unrecognized_event" },
     });
     expect(providerErrorEvents.at(-1)).toMatchObject({
       type: "turn.failed",
-      error: "Kimi Code protocol error: provider error event",
-      rawEvent: { protocol: "provider_error" },
+      error: "Kimi Code provider returned an error",
+      rawEvent: {},
     });
     expect(JSON.stringify(providerErrorEvents)).not.toContain("synthetic provider secret");
     expect(eofEvents.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code stream ended before completion" });
@@ -377,6 +429,105 @@ describe("createKimiCodeRuntimeProvider", () => {
     });
   });
 
+  test("projects preflight codes as non-recoverable canonical failures", async () => {
+    const codes: KimiCodePreflightErrorCode[] = [
+      "message_too_large",
+      "missing_api_key",
+      "request_too_large",
+      "unknown_model",
+      "untrusted_origin",
+      "unsupported_effort",
+    ];
+
+    for (const code of codes) {
+      const provider = createKimiCodeRuntimeProvider({
+        transportFactory: () => ({
+          async *stream() {
+            yield* [] as KimiCodeStreamEvent[];
+            throw new KimiCodePreflightError(code, "PRIVATE_PREFLIGHT_SENTINEL");
+          },
+          async close() {},
+        }),
+      });
+
+      const terminal = (await collectEvents(provider, startRequest())).at(-1);
+      expect(terminal).toEqual(
+        expect.objectContaining({
+          type: "turn.failed",
+          error: "Kimi Code request preflight failed",
+          recoverable: false,
+          rawEvent: { preflight: code },
+        }),
+      );
+      expect(JSON.stringify(terminal)).not.toContain("PRIVATE_PREFLIGHT_SENTINEL");
+    }
+  });
+
+  test("projects structured native errors without native message or body", async () => {
+    const sentinel = "PRIVATE_NATIVE_ERROR_SENTINEL";
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          {
+            type: "message",
+            data: {
+              error: {
+                status: 429,
+                code: "rate_limited",
+                type: "rate_limit_error",
+                request_id: "req-native-1",
+                message: sentinel,
+                body: sentinel,
+              },
+            },
+          },
+          { type: "done" },
+        ]),
+    });
+
+    const terminal = (await collectEvents(provider, startRequest())).at(-1);
+
+    expect(terminal).toEqual(
+      expect.objectContaining({
+        type: "turn.failed",
+        error: "Kimi Code provider returned an error",
+        rawEvent: { status: 429, code: "rate_limited", type: "rate_limit_error", requestId: "req-native-1" },
+      }),
+    );
+    expect(JSON.stringify(terminal)).not.toContain(sentinel);
+    expect(JSON.stringify(terminal)).not.toContain("body");
+    expect(JSON.stringify(terminal)).not.toContain("message");
+  });
+
+  test("marks acceptance_ambiguous without retrying the native request", async () => {
+    let transportStarts = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        transportStarts += 1;
+        return {
+          async *stream() {
+            yield* [] as KimiCodeStreamEvent[];
+            throw new KimiCodeTransportError("acceptance_ambiguous", "PRIVATE_HANDOFF_SENTINEL");
+          },
+          async close() {},
+        };
+      },
+    });
+
+    const terminal = (await collectEvents(provider, startRequest())).at(-1);
+
+    expect(transportStarts).toBe(1);
+    expect(terminal).toEqual(
+      expect.objectContaining({
+        type: "turn.failed",
+        error: "Kimi Code request delivery is ambiguous",
+        recoverable: false,
+        rawEvent: { phase: "acceptance_ambiguous" },
+      }),
+    );
+    expect(JSON.stringify(terminal)).not.toContain("PRIVATE_HANDOFF_SENTINEL");
+  });
+
   test("re-sanitizes a custom transport Kimi HTTP error at the provider boundary", async () => {
     const sentinel = "PRIVATE_CUSTOM_TRANSPORT_SENTINEL";
     const provider = createKimiCodeRuntimeProvider({
@@ -428,10 +579,15 @@ describe("createKimiCodeRuntimeProvider", () => {
     const afterEvents = await collectEvents(provider, after);
 
     expect(beforeEvents.map((event) => event.type)).toEqual(["turn.interrupted"]);
-    expect(afterEvents.map((event) => event.type)).toEqual(["turn.started", "text.delta", "turn.interrupted"]);
+    expect(afterEvents.map((event) => event.type)).toEqual([
+      "thread.started",
+      "turn.started",
+      "text.delta",
+      "turn.interrupted",
+    ]);
   });
 
-  test("publishes an empty assistant message before completion (catches empty-output omission)", async () => {
+  test("does not emit assistant.message when public text is empty", async () => {
     const provider = createKimiCodeRuntimeProvider({
       transportFactory: () =>
         transportFrom([
@@ -442,8 +598,42 @@ describe("createKimiCodeRuntimeProvider", () => {
 
     const events = await collectEvents(provider, startRequest());
 
-    expect(events.map((event) => event.type)).toEqual(["turn.started", "assistant.message", "turn.complete"]);
-    expect(events[1]).toMatchObject({ type: "assistant.message", text: "" });
+    expect(events.some((event) => event.type === "assistant.message")).toBe(false);
+    expect(events.at(-1)?.type).toBe("turn.complete");
+  });
+
+  test("maps an aborted pending reader to turn.interrupted", async () => {
+    let releaseReader!: () => void;
+    let markReaderPending!: () => void;
+    const readerReleased = new Promise<void>((resolve) => {
+      releaseReader = resolve;
+    });
+    const readerPending = new Promise<void>((resolve) => {
+      markReaderPending = resolve;
+    });
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => ({
+        async *stream() {
+          yield* [] as KimiCodeStreamEvent[];
+          markReaderPending();
+          await readerReleased;
+        },
+        async close() {
+          releaseReader();
+        },
+      }),
+    });
+    const handle = provider.startSession(startRequest());
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("thread.started");
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    const terminal = iterator.next();
+    await readerPending;
+    await handle.interrupt();
+
+    expect((await terminal).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).done).toBe(true);
   });
 
   test("makes interrupt and close idempotent while a stream is active (catches repeated transport teardown)", async () => {
@@ -472,6 +662,7 @@ describe("createKimiCodeRuntimeProvider", () => {
     const handle = provider.startSession(startRequest());
     const iterator = handle.events[Symbol.asyncIterator]();
 
+    expect((await iterator.next()).value?.type).toBe("thread.started");
     expect((await iterator.next()).value?.type).toBe("turn.started");
     const terminal = iterator.next();
     await entered;
@@ -513,11 +704,11 @@ describe("createKimiCodeRuntimeProvider", () => {
     const handle = provider.startSession(startRequest({ prompt: prompts("first", "second") }));
     const iterator = handle.events[Symbol.asyncIterator]();
 
+    expect((await iterator.next()).value?.type).toBe("thread.started");
     expect((await iterator.next()).value?.type).toBe("turn.started");
     await handle.interrupt();
     expect((await iterator.next()).value?.type).toBe("turn.interrupted");
     expect((await iterator.next()).value?.type).toBe("turn.started");
-    expect((await iterator.next()).value?.type).toBe("assistant.message");
     expect((await iterator.next()).value?.type).toBe("turn.complete");
     expect(calls).toBe(1);
   });
@@ -534,6 +725,7 @@ describe("createKimiCodeRuntimeProvider", () => {
       const handle = provider.startSession(startRequest());
       const iterator = handle.events[Symbol.asyncIterator]();
 
+      expect((await iterator.next()).value?.type).toBe("thread.started");
       expect((await iterator.next()).value?.type).toBe("turn.started");
       await handle[action]?.();
       expect((await iterator.next()).value?.type).toBe("turn.interrupted");
@@ -618,6 +810,58 @@ describe("createKimiCodeRuntimeProvider", () => {
     });
   });
 
+  test("does not dispatch tools for length or content_filter", async () => {
+    for (const finishReason of ["length", "content_filter"] as const) {
+      let dispatches = 0;
+      const provider = createKimiCodeRuntimeProvider({
+        transportFactory: () =>
+          transportFrom([
+            {
+              type: "message",
+              data: {
+                choices: [
+                  {
+                    index: 0,
+                    delta: {
+                      tool_calls: [
+                        {
+                          index: 0,
+                          id: `call-${finishReason}`,
+                          type: "function",
+                          function: { name: "lookup_order", arguments: "{}" },
+                        },
+                      ],
+                    },
+                    finish_reason: finishReason,
+                  },
+                ],
+              },
+            },
+            { type: "done" },
+          ]),
+      });
+
+      const events = await collectEvents(
+        provider,
+        startRequest({
+          dynamicTools: createHostServices().listDynamicTools(),
+          handleRuntimeToolCall: async () => {
+            dispatches += 1;
+            return { success: true, contentItems: [] };
+          },
+        }),
+      );
+
+      expect(dispatches).toBe(0);
+      expect(events.at(-1)).toEqual(
+        expect.objectContaining({
+          type: "turn.failed",
+          rawEvent: { protocol: `terminal_${finishReason}` },
+        }),
+      );
+    }
+  });
+
   test("reconstructs private reasoning and indexed tool fragments independently of public events (catches accumulator loss)", () => {
     const accumulator = createKimiCodeCompletedTurnAccumulator();
 
@@ -700,6 +944,7 @@ describe("createKimiCodeRuntimeProvider", () => {
 
     expect(hostCalls).toEqual([{ toolName: "lookup_order", callId: "call-order-42", arguments: { id: 42 } }]);
     expect(events.map((event) => event.type)).toEqual([
+      "thread.started",
       "turn.started",
       "status",
       "tool.started",
@@ -709,18 +954,18 @@ describe("createKimiCodeRuntimeProvider", () => {
       "assistant.message",
       "turn.complete",
     ]);
-    expect(events[2]).toMatchObject({
+    expect(events[3]).toMatchObject({
       type: "tool.started",
       toolUse: { id: "call-order-42", name: "lookup_order", input: { id: 42 } },
     });
-    expect(events[3]).toMatchObject({
+    expect(events[4]).toMatchObject({
       type: "tool.completed",
       toolUseId: "call-order-42",
       toolName: "lookup_order",
       content: "order:42",
       isError: false,
     });
-    expect(events[4]).toMatchObject({ type: "tool.result_delivered", toolCallId: "call-order-42" });
+    expect(events[5]).toMatchObject({ type: "tool.result_delivered", toolCallId: "call-order-42" });
     expect(JSON.stringify(events)).not.toContain("private lookup plan");
 
     const firstBody = requests[0]?.body as unknown as Record<string, unknown>;
@@ -1043,6 +1288,7 @@ describe("createKimiCodeRuntimeProvider", () => {
 
     expect(dispatches).toEqual(["call-first"]);
     expect(events.map((event) => event.type)).toEqual([
+      "thread.started",
       "turn.started",
       "tool.started",
       "tool.completed",
@@ -1459,20 +1705,99 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(interruptedEvents.every((event) => !("session" in event))).toBe(true);
   });
 
-  test("leaves a completed commit orphaned when interrupted after assistant publication", async () => {
+  test("committed native success wins over an abort after assistant publication", async () => {
     const fixture = isolatedStateEnv();
     const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
     const handle = provider.startSession(startRequest({ cwd: join(fixture.root, "workspace"), env: fixture.env }));
     const iterator = handle.events[Symbol.asyncIterator]();
 
+    expect((await iterator.next()).value?.type).toBe("thread.started");
     expect((await iterator.next()).value?.type).toBe("turn.started");
     expect((await iterator.next()).value?.type).toBe("text.delta");
     expect((await iterator.next()).value?.type).toBe("assistant.message");
     await handle.interrupt();
     const terminal = (await iterator.next()).value;
 
-    expect(terminal?.type).toBe("turn.interrupted");
-    expect(terminal && "session" in terminal).toBe(false);
+    expect(terminal?.type).toBe("turn.complete");
+    expect(terminal?.type === "turn.complete" ? terminal.session : undefined).toBeDefined();
+    expect((await iterator.next()).done).toBe(true);
+  });
+
+  test("an interrupt that wins during commit cannot transition back to completed", async () => {
+    const fixture = isolatedStateEnv();
+    let messageIdReads = 0;
+    let interruptDuringCommit = () => {};
+    const prompt = (async function* (): AsyncGenerator<RuntimePromptMessage> {
+      const message: RuntimePromptMessage = {
+        type: "user",
+        message: { role: "user", content: "commit race" },
+        session_id: "commit-race-session",
+        parent_tool_use_id: null,
+      };
+      Object.defineProperty(message, "clientMessageId", {
+        get() {
+          messageIdReads += 1;
+          if (messageIdReads === 2) interruptDuringCommit();
+          return "commit-race-message";
+        },
+      });
+      yield message;
+    })();
+    const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
+    const handle = provider.startSession(
+      startRequest({ prompt, cwd: join(fixture.root, "workspace"), env: fixture.env }),
+    );
+    interruptDuringCommit = () => {
+      void handle.interrupt();
+    };
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("thread.started");
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    expect((await iterator.next()).value?.type).toBe("text.delta");
+    expect((await iterator.next()).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).done).toBe(true);
+  });
+
+  test("an interrupt that wins during a rejected commit cannot transition to failed", async () => {
+    const fixture = isolatedStateEnv();
+    const invalidStateRoot = join(fixture.root, "state-file");
+    writeFileSync(invalidStateRoot, "not a directory");
+    let messageIdReads = 0;
+    let interruptDuringCommit = () => {};
+    const prompt = (async function* (): AsyncGenerator<RuntimePromptMessage> {
+      const message: RuntimePromptMessage = {
+        type: "user",
+        message: { role: "user", content: "rejected commit race" },
+        session_id: "rejected-commit-race-session",
+        parent_tool_use_id: null,
+      };
+      Object.defineProperty(message, "clientMessageId", {
+        get() {
+          messageIdReads += 1;
+          if (messageIdReads === 2) interruptDuringCommit();
+          return "rejected-commit-race-message";
+        },
+      });
+      yield message;
+    })();
+    const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
+    const handle = provider.startSession(
+      startRequest({
+        prompt,
+        cwd: join(fixture.root, "workspace"),
+        env: { ...fixture.env, RAVI_STATE_DIR: invalidStateRoot },
+      }),
+    );
+    interruptDuringCommit = () => {
+      void handle.interrupt();
+    };
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("thread.started");
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    expect((await iterator.next()).value?.type).toBe("text.delta");
+    expect((await iterator.next()).value?.type).toBe("turn.interrupted");
     expect((await iterator.next()).done).toBe(true);
   });
 
@@ -1592,7 +1917,12 @@ describe("createKimiCodeRuntimeProvider", () => {
       }),
     );
 
-    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code stream failed" });
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code request preflight failed",
+      recoverable: false,
+      rawEvent: { preflight: "request_too_large" },
+    });
     expect(events.some((event) => event.type === "turn.complete")).toBe(false);
   });
 });
