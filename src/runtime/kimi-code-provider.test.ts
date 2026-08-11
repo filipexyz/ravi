@@ -17,6 +17,7 @@ import { listRegisteredRuntimeProviderIds, unregisterRuntimeProvider } from "./p
 import type { KimiCodeStreamEvent, KimiCodeTransport, KimiCodeTransportRequest } from "./kimi-code-transport.js";
 import type {
   RuntimeDynamicToolCallRequest,
+  RuntimeDynamicToolCallResult,
   RuntimeEvent,
   RuntimeHostServices,
   RuntimePromptMessage,
@@ -1208,6 +1209,45 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(events.filter((event) => event.type === "tool.result_delivered")).toHaveLength(1);
     expect(JSON.stringify(events)).not.toContain("synthetic handler secret");
     expect(JSON.stringify(requests[1]?.body)).not.toContain("synthetic handler secret");
+  });
+
+  test("pairs a malformed host result before failing the tool lifecycle", async () => {
+    let dispatches = 0;
+    const privateDetail = "synthetic malformed host result detail";
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom(toolTurn([{ index: 0, id: "call-malformed-result", name: "lookup_order", arguments: "{}" }])),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async () => {
+          dispatches += 1;
+          return { success: true, privateDetail } as unknown as RuntimeDynamicToolCallResult;
+        },
+      }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "thread.started",
+      "turn.started",
+      "tool.started",
+      "tool.completed",
+      "turn.failed",
+    ]);
+    expect(events.filter((event) => event.type === "tool.completed")).toEqual([
+      expect.objectContaining({
+        toolUseId: "call-malformed-result",
+        toolName: "lookup_order",
+        content: "Tool execution failed.",
+        isError: true,
+      }),
+    ]);
+    expect(events.some((event) => event.type === "tool.result_delivered")).toBe(false);
+    expect(dispatches).toBe(1);
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code stream failed" });
+    expect(JSON.stringify(events)).not.toContain(privateDetail);
   });
 
   test("rejects malformed, non-object, empty, and duplicate tool calls before host dispatch", async () => {

@@ -445,7 +445,18 @@ function createKimiCodeSession(
                   contentItems: [{ type: "inputText", text: "Tool execution failed." }],
                 };
               }
-              const { providerContent, publicContent } = createKimiCodeToolResultViews(result);
+              let toolResultViews: ReturnType<typeof createKimiCodeToolResultViews>;
+              try {
+                toolResultViews = createKimiCodeToolResultViews(result);
+              } catch {
+                const completion = completeToolOnce(obligation, {
+                  content: "Tool execution failed.",
+                  isError: true,
+                });
+                if (completion) yield completion;
+                throw new Error("Kimi Code tool result projection failed");
+              }
+              const { providerContent, publicContent } = toolResultViews;
               const completion = completeToolOnce(obligation, {
                 content: publicContent,
                 isError: !result.success,
