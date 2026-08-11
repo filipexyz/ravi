@@ -1,8 +1,10 @@
 import { describe, expect, it } from "bun:test";
 import {
+  canReleaseRuntimeDeliveryBarrier,
   createQueuedRuntimeUserMessage,
   createRuntimeMessageGenerator,
   getDeliverableRuntimeMessages,
+  prepareRuntimeInterruptSuccessor,
   shouldInterruptRuntimeForIncoming,
 } from "./delivery-queue.js";
 import {
@@ -249,6 +251,27 @@ describe("runtime delivery queue", () => {
     });
   });
 
+  it("keeps every interrupt lane closed while a provider tool callback is being delivered", () => {
+    const session = makeStreamingSession({
+      turnActive: true,
+      toolRunning: false,
+      currentToolSafety: "safe",
+      toolResultDeliveryPending: true,
+    });
+
+    for (const barrier of ["immediate_interrupt", "after_tool", "after_response", "after_task"] as const) {
+      expect(canReleaseRuntimeDeliveryBarrier("dev", session, barrier, undefined, false)).toBe(false);
+    }
+    expect(shouldInterruptRuntimeForIncoming("dev", session, "immediate_interrupt")).toEqual({
+      interrupt: false,
+      reason: "tool_result_delivery",
+    });
+    expect(shouldInterruptRuntimeForIncoming("dev", session, "after_tool")).toEqual({
+      interrupt: false,
+      reason: "tool_result_delivery",
+    });
+  });
+
   it("delivers the steering prompt next instead of replaying the superseded channel turn", async () => {
     const active = createQueuedRuntimeUserMessage(channelPrompt("implement the old plan", "turn-a"));
     const steering = createQueuedRuntimeUserMessage(channelPrompt("stop and use the new plan", "turn-b"));
@@ -281,6 +304,117 @@ describe("runtime delivery queue", () => {
     session.done = true;
     session.onTurnComplete?.();
     await generator.return(undefined);
+  });
+
+  it("coalesces a compatible channel backlog behind the latest interrupting prompt", async () => {
+    const active = createQueuedRuntimeUserMessage(channelPrompt("old active work", "turn-a"));
+    const queued = createQueuedRuntimeUserMessage(channelPrompt("first steering detail", "turn-b"));
+    const latest = createQueuedRuntimeUserMessage(channelPrompt("latest steering direction", "turn-c"));
+    const session = makeStreamingSession({ pendingMessages: [active] });
+    const generator = createRuntimeMessageGenerator({
+      sessionName: "dev",
+      session,
+      stashedMessages: new Map(),
+    });
+
+    expect((await generator.next()).value).toMatchObject({
+      message: { content: "old active work" },
+    });
+    session.pendingMessages.push(queued, latest);
+
+    const prepared = prepareRuntimeInterruptSuccessor("dev", session);
+
+    expect(prepared?.coalescedMessages).toEqual([queued]);
+    expect(session.pendingMessages).toHaveLength(2);
+    expect(session.pendingMessages[0]).toBe(active);
+    expect(session.pendingMessages[1]).toMatchObject({
+      pendingId: latest.pendingId,
+      message: { content: "first steering detail\n\nlatest steering direction" },
+      launchPrompt: {
+        prompt: "first steering detail\n\nlatest steering direction",
+        _channelBackend: { binding: { turnId: "turn-c" } },
+      },
+    });
+
+    session.currentTurnSuperseded = true;
+    session.interrupted = true;
+    session.turnActive = false;
+    session.onTurnComplete?.();
+
+    expect((await generator.next()).value).toMatchObject({
+      message: { content: "first steering detail\n\nlatest steering direction" },
+    });
+
+    session.done = true;
+    session.onTurnComplete?.();
+    await generator.return(undefined);
+  });
+
+  it("preserves FIFO instead of combining or reordering different actors", () => {
+    const active = createQueuedRuntimeUserMessage(channelPrompt("active", "turn-a"));
+    const otherActor = createQueuedRuntimeUserMessage(channelPrompt("other actor", "turn-b", "user-b"));
+    const latest = createQueuedRuntimeUserMessage(channelPrompt("latest", "turn-c", "user-a"));
+    const session = makeStreamingSession({
+      turnActive: true,
+      pendingMessages: [active, otherActor, latest],
+      currentTurnPendingIds: [active.pendingId!],
+    });
+
+    const prepared = prepareRuntimeInterruptSuccessor("dev", session);
+
+    expect(prepared?.coalescedMessages).toEqual([]);
+    expect(prepared?.message).toBe(otherActor);
+    expect(session.pendingMessages.map((message) => message.message.content)).toEqual([
+      "active",
+      "other actor",
+      "latest",
+    ]);
+  });
+
+  it("keeps steering prompts from different channel threads isolated", () => {
+    const active = createQueuedRuntimeUserMessage(channelPrompt("active", "turn-a"));
+    const firstThread = createQueuedRuntimeUserMessage(channelPrompt("thread one", "turn-b", "user-a", "thread-1"));
+    const secondThread = createQueuedRuntimeUserMessage(channelPrompt("thread two", "turn-c", "user-a", "thread-2"));
+    const session = makeStreamingSession({
+      turnActive: true,
+      pendingMessages: [active, firstThread, secondThread],
+      currentTurnPendingIds: [active.pendingId!],
+    });
+
+    const prepared = prepareRuntimeInterruptSuccessor("dev", session);
+
+    expect(prepared?.coalescedMessages).toEqual([]);
+    expect(prepared?.message).toBe(firstThread);
+    expect(session.pendingMessages).toEqual([active, firstThread, secondThread]);
+  });
+
+  it("does not fold Ravi Commands into conversational steering", () => {
+    const active = createQueuedRuntimeUserMessage(channelPrompt("active", "turn-a"));
+    const command = createQueuedRuntimeUserMessage({
+      ...channelPrompt("#deploy", "turn-b"),
+      commands: [
+        {
+          id: "deploy",
+          scope: "agent",
+          sourcePath: "/commands/deploy.md",
+          originalText: "#deploy",
+          arguments: "",
+          renderedPromptSha256: "a".repeat(64),
+        },
+      ],
+    });
+    const steering = createQueuedRuntimeUserMessage(channelPrompt("after command", "turn-c"));
+    const session = makeStreamingSession({
+      turnActive: true,
+      pendingMessages: [active, command, steering],
+      currentTurnPendingIds: [active.pendingId!],
+    });
+
+    const prepared = prepareRuntimeInterruptSuccessor("dev", session);
+
+    expect(prepared?.coalescedMessages).toEqual([]);
+    expect(prepared?.message).toBe(command);
+    expect(session.pendingMessages).toEqual([active, command, steering]);
   });
 
   it("replays an active prompt marked for provider reconciliation", async () => {
@@ -495,9 +629,38 @@ describe("runtime delivery queue", () => {
   });
 });
 
-function channelPrompt(prompt: string, turnId: string) {
+function channelPrompt(prompt: string, turnId: string, senderId = "user-a", threadId?: string) {
   return {
     prompt,
+    deliveryBarrier: "after_tool" as const,
+    source: {
+      channel: "custom",
+      accountId: "connection-a",
+      instanceId: "channel-instance-a",
+      chatId: "conversation-a",
+      ...(threadId ? { threadId } : {}),
+      canonicalChatId: "chat-a",
+      actorType: "contact" as const,
+      contactId: senderId,
+      normalizedSenderId: senderId,
+      sourceMessageId: `message-${turnId}`,
+    },
+    context: {
+      channelId: "custom",
+      channelName: "Custom",
+      accountId: "connection-a",
+      instanceId: "channel-instance-a",
+      chatId: "conversation-a",
+      canonicalChatId: "chat-a",
+      messageId: `message-${turnId}`,
+      senderId,
+      isGroup: true,
+      timestamp: 1,
+      actorType: "contact" as const,
+      contactId: senderId,
+      normalizedSenderId: senderId,
+    },
+    _agentId: "agent-a",
     _channelBackend: {
       protocol: "ravi.channel.backend" as const,
       schemaVersion: 1 as const,

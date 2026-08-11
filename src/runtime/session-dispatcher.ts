@@ -1,6 +1,8 @@
 import { configStore } from "../config-store.js";
+import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { saveMessage } from "../db.js";
 import {
+  DEFAULT_DELIVERY_BARRIER,
   chooseMoreUrgentBarrier,
   describeDeliveryBarrier,
   type DeliveryBarrier,
@@ -20,7 +22,9 @@ import {
   getRuntimePromptDeliveryBarrier,
   hasIsolatedRuntimeTurnEnvelope,
   hasDeliverableRuntimeMessages,
+  prepareRuntimeInterruptSuccessor,
   shouldInterruptRuntimeForIncoming,
+  type RuntimeInterruptSuccessorPreparation,
   wakeRuntimeSessionIfDeliverable,
 } from "./delivery-queue.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
@@ -435,10 +439,11 @@ export class RuntimeSessionDispatcher {
       getSessionByName(sessionName) ?? (identity.sessionKey ? getSession(identity.sessionKey) : null);
     const sessionKey = sessionEntry?.sessionKey ?? identity.sessionKey ?? sessionName;
 
-    if (session.toolRunning && session.currentToolSafety === "unsafe") {
-      log.info("Deferring abort - unsafe tool running", {
+    if (session.toolResultDeliveryPending || (session.toolRunning && session.currentToolSafety === "unsafe")) {
+      log.info("Deferring abort - tool barrier active", {
         sessionName,
         tool: session.currentToolName,
+        toolResultDeliveryPending: Boolean(session.toolResultDeliveryPending),
         provenance,
       });
       session.internalAbortReason = `${abortReason}_deferred`;
@@ -460,6 +465,7 @@ export class RuntimeSessionDispatcher {
           provenance,
           tool: session.currentToolName ?? null,
           toolSafety: session.currentToolSafety,
+          toolResultDeliveryPending: Boolean(session.toolResultDeliveryPending),
         },
       });
       return true;
@@ -946,10 +952,8 @@ export class RuntimeSessionDispatcher {
           return;
         }
 
-        appendUniqueRuntimeMessages(
-          existing.pendingMessages,
-          daemonRestartMessages ?? [createQueuedRuntimeUserMessage(prompt)],
-        );
+        const queuedMessages = daemonRestartMessages ?? [createQueuedRuntimeUserMessage(prompt)];
+        appendUniqueRuntimeMessages(existing.pendingMessages, queuedMessages);
         updateRuntimeLiveState(sessionName, {
           activity: "thinking",
           summary: existing.turnActive ? `queued ${existing.pendingMessages.length}` : "prompt queued",
@@ -1088,53 +1092,23 @@ export class RuntimeSessionDispatcher {
               this.scheduleIdleGapRecovery(sessionName, existing, sessionEntry?.sessionKey ?? sessionName);
             }
           } else {
-            existing.currentTurnSuperseded = true;
-            nats
-              .emit(`ravi.session.${sessionName}.runtime`, {
-                type: "turn.interrupt.requested",
+            const successor = prepareRuntimeInterruptSuccessor(sessionName, existing);
+            if (!successor) {
+              log.warn("Streaming: interrupt requested without a releasable successor", {
                 sessionName,
                 queueSize: existing.pendingMessages.length,
                 barrier: describeDeliveryBarrier(barrier),
-                barrierSource: prompt.deliveryBarrierSource ?? null,
-                reason: decision.reason,
-                source: prompt.source,
-                context: prompt.context,
-                taskBarrierTaskId: prompt.taskBarrierTaskId,
-                timestamp: new Date().toISOString(),
-              })
-              .catch((error) => {
-                log.warn("Failed to emit turn interrupt audit event", { sessionName, error });
               });
-            log.info("Streaming: interrupting turn", {
+              return;
+            }
+            await this.interruptForRuntimeSuccessor(
               sessionName,
-              queueSize: existing.pendingMessages.length,
-              barrier: describeDeliveryBarrier(barrier),
-              reason: decision.reason,
-            });
-            recordRuntimeTraceEvent({
-              sessionKey: sessionEntry?.sessionKey ?? sessionName,
-              sessionName,
-              agentId: existing.agentId,
-              runId: existing.traceRunId,
-              turnId: existing.currentTraceTurnId,
-              provider: existing.queryHandle.provider,
-              model: existing.currentModel,
-              eventType: "dispatch.interrupt_requested",
-              eventGroup: "dispatch",
-              status: "requested",
-              source: prompt.source ?? existing.currentSource,
-              messageId: prompt.context?.messageId,
-              payloadJson: {
-                queueSize: existing.pendingMessages.length,
-                barrier: describeDeliveryBarrier(barrier),
-                barrierSource: prompt.deliveryBarrierSource ?? null,
-                reason: decision.reason,
-                taskBarrierTaskId: prompt.taskBarrierTaskId ?? null,
-                currentTurnReplay: false,
-              },
-            });
-            existing.interrupted = true;
-            existing.queryHandle.interrupt().catch(() => {});
+              existing,
+              successor,
+              decision.reason,
+              prompt,
+              sessionEntry?.sessionKey ?? sessionName,
+            );
           }
         }
         return;
@@ -1378,6 +1352,7 @@ export class RuntimeSessionDispatcher {
         drainPendingStarts: () => this.drainPendingStarts(),
         restartStashedSession: ({ sessionName: stashedSessionName, reason }) =>
           this.restartStashedSession(stashedSessionName, reason),
+        onToolBarrierReleased: (releasedSessionName) => this.releaseQueuedPromptsAfterTool(releasedSessionName),
         crashRecovery: this.options.crashRecovery,
       });
     } finally {
@@ -1804,6 +1779,118 @@ export class RuntimeSessionDispatcher {
     await this.restartStashedSession(sessionName, "idle_gap_stuck");
   }
 
+  private async releaseQueuedPromptsAfterTool(sessionName: string): Promise<void> {
+    const existing = this.streamingSessions.get(sessionName);
+    if (
+      !existing ||
+      existing.done ||
+      existing.starting ||
+      existing.compacting ||
+      existing.toolRunning ||
+      !existing.turnActive ||
+      existing.currentTurnSuperseded ||
+      existing.interrupted
+    ) {
+      return;
+    }
+
+    const successor = prepareRuntimeInterruptSuccessor(sessionName, existing);
+    if (!successor) return;
+
+    const prompt = successor.message.launchPrompt;
+    const sessionEntry = getSessionByName(sessionName);
+    await this.interruptForRuntimeSuccessor(
+      sessionName,
+      existing,
+      successor,
+      "tool_barrier_released",
+      prompt,
+      sessionEntry?.sessionKey ?? sessionName,
+    );
+  }
+
+  private async interruptForRuntimeSuccessor(
+    sessionName: string,
+    existing: RuntimeHostStreamingSession,
+    successor: RuntimeInterruptSuccessorPreparation,
+    reason: string,
+    fallbackPrompt?: RuntimeLaunchPrompt,
+    sessionKey = sessionName,
+  ): Promise<void> {
+    const prompt = successor.message.launchPrompt ?? fallbackPrompt;
+    const source = prompt?.source ?? fallbackPrompt?.source ?? existing.currentSource;
+    const barrier = successor.message.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER;
+    existing.currentTurnSuperseded = true;
+    existing.interrupted = true;
+    nats
+      .emit(`ravi.session.${sessionName}.runtime`, {
+        type: "turn.interrupt.requested",
+        sessionName,
+        queueSize: existing.pendingMessages.length,
+        barrier: describeDeliveryBarrier(barrier),
+        barrierSource: successor.message.deliveryBarrierSource ?? prompt?.deliveryBarrierSource ?? null,
+        reason,
+        source,
+        context: prompt?.context ?? fallbackPrompt?.context,
+        taskBarrierTaskId: successor.message.taskBarrierTaskId ?? prompt?.taskBarrierTaskId,
+        timestamp: new Date().toISOString(),
+      })
+      .catch((error) => {
+        log.warn("Failed to emit turn interrupt audit event", { sessionName, error });
+      });
+    log.info("Streaming: interrupting turn", {
+      sessionName,
+      queueSize: existing.pendingMessages.length,
+      barrier: describeDeliveryBarrier(barrier),
+      reason,
+    });
+    recordRuntimeTraceEvent({
+      sessionKey,
+      sessionName,
+      agentId: existing.agentId,
+      runId: existing.traceRunId,
+      turnId: existing.currentTraceTurnId,
+      provider: existing.queryHandle.provider,
+      model: existing.currentModel,
+      eventType: "dispatch.interrupt_requested",
+      eventGroup: "dispatch",
+      status: "requested",
+      source,
+      messageId: prompt?.context?.messageId ?? fallbackPrompt?.context?.messageId,
+      payloadJson: {
+        queueSize: existing.pendingMessages.length,
+        barrier: describeDeliveryBarrier(barrier),
+        barrierSource: successor.message.deliveryBarrierSource ?? prompt?.deliveryBarrierSource ?? null,
+        reason,
+        taskBarrierTaskId: successor.message.taskBarrierTaskId ?? prompt?.taskBarrierTaskId ?? null,
+        currentTurnReplay: false,
+      },
+    });
+    if (successor.coalescedMessages.length > 0) {
+      recordRuntimeTraceEvent({
+        sessionKey,
+        sessionName,
+        agentId: existing.agentId,
+        runId: existing.traceRunId,
+        turnId: existing.currentTraceTurnId,
+        provider: existing.queryHandle.provider,
+        model: existing.currentModel,
+        eventType: "dispatch.coalesced_steering",
+        eventGroup: "dispatch",
+        status: "queued",
+        source,
+        messageId: prompt?.context?.messageId ?? fallbackPrompt?.context?.messageId,
+        payloadJson: {
+          coalescedMessages: successor.coalescedMessages.length,
+          queueSize: existing.pendingMessages.length,
+          reason: "compatible_channel_backlog",
+        },
+      });
+    }
+    existing.queryHandle.interrupt().catch(() => {});
+    await terminalizeCoalescedChannelMessages(sessionName, successor.coalescedMessages);
+  }
+
   private async tryNativeRuntimeSteer(
     sessionName: string,
     existing: RuntimeHostStreamingSession,
@@ -1923,7 +2010,8 @@ export function canUseNativeRuntimeSteer(session: RuntimeHostStreamingSession, b
     !session.done &&
     !session.starting &&
     !session.compacting &&
-    !session.toolRunning
+    !session.toolRunning &&
+    getPendingRuntimeTurnSuccessors(session).length === 0
   );
 }
 
@@ -2197,6 +2285,25 @@ function cloneRuntimeUserMessage(message: RuntimeUserMessage): RuntimeUserMessag
   return JSON.parse(JSON.stringify(message)) as RuntimeUserMessage;
 }
 
+async function terminalizeCoalescedChannelMessages(sessionName: string, messages: RuntimeUserMessage[]): Promise<void> {
+  for (const message of messages) {
+    const metadata = message.launchPrompt?._channelBackend;
+    if (!metadata) continue;
+    try {
+      await projectChannelRuntimeEvent({
+        metadata,
+        event: { type: "turn.interrupted" },
+      });
+    } catch (error) {
+      log.warn("Failed to terminalize coalesced channel turn", {
+        sessionName,
+        turnId: metadata.binding.turnId,
+        error,
+      });
+    }
+  }
+}
+
 function cloneRuntimeMessageTarget(target: RuntimeMessageTarget): RuntimeMessageTarget {
   return JSON.parse(JSON.stringify(target)) as RuntimeMessageTarget;
 }
@@ -2365,6 +2472,7 @@ function describeSessionState(session: RuntimeHostStreamingSession): Record<stri
     starting: session.starting,
     compacting: session.compacting,
     toolRunning: session.toolRunning,
+    toolResultDeliveryPending: Boolean(session.toolResultDeliveryPending),
     turnActive: session.turnActive,
     tool: session.currentToolName ?? null,
     idleMs: session.lastActivity ? Date.now() - session.lastActivity : null,

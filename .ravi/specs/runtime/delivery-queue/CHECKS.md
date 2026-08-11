@@ -25,12 +25,16 @@
 - `after_response` / `followup` never calls provider interrupt during text generation.
 - `after_task` never calls provider interrupt during text generation or active task work.
 - `after_tool` / `steer` waits for startup, compaction, and tool barriers before interrupting.
+- Provider tool-result delivery immediately re-evaluates queued `after_tool` / `steer` atoms; no later inbound message is required.
+- A pending provider callback write blocks every interrupt lane, including `immediate_interrupt`.
 - `immediate_interrupt` still respects startup, compaction, and unsafe tool barriers.
 
 ## Queue Integrity
 
 - Pending prompt atoms keep source, context, pending id, barrier, queue time, task barrier metadata, and launch metadata.
 - Same-lane prompt atoms are delivered FIFO.
+- A leading compatible burst from the same human channel authority may be folded chronologically under the newest channel envelope.
+- Different actors, chats, threads, authority envelopes, commands, and replay attempts are never folded together; incompatible atoms in the same releasable lane retain FIFO order.
 - Bypassing a blocked prompt atom is traceable.
 - Batched prompt atoms keep their internal order.
 - Daemon restart resume preserves queued prompt atoms.
@@ -52,6 +56,8 @@
 - Immediate arrives while an unsafe tool is running and waits.
 - Operational event arrives during active task and waits for the task barrier.
 - Human channel input arrives during active text generation and can interrupt after safe barriers.
+- Multiple compatible human messages arrive during one tool call and are released together immediately after tool completion.
+- Different actors or threads queued during one tool call retain isolated FIFO turns.
 - Human channel input that interrupts a turn is delivered next without replaying the superseded turn first.
 - Unexpected provider interruption without a newer prompt retains the active prompt for recovery replay.
 - Intentional provider/model restart is not marked as ambiguous and retains normal batching behavior.

@@ -648,6 +648,21 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
       ),
     ).toBe(false);
   });
+
+  it("does not native steer past an already queued successor", () => {
+    const active = createQueuedRuntimeUserMessage({ prompt: "active", deliveryBarrier: "after_tool" });
+    const queued = createQueuedRuntimeUserMessage({ prompt: "queued", deliveryBarrier: "after_tool" });
+
+    expect(
+      canUseNativeRuntimeSteer(
+        createStreamingSession({
+          pendingMessages: [active, queued],
+          currentTurnPendingIds: [active.pendingId!],
+        }),
+        "after_tool",
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("RuntimeSessionDispatcher abort resolution", () => {
@@ -678,6 +693,34 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       ...overrides,
     };
   }
+
+  it("defers abort until a completed dynamic tool result reaches the provider", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-tool-delivery-abort-");
+    try {
+      getOrCreateSession("agent:main:test:tool-delivery-abort", "main", stateDir, {
+        name: "tool-delivery-abort",
+      });
+      const dispatcher = createDispatcher(2);
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        toolRunning: true,
+        toolResultDeliveryPending: true,
+        currentToolSafety: "safe",
+        currentToolName: "tools_invoke",
+      });
+      dispatcher.streamingSessions.set("tool-delivery-abort", activeSession);
+
+      expect(dispatcher.abortSession("tool-delivery-abort")).toBe(true);
+
+      expect(activeSession.pendingAbort).toBe(true);
+      expect(activeSession.internalAbortReason).toBe("explicit_abort_deferred");
+      expect(activeSession.abortController.signal.aborted).toBe(false);
+      expect(dispatcher.streamingSessions.get("tool-delivery-abort")).toBe(activeSession);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
 
   it("continues closing every provider when one shutdown terminal fence fails", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-shutdown-cleanup-");
@@ -1496,6 +1539,52 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(activeSession.pendingMessages[1]?.launchPrompt?.source).toEqual(slackSource);
       expect(activeSession.currentTurnSuperseded).toBe(true);
       expect(activeSession.interrupted).toBe(true);
+      expect(interrupt).toHaveBeenCalledTimes(1);
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("interrupts for a queued after_tool prompt as soon as the tool barrier releases", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-tool-release-");
+    try {
+      getOrCreateSession("agent:main:test:tool-release", "main", stateDir, { name: "tool-release" });
+      const interrupt = mock(async () => {});
+      const activeMessage = createQueuedRuntimeUserMessage({
+        prompt: "active tool work",
+        deliveryBarrier: "after_tool",
+      });
+      const successor = createQueuedRuntimeUserMessage({
+        prompt: "new direction after tool",
+        deliveryBarrier: "after_tool",
+      });
+      const dispatcher = createDispatcher(2);
+      const activeSession = createActiveSession({
+        agentId: "main",
+        turnActive: true,
+        toolRunning: false,
+        pendingMessages: [activeMessage, successor],
+        currentTurnPendingIds: [activeMessage.pendingId!],
+        queryHandle: {
+          provider: "codex",
+          events: (async function* () {})(),
+          interrupt,
+        },
+      });
+      dispatcher.streamingSessions.set("tool-release", activeSession);
+
+      await (
+        dispatcher as unknown as {
+          releaseQueuedPromptsAfterTool(sessionName: string): Promise<void>;
+        }
+      ).releaseQueuedPromptsAfterTool("tool-release");
+
+      expect(activeSession.currentTurnSuperseded).toBe(true);
+      expect(activeSession.interrupted).toBe(true);
+      expect(activeSession.pendingMessages.map((message) => message.message.content)).toEqual([
+        "active tool work",
+        "new direction after tool",
+      ]);
       expect(interrupt).toHaveBeenCalledTimes(1);
     } finally {
       await cleanupIsolatedRaviState(stateDir);
