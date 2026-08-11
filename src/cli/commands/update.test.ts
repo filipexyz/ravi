@@ -45,7 +45,11 @@ describe("update command helpers", () => {
 
   it("returns one machine-readable usage error for an invalid exact version", () => {
     const stateDir = join(tmpdir(), `ravi-update-contract-${process.pid}`);
-    const env: NodeJS.ProcessEnv = { ...process.env, RAVI_STATE_DIR: stateDir };
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      RAVI_STATE_DIR: stateDir,
+      RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+    };
     delete env.RAVI_CONTEXT_KEY;
     delete env.RAVI_SESSION_KEY;
     const result = spawnSync("bun", ["src/cli/index.ts", "update", "--version", "latest", "--json"], {
