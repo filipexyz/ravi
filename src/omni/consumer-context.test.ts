@@ -5,6 +5,7 @@ import { logger } from "../utils/logger.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeAbortProvenance } from "../runtime/session-dispatcher.js";
 import type { MessageMetadata } from "../router/router-db.js";
+import type { RouteConfig } from "../router/types.js";
 
 const actualRouterDbModule = await import("../router/router-db.js");
 const actualRouterIndexModule = await import("../router/index.js");
@@ -48,6 +49,8 @@ let agentCwd = "/tmp/ravi-agent";
 let contactIntakeMode: "off" | "discovered" | "pending" = "off";
 let routeResult: Record<string, unknown> | null = null;
 let configuredAgentMode: "active" | "sentinel" = "active";
+let configuredRoutes: RouteConfig[] = [];
+let useAccountAgentFallback = true;
 
 function defaultRouteResult(): Record<string, unknown> {
   return {
@@ -121,7 +124,7 @@ mock.module("../config-store.js", () => ({
           contactIntakeMode,
         },
       },
-      routes: [],
+      routes: configuredRoutes,
       agents: {
         main: {
           id: "main",
@@ -138,7 +141,7 @@ mock.module("../config-store.js", () => ({
       // branch. When routeResult is set, accountAgents maps main→main so
       // matchRoute returns a valid match; commitMatchedRoute is then mocked
       // to inject the test's routeResult for downstream assertions.
-      accountAgents: routeResult ? { main: "main" } : {},
+      accountAgents: useAccountAgentFallback && routeResult ? { main: "main" } : {},
       ignoredOmniInstanceIds: [],
     }),
   },
@@ -301,6 +304,8 @@ describe("OmniConsumer channel context", () => {
     configuredAgentMode = "active";
     routeResult = defaultRouteResult();
     contactIntakeMode = "off";
+    configuredRoutes = [];
+    useAccountAgentFallback = true;
     actualGetOrCreateSession("agent:main:whatsapp:main:group:120363424772797713", "main", agentCwd);
     promptCalls.length = 0;
     chatMessageCalls.length = 0;
@@ -571,6 +576,71 @@ describe("OmniConsumer channel context", () => {
     expect(groupChat).toMatchObject({
       chatType: "group",
       normalizedChatId: "group:120363424772797713",
+    });
+  });
+
+  it("routes WhatsApp LID DMs through the resolved sender phone", async () => {
+    const route: RouteConfig = {
+      pattern: "5511947879044",
+      accountId: "main",
+      agent: "main",
+      dmScope: "main",
+      channel: "whatsapp",
+    };
+    configuredRoutes = [route];
+    useAccountAgentFallback = false;
+    routeResult = {
+      sessionKey: "agent:main:main",
+      sessionName: "main",
+      dmScope: "main",
+      route,
+      agent: {
+        id: "main",
+        cwd: agentCwd,
+        mode: "active",
+      },
+    };
+    actualGetOrCreateSession("agent:main:main", "main", agentCwd);
+
+    const sender = {
+      send: mock(async () => {}),
+      sendTyping: mock(async () => {}),
+      markRead: mock(async () => {}),
+    };
+    const consumer = new OmniConsumer(sender as never, "http://omni.local", "test-key", {
+      resolveGroupMetadata: async () => null,
+    });
+
+    await consumer["handleMessageEvent"]("message.received.whatsapp-baileys.instance-1", {
+      id: "evt-dm-lid-route",
+      type: "message.received",
+      payload: {
+        externalId: "msg-dm-lid-route",
+        chatId: "178035101794451@lid",
+        from: "178035101794451@lid",
+        content: {
+          type: "text",
+          text: "oi",
+        },
+        rawPayload: {
+          pushName: "Luis Filipe",
+          resolvedSenderPhone: "5511947879044",
+          isGroup: false,
+        },
+      },
+      metadata: {
+        instanceId: "instance-1",
+        channelType: "whatsapp-baileys",
+        ingestMode: "realtime",
+      },
+      timestamp: Date.now(),
+    });
+
+    expect(promptCalls).toHaveLength(1);
+    expect(promptCalls[0]?.[1].context).toMatchObject({
+      senderId: "178035101794451",
+      senderPhone: "5511947879044",
+      isGroup: false,
     });
   });
 

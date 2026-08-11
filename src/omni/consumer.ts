@@ -657,8 +657,9 @@ export class OmniConsumer {
     const senderPhone = stripJid(payload.from);
     const resolvedSenderPhone = this.resolveSenderPhone(rawPayload, senderPhone);
     const chatJid = payload.chatId;
-    // For routing: use phone for DMs, chatJid for groups
-    const routePhone = isGroup ? chatJid : senderPhone;
+    // For routing: use the canonical phone for DMs when Omni resolved a LID,
+    // while preserving the raw sender as a fallback. Groups still route by chat JID.
+    const routePhone = isGroup ? chatJid : resolvedSenderPhone || senderPhone;
 
     // Channel detection: Slack/Discord non-DM channels use "channel" peerKind.
     // accountId is still included in the session key for full isolation.
