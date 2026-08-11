@@ -735,7 +735,8 @@ describe("createKimiCodeRuntimeProvider", () => {
       },
     ]);
     const continuation = requests[1]?.body as unknown as { messages: unknown[] };
-    expect(continuation.messages.slice(0, 3)).toEqual([
+    expect(continuation.messages.slice(0, 4)).toEqual([
+      { role: "system", content: "Ravi policy." },
       { role: "user", content: "hello" },
       {
         role: "assistant",
@@ -799,7 +800,7 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(JSON.stringify(events)).not.toContain(rawResult);
 
     const continuation = requests[1]?.body as unknown as { messages: Array<Record<string, unknown>> };
-    expect(continuation.messages[1]).toMatchObject({
+    expect(continuation.messages[2]).toMatchObject({
       role: "assistant",
       tool_calls: [
         {
@@ -809,7 +810,7 @@ describe("createKimiCodeRuntimeProvider", () => {
         },
       ],
     });
-    expect(continuation.messages[2]).toEqual({
+    expect(continuation.messages[3]).toEqual({
       role: "tool",
       tool_call_id: "call-secret",
       content: rawResult,
@@ -846,7 +847,7 @@ describe("createKimiCodeRuntimeProvider", () => {
       isError: true,
     });
     const continuation = requests[1]?.body as unknown as { messages: Array<Record<string, unknown>> };
-    expect(continuation.messages[2]).toEqual({
+    expect(continuation.messages[3]).toEqual({
       role: "tool",
       tool_call_id: "call-denied",
       content: "access denied",
@@ -1324,8 +1325,8 @@ describe("createKimiCodeRuntimeProvider", () => {
 
     const body = requests[0]?.body as unknown as Record<string, unknown>;
     expect(body.messages).toEqual([
-      { role: "user", content: mediaPaths },
       { role: "system", content: "Ravi policy." },
+      { role: "user", content: mediaPaths },
     ]);
     for (const unsupportedKey of ["images", "videos", "response_format", "plugins", "mcp_servers", "remote_spawn"]) {
       expect(body).not.toHaveProperty(unsupportedKey);
@@ -1380,7 +1381,8 @@ describe("createKimiCodeRuntimeProvider", () => {
     );
 
     const requestBody = resumedRequests[0]?.body as unknown as { messages: unknown[] };
-    expect(requestBody.messages.slice(0, 5)).toEqual([
+    expect(requestBody.messages.slice(0, 6)).toEqual([
+      { role: "system", content: "Ravi policy." },
       { role: "user", content: "hello" },
       {
         role: "assistant",
@@ -1590,7 +1592,7 @@ describe("createKimiCodeRuntimeProvider", () => {
       }),
     );
 
-    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code session state commit failed" });
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code stream failed" });
     expect(events.some((event) => event.type === "turn.complete")).toBe(false);
   });
 });

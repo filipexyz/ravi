@@ -221,6 +221,7 @@ export function createKimiCodeHttpTransport(options: CreateKimiCodeHttpTransport
     async *stream(request: KimiCodeTransportRequest): AsyncGenerator<KimiCodeStreamEvent> {
       if (closed || request.signal?.aborted) return;
       assertKimiCodeOrigin(request.url);
+      const serializedBody = serializeKimiCodeTransportBody(request.body);
       const combined = combineSignals(request.signal, controller.signal);
       let phase: KimiCodeTransportPhase = "request_not_sent";
       let response: Response;
@@ -229,7 +230,7 @@ export function createKimiCodeHttpTransport(options: CreateKimiCodeHttpTransport
           response = await fetchImpl(request.url, {
             method: "POST",
             headers: { ...request.headers, ...(options.userAgent ? { "User-Agent": options.userAgent } : {}) },
-            body: JSON.stringify(request.body),
+            body: serializedBody,
             signal: combined.signal,
           });
         } catch {
@@ -430,6 +431,14 @@ function assertKimiCodeOrigin(requestUrl: string): void {
     // Fall through to the fixed preflight error.
   }
   throw new KimiCodePreflightError("untrusted_origin");
+}
+
+function serializeKimiCodeTransportBody(body: unknown): string {
+  const serializedBody = JSON.stringify(body);
+  if (typeof serializedBody !== "string" || new TextEncoder().encode(serializedBody).byteLength > MAX_MESSAGE_BYTES) {
+    throw new KimiCodePreflightError("request_too_large");
+  }
+  return serializedBody;
 }
 
 function combineSignals(

@@ -1,5 +1,6 @@
 import { describe, expect, it, test } from "bun:test";
 import packageJson from "../../package.json" with { type: "json" };
+import { createKimiCodeTurnRequest } from "./kimi-code-turn.js";
 import type { RuntimeStartRequest } from "./types.js";
 import {
   buildKimiCodeRequest,
@@ -399,6 +400,73 @@ describe("createKimiCodeHttpTransport", () => {
 
     expect(received.url).toBe("https://api.kimi.com/coding/v1/chat/completions");
     expect(new Headers(received.headers as never).get("authorization")).toBe("Bearer synthetic-key");
+  });
+
+  it("rejects an oversized final body after dynamic tools are attached before HTTP handoff", async () => {
+    const turnRequest = createKimiCodeTurnRequest(
+      request({
+        dynamicTools: [
+          {
+            name: "large_schema_tool",
+            description: "x".repeat(2 * 1024 * 1024),
+            inputSchema: { type: "object" },
+          },
+        ],
+      }),
+      [{ role: "user", content: "short transcript" }],
+      sessionId,
+    );
+    let fetchCalls = 0;
+    const transport = createKimiCodeHttpTransport({
+      fetch: syntheticFetch(async () => {
+        fetchCalls += 1;
+        return response(["data: [DONE]\n\n"]);
+      }),
+    });
+
+    expect(new TextEncoder().encode(JSON.stringify(turnRequest.body.messages)).byteLength).toBeLessThan(
+      2 * 1024 * 1024,
+    );
+    await expect(consume(transport, turnRequest)).rejects.toMatchObject({
+      name: "KimiCodePreflightError",
+      code: "request_too_large",
+      recoverable: false,
+    });
+    expect(fetchCalls).toBe(0);
+  });
+
+  it("hands off the one final serialized representation after dynamic tools are attached", async () => {
+    let serializations = 0;
+    const turnRequest = createKimiCodeTurnRequest(
+      request({
+        dynamicTools: [
+          {
+            name: "serialization_probe",
+            description: "probe",
+            inputSchema: {
+              toJSON() {
+                serializations += 1;
+                return { serialization: serializations };
+              },
+            },
+          },
+        ],
+      }),
+      [{ role: "user", content: "short transcript" }],
+      sessionId,
+    );
+    let handedOffBody: unknown;
+    const transport = createKimiCodeHttpTransport({
+      fetch: syntheticFetch(async (_url, init) => {
+        handedOffBody = init?.body;
+        return response(["data: [DONE]\n\n"]);
+      }),
+    });
+
+    await consume(transport, turnRequest);
+
+    expect(serializations).toBe(1);
+    expect(handedOffBody).toContain('"serialization":1');
   });
 
   it("classifies a fetch rejection before acceptance as request_not_sent", async () => {
