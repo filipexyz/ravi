@@ -1,13 +1,17 @@
 import { describe, expect, it } from "bun:test";
-import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   detectFromBinaryPath,
   findPackageRoot,
   managedRuntimeMatchesSnapshot,
   packageTagForChannel,
+  packageTagForVersion,
   planManagedRuntimeRestart,
   resolveUpdateChannel,
+  validateExpectedIntegrity,
 } from "./update.js";
 
 describe("update command helpers", () => {
@@ -24,6 +28,44 @@ describe("update command helpers", () => {
   it("formats package tags for npm channels", () => {
     expect(packageTagForChannel("next")).toBe("ravi.bot@next");
     expect(packageTagForChannel("latest")).toBe("ravi.bot@latest");
+  });
+
+  it("normalizes and pins exact package versions", () => {
+    expect(packageTagForVersion("v3.260811.2")).toBe("ravi.bot@3.260811.2");
+    expect(() => packageTagForVersion("next")).toThrow("exact version");
+    expect(() => packageTagForVersion("3.260811.2 || latest")).toThrow("exact version");
+  });
+
+  it("accepts only sha512 SRI values for release verification", () => {
+    const integrity = `sha512-${"A".repeat(86)}==`;
+    expect(validateExpectedIntegrity(integrity)).toBe(integrity);
+    expect(() => validateExpectedIntegrity("sha256-not-enough")).toThrow("sha512");
+    expect(() => validateExpectedIntegrity("sha512-A")).toThrow("sha512");
+  });
+
+  it("returns one machine-readable usage error for an invalid exact version", () => {
+    const stateDir = join(tmpdir(), `ravi-update-contract-${process.pid}`);
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      RAVI_STATE_DIR: stateDir,
+      RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+    };
+    delete env.RAVI_CONTEXT_KEY;
+    delete env.RAVI_SESSION_KEY;
+    const result = spawnSync("bun", ["src/cli/index.ts", "update", "--version", "latest", "--json"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env,
+    });
+    rmSync(stateDir, { recursive: true, force: true });
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      success: false,
+      op: "ravi update",
+      error: { code: "USAGE_ERROR", retryable: false },
+    });
   });
 
   it("detects common global install paths", () => {

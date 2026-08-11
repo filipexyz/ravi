@@ -28,7 +28,7 @@ import {
 } from "./agent-contract.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
-import { runUpdate } from "./commands/update.js";
+import { runUpdate, type RaviUpdateOptions } from "./commands/update.js";
 import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
 import { emitCliAuditEvent, runWithCliAudit, wasContractErrorAudited } from "./audit.js";
 import { configureCliLogging } from "./logging.js";
@@ -174,17 +174,20 @@ program
 
 program
   .command("update")
-  .description("Update Ravi CLI to the configured npm channel")
+  .description("Update Ravi CLI to an exact release or configured npm channel")
+  .option("--version <version>", "Install one exact Ravi release")
+  .option("--expected-integrity <sri>", "Require the npm sha512 SRI for an exact release")
   .option("--next", "Switch to dev builds (npm @next tag)")
   .option("--stable", "Switch to stable releases (npm @latest tag)")
   .option("--no-restart", "Do not restart managed Ravi processes after updating")
-  .action(async (options: { next?: boolean; stable?: boolean; restart?: boolean }) => {
+  .option("--json", "Print a machine-readable result")
+  .action(async (options: RaviUpdateOptions) => {
     await runWithCliAudit(
       {
         group: "_root",
         name: "update",
         tool: "root_update",
-        input: options,
+        input: { ...options },
         closeLazyConnection: true,
       },
       () => runUpdate(options),
