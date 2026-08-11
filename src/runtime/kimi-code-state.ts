@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { chmod, link, lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
 import { isAbsolute, dirname, join, parse, relative, resolve, sep } from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
 import { getRaviStateDir } from "../utils/paths.js";
 import { KIMI_CODE_PROVIDER_ID } from "./kimi-code-models.js";
@@ -30,6 +30,7 @@ const SNAPSHOT_KEYS = [
   "revision",
   "cwd",
   "lastCommittedTurnId",
+  "credentialProfileFingerprint",
   "messages",
 ] as const;
 
@@ -41,6 +42,7 @@ export interface KimiCodeSessionSnapshot {
   revision: number;
   cwd: string;
   lastCommittedTurnId: string;
+  credentialProfileFingerprint: string;
   messages: KimiCodeConversationMessage[];
 }
 
@@ -53,7 +55,10 @@ export interface CommitKimiCodeSessionStateInput {
   previousSnapshot?: KimiCodeSessionSnapshot;
   env?: NodeJS.ProcessEnv;
   /** Test-only crash boundary; production callers must omit it. */
-  faultInjection?: { beforePublish?: () => void | Promise<void> };
+  faultInjection?: {
+    beforePublish?: () => void | Promise<void>;
+    observeAclProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void;
+  };
 }
 
 export interface CommittedKimiCodeSessionState {
@@ -72,9 +77,10 @@ export async function commitKimiCodeSessionState(
   input: CommitKimiCodeSessionStateInput,
 ): Promise<CommittedKimiCodeSessionState> {
   const cwd = normalizeCwd(input.cwd);
+  const credentialProfileFingerprint = resolveCredentialProfileFingerprint(input.env);
   if (!UUID_PATTERN.test(input.sessionId)) throw stateError("session id is invalid");
   const previous = input.previousSnapshot;
-  if (previous) validatePreviousSnapshot(previous, input.model, cwd);
+  if (previous) validatePreviousSnapshot(previous, input.model, cwd, credentialProfileFingerprint);
   if (previous && previous.sessionId !== input.sessionId) throw stateError("session id mismatch");
   if (!input.lastCommittedTurnId.trim()) throw stateError("turn id is invalid");
   if (containsConfiguredCredential(input.messages, input.env)) {
@@ -89,6 +95,7 @@ export async function commitKimiCodeSessionState(
     revision: (previous?.revision ?? 0) + 1,
     cwd,
     lastCommittedTurnId: input.lastCommittedTurnId,
+    credentialProfileFingerprint,
     messages,
   };
   if (containsConfiguredCredential(snapshot, input.env)) {
@@ -104,7 +111,7 @@ export async function commitKimiCodeSessionState(
     throw new Error("Kimi Code session state contains configured credential");
   }
   const sessionDirectory = join(root, snapshot.sessionId);
-  await ensureDurablePrivateStateDirectories(root, sessionDirectory);
+  await ensureDurablePrivateStateDirectories(root, sessionDirectory, input.faultInjection?.observeAclProcessEnv);
 
   const finalPath = join(sessionDirectory, revisionFilename(snapshot.revision));
   const temporaryPath = join(sessionDirectory, `.${revisionFilename(snapshot.revision)}.${randomUUID()}.tmp`);
@@ -113,7 +120,7 @@ export async function commitKimiCodeSessionState(
     const file = await open(temporaryPath, "wx", 0o600);
     temporaryCreated = true;
     try {
-      await applyPrivatePermissions(temporaryPath, false);
+      await applyPrivatePermissions(temporaryPath, false, input.faultInjection?.observeAclProcessEnv);
       await file.writeFile(serialized, "utf8");
       await file.sync();
     } finally {
@@ -204,6 +211,9 @@ export async function loadKimiCodeSessionState(input: LoadKimiCodeSessionStateIn
     throw stateError("session file contains configured credential");
   }
   const snapshot = parseSnapshot(decoded);
+  if (snapshot.credentialProfileFingerprint !== resolveCredentialProfileFingerprint(input.env)) {
+    throw stateError("credential profile mismatch");
+  }
   if (
     snapshot.schemaVersion !== params.schemaVersion ||
     snapshot.provider !== params.provider ||
@@ -272,6 +282,8 @@ function parseSnapshot(value: unknown): KimiCodeSessionSnapshot {
     typeof value.revision !== "number" ||
     typeof value.cwd !== "string" ||
     typeof value.lastCommittedTurnId !== "string" ||
+    typeof value.credentialProfileFingerprint !== "string" ||
+    !/^sha256:[0-9a-f]{64}$/.test(value.credentialProfileFingerprint) ||
     !Array.isArray(value.messages)
   ) {
     throw stateError("session file is corrupt");
@@ -284,11 +296,17 @@ function parseSnapshot(value: unknown): KimiCodeSessionSnapshot {
     revision: value.revision,
     cwd: value.cwd,
     lastCommittedTurnId: value.lastCommittedTurnId,
+    credentialProfileFingerprint: value.credentialProfileFingerprint,
     messages: validateMessages(value.messages),
   };
 }
 
-function validatePreviousSnapshot(snapshot: KimiCodeSessionSnapshot, model: string, cwd: string): void {
+function validatePreviousSnapshot(
+  snapshot: KimiCodeSessionSnapshot,
+  model: string,
+  cwd: string,
+  credentialProfileFingerprint: string,
+): void {
   if (
     snapshot.schemaVersion !== KIMI_CODE_STATE_SCHEMA_VERSION ||
     snapshot.provider !== KIMI_CODE_PROVIDER_ID ||
@@ -297,11 +315,18 @@ function validatePreviousSnapshot(snapshot: KimiCodeSessionSnapshot, model: stri
     !Number.isSafeInteger(snapshot.revision) ||
     snapshot.revision < 1 ||
     !sameCwd(snapshot.cwd, cwd) ||
+    snapshot.credentialProfileFingerprint !== credentialProfileFingerprint ||
     !snapshot.lastCommittedTurnId.trim()
   ) {
     throw stateError("previous snapshot is invalid");
   }
   validateMessages(snapshot.messages);
+}
+
+function resolveCredentialProfileFingerprint(env?: NodeJS.ProcessEnv): string {
+  const key = env?.KIMI_API_KEY;
+  if (!key) throw stateError("credential profile is unavailable");
+  return `sha256:${createHash("sha256").update(`${KIMI_CODE_PROVIDER_ID}\0${key}`, "utf8").digest("hex")}`;
 }
 
 function validateMessages(messages: readonly unknown[]): KimiCodeConversationMessage[] {
@@ -401,7 +426,11 @@ async function assertNoExistingReparsePoints(target: string): Promise<void> {
   }
 }
 
-async function applyPrivatePermissions(pathOrPaths: string | readonly string[], directory: boolean): Promise<void> {
+async function applyPrivatePermissions(
+  pathOrPaths: string | readonly string[],
+  directory: boolean,
+  observeAclProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void,
+): Promise<void> {
   const paths = typeof pathOrPaths === "string" ? [pathOrPaths] : [...pathOrPaths];
   await Promise.all(paths.map((path) => chmod(path, directory ? 0o700 : 0o600)));
   if (process.platform !== "win32") return;
@@ -413,13 +442,19 @@ async function applyPrivatePermissions(pathOrPaths: string | readonly string[], 
     "$sections = [System.Security.AccessControl.AccessControlSections]::Access",
     "foreach ($target in (ConvertFrom-Json $env:RAVI_KIMI_ACL_PATHS)) { $security = if ($isDirectory) { [System.IO.Directory]::GetAccessControl($target, $sections) } else { [System.IO.File]::GetAccessControl($target, $sections) }; $security.SetAccessRuleProtection($true, $false); @($security.Access) | ForEach-Object { [void]$security.RemoveAccessRuleSpecific($_) }; foreach ($sid in $sids) { $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, [System.Security.AccessControl.FileSystemRights]::FullControl, $inheritance, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow); [void]$security.AddAccessRule($rule) }; if ($isDirectory) { [System.IO.Directory]::SetAccessControl($target, $security) } else { [System.IO.File]::SetAccessControl($target, $security) } }",
   ].join("; ");
+  const childEnv = aclProcessEnv(paths, directory);
+  observeAclProcessEnv?.({ ...childEnv });
   await execFileAsync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
-    env: aclProcessEnv(paths, directory),
+    env: childEnv,
     windowsHide: true,
   });
 }
 
-async function ensureDurablePrivateStateDirectories(root: string, sessionDirectory: string): Promise<void> {
+async function ensureDurablePrivateStateDirectories(
+  root: string,
+  sessionDirectory: string,
+  observeAclProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void,
+): Promise<void> {
   const stateDirectory = dirname(dirname(dirname(root)));
   const runtimeDirectory = join(stateDirectory, "runtime");
   const providerDirectory = join(runtimeDirectory, "kimi-code");
@@ -438,7 +473,7 @@ async function ensureDurablePrivateStateDirectories(root: string, sessionDirecto
     }
     await syncDirectory(dirname(directory));
   }
-  await applyPrivatePermissions(privateDirectories, true);
+  await applyPrivatePermissions(privateDirectories, true, observeAclProcessEnv);
 }
 
 function aclProcessEnv(paths: readonly string[], directory: boolean): NodeJS.ProcessEnv {

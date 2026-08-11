@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createKimiCodeCompletedTurnAccumulator, createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
@@ -1183,6 +1183,104 @@ describe("createKimiCodeRuntimeProvider", () => {
         tool_calls: [],
       },
     ]);
+  });
+
+  test("keeps end-to-end private sentinels out of host input, public events, and public state", async () => {
+    const fixture = isolatedStateEnv();
+    const managedKey = "sk-test_kimi_managed_secret_123456789";
+    const promptSentinel = "PRIVATE_PROMPT_SENTINEL";
+    const pathSentinel = "C:/synthetic/PRIVATE_PATH_SENTINEL.png";
+    const reasoningSentinel = "PRIVATE_REASONING_SENTINEL";
+    const toolInputSentinel = "sk-test_tool_input_secret_123456789";
+    const toolOutputSentinel = "sk-test_tool_output_secret_123456789";
+    const requests: KimiCodeTransportRequest[] = [];
+    const hostInputs: RuntimeDynamicToolCallRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [
+          toolTurn(
+            [
+              {
+                index: 0,
+                id: "sentinel-call",
+                name: "lookup_order",
+                arguments: JSON.stringify({ token: toolInputSentinel }),
+              },
+            ],
+            { reasoning: reasoningSentinel },
+          ),
+          finalTurn("Synthetic completion"),
+        ],
+        requests,
+      ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        prompt: prompts(`${promptSentinel} ${pathSentinel}`),
+        cwd: join(fixture.root, "workspace"),
+        env: { ...fixture.env, KIMI_API_KEY: managedKey },
+        handleRuntimeToolCall: async (request) => {
+          hostInputs.push(request);
+          return { success: true, contentItems: [{ type: "inputText", text: toolOutputSentinel }] };
+        },
+      }),
+    );
+
+    expect(JSON.stringify(hostInputs)).not.toContain(managedKey);
+    expect(requests[0]?.headers.Authorization).toBe(`Bearer ${managedKey}`);
+    expect(JSON.stringify(requests.map((request) => request.body))).not.toContain(managedKey);
+    const publicEvents = JSON.stringify(events);
+    for (const sentinel of [
+      managedKey,
+      promptSentinel,
+      pathSentinel,
+      reasoningSentinel,
+      toolInputSentinel,
+      toolOutputSentinel,
+    ]) {
+      expect(publicEvents).not.toContain(sentinel);
+    }
+
+    const terminal = events.at(-1);
+    if (terminal?.type !== "turn.complete" || !terminal.session) throw new Error("missing committed sentinel state");
+    const publicState = JSON.stringify(terminal.session);
+    expect(publicState).not.toContain(managedKey);
+    expect(publicState).not.toContain(reasoningSentinel);
+    const privateState = readFileSync(String(terminal.session.params?.sessionFile), "utf8");
+    expect(privateState).not.toContain(managedKey);
+    expect(privateState).toContain(promptSentinel);
+    expect(privateState).toContain(reasoningSentinel);
+  });
+
+  test("omits unsupported attachments and host integrations from native requests", async () => {
+    const requests: KimiCodeTransportRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence([finalTurn("Text only")], requests),
+    });
+    const mediaPaths = "C:/synthetic/image.png C:/synthetic/video.mp4";
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        prompt: prompts(mediaPaths),
+        mcpServers: { privateMcp: { command: "synthetic" } },
+        plugins: [{ type: "local", path: "C:/synthetic/plugin" }],
+        remoteSpawn: { target: "synthetic-worker" },
+      }),
+    );
+
+    const body = requests[0]?.body as unknown as Record<string, unknown>;
+    expect(body.messages).toEqual([
+      { role: "user", content: mediaPaths },
+      { role: "system", content: "Ravi policy." },
+    ]);
+    for (const unsupportedKey of ["images", "videos", "response_format", "plugins", "mcp_servers", "remote_spawn"]) {
+      expect(body).not.toHaveProperty(unsupportedKey);
+    }
+    expect(events.at(-1)?.type).toBe("turn.complete");
+    expect(createKimiCodeRuntimeProvider().getCapabilities().tools.supportsParallelCalls).toBe(false);
   });
 
   test("resumes byte-faithful reasoning and tool pairings before the next provider request", async () => {

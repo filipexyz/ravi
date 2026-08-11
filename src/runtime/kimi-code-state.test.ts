@@ -213,6 +213,45 @@ describe("Kimi Code immutable session state", () => {
     expect(bytes).not.toContain("never-persist-this-key");
   });
 
+  test("binds private continuity to a non-secret credential profile fingerprint", async () => {
+    const committed = await firstCommit();
+    const bytes = readFileSync(String(committed.session.params?.sessionFile), "utf8");
+    const fingerprint = (committed.snapshot as unknown as Record<string, unknown>).credentialProfileFingerprint;
+
+    expect(fingerprint).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(bytes).toContain(String(fingerprint));
+    expect(bytes).not.toContain(committed.env.KIMI_API_KEY);
+    await expect(
+      loadKimiCodeSessionState({
+        session: committed.session,
+        model: "k3",
+        cwd: committed.cwd,
+        env: { ...committed.env, KIMI_API_KEY: "rotated-membership-key" },
+      }),
+    ).rejects.toThrow("credential profile mismatch");
+  });
+
+  test("does not inherit the managed Kimi key into the Windows ACL child environment", async () => {
+    const fixture = temporaryState();
+    const observed: NodeJS.ProcessEnv[] = [];
+
+    await commitKimiCodeSessionState({
+      sessionId: createKimiCodeSessionId(),
+      model: "k3",
+      cwd: fixture.cwd,
+      lastCommittedTurnId: "turn-acl-env",
+      messages: nativeMessages(),
+      env: fixture.env,
+      faultInjection: { observeAclProcessEnv: (env) => observed.push(env) },
+    });
+
+    if (process.platform === "win32") expect(observed.length).toBeGreaterThan(0);
+    for (const env of observed) {
+      expect(env.KIMI_API_KEY).toBeUndefined();
+      expect(JSON.stringify(env)).not.toContain(fixture.env.KIMI_API_KEY);
+    }
+  });
+
   test("rejects a commit when native state contains the configured API key", async () => {
     const fixture = temporaryState();
     await expect(

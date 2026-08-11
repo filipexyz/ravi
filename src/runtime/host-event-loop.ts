@@ -2303,12 +2303,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
         const cost = executionModel
-          ? calculateCost(executionModel, {
-              inputTokens,
-              outputTokens,
-              cacheRead,
-              cacheCreation,
-            })
+          ? calculateCost(
+              executionModel,
+              {
+                inputTokens,
+                outputTokens,
+                cacheRead,
+                cacheCreation,
+              },
+              {
+                runtimeProvider: runtimeSession.provider,
+              },
+            )
           : null;
         const resolvedCost = cost ? await cost : null;
         if (resolvedCost && executionModel) {

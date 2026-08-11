@@ -77,6 +77,7 @@ export interface PricingCatalogOptions {
 
 export interface CalculateCostOptions extends PricingCatalogOptions {
   catalog?: PricingCatalogSnapshot;
+  runtimeProvider?: string;
 }
 
 const memoryCatalogs = new Map<string, PricingCatalogSnapshot>();
@@ -127,7 +128,10 @@ export async function resolveModelPricing(
   const catalog = options.catalog ?? (await loadPricingCatalog(options));
   if (!catalog) return null;
 
-  const match = resolveModelPricingFromCatalog(model, catalog);
+  const match =
+    options.runtimeProvider === "kimi-code"
+      ? resolveProviderQualifiedPricingFromCatalog("kimi-code", model, catalog)
+      : resolveModelPricingFromCatalog(model, catalog);
   if (!match) return null;
 
   return {
@@ -141,6 +145,20 @@ export async function resolveModelPricing(
       stale: catalog.stale,
     },
   };
+}
+
+function resolveProviderQualifiedPricingFromCatalog(
+  runtimeProvider: string,
+  model: string,
+  catalog: PricingCatalogSnapshot,
+): { model: string; pricing: ModelPricing } | null {
+  const normalizedModel = model.trim();
+  if (!normalizedModel) return null;
+  const qualifiedModel = normalizedModel.startsWith(`${runtimeProvider}/`)
+    ? normalizedModel
+    : `${runtimeProvider}/${normalizedModel}`;
+  const pricing = parseLiteLlmPricing(catalog.entries[qualifiedModel]);
+  return pricing ? { model: qualifiedModel, pricing } : null;
 }
 
 export function resolveModelPricingFromCatalog(
