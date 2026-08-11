@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
+import { buildKimiCodeRequest } from "./kimi-code-transport.js";
 import { listRegisteredRuntimeProviderIds, unregisterRuntimeProvider } from "./provider-registry.js";
 import type { RuntimeHostServices } from "./types.js";
 
@@ -24,6 +25,10 @@ function createHostServices(): RuntimeHostServices {
 }
 
 describe("createKimiCodeRuntimeProvider", () => {
+  test("exports the transport request boundary for its provider-specific mapping", () => {
+    expect(typeof buildKimiCodeRequest).toBe("function");
+  });
+
   test("declares the conservative Kimi Code v1 capability contract", () => {
     expect(createKimiCodeRuntimeProvider().getCapabilities()).toEqual({
       runtimeControl: { supported: false, operations: [] },

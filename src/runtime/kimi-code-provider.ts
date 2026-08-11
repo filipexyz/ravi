@@ -8,6 +8,13 @@ import type {
 } from "./types.js";
 
 export { KIMI_CODE_CREDENTIAL_ENV_KEY } from "./kimi-code-models.js";
+export {
+  buildKimiCodeRequest,
+  createKimiCodeHttpTransport,
+  type KimiCodeStreamEvent,
+  type KimiCodeTransport,
+  type KimiCodeTransportRequest,
+} from "./kimi-code-transport.js";
 
 export interface KimiCodeRuntimeProvider extends SessionRuntimeProvider {
   id: typeof KIMI_CODE_PROVIDER_ID;
