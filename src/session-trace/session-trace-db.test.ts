@@ -313,6 +313,30 @@ describe("session trace db", () => {
     expect(getSessionTurn("turn-1")?.status).toBe("complete");
   });
 
+  it("preserves unavailable turn usage as null instead of fabricating zero", () => {
+    upsertSessionTurn({
+      turnId: "turn-usage-unavailable",
+      sessionKey: "agent:main:usage-unavailable",
+      status: "running",
+      startedAt: 100,
+    });
+    const completed = upsertSessionTurn({
+      turnId: "turn-usage-unavailable",
+      sessionKey: "agent:main:usage-unavailable",
+      status: "complete",
+      completedAt: 200,
+    });
+
+    expect(completed).toMatchObject({
+      inputTokens: null,
+      outputTokens: null,
+      cacheReadTokens: null,
+      cacheCreationTokens: null,
+      costUsd: null,
+    });
+    expect(getSessionTurn("turn-usage-unavailable")).toMatchObject({ inputTokens: null, outputTokens: null });
+  });
+
   it("redacts nested secret values without dropping allowed operational values", () => {
     expect(redactText("Bearer abcdefghijklmnop")).toEqual({
       value: "Bearer [REDACTED]",

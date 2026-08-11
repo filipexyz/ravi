@@ -138,11 +138,11 @@ type StoredTurn = {
   userPromptSha256: string | null;
   systemPromptSha256: string | null;
   requestBlobSha256: string | null;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  costUsd: number;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheCreationTokens: number | null;
+  costUsd: number | null;
   error: string | null;
   abortReason: string | null;
   startedAt: number;
@@ -389,11 +389,11 @@ function rowToSessionTurn(row: SessionTurnRow): SessionTurnRecord {
     userPromptSha256: row.user_prompt_sha256,
     systemPromptSha256: row.system_prompt_sha256,
     requestBlobSha256: row.request_blob_sha256,
-    inputTokens: row.input_tokens ?? 0,
-    outputTokens: row.output_tokens ?? 0,
-    cacheReadTokens: row.cache_read_tokens ?? 0,
-    cacheCreationTokens: row.cache_creation_tokens ?? 0,
-    costUsd: row.cost_usd ?? 0,
+    inputTokens: row.input_tokens,
+    outputTokens: row.output_tokens,
+    cacheReadTokens: row.cache_read_tokens,
+    cacheCreationTokens: row.cache_creation_tokens,
+    costUsd: row.cost_usd,
     error: row.error,
     abortReason: row.abort_reason,
     startedAt: row.started_at,
@@ -523,10 +523,11 @@ function pickText<K extends keyof UpsertSessionTurnInput>(
 function pickNumber<K extends keyof UpsertSessionTurnInput>(
   input: UpsertSessionTurnInput,
   key: K,
-  current: number,
-): number {
+  current: number | null,
+): number | null {
   if (!hasOwn(input, key) || input[key] === undefined) return current;
   const value = input[key];
+  if (value === null) return null;
   return typeof value === "number" && Number.isFinite(value) ? value : current;
 }
 
@@ -573,11 +574,11 @@ function normalizeTurn(input: UpsertSessionTurnInput, current: StoredTurn | null
     userPromptSha256: pickText(input, "userPromptSha256", current?.userPromptSha256 ?? null),
     systemPromptSha256: pickText(input, "systemPromptSha256", current?.systemPromptSha256 ?? null),
     requestBlobSha256: pickText(input, "requestBlobSha256", current?.requestBlobSha256 ?? null),
-    inputTokens: pickNumber(input, "inputTokens", current?.inputTokens ?? 0),
-    outputTokens: pickNumber(input, "outputTokens", current?.outputTokens ?? 0),
-    cacheReadTokens: pickNumber(input, "cacheReadTokens", current?.cacheReadTokens ?? 0),
-    cacheCreationTokens: pickNumber(input, "cacheCreationTokens", current?.cacheCreationTokens ?? 0),
-    costUsd: pickNumber(input, "costUsd", current?.costUsd ?? 0),
+    inputTokens: pickNumber(input, "inputTokens", current?.inputTokens ?? null),
+    outputTokens: pickNumber(input, "outputTokens", current?.outputTokens ?? null),
+    cacheReadTokens: pickNumber(input, "cacheReadTokens", current?.cacheReadTokens ?? null),
+    cacheCreationTokens: pickNumber(input, "cacheCreationTokens", current?.cacheCreationTokens ?? null),
+    costUsd: pickNumber(input, "costUsd", current?.costUsd ?? null),
     error,
     abortReason,
     startedAt:

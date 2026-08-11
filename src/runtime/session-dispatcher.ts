@@ -49,12 +49,14 @@ import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
+import { isKimiCodeSessionStartEnabled } from "./kimi-code-availability.js";
 import {
   startRuntimeSession,
   updateRuntimeSessionMetadata,
   type PendingRuntimeSessionStart,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { resolveRuntimeProviderIdForSession } from "./session-resolver.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import { resolveRuntimeForPrompt, runtimePromptRequiresRestart } from "./task-runtime-context.js";
 import {
@@ -1331,6 +1333,21 @@ export class RuntimeSessionDispatcher {
     prompt: RuntimeLaunchPrompt,
     options: { retainReleasedSlot?: boolean } = {},
   ): Promise<void> {
+    const requestedProvider = resolveRuntimeProviderIdForSession({
+      sessionName,
+      prompt,
+      configModel: this.options.getConfigModel(),
+      defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
+    });
+    if (requestedProvider === "kimi-code" && !isKimiCodeSessionStartEnabled(process.env)) {
+      await this.options.safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "turn.failed",
+        provider: "kimi-code",
+        error: "Kimi Code session start is disabled",
+        recoverable: false,
+      });
+      return;
+    }
     this.pendingStartSessions.add(sessionName);
     let reserved = false;
     try {

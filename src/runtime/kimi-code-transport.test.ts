@@ -469,7 +469,7 @@ describe("createKimiCodeHttpTransport", () => {
     expect(handedOffBody).toContain('"serialization":1');
   });
 
-  it("classifies a fetch rejection before acceptance as request_not_sent", async () => {
+  it("classifies a fetch rejection after invocation as acceptance_ambiguous", async () => {
     const transport = createKimiCodeHttpTransport({
       fetch: syntheticFetch(async () => {
         throw new Error("network unavailable");
@@ -478,11 +478,11 @@ describe("createKimiCodeHttpTransport", () => {
 
     await expect(consume(transport, transportRequest)).rejects.toMatchObject({
       name: "KimiCodeTransportError",
-      phase: "request_not_sent",
+      phase: "acceptance_ambiguous",
     });
   });
 
-  it("classifies an unowned AbortError before acceptance as request_not_sent", async () => {
+  it("classifies an unowned AbortError after fetch invocation as acceptance_ambiguous", async () => {
     const transport = createKimiCodeHttpTransport({
       fetch: syntheticFetch(async () => {
         throw new DOMException("remote cancellation", "AbortError");
@@ -491,7 +491,7 @@ describe("createKimiCodeHttpTransport", () => {
 
     await expect(consume(transport, transportRequest)).rejects.toMatchObject({
       name: "KimiCodeTransportError",
-      phase: "request_not_sent",
+      phase: "acceptance_ambiguous",
     });
   });
 

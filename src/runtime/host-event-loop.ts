@@ -275,25 +275,12 @@ function recordRuntimeCredentialTurnFailure(input: {
 }): RuntimeCredentialFailureSignal | undefined {
   const credential = input.streaming.currentRuntimeCredential;
   if (!credential) return undefined;
-  const rawError = asRecord(input.rawEvent?.error);
-  const headers = extractRuntimeFailureHeaders(input.rawEvent);
-  const signal = classifyRuntimeCredentialFailure({
-    runtimeProvider: input.provider,
-    upstreamProvider: credential.upstreamProvider,
+  const signal = classifyRuntimeCredentialTurnFailure({
+    provider: input.provider,
     model: input.model,
-    credentialId: credential.credentialId,
-    httpStatus: firstNumber(input.rawEvent?.status, input.rawEvent?.statusCode, rawError?.status, rawError?.statusCode),
-    providerCode: firstString(input.rawEvent?.code, rawError?.code),
-    providerType: firstString(input.rawEvent?.type, input.rawEvent?.subtype, rawError?.type),
-    message: input.error,
-    ...(headers ? { headers } : {}),
-    requestId: firstString(
-      input.rawEvent?.requestId,
-      input.rawEvent?.request_id,
-      rawError?.requestId,
-      rawError?.request_id,
-    ),
-    source: "sdk-error",
+    error: input.error,
+    rawEvent: input.rawEvent,
+    credential,
   });
 
   try {
@@ -310,6 +297,36 @@ function recordRuntimeCredentialTurnFailure(input: {
     });
   }
   return signal;
+}
+
+/** @internal Pure host-boundary projection used by credential regression tests. */
+export function classifyRuntimeCredentialTurnFailure(input: {
+  provider: RuntimeProviderId;
+  model: string;
+  error: string;
+  rawEvent?: Record<string, unknown>;
+  credential: { credentialId: string; upstreamProvider?: string };
+}): RuntimeCredentialFailureSignal {
+  const rawError = asRecord(input.rawEvent?.error);
+  const headers = extractRuntimeFailureHeaders(input.rawEvent);
+  return classifyRuntimeCredentialFailure({
+    runtimeProvider: input.provider,
+    upstreamProvider: input.credential.upstreamProvider,
+    model: input.model,
+    credentialId: input.credential.credentialId,
+    httpStatus: firstNumber(input.rawEvent?.status, input.rawEvent?.statusCode, rawError?.status, rawError?.statusCode),
+    providerCode: firstString(input.rawEvent?.code, rawError?.code),
+    providerType: firstString(input.rawEvent?.type, input.rawEvent?.subtype, rawError?.type),
+    message: input.error,
+    ...(headers ? { headers } : {}),
+    requestId: firstString(
+      input.rawEvent?.requestId,
+      input.rawEvent?.request_id,
+      rawError?.requestId,
+      rawError?.request_id,
+    ),
+    source: "sdk-error",
+  });
 }
 
 function buildProviderRawRuntimeEvent(
@@ -2255,19 +2272,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       // Handle result (turn complete - save and wait for next message)
       if (event.type === "turn.complete") {
-        const inputTokens = event.usage.inputTokens;
-        const outputTokens = event.usage.outputTokens;
-        const cacheRead = event.usage.cacheReadTokens ?? 0;
-        const cacheCreation = event.usage.cacheCreationTokens ?? 0;
+        const inputTokens = event.usage?.inputTokens;
+        const outputTokens = event.usage?.outputTokens;
+        const cacheRead = event.usage?.cacheReadTokens;
+        const cacheCreation = event.usage?.cacheCreationTokens;
 
         log.info("Turn complete", {
           runId,
           interrupted: streaming.interrupted,
-          total: inputTokens + cacheRead + cacheCreation,
-          new: inputTokens,
-          cached: cacheRead,
-          written: cacheCreation,
-          output: outputTokens,
+          ...(event.usage
+            ? {
+                total: inputTokens! + (cacheRead ?? 0) + (cacheCreation ?? 0),
+                new: inputTokens,
+                cached: cacheRead ?? 0,
+                written: cacheCreation ?? 0,
+                output: outputTokens,
+              }
+            : { usage: "unavailable" }),
           sessionId: event.session?.displayId ?? event.providerSessionId,
         });
         const completedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
@@ -2299,33 +2320,41 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           session.runtimeProvider = runtimeSession.provider;
         }
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
-        updateTokens(session.sessionKey, inputTokens, outputTokens, inputTokens + cacheRead + cacheCreation);
+        if (event.usage) {
+          updateTokens(
+            session.sessionKey,
+            inputTokens!,
+            outputTokens!,
+            inputTokens! + (cacheRead ?? 0) + (cacheCreation ?? 0),
+          );
+        }
 
         const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
-        const cost = executionModel
-          ? calculateCost(
-              executionModel,
-              {
-                inputTokens,
-                outputTokens,
-                cacheRead,
-                cacheCreation,
-              },
-              {
-                runtimeProvider: runtimeSession.provider,
-              },
-            )
-          : null;
+        const cost =
+          executionModel && event.usage
+            ? calculateCost(
+                executionModel,
+                {
+                  inputTokens: inputTokens!,
+                  outputTokens: outputTokens!,
+                  cacheRead: cacheRead ?? 0,
+                  cacheCreation: cacheCreation ?? 0,
+                },
+                {
+                  runtimeProvider: runtimeSession.provider,
+                },
+              )
+            : null;
         const resolvedCost = cost ? await cost : null;
-        if (resolvedCost && executionModel) {
+        if (resolvedCost && executionModel && event.usage) {
           dbInsertCostEvent({
             sessionKey: session.sessionKey,
             agentId: agent.id,
             model: executionModel,
-            inputTokens,
-            outputTokens,
-            cacheReadTokens: cacheRead,
-            cacheCreationTokens: cacheCreation,
+            inputTokens: inputTokens!,
+            outputTokens: outputTokens!,
+            cacheReadTokens: cacheRead ?? 0,
+            cacheCreationTokens: cacheCreation ?? 0,
             inputCostUsd: resolvedCost.inputCost,
             outputCostUsd: resolvedCost.outputCost,
             cacheCostUsd: resolvedCost.cacheCost,

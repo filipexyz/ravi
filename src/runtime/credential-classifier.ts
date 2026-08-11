@@ -53,7 +53,7 @@ export function classifyRuntimeCredentialFailure(
 
   const classified =
     input.runtimeProvider === "kimi-code"
-      ? classifyKimiCodeKind({ status, text })
+      ? classifyKimiCodeKind({ status, text, providerCode, providerType })
       : classifyKind({ status, providerCode, providerType, text });
   return {
     kind: classified.kind,
@@ -79,12 +79,28 @@ export function classifyRuntimeCredentialFailure(
   };
 }
 
-function classifyKimiCodeKind(input: { status?: number; text: string }): {
+function classifyKimiCodeKind(input: { status?: number; text: string; providerCode?: string; providerType?: string }): {
   kind: RuntimeCredentialFailureKind;
   confidence: RuntimeCredentialFailureConfidence;
   scope: RuntimeCredentialFailureScope;
 } {
   const text = input.text;
+  const tokens = [input.providerCode, input.providerType];
+  if (
+    input.status === 401 &&
+    (input.providerCode === "invalid_api_key" || input.providerType === "authentication_error")
+  ) {
+    return { kind: "auth_invalid", confidence: "high", scope: "credential" };
+  }
+  if (
+    (input.status === 403 || input.status === 429) &&
+    (tokens.includes("quota_exhausted") || tokens.includes("usage_limit_exceeded"))
+  ) {
+    return { kind: "quota_exhausted", confidence: "high", scope: "account" };
+  }
+  if (input.status === 429 && (input.providerCode === "rate_limited" || input.providerType === "rate_limit_error")) {
+    return { kind: "rate_limited", confidence: "high", scope: "account" };
+  }
   if (
     input.status === 401 &&
     (text.includes("api key appears to be invalid") || text.includes("invalid authentication"))

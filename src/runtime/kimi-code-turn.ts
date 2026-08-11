@@ -49,7 +49,14 @@ export interface KimiCodeCompletedTurn {
   text: string;
   reasoning: string;
   toolCalls: KimiCodeToolCallFragment[];
-  usage: { inputTokens: number; outputTokens: number; cacheReadTokens?: number; cacheCreationTokens?: number };
+  usage?: KimiCodeUsage;
+}
+
+export interface KimiCodeUsage {
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens?: number;
+  cacheCreationTokens?: number;
 }
 
 export type KimiCodeConversationMessage =
@@ -114,7 +121,7 @@ export function createKimiCodeCompletedTurnAccumulator(): {
 } {
   let text = "";
   let reasoning = "";
-  let usage: KimiCodeCompletedTurn["usage"] = { inputTokens: 0, outputTokens: 0 };
+  let usage: KimiCodeUsagePatch | undefined;
   let finishReason: KimiCodeTerminalFinishReason | undefined;
   let accumulatedResponseBytes = 0;
   const toolCalls = new Map<number, KimiCodeToolCallFragment>();
@@ -252,10 +259,7 @@ export function createKimiCodeToolResultViews(result: RuntimeDynamicToolCallResu
   return { providerContent, publicContent: sanitizePublicValue(providerContent) };
 }
 
-export function addKimiCodeUsage(
-  current: KimiCodeCompletedTurn["usage"],
-  next: KimiCodeCompletedTurn["usage"],
-): KimiCodeCompletedTurn["usage"] {
+export function addKimiCodeUsage(current: KimiCodeUsage, next: KimiCodeUsage): KimiCodeUsage {
   const cacheReadTokens = checkedAddTokenCounts(current.cacheReadTokens ?? 0, next.cacheReadTokens ?? 0);
   const cacheCreationTokens = checkedAddTokenCounts(current.cacheCreationTokens ?? 0, next.cacheCreationTokens ?? 0);
   return {
@@ -409,29 +413,41 @@ function completeKimiCodeTurn(input: {
   text: string;
   reasoning: string;
   toolCalls: ReadonlyMap<number, KimiCodeToolCallFragment>;
-  usage: KimiCodeCompletedTurn["usage"];
+  usage?: KimiCodeUsagePatch;
 }): KimiCodeCompletedTurn {
+  const usage =
+    input.usage?.inputTokens !== undefined && input.usage.outputTokens !== undefined
+      ? {
+          inputTokens: input.usage.inputTokens,
+          outputTokens: input.usage.outputTokens,
+          ...(input.usage.cacheReadTokens !== undefined ? { cacheReadTokens: input.usage.cacheReadTokens } : {}),
+          ...(input.usage.cacheCreationTokens !== undefined
+            ? { cacheCreationTokens: input.usage.cacheCreationTokens }
+            : {}),
+        }
+      : undefined;
   return {
     finishReason: input.finishReason,
     text: input.text,
     reasoning: input.reasoning,
     toolCalls: [...input.toolCalls.values()].sort((left, right) => left.index - right.index),
-    usage: input.usage,
+    ...(usage ? { usage } : {}),
   };
 }
 
-function mergeKimiCodeUsage(
-  current: KimiCodeCompletedTurn["usage"],
-  value: KimiCodeUsagePatch,
-): KimiCodeCompletedTurn["usage"] {
+function mergeKimiCodeUsage(current: KimiCodeUsagePatch | undefined, value: KimiCodeUsagePatch): KimiCodeUsagePatch {
   return {
-    inputTokens: value.inputTokens ?? current.inputTokens,
-    outputTokens: value.outputTokens ?? current.outputTokens,
-    ...((value.cacheReadTokens ?? current.cacheReadTokens) !== undefined
-      ? { cacheReadTokens: value.cacheReadTokens ?? current.cacheReadTokens }
+    ...((value.inputTokens ?? current?.inputTokens) !== undefined
+      ? { inputTokens: value.inputTokens ?? current?.inputTokens }
       : {}),
-    ...((value.cacheCreationTokens ?? current.cacheCreationTokens) !== undefined
-      ? { cacheCreationTokens: value.cacheCreationTokens ?? current.cacheCreationTokens }
+    ...((value.outputTokens ?? current?.outputTokens) !== undefined
+      ? { outputTokens: value.outputTokens ?? current?.outputTokens }
+      : {}),
+    ...((value.cacheReadTokens ?? current?.cacheReadTokens) !== undefined
+      ? { cacheReadTokens: value.cacheReadTokens ?? current?.cacheReadTokens }
+      : {}),
+    ...((value.cacheCreationTokens ?? current?.cacheCreationTokens) !== undefined
+      ? { cacheCreationTokens: value.cacheCreationTokens ?? current?.cacheCreationTokens }
       : {}),
   };
 }

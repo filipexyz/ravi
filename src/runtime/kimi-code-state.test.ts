@@ -868,28 +868,50 @@ describe("Kimi Code immutable session state", () => {
     },
   );
 
-  test("installs an exact private Windows ACL on the stable parent, session, and snapshot", async () => {
+  test.skipIf(process.platform !== "win32")(
+    "creates the Windows provider root with its protected ACL atomically on first use",
+    async () => {
+      const fixture = temporaryState();
+      mkdirSync(fixture.env.RAVI_STATE_DIR);
+      execFileSync("icacls", [fixture.env.RAVI_STATE_DIR, "/grant", "*S-1-1-0:(OI)(CI)R", "/Q"]);
+      const providerRoot = join(fixture.env.RAVI_STATE_DIR, "runtime", "kimi-code");
+      const allowed = new Set([currentWindowsSid(), "S-1-5-18", "S-1-5-32-544"]);
+
+      const pending = commitKimiCodeSessionState({
+        sessionId: createKimiCodeSessionId(),
+        model: "k3",
+        cwd: fixture.cwd,
+        lastCommittedTurnId: "turn-atomic-provider-root",
+        messages: nativeMessages("atomic-provider-root"),
+        env: fixture.env,
+      });
+      while (!existsSync(providerRoot)) await new Promise((resolve) => setTimeout(resolve, 1));
+      const firstVisibleAcl = new Set(windowsAclSids(providerRoot));
+      await pending;
+
+      expect(firstVisibleAcl).toEqual(allowed);
+    },
+  );
+
+  test("fails closed when an existing Windows session directory no longer has the exact private ACL", async () => {
     if (process.platform !== "win32") return;
     const committed = await firstCommit();
     const sessionFile = String(committed.session.params?.sessionFile);
     const sessionDirectory = dirname(sessionFile);
-    const sessionsParent = dirname(sessionDirectory);
     execFileSync("icacls", [sessionDirectory, "/grant", "*S-1-1-0:(OI)(CI)R", "/Q"]);
 
-    const hardened = await commitKimiCodeSessionState({
-      sessionId: committed.snapshot.sessionId,
-      model: "k3",
-      cwd: committed.cwd,
-      lastCommittedTurnId: "turn-acl",
-      messages: nativeMessages("acl"),
-      previousSnapshot: committed.snapshot,
-      env: committed.env,
-    });
-    const allowed = new Set([currentWindowsSid(), "S-1-5-18", "S-1-5-32-544"]);
-
-    expect(new Set(windowsAclSids(sessionsParent))).toEqual(allowed);
-    expect(new Set(windowsAclSids(sessionDirectory))).toEqual(allowed);
-    expect(new Set(windowsAclSids(String(hardened.session.params?.sessionFile)))).toEqual(allowed);
+    await expect(
+      commitKimiCodeSessionState({
+        sessionId: committed.snapshot.sessionId,
+        model: "k3",
+        cwd: committed.cwd,
+        lastCommittedTurnId: "turn-acl",
+        messages: nativeMessages("acl"),
+        previousSnapshot: committed.snapshot,
+        env: committed.env,
+      }),
+    ).rejects.toThrow();
+    expect(existsSync(String(committed.session.params?.sessionFile))).toBe(true);
   });
 });
 

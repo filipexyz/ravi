@@ -485,6 +485,36 @@ describe("createKimiCodeRuntimeProvider", () => {
     });
   });
 
+  test("projects missing native finish reason as a fixed non-recoverable provider protocol failure", async () => {
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          { type: "message", data: { choices: [{ index: 0, delta: { content: "unterminated" } }] } },
+          { type: "done" },
+        ]),
+    });
+
+    expect((await collectEvents(provider, startRequest())).at(-1)).toEqual(
+      expect.objectContaining({
+        type: "turn.failed",
+        error: "Kimi Code provider protocol failed",
+        recoverable: false,
+        rawEvent: { phase: "provider_protocol", protocol: "missing_finish_reason" },
+      }),
+    );
+  });
+
+  test("keeps terminal usage unavailable when the provider omits usage", async () => {
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => transportFrom(finalTurn("No usage frame")),
+    });
+
+    const terminal = (await collectEvents(provider, startRequest())).at(-1);
+
+    expect(terminal).toMatchObject({ type: "turn.complete" });
+    expect(terminal).not.toHaveProperty("usage");
+  });
+
   test("projects preflight codes as non-recoverable canonical failures", async () => {
     const codes: KimiCodePreflightErrorCode[] = [
       "message_too_large",
@@ -1043,7 +1073,6 @@ describe("createKimiCodeRuntimeProvider", () => {
         { index: 1, id: "tool-1", name: "first", arguments: "{}" },
         { index: 2, id: "tool-2", name: "later", arguments: "{}" },
       ],
-      usage: { inputTokens: 0, outputTokens: 0 },
     });
   });
 
@@ -1473,7 +1502,7 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(final.done).toBe(true);
   });
 
-  test("preserves one completed tool lifecycle during host execution after interruption", async () => {
+  test("pairs an interrupted running tool without delivering or continuing its result", async () => {
     const dispatches: string[] = [];
     let releaseHandler!: () => void;
     let handlerStarted!: () => void;
@@ -1507,12 +1536,15 @@ describe("createKimiCodeRuntimeProvider", () => {
     await handle.interrupt();
     releaseHandler();
     const completed = await pendingCompleted;
-    const delivered = await iterator.next();
     const interrupted = await iterator.next();
 
     expect(started.value).toMatchObject({ type: "tool.started", toolUse: { id: "call-running" } });
-    expect(completed.value).toMatchObject({ type: "tool.completed", toolUseId: "call-running", isError: false });
-    expect(delivered.value).toMatchObject({ type: "tool.result_delivered", toolCallId: "call-running" });
+    expect(completed.value).toMatchObject({
+      type: "tool.completed",
+      toolUseId: "call-running",
+      content: "Tool execution cancelled.",
+      isError: true,
+    });
     expect(interrupted.value).toMatchObject({ type: "turn.interrupted" });
     expect(dispatches).toEqual(["call-running"]);
     expect((await iterator.next()).done).toBe(true);
@@ -1586,7 +1618,6 @@ describe("createKimiCodeRuntimeProvider", () => {
       "turn.started",
       "tool.started",
       "tool.completed",
-      "tool.result_delivered",
       "turn.interrupted",
     ]);
   });

@@ -13,6 +13,7 @@ import {
   createKimiCodeTurnRequest,
   KIMI_CODE_MAX_TOOL_CALLS,
   KIMI_CODE_MAX_TOOL_ROUNDS,
+  KimiCodeNativeProtocolError,
   type KimiCodeCompletedTurn,
   type KimiCodeConversationMessage,
   type KimiCodeTurnChunkResult,
@@ -229,7 +230,10 @@ function createKimiCodeSession(
           continue;
         }
         let thinkingPublished = false;
-        let completedUsage: KimiCodeCompletedTurn["usage"] = { inputTokens: 0, outputTokens: 0 };
+        let completedUsage: NonNullable<KimiCodeCompletedTurn["usage"]> | undefined = {
+          inputTokens: 0,
+          outputTokens: 0,
+        };
         let toolRounds = 0;
         let totalToolCalls = 0;
         const seenToolCallIds = new Set<string>();
@@ -328,7 +332,8 @@ function createKimiCodeSession(
             }
 
             const completed = accumulator.complete();
-            completedUsage = addKimiCodeUsage(completedUsage, completed.usage);
+            completedUsage =
+              completedUsage && completed.usage ? addKimiCodeUsage(completedUsage, completed.usage) : undefined;
             if (completed.finishReason === "stop") {
               messages.push({
                 role: "assistant",
@@ -375,7 +380,7 @@ function createKimiCodeSession(
                 providerSessionId: committed.snapshot.sessionId,
                 session: committed.session,
                 execution: { provider: KIMI_CODE_PROVIDER_ID, model: input.model, billingType: "subscription" },
-                usage: completedUsage,
+                ...(completedUsage ? { usage: completedUsage } : {}),
                 metadata,
               };
               turn.committedTerminal = terminal;
@@ -462,6 +467,17 @@ function createKimiCodeSession(
                   contentItems: [{ type: "inputText", text: "Tool execution failed." }],
                 };
               }
+              if (turn.interrupted || closed || input.abortController.signal.aborted) {
+                const completion = completeToolOnce(obligation, {
+                  content: "Tool execution cancelled.",
+                  isError: true,
+                });
+                if (completion) yield completion;
+                turn.phase = "interrupted";
+                const terminal = terminalTracker.interrupt({ metadata });
+                if (terminal) yield terminal;
+                break turnLoop;
+              }
               let toolResultViews: ReturnType<typeof createKimiCodeToolResultViews>;
               try {
                 toolResultViews = createKimiCodeToolResultViews(result);
@@ -490,7 +506,19 @@ function createKimiCodeSession(
             error instanceof KimiCodePreflightError ? projectKimiCodePreflightError(error) : undefined;
           const protocolFailure =
             error instanceof KimiCodeProtocolError
-              ? { message: error.message, rawEvent: { protocol: error.code } }
+              ? {
+                  message: error.message,
+                  recoverable: false as const,
+                  rawEvent: { phase: "provider_protocol", protocol: error.code },
+                }
+              : undefined;
+          const nativeProtocolFailure =
+            error instanceof KimiCodeNativeProtocolError
+              ? {
+                  error: "Kimi Code provider protocol failed",
+                  recoverable: false as const,
+                  rawEvent: { phase: "provider_protocol", protocol: error.code },
+                }
               : undefined;
           const transportFailure =
             error instanceof KimiCodeTransportError ? projectKimiCodeTransportError(error) : undefined;
@@ -503,17 +531,20 @@ function createKimiCodeSession(
                 ? terminalTracker.interrupt({ metadata })
                 : kimiFailure
                   ? terminalTracker.fail({ error: kimiFailure.message, rawEvent: kimiFailure.rawEvent, metadata })
-                  : preflightFailure
-                    ? terminalTracker.fail({ ...preflightFailure, metadata })
-                    : protocolFailure
-                      ? terminalTracker.fail({
-                          error: protocolFailure.message,
-                          rawEvent: protocolFailure.rawEvent,
-                          metadata,
-                        })
-                      : transportFailure
-                        ? terminalTracker.fail({ ...transportFailure, metadata })
-                        : terminalTracker.fail({ error: "Kimi Code stream failed", recoverable: true, metadata });
+                  : nativeProtocolFailure
+                    ? terminalTracker.fail({ ...nativeProtocolFailure, metadata })
+                    : preflightFailure
+                      ? terminalTracker.fail({ ...preflightFailure, metadata })
+                      : protocolFailure
+                        ? terminalTracker.fail({
+                            error: protocolFailure.message,
+                            recoverable: protocolFailure.recoverable,
+                            rawEvent: protocolFailure.rawEvent,
+                            metadata,
+                          })
+                        : transportFailure
+                          ? terminalTracker.fail({ ...transportFailure, metadata })
+                          : terminalTracker.fail({ error: "Kimi Code stream failed", recoverable: true, metadata });
           if (terminal) yield terminal;
         } finally {
           await closeTurnTransport(turn);

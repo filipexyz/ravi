@@ -290,7 +290,6 @@ describe("Kimi Code turn boundary", () => {
       text: "",
       reasoning: "private",
       toolCalls: [{ index: 0, id: "call-1", name: "lookup_order", arguments: "{}" }],
-      usage: { inputTokens: 0, outputTokens: 0 },
     });
   });
 

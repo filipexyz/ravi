@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { classifyRuntimeCredentialFailure, evaluateCredentialLimitPressure } from "./credential-classifier.js";
+import { classifyRuntimeCredentialTurnFailure } from "./host-event-loop.js";
 
 describe("runtime credential classifier", () => {
   it("classifies rate limit pressure without leaking sensitive headers", () => {
@@ -166,5 +167,62 @@ describe("runtime credential classifier", () => {
       expect(signal.retryAfterMs).toBe(60_000);
       expect(signal.retryableByCredential).toBe(false);
     }
+
+    const nearMiss = classifyRuntimeCredentialFailure({
+      runtimeProvider: "kimi-code",
+      httpStatus: 429,
+      providerCode: "not_quota_exhausted",
+      providerType: "unknown_error",
+      message: "Kimi Code request failed",
+    });
+    expect(nearMiss.kind).toBe("unknown");
+    expect(nearMiss.scope).toBe("unknown");
+  });
+
+  it("classifies allowlisted Kimi structured-error tokens without a provider message", () => {
+    const fixtures = [
+      [401, "invalid_api_key", "authentication_error", "auth_invalid", "credential"],
+      [403, "quota_exhausted", "membership_error", "quota_exhausted", "account"],
+      [429, "usage_limit_exceeded", "rate_limit_error", "quota_exhausted", "account"],
+      [429, "rate_limited", "rate_limit_error", "rate_limited", "account"],
+    ] as const;
+
+    for (const [httpStatus, providerCode, providerType, kind, scope] of fixtures) {
+      const signal = classifyRuntimeCredentialFailure({
+        runtimeProvider: "kimi-code",
+        httpStatus,
+        providerCode,
+        providerType,
+        message: "Kimi Code provider returned an error",
+      });
+      expect(signal.kind, providerCode).toBe(kind);
+      expect(signal.scope, providerCode).toBe(scope);
+      expect(signal.retryableByCredential, providerCode).toBe(false);
+    }
+  });
+
+  it("passes structured Kimi SSE status and tokens through the host credential boundary", () => {
+    const signal = classifyRuntimeCredentialTurnFailure({
+      provider: "kimi-code",
+      model: "k3",
+      error: "Kimi Code provider returned an error",
+      rawEvent: {
+        status: 429,
+        code: "rate_limited",
+        type: "rate_limit_error",
+        requestId: "req-native-1",
+      },
+      credential: { credentialId: "credential-1", upstreamProvider: "kimi-code" },
+    });
+
+    expect(signal).toMatchObject({
+      kind: "rate_limited",
+      scope: "account",
+      runtimeProvider: "kimi-code",
+      providerCode: "rate_limited",
+      providerType: "rate_limit_error",
+      requestId: "req-native-1",
+      retryableByCredential: false,
+    });
   });
 });

@@ -133,11 +133,17 @@ export async function commitKimiCodeSessionState(
     throw new Error("Kimi Code session state contains configured credential");
   }
   const sessionDirectory = join(root, snapshot.sessionId);
-  const privateDirectories = await ensureDurablePrivateStateDirectories(root, sessionDirectory);
-  await applyPrivatePermissions(
-    privateDirectories.map((path) => ({ path, directory: true })),
+  const privateDirectories = await ensureDurablePrivateStateDirectories(
+    root,
+    sessionDirectory,
     input.faultInjection?.observeAclProcessEnv,
   );
+  if (privateDirectories.length > 0) {
+    await applyPrivatePermissions(
+      privateDirectories.map((path) => ({ path, directory: true })),
+      input.faultInjection?.observeAclProcessEnv,
+    );
+  }
 
   const filename = revisionFilename(snapshot.revision);
   const finalPath = join(sessionDirectory, filename);
@@ -515,28 +521,72 @@ async function applyPrivatePermissions(
   });
 }
 
-async function ensureDurablePrivateStateDirectories(root: string, sessionDirectory: string): Promise<string[]> {
+async function ensureDurablePrivateStateDirectories(
+  root: string,
+  sessionDirectory: string,
+  observeAclProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void,
+): Promise<string[]> {
   const stateDirectory = dirname(dirname(dirname(root)));
   const runtimeDirectory = join(stateDirectory, "runtime");
   const providerDirectory = join(runtimeDirectory, "kimi-code");
-  const directories = [stateDirectory, runtimeDirectory, providerDirectory, root, sessionDirectory];
-  const privateDirectories: string[] = [];
-  for (const directory of directories) {
-    await assertNoExistingReparsePoints(directory);
-    await mkdir(directory, { recursive: false, mode: 0o700 }).catch((error) => {
-      if (!isRecord(error) || error.code !== "EEXIST") throw error;
-    });
-    await assertNoExistingReparsePoints(directory);
-    const info = await lstat(directory).catch(() => undefined);
-    if (!info?.isDirectory() || info.isSymbolicLink()) throw stateError("session directory is invalid");
-    if (directory === providerDirectory || directory === root || directory === sessionDirectory) {
-      privateDirectories.push(directory);
+  const parentDirectories = [stateDirectory, runtimeDirectory];
+  const privateDirectories = [providerDirectory, root, sessionDirectory];
+  for (const directory of parentDirectories) {
+    await createAndValidateDirectory(directory);
+  }
+  if (process.platform === "win32") {
+    await createPrivateWindowsDirectoriesAtomically(privateDirectories, observeAclProcessEnv);
+    for (const directory of privateDirectories) {
+      await assertNoExistingReparsePoints(directory);
+      await syncDirectory(dirname(directory));
     }
-    await syncDirectory(dirname(directory));
+    return [];
+  }
+  for (const directory of privateDirectories) {
+    await createAndValidateDirectory(directory);
   }
   return privateDirectories;
 }
 
+async function createAndValidateDirectory(directory: string): Promise<void> {
+  await assertNoExistingReparsePoints(directory);
+  await mkdir(directory, { recursive: false, mode: 0o700 }).catch((error) => {
+    if (!isRecord(error) || error.code !== "EEXIST") throw error;
+  });
+  await assertNoExistingReparsePoints(directory);
+  const info = await lstat(directory).catch(() => undefined);
+  if (!info?.isDirectory() || info.isSymbolicLink()) throw stateError("session directory is invalid");
+  await syncDirectory(dirname(directory));
+}
+
+async function createPrivateWindowsDirectoriesAtomically(
+  directories: readonly string[],
+  observeAclProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void,
+): Promise<void> {
+  const script = [
+    "$identity = [System.Security.Principal.WindowsIdentity]::GetCurrent()",
+    "$allowed = @($identity.User, (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-18')), (New-Object System.Security.Principal.SecurityIdentifier('S-1-5-32-544')))",
+    "$allowedValues = @($allowed | ForEach-Object { $_.Value })",
+    "$sections = [System.Security.AccessControl.AccessControlSections]::Access -bor [System.Security.AccessControl.AccessControlSections]::Owner",
+    "$inheritance = [System.Security.AccessControl.InheritanceFlags]::ContainerInherit -bor [System.Security.AccessControl.InheritanceFlags]::ObjectInherit",
+    "foreach ($entry in (ConvertFrom-Json $env:RAVI_KIMI_ACL_TARGETS)) { $target = [string]$entry.path; $security = New-Object System.Security.AccessControl.DirectorySecurity; $security.SetAccessRuleProtection($true, $false); $security.SetOwner($identity.User); foreach ($sid in $allowed) { $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($sid, [System.Security.AccessControl.FileSystemRights]::FullControl, $inheritance, [System.Security.AccessControl.PropagationFlags]::None, [System.Security.AccessControl.AccessControlType]::Allow); [void]$security.AddAccessRule($rule) }; $item = New-Object System.IO.DirectoryInfo($target); if (-not $item.Exists) { $item.Create($security) }; $item.Refresh(); if (-not $item.Exists -or (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0)) { throw 'Kimi state directory is missing or a reparse point' }; $actual = [System.IO.Directory]::GetAccessControl($target, $sections); if (-not $actual.AreAccessRulesProtected -or $actual.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $identity.User.Value) { throw 'Kimi state directory owner or DACL protection is invalid' }; $rules = @($actual.Access); if ($rules.Count -ne $allowedValues.Count) { throw 'Kimi state directory DACL is not exact' }; foreach ($rule in $rules) { $sid = $rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value; if ($allowedValues -notcontains $sid -or $rule.AccessControlType -ne [System.Security.AccessControl.AccessControlType]::Allow -or $rule.FileSystemRights -ne [System.Security.AccessControl.FileSystemRights]::FullControl -or $rule.InheritanceFlags -ne $inheritance -or $rule.PropagationFlags -ne [System.Security.AccessControl.PropagationFlags]::None) { throw 'Kimi state directory DACL rule is invalid' } } }",
+  ].join("; ");
+  const targets = directories.map((path) => ({ path, directory: true }));
+  const childEnv = aclProcessEnv(targets);
+  observeAclProcessEnv?.({ ...childEnv });
+  await execFileAsync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    env: childEnv,
+    windowsHide: true,
+  });
+}
+
+/*
+ * Windows has no handle-relative openat/O_NOFOLLOW equivalent in the current
+ * Node/Bun fs surface. The provider root and its descendants are therefore
+ * created with their final protected DACL in the atomic DirectoryInfo.Create
+ * call and then reparse/DACL-validated. This excludes other-SID races below the
+ * provider root; it does not claim protection from a hostile same-SID process.
+ */
 function aclProcessEnv(targets: readonly PrivatePermissionTarget[]): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {
     RAVI_KIMI_ACL_TARGETS: JSON.stringify(targets),

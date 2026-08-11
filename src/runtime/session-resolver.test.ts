@@ -12,11 +12,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import { configStore } from "../config-store.js";
 import { dbCreateTask, dbDispatchTask } from "../tasks/task-db.js";
 import { buildTaskProfileSnapshot, resolveTaskProfile } from "../tasks/profiles.js";
-import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
-import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
-import { createPendingRuntimeHandle, type RuntimeHostStreamingSession } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { buildRuntimeStartRequest } from "./runtime-request-builder.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
 import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
@@ -84,31 +80,7 @@ function persistKimiK3Session(): void {
   });
 }
 
-function createRequestStreamingSession(model: string, prompt: RuntimeLaunchPrompt): RuntimeHostStreamingSession {
-  return {
-    agentId: "main",
-    queryHandle: createPendingRuntimeHandle("kimi-code"),
-    starting: true,
-    abortController: new AbortController(),
-    pushMessage: null,
-    pendingWake: false,
-    pendingMessages: [createQueuedRuntimeUserMessage(prompt)],
-    currentModel: model,
-    toolRunning: false,
-    lastActivity: Date.now(),
-    done: false,
-    interrupted: false,
-    turnActive: false,
-    compacting: false,
-    onTurnComplete: null,
-    currentToolSafety: null,
-    pendingAbort: false,
-    agentMode: "interactive",
-    traceRunId: "run-kimi-model-continuity",
-  };
-}
-
-async function buildKimiRequestThroughRuntimeBoundary(prompt: RuntimeLaunchPrompt, configModel: string) {
+function resolveKimiThroughRuntimeBoundary(prompt: RuntimeLaunchPrompt, configModel: string) {
   const resolutionInput = {
     sessionName: SESSION_NAME,
     prompt,
@@ -119,31 +91,7 @@ async function buildKimiRequestThroughRuntimeBoundary(prompt: RuntimeLaunchPromp
   if (!resolved) {
     throw new Error("expected runtime session resolution");
   }
-  const { runtimeResolution, model } = resolved;
-  const { runtimeRequest } = await buildRuntimeStartRequest({
-    runId: "run-kimi-model-continuity",
-    sessionName: SESSION_NAME,
-    prompt,
-    session: resolved.session,
-    agent: resolved.agent,
-    runtimeProviderId: resolved.runtimeProviderId,
-    runtimeProvider: resolved.runtimeProvider,
-    runtimeCapabilities: resolved.runtimeCapabilities,
-    sessionCwd: resolved.sessionCwd,
-    dbSessionKey: resolved.dbSessionKey,
-    model,
-    runtimeResolution,
-    storedRuntimeSessionParams: resolved.storedRuntimeSessionParams,
-    storedProviderSessionId: resolved.storedProviderSessionId,
-    canResumeStoredSession: resolved.canResumeStoredSession,
-    streamingSession: createRequestStreamingSession(model, prompt),
-    stashedMessages: new Map(),
-    defaultRuntimeProviderId: "codex",
-    crashRecovery: {
-      markTurnAttemptSafety: () => {},
-    } as unknown as RuntimeCrashRecoveryCoordinator,
-  });
-  return { resolved, runtimeRequest, runtimeResolution };
+  return { resolved, runtimeResolution: resolved.runtimeResolution };
 }
 
 describe("runtime session resolver", () => {
@@ -383,15 +331,15 @@ describe("runtime session resolver", () => {
   it("does not forward k3 continuity when the real request uses the global k3-256k default", async () => {
     persistKimiK3Session();
 
-    const { resolved, runtimeRequest, runtimeResolution } = await buildKimiRequestThroughRuntimeBoundary(
+    const { resolved, runtimeResolution } = resolveKimiThroughRuntimeBoundary(
       { prompt: "use the global model" },
       "k3-256k",
     );
 
     expect(runtimeResolution.sources.model).toBe("global_default");
-    expect(runtimeRequest.model).toBe("k3-256k");
-    expect(runtimeRequest.resume).toBeUndefined();
-    expect(runtimeRequest.resumeSession).toBeUndefined();
+    expect(resolved.model).toBe("k3-256k");
+    expect(resolved.storedProviderSessionId).toBeUndefined();
+    expect(resolved.storedRuntimeSessionParams).toBeUndefined();
     expect(resolved.resumeDecision).toMatchObject({
       sessionStateInvalidReason: "model_mismatch",
       staleCleared: true,
@@ -413,15 +361,12 @@ describe("runtime session resolver", () => {
     });
     const prompt = { prompt: "use the task model", taskBarrierTaskId: created.task.id };
 
-    const { resolved, runtimeRequest, runtimeResolution } = await buildKimiRequestThroughRuntimeBoundary(
-      prompt,
-      "global-fallback",
-    );
+    const { resolved, runtimeResolution } = resolveKimiThroughRuntimeBoundary(prompt, "global-fallback");
 
     expect(runtimeResolution.sources.model).toBe("task_override");
-    expect(runtimeRequest.model).toBe("k3-256k");
-    expect(runtimeRequest.resume).toBeUndefined();
-    expect(runtimeRequest.resumeSession).toBeUndefined();
+    expect(resolved.model).toBe("k3-256k");
+    expect(resolved.storedProviderSessionId).toBeUndefined();
+    expect(resolved.storedRuntimeSessionParams).toBeUndefined();
     expect(resolved.resumeDecision).toMatchObject({
       sessionStateInvalidReason: "model_mismatch",
       staleCleared: true,
@@ -450,15 +395,12 @@ describe("runtime session resolver", () => {
     });
     const prompt = { prompt: "use the profile model", taskBarrierTaskId: created.task.id };
 
-    const { resolved, runtimeRequest, runtimeResolution } = await buildKimiRequestThroughRuntimeBoundary(
-      prompt,
-      "global-fallback",
-    );
+    const { resolved, runtimeResolution } = resolveKimiThroughRuntimeBoundary(prompt, "global-fallback");
 
     expect(runtimeResolution.sources.model).toBe("profile_default");
-    expect(runtimeRequest.model).toBe("k3-256k");
-    expect(runtimeRequest.resume).toBeUndefined();
-    expect(runtimeRequest.resumeSession).toBeUndefined();
+    expect(resolved.model).toBe("k3-256k");
+    expect(resolved.storedProviderSessionId).toBeUndefined();
+    expect(resolved.storedRuntimeSessionParams).toBeUndefined();
     expect(resolved.resumeDecision).toMatchObject({
       sessionStateInvalidReason: "model_mismatch",
       staleCleared: true,

@@ -2245,11 +2245,11 @@ function buildTraceTurnDetailLines(
       .filter(Boolean)
       .join(" "),
     [
-      `tokens=input:${turn.inputTokens}`,
-      `output:${turn.outputTokens}`,
-      `cacheRead:${turn.cacheReadTokens}`,
-      `cacheCreate:${turn.cacheCreationTokens}`,
-      `cost=${turn.costUsd.toFixed(6)}`,
+      `tokens=input:${turn.inputTokens ?? "unavailable"}`,
+      `output:${turn.outputTokens ?? "unavailable"}`,
+      `cacheRead:${turn.cacheReadTokens ?? "unavailable"}`,
+      `cacheCreate:${turn.cacheCreationTokens ?? "unavailable"}`,
+      `cost=${turn.costUsd === null ? "unavailable" : turn.costUsd.toFixed(6)}`,
     ].join(" "),
     `systemPrompt=${formatTraceSha(turn.systemPromptSha256)} userPrompt=${formatTraceSha(turn.userPromptSha256)} requestBlob=${formatTraceSha(turn.requestBlobSha256)}`,
   ];

@@ -525,7 +525,7 @@ export type RuntimeEvent =
       providerSessionId?: string;
       session?: RuntimeSessionState;
       execution?: RuntimeExecutionMetadata;
-      usage: RuntimeUsage;
+      usage?: RuntimeUsage;
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase);
 

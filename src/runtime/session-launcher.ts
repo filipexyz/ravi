@@ -15,6 +15,7 @@ import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { runRuntimeEventLoop, type RuntimeSafeEmit } from "./host-event-loop.js";
+import { isKimiCodeSessionStartEnabled } from "./kimi-code-availability.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
   createPendingRuntimeHandle,
@@ -25,7 +26,7 @@ import {
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import { shouldUseTurnScopedAuthorityForPrompt } from "./runtime-request-context.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
-import { resolveRuntimeSession } from "./session-resolver.js";
+import { resolveRuntimeProviderIdForSession, resolveRuntimeSession } from "./session-resolver.js";
 import { markRuntimeTaskAcceptedForPrompt } from "./task-runtime-context.js";
 import { updateRuntimeLiveState } from "./live-state.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
@@ -83,6 +84,22 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   } = options;
   const runId = createSessionTraceRunId();
   const resumeStashedMessages = prompt._resumeStashedMessages === true;
+
+  const requestedProvider = resolveRuntimeProviderIdForSession({
+    sessionName,
+    prompt,
+    configModel,
+    defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
+  });
+  if (requestedProvider === "kimi-code" && !isKimiCodeSessionStartEnabled(process.env)) {
+    await safeEmit(`ravi.session.${sessionName}.runtime`, {
+      type: "turn.failed",
+      provider: "kimi-code",
+      error: "Kimi Code session start is disabled",
+      recoverable: false,
+    });
+    return;
+  }
 
   const resolvedSession = resolveRuntimeSession({
     sessionName,

@@ -227,6 +227,9 @@ export function createKimiCodeHttpTransport(options: CreateKimiCodeHttpTransport
       let response: Response;
       try {
         try {
+          // Once fetch is invoked this adapter has no evidence that zero request
+          // bytes reached the provider, even when the returned promise rejects.
+          phase = "acceptance_ambiguous";
           response = await fetchImpl(request.url, {
             method: "POST",
             headers: { ...request.headers, ...(options.userAgent ? { "User-Agent": options.userAgent } : {}) },
@@ -237,7 +240,6 @@ export function createKimiCodeHttpTransport(options: CreateKimiCodeHttpTransport
           if (closed || request.signal?.aborted || controller.signal.aborted || combined.signal.aborted) return;
           throw new KimiCodeTransportError(phase, "Kimi Code request could not be completed");
         }
-        phase = "acceptance_ambiguous";
         if (!response.ok) {
           throw await createKimiCodeHttpError(response);
         }

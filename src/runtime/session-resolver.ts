@@ -60,12 +60,23 @@ export interface RuntimeResumeDecision {
   staleCleared: boolean;
 }
 
-export function resolveRuntimeSession(options: {
+export interface RuntimeSessionResolutionOptions {
   sessionName: string;
   prompt: RuntimeLaunchPrompt;
   configModel: string;
   defaultRuntimeProviderId: RuntimeProviderId;
-}): RuntimeSessionResolution | null {
+}
+
+interface RuntimeProviderSelectionContext {
+  sessionEntry: SessionEntry | null;
+  agentId: string;
+  agent: AgentConfig;
+  runtimeProviderId: RuntimeProviderId;
+}
+
+function resolveRuntimeProviderSelectionContext(
+  options: RuntimeSessionResolutionOptions,
+): RuntimeProviderSelectionContext | null {
   const routerConfig = configStore.getConfig();
   const sessionEntry = getSessionByName(options.sessionName);
   const agentId = options.prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
@@ -76,7 +87,6 @@ export function resolveRuntimeSession(options: {
     return null;
   }
 
-  const agentCwd = expandHome(agent.cwd);
   const agentSelection = resolveAgentModelSelection(agent);
   const sessionRuntimeProviderOverride =
     options.prompt._observation && options.prompt._runtimeProviderId
@@ -90,6 +100,19 @@ export function resolveRuntimeSession(options: {
         : agentSelection.modelSource === "agent_preset"
           ? agentSelection.effectiveProvider
           : (agent.provider ?? options.defaultRuntimeProviderId);
+  return { sessionEntry, agentId, agent, runtimeProviderId };
+}
+
+/** Read-only provider selection used by pre-mutation availability gates. */
+export function resolveRuntimeProviderIdForSession(options: RuntimeSessionResolutionOptions): RuntimeProviderId | null {
+  return resolveRuntimeProviderSelectionContext(options)?.runtimeProviderId ?? null;
+}
+
+export function resolveRuntimeSession(options: RuntimeSessionResolutionOptions): RuntimeSessionResolution | null {
+  const selection = resolveRuntimeProviderSelectionContext(options);
+  if (!selection) return null;
+  const { sessionEntry, agentId, agent, runtimeProviderId } = selection;
+  const agentCwd = expandHome(agent.cwd);
   const runtimeProvider = createRuntimeProvider(runtimeProviderId);
   const runtimeCapabilities = runtimeProvider.getCapabilities();
 

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { nats } from "../nats.js";
+import { getHistory } from "../db.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import {
   RuntimeSessionDispatcher,
@@ -2090,6 +2091,60 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         )?.payloadJson,
       ).toMatchObject({ reason: "model_change_restart", strategy: "restart-next-turn", nextModel: "k3-256k" });
     } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("rejects a disabled Kimi model switch before resolver state prompt or start reservation mutation", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-kimi-disabled-");
+    const previousEnabled = process.env.RAVI_KIMI_CODE_ENABLED;
+    delete process.env.RAVI_KIMI_CODE_ENABLED;
+    try {
+      const sessionKey = "agent:main:test:kimi-disabled-model-switch";
+      const sessionName = "kimi-disabled-model-switch";
+      const sessionFile = join(stateDir, "kimi-k3-session.json");
+      writeFileSync(sessionFile, '{"messages":["old-k3-transcript"]}');
+      getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName });
+      updateSessionRuntimeProviderOverride(sessionKey, "kimi-code");
+      updateSessionModelOverride(sessionKey, "k3-256k");
+      updateProviderSession(sessionKey, "kimi-code", "kimi-k3-locator", {
+        runtimeSessionParams: { provider: "kimi-code", model: "k3", sessionFile, cwd: stateDir },
+        runtimeSessionDisplayId: "kimi-k3-locator",
+      });
+      const emitted: unknown[] = [];
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "test",
+        maxConcurrentSessions: 1,
+        interactiveReservedSessions: 0,
+        safeEmit: async (_subject, event) => {
+          emitted.push(event);
+        },
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => "global-model",
+        crashRecovery: crashRecoveryStub,
+      });
+
+      await dispatcher.startStreamingSession(sessionName, { prompt: "must not be accepted" });
+
+      expect(getSessionByName(sessionName)).toMatchObject({
+        providerSessionId: "kimi-k3-locator",
+        runtimeSessionDisplayId: "kimi-k3-locator",
+        runtimeSessionParams: { provider: "kimi-code", model: "k3", sessionFile, cwd: stateDir },
+      });
+      expect(getHistory(sessionName)).toHaveLength(0);
+      expect(dispatcher.streamingSessions.size).toBe(0);
+      expect(dispatcher.startReservations.size).toBe(0);
+      expect(emitted).toContainEqual(
+        expect.objectContaining({
+          type: "turn.failed",
+          provider: "kimi-code",
+          error: "Kimi Code session start is disabled",
+          recoverable: false,
+        }),
+      );
+    } finally {
+      if (previousEnabled === undefined) delete process.env.RAVI_KIMI_CODE_ENABLED;
+      else process.env.RAVI_KIMI_CODE_ENABLED = previousEnabled;
       await cleanupIsolatedRaviState(stateDir);
     }
   });
