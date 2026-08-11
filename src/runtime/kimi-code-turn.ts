@@ -87,6 +87,11 @@ interface ParsedKimiCodeChunk {
   nativeError?: KimiCodeNativeError;
 }
 
+interface ParsedKimiCodeUsage {
+  usage: KimiCodeUsagePatch;
+  recognized: boolean;
+}
+
 interface KimiCodeUsagePatch {
   inputTokens?: number;
   outputTokens?: number;
@@ -298,9 +303,13 @@ function parseKimiCodeChunk(
   const usageValue = event.data.usage;
   if (choicesValue === undefined && usageValue === undefined) return { code: "unrecognized_event" };
   if (choicesValue !== undefined && !Array.isArray(choicesValue)) return { code: "unrecognized_event" };
-  const usage = usageValue === undefined ? undefined : parseKimiCodeUsage(usageValue);
-  if (usage && "code" in usage) return usage;
-  if (choicesValue === undefined) return { choices: [], ...(usage ? { usage } : {}) };
+  const parsedUsage = usageValue === undefined ? undefined : parseKimiCodeUsage(usageValue);
+  if (parsedUsage && "code" in parsedUsage) return parsedUsage;
+  const usage = parsedUsage?.usage;
+  let recognized = parsedUsage?.recognized ?? false;
+  if (choicesValue === undefined) {
+    return recognized ? { choices: [], ...(usage ? { usage } : {}) } : { code: "unrecognized_event" };
+  }
   if (choicesValue.length > 1) return { code: "unrecognized_event" };
   const choices: ParsedKimiCodeChoice[] = [];
   for (const rawChoice of choicesValue) {
@@ -317,6 +326,11 @@ function parseKimiCodeChunk(
     if (finishReason !== undefined && finishReason !== null && !isKimiCodeFinishReason(finishReason)) {
       return { code: "invalid_finish_reason" };
     }
+    recognized ||=
+      delta.content !== undefined ||
+      delta.reasoning_content !== undefined ||
+      delta.tool_calls !== undefined ||
+      finishReason !== undefined;
     choices.push({
       ...(typeof delta.content === "string" ? { content: delta.content } : {}),
       ...(typeof delta.reasoning_content === "string" ? { reasoning: delta.reasoning_content } : {}),
@@ -324,7 +338,7 @@ function parseKimiCodeChunk(
       ...(typeof finishReason === "string" ? { finishReason } : {}),
     });
   }
-  return { choices, ...(usage ? { usage } : {}) };
+  return recognized ? { choices, ...(usage ? { usage } : {}) } : { code: "unrecognized_event" };
 }
 
 function isKimiCodeFinishReason(value: unknown): value is "stop" | "length" | "tool_calls" | "content_filter" {
@@ -422,20 +436,29 @@ function mergeKimiCodeUsage(
   };
 }
 
-function parseKimiCodeUsage(value: unknown): KimiCodeUsagePatch | { code: KimiCodeNativeProtocolCode } {
+function parseKimiCodeUsage(value: unknown): ParsedKimiCodeUsage | { code: KimiCodeNativeProtocolCode } {
   if (!isRecord(value)) return { code: "invalid_usage" };
   try {
     const details = value.prompt_tokens_details;
     if (details !== undefined && !isRecord(details)) throw protocol("invalid_usage");
+    const hasCacheReadTokens = details?.cached_tokens !== undefined || value.cache_read_input_tokens !== undefined;
+    const recognized =
+      value.prompt_tokens !== undefined ||
+      value.completion_tokens !== undefined ||
+      hasCacheReadTokens ||
+      value.cache_creation_input_tokens !== undefined;
     return {
-      ...(value.prompt_tokens !== undefined ? { inputTokens: checkedTokenCount(value.prompt_tokens) } : {}),
-      ...(value.completion_tokens !== undefined ? { outputTokens: checkedTokenCount(value.completion_tokens) } : {}),
-      ...((details?.cached_tokens ?? value.cache_read_input_tokens) !== undefined
-        ? { cacheReadTokens: checkedTokenCount(details?.cached_tokens ?? value.cache_read_input_tokens) }
-        : {}),
-      ...(value.cache_creation_input_tokens !== undefined
-        ? { cacheCreationTokens: checkedTokenCount(value.cache_creation_input_tokens) }
-        : {}),
+      usage: {
+        ...(value.prompt_tokens !== undefined ? { inputTokens: checkedTokenCount(value.prompt_tokens) } : {}),
+        ...(value.completion_tokens !== undefined ? { outputTokens: checkedTokenCount(value.completion_tokens) } : {}),
+        ...(hasCacheReadTokens
+          ? { cacheReadTokens: checkedTokenCount(details?.cached_tokens ?? value.cache_read_input_tokens) }
+          : {}),
+        ...(value.cache_creation_input_tokens !== undefined
+          ? { cacheCreationTokens: checkedTokenCount(value.cache_creation_input_tokens) }
+          : {}),
+      },
+      recognized,
     };
   } catch (error) {
     if (error instanceof KimiCodeNativeProtocolError) return { code: error.code };

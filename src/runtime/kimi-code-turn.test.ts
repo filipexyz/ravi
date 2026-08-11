@@ -165,6 +165,31 @@ describe("Kimi Code turn boundary", () => {
     expect(accumulator.accept({ synthetic: "ignored" })).toEqual({ kind: "malformed", code: "unrecognized_event" });
   });
 
+  it("rejects an empty choices container with no recognized native field", () => {
+    const accumulator = createKimiCodeCompletedTurnAccumulator();
+
+    expect(accumulator.accept({ choices: [] })).toEqual({ kind: "malformed", code: "unrecognized_event" });
+  });
+
+  it("rejects an empty usage container with no recognized native field", () => {
+    const accumulator = createKimiCodeCompletedTurnAccumulator();
+
+    expect(accumulator.accept({ usage: {} })).toEqual({ kind: "malformed", code: "unrecognized_event" });
+  });
+
+  it("rejects an unknown-only delta before a later valid stop", () => {
+    const accumulator = createKimiCodeCompletedTurnAccumulator();
+
+    expect(accumulator.accept({ choices: [{ index: 0, delta: { future_shape: true } }] })).toEqual({
+      kind: "malformed",
+      code: "unrecognized_event",
+    });
+    expect(accumulator.accept({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })).toMatchObject({
+      kind: "accepted",
+      finished: true,
+    });
+  });
+
   it("accepts additive unknown fields when a recognized field is valid", () => {
     const accumulator = createKimiCodeCompletedTurnAccumulator();
 
