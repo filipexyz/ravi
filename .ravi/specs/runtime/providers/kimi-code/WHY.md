@@ -2,10 +2,10 @@
 
 ## Problem reference
 
-The canonical project problem is
-[`../../../../../docs/PROBLEMA.md`](../../../../../docs/PROBLEMA.md). Technical
-evidence is in
-[`../../../../../docs/research/ESTUDO-KIMI-E-RAVI.md`](../../../../../docs/research/ESTUDO-KIMI-E-RAVI.md).
+The normative provider contract and release requirements are in
+[`SPEC.md`](SPEC.md). The implementation rationale, threat model, and rejected
+alternatives are in the
+[Kimi Code Provider Hardening Design](../../../../../docs/superpowers/specs/2026-08-11-kimi-code-provider-hardening-design.md).
 
 ## Decision
 

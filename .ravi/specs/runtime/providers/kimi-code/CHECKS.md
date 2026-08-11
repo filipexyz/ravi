@@ -1,7 +1,10 @@
 # Kimi Code Provider Checks
 
 All default checks must run without a live Kimi credential. Live tests are opt-in
-and must use synthetic prompts.
+and must use synthetic prompts. A live run is allowed only when
+`RAVI_LIVE_TESTS=1`, `RAVI_KIMI_CODE_ENABLED=1` for the single dev-agent canary, and
+a newly issued `KIMI_API_KEY` is supplied through an approved private channel. Never
+use a credential exposed in chat or another public artifact.
 
 ## Contract checks
 
@@ -204,7 +207,22 @@ captured by a failing regression before its correction.
 ## Private live release checks
 
 Live checks require explicit operator opt-in and must never run in public CI. They
-are nevertheless mandatory before release:
+are nevertheless mandatory before release. Until a newly issued private credential
+is used, every live gate remains pending:
+
+| Gate | Required evidence | Status |
+|---|---|---|
+| L-01 | text streaming and terminal sequence for `k3-256k` | pending — fresh private credential required |
+| L-02 | `max` request classification for `k3`, without recording reasoning | pending — fresh private credential required |
+| L-03 | harmless synthetic tool call and multi-turn continuation | pending — fresh private credential required |
+| L-04 | abort and any naturally available quota/rate classification | pending — fresh private credential required |
+
+Run only with `RAVI_LIVE_TESTS=1`, `RAVI_KIMI_CODE_ENABLED=1`, and a newly issued
+private `KIMI_API_KEY`. The live scaffold retains only structural event sequences and
+redacted classifications; it must not log prompts, reasoning, account identifiers,
+response bodies, headers, or credentials.
+
+The pending gates cover:
 
 - text streaming against `k3-256k`;
 - `max` request capture against `k3` without recording reasoning;
@@ -213,9 +231,9 @@ are nevertheless mandatory before release:
 - abort;
 - quota/rate response observation when naturally available.
 
-The release record must identify the upstream SHA, provider model family, redacted
-result, date, and operator. It must not retain prompts, reasoning, credential or
-account identifiers.
+The release record must identify the candidate SHA, provider model family, redacted
+result, date, and operator. It must not retain prompts, reasoning, credential,
+account identifiers, response bodies, or headers.
 
 ## Public contribution sanitization
 

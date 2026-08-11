@@ -18,7 +18,7 @@
 - The request limit is 2 MiB over the UTF-8 encoding of the complete serialized native request body, not per message.
 - Provider id, models, effort mapping, capabilities, subscription billing, serial tool execution, and unsupported features remain unchanged.
 - Preserved reasoning, prompts, tool inputs/results, bearer values, response bodies, personal paths, and the credential disclosed in chat must not enter events, errors, fixtures, reports, commits, or PR comments.
-- `RAVI_KIMI_CODE_ENABLED=1` is the only value that enables new Kimi Code sessions; registration and model discovery remain available while disabled.
+- The normative session-start gate and rollback procedure are in [the Kimi Code SPEC](../../../.ravi/specs/runtime/providers/kimi-code/SPEC.md) and [runbook](../../../.ravi/specs/runtime/providers/kimi-code/RUNBOOK.md); this plan does not restate them.
 - A native success committed before a later abort wins; an ambiguous network handoff is never replayed automatically.
 - Every published `tool.started` has exactly one matching `tool.completed`, including cancellation before host dispatch.
 - Offline gates must pass on Windows and Linux. Private live gates require a newly issued credential supplied outside chat and remain merge-blocking until recorded.
@@ -454,12 +454,12 @@ rtk git commit -m "fix(runtime): gate kimi sessions and reset model state"
 - Modify: `docs/superpowers/plans/2026-08-11-kimi-code-provider-hardening.md`
 
 **Interfaces:**
-- Documents: exact `RAVI_KIMI_CODE_ENABLED=1` canary/disable procedure and fresh-secret requirement.
-- Preserves: live tests skipped unless both `RAVI_LIVE_TESTS=1` and a fresh `KIMI_API_KEY` are present.
+- Documents: use the normative [SPEC](../../../.ravi/specs/runtime/providers/kimi-code/SPEC.md), [RUNBOOK](../../../.ravi/specs/runtime/providers/kimi-code/RUNBOOK.md), and [CHECKS](../../../.ravi/specs/runtime/providers/kimi-code/CHECKS.md) for rollout, rollback, and fresh-secret requirements.
+- Preserves: see the normative CHECKS live-test gate; this plan does not redefine it.
 
 - [ ] **Step 1: Reproduce documentation drift and inspect live-test behavior.**
 
-Run: `rtk rg -n "docs/ABERTO.md|docs/PROBLEMA.md|docs/research/ESTUDO-KIMI-E-RAVI.md" .ravi/specs/runtime/providers/kimi-code`
+Run the repository documentation link check for the Kimi provider documents.
 
 Expected: matches identify the three broken repository-local references.
 
@@ -469,15 +469,16 @@ Expected: test file exits 0 with live cases explicitly skipped when gates are ab
 
 - [ ] **Step 2: Replace broken references and make rollout commands exact.**
 
-Replace absent document paths with links to the existing Kimi `SPEC.md`, `WHY.md`, `RUNBOOK.md`, `CHECKS.md`, hardening design, or hardening plan according to ownership. Document enable as setting `RAVI_KIMI_CODE_ENABLED=1` for one dev agent process and disable as removing it or setting any other value before starting new sessions. State that existing state is retained and that no public artifact may contain live bodies or credentials.
+Replace absent document paths with links to the existing Kimi `SPEC.md`, `WHY.md`, `RUNBOOK.md`, `CHECKS.md`, hardening design, or hardening plan according to ownership. Keep exact rollout behavior solely in the normative SPEC and RUNBOOK; design and plan documents link there.
 
 - [ ] **Step 3: Keep release evidence honest.**
 
-Update `CHECKS.md` only with commands actually executed and their final SHA. Leave L-01 through L-04 marked pending until a fresh private credential runs them. The live scaffold must assert structural event sequences and redacted classifications without logging prompts, reasoning, account identifiers, response bodies, or headers.
+Update `CHECKS.md` only with commands actually executed and their final SHA. Leave L-01 through L-04 marked pending until a fresh private credential runs them. The live scaffold requirements are normative in CHECKS.
 
 - [ ] **Step 4: Validate docs, live skip, and secret hygiene.**
 
-Run: `rtk rg -n "docs/ABERTO.md|docs/PROBLEMA.md|docs/research/ESTUDO-KIMI-E-RAVI.md|sk-kimi-" .ravi/specs/runtime/providers/kimi-code docs/superpowers src/runtime`
+Run the repository documentation link check and the credential-hygiene scan for the
+Kimi provider scope.
 
 Expected: zero matches.
 

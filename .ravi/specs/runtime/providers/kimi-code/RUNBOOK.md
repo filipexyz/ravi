@@ -14,7 +14,8 @@ Do not use a Moonshot Open Platform key with the Kimi Code membership endpoint.
 
 ## Secure setup
 
-1. Create a dedicated Kimi Code API key for RAVI.
+1. Create a newly issued dedicated Kimi Code API key for RAVI. Never reuse a key
+   exposed in chat, a ticket, a fixture, or another public artifact.
 2. Store it only through the RAVI-owned credential/environment mechanism.
 3. Do not add the value to a repository, agent prompt, task, trace, screenshot, or
    shell history.
@@ -100,9 +101,12 @@ than guessing.
 
 ## Rollback
 
-Rollback is configuration-first:
+Rollback is configuration-first. Before starting any new sessions, remove
+`RAVI_KIMI_CODE_ENABLED` or set it to any value other than `1`. This prevents only
+new `kimi-code` sessions; it does not remove registration/model discovery or delete,
+translate, or migrate existing Kimi provider state.
 
-1. Stop assigning new sessions to `kimi-code`.
+1. Disable the flag for the affected agent processes before they start new sessions.
 2. Select an existing provider explicitly for affected agents.
 3. Preserve Kimi provider state for diagnosis; do not translate it into another
    provider automatically.
@@ -115,15 +119,21 @@ No existing provider or model selector should require migration.
 
 Before wider use:
 
-1. Keep the provider disabled for existing/default agents.
-2. Enable one explicit dev agent with a dedicated credential.
+1. Keep the provider disabled for existing/default agents: omit
+   `RAVI_KIMI_CODE_ENABLED`, or set it to any value other than `1`, before they
+   start new sessions.
+2. For exactly one dev-agent canary process, set
+   `RAVI_KIMI_CODE_ENABLED=1` before starting a new session and supply a newly
+   issued dedicated credential only through the approved private mechanism.
 3. Exercise text, one tool, two serialized tools, resume, abort, quota handling, and
    provider disable/re-enable.
 4. Promote only when the release gates in `SPEC.md` and private checks in
    `CHECKS.md` pass.
 
 The operator must be able to disable new `kimi-code` sessions without a deploy.
-Disabling the provider must not translate or delete existing provider state.
+Removing `RAVI_KIMI_CODE_ENABLED`, or setting it to any value other than `1`, before
+starting new sessions disables the canary. Disabling the provider must not translate
+or delete existing provider state.
 
 Trigger immediate disablement when any of these occurs:
 
@@ -139,3 +149,8 @@ After disablement, preserve only the minimum redacted diagnostic state allowed b
 RAVI retention policy, revoke the dedicated key if exposure is possible, and leave
 affected sessions in an explicit provider-unavailable/manual-recovery state. Do not
 attempt cross-provider transcript conversion during an incident.
+
+No public report, fixture, trace, screenshot, commit, or PR artifact may contain a
+live prompt or response body, preserved reasoning, credential, authorization header,
+or account identifier. Record only the redacted status required by
+[`CHECKS.md`](CHECKS.md).

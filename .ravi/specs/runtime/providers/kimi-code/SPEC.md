@@ -468,15 +468,23 @@ generic classifier can classify at least:
 
 ## Release Gates
 
-- O-01 through O-08 in project `docs/ABERTO.md` are closed for planning. The
-  remaining L-01 through L-04 evidence MUST pass before merge or release.
+- The hardening design records the planning questions that informed this contract;
+  it does not replace this normative release gate.
+- `RAVI_KIMI_CODE_ENABLED=1` is the only setting that enables a new `kimi-code`
+  session. Removing the variable, or setting it to any other value, disables new
+  sessions when they are started. Registration and model discovery remain
+  available while disabled.
+- Disabling new sessions MUST preserve existing Kimi provider state. It MUST NOT
+  delete, translate, or migrate that state.
 - Upstream runtime/provider contracts MUST be revalidated before the implementation
   plan is finalized and again before the public pull request is opened.
 - Redacted subscription-API captures MUST validate text, tool, reasoning, usage,
   terminal, abort, and error fixtures without entering public history.
 - Offline contract, fuzz, crash-boundary, redaction, and regression checks MUST pass.
 - A private live smoke is mandatory for release even though it MUST remain outside
-  public CI.
+  public CI. It requires both `RAVI_LIVE_TESTS=1` and a newly issued
+  `KIMI_API_KEY` supplied through an approved private channel; a credential exposed
+  in chat or another public artifact MUST NOT be used.
 - Rollout MUST start with one explicit dev-agent canary and a kill switch for new
   sessions. Existing providers MUST remain the default until promotion criteria pass.
 - Any duplicate/missing terminal, duplicate tool execution, secret/reasoning leak,
@@ -528,5 +536,7 @@ generic classifier can classify at least:
 ## Validation
 
 The canonical validation matrix is in [`CHECKS.md`](CHECKS.md). Rationale and
-rejected alternatives are in [`WHY.md`](WHY.md). Operational setup is in
-[`RUNBOOK.md`](RUNBOOK.md).
+rejected alternatives are in [`WHY.md`](WHY.md). The hardening design and plan are
+[linked from the design](../../../../../docs/superpowers/specs/2026-08-11-kimi-code-provider-hardening-design.md)
+and [implementation plan](../../../../../docs/superpowers/plans/2026-08-11-kimi-code-provider-hardening.md);
+they refine implementation only. Operational setup is in [`RUNBOOK.md`](RUNBOOK.md).
