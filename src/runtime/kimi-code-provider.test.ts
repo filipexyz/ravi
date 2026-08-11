@@ -628,6 +628,69 @@ describe("createKimiCodeRuntimeProvider", () => {
     ]);
   });
 
+  test("sanitizes public tool events while preserving exact host and native values", async () => {
+    const rawArguments = '{"apiKey":"sk-test_argument_secret_123456","orderId":42}';
+    const rawResult = "sk-test_result_secret_123456";
+    const requests: KimiCodeTransportRequest[] = [];
+    const hostCalls: RuntimeDynamicToolCallRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [
+          toolTurn([{ index: 0, id: "call-secret", name: "lookup_order", arguments: rawArguments }]),
+          finalTurn("Handled privately"),
+        ],
+        requests,
+      ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async (request) => {
+          hostCalls.push(request);
+          return { success: true, contentItems: [{ type: "inputText", text: rawResult }] };
+        },
+      }),
+    );
+
+    expect(hostCalls).toEqual([
+      {
+        toolName: "lookup_order",
+        callId: "call-secret",
+        arguments: { apiKey: "sk-test_argument_secret_123456", orderId: 42 },
+      },
+    ]);
+    expect(events.find((event) => event.type === "tool.started")).toMatchObject({
+      type: "tool.started",
+      toolUse: { id: "call-secret", name: "lookup_order", input: { apiKey: "[REDACTED]", orderId: 42 } },
+    });
+    expect(events.find((event) => event.type === "tool.completed")).toMatchObject({
+      type: "tool.completed",
+      toolUseId: "call-secret",
+      content: "[REDACTED:token]",
+      isError: false,
+    });
+    expect(JSON.stringify(events)).not.toContain("sk-test_argument_secret_123456");
+    expect(JSON.stringify(events)).not.toContain(rawResult);
+
+    const continuation = requests[1]?.body as unknown as { messages: Array<Record<string, unknown>> };
+    expect(continuation.messages[1]).toMatchObject({
+      role: "assistant",
+      tool_calls: [
+        {
+          id: "call-secret",
+          type: "function",
+          function: { name: "lookup_order", arguments: rawArguments },
+        },
+      ],
+    });
+    expect(continuation.messages[2]).toEqual({
+      role: "tool",
+      tool_call_id: "call-secret",
+      content: rawResult,
+    });
+  });
+
   test("preserves a failed tool result as binary error semantics and continues", async () => {
     const requests: KimiCodeTransportRequest[] = [];
     const provider = createKimiCodeRuntimeProvider({
