@@ -11,6 +11,7 @@ const KIMI_CODE_BASE_URL = "https://api.kimi.com/coding/v1";
 const KIMI_CODE_CHAT_COMPLETIONS_URL = `${KIMI_CODE_BASE_URL}/chat/completions`;
 const MAX_MESSAGE_BYTES = 2 * 1024 * 1024;
 const MAX_SSE_BUFFER_BYTES = 1024 * 1024;
+const MAX_SSE_EVENT_BYTES = 1024 * 1024;
 const MAX_ERROR_BODY_BYTES = 64 * 1024;
 const trustedKimiCodeHttpErrors = new WeakSet<KimiCodeHttpError>();
 
@@ -68,6 +69,28 @@ export class KimiCodeHttpError extends Error {
       ...(input.headers && Object.keys(input.headers).length > 0 ? { headers: input.headers } : {}),
       ...(input.requestId ? { requestId: input.requestId } : {}),
     };
+  }
+}
+
+export type KimiCodeProtocolErrorCode =
+  | "missing_stream_body"
+  | "sse_buffer_limit"
+  | "sse_event_limit"
+  | "malformed_json";
+
+export class KimiCodeProtocolError extends Error {
+  readonly code: KimiCodeProtocolErrorCode;
+
+  constructor(code: KimiCodeProtocolErrorCode) {
+    const messages: Record<KimiCodeProtocolErrorCode, string> = {
+      missing_stream_body: "Kimi Code protocol error: missing stream body",
+      sse_buffer_limit: "Kimi Code protocol error: SSE buffer limit exceeded",
+      sse_event_limit: "Kimi Code protocol error: SSE event limit exceeded",
+      malformed_json: "Kimi Code protocol error: malformed JSON event",
+    };
+    super(messages[code]);
+    this.name = "KimiCodeProtocolError";
+    this.code = code;
   }
 }
 
@@ -170,7 +193,7 @@ export function createKimiCodeHttpTransport(options: CreateKimiCodeHttpTransport
         throw await createKimiCodeHttpError(response);
       }
       if (!response.body) {
-        throw new Error("Kimi Code response did not include a stream body");
+        throw new KimiCodeProtocolError("missing_stream_body");
       }
 
       const reader = response.body.getReader();
@@ -200,7 +223,7 @@ export function createKimiCodeHttpTransport(options: CreateKimiCodeHttpTransport
             try {
               yield { type: "message", data: JSON.parse(payload) };
             } catch {
-              throw new Error("Kimi Code stream contained malformed JSON");
+              throw new KimiCodeProtocolError("malformed_json");
             }
           }
         }
@@ -359,7 +382,7 @@ function combineSignals(primary: AbortSignal | undefined, secondary: AbortSignal
 
 function assertBoundedBuffer(value: string): void {
   if (new TextEncoder().encode(value).byteLength > MAX_SSE_BUFFER_BYTES) {
-    throw new Error("Kimi Code SSE buffer limit exceeded");
+    throw new KimiCodeProtocolError("sse_buffer_limit");
   }
 }
 
@@ -368,6 +391,9 @@ function extractSseEvents(source: string): { payloads: string[]; remainder: stri
   const remainder = events.pop() ?? "";
   const payloads: string[] = [];
   for (const event of events) {
+    if (new TextEncoder().encode(event).byteLength > MAX_SSE_EVENT_BYTES) {
+      throw new KimiCodeProtocolError("sse_event_limit");
+    }
     const data = event
       .split(/\r?\n/)
       .filter((line) => line.startsWith("data:"))

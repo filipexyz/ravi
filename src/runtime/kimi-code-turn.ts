@@ -5,6 +5,8 @@ import type { RuntimeDynamicToolCallResult, RuntimeDynamicToolSpec, RuntimeStart
 export const KIMI_CODE_MAX_TOOL_ROUNDS = 8;
 export const KIMI_CODE_MAX_TOOL_CALLS = 32;
 const MAX_KIMI_TOOL_RESULT_BYTES = 64 * 1024;
+const MAX_KIMI_TOOL_ARGUMENT_BYTES = 1024 * 1024;
+const MAX_KIMI_ACCUMULATED_RESPONSE_BYTES = 2 * 1024 * 1024;
 
 export interface KimiCodeToolCallFragment {
   index: number;
@@ -58,7 +60,9 @@ interface ParsedKimiCodeChunk {
 
 export type KimiCodeTurnChunkResult =
   | { kind: "accepted"; textDeltas: string[]; reasoningDelta: boolean; finished: boolean }
-  | { kind: "malformed" | "provider_error" | "post_finish" };
+  | {
+      kind: "malformed" | "provider_error" | "post_finish" | "response_limit" | "tool_argument_limit";
+    };
 
 /** @internal Deterministic Kimi chunk assembly boundary for Tasks 4 and 5. */
 export function createKimiCodeCompletedTurnAccumulator(): {
@@ -69,6 +73,7 @@ export function createKimiCodeCompletedTurnAccumulator(): {
   let reasoning = "";
   let usage: KimiCodeCompletedTurn["usage"] = { inputTokens: 0, outputTokens: 0 };
   let finished = false;
+  let accumulatedResponseBytes = 0;
   const toolCalls = new Map<number, KimiCodeToolCallFragment>();
 
   return {
@@ -81,6 +86,35 @@ export function createKimiCodeCompletedTurnAccumulator(): {
       const hasPostFinishDelta =
         textDeltas.length > 0 || reasoningDelta || chunk.choices.some((choice) => choice.toolCalls.length > 0);
       if (finished && hasPostFinishDelta) return { kind: "post_finish" };
+      const fragmentBytes = chunk.choices.reduce(
+        (total, choice) =>
+          total +
+          utf8Length(choice.content ?? "") +
+          utf8Length(choice.reasoning ?? "") +
+          choice.toolCalls.reduce(
+            (toolTotal, fragment) =>
+              toolTotal +
+              utf8Length(fragment.id ?? "") +
+              utf8Length(fragment.name ?? "") +
+              utf8Length(fragment.arguments),
+            0,
+          ),
+        0,
+      );
+      if (accumulatedResponseBytes + fragmentBytes > MAX_KIMI_ACCUMULATED_RESPONSE_BYTES) {
+        return { kind: "response_limit" };
+      }
+      const projectedToolArgumentBytes = new Map<number, number>();
+      for (const choice of chunk.choices) {
+        for (const fragment of choice.toolCalls) {
+          const currentBytes =
+            projectedToolArgumentBytes.get(fragment.index) ??
+            utf8Length(toolCalls.get(fragment.index)?.arguments ?? "");
+          const nextBytes = currentBytes + utf8Length(fragment.arguments);
+          if (nextBytes > MAX_KIMI_TOOL_ARGUMENT_BYTES) return { kind: "tool_argument_limit" };
+          projectedToolArgumentBytes.set(fragment.index, nextBytes);
+        }
+      }
       if (chunk.usage) usage = mergeKimiCodeUsage(usage, chunk.usage);
       for (const choice of chunk.choices) {
         if (choice.content) text += choice.content;
@@ -88,6 +122,7 @@ export function createKimiCodeCompletedTurnAccumulator(): {
         mergeToolCallFragments(toolCalls, choice.toolCalls);
         if (choice.finishReason) finished = true;
       }
+      accumulatedResponseBytes += fragmentBytes;
       return { kind: "accepted", textDeltas, reasoningDelta, finished };
     },
     complete() {
@@ -185,6 +220,10 @@ function boundUtf8(value: string, maximumBytes: number): string {
   const suffixBytes = encoder.encode(suffix);
   const prefixLimit = Math.max(0, maximumBytes - suffixBytes.byteLength - 3);
   return `${new TextDecoder().decode(encoded.slice(0, prefixLimit))}${suffix}`;
+}
+
+function utf8Length(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
 }
 
 function parseKimiCodeChunk(event: Extract<KimiCodeStreamEvent, { type: "message" }>): ParsedKimiCodeChunk | null {

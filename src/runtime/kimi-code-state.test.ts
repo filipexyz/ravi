@@ -15,8 +15,15 @@ import {
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
+import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js";
 import { commitKimiCodeSessionState, createKimiCodeSessionId, loadKimiCodeSessionState } from "./kimi-code-state.js";
+import {
+  emptySkillVisibilitySnapshot,
+  markLoadedFromRaviSkillToolCall,
+  markLoadedFromSkillGate,
+} from "./skill-visibility.js";
 import type { KimiCodeConversationMessage } from "./kimi-code-turn.js";
+import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { RuntimeSessionState } from "./types.js";
 
 const temporaryRoots = new Set<string>();
@@ -229,6 +236,103 @@ describe("Kimi Code immutable session state", () => {
         env: { ...committed.env, KIMI_API_KEY: "rotated-membership-key" },
       }),
     ).rejects.toThrow("credential profile mismatch");
+  });
+
+  test("resumes through host-managed credential and skill metadata without accepting arbitrary fields or secrets", async () => {
+    const committed = await firstCommit();
+    const binding: RuntimeCredentialAttemptBinding = {
+      credentialId: "rcred-kimi-managed",
+      label: "Managed Kimi membership",
+      fingerprint: "sha256:credential-profile",
+      runtimeProvider: "kimi-code",
+      resolvedEnv: { KIMI_API_KEY: committed.env.KIMI_API_KEY },
+      sensitiveEnvKeys: ["KIMI_API_KEY"],
+      remoteForwardEnvKeys: [],
+      bindings: [],
+    };
+    const params = mergeRuntimeCredentialSessionMetadata(committed.session.params ?? undefined, binding);
+    const skillVisibility = markLoadedFromSkillGate(
+      markLoadedFromRaviSkillToolCall(emptySkillVisibilitySnapshot(100), {
+        provider: "kimi-code",
+        toolName: "ravi_skills_show",
+        toolInput: { name: "release-check" },
+        output: { name: "release-check" },
+        now: 200,
+      }),
+      {
+        provider: "kimi-code",
+        skill: "gated-check",
+        source: "synthetic",
+        path: "C:/synthetic/SKILL.md",
+        toolName: "ravi_tasks_add",
+        now: 300,
+      },
+    );
+    Object.assign(params ?? {}, { skillVisibility });
+    const resumed: RuntimeSessionState = { ...committed.session, params };
+
+    expect(JSON.stringify(resumed)).not.toContain(committed.env.KIMI_API_KEY);
+    await expect(
+      loadKimiCodeSessionState({ session: resumed, model: "k3", cwd: committed.cwd, env: committed.env }),
+    ).resolves.toEqual(committed.snapshot);
+
+    const arbitraryLocator = cloneSession(resumed);
+    Object.assign(arbitraryLocator.params ?? {}, { arbitrary: "metadata" });
+    await expect(
+      loadKimiCodeSessionState({ session: arbitraryLocator, model: "k3", cwd: committed.cwd, env: committed.env }),
+    ).rejects.toThrow("locator is invalid");
+
+    const credentialWithSecret = cloneSession(resumed);
+    Object.assign(credentialWithSecret.params?.runtimeCredential as Record<string, unknown>, {
+      KIMI_API_KEY: committed.env.KIMI_API_KEY,
+    });
+    await expect(
+      loadKimiCodeSessionState({ session: credentialWithSecret, model: "k3", cwd: committed.cwd, env: committed.env }),
+    ).rejects.toThrow("locator is invalid");
+
+    const secretInAllowedMetadata = cloneSession(resumed);
+    Object.assign(secretInAllowedMetadata.params?.runtimeCredential as Record<string, unknown>, {
+      fingerprint: committed.env.KIMI_API_KEY,
+    });
+    await expect(
+      loadKimiCodeSessionState({
+        session: secretInAllowedMetadata,
+        model: "k3",
+        cwd: committed.cwd,
+        env: committed.env,
+      }),
+    ).rejects.toThrow("locator is invalid");
+
+    const malformedSkillVisibility = cloneSession(resumed);
+    Object.assign(malformedSkillVisibility.params ?? {}, {
+      skillVisibility: { skills: [{ id: "release-check" }], loadedSkills: [], updatedAt: 200 },
+    });
+    await expect(
+      loadKimiCodeSessionState({
+        session: malformedSkillVisibility,
+        model: "k3",
+        cwd: committed.cwd,
+        env: committed.env,
+      }),
+    ).rejects.toThrow("locator is invalid");
+
+    const skillVisibilityWithSecret = cloneSession(resumed);
+    const secretSkills = (
+      (skillVisibilityWithSecret.params?.skillVisibility as Record<string, unknown>).skills as Array<
+        Record<string, unknown>
+      >
+    ).map((skill) => ({ ...skill, source: committed.env.KIMI_API_KEY }));
+    Object.assign(skillVisibilityWithSecret.params ?? {}, {
+      skillVisibility: { ...skillVisibility, skills: secretSkills },
+    });
+    await expect(
+      loadKimiCodeSessionState({
+        session: skillVisibilityWithSecret,
+        model: "k3",
+        cwd: committed.cwd,
+        env: committed.env,
+      }),
+    ).rejects.toThrow("locator is invalid");
   });
 
   test("does not inherit the managed Kimi key into the Windows ACL child environment", async () => {

@@ -168,9 +168,15 @@ describe("createKimiCodeHttpTransport", () => {
 
   test("fails malformed JSON and oversized retained input without exposing body or authorization", async () => {
     await expect(collect(transportRequest, ["data: {bad}\n\n"])).rejects.toThrow(
-      "Kimi Code stream contained malformed JSON",
+      "Kimi Code protocol error: malformed JSON event",
     );
     await expect(collect(transportRequest, ["x".repeat(1024 * 1024 + 1)])).rejects.toThrow("buffer limit");
+  });
+
+  test("rejects one complete SSE event that exceeds the event bound", async () => {
+    const oversized = `data: ${JSON.stringify({ text: "x".repeat(1024 * 1024) })}\n\n`;
+
+    await expect(collect(transportRequest, [oversized])).rejects.toThrow("event limit");
   });
 
   test("accepts a large fetch chunk when it contains only complete small SSE events", async () => {

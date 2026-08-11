@@ -19,6 +19,7 @@ import {
 import {
   createKimiCodeHttpTransport,
   KimiCodeHttpError,
+  KimiCodeProtocolError,
   projectKimiCodeHttpError,
   type KimiCodeTransport,
 } from "./kimi-code-transport.js";
@@ -232,9 +233,10 @@ function createKimiCodeSession(
 
                 const accepted = accumulator.accept(event.data);
                 if (accepted.kind !== "accepted") {
+                  const protocolFailure = projectAccumulatorProtocolFailure(accepted.kind);
                   const terminal = terminalTracker.fail({
-                    error: "Kimi Code stream failed",
-                    recoverable: true,
+                    error: protocolFailure.message,
+                    rawEvent: { protocol: protocolFailure.code },
                     metadata,
                   });
                   if (terminal) yield terminal;
@@ -396,12 +398,22 @@ function createKimiCodeSession(
           }
         } catch (error) {
           const kimiFailure = error instanceof KimiCodeHttpError ? projectKimiCodeHttpError(error) : undefined;
+          const protocolFailure =
+            error instanceof KimiCodeProtocolError
+              ? { message: error.message, rawEvent: { protocol: error.code } }
+              : undefined;
           const terminal =
             turn.interrupted || closed || input.abortController.signal.aborted
               ? terminalTracker.interrupt({ metadata })
               : kimiFailure
                 ? terminalTracker.fail({ error: kimiFailure.message, rawEvent: kimiFailure.rawEvent, metadata })
-                : terminalTracker.fail({ error: "Kimi Code stream failed", recoverable: true, metadata });
+                : protocolFailure
+                  ? terminalTracker.fail({
+                      error: protocolFailure.message,
+                      rawEvent: protocolFailure.rawEvent,
+                      metadata,
+                    })
+                  : terminalTracker.fail({ error: "Kimi Code stream failed", recoverable: true, metadata });
           if (terminal) yield terminal;
         } finally {
           await closeTurnTransport(turn);
@@ -422,6 +434,22 @@ function createKimiCodeSession(
       await closeTurnTransport(activeTurn);
     },
   };
+}
+
+function projectAccumulatorProtocolFailure(
+  kind: Exclude<ReturnType<ReturnType<typeof createKimiCodeCompletedTurnAccumulator>["accept"]>["kind"], "accepted">,
+): { message: string; code: string } {
+  const failures = {
+    malformed: { message: "Kimi Code protocol error: malformed response chunk", code: "malformed_chunk" },
+    provider_error: { message: "Kimi Code protocol error: provider error event", code: "provider_error" },
+    post_finish: { message: "Kimi Code protocol error: data after finish", code: "post_finish_data" },
+    response_limit: { message: "Kimi Code protocol error: response limit exceeded", code: "response_limit" },
+    tool_argument_limit: {
+      message: "Kimi Code protocol error: tool argument limit exceeded",
+      code: "tool_argument_limit",
+    },
+  } as const;
+  return failures[kind];
 }
 
 interface KimiCodeActiveTurn {

@@ -172,7 +172,7 @@ providers are unchanged.
 
 Verified against upstream `dev` at `d912bb85`:
 
-- focused Kimi/provider/catalog/credential/pricing suite: 111 passed, 0 failed,
+- focused Kimi/provider/catalog/credential/pricing suite: 119 passed, 0 failed,
   2 private-live tests skipped by their explicit opt-in gate;
 - isolated runtime regression suite: 94 passed, 0 failed;
 - `bun run typecheck`: passed;
@@ -195,6 +195,11 @@ baseline.
 
 Private live checks below remain a release gate. They were not run with any
 credential disclosed through a conversation or other non-secret channel.
+
+The final independent review additionally exercised host-added credential and
+skill-visibility resume metadata, complete SSE event bounds, accumulated response
+and tool-argument bounds, and redacted protocol diagnostics. Each finding was
+captured by a failing regression before its correction.
 
 ## Private live release checks
 

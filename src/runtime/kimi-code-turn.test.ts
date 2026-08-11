@@ -60,4 +60,39 @@ describe("Kimi Code turn boundary", () => {
       usage: { inputTokens: 0, outputTokens: 0 },
     });
   });
+
+  test("fails closed before accumulated response text exceeds its bound", () => {
+    const accumulator = createKimiCodeCompletedTurnAccumulator();
+
+    expect(
+      accumulator.accept({
+        choices: [{ index: 0, delta: { content: "x".repeat(2 * 1024 * 1024 + 1) } }],
+      }),
+    ).toEqual({ kind: "response_limit" });
+    expect(accumulator.complete().text).toBe("");
+  });
+
+  test("fails closed before fragmented tool arguments exceed their bound", () => {
+    const accumulator = createKimiCodeCompletedTurnAccumulator();
+
+    expect(
+      accumulator.accept({
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call-bounded",
+                  function: { name: "bounded_tool", arguments: "x".repeat(1024 * 1024 + 1) },
+                },
+              ],
+            },
+          },
+        ],
+      }),
+    ).toEqual({ kind: "tool_argument_limit" });
+    expect(accumulator.complete().toolCalls).toEqual([]);
+  });
 });

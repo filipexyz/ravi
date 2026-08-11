@@ -4,7 +4,12 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { createKimiCodeCompletedTurnAccumulator, createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
 import { commitKimiCodeSessionState, createKimiCodeSessionId, loadKimiCodeSessionState } from "./kimi-code-state.js";
-import { buildKimiCodeRequest, createKimiCodeHttpTransport, KimiCodeHttpError } from "./kimi-code-transport.js";
+import {
+  buildKimiCodeRequest,
+  createKimiCodeHttpTransport,
+  KimiCodeHttpError,
+  KimiCodeProtocolError,
+} from "./kimi-code-transport.js";
 import { listRegisteredRuntimeProviderIds, unregisterRuntimeProvider } from "./provider-registry.js";
 import type { KimiCodeStreamEvent, KimiCodeTransport, KimiCodeTransportRequest } from "./kimi-code-transport.js";
 import type {
@@ -303,8 +308,16 @@ describe("createKimiCodeRuntimeProvider", () => {
     const providerErrorEvents = await collectEvents(providerError, startRequest());
     const eofEvents = await collectEvents(eof, startRequest());
 
-    expect(malformedEvents.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code stream failed" });
-    expect(providerErrorEvents.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code stream failed" });
+    expect(malformedEvents.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code protocol error: malformed response chunk",
+      rawEvent: { protocol: "malformed_chunk" },
+    });
+    expect(providerErrorEvents.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code protocol error: provider error event",
+      rawEvent: { protocol: "provider_error" },
+    });
     expect(JSON.stringify(providerErrorEvents)).not.toContain("synthetic provider secret");
     expect(eofEvents.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code stream ended before completion" });
   });
@@ -342,6 +355,24 @@ describe("createKimiCodeRuntimeProvider", () => {
         headers: { "retry-after": "2", "x-request-id": "req-provider" },
         requestId: "req-provider",
       },
+    });
+  });
+
+  test("projects a bounded protocol diagnostic from transport failures", async () => {
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => ({
+        async *stream() {
+          yield* [] as KimiCodeStreamEvent[];
+          throw new KimiCodeProtocolError("malformed_json");
+        },
+        async close() {},
+      }),
+    });
+
+    expect((await collectEvents(provider, startRequest())).at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code protocol error: malformed JSON event",
+      rawEvent: { protocol: "malformed_json" },
     });
   });
 

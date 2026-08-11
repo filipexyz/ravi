@@ -22,6 +22,7 @@ const LOCATOR_KEYS = [
   "sessionFile",
   "lastCommittedTurnId",
 ] as const;
+const LOCATOR_HOST_METADATA_KEYS = ["runtimeCredential", "skillVisibility"] as const;
 const SNAPSHOT_KEYS = [
   "schemaVersion",
   "provider",
@@ -156,7 +157,7 @@ export async function commitKimiCodeSessionState(
 }
 
 export async function loadKimiCodeSessionState(input: LoadKimiCodeSessionStateInput): Promise<KimiCodeSessionSnapshot> {
-  const params = parseLocator(input.session);
+  const params = parseLocator(input.session, input.env);
   const expectedCwd = normalizeCwd(input.cwd);
   if (params.provider !== KIMI_CODE_PROVIDER_ID) throw stateError("provider mismatch");
   if (params.schemaVersion !== KIMI_CODE_STATE_SCHEMA_VERSION) throw stateError("schema mismatch");
@@ -236,7 +237,10 @@ function revisionFilename(revision: number): string {
   return `revision-${revision.toString().padStart(8, "0")}.json`;
 }
 
-function parseLocator(session: RuntimeSessionState): {
+function parseLocator(
+  session: RuntimeSessionState,
+  env?: NodeJS.ProcessEnv,
+): {
   schemaVersion: number;
   provider: string;
   model: string;
@@ -247,7 +251,15 @@ function parseLocator(session: RuntimeSessionState): {
   lastCommittedTurnId: string;
 } {
   const params = session.params;
-  if (!isRecord(params) || !hasExactKeys(params, LOCATOR_KEYS)) throw stateError("locator is invalid");
+  if (
+    !isRecord(params) ||
+    !hasRequiredAndAllowedKeys(params, LOCATOR_KEYS, LOCATOR_HOST_METADATA_KEYS) ||
+    ("runtimeCredential" in params && !isRuntimeCredentialMetadata(params.runtimeCredential)) ||
+    ("skillVisibility" in params && !isSkillVisibilitySnapshot(params.skillVisibility)) ||
+    containsConfiguredCredential(params, env)
+  ) {
+    throw stateError("locator is invalid");
+  }
   if (
     typeof params.schemaVersion !== "number" ||
     typeof params.provider !== "string" ||
@@ -555,6 +567,143 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): 
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
   return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function hasRequiredAndAllowedKeys(
+  value: Record<string, unknown>,
+  required: readonly string[],
+  optional: readonly string[],
+): boolean {
+  const allowed = new Set([...required, ...optional]);
+  return required.every((key) => Object.hasOwn(value, key)) && Object.keys(value).every((key) => allowed.has(key));
+}
+
+function isRuntimeCredentialMetadata(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !hasRequiredAndAllowedKeys(
+      value,
+      ["credentialId", "fingerprint", "runtimeProvider"],
+      ["attemptId", "upstreamProvider", "authMethod", "sessionCompatibilityKey"],
+    )
+  ) {
+    return false;
+  }
+  if (
+    typeof value.credentialId !== "string" ||
+    typeof value.fingerprint !== "string" ||
+    typeof value.runtimeProvider !== "string" ||
+    !value.credentialId.trim() ||
+    !value.fingerprint.trim() ||
+    value.runtimeProvider !== KIMI_CODE_PROVIDER_ID
+  ) {
+    return false;
+  }
+  return (
+    (value.attemptId === undefined || value.attemptId === null || typeof value.attemptId === "string") &&
+    (value.upstreamProvider === undefined || typeof value.upstreamProvider === "string") &&
+    (value.authMethod === undefined || typeof value.authMethod === "string") &&
+    (value.sessionCompatibilityKey === undefined || typeof value.sessionCompatibilityKey === "string")
+  );
+}
+
+function isSkillVisibilitySnapshot(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["skills", "loadedSkills", "updatedAt"]) ||
+    !Array.isArray(value.skills) ||
+    !Array.isArray(value.loadedSkills) ||
+    typeof value.updatedAt !== "number" ||
+    !Number.isFinite(value.updatedAt) ||
+    !value.skills.every(isSkillVisibilityRecord) ||
+    !value.loadedSkills.every((skill) => typeof skill === "string" && skill.trim())
+  ) {
+    return false;
+  }
+
+  const skills = value.skills as Array<Record<string, unknown>>;
+  const loadedSkills = value.loadedSkills as unknown[];
+  if (new Set(skills.map((skill) => skill.id)).size !== skills.length) return false;
+  const expectedLoadedSkills = skills
+    .filter((skill) => skill.state === "loaded" && skill.confidence === "observed")
+    .map((skill) => skill.id);
+  return (
+    expectedLoadedSkills.length === loadedSkills.length &&
+    expectedLoadedSkills.every((skill, index) => skill === loadedSkills[index])
+  );
+}
+
+function isSkillVisibilityRecord(value: unknown): value is Record<string, unknown> {
+  if (
+    !isRecord(value) ||
+    !hasRequiredAndAllowedKeys(
+      value,
+      ["id", "provider", "state", "confidence", "lastSeenAt"],
+      ["source", "evidence", "loadedAt"],
+    ) ||
+    typeof value.id !== "string" ||
+    !value.id.trim() ||
+    value.provider !== KIMI_CODE_PROVIDER_ID ||
+    !isSkillVisibilityState(value.state) ||
+    !isSkillVisibilityConfidence(value.confidence) ||
+    typeof value.lastSeenAt !== "number" ||
+    !Number.isFinite(value.lastSeenAt) ||
+    (value.source !== undefined && typeof value.source !== "string") ||
+    (value.loadedAt !== undefined &&
+      value.loadedAt !== null &&
+      (typeof value.loadedAt !== "number" || !Number.isFinite(value.loadedAt)))
+  ) {
+    return false;
+  }
+  return (
+    value.evidence === undefined || (Array.isArray(value.evidence) && value.evidence.every(isSkillVisibilityEvidence))
+  );
+}
+
+function isSkillVisibilityEvidence(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !hasRequiredAndAllowedKeys(
+      value,
+      ["kind"],
+      ["observedAt", "path", "eventType", "eventId", "turnId", "itemId", "detail"],
+    ) ||
+    !isSkillVisibilityEvidenceKind(value.kind) ||
+    (value.observedAt !== undefined && (typeof value.observedAt !== "number" || !Number.isFinite(value.observedAt)))
+  ) {
+    return false;
+  }
+  return ["path", "eventType", "eventId", "turnId", "itemId", "detail"].every(
+    (key) => value[key] === undefined || typeof value[key] === "string",
+  );
+}
+
+function isSkillVisibilityState(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    ["available", "synced", "advertised", "requested", "loaded", "stale", "unknown"].includes(value)
+  );
+}
+
+function isSkillVisibilityConfidence(value: unknown): boolean {
+  return typeof value === "string" && ["observed", "inferred", "declared", "unknown"].includes(value);
+}
+
+function isSkillVisibilityEvidenceKind(value: unknown): boolean {
+  return (
+    typeof value === "string" &&
+    [
+      "provider-event",
+      "skill-gate",
+      "tool-call",
+      "sync-manifest",
+      "system-prompt",
+      "control-api",
+      "rpc-state",
+      "plugin-bootstrap",
+      "instruction-source",
+    ].includes(value)
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
