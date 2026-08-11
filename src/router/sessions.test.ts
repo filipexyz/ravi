@@ -1,8 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import { dbUpsertChat } from "./router-db.js";
 import {
+  attachChatToSession,
+  detachChatFromSession,
   getOrCreateSession,
   getSession,
+  listSessionSubscriptions,
   updateSessionContext,
   updateSessionEffortOverride,
   updateSessionRuntimeProviderOverride,
@@ -110,5 +114,39 @@ describe("sessions store", () => {
       groupMembers: ["Operator", "Ravi"],
       botTag: "@ravi",
     });
+  });
+
+  it("keeps cross-channel attachments and clears only the detached default", () => {
+    const session = getOrCreateSession("agent:dev:multi-surface", "dev", "/tmp/dev");
+    const slackChat = dbUpsertChat({
+      channel: "slack",
+      instanceId: "slack-primary",
+      platformChatId: "channel-1",
+      chatType: "group",
+      title: "Team channel",
+    });
+    const whatsappChat = dbUpsertChat({
+      channel: "whatsapp",
+      instanceId: "whatsapp-primary",
+      platformChatId: "contact-1",
+      chatType: "dm",
+      title: "Direct chat",
+    });
+
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: slackChat.id });
+    attachChatToSession({ sessionKey: session.sessionKey, chatId: whatsappChat.id });
+
+    const attached = listSessionSubscriptions(session.sessionKey);
+    expect(attached).toHaveLength(2);
+    expect(attached.find((entry) => entry.chatId === slackChat.id)?.outputAttachedAt).toBeUndefined();
+    expect(attached.find((entry) => entry.chatId === whatsappChat.id)?.outputAttachedAt).toBeNumber();
+
+    expect(detachChatFromSession(session.sessionKey, whatsappChat.id)).toEqual({
+      detached: true,
+      outputDetached: true,
+    });
+    expect(listSessionSubscriptions(session.sessionKey)).toEqual([
+      expect.objectContaining({ chatId: slackChat.id, outputAttachedAt: undefined }),
+    ]);
   });
 });
