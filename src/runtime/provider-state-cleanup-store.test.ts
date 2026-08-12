@@ -3,6 +3,7 @@ import { executeWrite } from "../db/write-retry.js";
 import { getDb } from "../router/router-db.js";
 import { getOrCreateSession, getSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
+import * as providerStateCleanupStore from "./provider-state-cleanup-store.js";
 import {
   createRuntimeBootEpoch,
   createRuntimeTurnAttempt,
@@ -18,7 +19,6 @@ import {
   failProviderStateCleanupTask,
   mutateSessionAndEnqueueProviderStateCleanup,
   parseProviderStateCleanupLocator,
-  publishPreparedProviderStateCleanupTask,
   publishPreparedProviderStateCleanupTaskInTransaction,
   serializeProviderStateCleanupLocator,
 } from "./provider-state-cleanup-store.js";
@@ -179,41 +179,58 @@ describe("provider state cleanup durable store", () => {
     ).toEqual({ id: "reservation-a" });
   });
 
-  it("composes prepared enqueue in an existing transaction and promotes only the exact fenced reservation", () => {
+  it("exposes only transaction-scoped promotion and composes callback work with enqueue and promotion", () => {
+    expect("publishPreparedProviderStateCleanupTask" in providerStateCleanupStore).toBe(false);
     const owner = { attemptId: "attempt-a", sessionKey: "session-a", bootEpoch: "boot-a" };
     const input = { id: "reservation-composable", locator: locator(), owner, now: 100 };
+    getDb().exec("CREATE TEMP TABLE cleanup_publish_markers (id TEXT PRIMARY KEY)");
 
-    const prepared = executeWrite(getDb(), (database) =>
-      enqueuePreparedProviderStateCleanupTaskInTransaction(database, input),
-    );
-    expect(prepared).toMatchObject({ id: input.id, status: "prepared" });
-    expect(
-      executeWrite(getDb(), (database) =>
+    const published = executeWrite(getDb(), (database) => {
+      expect(enqueuePreparedProviderStateCleanupTaskInTransaction(database, input)).toMatchObject({
+        id: input.id,
+        status: "prepared",
+      });
+      expect(
         publishPreparedProviderStateCleanupTaskInTransaction(database, {
           ...input,
           locator: locator(2, "a"),
           now: 200,
         }),
-      ),
-    ).toBeNull();
-    expect(
-      executeWrite(getDb(), (database) =>
+      ).toBeNull();
+      expect(
         publishPreparedProviderStateCleanupTaskInTransaction(database, {
           ...input,
           owner: { ...owner, sessionKey: "wrong-session" },
           now: 200,
         }),
-      ),
-    ).toBeNull();
-    expect(getDb().prepare("SELECT status FROM provider_state_cleanup_tasks WHERE id = ?").get(input.id)).toEqual({
-      status: "prepared",
+      ).toBeNull();
+      database.prepare("INSERT INTO cleanup_publish_markers (id) VALUES (?)").run(input.id);
+      return publishPreparedProviderStateCleanupTaskInTransaction(database, { ...input, now: 300 });
     });
-
-    expect(publishPreparedProviderStateCleanupTask({ ...input, now: 300 })).toMatchObject({
+    expect(published).toMatchObject({
       id: input.id,
       status: "published",
     });
-    expect(publishPreparedProviderStateCleanupTask({ ...input, now: 400 })).toBeNull();
+    expect(getDb().prepare("SELECT id FROM cleanup_publish_markers WHERE id = ?").get(input.id)).toEqual({
+      id: input.id,
+    });
+
+    const rollbackInput = { ...input, id: "reservation-rollback", locator: locator(2, "b") };
+    expect(() =>
+      executeWrite(getDb(), (database) => {
+        enqueuePreparedProviderStateCleanupTaskInTransaction(database, rollbackInput);
+        database.prepare("INSERT INTO cleanup_publish_markers (id) VALUES (?)").run(rollbackInput.id);
+        expect(publishPreparedProviderStateCleanupTaskInTransaction(database, rollbackInput)).toMatchObject({
+          id: rollbackInput.id,
+          status: "published",
+        });
+        throw new Error("rollback composed publish");
+      }),
+    ).toThrow("rollback composed publish");
+    expect(
+      getDb().prepare("SELECT id FROM provider_state_cleanup_tasks WHERE id = ?").get(rollbackInput.id),
+    ).toBeNull();
+    expect(getDb().prepare("SELECT id FROM cleanup_publish_markers WHERE id = ?").get(rollbackInput.id)).toBeNull();
   });
 
   it("commits a session CAS and cleanup task together, creates nothing on loss, and rolls back on enqueue error", () => {

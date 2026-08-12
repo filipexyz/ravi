@@ -419,14 +419,6 @@ export function publishPreparedProviderStateCleanupTaskInTransaction(
   return rowToTask(row);
 }
 
-export function publishPreparedProviderStateCleanupTask(
-  input: PublishPreparedProviderStateCleanupTaskInput,
-): ProviderStateCleanupTask | null {
-  return executeWrite(getDb(), (database) => publishPreparedProviderStateCleanupTaskInTransaction(database, input), {
-    label: "provider-state-cleanup-publish-prepared",
-  });
-}
-
 export function enqueuePublishedProviderStateCleanupTask(
   input: EnqueuePublishedProviderStateCleanupTaskInput,
 ): ProviderStateCleanupTask {
