@@ -91,8 +91,9 @@ The cleanup table records:
   `retire_revision`);
 - canonical locator JSON and, for retirement, canonical successor locator JSON;
 - `prepared`, `published`, `leased`, `failed`, or `dead` status;
-- nullable `owner_attempt_id`; it is required for `provisional_exact` and absent
-  for ordinary delete/retirement tasks;
+- nullable `owner_attempt_id`, `owner_session_key`, and `owner_boot_epoch`; all
+  three are required for `provisional_exact` and absent for ordinary
+  delete/retirement tasks;
 - bounded attempt count, next-attempt time, lease id/expiry, allowlisted error
   code, and timestamps.
 
