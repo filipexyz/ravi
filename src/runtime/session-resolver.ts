@@ -17,7 +17,7 @@ import type { RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
 import { validateRuntimeSessionState, type RuntimeSessionStateInvalidReason } from "./session-state.js";
 import { resolveRuntimeForPrompt } from "./task-runtime-context.js";
-import { runProviderSessionLifecycleMutation } from "./provider-session-lifecycle.js";
+import { startProviderSessionLifecycleMutation } from "./provider-session-lifecycle.js";
 
 const log = logger.child("runtime:session-resolver");
 
@@ -180,15 +180,12 @@ export function resolveRuntimeSession(options: RuntimeSessionResolutionOptions):
       requestedProvider: runtimeProviderId,
       resumeDecision,
     });
-    let providerStateCleared = false;
-    providerStateCleanup = runProviderSessionLifecycleMutation({
+    const lifecycleMutation = startProviderSessionLifecycleMutation({
       session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
-      mutate: () => {
-        providerStateCleared = clearProviderSessionIfUnchanged(session);
-        return providerStateCleared;
-      },
+      mutate: () => clearProviderSessionIfUnchanged(session),
     });
-    if (providerStateCleared) {
+    providerStateCleanup = lifecycleMutation.cleanup.then(() => lifecycleMutation.changed);
+    if (lifecycleMutation.changed) {
       session.runtimeSessionParams = undefined;
       session.runtimeSessionDisplayId = undefined;
       session.providerSessionId = undefined;

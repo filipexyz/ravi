@@ -69,7 +69,7 @@ function persistKimiK3Session(): void {
   writeFileSync(sessionFile, '{"messages":["old-k3-transcript"]}');
   getOrCreateSession(SESSION_KEY, "main", cwd, { name: SESSION_NAME });
   updateSessionRuntimeProviderOverride(SESSION_KEY, "kimi-code");
-  updateProviderSession(SESSION_KEY, "kimi-code", "kimi-k3-locator", {
+  updateProviderSession(getSession(SESSION_KEY)!, "kimi-code", "kimi-k3-locator", {
     runtimeSessionParams: {
       provider: "kimi-code",
       model: "k3",
@@ -108,7 +108,7 @@ describe("runtime session resolver", () => {
 
   it("resumes stored provider state for the same runtime provider", () => {
     getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", { name: SESSION_NAME });
-    updateProviderSession(SESSION_KEY, "codex", "provider-existing", {
+    updateProviderSession(getSession(SESSION_KEY)!, "codex", "provider-existing", {
       runtimeSessionParams: { sessionId: "provider-existing" },
       runtimeSessionDisplayId: "provider-existing",
     });
@@ -133,9 +133,9 @@ describe("runtime session resolver", () => {
     });
   });
 
-  it("clears stale provider state only for an explicit runtime provider mismatch", () => {
+  it("clears stale provider state only for an explicit runtime provider mismatch without a microtask race", async () => {
     getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", { name: SESSION_NAME });
-    updateProviderSession(SESSION_KEY, "codex", "provider-existing");
+    updateProviderSession(getSession(SESSION_KEY)!, "codex", "provider-existing");
 
     const resolved = resolveRuntimeSession({
       sessionName: SESSION_NAME,
@@ -155,6 +155,13 @@ describe("runtime session resolver", () => {
       staleCleared: true,
     });
     expect(getSession(SESSION_KEY)?.providerSessionId).toBeUndefined();
+    let cleanupSettled = false;
+    const cleanup = resolved?.providerStateCleanup?.then(() => {
+      cleanupSettled = true;
+    });
+    expect(cleanupSettled).toBe(false);
+    await cleanup;
+    expect(cleanupSettled).toBe(true);
   });
 
   it("uses session runtime provider override before agent/default provider", () => {
@@ -182,7 +189,7 @@ describe("runtime session resolver", () => {
     writeFileSync(sessionFile, "{}");
 
     getOrCreateSession(SESSION_KEY, "main", cwd, { name: SESSION_NAME });
-    updateProviderSession(SESSION_KEY, FILE_BACKED_PROVIDER, "file-backed-session", {
+    updateProviderSession(getSession(SESSION_KEY)!, FILE_BACKED_PROVIDER, "file-backed-session", {
       runtimeSessionParams: {
         sessionFile,
         cwd,
@@ -213,7 +220,7 @@ describe("runtime session resolver", () => {
     const cwd = stateDir ?? "/tmp";
 
     getOrCreateSession(SESSION_KEY, "main", cwd, { name: SESSION_NAME });
-    updateProviderSession(SESSION_KEY, FILE_BACKED_PROVIDER, "missing-file-session", {
+    updateProviderSession(getSession(SESSION_KEY)!, FILE_BACKED_PROVIDER, "missing-file-session", {
       runtimeSessionParams: {
         sessionFile: join(cwd, "missing-provider-session.json"),
         cwd,
@@ -248,7 +255,7 @@ describe("runtime session resolver", () => {
     getOrCreateSession(SESSION_KEY, "main", cwd, { name: SESSION_NAME });
     updateSessionRuntimeProviderOverride(SESSION_KEY, "kimi-code");
     updateSessionModelOverride(SESSION_KEY, "k3");
-    updateProviderSession(SESSION_KEY, "kimi-code", "kimi-k3-locator", {
+    updateProviderSession(getSession(SESSION_KEY)!, "kimi-code", "kimi-k3-locator", {
       runtimeSessionParams: {
         provider: "kimi-code",
         model: "k3",
@@ -268,6 +275,7 @@ describe("runtime session resolver", () => {
     expect(matching?.storedProviderSessionId).toBe("kimi-k3-locator");
 
     updateSessionModelOverride(SESSION_KEY, "k3-256k");
+    const admittedBeforeRestart = getSession(SESSION_KEY)!;
     const changed = resolveRuntimeSession({
       sessionName: SESSION_NAME,
       configModel: "global-model",
@@ -291,6 +299,12 @@ describe("runtime session resolver", () => {
       runtimeProviderOverride: "kimi-code",
     });
     expect(getSession(SESSION_KEY)?.runtimeSessionParams).toBeUndefined();
+    expect(getSession(SESSION_KEY)?.lifecycleGeneration).toBe(admittedBeforeRestart.lifecycleGeneration! + 1);
+    expect(
+      updateProviderSession(admittedBeforeRestart, "kimi-code", "synthetic-late-model-terminal", {
+        runtimeSessionParams: { provider: "kimi-code", model: "k3-256k", revision: 2 },
+      }).won,
+    ).toBe(false);
   });
 
   it("does not apply Kimi model invalidation rules to Claude, Codex, or Pi", () => {
@@ -303,7 +317,7 @@ describe("runtime session resolver", () => {
       getOrCreateSession(sessionKey, "main", cwd, { name: sessionName });
       updateSessionRuntimeProviderOverride(sessionKey, provider);
       updateSessionModelOverride(sessionKey, "new-model");
-      updateProviderSession(sessionKey, provider, `${provider}-locator`, {
+      updateProviderSession(getSession(sessionKey)!, provider, `${provider}-locator`, {
         runtimeSessionParams: {
           model: "old-model",
           sessionFile,

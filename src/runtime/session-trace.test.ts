@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { getRecentHistory, saveMessage } from "../db.js";
 import { nats } from "../nats.js";
-import { attachChatToSession } from "../router/sessions.js";
+import { attachChatToSession, resetSessionIfUnchanged, updateProviderSession } from "../router/sessions.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import {
   getOrCreateSession,
@@ -359,7 +359,7 @@ async function runTraceLoop(
   await runRuntimeEventLoop({
     runId: streaming.traceRunId ?? "run-1",
     sessionName: SESSION_NAME,
-    session: makeSession(),
+    session: getSession(SESSION_KEY) ?? makeSession(),
     agent: makeAgent(),
     streaming,
     runtimeSession,
@@ -799,6 +799,58 @@ describe("runtime session trace instrumentation", () => {
       startedTool: true,
       materializedOutput: false,
     });
+  });
+
+  it("rejects a deferred terminal after reset without restoring its locator or durable success", async () => {
+    const initial = getSession(SESSION_KEY)!;
+    expect(
+      updateProviderSession(initial, PROVIDER, "synthetic-provider-before", {
+        runtimeSessionParams: { sessionId: "synthetic-provider-before" },
+        runtimeSessionDisplayId: "synthetic-provider-before",
+      }).won,
+    ).toBe(true);
+    const admitted = getSession(SESSION_KEY)!;
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-ownership-reset");
+
+    let releaseTerminal!: () => void;
+    const terminalGate = new Promise<void>((resolve) => {
+      releaseTerminal = resolve;
+    });
+    let terminalDeferred!: () => void;
+    const terminalWasDeferred = new Promise<void>((resolve) => {
+      terminalDeferred = resolve;
+    });
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: (async function* () {
+        terminalDeferred();
+        await terminalGate;
+        yield {
+          type: "turn.complete",
+          providerSessionId: "synthetic-provider-after",
+          session: {
+            displayId: "synthetic-provider-after",
+            params: { sessionId: "synthetic-provider-after" },
+          },
+        } satisfies RuntimeEvent;
+      })(),
+      interrupt: async () => {},
+    };
+
+    const loop = runTraceLoop(streaming, runtimeSession, { session: admitted });
+    await terminalWasDeferred;
+    expect(resetSessionIfUnchanged(admitted)).toBe(true);
+    releaseTerminal();
+
+    await expect(loop).rejects.toThrow("Session ownership changed before provider state persistence");
+    expect(getSession(SESSION_KEY)).toMatchObject({
+      lifecycleGeneration: admitted.lifecycleGeneration! + 1,
+      providerSessionId: undefined,
+      runtimeSessionParams: undefined,
+    });
+    expect(getSessionTurn("turn-ownership-reset")?.status).not.toBe("complete");
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).not.toContain("turn.complete");
   });
 
   it("releases queued delivery barriers after a tool completes without exposing callback failures", async () => {
@@ -1245,7 +1297,7 @@ describe("runtime session trace instrumentation", () => {
     session.providerSessionId = "provider-before";
     session.runtimeSessionDisplayId = "provider-before";
 
-    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+    updateRuntimeProviderState(getSession(SESSION_KEY)!, PROVIDER, {
       providerSessionId: "provider-before",
       runtimeSessionDisplayId: "provider-before",
       runtimeSessionParams: {
@@ -2619,7 +2671,7 @@ describe("runtime session trace instrumentation", () => {
       chatId: source.chatId,
       sourceMessageId: "wamid-latest",
     });
-    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+    updateRuntimeProviderState(getSession(SESSION_KEY)!, PROVIDER, {
       providerSessionId: "thread-old",
       runtimeSessionDisplayId: "thread-old",
       runtimeSessionParams: { sessionId: "thread-old" },

@@ -30,6 +30,11 @@ export interface ProviderSessionPersistenceMutationInput {
   env?: NodeJS.ProcessEnv;
 }
 
+export interface StartedProviderSessionLifecycleMutation {
+  changed: boolean;
+  cleanup: Promise<void>;
+}
+
 export async function runProviderSessionPersistenceMutation(
   input: ProviderSessionPersistenceMutationInput,
 ): Promise<void> {
@@ -58,16 +63,26 @@ export async function runProviderSessionPersistenceMutation(
 export async function runProviderSessionLifecycleMutation(
   input: ProviderSessionLifecycleMutationInput,
 ): Promise<boolean> {
+  const started = startProviderSessionLifecycleMutation(input);
+  await started.cleanup;
+  return started.changed;
+}
+
+/** Runs the exact database mutation synchronously and exposes cleanup separately. */
+export function startProviderSessionLifecycleMutation(
+  input: ProviderSessionLifecycleMutationInput,
+): StartedProviderSessionLifecycleMutation {
   const snapshot = snapshotRuntimeSessionState(input.session);
   const changed = input.mutate();
-  if (!changed || !isKimiCodeSession(snapshot)) return changed;
-
-  try {
-    await (input.cleanupKimi ?? ((session) => cleanupKimiCodeSessionState(session, input.env)))(snapshot);
-  } catch (error) {
-    log.warn("Failed to clean Kimi Code session state after host lifecycle mutation", { error });
-  }
-  return changed;
+  const cleanup = (async () => {
+    if (!changed || !isKimiCodeSession(snapshot)) return;
+    try {
+      await (input.cleanupKimi ?? ((session) => cleanupKimiCodeSessionState(session, input.env)))(snapshot);
+    } catch (error) {
+      log.warn("Failed to clean Kimi Code session state after host lifecycle mutation", { error });
+    }
+  })();
+  return { changed, cleanup };
 }
 
 function isKimiCodeSession(session: RuntimeSessionState | undefined): session is RuntimeSessionState {

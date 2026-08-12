@@ -20,6 +20,7 @@ import type { PendingRuntimeSessionStart } from "./session-launcher.js";
 import {
   deleteSession,
   getOrCreateSession,
+  getSession,
   getSessionByName,
   setSessionEphemeral,
   updateProviderSession,
@@ -2038,7 +2039,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName });
       updateSessionRuntimeProviderOverride(sessionKey, "kimi-code");
       updateSessionModelOverride(sessionKey, "k3-256k");
-      updateProviderSession(sessionKey, "kimi-code", "kimi-k3-locator", {
+      updateProviderSession(getSession(sessionKey)!, "kimi-code", "kimi-k3-locator", {
         runtimeSessionParams: {
           provider: "kimi-code",
           model: "k3",
@@ -2107,7 +2108,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName });
       updateSessionRuntimeProviderOverride(sessionKey, "kimi-code");
       updateSessionModelOverride(sessionKey, "k3-256k");
-      updateProviderSession(sessionKey, "kimi-code", "kimi-k3-locator", {
+      updateProviderSession(getSession(sessionKey)!, "kimi-code", "kimi-k3-locator", {
         runtimeSessionParams: { provider: "kimi-code", model: "k3", sessionFile, cwd: stateDir },
         runtimeSessionDisplayId: "kimi-k3-locator",
       });

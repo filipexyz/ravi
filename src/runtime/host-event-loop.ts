@@ -1734,7 +1734,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 ? "interrupted"
                 : "failed"
               : undefined;
-      if (receivedTerminalStatus) {
+      if (receivedTerminalStatus && receivedTerminalStatus !== "complete") {
         const terminal = terminalizeCurrentCrashRecoveryAttempt(receivedTerminalStatus);
         if (!terminal) {
           log.warn("Ignoring provider terminal event after crash recovery ownership loss", {
@@ -1756,11 +1756,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
           break;
         }
-        if (receivedTerminalStatus !== "complete") {
-          // Interrupted/failed native envelopes may contain partial assistant
-          // content that was never accepted by response policy.
-          suppressProviderRawForCurrentTurn = true;
-        }
+        // Interrupted/failed native envelopes may contain partial assistant
+        // content that was never accepted by response policy.
+        suppressProviderRawForCurrentTurn = true;
       }
 
       if (event.type === "text.delta") {
@@ -2298,7 +2296,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionId: event.session?.displayId ?? event.providerSessionId,
         });
         const completedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
-        recordRuntimeCredentialTurnSuccess(streaming);
 
         const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
         // Skill gates can be persisted by the Codex Bash hook in a separate process.
@@ -2338,6 +2335,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
           backfillProviderSessionId(sessionName, persistedSessionId);
         }
+        recordRuntimeCredentialTurnSuccess(streaming);
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
         if (event.usage) {
           updateTokens(

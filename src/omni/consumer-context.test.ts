@@ -1159,7 +1159,7 @@ describe("OmniConsumer channel context", () => {
 
   it("resets the runtime session and republishes an Omni message edit as a rebase replay", async () => {
     const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
-    actualUpdateProviderSession(sessionKey, "codex", "provider-before-edit");
+    actualUpdateProviderSession(actualGetSession(sessionKey)!, "codex", "provider-before-edit");
     const lifecycleGenerationBeforeEdit = actualGetSession(sessionKey)?.lifecycleGeneration ?? 0;
     actualChatDbModule.saveMessage("dev", "user", "[WhatsApp Ravi - Dev mid:msg-original] Luis: texto antigo", null, {
       agentId: "main",

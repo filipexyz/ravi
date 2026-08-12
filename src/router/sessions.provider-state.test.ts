@@ -6,6 +6,7 @@ import {
   getSession,
   updateProviderSession,
   updateRuntimeProviderState,
+  updateSdkSessionId,
 } from "./sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
@@ -138,5 +139,52 @@ describe("Session provider state", () => {
       }),
     ).toEqual({ won: false, lifecycleGeneration: admitted.lifecycleGeneration! });
     expect(getSession(admitted.sessionKey)?.providerSessionId).toBe("synthetic-revision-2");
+  });
+
+  it("rejects key-only locator persistence instead of reacquiring ownership after reset", () => {
+    const admitted = getOrCreateSession("test:runtime-provider:key-only", "agent-a", "/tmp/agent-a", {
+      runtimeProvider: "kimi-code",
+      providerSessionId: "synthetic-admitted-locator",
+      runtimeSessionParams: { provider: "kimi-code", revision: 1 },
+    });
+    expect(clearProviderSession(admitted)).toBe(true);
+
+    const unsafeKeyOnlyCall = updateProviderSession as unknown as (
+      sessionKey: string,
+      runtimeProvider: "kimi-code",
+      providerSessionId: string,
+    ) => { won: boolean };
+    expect(unsafeKeyOnlyCall(admitted.sessionKey, "kimi-code", "synthetic-late-locator").won).toBe(false);
+    expect(getSession(admitted.sessionKey)?.providerSessionId).toBeUndefined();
+  });
+
+  it("fences ordinary runtime-provider metadata with the admitted ownership snapshot", () => {
+    const admitted = getOrCreateSession("test:runtime-provider:metadata-cas", "agent-a", "/tmp/agent-a", {
+      runtimeProvider: "kimi-code",
+      providerSessionId: "synthetic-metadata-locator",
+      runtimeSessionParams: { provider: "kimi-code", revision: 1 },
+    });
+    expect(clearProviderSession(admitted)).toBe(true);
+
+    expect(updateRuntimeProviderState(admitted, "claude")).toEqual({
+      won: false,
+      lifecycleGeneration: admitted.lifecycleGeneration! + 1,
+    });
+    expect(getSession(admitted.sessionKey)?.runtimeProvider).toBeUndefined();
+  });
+
+  it("fences the SDK locator compatibility boundary with admitted ownership", () => {
+    const admitted = getOrCreateSession("test:runtime-provider:sdk-cas", "agent-a", "/tmp/agent-a");
+    expect(clearProviderSession(admitted)).toBe(true);
+
+    const unsafeKeyOnlyCall = updateSdkSessionId as unknown as (
+      sessionKey: string,
+      providerSessionId: string,
+    ) => { won: boolean; lifecycleGeneration: number | null };
+    expect(unsafeKeyOnlyCall(admitted.sessionKey, "synthetic-stale-sdk-locator")).toEqual({
+      won: false,
+      lifecycleGeneration: null,
+    });
+    expect(getSession(admitted.sessionKey)?.providerSessionId).toBeUndefined();
   });
 });

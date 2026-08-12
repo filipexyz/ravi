@@ -282,6 +282,16 @@ export type SessionProviderStateMutationResult =
   | { won: true; lifecycleGeneration: number }
   | { won: false; lifecycleGeneration: number | null };
 
+export type SessionProviderStateOwnership = Pick<
+  SessionEntry,
+  | "sessionKey"
+  | "lifecycleGeneration"
+  | "runtimeProvider"
+  | "sdkSessionId"
+  | "runtimeSessionDisplayId"
+  | "runtimeSessionParams"
+>;
+
 // ============================================================================
 // Matched Route (pure routing, no side effects)
 // ============================================================================
