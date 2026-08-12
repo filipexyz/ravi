@@ -628,9 +628,16 @@ async function assertNoExistingReparsePoints(target: string): Promise<void> {
   for (const segment of segments) {
     current = join(current, segment);
     const info = await lstat(current).catch(() => undefined);
-    if (info?.isSymbolicLink()) throw stateError("session path uses a reparse point");
+    if (info?.isSymbolicLink() && !(await isCanonicalMacOSVarAlias(current))) {
+      throw stateError("session path uses a reparse point");
+    }
     if (!info) return;
   }
+}
+
+async function isCanonicalMacOSVarAlias(path: string): Promise<boolean> {
+  if (process.platform !== "darwin" || path !== `${sep}var`) return false;
+  return (await realpath(path).catch(() => undefined)) === `${sep}private${sep}var`;
 }
 
 async function applyPrivatePermissions(

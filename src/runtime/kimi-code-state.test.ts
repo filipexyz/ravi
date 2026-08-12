@@ -940,6 +940,27 @@ describe("Kimi Code immutable session state", () => {
     expect(existsSync(join(outsideState, "runtime"))).toBe(false);
   });
 
+  test.skipIf(process.platform !== "darwin")(
+    "accepts a macOS workspace and state directory beneath the canonical /var system alias",
+    async () => {
+      const fixture = temporaryState();
+      if (!fixture.root.startsWith(`${sep}var${sep}`)) return;
+
+      const committed = await commitKimiCodeSessionState({
+        sessionId: createKimiCodeSessionId(),
+        model: "k3",
+        cwd: fixture.cwd,
+        lastCommittedTurnId: "turn-macos-var-alias",
+        messages: nativeMessages("macos-var-alias"),
+        env: fixture.env,
+      });
+
+      await expect(
+        loadKimiCodeSessionState({ session: committed.session, model: "k3", cwd: fixture.cwd, env: fixture.env }),
+      ).resolves.toEqual(committed.snapshot);
+    },
+  );
+
   test.skipIf(process.platform !== "win32")(
     "does not transiently open a snapshot under a permissive inherited Windows ACL",
     async () => {
