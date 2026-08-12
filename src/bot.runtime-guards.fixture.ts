@@ -385,19 +385,34 @@ mock.module("./router/index.js", () => ({
   clearProviderSessionIfUnchanged,
   updateProviderSession: mock(
     (
-      sessionKey: string,
+      expected: Pick<
+        SessionState,
+        | "sessionKey"
+        | "lifecycleGeneration"
+        | "runtimeProvider"
+        | "sdkSessionId"
+        | "runtimeSessionDisplayId"
+        | "runtimeSessionParams"
+      >,
       provider: RuntimeProviderId,
       providerSessionId: string,
       options?: { runtimeSessionParams?: Record<string, unknown>; runtimeSessionDisplayId?: string },
     ) => {
-      const session = sessions.get(sessionKey);
-      if (!session) return;
+      const session = sessions.get(expected.sessionKey);
+      if (!session) return { won: false, lifecycleGeneration: null };
+      if (typeof expected.lifecycleGeneration !== "number" || !Number.isSafeInteger(expected.lifecycleGeneration)) {
+        return { won: false, lifecycleGeneration: session.lifecycleGeneration ?? null };
+      }
+      if (session.lifecycleGeneration !== expected.lifecycleGeneration) {
+        return { won: false, lifecycleGeneration: session.lifecycleGeneration ?? null };
+      }
       const displayId = options?.runtimeSessionDisplayId ?? providerSessionId;
       session.runtimeProvider = provider;
       session.runtimeSessionParams = options?.runtimeSessionParams;
       session.runtimeSessionDisplayId = displayId;
       session.providerSessionId = displayId;
       session.sdkSessionId = providerSessionId;
+      return { won: true, lifecycleGeneration: expected.lifecycleGeneration };
     },
   ),
   updateRuntimeProviderState: mock(
