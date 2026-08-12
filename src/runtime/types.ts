@@ -375,7 +375,6 @@ export interface RuntimeProviderStatePublishInput {
   locator: unknown;
   /** Must be bounded and synchronous; returning a Promise fails closed. */
   publish(): void;
-  now?: number;
 }
 
 export interface RuntimeProviderStateLifecycle {

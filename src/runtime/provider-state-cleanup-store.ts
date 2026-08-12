@@ -593,6 +593,33 @@ export function completeProviderStateCleanupTask(input: { id: string; leaseId: s
   );
 }
 
+/**
+ * Releases a task whose provider executor is not installed without consuming a
+ * retry attempt. The durable diagnostic survives restarts and the task becomes
+ * claimable again as soon as a daemon with the executor is installed.
+ */
+export function holdProviderStateCleanupTaskForUnavailableExecutor(input: {
+  id: string;
+  leaseId: string;
+  now?: number;
+}): boolean {
+  const now = requireTimestamp(input.now ?? Date.now(), "now");
+  return executeWrite(
+    getDb(),
+    (database) =>
+      database
+        .prepare(
+          `UPDATE provider_state_cleanup_tasks
+           SET status = 'failed', attempt_count = MAX(0, attempt_count - 1),
+             next_attempt_at = ?, lease_id = NULL, leased_until = NULL,
+             last_error_code = 'executor_unavailable', updated_at = ?
+           WHERE id = ? AND status = 'leased' AND lease_id = ? AND leased_until > ?`,
+        )
+        .run(now, now, input.id, input.leaseId, now).changes === 1,
+    { label: "provider-state-cleanup-hold-executor-unavailable" },
+  );
+}
+
 function providerStateCleanupFailureDisposition(errorCode: ProviderStateCleanupErrorCode): "retry" | "dead" {
   switch (errorCode) {
     case "io_transient":
@@ -623,6 +650,9 @@ export function failProviderStateCleanupTask(input: {
   const now = requireTimestamp(input.now ?? Date.now(), "now");
   if (!(PROVIDER_STATE_CLEANUP_ERROR_CODES as readonly string[]).includes(input.errorCode)) {
     throw new Error("Provider cleanup error code is not allowlisted");
+  }
+  if (input.errorCode === "executor_unavailable") {
+    return holdProviderStateCleanupTaskForUnavailableExecutor({ id: input.id, leaseId: input.leaseId, now });
   }
   const baseBackoffMs = requireTimestamp(input.baseBackoffMs ?? DEFAULT_BASE_BACKOFF_MS, "baseBackoffMs");
   const maxBackoffMs = requireTimestamp(input.maxBackoffMs ?? DEFAULT_MAX_BACKOFF_MS, "maxBackoffMs");

@@ -10,6 +10,7 @@ import {
 import { serializeProviderStateCleanupLocator } from "./provider-state-cleanup-store.js";
 import {
   createProviderStateLifecycle,
+  providerStatePublishIntentIsResolved,
   reconcileProviderStatePublishIntent,
 } from "./provider-state-lifecycle.js";
 
@@ -77,25 +78,25 @@ describe("request-scoped provider state lifecycle", () => {
       sessionKey: first.sessionKey,
       admittedEpoch: first.lifecycleGeneration!,
       currentAttempt: () => ({ attemptId: "attempt-a", bootEpoch: "boot-a" }),
+      now: () => 200,
     });
     const lifecycleB = createProviderStateLifecycle({
       provider: "test-provider",
       sessionKey: second.sessionKey,
       admittedEpoch: second.lifecycleGeneration!,
       currentAttempt: () => ({ attemptId: "attempt-b", bootEpoch: "boot-b" }),
+      now: () => 201,
     });
 
     lifecycleA.publishPreparedState({
       reservationId: "reservation-a",
       locator: locator("00000000-0000-4000-8000-00000000000a", "/private/a/revision-1.json"),
       publish: () => undefined,
-      now: 200,
     });
     lifecycleB.publishPreparedState({
       reservationId: "reservation-b",
       locator: locator("00000000-0000-4000-8000-00000000000b", "/private/b/revision-1.json"),
       publish: () => undefined,
-      now: 201,
     });
 
     const rows = getDb()
@@ -117,6 +118,7 @@ describe("request-scoped provider state lifecycle", () => {
       sessionKey: session.sessionKey,
       admittedEpoch: session.lifecycleGeneration!,
       currentAttempt: () => ({ attemptId: "attempt-order", bootEpoch: "boot-order" }),
+      now: () => 200,
     });
     const observed: string[] = [];
 
@@ -129,7 +131,6 @@ describe("request-scoped provider state lifecycle", () => {
           .get("reservation-order") as { status: string };
         observed.push(row.status);
       },
-      now: 200,
     });
 
     expect(observed).toEqual(["prepared"]);
@@ -147,6 +148,7 @@ describe("request-scoped provider state lifecycle", () => {
       sessionKey: session.sessionKey,
       admittedEpoch: session.lifecycleGeneration!,
       currentAttempt: () => ({ attemptId: "attempt-rollback", bootEpoch: "boot-rollback" }),
+      now: () => 200,
     });
 
     expect(() =>
@@ -178,6 +180,7 @@ describe("request-scoped provider state lifecycle", () => {
       sessionKey: session.sessionKey,
       admittedEpoch: session.lifecycleGeneration!,
       currentAttempt: () => ({ attemptId: "attempt-stale", bootEpoch: "boot-stale" }),
+      now: () => 200,
     });
     getDb()
       .prepare("UPDATE sessions SET lifecycle_generation = lifecycle_generation + 1 WHERE session_key = ?")
@@ -195,9 +198,96 @@ describe("request-scoped provider state lifecycle", () => {
     ).toThrow("ownership");
     expect(published).toBe(false);
   });
+
+  it("uses the host clock to reject expired attempt leases before provider publication", () => {
+    const session = getOrCreateSession("session-expired", "agent-a", "/workspace/project");
+    establishAttempt(session.sessionKey, "attempt-expired", "boot-expired");
+    const lifecycle = createProviderStateLifecycle({
+      provider: "test-provider",
+      sessionKey: session.sessionKey,
+      admittedEpoch: session.lifecycleGeneration!,
+      currentAttempt: () => ({ attemptId: "attempt-expired", bootEpoch: "boot-expired" }),
+      now: () => 1_000,
+    });
+    let published = false;
+
+    expect(() =>
+      lifecycle.publishPreparedState({
+        reservationId: "reservation-expired",
+        locator: locator("00000000-0000-4000-8000-000000000020", "/private/expired/revision-1.json"),
+        publish: () => {
+          published = true;
+        },
+      }),
+    ).toThrow("ownership");
+    expect(published).toBe(false);
+    expect(getDb().prepare("SELECT id FROM provider_state_cleanup_tasks").get()).toBeNull();
+  });
+
+  it("rolls back when the synchronous callback exceeds the host deadline", () => {
+    const session = getOrCreateSession("session-deadline", "agent-a", "/workspace/project");
+    establishAttempt(session.sessionKey, "attempt-deadline", "boot-deadline");
+    const observations = [200, 205, 211];
+    const lifecycle = createProviderStateLifecycle({
+      provider: "test-provider",
+      sessionKey: session.sessionKey,
+      admittedEpoch: session.lifecycleGeneration!,
+      currentAttempt: () => ({ attemptId: "attempt-deadline", bootEpoch: "boot-deadline" }),
+      now: () => observations.shift()!,
+      publishDeadlineMs: 10,
+    });
+    let published = false;
+
+    expect(() =>
+      lifecycle.publishPreparedState({
+        reservationId: "reservation-deadline",
+        locator: locator("00000000-0000-4000-8000-000000000021", "/private/deadline/revision-1.json"),
+        publish: () => {
+          published = true;
+        },
+      }),
+    ).toThrow("deadline");
+    expect(published).toBe(true);
+    expect(getDb().prepare("SELECT id FROM provider_state_cleanup_tasks").get()).toBeNull();
+  });
+
+  it("rejects a locator for another provider before invoking its callback", () => {
+    const session = getOrCreateSession("session-provider-scope", "agent-a", "/workspace/project");
+    establishAttempt(session.sessionKey, "attempt-provider-scope", "boot-provider-scope");
+    const lifecycle = createProviderStateLifecycle({
+      provider: "test-provider",
+      sessionKey: session.sessionKey,
+      admittedEpoch: session.lifecycleGeneration!,
+      currentAttempt: () => ({ attemptId: "attempt-provider-scope", bootEpoch: "boot-provider-scope" }),
+      now: () => 200,
+    });
+    let published = false;
+
+    expect(() =>
+      lifecycle.publishPreparedState({
+        reservationId: "reservation-provider-scope",
+        locator: {
+          ...locator("00000000-0000-4000-8000-000000000022", "/private/provider/revision-1.json"),
+          provider: "foreign-provider",
+        },
+        publish: () => {
+          published = true;
+        },
+      }),
+    ).toThrow("scoped lifecycle provider");
+    expect(published).toBe(false);
+  });
 });
 
 describe("provider state publish-intent reconciliation", () => {
+  it("removes only intent decisions backed by owned state or a durable cleanup task", () => {
+    expect(providerStatePublishIntentIsResolved("held_active_attempt")).toBe(false);
+    expect(providerStatePublishIntentIsResolved("held_invalid_attempt")).toBe(false);
+    expect(providerStatePublishIntentIsResolved("remove_owned_intent")).toBe(true);
+    expect(providerStatePublishIntentIsResolved("held_existing_task")).toBe(true);
+    expect(providerStatePublishIntentIsResolved("published_cleanup")).toBe(true);
+  });
+
   it("holds an active attempt, then recreates the exact published task after attempt loss", () => {
     const session = getOrCreateSession("session-reconcile", "agent-a", "/workspace/project");
     establishAttempt(session.sessionKey, "attempt-reconcile", "boot-reconcile");
@@ -211,18 +301,71 @@ describe("provider state publish-intent reconciliation", () => {
       locatorJson: serializeProviderStateCleanupLocator(canonicalLocator),
     };
 
-    expect(reconcileProviderStatePublishIntent({ intent, now: 200 })).toBe("held_active_attempt");
+    const reconcile = (now: number) =>
+      reconcileProviderStatePublishIntent({
+        provider: "test-provider",
+        intent,
+        isLocatorOwned: () => false,
+        now,
+      });
+
+    expect(reconcile(200)).toBe("held_active_attempt");
     expect(
       getDb().prepare("SELECT id FROM provider_state_cleanup_tasks WHERE id = ?").get(intent.taskId),
     ).toBeNull();
 
     terminalizeRuntimeTurnAttempt({ attemptId: "attempt-reconcile", status: "aborted", completedAt: 300 });
-    expect(reconcileProviderStatePublishIntent({ intent, now: 301 })).toBe("published_cleanup");
+    expect(reconcile(301)).toBe("published_cleanup");
     expect(
       getDb()
         .prepare("SELECT status, owner_attempt_id FROM provider_state_cleanup_tasks WHERE id = ?")
         .get(intent.taskId),
     ).toEqual({ status: "published", owner_attempt_id: "attempt-reconcile" });
-    expect(reconcileProviderStatePublishIntent({ intent, now: 302 })).toBe("held_existing_task");
+    expect(reconcile(302)).toBe("held_existing_task");
+  });
+
+  it("holds missing attempt evidence without throwing or publishing a cleanup task", () => {
+    const intent = {
+      taskId: "reservation-missing-attempt",
+      ownerAttemptId: "attempt-missing",
+      locatorJson: serializeProviderStateCleanupLocator(
+        locator("00000000-0000-4000-8000-000000000023", "/private/missing/revision-1.json"),
+      ),
+    };
+
+    expect(
+      reconcileProviderStatePublishIntent({
+        provider: "test-provider",
+        intent,
+        isLocatorOwned: () => false,
+        now: 200,
+      }),
+    ).toBe("held_invalid_attempt");
+    expect(getDb().prepare("SELECT id FROM provider_state_cleanup_tasks").get()).toBeNull();
+  });
+
+  it("rejects an intent locator outside the registered provider scope", () => {
+    const intent = {
+      taskId: "reservation-foreign-provider",
+      ownerAttemptId: "attempt-foreign-provider",
+      locatorJson: serializeProviderStateCleanupLocator({
+        ...locator("00000000-0000-4000-8000-000000000024", "/private/foreign/revision-1.json"),
+        provider: "foreign-provider",
+      }),
+    };
+    let ownershipChecked = false;
+
+    expect(() =>
+      reconcileProviderStatePublishIntent({
+        provider: "test-provider",
+        intent,
+        isLocatorOwned: () => {
+          ownershipChecked = true;
+          return false;
+        },
+        now: 200,
+      }),
+    ).toThrow("scoped reconciler provider");
+    expect(ownershipChecked).toBe(false);
   });
 });

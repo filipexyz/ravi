@@ -20,7 +20,20 @@ export interface CreateProviderStateLifecycleOptions {
   admittedEpoch: number;
   currentAttempt(): ProviderStateLifecycleAttemptBinding | null;
   database?: Database;
+  /** Host-owned monotonic-enough wall clock. Providers never supply cleanup timestamps. */
+  now?: () => number;
+  publishDeadlineMs?: number;
 }
+
+const DEFAULT_PUBLISH_DEADLINE_MS = 1_000;
+const RECONCILABLE_ATTEMPT_STATUSES = [
+  "running",
+  "complete",
+  "failed",
+  "interrupted",
+  "timeout",
+  "aborted",
+] as const;
 
 export class ProviderStateLifecycleOwnershipError extends Error {
   constructor() {
@@ -37,9 +50,20 @@ export interface ProviderStatePublishIntent {
 
 export type ProviderStatePublishIntentReconcileDecision =
   | "held_active_attempt"
+  | "held_invalid_attempt"
   | "held_existing_task"
   | "remove_owned_intent"
   | "published_cleanup";
+
+export function providerStatePublishIntentIsResolved(
+  decision: ProviderStatePublishIntentReconcileDecision,
+): boolean {
+  return (
+    decision === "remove_owned_intent" ||
+    decision === "held_existing_task" ||
+    decision === "published_cleanup"
+  );
+}
 
 interface OwnedSessionRow {
   lifecycle_generation: number;
@@ -50,14 +74,26 @@ interface OwnedAttemptRow {
   session_key: string;
   provider: string;
   boot_epoch: string;
-}
-
-interface ReconcileAttemptRow extends OwnedAttemptRow {
   lease_expires_at: number;
 }
 
+export type ProviderStateLocatorOwnershipPredicate = (
+  locatorJson: string,
+  database: Database,
+) => boolean;
+
 function requireText(value: string, field: string): string {
   if (!value.trim()) throw new Error(`${field} must be non-empty`);
+  return value;
+}
+
+function requireTimestamp(value: number, field: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${field} must be a non-negative safe integer`);
+  return value;
+}
+
+function requirePositiveInteger(value: number, field: string): number {
+  if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${field} must be a positive safe integer`);
   return value;
 }
 
@@ -65,13 +101,14 @@ function assertPublicationOwnership(
   database: Database,
   options: CreateProviderStateLifecycleOptions,
   attempt: ProviderStateLifecycleAttemptBinding,
+  now: number,
 ): void {
   const session = database
     .prepare("SELECT lifecycle_generation FROM sessions WHERE session_key = ?")
     .get(options.sessionKey) as OwnedSessionRow | undefined;
   const attemptRow = database
     .prepare(
-      `SELECT status, session_key, provider, boot_epoch
+      `SELECT status, session_key, provider, boot_epoch, lease_expires_at
        FROM runtime_turn_attempts WHERE attempt_id = ?`,
     )
     .get(attempt.attemptId) as OwnedAttemptRow | undefined;
@@ -82,10 +119,34 @@ function assertPublicationOwnership(
     attemptRow.status !== "running" ||
     attemptRow.session_key !== options.sessionKey ||
     attemptRow.provider !== options.provider ||
-    attemptRow.boot_epoch !== attempt.bootEpoch
+    attemptRow.boot_epoch !== attempt.bootEpoch ||
+    !Number.isSafeInteger(attemptRow.lease_expires_at) ||
+    attemptRow.lease_expires_at <= now
   ) {
     throw new ProviderStateLifecycleOwnershipError();
   }
+}
+
+function assertWithinPublishDeadline(startedAt: number, observedAt: number, deadlineMs: number): void {
+  requireTimestamp(observedAt, "host clock");
+  if (observedAt < startedAt || observedAt - startedAt > deadlineMs) {
+    throw new Error("Provider state publication callback exceeded its host deadline");
+  }
+}
+
+function reconcileAttemptIsValid(attempt: OwnedAttemptRow | undefined): attempt is OwnedAttemptRow {
+  return Boolean(
+    attempt &&
+      typeof attempt.session_key === "string" &&
+      attempt.session_key.trim() &&
+      typeof attempt.provider === "string" &&
+      attempt.provider.trim() &&
+      typeof attempt.boot_epoch === "string" &&
+      attempt.boot_epoch.trim() &&
+      (RECONCILABLE_ATTEMPT_STATUSES as readonly string[]).includes(attempt.status) &&
+      Number.isSafeInteger(attempt.lease_expires_at) &&
+      attempt.lease_expires_at >= 0,
+  );
 }
 
 export function createProviderStateLifecycle(
@@ -97,6 +158,11 @@ export function createProviderStateLifecycle(
     throw new Error("admittedEpoch must be a positive safe integer");
   }
   const database = options.database ?? getDb();
+  const now = options.now ?? Date.now;
+  const publishDeadlineMs = requirePositiveInteger(
+    options.publishDeadlineMs ?? DEFAULT_PUBLISH_DEADLINE_MS,
+    "publishDeadlineMs",
+  );
 
   return Object.freeze({
     publishPreparedState(input: RuntimeProviderStatePublishInput) {
@@ -105,34 +171,45 @@ export function createProviderStateLifecycle(
       requireText(attempt.attemptId, "attemptId");
       requireText(attempt.bootEpoch, "bootEpoch");
       const reservationId = requireText(input.reservationId, "reservationId");
-      const now = input.now ?? Date.now();
+      const locator = parseProviderStateCleanupLocator(serializeProviderStateCleanupLocator(input.locator));
+      if (locator.provider !== options.provider) {
+        throw new Error("Provider cleanup locator does not match the scoped lifecycle provider");
+      }
+      const startedAt = requireTimestamp(now(), "host clock");
       return executeWrite(
         database,
         (transaction) => {
-          assertPublicationOwnership(transaction, options, attempt);
+          assertPublicationOwnership(transaction, options, attempt, startedAt);
           enqueuePreparedProviderStateCleanupTaskInTransaction(transaction, {
             id: reservationId,
-            locator: input.locator,
+            locator,
             owner: {
               attemptId: attempt.attemptId,
               sessionKey: options.sessionKey,
               bootEpoch: attempt.bootEpoch,
             },
-            now,
+            now: startedAt,
           });
+          assertWithinPublishDeadline(startedAt, now(), publishDeadlineMs);
+          // JavaScript cannot preempt a synchronous callback. Providers must
+          // therefore use bounded primitives; the post-check fails closed and
+          // rolls back the SQLite reservation if that bound is exceeded.
           const callbackResult = input.publish();
           if (callbackResult !== undefined) {
             throw new Error("Provider state publication callback must be synchronous and return void");
           }
+          const finishedAt = now();
+          assertWithinPublishDeadline(startedAt, finishedAt, publishDeadlineMs);
+          assertPublicationOwnership(transaction, options, attempt, finishedAt);
           const published = publishPreparedProviderStateCleanupTaskInTransaction(transaction, {
             id: reservationId,
-            locator: input.locator,
+            locator,
             owner: {
               attemptId: attempt.attemptId,
               sessionKey: options.sessionKey,
               bootEpoch: attempt.bootEpoch,
             },
-            now,
+            now: finishedAt,
           });
           if (!published) throw new ProviderStateLifecycleOwnershipError();
           return { reservationId };
@@ -143,64 +220,43 @@ export function createProviderStateLifecycle(
   });
 }
 
-export function isProviderStateLocatorOwned(locatorJson: string, database: Database = getDb()): boolean {
-  const provider = parseProviderStateCleanupLocator(locatorJson).provider;
-  const rows = database
-    .prepare("SELECT runtime_session_json FROM sessions WHERE runtime_provider = ? AND runtime_session_json IS NOT NULL")
-    .all(provider) as Array<{ runtime_session_json: string }>;
-  return rows.some((row) => {
-    try {
-      return serializeProviderStateCleanupLocator(JSON.parse(row.runtime_session_json)) === locatorJson;
-    } catch {
-      return false;
-    }
-  });
-}
-
 /** Reconcile one already-validated provider intent under a single writer lock. */
 export function reconcileProviderStatePublishIntent(input: {
+  provider: string;
   intent: ProviderStatePublishIntent;
+  isLocatorOwned: ProviderStateLocatorOwnershipPredicate;
   now?: number;
   database?: Database;
 }): ProviderStatePublishIntentReconcileDecision {
   const database = input.database ?? getDb();
-  const now = input.now ?? Date.now();
+  requireText(input.provider, "provider");
+  const now = requireTimestamp(input.now ?? Date.now(), "now");
   const locator = parseProviderStateCleanupLocator(input.intent.locatorJson);
+  if (locator.provider !== input.provider) {
+    throw new Error("Provider cleanup intent does not match the scoped reconciler provider");
+  }
   return executeWrite(
     database,
     (transaction) => {
+      const existing = transaction
+        .prepare(
+          `SELECT id FROM provider_state_cleanup_tasks
+           WHERE id = ? AND provider = ? AND operation = 'provisional_exact'
+             AND locator_json = ? AND owner_attempt_id = ? AND status <> 'prepared'`,
+        )
+        .get(input.intent.taskId, input.provider, input.intent.locatorJson, input.intent.ownerAttemptId);
+      if (existing) return "held_existing_task";
       const attempt = transaction
         .prepare(
           `SELECT status, session_key, provider, boot_epoch, lease_expires_at
            FROM runtime_turn_attempts WHERE attempt_id = ?`,
         )
-        .get(input.intent.ownerAttemptId) as ReconcileAttemptRow | undefined;
-      if (
-        !attempt ||
-        !attempt.session_key ||
-        attempt.provider !== locator.provider ||
-        !attempt.boot_epoch
-      ) {
-        throw new ProviderStateLifecycleOwnershipError();
+        .get(input.intent.ownerAttemptId) as OwnedAttemptRow | undefined;
+      if (!reconcileAttemptIsValid(attempt) || attempt.provider !== input.provider) {
+        return "held_invalid_attempt";
       }
-      const existing = transaction
-        .prepare(
-          `SELECT id FROM provider_state_cleanup_tasks
-           WHERE id = ? AND provider = ? AND operation = 'provisional_exact'
-             AND locator_json = ? AND owner_attempt_id = ? AND owner_session_key = ?
-             AND owner_boot_epoch = ?`,
-        )
-        .get(
-          input.intent.taskId,
-          locator.provider,
-          input.intent.locatorJson,
-          input.intent.ownerAttemptId,
-          attempt.session_key,
-          attempt.boot_epoch,
-        );
-      if (existing) return "held_existing_task";
       if (attempt.status === "running" && attempt.lease_expires_at > now) return "held_active_attempt";
-      if (isProviderStateLocatorOwned(input.intent.locatorJson, transaction)) {
+      if (input.isLocatorOwned(input.intent.locatorJson, transaction)) {
         return "remove_owned_intent";
       }
       const owner = {

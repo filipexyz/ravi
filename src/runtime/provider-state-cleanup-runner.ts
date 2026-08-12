@@ -5,11 +5,16 @@ import {
   claimProviderStateCleanupTasks,
   completeProviderStateCleanupTask,
   failProviderStateCleanupTask,
+  holdProviderStateCleanupTaskForUnavailableExecutor,
   type ProviderStateCleanupErrorCode,
   type ProviderStateCleanupOperation,
   type ProviderStateCleanupTask,
 } from "./provider-state-cleanup-store.js";
-import { isProviderStateLocatorOwned, reconcileProviderStatePublishIntent } from "./provider-state-lifecycle.js";
+import {
+  providerStatePublishIntentIsResolved,
+  reconcileProviderStatePublishIntent,
+  type ProviderStateLocatorOwnershipPredicate,
+} from "./provider-state-lifecycle.js";
 import {
   classifyKimiCodeStateError,
   closeKimiCodePublishIntentCursor,
@@ -19,6 +24,7 @@ import {
   listKimiCodePublishIntents,
   readKimiCodePublishIntent,
   removeKimiCodePublishIntent,
+  serializeKimiCodeCleanupLocator,
   type KimiCodePublishIntentCursor,
 } from "./kimi-code-state.js";
 import { KIMI_CODE_PROVIDER_ID } from "./kimi-code-models.js";
@@ -64,6 +70,7 @@ function executorKey(provider: string, operation: ProviderStateCleanupOperation)
 export class ProviderStateCleanupExecutorRegistry {
   private readonly executors = new Map<string, ProviderStateCleanupExecutor>();
   private readonly reconcilers = new Map<string, ProviderStateIntentReconciler>();
+  private readonly ownershipPredicates = new Map<string, ProviderStateLocatorOwnershipPredicate>();
   private sealed = false;
 
   registerExecutor(
@@ -83,6 +90,14 @@ export class ProviderStateCleanupExecutorRegistry {
     this.reconcilers.set(provider, reconciler);
   }
 
+  registerLocatorOwnership(provider: string, predicate: ProviderStateLocatorOwnershipPredicate): void {
+    if (this.sealed) throw new Error("Provider cleanup executor registry is already active");
+    if (this.ownershipPredicates.has(provider)) {
+      throw new Error(`Provider locator ownership predicate already registered for ${provider}`);
+    }
+    this.ownershipPredicates.set(provider, predicate);
+  }
+
   activate(): void {
     this.sealed = true;
   }
@@ -93,6 +108,10 @@ export class ProviderStateCleanupExecutorRegistry {
 
   intentReconcilers(): readonly ProviderStateIntentReconciler[] {
     return [...this.reconcilers.values()];
+  }
+
+  locatorOwnershipFor(provider: string): ProviderStateLocatorOwnershipPredicate | undefined {
+    return this.ownershipPredicates.get(provider);
   }
 }
 
@@ -131,7 +150,9 @@ export class ProviderStateCleanupRunner {
   private readonly cancel: (timer: unknown) => void;
   private readonly onDrain: ((result: ProviderStateCleanupDrainResult) => void) | undefined;
   private timer: unknown;
-  private draining = false;
+  private active = false;
+  private starting: Promise<void> | undefined;
+  private inFlight: Promise<void> | undefined;
 
   constructor(options: ProviderStateCleanupRunnerOptions) {
     this.registry = options.registry;
@@ -147,18 +168,37 @@ export class ProviderStateCleanupRunner {
   }
 
   async start(): Promise<void> {
-    if (this.timer !== undefined) return;
-    this.registry.activate();
-    await this.runBoundedDrain();
-    this.timer = this.schedule(() => {
-      void this.runBoundedDrain().catch((error) => log.error("Provider cleanup periodic drain failed", { error }));
-    }, this.intervalMs);
+    if (this.starting) return this.starting;
+    if (this.active) return;
+    this.active = true;
+    const startup = (async () => {
+      this.registry.activate();
+      await this.requestBoundedDrain();
+      if (!this.active) return;
+      this.timer = this.schedule(() => {
+        void this.requestBoundedDrain().catch((error) =>
+          log.error("Provider cleanup periodic drain failed", { error }),
+        );
+      }, this.intervalMs);
+    })();
+    this.starting = startup;
+    try {
+      await startup;
+    } catch (error) {
+      this.active = false;
+      throw error;
+    } finally {
+      this.starting = undefined;
+    }
   }
 
-  stop(): void {
-    if (this.timer === undefined) return;
-    this.cancel(this.timer);
-    this.timer = undefined;
+  async stop(): Promise<void> {
+    this.active = false;
+    if (this.timer !== undefined) {
+      this.cancel(this.timer);
+      this.timer = undefined;
+    }
+    await this.inFlight;
   }
 
   async reconcileOnce(): Promise<void> {
@@ -185,7 +225,7 @@ export class ProviderStateCleanupRunner {
       if (!leaseId) continue;
       const executor = this.registry.executorFor(task);
       if (!executor) {
-        failProviderStateCleanupTask({ id: task.id, leaseId, errorCode: "executor_unavailable", now: this.now() });
+        holdProviderStateCleanupTaskForUnavailableExecutor({ id: task.id, leaseId, now: this.now() });
         result.failed += 1;
         continue;
       }
@@ -207,16 +247,19 @@ export class ProviderStateCleanupRunner {
     return result;
   }
 
-  private async runBoundedDrain(): Promise<void> {
-    if (this.draining) return;
-    this.draining = true;
-    try {
+  private requestBoundedDrain(): Promise<void> {
+    if (this.inFlight) return this.inFlight;
+    const drain = (async () => {
       await this.reconcileOnce();
       const result = await this.drainOnce();
       this.onDrain?.(result);
-    } finally {
-      this.draining = false;
-    }
+    })();
+    this.inFlight = drain;
+    const clear = () => {
+      if (this.inFlight === drain) this.inFlight = undefined;
+    };
+    void drain.then(clear, clear);
+    return drain;
   }
 }
 
@@ -236,10 +279,6 @@ function requeueIncompleteProviderStateCleanupTask(id: string, leaseId: string, 
   );
 }
 
-function isKimiLocatorOwned(locatorJson: string): boolean {
-  return isProviderStateLocatorOwned(locatorJson);
-}
-
 function asKimiTaskError(error: unknown): ProviderStateCleanupTaskError {
   return new ProviderStateCleanupTaskError(classifyKimiCodeStateError(error).code);
 }
@@ -254,8 +293,16 @@ function installKimiCodeIntentReconciler(registry: ProviderStateCleanupExecutorR
       for (const candidate of page.candidates) {
         if (candidate.kind === "invalid") continue;
         const intent = await readKimiCodePublishIntent(candidate.path);
-        const decision = reconcileProviderStatePublishIntent({ intent });
-        if (decision === "remove_owned_intent") await removeKimiCodePublishIntent(candidate.path);
+        const isLocatorOwned = registry.locatorOwnershipFor(KIMI_CODE_PROVIDER_ID);
+        if (!isLocatorOwned) throw new ProviderStateCleanupTaskError("executor_unavailable");
+        const decision = reconcileProviderStatePublishIntent({
+          provider: KIMI_CODE_PROVIDER_ID,
+          intent,
+          isLocatorOwned,
+        });
+        if (providerStatePublishIntentIsResolved(decision)) {
+          await removeKimiCodePublishIntent(candidate.path);
+        }
       }
       return { processed: page.candidates.length, complete: !page.nextCursor };
     } catch (error) {
@@ -270,6 +317,20 @@ function installKimiCodeIntentReconciler(registry: ProviderStateCleanupExecutorR
 
 /** Install built-in providers before reconciliation, draining, or runtime intake. */
 export function installProviderStateCleanupExecutors(registry: ProviderStateCleanupExecutorRegistry): void {
+  registry.registerLocatorOwnership(KIMI_CODE_PROVIDER_ID, (locatorJson, database) => {
+    const rows = database
+      .prepare(
+        "SELECT runtime_session_json FROM sessions WHERE runtime_provider = ? AND runtime_session_json IS NOT NULL",
+      )
+      .all(KIMI_CODE_PROVIDER_ID) as Array<{ runtime_session_json: string }>;
+    return rows.some((row) => {
+      try {
+        return serializeKimiCodeCleanupLocator({ params: JSON.parse(row.runtime_session_json) }) === locatorJson;
+      } catch {
+        return false;
+      }
+    });
+  });
   registry.registerExecutor(KIMI_CODE_PROVIDER_ID, "provisional_exact", async (task) => {
     if (!task.ownerAttemptId) throw new ProviderStateCleanupTaskError("schema_mismatch");
     try {
@@ -277,7 +338,11 @@ export function installProviderStateCleanupExecutors(registry: ProviderStateClea
         locatorJson: task.locatorJson,
         taskId: task.id,
         ownerAttemptId: task.ownerAttemptId,
-        isLocatorOwned: () => isKimiLocatorOwned(task.locatorJson),
+        isLocatorOwned: () => {
+          const predicate = registry.locatorOwnershipFor(KIMI_CODE_PROVIDER_ID);
+          if (!predicate) throw new ProviderStateCleanupTaskError("executor_unavailable");
+          return predicate(task.locatorJson, getDb());
+        },
       });
       return { complete: true };
     } catch (error) {

@@ -223,8 +223,13 @@ async function shutdown(signal: string) {
       });
     }
 
-    providerStateCleanupRunner?.stop();
-    providerStateCleanupRunner = null;
+    try {
+      await providerStateCleanupRunner?.stop();
+    } catch (error) {
+      log.error("Provider state cleanup drain failed during shutdown", { error });
+    } finally {
+      providerStateCleanupRunner = null;
+    }
 
     // Stop runtime intake and abort SDK subprocesses before the remaining runners.
     if (bot) {
@@ -297,24 +302,33 @@ async function shutdown(signal: string) {
 }
 
 export async function startDaemon() {
+  // Provider lifecycle handlers and their initial recovery drain must succeed
+  // before opening messaging/egress resources or accepting runtime input.
+  const providerStateCleanupRegistry = new ProviderStateCleanupExecutorRegistry();
+  installProviderStateCleanupExecutors(providerStateCleanupRegistry);
+  const cleanupRunner = new ProviderStateCleanupRunner({ registry: providerStateCleanupRegistry });
+  await cleanupRunner.start();
+  providerStateCleanupRunner = cleanupRunner;
+  log.info("Provider state cleanup runner started");
+
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
   log.info("Connecting to NATS...", { natsUrl });
-  await connectNats(natsUrl, { explicit: true });
-  setChannelBackendEgressRequesterForRuntime(createChannelBackendEgressRequester());
+  try {
+    await connectNats(natsUrl, { explicit: true });
+    setChannelBackendEgressRequesterForRuntime(createChannelBackendEgressRequester());
+  } catch (error) {
+    await cleanupRunner.stop();
+    if (providerStateCleanupRunner === cleanupRunner) providerStateCleanupRunner = null;
+    setChannelBackendEgressRequesterForRuntime();
+    await closeNats().catch(() => undefined);
+    throw error;
+  }
 
   const config = loadConfig();
   logger.setLevel(config.logLevel);
 
   log.info("Starting Ravi daemon...");
-
-  // Provider lifecycle handlers must exist before intent recovery, cleanup,
-  // and any runtime session can accept input.
-  const providerStateCleanupRegistry = new ProviderStateCleanupExecutorRegistry();
-  installProviderStateCleanupExecutors(providerStateCleanupRegistry);
-  providerStateCleanupRunner = new ProviderStateCleanupRunner({ registry: providerStateCleanupRegistry });
-  await providerStateCleanupRunner.start();
-  log.info("Provider state cleanup runner started");
 
   // Step 2: Start config store (NATS sub + periodic refresh)
   await configStore.startRefresh();
