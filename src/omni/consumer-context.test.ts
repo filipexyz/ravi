@@ -1160,6 +1160,7 @@ describe("OmniConsumer channel context", () => {
   it("resets the runtime session and republishes an Omni message edit as a rebase replay", async () => {
     const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
     actualUpdateProviderSession(sessionKey, "codex", "provider-before-edit");
+    const lifecycleGenerationBeforeEdit = actualGetSession(sessionKey)?.lifecycleGeneration ?? 0;
     actualChatDbModule.saveMessage("dev", "user", "[WhatsApp Ravi - Dev mid:msg-original] Luis: texto antigo", null, {
       agentId: "main",
       channel: "whatsapp-baileys",
@@ -1234,9 +1235,11 @@ describe("OmniConsumer channel context", () => {
     });
     expect(actualGetSession(sessionKey)?.sdkSessionId).toBeUndefined();
     expect(actualGetSession(sessionKey)?.runtimeProvider).toBeUndefined();
+    expect(actualGetSession(sessionKey)?.lifecycleGeneration ?? 0).toBeGreaterThan(lifecycleGenerationBeforeEdit);
     expect(promptCalls).toHaveLength(1);
     const [, prompt] = promptCalls[0];
     expect(prompt.prompt).toContain("## Mensagem editada detectada pelo Omni");
+    expect(prompt.prompt).toContain("Provider state resetado: sim");
     expect(prompt.prompt).toContain("## Runtime session rebase");
     expect(prompt.prompt).toContain("Mensagem original: msg-original");
     expect(prompt.prompt).toContain("[Message edited]\ntexto editado");
