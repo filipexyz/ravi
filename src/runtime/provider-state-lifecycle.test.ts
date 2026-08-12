@@ -261,6 +261,37 @@ describe("request-scoped provider state lifecycle", () => {
     expect(
       getDb().prepare("SELECT status FROM provider_state_cleanup_tasks WHERE id = ?").get(reservation.reservationId),
     ).toEqual({ status: "published" });
+    expect(lifecycle.cancelPreparedState(reservation.reservationId)).toBe(false);
+    expect(
+      getDb().prepare("SELECT status FROM provider_state_cleanup_tasks WHERE id = ?").get(reservation.reservationId),
+    ).toEqual({ status: "published" });
+  });
+
+  it("cancels an unconsumed host reservation exactly once before publication", () => {
+    const session = getOrCreateSession("session-cancel-reservation", "agent-a", "/workspace/project");
+    establishAttempt(session.sessionKey, "attempt-cancel-reservation", "boot-cancel-reservation");
+    const lifecycle = createProviderStateLifecycle({
+      provider: "test-provider",
+      sessionKey: session.sessionKey,
+      admittedEpoch: session.lifecycleGeneration!,
+      currentAttempt: () => ({
+        attemptId: "attempt-cancel-reservation",
+        bootEpoch: "boot-cancel-reservation",
+      }),
+      now: () => 200,
+    });
+    const reservation = lifecycle.reservePreparedState();
+
+    expect(lifecycle.cancelPreparedState(reservation.reservationId)).toBe(true);
+    expect(lifecycle.cancelPreparedState(reservation.reservationId)).toBe(false);
+    expect(() =>
+      lifecycle.publishPreparedState({
+        reservationId: reservation.reservationId,
+        locator: locator("00000000-0000-4000-8000-000000000096", "/private/cancel/revision-1.json"),
+        publish: () => {},
+      }),
+    ).toThrow("ownership");
+    expect(getDb().prepare("SELECT id FROM provider_state_cleanup_tasks").get()).toBeNull();
   });
 
   it("rolls back the reservation when publication throws or returns a Promise", () => {

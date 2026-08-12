@@ -35,6 +35,7 @@ export async function prepareRuntimeProviderBootstrap(
   const session = options.session;
   const hostServices = createRuntimeHostServices({
     context: options.context,
+    ...(session ? { admittedSession: session } : {}),
     agentId: options.agent.id,
     sessionName: options.sessionName,
     resolvedSource: options.resolvedSource,

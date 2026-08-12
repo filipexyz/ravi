@@ -2544,9 +2544,14 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           runtimeSessionDisplayId ??
           (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
 
-        let providerStateWon = true;
-        if (persistedSessionId) {
-          const reservationId = event.session?.providerStateReservationId;
+        const reservationId = event.session?.providerStateReservationId;
+        const requiresProviderStateReservation = runtimeCapabilities.sessionState.mode === "file-backed";
+        let providerStateWon = !requiresProviderStateReservation || Boolean(reservationId && persistedSessionId);
+        let providerStateLossReason =
+          requiresProviderStateReservation && !reservationId
+            ? "provider_state_reservation_missing"
+            : "provider_state_ownership_lost";
+        if (persistedSessionId && providerStateWon) {
           if (reservationId) {
             const attemptId = streaming.currentCrashRecoveryAttemptId;
             const attempt = attemptId && crashRecovery ? crashRecovery.getActiveTurnAttempt(attemptId) : null;
@@ -2562,32 +2567,34 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                   ownerBootEpoch: attempt.bootEpoch,
                 }).won,
             );
+            providerStateLossReason = "provider_state_ownership_lost";
           } else {
             providerStateWon = updateProviderSession(session, runtimeSession.provider, persistedSessionId, {
               runtimeSessionParams,
               runtimeSessionDisplayId,
             }).won;
           }
-          if (!providerStateWon) {
-            const ownershipLossReason = "provider_state_ownership_lost";
-            streaming.internalAbortReason = ownershipLossReason;
-            streaming.interrupted = true;
-            const terminal = terminalizeCurrentCrashRecoveryAttempt("aborted", undefined, {
-              abortReason: ownershipLossReason,
+        }
+        if (!providerStateWon) {
+          streaming.internalAbortReason = providerStateLossReason;
+          streaming.interrupted = true;
+          const terminal = terminalizeCurrentCrashRecoveryAttempt("aborted", undefined, {
+            abortReason: providerStateLossReason,
+          });
+          if (terminal) {
+            recordTerminalTraceOnce({
+              status: "aborted",
+              eventType: "turn.interrupted",
+              abortReason: providerStateLossReason,
+              completedAt: terminal.completedAt,
+              payloadJson: { reason: providerStateLossReason },
             });
-            if (terminal) {
-              recordTerminalTraceOnce({
-                status: "aborted",
-                eventType: "turn.interrupted",
-                abortReason: ownershipLossReason,
-                completedAt: terminal.completedAt,
-                payloadJson: { reason: ownershipLossReason },
-              });
-            }
-            if (!streaming.abortController.signal.aborted) streaming.abortController.abort();
-            await closeRuntimeSession();
-            break;
           }
+          if (!streaming.abortController.signal.aborted) streaming.abortController.abort();
+          await closeRuntimeSession();
+          break;
+        }
+        if (persistedSessionId) {
           session.runtimeSessionParams = runtimeSessionParams;
           session.runtimeSessionDisplayId = runtimeSessionDisplayId ?? persistedSessionId;
           session.providerSessionId = runtimeSessionDisplayId ?? persistedSessionId;

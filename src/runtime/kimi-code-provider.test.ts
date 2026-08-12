@@ -74,6 +74,7 @@ function startRequest(overrides: Partial<RuntimeStartRequest> = {}): RuntimeStar
     env: fixture.env,
     providerStateLifecycle: {
       reservePreparedState: () => ({ reservationId, ownerAttemptId: `attempt-test-${reservationSequence}` }),
+      cancelPreparedState: () => false,
       publishPreparedState: (input) => {
         input.publish();
         return { reservationId: input.reservationId };
@@ -186,6 +187,7 @@ describe("createKimiCodeRuntimeProvider", () => {
       startRequest({
         providerStateLifecycle: {
           reservePreparedState: () => ({ reservationId: "reservation-host-a", ownerAttemptId: "attempt-host-a" }),
+          cancelPreparedState: () => false,
           publishPreparedState: (input) => {
             publications.push(input.reservationId);
             input.publish();
@@ -204,6 +206,40 @@ describe("createKimiCodeRuntimeProvider", () => {
     if (terminal?.type !== "turn.complete") throw new Error("missing terminal");
     expect(terminal.session?.params).not.toHaveProperty("providerStateReservationId");
     expect(JSON.stringify(terminal.session?.params)).not.toContain("reservation-host-a");
+  });
+
+  test("cancels its host reservation when snapshot preparation fails before publication", async () => {
+    const fixture = isolatedStateEnv();
+    const cancelled: string[] = [];
+    let publications = 0;
+    const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        cwd: join(fixture.root, "missing-workspace"),
+        env: fixture.env,
+        providerStateLifecycle: {
+          reservePreparedState: () => ({
+            reservationId: "reservation-prepare-failure",
+            ownerAttemptId: "attempt-prepare-failure",
+          }),
+          cancelPreparedState: (reservationId) => {
+            cancelled.push(reservationId);
+            return true;
+          },
+          publishPreparedState: (input) => {
+            publications += 1;
+            input.publish();
+            return { reservationId: input.reservationId };
+          },
+        },
+      }),
+    );
+
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code session state commit failed" });
+    expect(cancelled).toEqual(["reservation-prepare-failure"]);
+    expect(publications).toBe(0);
   });
 
   test("rejects disabled session starts before transport creation without deleting persisted state", async () => {

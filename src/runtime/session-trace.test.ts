@@ -1219,6 +1219,56 @@ describe("runtime session trace instrumentation", () => {
     expect(providerClosed).toBe(1);
   });
 
+  it("rejects a file-backed terminal without its host reservation before any success effect", async () => {
+    const admitted = getSession(SESSION_KEY)!;
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-missing-provider-reservation");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    let providerClosed = 0;
+    const emitted: Array<Record<string, unknown>> = [];
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: (async function* () {
+        yield {
+          type: "turn.complete",
+          providerSessionId: "unreserved-provider-state",
+          session: {
+            displayId: "unreserved-provider-state",
+            params: { sessionId: "unreserved-provider-state" },
+          },
+          usage: { inputTokens: 17, outputTokens: 4 },
+        } satisfies RuntimeEvent;
+      })(),
+      interrupt: async () => {},
+      close: async () => {
+        providerClosed += 1;
+      },
+    };
+
+    await runTraceLoop(streaming, runtimeSession, {
+      session: admitted,
+      runtimeCapabilities: { ...capabilities, sessionState: { mode: "file-backed" } },
+      safeEmit: async (_subject, data) => {
+        emitted.push(data);
+      },
+    });
+
+    expect(getSession(SESSION_KEY)).toMatchObject({
+      providerSessionId: undefined,
+      runtimeSessionParams: undefined,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "aborted",
+      metadata: { abortReason: "provider_state_reservation_missing" },
+    });
+    expect(getSessionTurn("turn-missing-provider-reservation")?.status).not.toBe("complete");
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).not.toContain("turn.complete");
+    expect(emitted.some((event) => event.type === "turn.complete")).toBe(false);
+    expect(providerClosed).toBe(1);
+  });
+
   it("rejects a deferred terminal after an agent redirect without recording success", async () => {
     const initial = getSession(SESSION_KEY)!;
     expect(

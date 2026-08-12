@@ -357,29 +357,34 @@ function createKimiCodeSession(
                 const lifecycle = input.providerStateLifecycle;
                 if (!lifecycle) throw new Error("Kimi Code provider state lifecycle is unavailable");
                 const reservation = lifecycle.reservePreparedState();
-                const prepared = await prepareKimiCodeSessionState({
-                  sessionId: providerSessionId,
-                  model: input.model,
-                  cwd: input.cwd,
-                  lastCommittedTurnId: prompt.clientMessageId ?? prompt.session_id,
-                  messages,
-                  previousSnapshot: committedSnapshot,
-                  taskId: reservation.reservationId,
-                  ownerAttemptId: reservation.ownerAttemptId,
-                  env: stateEnv,
-                });
-                lifecycle.publishPreparedState({
-                  reservationId: reservation.reservationId,
-                  locator: prepared.session.params,
-                  publish: prepared.publish,
-                });
-                committed = {
-                  snapshot: prepared.snapshot,
-                  session: {
-                    ...prepared.session,
-                    providerStateReservationId: reservation.reservationId,
-                  },
-                };
+                try {
+                  const prepared = await prepareKimiCodeSessionState({
+                    sessionId: providerSessionId,
+                    model: input.model,
+                    cwd: input.cwd,
+                    lastCommittedTurnId: prompt.clientMessageId ?? prompt.session_id,
+                    messages,
+                    previousSnapshot: committedSnapshot,
+                    taskId: reservation.reservationId,
+                    ownerAttemptId: reservation.ownerAttemptId,
+                    env: stateEnv,
+                  });
+                  lifecycle.publishPreparedState({
+                    reservationId: reservation.reservationId,
+                    locator: prepared.session.params,
+                    publish: prepared.publish,
+                  });
+                  committed = {
+                    snapshot: prepared.snapshot,
+                    session: {
+                      ...prepared.session,
+                      providerStateReservationId: reservation.reservationId,
+                    },
+                  };
+                } catch (error) {
+                  lifecycle.cancelPreparedState(reservation.reservationId);
+                  throw error;
+                }
               } catch {
                 const interrupted = turn.interrupted || closed || input.abortController.signal.aborted;
                 turn.phase = interrupted ? "interrupted" : "failed";

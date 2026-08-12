@@ -176,6 +176,9 @@ export function createProviderStateLifecycle(
       reservations.set(reservationId, { ...attempt });
       return { reservationId, ownerAttemptId: attempt.attemptId };
     },
+    cancelPreparedState(reservationId: string) {
+      return reservations.delete(requireText(reservationId, "reservationId"));
+    },
     publishPreparedState(input: RuntimeProviderStatePublishInput) {
       const attempt = options.currentAttempt();
       if (!attempt) throw new ProviderStateLifecycleOwnershipError();

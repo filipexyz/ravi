@@ -39,18 +39,21 @@ export interface SkillGateDecision {
 export interface EvaluateSkillGateInput {
   gate?: SkillGateMetadata;
   context?: ContextRecord | null;
+  admittedSession?: SessionEntry;
   toolName: string;
 }
 
 export interface EvaluateRuntimeToolSkillGateInput {
   toolName: string;
   context?: ContextRecord | null;
+  admittedSession?: SessionEntry;
   onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
 }
 
 export interface EvaluateRuntimeCommandSkillGateInput {
   commandLine: string;
   context?: ContextRecord | null;
+  admittedSession?: SessionEntry;
   toolName?: string;
   executables?: readonly string[];
   onSkillGatePersisted?: (skillVisibility: RuntimeSkillVisibilitySnapshot) => void;
@@ -72,6 +75,7 @@ export function evaluateRuntimeToolSkillGate(input: EvaluateRuntimeToolSkillGate
   return evaluateResolvedRuntimeSkillGate({
     gate: runtimeSkillGateForTool(input.toolName),
     context: input.context,
+    ...(input.admittedSession ? { admittedSession: input.admittedSession } : {}),
     toolName: input.toolName,
     onSkillGatePersisted: input.onSkillGatePersisted,
   });
@@ -81,6 +85,7 @@ export function evaluateRuntimeCommandSkillGate(input: EvaluateRuntimeCommandSki
   return evaluateResolvedRuntimeSkillGate({
     gate: runtimeSkillGateForCommand(input.commandLine, { executables: input.executables }),
     context: input.context,
+    ...(input.admittedSession ? { admittedSession: input.admittedSession } : {}),
     toolName: input.toolName ?? "Bash",
     onSkillGatePersisted: input.onSkillGatePersisted,
   });
@@ -103,7 +108,7 @@ export function evaluateSkillGate(input: EvaluateSkillGateInput): SkillGateDecis
     return { allowed: true };
   }
 
-  const session = resolveContextSession(input.context);
+  const session = resolveContextSession(input.context, input.admittedSession);
   if (!session) {
     if (input.context) {
       return {
@@ -205,7 +210,14 @@ function readConfiguredSkillGateRules(): SkillGateRuleConfig[] {
   }));
 }
 
-function resolveContextSession(context: ContextRecord | null | undefined): SessionEntry | null {
+function resolveContextSession(
+  context: ContextRecord | null | undefined,
+  admittedSession?: SessionEntry,
+): SessionEntry | null {
+  if (admittedSession) {
+    if (context?.sessionKey && context.sessionKey !== admittedSession.sessionKey) return null;
+    return admittedSession;
+  }
   if (!context) {
     return null;
   }
@@ -219,7 +231,7 @@ function resolveSkillForGate(skillName: string): RaviSkill | null {
   return findInstalledSkill(skillName) ?? findSkillByName(listCatalogSkills(), skillName);
 }
 
-export function persistSkillGateVisibility(
+function persistSkillGateVisibility(
   session: SessionEntry,
   skillVisibility: RuntimeSkillVisibilitySnapshot,
   toolName: string,

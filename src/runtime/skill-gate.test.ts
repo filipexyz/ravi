@@ -18,7 +18,6 @@ import {
 } from "../permissions/denials.js";
 import {
   evaluateSkillGate,
-  persistSkillGateVisibility,
   runtimeSkillGateForCommand,
   runtimeSkillGateForTool,
 } from "./skill-gate.js";
@@ -55,33 +54,6 @@ function writeCodexSkill(name: string): void {
 }
 
 describe("evaluateSkillGate", () => {
-  it("does not restore skill visibility through a stale callback after reset", () => {
-    const admitted = getOrCreateSession("agent:main:main", "main", stateDir!, {
-      name: "skill-gate-test",
-      runtimeProvider: "codex",
-      providerSessionId: "thread-1",
-      runtimeSessionDisplayId: "thread-1",
-    });
-    expect(resetSessionIfUnchanged(admitted)).toBe(true);
-    const visibility: RuntimeSkillVisibilitySnapshot = {
-      skills: [],
-      loadedSkills: ["stale-skill"],
-      updatedAt: 123,
-    };
-
-    expect(
-      persistSkillGateVisibility(
-        admitted,
-        visibility,
-        "Bash",
-        { skill: "stale-skill", source: "config" },
-        "stale callback",
-      ),
-    ).toBe(false);
-    expect(admitted.runtimeSessionParams).toBeUndefined();
-    expect(getSession(admitted.sessionKey)?.runtimeSessionParams).toBeUndefined();
-  });
-
   it("soft-gates a missing skill, delivers it, and marks it loaded for the session", () => {
     writeCodexSkill("demo-skill");
     // Custom skills must be granted to the agent (Invariant G,
@@ -206,6 +178,56 @@ describe("evaluateSkillGate", () => {
 });
 
 describe("runtime host skill-gate enforcement", () => {
+  for (const ownershipChange of ["reset", "redirect"] as const) {
+    it(`does not persist or publish skill state after a ${ownershipChange} ownership race`, async () => {
+      writeCodexSkill("ravi-system-image");
+      dbUpdateAgent("main", {
+        defaults: { runtimePermissions: { capabilities: ["execute:group:image_generate"] } },
+      });
+      const admitted = getOrCreateSession("agent:main:main", "main", stateDir!, {
+        name: "skill-gate-test",
+        runtimeProvider: "codex",
+        providerSessionId: "thread-1",
+        runtimeSessionDisplayId: "thread-1",
+      });
+      const context = createRuntimeContext({
+        kind: "agent-runtime",
+        agentId: "main",
+        sessionKey: admitted.sessionKey,
+        sessionName: "skill-gate-test",
+        capabilities: [{ permission: "use", objectType: "tool", objectId: "image_generate", source: "test" }],
+      });
+      let callbackSnapshot: RuntimeSkillVisibilitySnapshot | undefined;
+      const services = createRuntimeHostServices({
+        context,
+        admittedSession: admitted,
+        agentId: "main",
+        sessionName: "skill-gate-test",
+        toolContext: {},
+        onSkillGatePersisted: (skillVisibility) => {
+          callbackSnapshot = skillVisibility;
+        },
+      });
+      if (ownershipChange === "reset") {
+        expect(resetSessionIfUnchanged(admitted)).toBe(true);
+      } else {
+        const redirected = getOrCreateSession(admitted.sessionKey, "redirected-agent", join(stateDir!, "redirected"));
+        expect(redirected.lifecycleGeneration).toBe(admitted.lifecycleGeneration! + 1);
+      }
+
+      const result = await services.executeDynamicTool({
+        toolName: "image_generate",
+        arguments: { prompt: "dry-run stale skill gate" },
+      });
+
+      expect(result.success).toBe(false);
+      expect(result.reason).toContain("session ownership changed");
+      expect(callbackSnapshot).toBeUndefined();
+      expect(admitted.runtimeSessionParams).toBeUndefined();
+      expect(getSession(admitted.sessionKey)?.runtimeSessionParams?.skillVisibility).toBeUndefined();
+    });
+  }
+
   it("never persists or publishes the full command denied by native runtime policy", async () => {
     delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
     const auditEvents: Array<Record<string, unknown>> = [];

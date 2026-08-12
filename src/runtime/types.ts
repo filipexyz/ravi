@@ -379,6 +379,7 @@ export interface RuntimeProviderStatePublishInput {
 
 export interface RuntimeProviderStateLifecycle {
   reservePreparedState(): { reservationId: string; ownerAttemptId: string };
+  cancelPreparedState(reservationId: string): boolean;
   publishPreparedState(input: RuntimeProviderStatePublishInput): { reservationId: string };
 }
 
