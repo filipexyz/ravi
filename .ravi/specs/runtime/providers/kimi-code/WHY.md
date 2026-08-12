@@ -6,6 +6,8 @@ The normative provider contract and release requirements are in
 [`SPEC.md`](SPEC.md). The implementation rationale, threat model, and rejected
 alternatives are in the
 [Kimi Code Provider Hardening Design](../../../../../docs/superpowers/specs/2026-08-11-kimi-code-provider-hardening-design.md).
+Lifecycle ownership, durable cleanup, and crash-retry decisions are recorded in
+the [Kimi Code Provider Lifecycle Ownership Design](../../../../../docs/superpowers/specs/2026-08-11-kimi-code-provider-lifecycle-ownership-design.md).
 
 ## Decision
 

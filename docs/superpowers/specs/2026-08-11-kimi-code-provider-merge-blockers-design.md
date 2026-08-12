@@ -1,5 +1,10 @@
 # Kimi Code Provider Merge Blockers — Design
 
+> **Lifecycle update:** The cleanup-failure and post-publication retention
+> decisions in this document are superseded by the
+> [Lifecycle Ownership Design](2026-08-11-kimi-code-provider-lifecycle-ownership-design.md).
+> Transport, budget, and macOS decisions below remain current.
+
 ## Goal
 
 Remove the four merge blockers found after the first Kimi Code hardening wave:
@@ -67,4 +72,3 @@ Kimi provider, transport, state, lifecycle and affected session tests; then
 typecheck, build, quality/spec checks, public-contribution sanitization, and
 upstream CI. Private live checks remain mandatory before merge/release with a
 new privately managed credential.
-

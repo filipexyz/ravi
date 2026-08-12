@@ -90,6 +90,10 @@ It covers:
 - Registration MUST be additive in the runtime provider registry.
 - The adapter MUST NOT add provider-specific branches to `bot.ts`, the session
   launcher, the request builder, channel drivers, or task code.
+- Durable provider-state lifecycle hooks MUST use a generic host-service and
+  executor registry. Provider-specific validation and filesystem cleanup belong
+  to the registered provider executor, not to launcher, bot, channel, or task
+  branches.
 - The adapter MUST identify itself honestly in any client header. It MUST NOT spoof
   Kimi Code CLI, Claude Code, Pi, or another third-party client.
 
@@ -334,9 +338,15 @@ through one `file-backed` representation.
 - A new snapshot MUST be written to a new revision path with private permissions
   and an atomic temp-file rename. The previous confirmed snapshot MUST never be
   overwritten.
-- The new locator MUST be exposed only on `turn.complete`; the host then persists
-  it through its existing session-state path. A crash before host persistence may
-  leave an unreachable orphan, never promote partial history.
+- Before publishing a new immutable snapshot, the adapter MUST durably write a
+  private, redacted publish-intent and publish through the generic host lifecycle
+  service. Publication and provisional cleanup registration MUST be serialized by
+  the host database writer boundary. The new locator MUST be exposed only on
+  `turn.complete`; the host then atomically adopts it and consumes that
+  reservation through its session-state path. A crash before host persistence
+  may leave an unreachable snapshot only when its durable cleanup reservation or
+  publish-intent remains recoverable; it MUST never leave an untracked orphan or
+  promote partial history.
   `turn.failed` and `turn.interrupted` MUST preserve the previous committed version.
 - Interrupted or failed turns MUST NOT commit a partial assistant message as a
   completed history item.
@@ -351,6 +361,18 @@ through one `file-backed` representation.
 - Transcript persistence MUST follow RAVI's session access and retention policy.
   Preserved reasoning MUST NOT be copied to logs, traces, indexes, or public message
   history.
+- Session lifecycle ownership MUST be fenced by an explicit epoch. Metadata-only
+  updates MUST NOT invalidate that epoch. Reset, delete, redirect, stale-state
+  clear, and provider/model restart MUST use an exact ownership CAS, and a late
+  provider callback MUST NOT restore state after ownership changes.
+- Removing or superseding a Kimi locator and recording its cleanup obligation
+  MUST be one durable SQLite transaction. Cleanup MUST be retryable after process
+  crash or transient filesystem failure, and its durable payload MUST contain
+  only canonical locator fields—never transcript, reasoning, tool output, raw
+  provider errors, or credentials.
+- Cleanup execution MUST be idempotent and lease-fenced. Invalid, foreign,
+  traversal, snapshot-mismatched, or reparse locators MUST fail closed without a
+  filesystem mutation.
 - State size MUST be bounded. When state cannot fit the model or host persistence
   limit, the adapter MUST fail with an actionable context/state-limit error unless
   a canonical, tested compaction mechanism preserves native tool/reasoning pairing.
