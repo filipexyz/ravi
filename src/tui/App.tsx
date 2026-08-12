@@ -228,11 +228,21 @@ export function App() {
   );
 
   const handleSlashCommand = useCallback(
-    (cmd: string) => {
+    async (cmd: string) => {
       switch (cmd) {
         case "reset": {
           const session = currentSession;
-          if (session) {
+          if (!session) {
+            pushMessage({
+              id: `system-${Date.now()}`,
+              type: "chat",
+              role: "assistant",
+              content: "No active session to reset.",
+              timestamp: Date.now(),
+            });
+            break;
+          }
+          {
             publish("ravi.session.abort", {
               sessionKey: session.sessionKey,
               sessionName,
@@ -241,10 +251,20 @@ export function App() {
               reason: "tui_reset",
               actor: "operator",
             }).catch(() => {});
-            void runProviderSessionLifecycleMutation({
+            const changed = await runProviderSessionLifecycleMutation({
               session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
               mutate: () => resetSessionIfUnchanged(session),
             });
+            if (!changed) {
+              pushMessage({
+                id: `system-${Date.now()}`,
+                type: "chat",
+                role: "assistant",
+                content: "Session changed; reset was not applied.",
+                timestamp: Date.now(),
+              });
+              break;
+            }
           }
           clearMessages();
           pushMessage({

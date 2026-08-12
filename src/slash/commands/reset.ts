@@ -65,8 +65,11 @@ export const resetCommand: SlashCommand = {
       : false;
     log.info("/reset result", { sessionKey, reset });
 
-    if (aborted || reset) {
+    if (reset) {
       return `✅ Sessão resetada (${agentId})`;
+    }
+    if (aborted) {
+      return `⚠️ A execução foi interrompida, mas o reset não foi aplicado (${agentId})`;
     }
     return `✅ Nenhuma sessão ativa encontrada (${agentId})`;
   },
