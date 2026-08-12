@@ -1168,6 +1168,8 @@ describe("runtime session trace instrumentation", () => {
     const admitted = getSession(SESSION_KEY)!;
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-ownership-reset");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    let providerClosed = 0;
 
     let releaseTerminal!: () => void;
     const terminalGate = new Promise<void>((resolve) => {
@@ -1192,6 +1194,9 @@ describe("runtime session trace instrumentation", () => {
         } satisfies RuntimeEvent;
       })(),
       interrupt: async () => {},
+      close: async () => {
+        providerClosed += 1;
+      },
     };
 
     const loop = runTraceLoop(streaming, runtimeSession, { session: admitted });
@@ -1199,13 +1204,70 @@ describe("runtime session trace instrumentation", () => {
     expect(resetSessionIfUnchanged(admitted)).toBe(true);
     releaseTerminal();
 
-    await expect(loop).rejects.toThrow("Session ownership changed before provider state persistence");
+    await expect(loop).resolves.toBeUndefined();
     expect(getSession(SESSION_KEY)).toMatchObject({
       lifecycleGeneration: admitted.lifecycleGeneration! + 1,
       providerSessionId: undefined,
       runtimeSessionParams: undefined,
     });
     expect(getSessionTurn("turn-ownership-reset")?.status).not.toBe("complete");
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).not.toContain("turn.complete");
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "aborted",
+      metadata: { abortReason: "provider_state_ownership_lost" },
+    });
+    expect(providerClosed).toBe(1);
+  });
+
+  it("rejects a deferred terminal after an agent redirect without recording success", async () => {
+    const initial = getSession(SESSION_KEY)!;
+    expect(
+      updateProviderSession(initial, PROVIDER, "synthetic-provider-before", {
+        runtimeSessionParams: { sessionId: "synthetic-provider-before" },
+        runtimeSessionDisplayId: "synthetic-provider-before",
+      }).won,
+    ).toBe(true);
+    const admitted = getSession(SESSION_KEY)!;
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-ownership-redirect");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    let releaseTerminal!: () => void;
+    const terminalGate = new Promise<void>((resolve) => {
+      releaseTerminal = resolve;
+    });
+    let terminalDeferred!: () => void;
+    const terminalWasDeferred = new Promise<void>((resolve) => {
+      terminalDeferred = resolve;
+    });
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: (async function* () {
+        terminalDeferred();
+        await terminalGate;
+        yield {
+          type: "turn.complete",
+          providerSessionId: "synthetic-provider-after",
+          session: { displayId: "synthetic-provider-after", params: { sessionId: "synthetic-provider-after" } },
+        } satisfies RuntimeEvent;
+      })(),
+      interrupt: async () => {},
+      close: async () => {},
+    };
+
+    const loop = runTraceLoop(streaming, runtimeSession, { session: admitted });
+    await terminalWasDeferred;
+    const redirected = getOrCreateSession(SESSION_KEY, "redirected-agent", join(stateDir!, "redirected"));
+    expect(redirected.lifecycleGeneration).toBe(admitted.lifecycleGeneration! + 1);
+    releaseTerminal();
+
+    await expect(loop).resolves.toBeUndefined();
+    expect(getSession(SESSION_KEY)).toMatchObject({
+      lifecycleGeneration: admitted.lifecycleGeneration! + 1,
+      agentId: "redirected-agent",
+      providerSessionId: undefined,
+    });
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({ status: "aborted" });
+    expect(getSessionTurn("turn-ownership-redirect")?.status).not.toBe("complete");
     expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).not.toContain("turn.complete");
   });
 

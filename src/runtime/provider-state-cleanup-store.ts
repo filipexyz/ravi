@@ -432,10 +432,16 @@ export function publishPreparedProviderStateCleanupTaskInTransaction(
 export function enqueuePublishedProviderStateCleanupTask(
   input: EnqueuePublishedProviderStateCleanupTaskInput,
 ): ProviderStateCleanupTask {
-  const prepared = preparePublishedInput(input);
-  return executeWrite(getDb(), (database) => insertTask(database, prepared), {
+  return executeWrite(getDb(), (database) => enqueuePublishedProviderStateCleanupTaskInTransaction(database, input), {
     label: "provider-state-cleanup-enqueue-published",
   });
+}
+
+export function enqueuePublishedProviderStateCleanupTaskInTransaction(
+  database: Database,
+  input: EnqueuePublishedProviderStateCleanupTaskInput,
+): ProviderStateCleanupTask {
+  return insertTask(database, preparePublishedInput(input));
 }
 
 export function mutateSessionAndEnqueueProviderStateCleanup(

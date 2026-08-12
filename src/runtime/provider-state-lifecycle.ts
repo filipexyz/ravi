@@ -1,8 +1,11 @@
 import type { Database } from "bun:sqlite";
+import { randomUUID } from "node:crypto";
 import { executeWrite } from "../db/write-retry.js";
 import { getDb } from "../router/router-db.js";
+import type { SessionProviderStateMutationResult, SessionProviderStateOwnership } from "../router/types.js";
 import {
   enqueuePreparedProviderStateCleanupTaskInTransaction,
+  enqueuePublishedProviderStateCleanupTaskInTransaction,
   publishPreparedProviderStateCleanupTaskInTransaction,
   parseProviderStateCleanupLocator,
   recordInvalidProviderStatePublishIntentInTransaction,
@@ -27,6 +30,7 @@ export interface CreateProviderStateLifecycleOptions {
 }
 
 const DEFAULT_PUBLISH_DEADLINE_MS = 1_000;
+const PROVIDER_STATE_ADOPTION_LOST = Symbol("provider-state-adoption-lost");
 const RECONCILABLE_ATTEMPT_STATUSES = [
   "running",
   "complete",
@@ -161,60 +165,236 @@ export function createProviderStateLifecycle(
     "publishDeadlineMs",
   );
 
+  const reservations = new Map<string, ProviderStateLifecycleAttemptBinding>();
   return Object.freeze({
+    reservePreparedState() {
+      const attempt = options.currentAttempt();
+      if (!attempt) throw new ProviderStateLifecycleOwnershipError();
+      requireText(attempt.attemptId, "attemptId");
+      requireText(attempt.bootEpoch, "bootEpoch");
+      const reservationId = `cleanup_${randomUUID()}`;
+      reservations.set(reservationId, { ...attempt });
+      return { reservationId, ownerAttemptId: attempt.attemptId };
+    },
     publishPreparedState(input: RuntimeProviderStatePublishInput) {
       const attempt = options.currentAttempt();
       if (!attempt) throw new ProviderStateLifecycleOwnershipError();
       requireText(attempt.attemptId, "attemptId");
       requireText(attempt.bootEpoch, "bootEpoch");
       const reservationId = requireText(input.reservationId, "reservationId");
+      const reserved = reservations.get(reservationId);
+      if (!reserved || reserved.attemptId !== attempt.attemptId || reserved.bootEpoch !== attempt.bootEpoch) {
+        throw new ProviderStateLifecycleOwnershipError();
+      }
       const locator = parseProviderStateCleanupLocator(serializeProviderStateCleanupLocator(input.locator));
       if (locator.provider !== options.provider) {
         throw new Error("Provider cleanup locator does not match the scoped lifecycle provider");
       }
       const startedAt = requireTimestamp(now(), "host clock");
-      return executeWrite(
-        database,
-        (transaction) => {
-          assertPublicationOwnership(transaction, options, attempt, startedAt);
-          enqueuePreparedProviderStateCleanupTaskInTransaction(transaction, {
-            id: reservationId,
-            locator,
-            owner: {
-              attemptId: attempt.attemptId,
-              sessionKey: options.sessionKey,
-              bootEpoch: attempt.bootEpoch,
-            },
-            now: startedAt,
-          });
-          assertWithinPublishDeadline(startedAt, now(), publishDeadlineMs);
-          // JavaScript cannot preempt a synchronous callback. Providers must
-          // therefore use bounded primitives; the post-check fails closed and
-          // rolls back the SQLite reservation if that bound is exceeded.
-          const callbackResult = input.publish();
-          if (callbackResult !== undefined) {
-            throw new Error("Provider state publication callback must be synchronous and return void");
-          }
-          const finishedAt = now();
-          assertWithinPublishDeadline(startedAt, finishedAt, publishDeadlineMs);
-          assertPublicationOwnership(transaction, options, attempt, finishedAt);
-          const published = publishPreparedProviderStateCleanupTaskInTransaction(transaction, {
-            id: reservationId,
-            locator,
-            owner: {
-              attemptId: attempt.attemptId,
-              sessionKey: options.sessionKey,
-              bootEpoch: attempt.bootEpoch,
-            },
-            now: finishedAt,
-          });
-          if (!published) throw new ProviderStateLifecycleOwnershipError();
-          return { reservationId };
-        },
-        { label: "provider-state-publish-prepared" },
-      );
+      try {
+        return executeWrite(
+          database,
+          (transaction) => {
+            assertPublicationOwnership(transaction, options, attempt, startedAt);
+            enqueuePreparedProviderStateCleanupTaskInTransaction(transaction, {
+              id: reservationId,
+              locator,
+              owner: {
+                attemptId: attempt.attemptId,
+                sessionKey: options.sessionKey,
+                bootEpoch: attempt.bootEpoch,
+              },
+              now: startedAt,
+            });
+            assertWithinPublishDeadline(startedAt, now(), publishDeadlineMs);
+            // JavaScript cannot preempt a synchronous callback. Providers must
+            // therefore use bounded primitives; the post-check fails closed and
+            // rolls back the SQLite reservation if that bound is exceeded.
+            const callbackResult = input.publish();
+            if (callbackResult !== undefined) {
+              throw new Error("Provider state publication callback must be synchronous and return void");
+            }
+            const finishedAt = now();
+            assertWithinPublishDeadline(startedAt, finishedAt, publishDeadlineMs);
+            assertPublicationOwnership(transaction, options, attempt, finishedAt);
+            const published = publishPreparedProviderStateCleanupTaskInTransaction(transaction, {
+              id: reservationId,
+              locator,
+              owner: {
+                attemptId: attempt.attemptId,
+                sessionKey: options.sessionKey,
+                bootEpoch: attempt.bootEpoch,
+              },
+              now: finishedAt,
+            });
+            if (!published) throw new ProviderStateLifecycleOwnershipError();
+            return { reservationId };
+          },
+          { label: "provider-state-publish-prepared" },
+        );
+      } finally {
+        reservations.delete(reservationId);
+      }
     },
   });
+}
+
+export interface AdoptPublishedProviderStateInput {
+  session: SessionProviderStateOwnership;
+  provider: string;
+  providerSessionId: string;
+  nextSession: { params?: Record<string, unknown> | null; displayId?: string | null };
+  reservationId: string;
+  ownerAttemptId: string;
+  ownerBootEpoch: string;
+  now?: number;
+  database?: Database;
+}
+
+function runtimeSessionJson(params: Record<string, unknown> | null | undefined): string | null {
+  return params && Object.keys(params).length > 0 ? JSON.stringify(params) : null;
+}
+
+function sameLocatorLineage(
+  previous: ReturnType<typeof parseProviderStateCleanupLocator>,
+  next: ReturnType<typeof parseProviderStateCleanupLocator>,
+): boolean {
+  return (
+    previous.provider === next.provider &&
+    previous.model === next.model &&
+    previous.sessionId === next.sessionId &&
+    previous.cwd === next.cwd &&
+    previous.workspaceIdentity.realpath === next.workspaceIdentity.realpath &&
+    previous.workspaceIdentity.device === next.workspaceIdentity.device &&
+    previous.workspaceIdentity.inode === next.workspaceIdentity.inode &&
+    next.revision > previous.revision
+  );
+}
+
+/** Atomically adopts a published provider locator and consumes its cleanup reservation. */
+export function adoptPublishedProviderState(
+  input: AdoptPublishedProviderStateInput,
+): SessionProviderStateMutationResult {
+  const database = input.database ?? getDb();
+  const lifecycleGeneration = input.session.lifecycleGeneration;
+  if (!Number.isSafeInteger(lifecycleGeneration) || Number(lifecycleGeneration) < 1) {
+    return { won: false, lifecycleGeneration: null };
+  }
+  const now = requireTimestamp(input.now ?? Date.now(), "now");
+  const provider = requireText(input.provider, "provider");
+  const providerSessionId = requireText(input.providerSessionId, "providerSessionId");
+  const reservationId = requireText(input.reservationId, "reservationId");
+  const ownerAttemptId = requireText(input.ownerAttemptId, "ownerAttemptId");
+  const ownerBootEpoch = requireText(input.ownerBootEpoch, "ownerBootEpoch");
+  const nextLocatorJson = serializeProviderStateCleanupLocator(input.nextSession.params);
+  const nextLocator = parseProviderStateCleanupLocator(nextLocatorJson);
+  if (nextLocator.provider !== provider || nextLocator.sessionId !== providerSessionId) {
+    throw new Error("Provider state adoption locator does not match its provider session");
+  }
+  const nextSessionJson = runtimeSessionJson(input.nextSession.params);
+  const nextDisplayId = input.nextSession.displayId ?? providerSessionId;
+  let previousLocatorJson: string | null = null;
+  let previousLocator: ReturnType<typeof parseProviderStateCleanupLocator> | null = null;
+  if (input.session.runtimeSessionParams) {
+    try {
+      previousLocatorJson = serializeProviderStateCleanupLocator(input.session.runtimeSessionParams);
+      previousLocator = parseProviderStateCleanupLocator(previousLocatorJson);
+    } catch {
+      previousLocatorJson = null;
+      previousLocator = null;
+    }
+  }
+
+  try {
+    return executeWrite(
+      database,
+      (transaction) => {
+        const attempt = transaction
+          .prepare(
+            `SELECT status, session_key, provider, boot_epoch, lease_expires_at
+             FROM runtime_turn_attempts WHERE attempt_id = ?`,
+          )
+          .get(ownerAttemptId) as OwnedAttemptRow | undefined;
+        const task = transaction
+          .prepare(
+            `SELECT id FROM provider_state_cleanup_tasks
+             WHERE id = ? AND provider = ? AND operation = 'provisional_exact'
+               AND status = 'published' AND locator_json = ?
+               AND owner_attempt_id = ? AND owner_session_key = ? AND owner_boot_epoch = ?`,
+          )
+          .get(
+            reservationId,
+            provider,
+            nextLocatorJson,
+            ownerAttemptId,
+            input.session.sessionKey,
+            ownerBootEpoch,
+          );
+        if (
+          !task ||
+          !attempt ||
+          attempt.status !== "running" ||
+          attempt.session_key !== input.session.sessionKey ||
+          attempt.provider !== provider ||
+          attempt.boot_epoch !== ownerBootEpoch ||
+          !Number.isSafeInteger(attempt.lease_expires_at) ||
+          attempt.lease_expires_at <= now
+        ) {
+          throw PROVIDER_STATE_ADOPTION_LOST;
+        }
+        const updated = transaction
+          .prepare(
+            `UPDATE sessions SET sdk_session_id = ?, runtime_provider = ?, runtime_session_json = ?,
+               runtime_session_display_id = ?, updated_at = ?
+             WHERE session_key = ? AND lifecycle_generation = ?
+               AND sdk_session_id IS ? AND runtime_session_display_id IS ? AND runtime_session_json IS ?`,
+          )
+          .run(
+            providerSessionId,
+            provider,
+            nextSessionJson,
+            nextDisplayId,
+            now,
+            input.session.sessionKey,
+            lifecycleGeneration,
+            input.session.sdkSessionId ?? null,
+            input.session.runtimeSessionDisplayId ?? null,
+            runtimeSessionJson(input.session.runtimeSessionParams),
+          );
+        if (updated.changes !== 1) throw PROVIDER_STATE_ADOPTION_LOST;
+        const consumed = transaction
+          .prepare(
+            `DELETE FROM provider_state_cleanup_tasks
+             WHERE id = ? AND status = 'published' AND operation = 'provisional_exact'
+               AND locator_json = ? AND owner_attempt_id = ? AND owner_session_key = ? AND owner_boot_epoch = ?`,
+          )
+          .run(
+            reservationId,
+            nextLocatorJson,
+            ownerAttemptId,
+            input.session.sessionKey,
+            ownerBootEpoch,
+          );
+        if (consumed.changes !== 1) throw PROVIDER_STATE_ADOPTION_LOST;
+        if (previousLocator && previousLocatorJson && sameLocatorLineage(previousLocator, nextLocator)) {
+          enqueuePublishedProviderStateCleanupTaskInTransaction(transaction, {
+            operation: "retire_revision",
+            locator: previousLocator,
+            successorLocator: nextLocator,
+            now,
+          });
+        }
+        return { won: true as const, lifecycleGeneration: Number(lifecycleGeneration) };
+      },
+      { label: "provider-state-adopt-published" },
+    );
+  } catch (error) {
+    if (error !== PROVIDER_STATE_ADOPTION_LOST) throw error;
+    const row = database
+      .prepare("SELECT lifecycle_generation FROM sessions WHERE session_key = ?")
+      .get(input.session.sessionKey) as { lifecycle_generation: number } | undefined;
+    return { won: false, lifecycleGeneration: row?.lifecycle_generation ?? null };
+  }
 }
 
 /** Reconcile one already-validated provider intent under a single writer lock. */

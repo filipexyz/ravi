@@ -26,6 +26,7 @@ import type {
 } from "./types.js";
 
 const temporaryStateRoots = new Set<string>();
+let reservationSequence = 0;
 
 afterEach(() => {
   for (const root of temporaryStateRoots) rmSync(root, { recursive: true, force: true });
@@ -63,6 +64,7 @@ function prompts(...content: string[]): AsyncGenerator<RuntimePromptMessage> {
 
 function startRequest(overrides: Partial<RuntimeStartRequest> = {}): RuntimeStartRequest {
   const fixture = isolatedStateEnv();
+  const reservationId = `reservation-test-${++reservationSequence}`;
   return {
     prompt: prompts("hello"),
     model: "k3",
@@ -70,6 +72,13 @@ function startRequest(overrides: Partial<RuntimeStartRequest> = {}): RuntimeStar
     abortController: new AbortController(),
     systemPromptAppend: "Ravi policy.",
     env: fixture.env,
+    providerStateLifecycle: {
+      reservePreparedState: () => ({ reservationId, ownerAttemptId: `attempt-test-${reservationSequence}` }),
+      publishPreparedState: (input) => {
+        input.publish();
+        return { reservationId: input.reservationId };
+      },
+    },
     ...overrides,
   };
 }
@@ -169,6 +178,34 @@ function createHostServices(): RuntimeHostServices {
 }
 
 describe("createKimiCodeRuntimeProvider", () => {
+  test("publishes Kimi state only through a host-issued reservation kept outside locator params", async () => {
+    const publications: string[] = [];
+    const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        providerStateLifecycle: {
+          reservePreparedState: () => ({ reservationId: "reservation-host-a", ownerAttemptId: "attempt-host-a" }),
+          publishPreparedState: (input) => {
+            publications.push(input.reservationId);
+            input.publish();
+            return { reservationId: input.reservationId };
+          },
+        },
+      }),
+    );
+    const terminal = events.at(-1);
+
+    expect(publications).toEqual(["reservation-host-a"]);
+    expect(terminal).toMatchObject({
+      type: "turn.complete",
+      session: { providerStateReservationId: "reservation-host-a" },
+    });
+    if (terminal?.type !== "turn.complete") throw new Error("missing terminal");
+    expect(terminal.session?.params).not.toHaveProperty("providerStateReservationId");
+    expect(JSON.stringify(terminal.session?.params)).not.toContain("reservation-host-a");
+  });
+
   test("rejects disabled session starts before transport creation without deleting persisted state", async () => {
     const fixture = isolatedStateEnv();
     const persisted = await commitKimiCodeSessionState({

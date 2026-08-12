@@ -3,14 +3,25 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { createRuntimeContext } from "./context-registry.js";
-import { dbUpsertSkillGateRule, dbUpsertSkillGrant, getOrCreateSession, getSession } from "../router/index.js";
+import {
+  dbUpsertSkillGateRule,
+  dbUpsertSkillGrant,
+  getOrCreateSession,
+  getSession,
+  resetSessionIfUnchanged,
+} from "../router/index.js";
 import { dbUpdateAgent } from "../router/router-db.js";
 import {
   flushPermissionAuditEvents,
   listPermissionDenials,
   setPermissionAuditPublisherForTest,
 } from "../permissions/denials.js";
-import { evaluateSkillGate, runtimeSkillGateForCommand, runtimeSkillGateForTool } from "./skill-gate.js";
+import {
+  evaluateSkillGate,
+  persistSkillGateVisibility,
+  runtimeSkillGateForCommand,
+  runtimeSkillGateForTool,
+} from "./skill-gate.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import type { RuntimeSkillVisibilitySnapshot } from "./types.js";
 
@@ -44,6 +55,33 @@ function writeCodexSkill(name: string): void {
 }
 
 describe("evaluateSkillGate", () => {
+  it("does not restore skill visibility through a stale callback after reset", () => {
+    const admitted = getOrCreateSession("agent:main:main", "main", stateDir!, {
+      name: "skill-gate-test",
+      runtimeProvider: "codex",
+      providerSessionId: "thread-1",
+      runtimeSessionDisplayId: "thread-1",
+    });
+    expect(resetSessionIfUnchanged(admitted)).toBe(true);
+    const visibility: RuntimeSkillVisibilitySnapshot = {
+      skills: [],
+      loadedSkills: ["stale-skill"],
+      updatedAt: 123,
+    };
+
+    expect(
+      persistSkillGateVisibility(
+        admitted,
+        visibility,
+        "Bash",
+        { skill: "stale-skill", source: "config" },
+        "stale callback",
+      ),
+    ).toBe(false);
+    expect(admitted.runtimeSessionParams).toBeUndefined();
+    expect(getSession(admitted.sessionKey)?.runtimeSessionParams).toBeUndefined();
+  });
+
   it("soft-gates a missing skill, delivers it, and marks it loaded for the session", () => {
     writeCodexSkill("demo-skill");
     // Custom skills must be granted to the agent (Invariant G,

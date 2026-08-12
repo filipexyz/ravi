@@ -2,6 +2,8 @@ import { logger } from "../utils/logger.js";
 import { cleanupKimiCodeSessionState, retireSupersededKimiCodeSessionState } from "./kimi-code-state.js";
 import type { RuntimeSessionState } from "./types.js";
 
+export { adoptPublishedProviderState } from "./provider-state-lifecycle.js";
+
 const log = logger.child("runtime:provider-session-lifecycle");
 
 export interface ProviderSessionLifecycleMutationInput {

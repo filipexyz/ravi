@@ -26,8 +26,8 @@ import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete 
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
 import {
+  adoptPublishedProviderState,
   runProviderSessionLifecycleMutation,
-  runProviderSessionPersistenceMutation,
 } from "./provider-session-lifecycle.js";
 import {
   buildRuntimeContextRecoveryPrompt,
@@ -44,7 +44,7 @@ import {
   recordRuntimeCredentialSuccess,
 } from "./credential-store.js";
 import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
-import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import type { RuntimeCrashRecoveryCoordinator, RuntimeCrashRecoveryTerminalInput } from "./crash-recovery.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import {
@@ -521,6 +521,11 @@ function buildProviderRawRuntimeEvent(
 function stripRuntimeRawEvent<T extends RuntimeEvent>(event: T): T {
   const safeEvent: Record<string, unknown> = { ...event };
   delete safeEvent.rawEvent;
+  if (event.type === "turn.complete" && event.session) {
+    const publicSession: Record<string, unknown> = { ...event.session };
+    delete publicSession.providerStateReservationId;
+    safeEvent.session = publicSession;
+  }
   if (event.type === "tool.completed" && isGeneratedImageToolCompletion(event)) {
     safeEvent.content = summarizeGeneratedImageToolOutput({
       content: event.content,
@@ -786,6 +791,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const terminalizeCurrentCrashRecoveryAttempt = (
     status: RuntimeTurnAttemptTerminalStatus,
     requestedCompletedAt?: number,
+    metadata?: RuntimeCrashRecoveryTerminalInput["metadata"],
   ) => {
     if (streaming.currentCrashRecoveryTerminal) {
       return streaming.currentCrashRecoveryTerminal;
@@ -813,6 +819,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         attemptId: crashRecoveryAttemptId,
         status,
         completedAt,
+        ...(metadata ? { metadata } : {}),
       });
       if (terminalAttempt.status !== status || terminalAttempt.completedAt !== completedAt) {
         throw new Error(
@@ -1592,7 +1599,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     };
   };
 
-  const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
+  const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot): boolean => {
     const admittedSession = { ...session, runtimeSessionParams: session.runtimeSessionParams };
     const runtimeSessionParams: Record<string, unknown> = {
       ...(isRecord(session.runtimeSessionParams) ? session.runtimeSessionParams : {}),
@@ -1604,7 +1611,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       session.sdkSessionId ??
       (typeof runtimeSessionParams.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
 
-    runtimeSession.skillVisibility = skillVisibility;
     let persisted = false;
     if (persistedSessionId) {
       persisted = updateProviderSession(admittedSession, runtimeSession.provider, persistedSessionId, {
@@ -1616,8 +1622,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         runtimeSessionParams,
       }).won;
     }
-    if (persisted) session.runtimeSessionParams = runtimeSessionParams;
-    return runtimeSessionParams;
+    if (!persisted) return false;
+    runtimeSession.skillVisibility = skillVisibility;
+    session.runtimeSessionParams = runtimeSessionParams;
+    return true;
   };
 
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
@@ -1995,18 +2003,18 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       await chunkEmitTail;
 
-      if (event.type !== "turn.failed" && event.type !== "assistant.message") {
+      if (event.type !== "turn.failed" && event.type !== "assistant.message" && event.type !== "turn.complete") {
         await projectRuntimeEventToChannel(
           event,
           event.type === "turn.complete" && streaming.agentMode !== "sentinel" ? channelResponseText : undefined,
         );
       }
 
-      if (event.type !== "turn.failed" && event.type !== "assistant.message") {
+      if (event.type !== "turn.failed" && event.type !== "assistant.message" && event.type !== "turn.complete") {
         await emitRuntimeEvent({ ...stripRuntimeRawEvent(event), provider: runtimeSession.provider });
       }
 
-      if (event.type === "turn.complete" || event.type === "turn.interrupted") {
+      if (event.type === "turn.interrupted") {
         await releasePendingProviderRawEvent(correlatedProviderRawEvent);
         suppressProviderRawForCurrentTurn = false;
       }
@@ -2060,14 +2068,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           statusSkillVisibility = resetLoadedSkillVisibilitySnapshot(
             runtimeSkillVisibilityFromParams(session.runtimeSessionParams) ?? readSkillVisibilityFromParams(undefined),
           );
-          persistRuntimeSkillVisibility(statusSkillVisibility);
-          await emitRuntimeEvent({
-            type: "skill.visibility.reset",
-            provider: runtimeSession.provider,
-            reason: "compact",
-            skillVisibility: statusSkillVisibility,
-            metadata: event.metadata,
-          });
+          if (persistRuntimeSkillVisibility(statusSkillVisibility)) {
+            await emitRuntimeEvent({
+              type: "skill.visibility.reset",
+              provider: runtimeSession.provider,
+              reason: "compact",
+              skillVisibility: statusSkillVisibility,
+              metadata: event.metadata,
+            });
+          }
         }
 
         const liveActivity = status === "idle" ? "idle" : streaming.compacting ? "compacting" : "thinking";
@@ -2457,8 +2466,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             output: event.content,
             metadata: event.metadata,
           });
-          if (nextSkillVisibility !== previousSkillVisibility) {
-            persistRuntimeSkillVisibility(nextSkillVisibility);
+          if (
+            nextSkillVisibility !== previousSkillVisibility &&
+            persistRuntimeSkillVisibility(nextSkillVisibility)
+          ) {
             patchLiveState(
               {
                 activity: "thinking",
@@ -2521,6 +2532,80 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const cacheRead = event.usage?.cacheReadTokens;
         const cacheCreation = event.usage?.cacheCreationTokens;
 
+        const completedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
+
+        const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
+        // Skill gates can be persisted by the Codex Bash hook in a separate process.
+        // Refresh before merging the provider's terminal snapshot so those marks survive turn.complete.
+        refreshRuntimeSessionParamsFromDb();
+        const runtimeSessionParams = mergeRuntimeCredentialSessionMetadata(
+          mergeRuntimeSessionParams(event.session?.params ?? undefined),
+          streaming.currentRuntimeCredential,
+        );
+        const terminalSkillVisibility = runtimeSkillVisibilityFromParams(runtimeSessionParams);
+        const persistedSessionId =
+          runtimeSessionDisplayId ??
+          (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
+
+        let providerStateWon = true;
+        if (persistedSessionId) {
+          const reservationId = event.session?.providerStateReservationId;
+          if (reservationId) {
+            const attemptId = streaming.currentCrashRecoveryAttemptId;
+            const attempt = attemptId && crashRecovery ? crashRecovery.getActiveTurnAttempt(attemptId) : null;
+            providerStateWon = Boolean(
+              attempt &&
+                adoptPublishedProviderState({
+                  session,
+                  provider: runtimeSession.provider,
+                  providerSessionId: persistedSessionId,
+                  nextSession: { displayId: runtimeSessionDisplayId, params: runtimeSessionParams },
+                  reservationId,
+                  ownerAttemptId: attempt.attemptId,
+                  ownerBootEpoch: attempt.bootEpoch,
+                }).won,
+            );
+          } else {
+            providerStateWon = updateProviderSession(session, runtimeSession.provider, persistedSessionId, {
+              runtimeSessionParams,
+              runtimeSessionDisplayId,
+            }).won;
+          }
+          if (!providerStateWon) {
+            const ownershipLossReason = "provider_state_ownership_lost";
+            streaming.internalAbortReason = ownershipLossReason;
+            streaming.interrupted = true;
+            const terminal = terminalizeCurrentCrashRecoveryAttempt("aborted", undefined, {
+              abortReason: ownershipLossReason,
+            });
+            if (terminal) {
+              recordTerminalTraceOnce({
+                status: "aborted",
+                eventType: "turn.interrupted",
+                abortReason: ownershipLossReason,
+                completedAt: terminal.completedAt,
+                payloadJson: { reason: ownershipLossReason },
+              });
+            }
+            if (!streaming.abortController.signal.aborted) streaming.abortController.abort();
+            await closeRuntimeSession();
+            break;
+          }
+          session.runtimeSessionParams = runtimeSessionParams;
+          session.runtimeSessionDisplayId = runtimeSessionDisplayId ?? persistedSessionId;
+          session.providerSessionId = runtimeSessionDisplayId ?? persistedSessionId;
+          session.sdkSessionId = runtimeSessionDisplayId ?? persistedSessionId;
+          session.runtimeProvider = runtimeSession.provider;
+          backfillProviderSessionId(sessionName, persistedSessionId);
+        }
+        const publicTerminalEvent = stripRuntimeRawEvent(event);
+        await projectRuntimeEventToChannel(
+          publicTerminalEvent,
+          streaming.agentMode !== "sentinel" ? channelResponseText : undefined,
+        );
+        await emitRuntimeEvent({ ...publicTerminalEvent, provider: runtimeSession.provider });
+        await releasePendingProviderRawEvent(correlatedProviderRawEvent);
+        suppressProviderRawForCurrentTurn = false;
         log.info("Turn complete", {
           runId,
           interrupted: streaming.interrupted,
@@ -2535,46 +2620,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             : { usage: "unavailable" }),
           sessionId: event.session?.displayId ?? event.providerSessionId,
         });
-        const completedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
-
-        const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
-        // Skill gates can be persisted by the Codex Bash hook in a separate process.
-        // Refresh before merging the provider's terminal snapshot so those marks survive turn.complete.
-        refreshRuntimeSessionParamsFromDb();
-        const previousRuntimeSession = {
-          displayId: session.runtimeSessionDisplayId,
-          params: session.runtimeSessionParams,
-        };
-        const runtimeSessionParams = mergeRuntimeCredentialSessionMetadata(
-          mergeRuntimeSessionParams(event.session?.params ?? undefined),
-          streaming.currentRuntimeCredential,
-        );
-        const terminalSkillVisibility = runtimeSkillVisibilityFromParams(runtimeSessionParams);
-        const persistedSessionId =
-          runtimeSessionDisplayId ??
-          (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
-
-        if (persistedSessionId) {
-          await runProviderSessionPersistenceMutation({
-            previousSession: previousRuntimeSession,
-            nextSession: { displayId: runtimeSessionDisplayId, params: runtimeSessionParams },
-            persist: () => {
-              const mutation = updateProviderSession(session, runtimeSession.provider, persistedSessionId, {
-                runtimeSessionParams,
-                runtimeSessionDisplayId,
-              });
-              if (!mutation.won) {
-                throw new Error("Session ownership changed before provider state persistence");
-              }
-              session.runtimeSessionParams = runtimeSessionParams;
-              session.runtimeSessionDisplayId = runtimeSessionDisplayId ?? persistedSessionId;
-              session.providerSessionId = runtimeSessionDisplayId ?? persistedSessionId;
-              session.sdkSessionId = runtimeSessionDisplayId ?? persistedSessionId;
-              session.runtimeProvider = runtimeSession.provider;
-            },
-          });
-          backfillProviderSessionId(sessionName, persistedSessionId);
-        }
         recordRuntimeCredentialTurnSuccess(streaming);
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
         if (event.usage) {
@@ -2635,7 +2680,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           responseChars: responseText.trim().length,
           payloadJson: {
             execution: event.execution ?? null,
-            session: event.session ?? null,
+            session: publicTerminalEvent.session ?? null,
             metadata: event.metadata ?? null,
             pricing:
               resolvedCost?.pricingStatus === "priced"

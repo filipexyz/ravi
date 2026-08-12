@@ -1,14 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { getDb } from "../router/router-db.js";
-import { getOrCreateSession } from "../router/sessions.js";
+import { getOrCreateSession, getSession, updateProviderSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   createRuntimeBootEpoch,
   createRuntimeTurnAttempt,
   terminalizeRuntimeTurnAttempt,
 } from "./crash-recovery-store.js";
-import { serializeProviderStateCleanupLocator } from "./provider-state-cleanup-store.js";
 import {
+  claimProviderStateCleanupTasks,
+  serializeProviderStateCleanupLocator,
+} from "./provider-state-cleanup-store.js";
+import {
+  adoptPublishedProviderState,
   createProviderStateLifecycle,
   providerStatePublishIntentIsResolved,
   reconcileProviderStatePublishIntent,
@@ -25,17 +29,17 @@ afterEach(async () => {
   stateDir = null;
 });
 
-function locator(sessionId: string, sessionFile: string) {
+function locator(sessionId: string, sessionFile: string, revision = 1) {
   return {
     schemaVersion: 1 as const,
     provider: "test-provider",
     model: "test-model",
     sessionId,
-    revision: 1,
+    revision,
     cwd: "/workspace/project",
     workspaceIdentity: { realpath: "/workspace/project", device: "1", inode: "2" },
     sessionFile,
-    lastCommittedTurnId: "turn-1",
+    lastCommittedTurnId: `turn-${revision}`,
   };
 }
 
@@ -67,6 +71,120 @@ function establishAttempt(sessionKey: string, attemptId: string, bootEpoch: stri
 }
 
 describe("request-scoped provider state lifecycle", () => {
+  it("adopts a published locator and consumes its reservation in one ownership transaction", () => {
+    const created = getOrCreateSession("session-adopt", "agent-a", "/workspace/project");
+    const sessionId = "00000000-0000-4000-8000-000000000099";
+    const previous = locator(sessionId, "/private/adopt/revision-1.json");
+    expect(
+      updateProviderSession(created, "test-provider", sessionId, {
+        runtimeSessionParams: previous,
+        runtimeSessionDisplayId: sessionId,
+      }).won,
+    ).toBe(true);
+    const session = getSession(created.sessionKey)!;
+    establishAttempt(session.sessionKey, "attempt-adopt", "boot-adopt");
+    const next = locator(sessionId, "/private/adopt/revision-2.json", 2);
+    const lifecycle = createProviderStateLifecycle({
+      provider: "test-provider",
+      sessionKey: session.sessionKey,
+      admittedEpoch: session.lifecycleGeneration!,
+      currentAttempt: () => ({ attemptId: "attempt-adopt", bootEpoch: "boot-adopt" }),
+      now: () => 200,
+    });
+    const reservation = lifecycle.reservePreparedState();
+    lifecycle.publishPreparedState({ reservationId: reservation.reservationId, locator: next, publish: () => {} });
+
+    expect(
+      adoptPublishedProviderState({
+        session,
+        provider: "test-provider",
+        providerSessionId: next.sessionId,
+        nextSession: { displayId: next.sessionId, params: next },
+        reservationId: reservation.reservationId,
+        ownerAttemptId: reservation.ownerAttemptId,
+        ownerBootEpoch: "boot-adopt",
+        now: 250,
+      }),
+    ).toEqual({ won: true, lifecycleGeneration: session.lifecycleGeneration });
+    expect(getDb().prepare("SELECT id FROM provider_state_cleanup_tasks WHERE id = ?").get(reservation.reservationId)).toBeNull();
+    expect(getDb().prepare("SELECT runtime_session_json FROM sessions WHERE session_key = ?").get(session.sessionKey)).toEqual({
+      runtime_session_json: JSON.stringify(next),
+    });
+    expect(
+      getDb()
+        .prepare("SELECT operation, locator_json, successor_locator_json FROM provider_state_cleanup_tasks")
+        .get(),
+    ).toEqual({
+      operation: "retire_revision",
+      locator_json: JSON.stringify(previous),
+      successor_locator_json: JSON.stringify(next),
+    });
+  });
+
+  it("leaves a published reservation claimable and the session untouched when adoption loses", () => {
+    const session = getOrCreateSession("session-adopt-loss", "agent-a", "/workspace/project");
+    establishAttempt(session.sessionKey, "attempt-adopt-loss", "boot-adopt-loss");
+    const next = locator("00000000-0000-4000-8000-000000000098", "/private/adopt-loss/revision-1.json");
+    const lifecycle = createProviderStateLifecycle({
+      provider: "test-provider",
+      sessionKey: session.sessionKey,
+      admittedEpoch: session.lifecycleGeneration!,
+      currentAttempt: () => ({ attemptId: "attempt-adopt-loss", bootEpoch: "boot-adopt-loss" }),
+      now: () => 200,
+    });
+    const reservation = lifecycle.reservePreparedState();
+    lifecycle.publishPreparedState({ reservationId: reservation.reservationId, locator: next, publish: () => {} });
+    getDb().prepare("UPDATE sessions SET lifecycle_generation = lifecycle_generation + 1 WHERE session_key = ?").run(session.sessionKey);
+
+    expect(
+      adoptPublishedProviderState({
+        session,
+        provider: "test-provider",
+        providerSessionId: next.sessionId,
+        nextSession: { displayId: next.sessionId, params: next },
+        reservationId: reservation.reservationId,
+        ownerAttemptId: reservation.ownerAttemptId,
+        ownerBootEpoch: "boot-adopt-loss",
+        now: 250,
+      }).won,
+    ).toBe(false);
+    expect(getDb().prepare("SELECT status FROM provider_state_cleanup_tasks WHERE id = ?").get(reservation.reservationId)).toEqual({ status: "published" });
+  });
+
+  it("loses adoption without consuming a provisional task already leased by cleanup", () => {
+    const session = getOrCreateSession("session-adopt-leased", "agent-a", "/workspace/project");
+    establishAttempt(session.sessionKey, "attempt-adopt-leased", "boot-adopt-leased");
+    const next = locator(
+      "00000000-0000-4000-8000-000000000097",
+      "/private/adopt-leased/revision-1.json",
+    );
+    const lifecycle = createProviderStateLifecycle({
+      provider: "test-provider",
+      sessionKey: session.sessionKey,
+      admittedEpoch: session.lifecycleGeneration!,
+      currentAttempt: () => ({ attemptId: "attempt-adopt-leased", bootEpoch: "boot-adopt-leased" }),
+      now: () => 200,
+    });
+    const reservation = lifecycle.reservePreparedState();
+    lifecycle.publishPreparedState({ reservationId: reservation.reservationId, locator: next, publish: () => {} });
+    const claims = claimProviderStateCleanupTasks({ now: 1_000, limit: 1, leaseDurationMs: 100 });
+    expect(claims).toEqual([expect.objectContaining({ id: reservation.reservationId, status: "leased" })]);
+
+    expect(
+      adoptPublishedProviderState({
+        session,
+        provider: "test-provider",
+        providerSessionId: next.sessionId,
+        nextSession: { displayId: next.sessionId, params: next },
+        reservationId: reservation.reservationId,
+        ownerAttemptId: reservation.ownerAttemptId,
+        ownerBootEpoch: "boot-adopt-leased",
+        now: 1_001,
+      }).won,
+    ).toBe(false);
+    expect(getDb().prepare("SELECT status FROM provider_state_cleanup_tasks WHERE id = ?").get(reservation.reservationId)).toEqual({ status: "leased" });
+  });
+
   it("keeps two session scopes isolated without process-global owner state", () => {
     const first = getOrCreateSession("session-a", "agent-a", "/workspace/project");
     const second = getOrCreateSession("session-b", "agent-a", "/workspace/project");
@@ -88,13 +206,15 @@ describe("request-scoped provider state lifecycle", () => {
       now: () => 201,
     });
 
+    const reservationA = lifecycleA.reservePreparedState();
+    const reservationB = lifecycleB.reservePreparedState();
     lifecycleA.publishPreparedState({
-      reservationId: "reservation-a",
+      reservationId: reservationA.reservationId,
       locator: locator("00000000-0000-4000-8000-00000000000a", "/private/a/revision-1.json"),
       publish: () => undefined,
     });
     lifecycleB.publishPreparedState({
-      reservationId: "reservation-b",
+      reservationId: reservationB.reservationId,
       locator: locator("00000000-0000-4000-8000-00000000000b", "/private/b/revision-1.json"),
       publish: () => undefined,
     });
@@ -104,10 +224,12 @@ describe("request-scoped provider state lifecycle", () => {
         "SELECT id, owner_session_key, owner_attempt_id FROM provider_state_cleanup_tasks ORDER BY id",
       )
       .all();
-    expect(rows).toEqual([
-      { id: "reservation-a", owner_session_key: first.sessionKey, owner_attempt_id: "attempt-a" },
-      { id: "reservation-b", owner_session_key: second.sessionKey, owner_attempt_id: "attempt-b" },
-    ]);
+    expect(rows).toEqual(
+      expect.arrayContaining([
+        { id: reservationA.reservationId, owner_session_key: first.sessionKey, owner_attempt_id: "attempt-a" },
+        { id: reservationB.reservationId, owner_session_key: second.sessionKey, owner_attempt_id: "attempt-b" },
+      ]),
+    );
   });
 
   it("orders prepared, synchronous publication, and published inside one transaction", () => {
@@ -122,21 +244,22 @@ describe("request-scoped provider state lifecycle", () => {
     });
     const observed: string[] = [];
 
+    const reservation = lifecycle.reservePreparedState();
     const result = lifecycle.publishPreparedState({
-      reservationId: "reservation-order",
+      reservationId: reservation.reservationId,
       locator: locator("00000000-0000-4000-8000-00000000000c", "/private/c/revision-1.json"),
       publish: () => {
         const row = getDb()
           .prepare("SELECT status FROM provider_state_cleanup_tasks WHERE id = ?")
-          .get("reservation-order") as { status: string };
+          .get(reservation.reservationId) as { status: string };
         observed.push(row.status);
       },
     });
 
     expect(observed).toEqual(["prepared"]);
-    expect(result.reservationId).toBe("reservation-order");
+    expect(result.reservationId).toBe(reservation.reservationId);
     expect(
-      getDb().prepare("SELECT status FROM provider_state_cleanup_tasks WHERE id = ?").get("reservation-order"),
+      getDb().prepare("SELECT status FROM provider_state_cleanup_tasks WHERE id = ?").get(reservation.reservationId),
     ).toEqual({ status: "published" });
   });
 
@@ -151,18 +274,20 @@ describe("request-scoped provider state lifecycle", () => {
       now: () => 200,
     });
 
+    const throwingReservation = lifecycle.reservePreparedState();
     expect(() =>
       lifecycle.publishPreparedState({
-        reservationId: "reservation-throw",
+        reservationId: throwingReservation.reservationId,
         locator: locator("00000000-0000-4000-8000-00000000000d", "/private/d/revision-1.json"),
         publish: () => {
           throw new Error("publication failed");
         },
       }),
     ).toThrow("publication failed");
+    const promiseReservation = lifecycle.reservePreparedState();
     expect(() =>
       lifecycle.publishPreparedState({
-        reservationId: "reservation-promise",
+        reservationId: promiseReservation.reservationId,
         locator: locator("00000000-0000-4000-8000-00000000000e", "/private/e/revision-1.json"),
         publish: (() => Promise.resolve()) as unknown as () => void,
       }),
@@ -186,10 +311,11 @@ describe("request-scoped provider state lifecycle", () => {
       .prepare("UPDATE sessions SET lifecycle_generation = lifecycle_generation + 1 WHERE session_key = ?")
       .run(session.sessionKey);
     let published = false;
+    const reservation = lifecycle.reservePreparedState();
 
     expect(() =>
       lifecycle.publishPreparedState({
-        reservationId: "reservation-stale",
+        reservationId: reservation.reservationId,
         locator: locator("00000000-0000-4000-8000-00000000000f", "/private/f/revision-1.json"),
         publish: () => {
           published = true;
@@ -210,10 +336,11 @@ describe("request-scoped provider state lifecycle", () => {
       now: () => 1_000,
     });
     let published = false;
+    const reservation = lifecycle.reservePreparedState();
 
     expect(() =>
       lifecycle.publishPreparedState({
-        reservationId: "reservation-expired",
+        reservationId: reservation.reservationId,
         locator: locator("00000000-0000-4000-8000-000000000020", "/private/expired/revision-1.json"),
         publish: () => {
           published = true;
@@ -237,10 +364,11 @@ describe("request-scoped provider state lifecycle", () => {
       publishDeadlineMs: 10,
     });
     let published = false;
+    const reservation = lifecycle.reservePreparedState();
 
     expect(() =>
       lifecycle.publishPreparedState({
-        reservationId: "reservation-deadline",
+        reservationId: reservation.reservationId,
         locator: locator("00000000-0000-4000-8000-000000000021", "/private/deadline/revision-1.json"),
         publish: () => {
           published = true;
@@ -262,10 +390,11 @@ describe("request-scoped provider state lifecycle", () => {
       now: () => 200,
     });
     let published = false;
+    const reservation = lifecycle.reservePreparedState();
 
     expect(() =>
       lifecycle.publishPreparedState({
-        reservationId: "reservation-provider-scope",
+        reservationId: reservation.reservationId,
         locator: {
           ...locator("00000000-0000-4000-8000-000000000022", "/private/provider/revision-1.json"),
           provider: "foreign-provider",

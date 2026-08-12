@@ -1,9 +1,9 @@
 import { isKimiCodeSessionStartEnabled } from "./kimi-code-availability.js";
 import { KIMI_CODE_PROVIDER_ID, type KimiCodeModel } from "./kimi-code-models.js";
 import {
-  commitKimiCodeSessionState,
   createKimiCodeSessionId,
   loadKimiCodeSessionState,
+  prepareKimiCodeSessionState,
   type KimiCodeSessionSnapshot,
 } from "./kimi-code-state.js";
 import {
@@ -35,6 +35,7 @@ import type {
   RuntimePrepareSessionRequest,
   RuntimePrepareSessionResult,
   RuntimeSessionHandle,
+  RuntimeSessionState,
   RuntimeStartRequest,
   SessionRuntimeProvider,
 } from "./types.js";
@@ -347,18 +348,38 @@ function createKimiCodeSession(
                 if (terminal) yield terminal;
                 break;
               }
-              let committed: Awaited<ReturnType<typeof commitKimiCodeSessionState>>;
+              let committed: {
+                snapshot: KimiCodeSessionSnapshot;
+                session: RuntimeSessionState;
+              };
               turn.phase = "committing";
               try {
-                committed = await commitKimiCodeSessionState({
+                const lifecycle = input.providerStateLifecycle;
+                if (!lifecycle) throw new Error("Kimi Code provider state lifecycle is unavailable");
+                const reservation = lifecycle.reservePreparedState();
+                const prepared = await prepareKimiCodeSessionState({
                   sessionId: providerSessionId,
                   model: input.model,
                   cwd: input.cwd,
                   lastCommittedTurnId: prompt.clientMessageId ?? prompt.session_id,
                   messages,
                   previousSnapshot: committedSnapshot,
+                  taskId: reservation.reservationId,
+                  ownerAttemptId: reservation.ownerAttemptId,
                   env: stateEnv,
                 });
+                lifecycle.publishPreparedState({
+                  reservationId: reservation.reservationId,
+                  locator: prepared.session.params,
+                  publish: prepared.publish,
+                });
+                committed = {
+                  snapshot: prepared.snapshot,
+                  session: {
+                    ...prepared.session,
+                    providerStateReservationId: reservation.reservationId,
+                  },
+                };
               } catch {
                 const interrupted = turn.interrupted || closed || input.abortController.signal.aborted;
                 turn.phase = interrupted ? "interrupted" : "failed";

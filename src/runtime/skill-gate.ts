@@ -164,13 +164,21 @@ export function evaluateSkillGate(input: EvaluateSkillGateInput): SkillGateDecis
     toolName: input.toolName,
   });
   const reason = buildSoftGateMessage(input.toolName, input.gate.skill, skill);
-  persistSkillGateVisibility(
+  const persisted = persistSkillGateVisibility(
     session,
     nextSkillVisibility,
     input.toolName,
     input.gate,
     `RAVI_SKILL_REQUIRED: ${input.toolName} requires skill ${input.gate.skill}; skill delivered and marked as loaded.`,
   );
+  if (!persisted) {
+    return {
+      allowed: false,
+      code: "RAVI_SKILL_GATE_CONFIG_ERROR",
+      skill: input.gate.skill,
+      reason: `RAVI_SKILL_GATE_CONFIG_ERROR: ${input.toolName} requires skill ${input.gate.skill}, but session ownership changed before the skill state was persisted.`,
+    };
+  }
 
   return {
     allowed: false,
@@ -211,13 +219,13 @@ function resolveSkillForGate(skillName: string): RaviSkill | null {
   return findInstalledSkill(skillName) ?? findSkillByName(listCatalogSkills(), skillName);
 }
 
-function persistSkillGateVisibility(
+export function persistSkillGateVisibility(
   session: SessionEntry,
   skillVisibility: RuntimeSkillVisibilitySnapshot,
   toolName: string,
   gate: SkillGateMetadata,
   reason: string,
-): void {
+): boolean {
   const runtimeSessionParams: Record<string, unknown> = {
     ...(session.runtimeSessionParams ?? {}),
     skillVisibility,
@@ -228,16 +236,20 @@ function persistSkillGateVisibility(
     session.sdkSessionId ??
     (typeof runtimeSessionParams.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
 
+  let won: boolean;
   if (persistedSessionId) {
     const mutation = updateProviderSession(session, session.runtimeProvider, persistedSessionId, {
       runtimeSessionParams,
       runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
     });
-    if (mutation.won) session.runtimeSessionParams = runtimeSessionParams;
+    won = mutation.won;
   } else {
     const mutation = updateRuntimeProviderState(session, session.runtimeProvider, { runtimeSessionParams });
-    if (mutation.won) session.runtimeSessionParams = runtimeSessionParams;
+    won = mutation.won;
   }
+
+  if (!won) return false;
+  session.runtimeSessionParams = runtimeSessionParams;
 
   emitSkillGateEvent(session, {
     type: "skill.gate.loaded",
@@ -247,6 +259,7 @@ function persistSkillGateVisibility(
     reason,
     skillVisibility,
   });
+  return true;
 }
 
 function emitSkillGateEvent(

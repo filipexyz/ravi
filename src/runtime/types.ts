@@ -378,12 +378,15 @@ export interface RuntimeProviderStatePublishInput {
 }
 
 export interface RuntimeProviderStateLifecycle {
+  reservePreparedState(): { reservationId: string; ownerAttemptId: string };
   publishPreparedState(input: RuntimeProviderStatePublishInput): { reservationId: string };
 }
 
 export interface RuntimeSessionState {
   params?: Record<string, unknown> | null;
   displayId?: string | null;
+  /** Opaque host-only binding; never persisted in params or provider snapshots. */
+  providerStateReservationId?: string;
 }
 
 export interface RuntimeExecutionMetadata {
