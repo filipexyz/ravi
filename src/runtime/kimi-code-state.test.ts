@@ -466,7 +466,7 @@ describe("Kimi Code prepared state publication", () => {
       expect(executables).toHaveLength(2);
       for (const executable of executables) {
         expect(executable).toBe(
-          join(process.env.SystemRoot!, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+          realpathSync(join(process.env.SystemRoot!, "System32", "WindowsPowerShell", "v1.0", "powershell.exe")),
         );
       }
     },

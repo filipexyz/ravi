@@ -1306,7 +1306,9 @@ export async function executeKimiCodeDeleteStateCleanup(
       }
       if (reachedEnd) {
         scanner.exhausted = true;
-        await closeKimiCodeDeleteScanner(input.taskId, scanner);
+        if (scanner.directory) await closeDirectoryHandle(scanner.directory, "session");
+        scanner.directory = undefined;
+        if (processed === 0) kimiCodeDeleteScanners.delete(input.taskId);
       }
       return { complete: reachedEnd && processed === 0, processed };
     } catch (error) {
