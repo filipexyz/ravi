@@ -235,7 +235,7 @@ export class HeartbeatRunner {
             requestedAgent: agentId,
             currentAgent: redirect.session?.agentId,
           });
-          return;
+          return false;
         }
         mainSession = redirect.session;
       }

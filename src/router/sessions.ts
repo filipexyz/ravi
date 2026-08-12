@@ -378,9 +378,10 @@ export function redirectSessionIfUnchanged(
 ): SessionRedirectResult {
   if (session.agentId === agentId && session.agentCwd === agentCwd) {
     const current = getSession(session.sessionKey);
-    return current?.lifecycleGeneration === session.lifecycleGeneration
-      ? { won: true, session: current }
-      : { won: false, session: current };
+    if (!current || current.lifecycleGeneration !== session.lifecycleGeneration) {
+      return { won: false, session: current };
+    }
+    return { won: true, session: current };
   }
   const generation = session.lifecycleGeneration;
   if (typeof generation !== "number" || !Number.isSafeInteger(generation)) {

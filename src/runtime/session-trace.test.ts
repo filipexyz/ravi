@@ -3397,7 +3397,9 @@ describe("runtime session trace instrumentation", () => {
 
     await runTraceLoop(streaming, runtimeSession, {
       stashedMessages,
-      restartStashedSession: async (input) => restartRequests.push(input),
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
     });
 
     expect(restartRequests).toEqual([]);
@@ -3433,7 +3435,9 @@ describe("runtime session trace instrumentation", () => {
     };
 
     await runTraceLoop(streaming, runtimeSession, {
-      safeEmit: async (topic, data) => emitted.push({ topic, data: data as Record<string, unknown> }),
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data: data as Record<string, unknown> });
+      },
     });
 
     expect(getSession(SESSION_KEY)?.providerSessionId).toBe("prompt-too-long-current-owner");
