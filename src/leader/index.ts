@@ -127,15 +127,16 @@ export interface LeadershipVacancyWatcher {
 
 export interface LeadershipVacancyWatchOptions {
   signal?: AbortSignal;
+  pollIntervalMs?: number;
 }
 
-function waitForLeadershipPoll(signal: AbortSignal): Promise<boolean> {
+function waitForLeadershipPoll(signal: AbortSignal, pollIntervalMs: number): Promise<boolean> {
   if (signal.aborted) return Promise.resolve(false);
   return new Promise((resolve) => {
     const timer = setTimeout(() => {
       signal.removeEventListener("abort", abort);
       resolve(true);
-    }, RENEWAL_INTERVAL_MS);
+    }, pollIntervalMs);
     const abort = () => {
       clearTimeout(timer);
       resolve(false);
@@ -149,7 +150,8 @@ export function watchForLeadershipVacancy(
   onVacancy: () => Promise<void>,
   options: LeadershipVacancyWatchOptions = {},
 ): LeadershipVacancyWatcher {
-  log.info("Polling for leadership vacancy", { role, pollIntervalMs: RENEWAL_INTERVAL_MS });
+  const pollIntervalMs = options.pollIntervalMs ?? RENEWAL_INTERVAL_MS;
+  log.info("Polling for leadership vacancy", { role, pollIntervalMs });
 
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -157,32 +159,48 @@ export function watchForLeadershipVacancy(
   if (options.signal?.aborted) controller.abort();
   const done = (async () => {
     while (!controller.signal.aborted) {
-      if (!(await waitForLeadershipPoll(controller.signal))) return;
+      if (!(await waitForLeadershipPoll(controller.signal, pollIntervalMs))) return;
 
+      let leadershipVacant = false;
       try {
         const store = await ensureLeaderBucket();
         if (controller.signal.aborted) return;
         const entry = await store.get(role).catch(() => null);
         if (controller.signal.aborted) return;
-
-        if (!entry) {
-          // Key is gone — leader's TTL expired (or leader cleanly released it)
-          log.info("Leadership vacancy detected (key missing), attempting takeover", { role });
-          const won = await tryAcquireLeadership(role);
-          if (controller.signal.aborted) {
-            if (won) await releaseLeadership(role);
-            return;
-          }
-          if (won) {
-            startLeadershipRenewal(role);
-            await onVacancy();
-            return; // Done polling — we're now leader
-          }
-          // Lost the race — another daemon won; continue polling in case it also dies
-        }
+        leadershipVacant = !entry;
       } catch (err) {
         if (!controller.signal.aborted) log.warn("Leadership poll error, will retry", { role, error: err });
+        continue;
       }
+
+      if (!leadershipVacant) continue;
+
+      // Key is gone — leader's TTL expired (or leader cleanly released it)
+      log.info("Leadership vacancy detected (key missing), attempting takeover", { role });
+      let won: boolean;
+      try {
+        won = await tryAcquireLeadership(role);
+      } catch (err) {
+        if (!controller.signal.aborted) log.warn("Leadership takeover error, will retry", { role, error: err });
+        continue;
+      }
+      if (controller.signal.aborted) {
+        if (won) await releaseLeadership(role);
+        return;
+      }
+      if (!won) continue;
+
+      startLeadershipRenewal(role);
+      try {
+        await onVacancy();
+      } catch (err) {
+        await releaseLeadership(role);
+        throw err;
+      }
+      if (controller.signal.aborted) {
+        await releaseLeadership(role);
+      }
+      return; // Done polling — takeover either completed or was compensated.
     }
   })().finally(() => options.signal?.removeEventListener("abort", abort));
   return {

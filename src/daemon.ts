@@ -202,6 +202,19 @@ export function getBotInstance(): RaviBot | null {
   return bot;
 }
 
+async function stopRunnerLeadershipWatcher(): Promise<void> {
+  const watcher = runnerLeadershipWatcher;
+  runnerLeadershipWatcher = null;
+  if (!watcher) return;
+
+  watcher.cancel();
+  try {
+    await watcher.done;
+  } catch (error) {
+    log.error("Leadership watcher failed while stopping", { error });
+  }
+}
+
 async function rollbackDaemonStartup(cleanupRunner: ProviderStateCleanupRunner): Promise<void> {
   const stopSafely = async (label: string, stop: () => void | Promise<void>) => {
     try {
@@ -211,8 +224,7 @@ async function rollbackDaemonStartup(cleanupRunner: ProviderStateCleanupRunner):
     }
   };
 
-  runnerLeadershipWatcher?.cancel();
-  runnerLeadershipWatcher = null;
+  await stopSafely("runner leadership watcher", stopRunnerLeadershipWatcher);
   await stopSafely("webhook HTTP server", async () => webhookHttpServer?.stop());
   webhookHttpServer = null;
   await stopSafely("Work Object NATS service", async () => workObjectNatsService?.stop());
@@ -247,8 +259,6 @@ async function shutdown(signal: string) {
   shuttingDown = true;
   daemonLifetimeController?.abort();
   daemonLifetimeController = null;
-  runnerLeadershipWatcher?.cancel();
-  runnerLeadershipWatcher = null;
 
   log.info(`Received ${signal}, shutting down...`, { pid: process.pid });
 
@@ -259,6 +269,8 @@ async function shutdown(signal: string) {
   }, 15_000);
 
   try {
+    await stopRunnerLeadershipWatcher();
+
     const restartInfo = readRestartReasonInfo({ ensureEpoch: true });
     if (restartInfo) {
       dbUpsertDaemonRestartEpoch({
@@ -481,18 +493,44 @@ export async function startDaemon() {
     log.info("Task checkpoint runner started (leader)");
   } else {
     log.info("Not leader — heartbeat, cron, and task checkpoint runners skipped (another daemon is running them)");
-    runnerLeadershipWatcher = watchForLeadershipVacancy("runners", async () => {
-      log.info("Leadership vacancy detected — starting heartbeat, cron, and task checkpoint runners");
-      await runDaemonStartupPhase(startupSignal, startHeartbeatRunner);
-      await runDaemonStartupPhase(startupSignal, startCronRunner);
-      await runDaemonStartupPhase(startupSignal, startSessionFollowupRunner);
-      await runDaemonStartupPhase(startupSignal, () =>
-        startTaskCheckpointRunner({
-          canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
-        }),
-      );
-      log.info("Heartbeat, cron, session followup, and task checkpoint runners started (new leader)");
-    }, { signal: startupSignal });
+    runnerLeadershipWatcher = watchForLeadershipVacancy(
+      "runners",
+      async () => {
+        log.info("Leadership vacancy detected — starting heartbeat, cron, and task checkpoint runners");
+        const startedRunners: Array<{ label: string; stop: () => Promise<void> }> = [];
+        const startRunner = async (label: string, start: () => Promise<void>, stop: () => Promise<void>) => {
+          // Register before start so a post-start cancellation fence still stops this runner.
+          startedRunners.push({ label, stop });
+          await runDaemonStartupPhase(startupSignal, start);
+        };
+        try {
+          await startRunner("heartbeat runner", startHeartbeatRunner, stopHeartbeatRunner);
+          await startRunner("cron runner", startCronRunner, stopCronRunner);
+          await startRunner("session followup runner", startSessionFollowupRunner, stopSessionFollowupRunner);
+          await startRunner(
+            "task checkpoint runner",
+            () =>
+              startTaskCheckpointRunner({
+                canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
+              }),
+            stopTaskCheckpointRunner,
+          );
+          log.info("Heartbeat, cron, session followup, and task checkpoint runners started (new leader)");
+        } catch (error) {
+          for (const runner of startedRunners.reverse()) {
+            try {
+              await runner.stop();
+            } catch (stopError) {
+              log.error(`Failed to roll back ${runner.label} after leadership takeover failure`, {
+                error: stopError,
+              });
+            }
+          }
+          throw error;
+        }
+      },
+      { signal: startupSignal },
+    );
     void runnerLeadershipWatcher.done.catch((err) => log.error("Leadership watcher failed", err));
   }
 
