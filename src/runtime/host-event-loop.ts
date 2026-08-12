@@ -2004,10 +2004,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       await chunkEmitTail;
 
       if (event.type !== "turn.failed" && event.type !== "assistant.message" && event.type !== "turn.complete") {
-        await projectRuntimeEventToChannel(
-          event,
-          event.type === "turn.complete" && streaming.agentMode !== "sentinel" ? channelResponseText : undefined,
-        );
+        await projectRuntimeEventToChannel(event);
       }
 
       if (event.type !== "turn.failed" && event.type !== "assistant.message" && event.type !== "turn.complete") {

@@ -276,10 +276,15 @@ export function adoptPublishedProviderState(
   input: AdoptPublishedProviderStateInput,
 ): SessionProviderStateMutationResult {
   const database = input.database ?? getDb();
-  const lifecycleGeneration = input.session.lifecycleGeneration;
-  if (!Number.isSafeInteger(lifecycleGeneration) || Number(lifecycleGeneration) < 1) {
+  const observedLifecycleGeneration = input.session.lifecycleGeneration;
+  if (
+    typeof observedLifecycleGeneration !== "number" ||
+    !Number.isSafeInteger(observedLifecycleGeneration) ||
+    observedLifecycleGeneration < 1
+  ) {
     return { won: false, lifecycleGeneration: null };
   }
+  const lifecycleGeneration = observedLifecycleGeneration;
   const now = requireTimestamp(input.now ?? Date.now(), "now");
   const provider = requireText(input.provider, "provider");
   const providerSessionId = requireText(input.providerSessionId, "providerSessionId");

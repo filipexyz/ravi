@@ -105,7 +105,7 @@ describe("request-scoped provider state lifecycle", () => {
         ownerBootEpoch: "boot-adopt",
         now: 250,
       }),
-    ).toEqual({ won: true, lifecycleGeneration: session.lifecycleGeneration });
+    ).toEqual({ won: true, lifecycleGeneration: session.lifecycleGeneration! });
     expect(getDb().prepare("SELECT id FROM provider_state_cleanup_tasks WHERE id = ?").get(reservation.reservationId)).toBeNull();
     expect(getDb().prepare("SELECT runtime_session_json FROM sessions WHERE session_key = ?").get(session.sessionKey)).toEqual({
       runtime_session_json: JSON.stringify(next),
