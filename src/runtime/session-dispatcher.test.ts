@@ -529,6 +529,50 @@ describe("RuntimeSessionDispatcher native runtime steer", () => {
     expect(canUseNativeRuntimeSteer(createStreamingSession(), "after_response")).toBe(false);
   });
 
+  it("only native-steers input from the active turn's reply surface", () => {
+    const activeSource = {
+      channel: "slack",
+      accountId: "slack-a",
+      chatId: "C123",
+      canonicalChatId: "chat-slack",
+    };
+    const session = createStreamingSession({ currentSource: activeSource });
+
+    expect(
+      canUseNativeRuntimeSteer(session, "after_tool", {
+        prompt: "same chat",
+        source: { ...activeSource },
+      }),
+    ).toBe(true);
+    expect(
+      canUseNativeRuntimeSteer(session, "after_tool", {
+        prompt: "another chat",
+        source: {
+          channel: "whatsapp",
+          accountId: "wa-a",
+          chatId: "wa-test@s.whatsapp.net",
+          canonicalChatId: "chat-whatsapp",
+        },
+      }),
+    ).toBe(false);
+  });
+
+  it("never native-steers a durable channel turn envelope", () => {
+    const source = {
+      channel: "slack",
+      accountId: "slack-a",
+      chatId: "C123",
+      canonicalChatId: "chat-slack",
+    };
+    expect(
+      canUseNativeRuntimeSteer(createStreamingSession({ currentSource: source }), "after_tool", {
+        prompt: "new durable turn",
+        source,
+        _channelBackend: channelBackendMetadata("turn-next"),
+      }),
+    ).toBe(false);
+  });
+
   it("keeps active Pi input queued when no durable attempt owns the turn", () => {
     expect(
       canUseNativeRuntimeSteer(createStreamingSession({ currentCrashRecoveryAttemptId: undefined }), "after_tool"),
@@ -1485,23 +1529,23 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     }
   });
 
-  it("does not replace the active turn source before an after_tool interrupt starts the next turn", async () => {
+  it("queues another surface without replacing or interrupting the active turn", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-interrupt-source-");
     try {
       getOrCreateSession("agent:main:test:interrupt-source", "main", stateDir, { name: "interrupt-source" });
       const activeSource: NonNullable<RuntimeHostStreamingSession["currentSource"]> = {
         channel: "whatsapp",
         accountId: "main",
-        chatId: "5511947879044",
+        chatId: "wa-active",
         canonicalChatId: "chat_dm",
         sourceMessageId: "wamid-active",
       };
       const slackSource: NonNullable<RuntimeHostStreamingSession["currentSource"]> = {
         channel: "slack",
-        accountId: "ravi-rbbt-slack",
-        chatId: "C0BFAB90FUG",
+        accountId: "slack-main",
+        chatId: "C123",
         canonicalChatId: "chat_slack",
-        sourceMessageId: "1783105248.141999",
+        sourceMessageId: "123.456",
       };
       const interrupt = mock(async () => {});
       const activeMessage = createQueuedRuntimeUserMessage({
@@ -1526,7 +1570,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       dispatcher.streamingSessions.set("interrupt-source", activeSession);
 
       await dispatcher.handlePromptImmediate("interrupt-source", {
-        prompt: "[Slack C0BFAB90FUG mid:1783105248.141999] <@U0BAA2B1LTS>: oi",
+        prompt: "[Slack C123 mid:123.456] <@U123>: hello",
         _agentId: "main",
         deliveryBarrier: "after_tool",
         deliveryBarrierSource: "default",
@@ -1534,14 +1578,14 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
         context: {
           channelId: "slack",
           channelName: "Slack",
-          accountId: "ravi-rbbt-slack",
-          chatId: "C0BFAB90FUG",
+          accountId: "slack-main",
+          chatId: "C123",
           canonicalChatId: "chat_slack",
-          messageId: "1783105248.141999",
-          senderId: "U0BAA2B1LTS",
-          senderName: "<@U0BAA2B1LTS>",
+          messageId: "123.456",
+          senderId: "U123",
+          senderName: "<@U123>",
           isGroup: true,
-          groupName: "C0BFAB90FUG",
+          groupName: "C123",
           timestamp: Date.now(),
         },
       });
@@ -1550,9 +1594,14 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(activeSession.pendingMessages).toHaveLength(2);
       expect(activeSession.pendingMessages[1]?.deliveryBarrier).toBe("after_tool");
       expect(activeSession.pendingMessages[1]?.launchPrompt?.source).toEqual(slackSource);
-      expect(activeSession.currentTurnSuperseded).toBe(true);
-      expect(activeSession.interrupted).toBe(true);
-      expect(interrupt).toHaveBeenCalledTimes(1);
+      expect(activeSession.pendingMessages[1]?.message.content).toBe(
+        "[session surface] This turn came from a Slack chat. A normal reply returns there.\n" +
+          "[Slack C123 mid:123.456] <@U123>: hello",
+      );
+      expect(activeSession.pendingMessages[1]?.launchPrompt?._sessionSurfaceHint).toBe(true);
+      expect(activeSession.currentTurnSuperseded).not.toBe(true);
+      expect(activeSession.interrupted).not.toBe(true);
+      expect(interrupt).not.toHaveBeenCalled();
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

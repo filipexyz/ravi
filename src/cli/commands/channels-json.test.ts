@@ -564,7 +564,7 @@ describe("channel command --json output", () => {
         expect.objectContaining({ agentId: "launch-agent", role: "agent" }),
       ]),
     );
-    expect(sessionAttachments[0]).toMatchObject({ role: "primary", setOutputTarget: true, speechMode: "speak" });
+    expect(sessionAttachments[0]).toMatchObject({ role: "primary", setOutputTarget: true });
     expect(payload.agent).toMatchObject({ status: "created", agentId: "launch-agent" });
     expect(payload.adminPromotion).toMatchObject({
       status: "promoted",

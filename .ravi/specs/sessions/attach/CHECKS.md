@@ -4,14 +4,13 @@
 
 - `ravi sessions attach <session> --chat <chat>` MUST select that chat as the
   session output target.
-- Inbound from a speak-enabled source subscription MUST emit to that source
-  chat.
-- Inbound from a muted subscribed chat MUST emit to the default speak attachment
-  when one exists.
-- Muting the current output attachment MUST clear the output marker.
+- Inbound from an attached source MUST emit to that source chat or thread.
+- A source-less turn MUST emit to the default attachment when one exists.
+- An unattached inbound source MUST fail closed instead of using the default.
 - Detaching the output chat MUST clear output for that session.
-- With no speak-enabled source and no speak-enabled output attachment, runtime
-  MUST NOT emit externally.
-- `ravi sessions focus` and related focus surfaces MUST NOT exist.
+- Attach/detach during a running turn MUST NOT redirect that turn's captured
+  reply target.
+- Different source chats and threads MUST run as separate serialized turns.
+- `ravi sessions mute`, `unmute`, `focus`, and related state MUST NOT exist.
 - `bun test src/router/session-attach.test.ts src/runtime/session-output-target.test.ts src/cli/commands/sessions.test.ts src/omni/consumer-context.test.ts`
   SHOULD pass after changing attach behavior.

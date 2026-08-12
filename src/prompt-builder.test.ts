@@ -79,7 +79,9 @@ describe("buildSystemPrompt", () => {
     const prompt = renderPromptSections(sections);
     expect(prompt.startsWith("## Identidade\n\nVocê é Ravi.")).toBe(true);
     expect(prompt).toContain("## Extra Context\n\nInjected context text.");
-    expect(prompt).toContain("ravi sessions unmute");
+    expect(prompt).toContain("A normal reply returns to the chat or thread that supplied the current turn.");
+    expect(prompt).not.toContain("ravi sessions unmute");
+    expect(prompt).not.toContain("speech=muted");
     expect(prompt).toContain("ravi sessions actions --json");
     expect(prompt).toContain("ravi sessions delete-message <message-id> --execute");
     expect(prompt).toContain('ravi sessions edit-message <message-id> "novo texto" --execute');

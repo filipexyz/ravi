@@ -21,8 +21,9 @@
  *   ravi.config.changed        -> reload router config
  */
 
+import { unlink } from "node:fs/promises";
 import { nats } from "./nats.js";
-import type { ResponseMessage } from "./runtime/message-types.js";
+import type { ResponseContentPart, ResponseMediaAttachment, ResponseMessage } from "./runtime/message-types.js";
 import { configStore } from "./config-store.js";
 import { recordDeliveryTrace, recordPresenceTrace, recordResponseEmittedTrace } from "./session-trace/channel-trace.js";
 import { listRecentSessionEventsByType } from "./session-trace/session-trace-db.js";
@@ -49,6 +50,7 @@ import { resolveOmniConnection } from "./omni-config.js";
 import { resolveOmniGroupMetadata } from "./omni/group-metadata-cache.js";
 import { buildRaviTtsRequest, handleRaviTtsRequest, RAVI_TTS_TOPIC, shouldAutoTtsForAgent } from "./audio/tts.js";
 import { handleSlackThreadCreationDelivery, reconcileSlackThreadLifecycle } from "./channels/slack/thread-lifecycle.js";
+import { sendSlackMedia } from "./channels/slack/media.js";
 
 const log = logger.child("gateway");
 const PRESENCE_RENEW_THROTTLE_MS = 4_000;
@@ -88,6 +90,67 @@ function mergeMentions(...lists: Array<readonly OmniUserMention[] | undefined>):
   }
   const mentions = Array.from(byId.values());
   return mentions.length ? mentions : undefined;
+}
+
+function isResponseMediaType(value: unknown): value is ResponseMediaAttachment["type"] {
+  return value === "image" || value === "video" || value === "audio" || value === "document";
+}
+
+function normalizeResponseMediaAttachment(value: unknown): ResponseMediaAttachment | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (
+    !isResponseMediaType(record.type) ||
+    typeof record.filePath !== "string" ||
+    !record.filePath.trim() ||
+    typeof record.filename !== "string" ||
+    !record.filename.trim()
+  ) {
+    return null;
+  }
+
+  return {
+    type: record.type,
+    filePath: record.filePath,
+    filename: record.filename,
+    ...(typeof record.mimeType === "string" ? { mimeType: record.mimeType } : {}),
+    ...(typeof record.caption === "string" ? { caption: record.caption } : {}),
+    ...(record.voiceNote === true ? { voiceNote: true } : {}),
+    ...(typeof record.idempotencyKey === "string" ? { idempotencyKey: record.idempotencyKey } : {}),
+    ...(typeof record.source === "string" ? { source: record.source } : {}),
+    ...(record.metadata && typeof record.metadata === "object" && !Array.isArray(record.metadata)
+      ? { metadata: record.metadata as Record<string, unknown> }
+      : {}),
+  };
+}
+
+function normalizeResponseContentParts(
+  response: ResponseMessage,
+  fallbackText: string | undefined,
+): ResponseContentPart[] {
+  const explicitParts = Array.isArray(response.content)
+    ? response.content.flatMap((part): ResponseContentPart[] => {
+        if (!part || typeof part !== "object" || Array.isArray(part)) return [];
+        const record = part as Record<string, unknown>;
+        if (record.type === "text" && typeof record.text === "string") {
+          return [{ type: "text", text: record.text }];
+        }
+        if (record.type === "media") {
+          const media = normalizeResponseMediaAttachment(record.media);
+          return media ? [{ type: "media", media }] : [];
+        }
+        return [];
+      })
+    : [];
+
+  const text = fallbackText?.trim() ? fallbackText : undefined;
+  if (explicitParts.length === 0) {
+    return text ? [{ type: "text", text }] : [];
+  }
+  if (text && !explicitParts.some((part) => part.type === "text")) {
+    return [...explicitParts, { type: "text", text }];
+  }
+  return explicitParts;
 }
 
 function parsePresenceTarget(value: unknown): PresenceTarget | null {
@@ -897,24 +960,36 @@ export class Gateway {
   private async handleResponseEvent(sessionName: string, response: ResponseMessage): Promise<void> {
     this.recordResponseTrace(sessionName, response);
 
-    const emitDelivery = (data: Record<string, unknown>) => this.emitDeliveryEvent(sessionName, response, data);
-
     const target = response.target;
+    const emitDelivery = (data: Record<string, unknown>, deliveryResponse: ResponseMessage = response) =>
+      this.emitDeliveryEvent(sessionName, deliveryResponse, data);
     if (!target) {
       await emitDelivery({ status: "dropped", reason: "missing_target" });
       return;
     }
 
-    const text = response.error ? `Error: ${response.error}` : response.response;
+    const fallbackText = response.error ? `Error: ${response.error}` : response.response;
+    const parts = normalizeResponseContentParts(response, fallbackText);
+    const hasMedia = parts.some((part) => part.type === "media");
+    const textLen = parts
+      .filter((part): part is Extract<ResponseContentPart, { type: "text" }> => part.type === "text")
+      .reduce((total, part) => total + part.text.length, 0);
 
-    if (text && text.trim() === SILENT_TOKEN) {
+    if (
+      !hasMedia &&
+      parts.length > 0 &&
+      parts.every((part) => part.type === "text" && (!part.text.trim() || part.text.trim() === SILENT_TOKEN))
+    ) {
       log.debug("Silent response, not sending to channel", { sessionName });
       await this.stopPresenceForSession(sessionName, target);
       await emitDelivery({ status: "dropped", reason: "silent", target });
       return;
     }
 
-    if (!text) {
+    const deliverableParts = parts.filter(
+      (part) => part.type === "media" || (part.text.trim() && part.text.trim() !== SILENT_TOKEN),
+    );
+    if (deliverableParts.length === 0) {
       await emitDelivery({ status: "dropped", reason: "empty_response", target });
       return;
     }
@@ -922,14 +997,67 @@ export class Gateway {
     if (!response._emitId) {
       log.warn("GHOST RESPONSE DROPPED", {
         sessionName,
-        textPreview: text.slice(0, 200),
+        textPreview: String(fallbackText ?? "").slice(0, 200),
       });
-      await emitDelivery({ status: "dropped", reason: "missing_emit_id", target, textLen: text.length });
+      await emitDelivery({ status: "dropped", reason: "missing_emit_id", target, textLen });
       return;
     }
 
+    for (let index = 0; index < deliverableParts.length; index++) {
+      const part = deliverableParts[index]!;
+      if (part.type === "media") {
+        await this.deliverResponseMediaPart(sessionName, response, target, part.media, index);
+      } else {
+        await this.deliverResponseTextPart(sessionName, response, target, part.text, index, deliverableParts.length);
+      }
+    }
+  }
+
+  private buildTextPartResponse(
+    response: ResponseMessage,
+    text: string,
+    partIndex: number,
+    totalParts: number,
+  ): ResponseMessage {
+    if (!response.content && totalParts === 1) {
+      return response;
+    }
+    if (totalParts === 1) {
+      return {
+        ...response,
+        response: text,
+        error: undefined,
+        content: undefined,
+      };
+    }
+    return {
+      ...response,
+      response: text,
+      error: undefined,
+      content: undefined,
+      _emitId: `${response._emitId}:text:${partIndex}`,
+    };
+  }
+
+  private async deliverResponseTextPart(
+    sessionName: string,
+    response: ResponseMessage,
+    target: NonNullable<ResponseMessage["target"]>,
+    text: string,
+    partIndex: number,
+    totalParts: number,
+  ): Promise<void> {
+    const partResponse = this.buildTextPartResponse(response, text, partIndex, totalParts);
+    const emitDelivery = (data: Record<string, unknown>) =>
+      this.emitDeliveryEvent(sessionName, partResponse, {
+        ...data,
+        contentType: "text",
+        partIndex,
+        partCount: totalParts,
+      });
+
     if (this.shouldQueueNativeOutbound(target)) {
-      const built = buildChannelOutboundJobFromResponse(sessionName, response);
+      const built = buildChannelOutboundJobFromResponse(sessionName, partResponse);
       if (!built.ok) {
         await emitDelivery({ status: "dropped", reason: built.reason, target, textLen: text.length });
         return;
@@ -1011,7 +1139,6 @@ export class Gateway {
       this.schedulePostDeliveryPresenceRenewal(sessionName, target);
       await emitDelivery({
         status: "delivered",
-        emitId: response._emitId,
         messageId: delivered.messageId,
         target,
         deliveredAt: Date.now(),
@@ -1035,6 +1162,143 @@ export class Gateway {
         durationMs: Date.now() - t0,
       });
     }
+  }
+
+  private async deliverResponseMediaPart(
+    sessionName: string,
+    response: ResponseMessage,
+    target: NonNullable<ResponseMessage["target"]>,
+    media: ResponseMediaAttachment,
+    partIndex: number,
+  ): Promise<void> {
+    const emitDelivery = (data: Record<string, unknown>) =>
+      this.emitDeliveryEvent(sessionName, response, {
+        ...data,
+        contentType: "media",
+        mediaType: media.type,
+        filename: media.filename,
+        mimeType: media.mimeType,
+        idempotencyKey: media.idempotencyKey,
+        partIndex,
+      });
+    const channel = target.channel.toLowerCase();
+    const t0 = Date.now();
+
+    if (this.wasResponseMediaDelivered(sessionName, media.idempotencyKey, target)) {
+      log.info("Skipping already delivered response media", {
+        sessionName,
+        channel,
+        filename: media.filename,
+        idempotencyKey: media.idempotencyKey,
+      });
+      await emitDelivery({
+        status: "dropped",
+        reason: "duplicate_media",
+        target,
+        durationMs: Date.now() - t0,
+      });
+      return;
+    }
+
+    try {
+      if (channel === "slack") {
+        const delivered = await sendSlackMedia({
+          accountId: target.accountId,
+          chatId: target.chatId,
+          threadId: target.threadId,
+          filePath: media.filePath,
+          filename: media.filename,
+          caption: media.caption,
+        });
+        this.recordOutboundContactInteraction(sessionName, target);
+        this.schedulePostDeliveryPresenceRenewal(sessionName, target);
+        await emitDelivery({
+          status: "delivered",
+          target,
+          deliveredAt: Date.now(),
+          durationMs: Date.now() - t0,
+          transport: delivered.transport,
+          provider: delivered.provider,
+          fileId: delivered.fileId,
+          ...(delivered.messageId ? { messageId: delivered.messageId } : {}),
+        });
+        await this.cleanupResponseMediaFile(media);
+        return;
+      }
+
+      const instanceId = configStore.resolveInstanceId(target.accountId);
+      if (!instanceId) {
+        await emitDelivery({ status: "dropped", reason: "missing_instance", target });
+        return;
+      }
+
+      const chatId = normalizeOutboundJid(target.chatId);
+      const delivered = await this.omniSender.sendMedia(
+        instanceId,
+        chatId,
+        media.filePath,
+        media.type,
+        media.filename,
+        media.caption,
+        media.voiceNote,
+      );
+      this.recordOutboundContactInteraction(sessionName, target);
+      this.schedulePostDeliveryPresenceRenewal(sessionName, target);
+      await emitDelivery({
+        status: "delivered",
+        target,
+        instanceId,
+        chatId,
+        deliveredAt: Date.now(),
+        durationMs: Date.now() - t0,
+        ...(delivered.messageId ? { messageId: delivered.messageId } : {}),
+      });
+      await this.cleanupResponseMediaFile(media);
+    } catch (err) {
+      log.error("Failed to send response media", {
+        target,
+        mediaType: media.type,
+        filename: media.filename,
+        error: err,
+      });
+      await emitDelivery({
+        status: "failed",
+        reason: "send_error",
+        target,
+        textLen: 0,
+        error: err instanceof Error ? err.message : String(err),
+        durationMs: Date.now() - t0,
+      });
+    }
+  }
+
+  private wasResponseMediaDelivered(
+    sessionName: string,
+    idempotencyKey: string | undefined,
+    target: NonNullable<ResponseMessage["target"]>,
+  ): boolean {
+    if (!idempotencyKey) return false;
+    const session = getSessionByName(sessionName);
+    if (!session) return false;
+
+    return listRecentSessionEventsByType(session.sessionKey, "delivery.delivered", { limit: 1000 }).some((event) => {
+      const payload = event.payloadJson;
+      if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return false;
+      const record = payload as Record<string, unknown>;
+      if (record.idempotencyKey !== idempotencyKey) return false;
+      const deliveredTarget = parsePresenceTarget(record.target);
+      return deliveredTarget !== null && this.presenceSurfacesMatch(deliveredTarget, target);
+    });
+  }
+
+  private async cleanupResponseMediaFile(media: ResponseMediaAttachment): Promise<void> {
+    if (media.source !== "runtime.generated_media") return;
+    await unlink(media.filePath).catch((error) => {
+      log.debug("Failed to clean generated response media file", {
+        filePath: media.filePath,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 
   private shouldQueueNativeOutbound(target: NonNullable<ResponseMessage["target"]>): boolean {

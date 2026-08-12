@@ -460,8 +460,6 @@ function materializeSlackThreadChild(record: SlackThreadLifecycleRecord): {
     attachedByType: "agent",
     attachedById: record.initiatorSessionKey ?? record.parentSessionKey,
     attachedReason: "slack-thread-create-action",
-    speechMode: "speak",
-    speechReason: "primary-slack-thread-create-action",
     setOutputTarget: true,
   });
   const context = buildSlackThreadMessageContext(record, threadChat.id, child.agentId);

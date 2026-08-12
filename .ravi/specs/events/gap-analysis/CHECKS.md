@@ -65,7 +65,7 @@ Manual verification:
 - [ ] Matrix contains at least 12 evaluated candidates
 - [ ] Matrix contains at least 5 recommended follow-up candidates
 - [ ] Each candidate includes: subject, owner, classification, replay decision, trigger catalog decision, payload sketch, consumers, affected specs, value/risk/effort score, privacy risk
-- [ ] Matrix covers seed areas: session attach/mute/unmute/detach/rename; route create/update/delete; permission grant/profile changes; trigger create/update/enable/disable/fire/fail; cron/heartbeat run lifecycle; instance register/update/delete; observer binding lifecycle
+- [ ] Matrix covers seed areas: session attach/detach/rename; route create/update/delete; permission grant/profile changes; trigger create/update/enable/disable/fire/fail; cron/heartbeat run lifecycle; instance register/update/delete; observer binding lifecycle
 - [ ] `agent.created` and `session.created` are explicitly treated as #165 scope
 - [ ] Privacy-sensitive candidates are marked as `replay-only` or `internal-control`
 - [ ] No payload sketch contains secrets, credentials, raw prompts, context keys, or private paths

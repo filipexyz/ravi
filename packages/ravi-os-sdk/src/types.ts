@@ -11712,15 +11712,6 @@ export type SessionsListReturn = {
   [k: string]: unknown;
 };
 
-/** Input shape for `sessions.mute`. */
-export type SessionsMuteInput = {
-  chat?: string;
-  nameOrKey: string;
-};
-
-/** Return shape for `sessions.mute`. */
-export type SessionsMuteReturn = Record<string, unknown>;
-
 /** Input shape for `sessions.prune`. */
 export type SessionsPruneInput = {
   agent?: string;
@@ -12176,15 +12167,6 @@ export type SessionsTraceInput = {
 
 /** Return shape for `sessions.trace`. */
 export type SessionsTraceReturn = Record<string, unknown>;
-
-/** Input shape for `sessions.unmute`. */
-export type SessionsUnmuteInput = {
-  chat?: string;
-  nameOrKey: string;
-};
-
-/** Return shape for `sessions.unmute`. */
-export type SessionsUnmuteReturn = Record<string, unknown>;
 
 /** Input shape for `sessions.visibility`. */
 export type SessionsVisibilityInput = {

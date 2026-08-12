@@ -1,7 +1,7 @@
 /**
  * Tests for resolveSessionOutputTarget — attached sessions emit to the
- * source chat when speech is enabled there, otherwise to the default
- * output attachment, or fail closed when none exists.
+ * source chat for inbound turns, otherwise to the default output
+ * attachment for source-less turns, or fail closed when none exists.
  *
  * See .ravi/specs/sessions/attach/SPEC.md
  */
@@ -66,23 +66,17 @@ describe("resolveSessionOutputTarget", () => {
     stateDir = null;
   });
 
-  it("returns the attached output target even when fallback is another chat", () => {
+  it("fails closed instead of leaking an unattached inbound turn to the default", () => {
     const session = getOrCreateSession("agent:dev:s1", "dev", "/tmp/dev");
     const outputChat = makeChat("output");
     attachChatToSession({ sessionKey: session.sessionKey, chatId: outputChat.id, setOutputTarget: true });
     const fallback = makeFallback("inbound@s.whatsapp.net");
     const result = resolveSessionOutputTarget({ sessionKey: session.sessionKey, fallback });
-    expect(result.source).toBe("attached-output");
-    expect(result.target).toMatchObject({
-      channel: "whatsapp",
-      accountId: "luis",
-      instanceId: "luis",
-      chatId: "output@s.whatsapp.net",
-      canonicalChatId: outputChat.id,
-    });
+    expect(result.source).toBe("unresolved");
+    expect(result.target).toBeNull();
   });
 
-  it("returns the source chat when its subscription has speech enabled", () => {
+  it("returns the attached source chat", () => {
     const session = getOrCreateSession("agent:dev:s-source-speak", "dev", "/tmp/dev");
     const outputChat = makeChat("source-default-output");
     const sourceChat = makeChat("source-speak");
@@ -91,8 +85,6 @@ describe("resolveSessionOutputTarget", () => {
       sessionKey: session.sessionKey,
       chatId: sourceChat.id,
       setOutputTarget: false,
-      speechMode: "speak",
-      speechReason: "test-source-speak",
     });
 
     const result = resolveSessionOutputTarget({
@@ -114,7 +106,7 @@ describe("resolveSessionOutputTarget", () => {
 
     const result = resolveSessionOutputTarget({
       sessionKey: session.sessionKey,
-      fallback: makeFallback("inbound@s.whatsapp.net"),
+      fallback: undefined,
     });
 
     expect(result.source).toBe("attached-output");
@@ -128,38 +120,30 @@ describe("resolveSessionOutputTarget", () => {
     });
   });
 
-  it("falls back to the default output when the source subscription is muted", () => {
-    const session = getOrCreateSession("agent:dev:s-source-muted", "dev", "/tmp/dev");
-    const outputChat = makeChat("muted-default-output");
-    const sourceChat = makeChat("source-muted");
+  it("returns the default output for a source-less turn", () => {
+    const session = getOrCreateSession("agent:dev:s-default", "dev", "/tmp/dev");
+    const outputChat = makeChat("default-output");
     attachChatToSession({ sessionKey: session.sessionKey, chatId: outputChat.id, setOutputTarget: true });
-    attachChatToSession({
-      sessionKey: session.sessionKey,
-      chatId: sourceChat.id,
-      setOutputTarget: false,
-      attachedReason: "listen-only-test",
-    });
 
     const result = resolveSessionOutputTarget({
       sessionKey: session.sessionKey,
-      fallback: makeFallbackForChat(sourceChat),
+      fallback: undefined,
     });
 
     expect(result.source).toBe("attached-output");
     expect(result.target).toMatchObject({
-      chatId: "muted-default-output@s.whatsapp.net",
+      chatId: "default-output@s.whatsapp.net",
       canonicalChatId: outputChat.id,
     });
   });
 
-  it("fails closed when the source is muted and no default output exists", () => {
-    const session = getOrCreateSession("agent:dev:s-muted-no-output", "dev", "/tmp/dev");
-    const sourceChat = makeChat("muted-no-output");
+  it("fails closed when an inbound source is not attached", () => {
+    const session = getOrCreateSession("agent:dev:s-unattached", "dev", "/tmp/dev");
+    const sourceChat = makeChat("unattached-source");
     attachChatToSession({
       sessionKey: session.sessionKey,
-      chatId: sourceChat.id,
-      setOutputTarget: false,
-      attachedReason: "listen-only-test",
+      chatId: makeChat("unattached-default").id,
+      setOutputTarget: true,
     });
 
     const result = resolveSessionOutputTarget({
@@ -171,10 +155,9 @@ describe("resolveSessionOutputTarget", () => {
     expect(result.target).toBeNull();
   });
 
-  it("returns null when no output attachment exists, even with inbound fallback", () => {
+  it("returns null when no output attachment exists", () => {
     const session = getOrCreateSession("agent:dev:s2", "dev", "/tmp/dev");
-    const fallback = makeFallback("inbound@s.whatsapp.net");
-    const result = resolveSessionOutputTarget({ sessionKey: session.sessionKey, fallback });
+    const result = resolveSessionOutputTarget({ sessionKey: session.sessionKey, fallback: undefined });
     expect(result.source).toBe("unresolved");
     expect(result.target).toBeNull();
   });

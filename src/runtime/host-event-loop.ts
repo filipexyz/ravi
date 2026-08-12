@@ -1,3 +1,7 @@
+import { createHash } from "node:crypto";
+import { writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { calculateCost, prewarmPricingCatalog } from "../costs/pricing-catalog.js";
 import { projectChannelRuntimeEvent } from "../channels/runtime-events.js";
 import { backfillProviderSessionId, getRecentHistory, saveMessage } from "../db.js";
@@ -82,6 +86,7 @@ import type {
 } from "./types.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { buildRuntimeToolPresentation } from "./tool-presentation.js";
+import type { ResponseContentPart, ResponseMediaAttachment } from "./message-types.js";
 
 const log = logger.child("bot");
 
@@ -94,6 +99,9 @@ const RUNTIME_SESSION_CLOSE_TIMEOUT_MS = 5_000;
 const USER_FACING_LIMIT_SUPPRESSION_DEFAULT_MS = 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_MAX_MS = 24 * 60 * 60_000;
 const USER_FACING_LIMIT_SUPPRESSION_RESET_GRACE_MS = 60_000;
+const GENERATED_IMAGE_ITEM_TYPE = "imageGeneration";
+const GENERATED_MEDIA_FILE_PREFIX = "ravi-generated-media";
+const MAX_GENERATED_MEDIA_BYTES = 50 * 1024 * 1024;
 
 const userFacingRuntimeLimitSuppressions = new Map<string, number>();
 
@@ -182,6 +190,155 @@ function firstNumber(...values: unknown[]): number | undefined {
     }
   }
   return undefined;
+}
+
+function isGeneratedImageToolCompletion(event: Extract<RuntimeEvent, { type: "tool.completed" }>): boolean {
+  return event.isError !== true && event.metadata?.item?.type === GENERATED_IMAGE_ITEM_TYPE;
+}
+
+function extractGeneratedImagePayload(content: unknown): { id?: string; base64: string } | null {
+  if (typeof content === "string" && content.trim()) {
+    return { base64: content.trim() };
+  }
+
+  const record = asRecord(content);
+  if (!record) return null;
+
+  const base64 = firstString(record.result, record.image, record.base64, record.b64_json, record.data);
+  if (!base64) return null;
+
+  return {
+    base64,
+    ...(firstString(record.id, record.imageId, record.itemId)
+      ? { id: firstString(record.id, record.imageId, record.itemId) }
+      : {}),
+  };
+}
+
+function decodeBase64ImagePayload(value: string): Buffer | null {
+  const trimmed = value.trim();
+  const dataUrlMatch = /^data:[^;,]+;base64,(.*)$/s.exec(trimmed);
+  if (trimmed.startsWith("data:") && !dataUrlMatch) return null;
+  const payload = dataUrlMatch?.[1] ?? trimmed;
+  const normalized = payload.replace(/\s+/g, "");
+  if (!normalized) return null;
+
+  const estimatedBytes = Math.floor((normalized.length * 3) / 4);
+  if (estimatedBytes > MAX_GENERATED_MEDIA_BYTES) return null;
+
+  const bytes = Buffer.from(normalized, "base64");
+  return bytes.byteLength > 0 && bytes.byteLength <= MAX_GENERATED_MEDIA_BYTES ? bytes : null;
+}
+
+function inferImageFormat(bytes: Buffer): { mimeType: string; extension: string } | null {
+  if (bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return { mimeType: "image/png", extension: "png" };
+  }
+  if (bytes.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) {
+    return { mimeType: "image/jpeg", extension: "jpg" };
+  }
+  if (
+    bytes.byteLength >= 12 &&
+    bytes.subarray(0, 4).toString("ascii") === "RIFF" &&
+    bytes.subarray(8, 12).toString("ascii") === "WEBP"
+  ) {
+    return { mimeType: "image/webp", extension: "webp" };
+  }
+  const gifHeader = bytes.subarray(0, 6).toString("ascii");
+  if (gifHeader === "GIF87a" || gifHeader === "GIF89a") {
+    return { mimeType: "image/gif", extension: "gif" };
+  }
+  return null;
+}
+
+function safeFileComponent(value: unknown, fallback: string): string {
+  const normalized = String(value ?? "")
+    .replace(/[^a-zA-Z0-9_.-]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 80);
+  return normalized || fallback;
+}
+
+async function materializeGeneratedImageAttachment(input: {
+  sessionKey: string;
+  sessionName: string;
+  provider: RuntimeProviderId;
+  toolUseId?: string;
+  content: unknown;
+  metadata?: RuntimeEventMetadata;
+}): Promise<ResponseMediaAttachment | null> {
+  const payload = extractGeneratedImagePayload(input.content);
+  if (!payload) return null;
+
+  const bytes = decodeBase64ImagePayload(payload.base64);
+  if (!bytes) return null;
+
+  const format = inferImageFormat(bytes);
+  if (!format) return null;
+
+  const hash = createHash("sha256").update(bytes).digest("hex").slice(0, 16);
+  const itemId = payload.id ?? input.metadata?.item?.id ?? input.toolUseId ?? "image";
+  const filename = `${GENERATED_MEDIA_FILE_PREFIX}-${safeFileComponent(input.sessionName, "session")}-${safeFileComponent(itemId, "image")}-${hash}.${format.extension}`;
+  const filePath = join(tmpdir(), filename);
+  await writeFile(filePath, bytes);
+
+  return {
+    type: "image",
+    filePath,
+    filename,
+    mimeType: format.mimeType,
+    idempotencyKey: `runtime.generated_media:${input.sessionKey}:${itemId}:${hash}`,
+    source: "runtime.generated_media",
+    metadata: {
+      provider: input.provider,
+      ...(input.toolUseId ? { toolUseId: input.toolUseId } : {}),
+      ...(payload.id ? { providerOutputId: payload.id } : {}),
+      ...(input.metadata?.item?.id ? { providerItemId: input.metadata.item.id } : {}),
+    },
+  };
+}
+
+function summarizeGeneratedImageToolOutput(input: {
+  content: unknown;
+  attachment?: ResponseMediaAttachment | null;
+  metadata?: RuntimeEventMetadata;
+}): Record<string, unknown> {
+  const payload = extractGeneratedImagePayload(input.content);
+  return {
+    type: "generated_image",
+    ...(input.attachment !== undefined ? { materialized: input.attachment !== null } : {}),
+    ...(input.attachment
+      ? {
+          filename: input.attachment.filename,
+          mimeType: input.attachment.mimeType,
+          idempotencyKey: input.attachment.idempotencyKey,
+        }
+      : {}),
+    ...(payload?.id ? { providerOutputId: payload.id } : {}),
+    ...(input.metadata?.item?.id ? { providerItemId: input.metadata.item.id } : {}),
+  };
+}
+
+function redactGeneratedImageProviderRawEvent(
+  rawEvent: Record<string, unknown>,
+  metadata: RuntimeEventMetadata | undefined,
+): Record<string, unknown> {
+  if (metadata?.item?.type !== GENERATED_IMAGE_ITEM_TYPE) return rawEvent;
+
+  const payloadKeys = new Set(["result", "image", "base64", "b64_json", "data"]);
+  const redact = (value: unknown, key?: string): unknown => {
+    if (key && payloadKeys.has(key) && typeof value === "string") {
+      return "[generated image payload redacted]";
+    }
+    if (Array.isArray(value)) return value.map((item) => redact(item));
+    const record = asRecord(value);
+    if (!record) return value;
+    return Object.fromEntries(
+      Object.entries(record).map(([nestedKey, nestedValue]) => [nestedKey, redact(nestedValue, nestedKey)]),
+    );
+  };
+
+  return redact(rawEvent) as Record<string, unknown>;
 }
 
 function headerValue(value: unknown): string | number | undefined {
@@ -364,6 +521,12 @@ function buildProviderRawRuntimeEvent(
 function stripRuntimeRawEvent<T extends RuntimeEvent>(event: T): T {
   const safeEvent: Record<string, unknown> = { ...event };
   delete safeEvent.rawEvent;
+  if (event.type === "tool.completed" && isGeneratedImageToolCompletion(event)) {
+    safeEvent.content = summarizeGeneratedImageToolOutput({
+      content: event.content,
+      metadata: event.metadata,
+    });
+  }
   return safeEvent as T;
 }
 
@@ -728,6 +891,19 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   let providerRawEventCount = 0;
   let responseText = "";
   let channelResponseText = "";
+  let pendingGeneratedMedia: ResponseMediaAttachment[] = [];
+  const generatedMediaKeys = new Set<string>();
+  const clearPendingGeneratedMedia = () => {
+    pendingGeneratedMedia = [];
+    generatedMediaKeys.clear();
+  };
+  const queueGeneratedMedia = (attachment: ResponseMediaAttachment): boolean => {
+    const key = attachment.idempotencyKey ?? attachment.filePath;
+    if (generatedMediaKeys.has(key)) return false;
+    generatedMediaKeys.add(key);
+    pendingGeneratedMedia.push(attachment);
+    return true;
+  };
   let observationSequence = 0;
   let observedUserTurnId: string | undefined;
   let restartStashedReason: string | undefined;
@@ -1069,7 +1245,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     removePendingProviderRawEvent(pending);
     if (suppressProviderRawForCurrentTurn || !pending.safetyFenced || !canReleaseProviderRawEvent()) return;
 
-    await emitLegacyProviderEvent(pending.event.rawEvent);
+    await emitLegacyProviderEvent(redactGeneratedImageProviderRawEvent(pending.event.rawEvent, pending.event.metadata));
     await emitRuntimeEvent(
       buildProviderRawRuntimeEvent(runtimeSession.provider, pending.event.rawEvent, pending.event.metadata),
     );
@@ -1081,7 +1257,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       // do not prove that assistant content or tool arguments crossed a durable
       // replay-safety fence. Drop their raw envelopes fail-closed.
       if (!pending.safetyFenced || suppressProviderRawForCurrentTurn || !canReleaseProviderRawEvent()) continue;
-      await emitLegacyProviderEvent(pending.event.rawEvent);
+      await emitLegacyProviderEvent(
+        redactGeneratedImageProviderRawEvent(pending.event.rawEvent, pending.event.metadata),
+      );
       await emitRuntimeEvent(
         buildProviderRawRuntimeEvent(runtimeSession.provider, pending.event.rawEvent, pending.event.metadata),
       );
@@ -1443,42 +1621,67 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
-    if (streaming.currentChannelBackend) {
+    const mediaParts = isCommentaryResponse(metadata) ? [] : pendingGeneratedMedia.splice(0);
+    const channelBackendOwnsText = streaming.currentChannelBackend !== undefined;
+    if (channelBackendOwnsText && mediaParts.length === 0) {
       log.debug("Channel backend response deferred to terminal projection", {
         sessionName,
-        turnId: streaming.currentChannelBackend.binding.turnId,
+        turnId: streaming.currentChannelBackend?.binding.turnId,
       });
       return;
     }
-    const emitId = Math.random().toString(36).slice(2, 8);
+    const responseText = channelBackendOwnsText ? "" : text;
+    const emitId =
+      mediaParts.length > 0
+        ? `media-${createHash("sha256")
+            .update(mediaParts.map((media) => media.idempotencyKey ?? media.filePath).join("\n"))
+            .digest("hex")
+            .slice(0, 16)}`
+        : Math.random().toString(36).slice(2, 8);
     // Resolve the target chat per `.ravi/specs/sessions/attach/SPEC.md`.
     // Attach selects the chat that receives this session's external output.
     // Sentinel agents observe silently → no target.
     let resolvedTarget = undefined as ReturnType<typeof resolveSessionOutputTarget>["target"] | undefined;
     let resolvedSource: ReturnType<typeof resolveSessionOutputTarget>["source"] = "unresolved";
     if (streaming.agentMode !== "sentinel") {
-      const resolution = resolveSessionOutputTarget({
-        sessionKey: session.sessionKey,
-        fallback: streaming.currentSource,
-      });
-      resolvedTarget = resolution.target;
-      resolvedSource = resolution.source;
-      if (!resolution.target) {
+      if (streaming.currentReplyTarget !== undefined) {
+        resolvedTarget = streaming.currentReplyTarget;
+        resolvedSource = resolvedTarget ? (streaming.currentSource ? "source-chat" : "attached-output") : "unresolved";
+      } else {
+        const resolution = resolveSessionOutputTarget({
+          sessionKey: session.sessionKey,
+          fallback: streaming.currentSource,
+        });
+        resolvedTarget = resolution.target;
+        resolvedSource = resolution.source;
+      }
+      if (!resolvedTarget) {
         log.warn("Response target unresolved — dropping emit", {
           sessionName,
           source: resolvedSource,
         });
+        clearPendingGeneratedMedia();
         return;
       }
     }
+    const content =
+      mediaParts.length > 0
+        ? ([
+            ...mediaParts.map((media) => ({ type: "media" as const, media })),
+            ...(responseText.trim() ? [{ type: "text" as const, text: responseText }] : []),
+          ] satisfies ResponseContentPart[])
+        : undefined;
     log.info("Emitting response", {
       sessionName,
       emitId,
-      textLen: text.length,
+      textLen: responseText.length,
+      mediaCount: mediaParts.length,
       targetSource: resolvedSource,
+      channelBackendOwnsText,
     });
     await nats.emit(`ravi.session.${sessionName}.response`, {
-      response: text,
+      response: responseText,
+      ...(content ? { content } : {}),
       target: resolvedTarget,
       ...(metadata ? { metadata } : {}),
       _emitId: emitId,
@@ -2154,7 +2357,43 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const toolId = streaming.currentToolId ?? event.toolUseId ?? "unknown";
         const toolName = streaming.currentToolName ?? event.toolName ?? "unknown";
         const toolInput = streaming.currentToolInput;
-        const output = truncateOutput(event.content);
+        const generatedImageCompletion = isGeneratedImageToolCompletion(event);
+        let generatedImageAttachment: ResponseMediaAttachment | null = null;
+        if (generatedImageCompletion) {
+          try {
+            generatedImageAttachment = await materializeGeneratedImageAttachment({
+              sessionKey: session.sessionKey,
+              sessionName,
+              provider: runtimeSession.provider,
+              toolUseId: toolId,
+              content: event.content,
+              metadata: event.metadata,
+            });
+            if (generatedImageAttachment) {
+              const queued = queueGeneratedMedia(generatedImageAttachment);
+              log.info(queued ? "Generated image queued for next response" : "Duplicate generated image ignored", {
+                sessionName,
+                toolId,
+                filename: generatedImageAttachment.filename,
+                idempotencyKey: generatedImageAttachment.idempotencyKey,
+              });
+            } else {
+              log.warn("Generated image tool completed without materializable image payload", {
+                sessionName,
+                toolId,
+              });
+            }
+          } catch (error) {
+            log.warn("Failed to materialize generated image", { sessionName, toolId, error });
+          }
+        }
+        const output = generatedImageCompletion
+          ? summarizeGeneratedImageToolOutput({
+              content: event.content,
+              attachment: generatedImageAttachment,
+              metadata: event.metadata,
+            })
+          : truncateOutput(event.content);
         ensureCurrentTurnUserObservation();
         pushObservationEvent("tool.end", {
           preview: toolName,
@@ -2196,6 +2435,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           metadata: event.metadata,
           ...(streaming.currentTurnProvenance ? { _turnProvenance: streaming.currentTurnProvenance } : {}),
         }).catch((err) => log.warn("Failed to emit tool end", { error: err }));
+
         updateRuntimeLiveState(sessionName, {
           activity: event.isError ? "blocked" : "thinking",
           summary: event.isError ? `${toolName} failed` : `${toolName} completed`,
@@ -2464,6 +2704,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           streaming.abortController.abort();
         }
 
+        if (!streaming.interrupted && pendingGeneratedMedia.length > 0) {
+          markCurrentTurnAttemptSafety({ materializedOutput: true });
+          await emitResponse("", event.metadata);
+        }
+
         if (!streaming.interrupted && responseText.trim()) {
           const sdkId = event.providerSessionId;
           saveMessage(sessionName, "assistant", responseText.trim(), sdkId, {
@@ -2478,6 +2723,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Reset for next turn
         responseText = "";
         channelResponseText = "";
+        clearPendingGeneratedMedia();
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
@@ -2525,6 +2771,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.interrupted = true;
         responseText = "";
         channelResponseText = "";
+        clearPendingGeneratedMedia();
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;
@@ -2619,6 +2866,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
         responseText = "";
         channelResponseText = "";
+        clearPendingGeneratedMedia();
         clearActiveToolState();
         streaming.compacting = false;
         streaming.lastToolFailure = undefined;

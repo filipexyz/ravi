@@ -422,7 +422,6 @@ const {
   buildSessionDeleteMessageCommand,
   buildSessionEditMessageCommand,
   buildSessionDetachCommand,
-  buildSessionUnmuteCommand,
   serializeSessionActionMessage,
   extractNormalizedTranscriptMessages,
 } = await import("./sessions.js");
@@ -908,10 +907,6 @@ describe("SessionCommands attach hints", () => {
     expect(buildSessionDetachCommand("dev", "chat_123")).toBe("ravi sessions detach dev --chat chat_123");
   });
 
-  it("builds the unmute command used by muted source hints", () => {
-    expect(buildSessionUnmuteCommand("dev", "chat_123")).toBe("ravi sessions unmute dev --chat chat_123");
-  });
-
   it("builds action discovery and own-message deletion commands", () => {
     expect(buildCurrentSessionActionsCommand()).toBe("ravi sessions actions --json");
     expect(buildCurrentSessionDeleteMessageCommand("cm_123")).toBe("ravi sessions delete-message cm_123 --execute");
@@ -964,7 +959,6 @@ describe("SessionCommands attach hints", () => {
         sessionKey,
         chatId: "chat_ae70f8bc7ec999d2e2048219",
         role: "primary",
-        speechMode: "speak",
         outputAttachedAt: 1,
       },
     ];
@@ -1016,7 +1010,6 @@ describe("SessionCommands attach hints", () => {
     });
     expect(payload.surfaces.subscriptions[0]).toMatchObject({
       chatId: "chat_ae70f8bc7ec999d2e2048219",
-      speechMode: "speak",
       defaultOutput: true,
     });
   });
@@ -1035,7 +1028,6 @@ describe("SessionCommands attach hints", () => {
         sessionKey,
         chatId: "chat_slack",
         role: "primary",
-        speechMode: "speak",
         outputAttachedAt: 1,
       },
     ];
@@ -1148,7 +1140,6 @@ describe("SessionCommands attach hints", () => {
         sessionKey,
         chatId: "chat_slack",
         role: "primary",
-        speechMode: "speak",
         outputAttachedAt: 1,
       },
     ];
@@ -1262,7 +1253,6 @@ describe("SessionCommands attach hints", () => {
         sessionKey,
         chatId: "chat_slack",
         role: "primary",
-        speechMode: "speak",
         outputAttachedAt: 1,
       },
     ];
@@ -1351,7 +1341,6 @@ describe("SessionCommands attach hints", () => {
         sessionKey,
         chatId: "chat_slack",
         role: "primary",
-        speechMode: "speak",
         outputAttachedAt: 1,
       },
     ];

@@ -111,26 +111,20 @@ ravi sessions prune --inactive-for 12h --ephemeral
 
 Sem `--execute`, `prune` é sempre dry-run. Use o dry-run antes de apagar em lote.
 
-### Attach (multi-input + speech control)
+### Attach (multiple chats, one history)
 
-**Diferença chave vs routes:** `routes` decide qual *agent* atende um chat; `attach` decide quais chats alimentam uma sessão e qual superfície é o default de fala. Cada subscription tem `speech=speak|muted`: `muted` continua escutando sem responder naquele chat; `speak` permite que uma resposta ao inbound daquele chat saia ali.
+**Diferença chave vs routes:** `routes` decide qual *agent* atende um chat; `attach` decide quais chats alimentam uma sessão. Cada inbound responde automaticamente no próprio chat ou thread. O default só é usado por turnos sem origem inbound.
 
 **Regra crítica:** `sessions attach` NÃO cria, corrige nem troca a route do chat. Use attach apenas quando a route já resolve para o agent correto, ou depois de criar uma route explícita para esse agent. Para chat novo/rota errada, configure a rota primeiro; se quiser forçar a mesma sessão já na route, use `ravi instances routes add <instance> <pattern> <agent> --session <session>`.
 
 Ver spec `sessions/attach` pro modelo completo.
 
 ```bash
-# Listar chats atachados, speech e qual recebe output default
+# Listar chats atachados e qual é o output default
 ravi sessions subscriptions <session>
 
-# Atachar um chat como speak + output default da sessão
+# Atachar um chat e selecioná-lo como output default da sessão
 ravi sessions attach <session> --chat <chat-id> [--reason "..."]
-
-# Escutar sem falar nesse chat
-ravi sessions mute <session> --chat <chat-id>
-
-# Permitir fala em chat já inscrito
-ravi sessions unmute <session> --chat <chat-id>
 
 # Desatachar subscription/output
 ravi sessions detach <session> --chat <chat-id>
@@ -140,15 +134,14 @@ ravi sessions detach <session> --chat <chat-id>
 
 1. **Responder em outro grupo com a mesma sessão.** Caso típico: você está falando com `dev` no grupo de teste, mas quer que o resultado apareça no grupo principal.
    - `sessions attach dev --chat <chat-id-do-grupo-principal>`
-   - Próximas respostas da sessão `dev` saem no grupo principal quando o inbound vier de chats `muted`; se o source chat estiver `speech=speak`, a resposta sai no próprio source.
+   - Inbounds continuam respondendo no próprio chat. O grupo principal vira o default apenas para turnos sem inbound.
    - O comando imprime o hint de detach para desligar esse output depois.
 
 2. **Unificar histórico de N grupos numa sessão.** Caso: dev atende o grupo `ravi - dev` e você quer que o mesmo dev também receba inbound de `ravi - dev - test`.
    - Primeiro garanta que a route do grupo novo aponta para o agent `dev`: `ravi instances routes add <instance> "group:<id>" dev --priority 10`.
    - Se a intenção é fixar a sessão canônica já na route, prefira: `ravi instances routes add <instance> "group:<id>" dev --session dev --priority 10`.
    - Se o grupo novo já criou uma sessão paralela (`dev-2`, vazia), apague a paralela (`sessions delete dev-2 --execute`) antes de consolidar.
-   - Depois use `sessions attach dev --chat <chat-id-do-test>` para ligar o chat à sessão existente e ajustar fala/output.
-   - Use `sessions mute dev --chat <chat-id-do-test>` se o test deve ser listen-only.
+   - Depois use `sessions attach dev --chat <chat-id-do-test>` para ligar o chat à sessão existente.
 
 3. **Migrar grupo de um agent pra outro (sem unificar sessão).** Caso: grupo nasceu na sessão de onboarding (auto-criada pelo default agent da instance), você quer mover pro agent `dev` com sessão SEPARADA.
    - `ravi instances routes add <instance> group:<id> <novo-agent> --priority 10`
@@ -169,9 +162,9 @@ inbound chega ─► consumer normaliza chat
               ─► dispatch turn na sessão escolhida
               ─► runtime gera resposta
               ─► resolveSessionOutputTarget:
-                 1. source chat inscrito com speech=speak → win
-                 2. output default com speech=speak → win
-                 3. nada → fail closed (sem envio externo)
+                 1. inbound com source inscrito → source
+                 2. turno sem inbound → output default
+                 3. source não inscrito ou nenhum destino → fail closed
               ─► gateway emite no target resolvido
 ```
 
@@ -180,8 +173,7 @@ inbound chega ─► consumer normaliza chat
 - ❌ Adicionar route pra "trocar destino" quando o chat já está atachado em outra sessão. A subscription override puxa o inbound de volta. Use detach/delete da sessão antiga antes, ou attach explícito na nova.
 - ❌ Usar `sessions attach` como se ele configurasse route. Attach não muda o agent que atende o chat; ele só liga o chat a uma sessão quando a route/agent já está correta.
 - ❌ Tentar usar `focus` pra responder em outro chat. Focus foi removido; `attach` é o primitive que escolhe o chat de output.
-- ❌ Deixar inbound-route bookkeeping roubar output. Inbound pode criar subscription `muted`, mas não deve mudar o output target escolhido por operador.
-- ❌ Narrar mute/unmute/attach/routing para usuários finais; esse controle é interno.
+- ❌ Deixar inbound-route bookkeeping roubar o default escolhido pelo operador.
 - ❌ Esperar que `attach` sozinho mude o agent que atende o chat. Attach decide sessão; agent vem da route ou do default da instance.
 
 **Quando route vs attach:**
@@ -190,7 +182,7 @@ inbound chega ─► consumer normaliza chat
 |-----------|-----|
 | Outro agent atender o chat (histórico isolado) | `instances routes add` |
 | Mesma sessão em chat cuja route já aponta para o agent correto | `sessions attach` |
-| Mesma sessão em chat novo ou com route errada | `instances routes add ... --session <name>` e depois `sessions attach` se precisar ajustar fala/output |
+| Mesma sessão em chat novo ou com route errada | `instances routes add ... --session <name>` e depois `sessions attach` |
 | Forçar uma sessão específica num chat | `routes add ... --session <name>` (redirect estático) |
 
 ### Sessões Efêmeras

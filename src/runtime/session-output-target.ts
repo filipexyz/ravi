@@ -2,8 +2,8 @@
  * Output target resolution for the session runtime.
  *
  * Implements the resolution order from `.ravi/specs/sessions/attach/SPEC.md`:
- *   1. Source chat, when that subscription has speech enabled.
- *   2. Attached default output chat, when that subscription has speech enabled.
+ *   1. The attached source chat for an inbound turn.
+ *   2. The default output chat only for a source-less turn.
  *   3. Fail closed → caller drops the external response and keeps the
  *      provider transcript inside the session.
  *
@@ -34,12 +34,16 @@ export interface ResolvedSessionOutputTarget {
  * Resolve the target chat for an outbound response from this session.
  */
 export function resolveSessionOutputTarget(input: ResolveSessionOutputTargetInput): ResolvedSessionOutputTarget {
-  const fallbackChatId = input.fallback?.canonicalChatId;
-  if (fallbackChatId) {
+  if (input.fallback) {
+    const fallbackChatId = input.fallback.canonicalChatId;
+    if (!fallbackChatId) {
+      log.warn("Session source has no canonical chat — dropping emit", { sessionKey: input.sessionKey });
+      return { target: null, source: "unresolved" };
+    }
     const sourceSubscription = dbListSessionChatSubscriptions(input.sessionKey).find(
       (sub) => sub.chatId === fallbackChatId,
     );
-    if (sourceSubscription?.speechMode === "speak") {
+    if (sourceSubscription) {
       const target = chatToMessageTarget(sourceSubscription.chatId, input.fallback);
       if (target) return { target, source: "source-chat" };
       log.warn("Session source subscription cannot be resolved to a MessageTarget", {
@@ -47,18 +51,14 @@ export function resolveSessionOutputTarget(input: ResolveSessionOutputTargetInpu
         chatId: sourceSubscription.chatId,
       });
     }
+    return { target: null, source: "unresolved" };
   }
 
   const attached = dbGetSessionOutputAttachment(input.sessionKey);
-  if (attached?.speechMode === "speak") {
+  if (attached) {
     const target = chatToMessageTarget(attached.chatId, input.fallback);
     if (target) return { target, source: "attached-output" };
     log.warn("Session output attachment cannot be resolved to a MessageTarget", {
-      sessionKey: input.sessionKey,
-      chatId: attached.chatId,
-    });
-  } else if (attached) {
-    log.warn("Session output attachment is muted — dropping emit", {
       sessionKey: input.sessionKey,
       chatId: attached.chatId,
     });

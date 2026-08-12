@@ -371,7 +371,7 @@ describe("runtime delivery queue", () => {
     ]);
   });
 
-  it("keeps steering prompts from different channel threads isolated", () => {
+  it("keeps steering prompts from different channel threads queued behind the active thread", () => {
     const active = createQueuedRuntimeUserMessage(channelPrompt("active", "turn-a"));
     const firstThread = createQueuedRuntimeUserMessage(channelPrompt("thread one", "turn-b", "user-a", "thread-1"));
     const secondThread = createQueuedRuntimeUserMessage(channelPrompt("thread two", "turn-c", "user-a", "thread-2"));
@@ -383,8 +383,7 @@ describe("runtime delivery queue", () => {
 
     const prepared = prepareRuntimeInterruptSuccessor("dev", session);
 
-    expect(prepared?.coalescedMessages).toEqual([]);
-    expect(prepared?.message).toBe(firstThread);
+    expect(prepared).toBeNull();
     expect(session.pendingMessages).toEqual([active, firstThread, secondThread]);
   });
 
@@ -484,6 +483,56 @@ describe("runtime delivery queue", () => {
     });
 
     expect(getDeliverableRuntimeMessages("dev", session)).toEqual([active, later]);
+  });
+
+  it("never combines queued messages from different reply surfaces", () => {
+    const slack = createQueuedRuntimeUserMessage(surfacePrompt("from Slack", "slack", "chat-a"));
+    const whatsapp = createQueuedRuntimeUserMessage(surfacePrompt("from WhatsApp", "whatsapp", "chat-b"));
+    const session = makeStreamingSession({ pendingMessages: [slack, whatsapp] });
+
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([slack]);
+    session.pendingMessages.shift();
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([whatsapp]);
+  });
+
+  it("keeps adjacent messages from the same reply surface in one turn", () => {
+    const first = createQueuedRuntimeUserMessage(surfacePrompt("first", "slack", "chat-a"));
+    const second = createQueuedRuntimeUserMessage(surfacePrompt("second", "slack", "chat-a"));
+    const session = makeStreamingSession({ pendingMessages: [first, second] });
+
+    expect(getDeliverableRuntimeMessages("dev", session)).toEqual([first, second]);
+  });
+
+  it("does not interrupt an active turn for a different reply surface", () => {
+    const active = createQueuedRuntimeUserMessage(surfacePrompt("active", "slack", "chat-a"));
+    const otherSurface = createQueuedRuntimeUserMessage(surfacePrompt("wait", "whatsapp", "chat-b"));
+    const session = makeStreamingSession({
+      turnActive: true,
+      currentSource: active.launchPrompt?.source,
+      pendingMessages: [active, otherSurface],
+      currentTurnPendingIds: [active.pendingId!],
+    });
+
+    expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
+    expect(session.pendingMessages).toEqual([active, otherSurface]);
+  });
+
+  it("does not let a later same-surface interrupt bypass an earlier different surface", () => {
+    const active = createQueuedRuntimeUserMessage(surfacePrompt("active", "slack", "chat-a"));
+    const otherSurface = createQueuedRuntimeUserMessage({
+      ...surfacePrompt("other surface first", "whatsapp", "chat-b"),
+      deliveryBarrier: "after_response",
+    });
+    const sameSurface = createQueuedRuntimeUserMessage(surfacePrompt("same surface later", "slack", "chat-a"));
+    const session = makeStreamingSession({
+      turnActive: true,
+      currentSource: active.launchPrompt?.source,
+      pendingMessages: [active, otherSurface, sameSurface],
+      currentTurnPendingIds: [active.pendingId!],
+    });
+
+    expect(prepareRuntimeInterruptSuccessor("dev", session)).toBeNull();
+    expect(session.pendingMessages).toEqual([active, otherSurface, sameSurface]);
   });
 
   it("marks only the active delivery as ambiguous when stashing inactivity recovery", () => {
@@ -679,6 +728,21 @@ function channelPrompt(prompt: string, turnId: string, senderId = "user-a", thre
         connectionId: "connection-a",
         conversationId: "conversation-a",
       },
+    },
+  };
+}
+
+function surfacePrompt(prompt: string, channel: string, canonicalChatId: string, threadId?: string) {
+  return {
+    prompt,
+    deliveryBarrier: "after_tool" as const,
+    source: {
+      channel,
+      accountId: `${channel}-account`,
+      instanceId: `${channel}-instance`,
+      chatId: canonicalChatId,
+      canonicalChatId,
+      ...(threadId ? { threadId } : {}),
     },
   };
 }

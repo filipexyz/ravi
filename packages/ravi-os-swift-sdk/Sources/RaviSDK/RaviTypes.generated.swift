@@ -19246,26 +19246,6 @@ public struct SessionsListReturn: Codable, Sendable {
   }
 }
 
-public struct SessionsMuteOptions: Codable, Sendable {
-  public var chat: String?
-
-  public init(chat: String? = nil) {
-    self.chat = chat
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case chat = "chat"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.chat {
-      body["chat"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public typealias SessionsMuteReturn = [String: RaviJSON]
-
 public struct SessionsPruneOptions: Codable, Sendable {
   public var agent: String?
   public var ephemeral: Bool?
@@ -20017,26 +19997,6 @@ public struct SessionsTraceOptions: Codable, Sendable {
 }
 
 public typealias SessionsTraceReturn = [String: RaviJSON]
-
-public struct SessionsUnmuteOptions: Codable, Sendable {
-  public var chat: String?
-
-  public init(chat: String? = nil) {
-    self.chat = chat
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case chat = "chat"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.chat {
-      body["chat"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public typealias SessionsUnmuteReturn = [String: RaviJSON]
 
 public typealias SessionsVisibilityReturn = [String: RaviJSON]
 
