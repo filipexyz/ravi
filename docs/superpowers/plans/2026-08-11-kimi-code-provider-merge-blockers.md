@@ -96,4 +96,3 @@
 - [ ] **Step 3: Dispatch adversarial review of all fixes; resolve Critical/Important findings with a scoped re-review.**
 - [ ] **Step 4: Push the branch and monitor PR #406 CI.**
 - [ ] **Step 5: Keep L-01–L-04 explicitly pending until a new private credential is used.**
-
