@@ -56,6 +56,11 @@ import {
   watchForLeadershipVacancy,
   releaseLeadership,
 } from "./leader/index.js";
+import {
+  installProviderStateCleanupExecutors,
+  ProviderStateCleanupExecutorRegistry,
+  ProviderStateCleanupRunner,
+} from "./runtime/provider-state-cleanup-runner.js";
 
 const log = logger.child("daemon");
 
@@ -187,6 +192,7 @@ let shuttingDown = false;
 let omniConsumer: OmniConsumer | null = null;
 let webhookHttpServer: WebhookHttpServerHandle | null = null;
 let workObjectNatsService: WorkObjectNatsServiceHandle | null = null;
+let providerStateCleanupRunner: ProviderStateCleanupRunner | null = null;
 
 /** Get the bot instance (for in-process access like /reset) */
 export function getBotInstance(): RaviBot | null {
@@ -217,7 +223,10 @@ async function shutdown(signal: string) {
       });
     }
 
-    // Stop bot FIRST to abort SDK subprocesses
+    providerStateCleanupRunner?.stop();
+    providerStateCleanupRunner = null;
+
+    // Stop runtime intake and abort SDK subprocesses before the remaining runners.
     if (bot) {
       log.info("Stopping bot (aborting SDK subprocesses)...");
       await bot.stop(
@@ -298,6 +307,14 @@ export async function startDaemon() {
   logger.setLevel(config.logLevel);
 
   log.info("Starting Ravi daemon...");
+
+  // Provider lifecycle handlers must exist before intent recovery, cleanup,
+  // and any runtime session can accept input.
+  const providerStateCleanupRegistry = new ProviderStateCleanupExecutorRegistry();
+  installProviderStateCleanupExecutors(providerStateCleanupRegistry);
+  providerStateCleanupRunner = new ProviderStateCleanupRunner({ registry: providerStateCleanupRegistry });
+  await providerStateCleanupRunner.start();
+  log.info("Provider state cleanup runner started");
 
   // Step 2: Start config store (NATS sub + periodic refresh)
   await configStore.startRefresh();
