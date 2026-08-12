@@ -270,6 +270,18 @@ these durable variants return. Legacy `cleanupKimiCodeSessionState` and
 `retireSupersededKimiCodeSessionState` remain compatibility APIs and do not
 constitute worker durability evidence.
 
+Full deletion is batch-bounded. `executeKimiCodeDeleteStateCleanup` returns
+`{ complete, processed }`; it uses an incremental directory iterator, performs
+at most the fixed per-invocation scan/work budget, and returns `complete:false`
+when another leased invocation is required. The runner renews or requeues the
+same durable task and must not delete the ledger row until a final bounded pass
+returns `complete:true`. Every Windows tombstone name binds the operation, task
+id, exact source filename/revision, and a digest of that source identity;
+non-zero tombstones are parsed and snapshot-bound before truncation. Retirement
+is exact/single-artifact and continues to return only after its predecessor is
+durably absent. Credential-bearing recovered artifacts classify as
+`credential_detected`, never generic binding mismatch.
+
 This service is a generic runtime-provider lifecycle interface with a registry
 of provider cleanup executors. The launcher, bot, channels, and task code do not
 branch on `kimi-code`; only the registered Kimi executor understands its locator
