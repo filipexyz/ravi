@@ -121,6 +121,13 @@ export interface EnqueuePublishedProviderStateCleanupTaskInput {
   now?: number;
 }
 
+export interface PublishPreparedProviderStateCleanupTaskInput {
+  id: string;
+  locator: unknown;
+  owner: ProviderStateCleanupOwner;
+  now?: number;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -302,6 +309,7 @@ function insertTask(
   const row = getTaskByIdempotencyKey(database, idempotencyKey);
   if (!row) throw new Error("Provider cleanup task insert did not produce a durable row");
   const matches =
+    (input.id === undefined || row.id === input.id) &&
     row.schema_version === CLEANUP_SCHEMA_VERSION &&
     row.provider === locator.provider &&
     row.operation === input.operation &&
@@ -353,12 +361,69 @@ function preparePublishedInput(input: EnqueuePublishedProviderStateCleanupTaskIn
   };
 }
 
+function preparePublishInput(input: PublishPreparedProviderStateCleanupTaskInput) {
+  return {
+    id: requireNonEmptyString(input.id, "id"),
+    locatorJson: serializeProviderStateCleanupLocator(input.locator),
+    owner: {
+      attemptId: requireNonEmptyString(input.owner.attemptId, "owner.attemptId"),
+      sessionKey: requireNonEmptyString(input.owner.sessionKey, "owner.sessionKey"),
+      bootEpoch: requireNonEmptyString(input.owner.bootEpoch, "owner.bootEpoch"),
+    },
+    now: requireTimestamp(input.now ?? Date.now(), "now"),
+  };
+}
+
+export function enqueuePreparedProviderStateCleanupTaskInTransaction(
+  database: Database,
+  input: EnqueuePreparedProviderStateCleanupTaskInput,
+): ProviderStateCleanupTask {
+  return insertTask(database, preparePreparedInput(input));
+}
+
 export function enqueuePreparedProviderStateCleanupTask(
   input: EnqueuePreparedProviderStateCleanupTaskInput,
 ): ProviderStateCleanupTask {
-  const prepared = preparePreparedInput(input);
-  return executeWrite(getDb(), (database) => insertTask(database, prepared), {
+  return executeWrite(getDb(), (database) => enqueuePreparedProviderStateCleanupTaskInTransaction(database, input), {
     label: "provider-state-cleanup-enqueue-prepared",
+  });
+}
+
+export function publishPreparedProviderStateCleanupTaskInTransaction(
+  database: Database,
+  input: PublishPreparedProviderStateCleanupTaskInput,
+): ProviderStateCleanupTask | null {
+  const prepared = preparePublishInput(input);
+  const result = database
+    .prepare(
+      `UPDATE provider_state_cleanup_tasks
+       SET status = 'published', updated_at = ?
+       WHERE id = ? AND schema_version = ? AND operation = 'provisional_exact'
+         AND status = 'prepared' AND locator_json = ?
+         AND owner_attempt_id = ? AND owner_session_key = ? AND owner_boot_epoch = ?`,
+    )
+    .run(
+      prepared.now,
+      prepared.id,
+      CLEANUP_SCHEMA_VERSION,
+      prepared.locatorJson,
+      prepared.owner.attemptId,
+      prepared.owner.sessionKey,
+      prepared.owner.bootEpoch,
+    );
+  if (result.changes !== 1) return null;
+  const row = database.prepare("SELECT * FROM provider_state_cleanup_tasks WHERE id = ?").get(prepared.id) as
+    | CleanupTaskRow
+    | undefined;
+  if (!row) throw new Error("Published provider cleanup reservation disappeared inside its transaction");
+  return rowToTask(row);
+}
+
+export function publishPreparedProviderStateCleanupTask(
+  input: PublishPreparedProviderStateCleanupTaskInput,
+): ProviderStateCleanupTask | null {
+  return executeWrite(getDb(), (database) => publishPreparedProviderStateCleanupTaskInTransaction(database, input), {
+    label: "provider-state-cleanup-publish-prepared",
   });
 }
 
@@ -396,7 +461,10 @@ interface AttemptIdentityRow {
   provider: unknown;
   boot_epoch: unknown;
   status: unknown;
+  started_at: unknown;
+  last_heartbeat_at: unknown;
   lease_expires_at: unknown;
+  completed_at: unknown;
 }
 
 function deadLetterInvalidProvisionalOwner(
@@ -422,7 +490,8 @@ function provisionalTaskIsClaimable(database: Database, task: CleanupTaskRow, no
   }
   const attempt = database
     .prepare(
-      `SELECT session_key, provider, boot_epoch, status, lease_expires_at
+      `SELECT session_key, provider, boot_epoch, status, started_at,
+         last_heartbeat_at, lease_expires_at, completed_at
        FROM runtime_turn_attempts WHERE attempt_id = ?`,
     )
     .get(task.owner_attempt_id) as AttemptIdentityRow | undefined;
@@ -436,9 +505,20 @@ function provisionalTaskIsClaimable(database: Database, task: CleanupTaskRow, no
     typeof attempt.boot_epoch !== "string" ||
     typeof attempt.status !== "string" ||
     !(RUNTIME_TURN_ATTEMPT_STATUSES as readonly string[]).includes(attempt.status) ||
+    typeof attempt.started_at !== "number" ||
+    !Number.isSafeInteger(attempt.started_at) ||
+    attempt.started_at < 0 ||
+    typeof attempt.last_heartbeat_at !== "number" ||
+    !Number.isSafeInteger(attempt.last_heartbeat_at) ||
+    attempt.last_heartbeat_at < attempt.started_at ||
     typeof attempt.lease_expires_at !== "number" ||
     !Number.isSafeInteger(attempt.lease_expires_at) ||
-    attempt.lease_expires_at < 0
+    attempt.lease_expires_at <= attempt.last_heartbeat_at ||
+    (attempt.status === "running"
+      ? attempt.completed_at !== null
+      : typeof attempt.completed_at !== "number" ||
+        !Number.isSafeInteger(attempt.completed_at) ||
+        attempt.completed_at < attempt.last_heartbeat_at)
   ) {
     deadLetterInvalidProvisionalOwner(database, task, "schema_mismatch", now);
     return false;
@@ -521,11 +601,28 @@ export function completeProviderStateCleanupTask(input: { id: string; leaseId: s
   );
 }
 
+function providerStateCleanupFailureDisposition(errorCode: ProviderStateCleanupErrorCode): "retry" | "dead" {
+  switch (errorCode) {
+    case "io_transient":
+    case "state_busy":
+    case "executor_unavailable":
+      return "retry";
+    case "state_missing":
+    case "invalid_locator":
+    case "schema_mismatch":
+    case "binding_mismatch":
+    case "foreign_root":
+    case "reparse_detected":
+    case "credential_detected":
+    case "unknown":
+      return "dead";
+  }
+}
+
 export function failProviderStateCleanupTask(input: {
   id: string;
   leaseId: string;
   errorCode: ProviderStateCleanupErrorCode;
-  retryable: boolean;
   now?: number;
   baseBackoffMs?: number;
   maxBackoffMs?: number;
@@ -554,7 +651,8 @@ export function failProviderStateCleanupTask(input: {
       ) {
         return false;
       }
-      const willRetry = input.retryable && task.attempt_count < maxAttempts;
+      const willRetry =
+        providerStateCleanupFailureDisposition(input.errorCode) === "retry" && task.attempt_count < maxAttempts;
       const exponent = Math.max(0, task.attempt_count - 1);
       const delay = Math.min(maxBackoffMs, baseBackoffMs * 2 ** exponent);
       const nextAttemptAt = willRetry ? requireTimestamp(now + delay, "nextAttemptAt") : task.next_attempt_at;

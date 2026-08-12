@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { executeWrite } from "../db/write-retry.js";
 import { getDb } from "../router/router-db.js";
 import { getOrCreateSession, getSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
@@ -12,10 +13,13 @@ import {
   completeProviderStateCleanupTask,
   createProviderStateCleanupIdempotencyKey,
   enqueuePreparedProviderStateCleanupTask,
+  enqueuePreparedProviderStateCleanupTaskInTransaction,
   enqueuePublishedProviderStateCleanupTask,
   failProviderStateCleanupTask,
   mutateSessionAndEnqueueProviderStateCleanup,
   parseProviderStateCleanupLocator,
+  publishPreparedProviderStateCleanupTask,
+  publishPreparedProviderStateCleanupTaskInTransaction,
   serializeProviderStateCleanupLocator,
 } from "./provider-state-cleanup-store.js";
 
@@ -150,6 +154,68 @@ describe("provider state cleanup durable store", () => {
     ).toBe(2);
   });
 
+  it("rejects a different caller-supplied reservation id for the same provisional locator", () => {
+    const owner = { attemptId: "attempt-a", sessionKey: "session-a", bootEpoch: "boot-a" };
+    const first = enqueuePreparedProviderStateCleanupTask({
+      id: "reservation-a",
+      locator: locator(),
+      owner,
+      now: 100,
+    });
+
+    expect(() =>
+      enqueuePreparedProviderStateCleanupTask({
+        id: "reservation-b",
+        locator: locator(),
+        owner,
+        now: 200,
+      }),
+    ).toThrow("different immutable task data");
+    expect(first.id).toBe("reservation-a");
+    expect(
+      getDb()
+        .prepare("SELECT id FROM provider_state_cleanup_tasks WHERE idempotency_key = ?")
+        .get(first.idempotencyKey),
+    ).toEqual({ id: "reservation-a" });
+  });
+
+  it("composes prepared enqueue in an existing transaction and promotes only the exact fenced reservation", () => {
+    const owner = { attemptId: "attempt-a", sessionKey: "session-a", bootEpoch: "boot-a" };
+    const input = { id: "reservation-composable", locator: locator(), owner, now: 100 };
+
+    const prepared = executeWrite(getDb(), (database) =>
+      enqueuePreparedProviderStateCleanupTaskInTransaction(database, input),
+    );
+    expect(prepared).toMatchObject({ id: input.id, status: "prepared" });
+    expect(
+      executeWrite(getDb(), (database) =>
+        publishPreparedProviderStateCleanupTaskInTransaction(database, {
+          ...input,
+          locator: locator(2, "a"),
+          now: 200,
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      executeWrite(getDb(), (database) =>
+        publishPreparedProviderStateCleanupTaskInTransaction(database, {
+          ...input,
+          owner: { ...owner, sessionKey: "wrong-session" },
+          now: 200,
+        }),
+      ),
+    ).toBeNull();
+    expect(getDb().prepare("SELECT status FROM provider_state_cleanup_tasks WHERE id = ?").get(input.id)).toEqual({
+      status: "prepared",
+    });
+
+    expect(publishPreparedProviderStateCleanupTask({ ...input, now: 300 })).toMatchObject({
+      id: input.id,
+      status: "published",
+    });
+    expect(publishPreparedProviderStateCleanupTask({ ...input, now: 400 })).toBeNull();
+  });
+
   it("commits a session CAS and cleanup task together, creates nothing on loss, and rolls back on enqueue error", () => {
     const lost = getOrCreateSession("session:lost", "agent-a", "/workspace/project");
     const loss = mutateSessionAndEnqueueProviderStateCleanup(
@@ -272,6 +338,37 @@ describe("provider state cleanup durable store", () => {
     );
   });
 
+  it("dead-letters each internally inconsistent attempt invariant instead of claiming", () => {
+    const corruptions = [
+      "last_heartbeat_at = started_at - 1",
+      "lease_expires_at = last_heartbeat_at",
+      "completed_at = last_heartbeat_at",
+      "status = 'complete', completed_at = NULL",
+      "status = 'complete', completed_at = last_heartbeat_at - 1",
+    ];
+
+    for (const [index, corruption] of corruptions.entries()) {
+      const suffix = String.fromCharCode("a".charCodeAt(0) + index);
+      const attemptId = `attempt-invalid-invariant-${suffix}`;
+      const sessionKey = `session-invalid-invariant-${suffix}`;
+      createAttempt({ attemptId, sessionKey });
+      const task = enqueuePreparedProviderStateCleanupTask({
+        locator: locator(index + 1, suffix),
+        owner: { attemptId, sessionKey, bootEpoch: `boot-${attemptId}` },
+        now: 100,
+      });
+      publishTask(task.id);
+      getDb().exec("PRAGMA ignore_check_constraints = ON");
+      getDb().prepare(`UPDATE runtime_turn_attempts SET ${corruption} WHERE attempt_id = ?`).run(attemptId);
+      getDb().exec("PRAGMA ignore_check_constraints = OFF");
+
+      expect(claimProviderStateCleanupTasks({ now: 1_000, limit: 1, leaseDurationMs: 100 })).toEqual([]);
+      expect(
+        getDb().prepare("SELECT status, last_error_code FROM provider_state_cleanup_tasks WHERE id = ?").get(task.id),
+      ).toEqual({ status: "dead", last_error_code: "schema_mismatch" });
+    }
+  });
+
   it("reclaims expired leases and rejects stale completion", () => {
     const task = enqueuePublishedProviderStateCleanupTask({
       operation: "delete_state",
@@ -310,7 +407,6 @@ describe("provider state cleanup durable store", () => {
         id: retry.id,
         leaseId: retryLease.leaseId!,
         errorCode: "io_transient",
-        retryable: true,
         now: 110,
         baseBackoffMs: 20,
         maxBackoffMs: 30,
@@ -340,12 +436,54 @@ describe("provider state cleanup durable store", () => {
         id: dead.id,
         leaseId: deadLease.leaseId!,
         errorCode: "invalid_locator",
-        retryable: false,
         now: 120,
       }),
     ).toBe(true);
     expect(
       getDb().prepare("SELECT status, last_error_code FROM provider_state_cleanup_tasks WHERE id = ?").get(dead.id),
     ).toEqual({ status: "dead", last_error_code: "invalid_locator" });
+  });
+
+  it("derives retry versus dead disposition from the allowlisted error code", () => {
+    const transient = enqueuePublishedProviderStateCleanupTask({
+      operation: "delete_state",
+      locator: locator(1, "a"),
+      now: 100,
+    });
+    const unknown = enqueuePublishedProviderStateCleanupTask({
+      operation: "delete_state",
+      locator: locator(1, "b"),
+      now: 100,
+    });
+    const claimed = claimProviderStateCleanupTasks({ now: 100, limit: 2, leaseDurationMs: 100 });
+    const transientLease = claimed.find((task) => task.id === transient.id)!;
+    const unknownLease = claimed.find((task) => task.id === unknown.id)!;
+    const transientInput = {
+      id: transient.id,
+      leaseId: transientLease.leaseId!,
+      errorCode: "io_transient" as const,
+      now: 110,
+      baseBackoffMs: 20,
+    };
+    const unknownInput = {
+      id: unknown.id,
+      leaseId: unknownLease.leaseId!,
+      errorCode: "unknown" as const,
+      now: 110,
+      baseBackoffMs: 20,
+    };
+
+    expect(failProviderStateCleanupTask(transientInput)).toBe(true);
+    expect(failProviderStateCleanupTask(unknownInput)).toBe(true);
+    expect(
+      getDb()
+        .prepare("SELECT id, status, next_attempt_at, last_error_code FROM provider_state_cleanup_tasks ORDER BY id")
+        .all(),
+    ).toEqual(
+      expect.arrayContaining([
+        { id: transient.id, status: "failed", next_attempt_at: 130, last_error_code: "io_transient" },
+        { id: unknown.id, status: "dead", next_attempt_at: 0, last_error_code: "unknown" },
+      ]),
+    );
   });
 });
