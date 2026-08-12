@@ -859,15 +859,11 @@ function attachMultiSurfaceOutputForSession(input: {
     chatId: input.defaultChat.id,
     attachedReason: "runtime-guard-test-default-output",
     outputAttachedAt: Date.now(),
-    speechMode: "speak",
-    speechReason: "runtime-guard-test-default-output",
   });
   actualRouterDbModule.dbCreateSessionChatSubscription({
     sessionKey: input.sessionKey,
     chatId: input.sourceChat.id,
     attachedReason: "runtime-guard-test-source-speak",
-    speechMode: "speak",
-    speechReason: "runtime-guard-test-source-speak",
   });
 }
 
@@ -2707,8 +2703,6 @@ describe("RaviBot streaming session lifecycle", () => {
       sessionKey,
       chatId: whatsappSource.id,
       attachedReason: "runtime-guard-test-generated-media-dedupe",
-      speechMode: "speak",
-      speechReason: "runtime-guard-test-generated-media-dedupe",
     });
     streamGeneratedImageTurn("imagem única", { duplicateCompletion: true });
 
