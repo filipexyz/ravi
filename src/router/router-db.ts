@@ -2230,6 +2230,51 @@ function getDb(): Database {
       ON runtime_turn_attempts(recovery_claim_id)
       WHERE recovery_claim_id IS NOT NULL;
 
+    CREATE TABLE IF NOT EXISTS provider_state_cleanup_tasks (
+      id TEXT PRIMARY KEY,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      schema_version INTEGER NOT NULL CHECK(schema_version = 1),
+      provider TEXT NOT NULL,
+      operation TEXT NOT NULL CHECK(operation IN ('provisional_exact','delete_state','retire_revision')),
+      locator_json TEXT NOT NULL,
+      successor_locator_json TEXT,
+      status TEXT NOT NULL CHECK(status IN ('prepared','published','leased','failed','dead')),
+      owner_attempt_id TEXT,
+      owner_session_key TEXT,
+      owner_boot_epoch TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at INTEGER NOT NULL DEFAULT 0,
+      lease_id TEXT,
+      leased_until INTEGER,
+      last_error_code TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      CHECK(
+        (operation = 'provisional_exact'
+          AND owner_attempt_id IS NOT NULL
+          AND owner_session_key IS NOT NULL
+          AND owner_boot_epoch IS NOT NULL)
+        OR (operation != 'provisional_exact'
+          AND owner_attempt_id IS NULL
+          AND owner_session_key IS NULL
+          AND owner_boot_epoch IS NULL)
+      ),
+      CHECK(
+        (operation = 'retire_revision' AND successor_locator_json IS NOT NULL)
+        OR (operation != 'retire_revision' AND successor_locator_json IS NULL)
+      ),
+      CHECK(status != 'prepared' OR operation = 'provisional_exact'),
+      CHECK(
+        (status = 'leased' AND lease_id IS NOT NULL AND leased_until IS NOT NULL)
+        OR (status != 'leased' AND lease_id IS NULL AND leased_until IS NULL)
+      )
+    );
+    CREATE INDEX IF NOT EXISTS idx_provider_state_cleanup_ready
+      ON provider_state_cleanup_tasks(status, next_attempt_at, created_at);
+    CREATE INDEX IF NOT EXISTS idx_provider_state_cleanup_lease
+      ON provider_state_cleanup_tasks(status, leased_until)
+      WHERE leased_until IS NOT NULL;
+
     CREATE TABLE IF NOT EXISTS runtime_prompt_queue (
       queue_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
       queue_item_id TEXT NOT NULL UNIQUE,
