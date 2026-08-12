@@ -8,6 +8,7 @@ import {
   dbUpsertSkillGrant,
   getOrCreateSession,
   getSession,
+  redirectSessionIfUnchanged,
   resetSessionIfUnchanged,
 } from "../router/index.js";
 import { dbUpdateAgent } from "../router/router-db.js";
@@ -211,8 +212,9 @@ describe("runtime host skill-gate enforcement", () => {
       if (ownershipChange === "reset") {
         expect(resetSessionIfUnchanged(admitted)).toBe(true);
       } else {
-        const redirected = getOrCreateSession(admitted.sessionKey, "redirected-agent", join(stateDir!, "redirected"));
-        expect(redirected.lifecycleGeneration).toBe(admitted.lifecycleGeneration! + 1);
+        const redirected = redirectSessionIfUnchanged(admitted, "redirected-agent", join(stateDir!, "redirected"));
+        expect(redirected.won).toBe(true);
+        expect(redirected.session?.lifecycleGeneration).toBe(admitted.lifecycleGeneration! + 1);
       }
 
       const result = await services.executeDynamicTool({
