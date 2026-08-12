@@ -1,5 +1,5 @@
 import { logger } from "../utils/logger.js";
-import { cleanupKimiCodeSessionState } from "./kimi-code-state.js";
+import { cleanupKimiCodeSessionState, retireSupersededKimiCodeSessionState } from "./kimi-code-state.js";
 import type { RuntimeSessionState } from "./types.js";
 
 const log = logger.child("runtime:provider-session-lifecycle");
@@ -12,6 +12,43 @@ export interface ProviderSessionLifecycleMutationInput {
   /** Injectable only to keep the mutation/cleanup ordering independently testable. */
   cleanupKimi?: (session: RuntimeSessionState) => Promise<void>;
   env?: NodeJS.ProcessEnv;
+}
+
+export interface ProviderSessionPersistenceMutationInput {
+  /** The locator owned by the host before the durable persistence callback. */
+  previousSession: RuntimeSessionState | null | undefined;
+  /** The locator returned by the provider for the completed turn. */
+  nextSession: RuntimeSessionState | null | undefined;
+  /** Must synchronously durably store nextSession or throw. */
+  persist: () => void;
+  /** Injectable only to keep persistence/retirement ordering independently testable. */
+  retireKimi?: (
+    previousSession: RuntimeSessionState,
+    nextSession: RuntimeSessionState,
+    env?: NodeJS.ProcessEnv,
+  ) => Promise<void>;
+  env?: NodeJS.ProcessEnv;
+}
+
+export async function runProviderSessionPersistenceMutation(
+  input: ProviderSessionPersistenceMutationInput,
+): Promise<void> {
+  const previousSession = snapshotRuntimeSessionState(input.previousSession);
+  const nextSession = snapshotRuntimeSessionState(input.nextSession);
+  input.persist();
+  if (!isKimiCodeSession(previousSession) || !isKimiCodeSession(nextSession)) return;
+  if (
+    previousSession.params?.sessionId !== nextSession.params?.sessionId ||
+    Number(nextSession.params?.revision) <= Number(previousSession.params?.revision)
+  ) {
+    return;
+  }
+
+  try {
+    await (input.retireKimi ?? retireSupersededKimiCodeSessionState)(previousSession, nextSession, input.env);
+  } catch (error) {
+    log.warn("Failed to retire superseded Kimi Code session state after host persistence", { error });
+  }
 }
 
 /**

@@ -206,38 +206,53 @@ export async function cleanupKimiCodeSessionState(
   env?: NodeJS.ProcessEnv,
 ): Promise<void> {
   const locator = parseLocator(session, env);
-  if (locator.provider !== KIMI_CODE_PROVIDER_ID || locator.schemaVersion !== KIMI_CODE_STATE_SCHEMA_VERSION) {
-    throw stateError("locator is invalid");
-  }
-  if (!UUID_PATTERN.test(locator.sessionId) || !Number.isSafeInteger(locator.revision) || locator.revision < 1) {
-    throw stateError("locator is invalid");
-  }
-
-  const root = stateRoot(env);
-  const sessionDirectory = join(root, locator.sessionId);
-  if (
-    !isAbsolute(locator.sessionFile) ||
-    hasTraversalSegment(locator.sessionFile) ||
-    !samePath(dirname(locator.sessionFile), sessionDirectory) ||
-    !isRevisionFilename(basename(locator.sessionFile), locator.revision) ||
-    !isPathInside(root, locator.sessionFile)
-  ) {
-    throw stateError("session path is invalid");
-  }
-
-  const directoryInfo = await lstat(sessionDirectory).catch(() => undefined);
-  if (!directoryInfo) return;
-  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) throw stateError("session directory is invalid");
-  await assertNoExistingReparsePoints(sessionDirectory);
-  const rootRealPath = await realpath(root).catch(() => undefined);
-  const directoryRealPath = await realpath(sessionDirectory).catch(() => undefined);
-  if (!rootRealPath || !directoryRealPath || !isPathInside(rootRealPath, directoryRealPath)) {
-    throw stateError("session path escaped its root");
-  }
+  assertValidKimiCodeLocator(locator);
+  const { root, sessionDirectory } = resolveKimiCodeLocatorPath(locator, env);
+  if (!(await validateKimiCodeSessionDirectory(root, sessionDirectory))) return;
   await readLocatorBoundSnapshot(locator, env);
 
-  await removeOwnedSessionArtifacts(sessionDirectory, basename(locator.sessionFile));
+  await removeOwnedSessionArtifacts(sessionDirectory, locator.revision);
   await rmdir(sessionDirectory).catch((error) => {
+    if (isRecord(error) && (error.code === "ENOENT" || error.code === "ENOTEMPTY")) return;
+    throw error;
+  });
+}
+
+export async function retireSupersededKimiCodeSessionState(
+  previousSession: RuntimeSessionState,
+  nextSession: RuntimeSessionState,
+  env?: NodeJS.ProcessEnv,
+): Promise<void> {
+  const previous = parseLocator(previousSession, env);
+  const next = parseLocator(nextSession, env);
+  assertValidKimiCodeLocator(previous);
+  assertValidKimiCodeLocator(next);
+  const previousPath = resolveKimiCodeLocatorPath(previous, env);
+  const nextPath = resolveKimiCodeLocatorPath(next, env);
+  if (
+    previous.sessionId !== next.sessionId ||
+    next.revision <= previous.revision ||
+    previous.model !== next.model ||
+    !sameCwd(previous.cwd, next.cwd) ||
+    !sameWorkspaceIdentity(previous.workspaceIdentity, next.workspaceIdentity) ||
+    !samePath(previousPath.sessionDirectory, nextPath.sessionDirectory)
+  ) {
+    throw stateError("locator lineage mismatch");
+  }
+  if (!(await validateKimiCodeSessionDirectory(nextPath.root, nextPath.sessionDirectory))) return;
+
+  // The durable successor must bind to a real immutable snapshot before the
+  // predecessor can be retired. A fabricated terminal locator therefore
+  // leaves the previous resumable state untouched.
+  await readLocatorBoundSnapshot(next, env);
+  const previousInfo = await lstat(previous.sessionFile).catch(() => undefined);
+  if (!previousInfo) return;
+  await readLocatorBoundSnapshot(previous, env);
+  await unlink(previous.sessionFile).catch((error) => {
+    if (isRecord(error) && error.code === "ENOENT") return;
+    throw error;
+  });
+  await rmdir(previousPath.sessionDirectory).catch((error) => {
     if (isRecord(error) && (error.code === "ENOENT" || error.code === "ENOTEMPTY")) return;
     throw error;
   });
@@ -387,18 +402,26 @@ async function readLocatorBoundSnapshot(
   return snapshot;
 }
 
-async function removeOwnedSessionArtifacts(sessionDirectory: string, referencedFilename: string): Promise<void> {
+async function removeOwnedSessionArtifacts(sessionDirectory: string, maximumRevision: number): Promise<void> {
   await assertNoExistingReparsePoints(sessionDirectory);
   for (const entry of await readdir(sessionDirectory, { withFileTypes: true })) {
-    const isReferencedSnapshot = entry.name === referencedFilename;
+    const revision = revisionFromFilename(entry.name);
+    const isRetiredSnapshot = revision !== undefined && revision <= maximumRevision;
     const isAgedTemporary = isTemporaryRevisionFilename(entry.name);
-    if (!isReferencedSnapshot && !isAgedTemporary) continue;
+    if (!isRetiredSnapshot && !isAgedTemporary) continue;
     const path = join(sessionDirectory, entry.name);
     const info = await lstat(path);
     if (!info.isFile() || info.isSymbolicLink()) throw stateError("session path uses a reparse point");
-    if (!isReferencedSnapshot && Date.now() - info.mtimeMs < 60_000) continue;
+    if (!isRetiredSnapshot && Date.now() - info.mtimeMs < 60_000) continue;
     await unlink(path);
   }
+}
+
+function revisionFromFilename(filename: string): number | undefined {
+  const revision = /^revision-(\d{8})-([0-9a-f-]{36})\.json$/i.exec(filename);
+  if (revision === null || !UUID_PATTERN.test(revision[2])) return undefined;
+  const parsed = Number(revision[1]);
+  return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : undefined;
 }
 
 function isTemporaryRevisionFilename(filename: string): boolean {
@@ -422,6 +445,49 @@ function isRevisionFilename(filename: string, revision: number): boolean {
     filename.endsWith(suffix) &&
     UUID_PATTERN.test(filename.slice(prefix.length, -suffix.length))
   );
+}
+
+function assertValidKimiCodeLocator(locator: ReturnType<typeof parseLocator>): void {
+  if (
+    locator.provider !== KIMI_CODE_PROVIDER_ID ||
+    locator.schemaVersion !== KIMI_CODE_STATE_SCHEMA_VERSION ||
+    !UUID_PATTERN.test(locator.sessionId) ||
+    !Number.isSafeInteger(locator.revision) ||
+    locator.revision < 1
+  ) {
+    throw stateError("locator is invalid");
+  }
+}
+
+function resolveKimiCodeLocatorPath(
+  locator: ReturnType<typeof parseLocator>,
+  env?: NodeJS.ProcessEnv,
+): { root: string; sessionDirectory: string } {
+  const root = stateRoot(env);
+  const sessionDirectory = join(root, locator.sessionId);
+  if (
+    !isAbsolute(locator.sessionFile) ||
+    hasTraversalSegment(locator.sessionFile) ||
+    !samePath(dirname(locator.sessionFile), sessionDirectory) ||
+    !isRevisionFilename(basename(locator.sessionFile), locator.revision) ||
+    !isPathInside(root, locator.sessionFile)
+  ) {
+    throw stateError("session path is invalid");
+  }
+  return { root, sessionDirectory };
+}
+
+async function validateKimiCodeSessionDirectory(root: string, sessionDirectory: string): Promise<boolean> {
+  const directoryInfo = await lstat(sessionDirectory).catch(() => undefined);
+  if (!directoryInfo) return false;
+  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) throw stateError("session directory is invalid");
+  await assertNoExistingReparsePoints(sessionDirectory);
+  const rootRealPath = await realpath(root).catch(() => undefined);
+  const directoryRealPath = await realpath(sessionDirectory).catch(() => undefined);
+  if (!rootRealPath || !directoryRealPath || !isPathInside(rootRealPath, directoryRealPath)) {
+    throw stateError("session path escaped its root");
+  }
+  return true;
 }
 
 function parseLocator(

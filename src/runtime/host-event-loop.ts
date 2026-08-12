@@ -21,7 +21,10 @@ import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-tra
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
-import { runProviderSessionLifecycleMutation } from "./provider-session-lifecycle.js";
+import {
+  runProviderSessionLifecycleMutation,
+  runProviderSessionPersistenceMutation,
+} from "./provider-session-lifecycle.js";
 import {
   buildRuntimeContextRecoveryPrompt,
   classifyRuntimeContextWindowFailure,
@@ -2299,6 +2302,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         // Skill gates can be persisted by the Codex Bash hook in a separate process.
         // Refresh before merging the provider's terminal snapshot so those marks survive turn.complete.
         refreshRuntimeSessionParamsFromDb();
+        const previousRuntimeSession = {
+          displayId: session.runtimeSessionDisplayId,
+          params: session.runtimeSessionParams,
+        };
         const runtimeSessionParams = mergeRuntimeCredentialSessionMetadata(
           mergeRuntimeSessionParams(event.session?.params ?? undefined),
           streaming.currentRuntimeCredential,
@@ -2309,16 +2316,22 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
 
         if (persistedSessionId) {
-          updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
-            runtimeSessionParams,
-            runtimeSessionDisplayId,
+          await runProviderSessionPersistenceMutation({
+            previousSession: previousRuntimeSession,
+            nextSession: { displayId: runtimeSessionDisplayId, params: runtimeSessionParams },
+            persist: () => {
+              updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+                runtimeSessionParams,
+                runtimeSessionDisplayId,
+              });
+              session.runtimeSessionParams = runtimeSessionParams;
+              session.runtimeSessionDisplayId = runtimeSessionDisplayId ?? persistedSessionId;
+              session.providerSessionId = runtimeSessionDisplayId ?? persistedSessionId;
+              session.sdkSessionId = runtimeSessionDisplayId ?? persistedSessionId;
+              session.runtimeProvider = runtimeSession.provider;
+            },
           });
           backfillProviderSessionId(sessionName, persistedSessionId);
-          session.runtimeSessionParams = runtimeSessionParams;
-          session.runtimeSessionDisplayId = runtimeSessionDisplayId ?? persistedSessionId;
-          session.providerSessionId = runtimeSessionDisplayId ?? persistedSessionId;
-          session.sdkSessionId = runtimeSessionDisplayId ?? persistedSessionId;
-          session.runtimeProvider = runtimeSession.provider;
         }
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
         if (event.usage) {

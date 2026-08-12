@@ -263,6 +263,36 @@ describe("Kimi Code immutable session state", () => {
     expect(existsSync(String(first.session.params?.sessionFile))).toBe(false);
   });
 
+  test("cleanup current removes all validated older revisions but preserves a newer concurrent locator", async () => {
+    const first = await firstCommit();
+    const second = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-current",
+      messages: nativeMessages("current"),
+      previousSnapshot: first.snapshot,
+      env: first.env,
+    });
+    const newer = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-concurrent-newer",
+      messages: nativeMessages("concurrent-newer"),
+      previousSnapshot: second.snapshot,
+      env: first.env,
+    });
+
+    await cleanupKimiCodeSessionState(second.session, first.env);
+
+    expect(existsSync(String(first.session.params?.sessionFile))).toBe(false);
+    expect(existsSync(String(second.session.params?.sessionFile))).toBe(false);
+    await expect(
+      loadKimiCodeSessionState({ session: newer.session, model: "k3", cwd: first.cwd, env: first.env }),
+    ).resolves.toEqual(newer.snapshot);
+  }, 20_000);
+
   test("accepts a negative nonzero device identity but rejects signed-zero and plus-prefixed locators", async () => {
     const committed = await firstCommit();
     const sessionFile = String(committed.session.params?.sessionFile);
