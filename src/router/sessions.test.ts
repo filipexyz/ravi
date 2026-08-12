@@ -3,6 +3,7 @@ import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-
 import {
   getOrCreateSession,
   getSession,
+  resetSessionIfUnchanged,
   updateSessionContext,
   updateSessionEffortOverride,
   updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged,
@@ -74,11 +75,30 @@ describe("sessions store", () => {
     });
 
     expect(updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged(session, "claude", true)).toBe(true);
-    expect(getSession(session.sessionKey)).toMatchObject({ runtimeProviderOverride: "claude" });
+    expect(getSession(session.sessionKey)).toMatchObject({
+      runtimeProviderOverride: "claude",
+      lifecycleGeneration: session.lifecycleGeneration! + 1,
+    });
     expect(getSession(session.sessionKey)?.providerSessionId).toBeUndefined();
 
     expect(updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged(session, "codex", true)).toBe(false);
     expect(getSession(session.sessionKey)?.runtimeProviderOverride).toBe("claude");
+  });
+
+  it("advances reset ownership exactly once and rejects a stale repeat", () => {
+    const admitted = getOrCreateSession("agent:dev:reset-cas", "dev", "/tmp/dev", {
+      runtimeProvider: "kimi-code",
+      providerSessionId: "synthetic-reset-locator",
+      runtimeSessionParams: { provider: "kimi-code", revision: 1 },
+    });
+
+    expect(resetSessionIfUnchanged(admitted)).toBe(true);
+    expect(getSession(admitted.sessionKey)).toMatchObject({
+      lifecycleGeneration: admitted.lifecycleGeneration! + 1,
+      providerSessionId: undefined,
+    });
+    expect(resetSessionIfUnchanged(admitted)).toBe(false);
+    expect(getSession(admitted.sessionKey)?.lifecycleGeneration).toBe(admitted.lifecycleGeneration! + 1);
   });
 
   it("persists and clears the provider thread id for programmatic session forks", () => {

@@ -278,6 +278,10 @@ export interface SessionEntry {
   expiresAt?: number;
 }
 
+export type SessionProviderStateMutationResult =
+  | { won: true; lifecycleGeneration: number }
+  | { won: false; lifecycleGeneration: number | null };
+
 // ============================================================================
 // Matched Route (pure routing, no side effects)
 // ============================================================================

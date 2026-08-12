@@ -2861,9 +2861,7 @@ function getDb(): Database {
   if (!sessionColumns.some((c) => c.name === "lifecycle_generation")) {
     db.exec("ALTER TABLE sessions ADD COLUMN lifecycle_generation INTEGER NOT NULL DEFAULT 1");
   }
-  db.exec(`CREATE TRIGGER IF NOT EXISTS sessions_lifecycle_generation_after_update
-    AFTER UPDATE ON sessions FOR EACH ROW WHEN NEW.lifecycle_generation = OLD.lifecycle_generation
-    BEGIN UPDATE sessions SET lifecycle_generation = lifecycle_generation + 1 WHERE session_key = NEW.session_key; END`);
+  db.exec("DROP TRIGGER IF EXISTS sessions_lifecycle_generation_after_update");
   if (!sessionColumns.some((c) => c.name === "ephemeral")) {
     db.exec("ALTER TABLE sessions ADD COLUMN ephemeral INTEGER DEFAULT 0");
     db.exec("ALTER TABLE sessions ADD COLUMN expires_at INTEGER");

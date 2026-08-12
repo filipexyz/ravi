@@ -180,18 +180,25 @@ export function resolveRuntimeSession(options: RuntimeSessionResolutionOptions):
       requestedProvider: runtimeProviderId,
       resumeDecision,
     });
+    let providerStateCleared = false;
     providerStateCleanup = runProviderSessionLifecycleMutation({
       session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
-      mutate: () => clearProviderSessionIfUnchanged(session),
+      mutate: () => {
+        providerStateCleared = clearProviderSessionIfUnchanged(session);
+        return providerStateCleared;
+      },
     });
-    session.runtimeSessionParams = undefined;
-    session.runtimeSessionDisplayId = undefined;
-    session.providerSessionId = undefined;
-    session.sdkSessionId = undefined;
-    session.runtimeProvider = undefined;
-    storedRuntimeSessionParams = undefined;
-    storedProviderSessionId = undefined;
-    resumeDecision.staleCleared = true;
+    if (providerStateCleared) {
+      session.runtimeSessionParams = undefined;
+      session.runtimeSessionDisplayId = undefined;
+      session.providerSessionId = undefined;
+      session.sdkSessionId = undefined;
+      session.runtimeProvider = undefined;
+      session.lifecycleGeneration = (session.lifecycleGeneration ?? 0) + 1;
+      storedRuntimeSessionParams = undefined;
+      storedProviderSessionId = undefined;
+      resumeDecision.staleCleared = true;
+    }
   }
 
   return {

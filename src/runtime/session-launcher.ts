@@ -307,7 +307,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     markRuntimeCredentialAttemptStarted(runtimeCredentialAttempt?.attemptId);
     streamingSession.currentRuntimeCredential = runtimeCredentialAttempt;
     const persistedRuntimeProviderSessionId = canResumeStoredSession ? storedProviderSessionId : undefined;
-    updateRuntimeProviderState(session.sessionKey, runtimeProviderId, {
+    const providerStateMutation = updateRuntimeProviderState(session, runtimeProviderId, {
       ...(persistedRuntimeProviderSessionId ? { providerSessionId: persistedRuntimeProviderSessionId } : {}),
       ...(canResumeStoredSession && storedRuntimeSessionParams
         ? { runtimeSessionParams: storedRuntimeSessionParams }
@@ -318,8 +318,8 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
           }
         : {}),
     });
-    session.runtimeProvider = runtimeProviderId;
-    if (persistedRuntimeProviderSessionId) {
+    if (providerStateMutation.won) session.runtimeProvider = runtimeProviderId;
+    if (providerStateMutation.won && persistedRuntimeProviderSessionId) {
       session.runtimeSessionParams = storedRuntimeSessionParams;
       session.runtimeSessionDisplayId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
       session.providerSessionId = session.runtimeSessionDisplayId ?? storedProviderSessionId;

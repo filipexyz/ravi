@@ -1415,6 +1415,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   };
 
   const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
+    const admittedSession = { ...session, runtimeSessionParams: session.runtimeSessionParams };
     const runtimeSessionParams: Record<string, unknown> = {
       ...(isRecord(session.runtimeSessionParams) ? session.runtimeSessionParams : {}),
       skillVisibility,
@@ -1425,18 +1426,19 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       session.sdkSessionId ??
       (typeof runtimeSessionParams.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
 
-    session.runtimeSessionParams = runtimeSessionParams;
     runtimeSession.skillVisibility = skillVisibility;
+    let persisted = false;
     if (persistedSessionId) {
-      updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+      persisted = updateProviderSession(admittedSession, runtimeSession.provider, persistedSessionId, {
         runtimeSessionParams,
         runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
-      });
+      }).won;
     } else {
-      updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
+      persisted = updateRuntimeProviderState(admittedSession, runtimeSession.provider, {
         runtimeSessionParams,
-      });
+      }).won;
     }
+    if (persisted) session.runtimeSessionParams = runtimeSessionParams;
     return runtimeSessionParams;
   };
 
@@ -2320,10 +2322,13 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             previousSession: previousRuntimeSession,
             nextSession: { displayId: runtimeSessionDisplayId, params: runtimeSessionParams },
             persist: () => {
-              updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+              const mutation = updateProviderSession(session, runtimeSession.provider, persistedSessionId, {
                 runtimeSessionParams,
                 runtimeSessionDisplayId,
               });
+              if (!mutation.won) {
+                throw new Error("Session ownership changed before provider state persistence");
+              }
               session.runtimeSessionParams = runtimeSessionParams;
               session.runtimeSessionDisplayId = runtimeSessionDisplayId ?? persistedSessionId;
               session.providerSessionId = runtimeSessionDisplayId ?? persistedSessionId;

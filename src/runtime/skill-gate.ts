@@ -229,12 +229,14 @@ function persistSkillGateVisibility(
     (typeof runtimeSessionParams.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
 
   if (persistedSessionId) {
-    updateProviderSession(session.sessionKey, session.runtimeProvider, persistedSessionId, {
+    const mutation = updateProviderSession(session, session.runtimeProvider, persistedSessionId, {
       runtimeSessionParams,
       runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
     });
+    if (mutation.won) session.runtimeSessionParams = runtimeSessionParams;
   } else {
-    updateRuntimeProviderState(session.sessionKey, session.runtimeProvider, { runtimeSessionParams });
+    const mutation = updateRuntimeProviderState(session, session.runtimeProvider, { runtimeSessionParams });
+    if (mutation.won) session.runtimeSessionParams = runtimeSessionParams;
   }
 
   emitSkillGateEvent(session, {
