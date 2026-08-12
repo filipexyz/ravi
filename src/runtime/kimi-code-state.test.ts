@@ -709,8 +709,9 @@ describe("Kimi Code immutable session state", () => {
     expect(readFileSync(String(second.session.params?.sessionFile), "utf8")).toContain("answer-after-crash");
   });
 
-  test("rejects oversized state deterministically without lossy compaction", async () => {
+  test("rejects oversized state before reaching the publication boundary", async () => {
     const fixture = temporaryState();
+    let reachedPublicationBoundary = false;
     await expect(
       commitKimiCodeSessionState({
         sessionId: createKimiCodeSessionId(),
@@ -722,8 +723,14 @@ describe("Kimi Code immutable session state", () => {
           { role: "assistant", content: "x".repeat(1024 * 1024), reasoning_content: "", tool_calls: [] },
         ],
         env: fixture.env,
+        faultInjection: {
+          beforePublish: () => {
+            reachedPublicationBoundary = true;
+          },
+        },
       }),
     ).rejects.toThrow("Kimi Code session state exceeds maximum size");
+    expect(reachedPublicationBoundary).toBe(false);
     expect(existsSync(join(fixture.env.RAVI_STATE_DIR, "runtime", "kimi-code", "sessions"))).toBe(false);
   });
 

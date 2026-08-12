@@ -2230,27 +2230,46 @@ describe("createKimiCodeRuntimeProvider", () => {
     expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code session fork is unsupported" });
   });
 
-  test("fails the terminal instead of publishing a commit when state exceeds its bound", async () => {
+  test("fails before completion when the final serialized request exceeds its bound", async () => {
     const fixture = isolatedStateEnv();
-    const nearlyFull = await commitKimiCodeSessionState({
+    const committed = await commitKimiCodeSessionState({
       sessionId: createKimiCodeSessionId(),
       model: "k3",
       cwd: join(fixture.root, "workspace"),
-      lastCommittedTurnId: "seed-large",
+      lastCommittedTurnId: "seed-small",
       messages: [
-        { role: "user", content: "u".repeat(1_900_000) },
-        { role: "assistant", content: "a".repeat(1_900_000), reasoning_content: "", tool_calls: [] },
+        { role: "user", content: "seed user" },
+        { role: "assistant", content: "seed assistant", reasoning_content: "", tool_calls: [] },
       ],
       env: fixture.env,
     });
-    const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
+    expect(Buffer.byteLength(JSON.stringify(committed.snapshot), "utf8")).toBeLessThanOrEqual(1024 * 1024);
+
+    let fetchCalls = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        createKimiCodeHttpTransport({
+          fetch: (async () => {
+            fetchCalls += 1;
+            return new Response("data: [DONE]\\n\\n");
+          }) as unknown as typeof fetch,
+        }),
+    });
     const events = await collectEvents(
       provider,
       startRequest({
-        prompt: prompts("x".repeat(500_000)),
+        prompt: prompts("p".repeat(850_000)),
         cwd: join(fixture.root, "workspace"),
         env: fixture.env,
-        resumeSession: nearlyFull.session,
+        resumeSession: committed.session,
+        systemPromptAppend: "s".repeat(850_000),
+        dynamicTools: [
+          {
+            name: "oversized_request_tool",
+            description: "d".repeat(500_000),
+            inputSchema: { type: "object" },
+          },
+        ],
       }),
     );
 
@@ -2260,6 +2279,7 @@ describe("createKimiCodeRuntimeProvider", () => {
       recoverable: false,
       rawEvent: { preflight: "request_too_large" },
     });
+    expect(fetchCalls).toBe(0);
     expect(events.some((event) => event.type === "turn.complete")).toBe(false);
   });
 });
