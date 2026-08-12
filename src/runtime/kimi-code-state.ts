@@ -23,6 +23,7 @@ const KIMI_CODE_MAX_INTENT_SCAN_ENTRIES = 256;
 const KIMI_CODE_DELETE_BATCH_SIZE = 16;
 const KIMI_CODE_DELETE_SCAN_ENTRIES = 64;
 const KIMI_CODE_MAX_DELETE_SCANNERS = 64;
+const KIMI_CODE_DELETE_SCANNER_IDLE_TTL_MS = 5 * 60_000;
 const KIMI_CODE_WINDOWS_MOVE_TIMEOUT_MS = 10_000;
 const KIMI_CODE_WINDOWS_MOVE_COLLISION_EXIT = 17;
 const WINDOWS_SYSTEM_POWERSHELL_GLOBAL_PATH =
@@ -275,6 +276,9 @@ interface ExecuteKimiCodeDurableCleanupFaultInjection {
   strictSyncDirectory?: (directory: string) => void | Promise<void>;
   afterArtifactDurable?: (path: string) => void | Promise<void>;
   afterWindowsArtifactMove?: (kind: "snapshot" | "temporary" | "intent") => void | Promise<void>;
+  closeDirectory?: (kind: "session" | "root") => void | Promise<void>;
+  maxDeleteScanners?: number;
+  now?: () => number;
 }
 
 export interface ExecuteKimiCodeDeleteStateCleanupInput {
@@ -1212,10 +1216,12 @@ interface KimiCodeDeleteScannerState {
   sessionDirectory: string;
   directory?: Awaited<ReturnType<typeof opendir>>;
   active: boolean;
+  lastTouchedAt: number;
   resetRequired: boolean;
 }
 
 const kimiCodeDeleteScanners = new Map<string, KimiCodeDeleteScannerState>();
+const kimiCodeEvictingDeleteScannerTaskIds = new Set<string>();
 
 export async function executeKimiCodeDeleteStateCleanup(
   input: ExecuteKimiCodeDeleteStateCleanupInput,
@@ -1224,6 +1230,7 @@ export async function executeKimiCodeDeleteStateCleanup(
     validateReservationId(input.taskId, input.env);
     const locator = parseKimiCodeCleanupLocator(input.locatorJson, input.env);
     const { root, sessionDirectory } = resolveKimiCodeLocatorPath(locator, input.env);
+    if (kimiCodeEvictingDeleteScannerTaskIds.has(input.taskId)) throw new KimiCodeStateError("state_busy");
     let scanner = kimiCodeDeleteScanners.get(input.taskId);
     if (scanner) {
       if (scanner.binding !== input.locatorJson || !samePath(scanner.sessionDirectory, sessionDirectory)) {
@@ -1231,24 +1238,22 @@ export async function executeKimiCodeDeleteStateCleanup(
       }
       if (scanner.active) throw new KimiCodeStateError("state_busy");
       scanner.active = true;
+      scanner.lastTouchedAt = kimiCodeDeleteScannerNow(input.faultInjection);
       if (scanner.resetRequired) {
         try {
-          await closeKimiCodeDeleteScanner(input.taskId, scanner);
-        } finally {
+          if (scanner.directory) {
+            await closeDirectoryHandle(scanner.directory, "session", input.faultInjection?.closeDirectory);
+            scanner.directory = undefined;
+          }
+          scanner.resetRequired = false;
+        } catch (error) {
           scanner.active = false;
+          throw error;
         }
-        scanner = undefined;
       }
     }
     if (!scanner) {
-      await reserveKimiCodeDeleteScannerCapacity();
-      scanner = {
-        binding: input.locatorJson,
-        sessionDirectory,
-        active: true,
-        resetRequired: false,
-      };
-      kimiCodeDeleteScanners.set(input.taskId, scanner);
+      scanner = await acquireKimiCodeDeleteScanner(input, sessionDirectory);
     }
     try {
       if (!(await validateKimiCodeSessionDirectory(root, sessionDirectory))) {
@@ -1298,14 +1303,15 @@ export async function executeKimiCodeDeleteStateCleanup(
         processed += 1;
       }
       if (reachedEnd) {
-        await closeKimiCodeDeleteScanner(input.taskId, scanner);
+        await closeKimiCodeDeleteScanner(input.taskId, scanner, input.faultInjection?.closeDirectory);
       }
       return { complete: reachedEnd && processed === 0, processed };
     } catch (error) {
       scanner.resetRequired = true;
-      await closeKimiCodeDeleteScanner(input.taskId, scanner);
+      await closeKimiCodeDeleteScanner(input.taskId, scanner, input.faultInjection?.closeDirectory);
       throw error;
     } finally {
+      scanner.lastTouchedAt = kimiCodeDeleteScannerNow(input.faultInjection);
       scanner.active = false;
     }
   } catch (error) {
@@ -1313,23 +1319,69 @@ export async function executeKimiCodeDeleteStateCleanup(
   }
 }
 
-async function reserveKimiCodeDeleteScannerCapacity(): Promise<void> {
-  if (kimiCodeDeleteScanners.size < KIMI_CODE_MAX_DELETE_SCANNERS) return;
-  for (const [taskId, candidate] of kimiCodeDeleteScanners) {
-    if (candidate.active) continue;
-    candidate.active = true;
-    try {
-      await closeKimiCodeDeleteScanner(taskId, candidate);
-    } finally {
-      candidate.active = false;
-    }
-    return;
+async function acquireKimiCodeDeleteScanner(
+  input: ExecuteKimiCodeDeleteStateCleanupInput,
+  sessionDirectory: string,
+): Promise<KimiCodeDeleteScannerState> {
+  const now = kimiCodeDeleteScannerNow(input.faultInjection);
+  const maximumScanners = input.faultInjection?.maxDeleteScanners ?? KIMI_CODE_MAX_DELETE_SCANNERS;
+  if (
+    !Number.isSafeInteger(maximumScanners) ||
+    maximumScanners < 1 ||
+    maximumScanners > KIMI_CODE_MAX_DELETE_SCANNERS
+  ) {
+    throw new KimiCodeStateError("invalid_locator");
   }
-  throw new KimiCodeStateError("state_busy");
+  const scanner: KimiCodeDeleteScannerState = {
+    binding: input.locatorJson,
+    sessionDirectory,
+    active: true,
+    lastTouchedAt: now,
+    resetRequired: false,
+  };
+  if (kimiCodeDeleteScanners.size < maximumScanners) {
+    kimiCodeDeleteScanners.set(input.taskId, scanner);
+    return scanner;
+  }
+  const staleEntry = [...kimiCodeDeleteScanners].find(
+    ([taskId, candidate]) =>
+      !candidate.active &&
+      !kimiCodeEvictingDeleteScannerTaskIds.has(taskId) &&
+      now - candidate.lastTouchedAt >= KIMI_CODE_DELETE_SCANNER_IDLE_TTL_MS,
+  );
+  if (!staleEntry) throw new KimiCodeStateError("state_busy");
+  const [staleTaskId, staleScanner] = staleEntry;
+  staleScanner.active = true;
+  kimiCodeEvictingDeleteScannerTaskIds.add(staleTaskId);
+  kimiCodeDeleteScanners.delete(staleTaskId);
+  kimiCodeDeleteScanners.set(input.taskId, scanner);
+  try {
+    if (staleScanner.directory) {
+      await closeDirectoryHandle(staleScanner.directory, "session", input.faultInjection?.closeDirectory);
+      staleScanner.directory = undefined;
+    }
+    return scanner;
+  } catch (error) {
+    if (kimiCodeDeleteScanners.get(input.taskId) === scanner) kimiCodeDeleteScanners.delete(input.taskId);
+    staleScanner.active = false;
+    staleScanner.resetRequired = true;
+    kimiCodeDeleteScanners.set(staleTaskId, staleScanner);
+    throw error;
+  } finally {
+    kimiCodeEvictingDeleteScannerTaskIds.delete(staleTaskId);
+  }
 }
 
-async function closeKimiCodeDeleteScanner(taskId: string, scanner: KimiCodeDeleteScannerState): Promise<void> {
-  if (scanner.directory) await closeDirectoryHandle(scanner.directory, "session");
+function kimiCodeDeleteScannerNow(faultInjection?: ExecuteKimiCodeDurableCleanupFaultInjection): number {
+  return faultInjection?.now?.() ?? Date.now();
+}
+
+async function closeKimiCodeDeleteScanner(
+  taskId: string,
+  scanner: KimiCodeDeleteScannerState,
+  injectedClose?: (kind: "session" | "root") => void | Promise<void>,
+): Promise<void> {
+  if (scanner.directory) await closeDirectoryHandle(scanner.directory, "session", injectedClose);
   scanner.directory = undefined;
   if (kimiCodeDeleteScanners.get(taskId) === scanner) kimiCodeDeleteScanners.delete(taskId);
 }

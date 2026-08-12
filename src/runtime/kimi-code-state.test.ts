@@ -1267,19 +1267,25 @@ describe("Kimi Code durable ordinary cleanup executors", () => {
     expect(await executeKimiCodeDeleteStateCleanup(input)).toEqual({ complete: true, processed: 0 });
   });
 
-  test("delete_state bounds active scanner handles and rejects overflow without allocating another", async () => {
+  test("delete_state reserves scanner slots atomically under simultaneous starts", async () => {
     const scannerLimit = 64;
     const fixtures = await Promise.all(Array.from({ length: scannerLimit + 1 }, () => firstCommit()));
     let entered = 0;
+    let busy = 0;
     let releaseScanners!: () => void;
-    let resolveAllEntered!: () => void;
-    const allEntered = new Promise<void>((resolve) => {
-      resolveAllEntered = resolve;
+    let resolveAllArrived!: () => void;
+    let rejectAllArrived!: (error: unknown) => void;
+    const allArrived = new Promise<void>((resolve, reject) => {
+      resolveAllArrived = resolve;
+      rejectAllArrived = reject;
     });
     const scannerBarrier = new Promise<void>((resolve) => {
       releaseScanners = resolve;
     });
-    const activeRuns = fixtures.slice(0, scannerLimit).map((fixture, index) =>
+    const markArrival = () => {
+      if (entered + busy === fixtures.length) resolveAllArrived();
+    };
+    const runs = fixtures.map((fixture, index) =>
       executeKimiCodeDeleteStateCleanup({
         locatorJson: serializeKimiCodeCleanupLocator(fixture.session, fixture.env),
         taskId: `task-delete-active-scanner-${index}`,
@@ -1288,29 +1294,151 @@ describe("Kimi Code durable ordinary cleanup executors", () => {
           platform: "linux",
           strictSyncDirectory: async () => {
             entered += 1;
-            if (entered === scannerLimit) resolveAllEntered();
+            markArrival();
             await scannerBarrier;
           },
         },
+      }).catch((error) => {
+        if (error instanceof KimiCodeStateError && error.code === "state_busy") {
+          busy += 1;
+          markArrival();
+        } else {
+          rejectAllArrived(error);
+        }
+        throw error;
       }),
     );
+    const settledRuns = Promise.allSettled(runs);
 
-    await allEntered;
-    const overflow = fixtures.at(-1)!;
     try {
-      await expect(
-        executeKimiCodeDeleteStateCleanup({
-          locatorJson: serializeKimiCodeCleanupLocator(overflow.session, overflow.env),
-          taskId: "task-delete-active-scanner-overflow",
-          env: overflow.env,
-          faultInjection: { platform: "linux", strictSyncDirectory: async () => undefined },
-        }),
-      ).rejects.toMatchObject({ code: "state_busy" });
+      await allArrived;
     } finally {
       releaseScanners();
     }
-    expect((await Promise.all(activeRuns)).every((result) => !result.complete && result.processed === 1)).toBe(true);
+    const settled = await settledRuns;
+    expect(entered).toBe(scannerLimit);
+    expect(busy).toBe(1);
+    expect(settled.filter((result) => result.status === "fulfilled")).toHaveLength(scannerLimit);
+    expect(settled.filter((result) => result.status === "rejected")).toHaveLength(1);
   }, 20_000);
+
+  test("delete_state excludes a simultaneous call for the same task id", async () => {
+    const first = await firstCommit();
+    let releaseScanner!: () => void;
+    let resolveEntered!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      resolveEntered = resolve;
+    });
+    const scannerBarrier = new Promise<void>((resolve) => {
+      releaseScanner = resolve;
+    });
+    const input = {
+      locatorJson: serializeKimiCodeCleanupLocator(first.session, first.env),
+      taskId: "task-delete-same-task-concurrent",
+      env: first.env,
+      faultInjection: {
+        platform: "linux" as const,
+        strictSyncDirectory: async () => {
+          resolveEntered();
+          await scannerBarrier;
+        },
+      },
+    };
+    const activeRun = executeKimiCodeDeleteStateCleanup(input);
+
+    await entered;
+    try {
+      await expect(executeKimiCodeDeleteStateCleanup(input)).rejects.toMatchObject({ code: "state_busy" });
+    } finally {
+      releaseScanner();
+    }
+    expect(await activeRun).toEqual({ complete: false, processed: 1 });
+  });
+
+  test("delete_state blocks an old task id while atomically replacing its stale scanner", async () => {
+    const first = await firstCommit();
+    const sessionDirectory = dirname(String(first.session.params?.sessionFile));
+    rmSync(String(first.session.params?.sessionFile));
+    for (let index = 0; index < 80; index += 1) {
+      writeFileSync(join(sessionDirectory, `stale-noise-${index.toString().padStart(3, "0")}`), "noise");
+    }
+    let now = 0;
+    const oldInput = {
+      locatorJson: serializeKimiCodeCleanupLocator(first.session, first.env),
+      taskId: "task-delete-stale-old",
+      env: first.env,
+      faultInjection: { platform: "linux" as const, maxDeleteScanners: 1, now: () => now },
+    };
+    expect(await executeKimiCodeDeleteStateCleanup(oldInput)).toEqual({ complete: false, processed: 0 });
+
+    now = 5 * 60_000;
+    let releaseClose!: () => void;
+    let resolveCloseStarted!: () => void;
+    const closeStarted = new Promise<void>((resolve) => {
+      resolveCloseStarted = resolve;
+    });
+    const closeBarrier = new Promise<void>((resolve) => {
+      releaseClose = resolve;
+    });
+    const newInput = {
+      ...oldInput,
+      taskId: "task-delete-stale-new",
+      faultInjection: {
+        ...oldInput.faultInjection,
+        closeDirectory: async () => {
+          resolveCloseStarted();
+          await closeBarrier;
+        },
+      },
+    };
+    const replacement = executeKimiCodeDeleteStateCleanup(newInput);
+
+    await closeStarted;
+    try {
+      await expect(executeKimiCodeDeleteStateCleanup(oldInput)).rejects.toMatchObject({ code: "state_busy" });
+    } finally {
+      releaseClose();
+    }
+    expect(await replacement).toEqual({ complete: false, processed: 0 });
+    for (const name of readdirSync(sessionDirectory)) unlinkSync(join(sessionDirectory, name));
+    expect(
+      await executeKimiCodeDeleteStateCleanup({ ...newInput, faultInjection: oldInput.faultInjection }),
+    ).toEqual({ complete: true, processed: 0 });
+  });
+
+  test("delete_state restores a stale scanner when eviction close fails", async () => {
+    const first = await firstCommit();
+    const sessionDirectory = dirname(String(first.session.params?.sessionFile));
+    rmSync(String(first.session.params?.sessionFile));
+    for (let index = 0; index < 80; index += 1) {
+      writeFileSync(join(sessionDirectory, `rollback-noise-${index.toString().padStart(3, "0")}`), "noise");
+    }
+    let now = 0;
+    const oldInput = {
+      locatorJson: serializeKimiCodeCleanupLocator(first.session, first.env),
+      taskId: "task-delete-rollback-old",
+      env: first.env,
+      faultInjection: { platform: "linux" as const, maxDeleteScanners: 1, now: () => now },
+    };
+    expect(await executeKimiCodeDeleteStateCleanup(oldInput)).toEqual({ complete: false, processed: 0 });
+
+    now = 5 * 60_000;
+    await expect(
+      executeKimiCodeDeleteStateCleanup({
+        ...oldInput,
+        taskId: "task-delete-rollback-new",
+        faultInjection: {
+          ...oldInput.faultInjection,
+          closeDirectory: async () => {
+            throw new Error("synthetic scanner close failure");
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "unknown" });
+
+    for (const name of readdirSync(sessionDirectory)) unlinkSync(join(sessionDirectory, name));
+    expect(await executeKimiCodeDeleteStateCleanup(oldInput)).toEqual({ complete: true, processed: 0 });
+  });
 
   test.skipIf(process.platform !== "win32")(
     "delete_state retries a moved revision tombstone",
