@@ -7,7 +7,7 @@ import {
   parseProviderStateCleanupLocator,
   serializeProviderStateCleanupLocator,
 } from "./provider-state-cleanup-store.js";
-import type { RuntimeProviderStateLifecycle } from "./types.js";
+import type { RuntimeProviderStateLifecycle, RuntimeProviderStatePublishInput } from "./types.js";
 
 export interface ProviderStateLifecycleAttemptBinding {
   attemptId: string;
@@ -99,7 +99,7 @@ export function createProviderStateLifecycle(
   const database = options.database ?? getDb();
 
   return Object.freeze({
-    publishPreparedState(input) {
+    publishPreparedState(input: RuntimeProviderStatePublishInput) {
       const attempt = options.currentAttempt();
       if (!attempt) throw new ProviderStateLifecycleOwnershipError();
       requireText(attempt.attemptId, "attemptId");

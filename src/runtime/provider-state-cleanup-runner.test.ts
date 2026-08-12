@@ -128,7 +128,9 @@ describe("provider cleanup executor registry and runner", () => {
 
     await runner.start();
     expect(order).toEqual(["reconcile:3", "drain"]);
-    expect(() => registry.registerExecutor("late-provider", "delete_state", execute)).toThrow("already active");
+    expect(() =>
+      registry.registerExecutor("late-provider", "delete_state", async () => ({ complete: true })),
+    ).toThrow("already active");
     expect(scheduled).toHaveLength(1);
     scheduled[0]!();
     await Promise.resolve();

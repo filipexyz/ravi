@@ -67,21 +67,21 @@ function establishAttempt(sessionKey: string, attemptId: string, bootEpoch: stri
 
 describe("request-scoped provider state lifecycle", () => {
   it("keeps two session scopes isolated without process-global owner state", () => {
-    const first = getOrCreateSession("session-a", { agentId: "agent-a" });
-    const second = getOrCreateSession("session-b", { agentId: "agent-a" });
+    const first = getOrCreateSession("session-a", "agent-a", "/workspace/project");
+    const second = getOrCreateSession("session-b", "agent-a", "/workspace/project");
     establishAttempt(first.sessionKey, "attempt-a", "boot-a");
     establishAttempt(second.sessionKey, "attempt-b", "boot-b");
 
     const lifecycleA = createProviderStateLifecycle({
       provider: "test-provider",
       sessionKey: first.sessionKey,
-      admittedEpoch: first.lifecycleGeneration,
+      admittedEpoch: first.lifecycleGeneration!,
       currentAttempt: () => ({ attemptId: "attempt-a", bootEpoch: "boot-a" }),
     });
     const lifecycleB = createProviderStateLifecycle({
       provider: "test-provider",
       sessionKey: second.sessionKey,
-      admittedEpoch: second.lifecycleGeneration,
+      admittedEpoch: second.lifecycleGeneration!,
       currentAttempt: () => ({ attemptId: "attempt-b", bootEpoch: "boot-b" }),
     });
 
@@ -110,12 +110,12 @@ describe("request-scoped provider state lifecycle", () => {
   });
 
   it("orders prepared, synchronous publication, and published inside one transaction", () => {
-    const session = getOrCreateSession("session-order", { agentId: "agent-a" });
+    const session = getOrCreateSession("session-order", "agent-a", "/workspace/project");
     establishAttempt(session.sessionKey, "attempt-order", "boot-order");
     const lifecycle = createProviderStateLifecycle({
       provider: "test-provider",
       sessionKey: session.sessionKey,
-      admittedEpoch: session.lifecycleGeneration,
+      admittedEpoch: session.lifecycleGeneration!,
       currentAttempt: () => ({ attemptId: "attempt-order", bootEpoch: "boot-order" }),
     });
     const observed: string[] = [];
@@ -140,12 +140,12 @@ describe("request-scoped provider state lifecycle", () => {
   });
 
   it("rolls back the reservation when publication throws or returns a Promise", () => {
-    const session = getOrCreateSession("session-rollback", { agentId: "agent-a" });
+    const session = getOrCreateSession("session-rollback", "agent-a", "/workspace/project");
     establishAttempt(session.sessionKey, "attempt-rollback", "boot-rollback");
     const lifecycle = createProviderStateLifecycle({
       provider: "test-provider",
       sessionKey: session.sessionKey,
-      admittedEpoch: session.lifecycleGeneration,
+      admittedEpoch: session.lifecycleGeneration!,
       currentAttempt: () => ({ attemptId: "attempt-rollback", bootEpoch: "boot-rollback" }),
     });
 
@@ -171,12 +171,12 @@ describe("request-scoped provider state lifecycle", () => {
   });
 
   it("fails closed before publication when epoch or current attempt ownership changed", () => {
-    const session = getOrCreateSession("session-stale", { agentId: "agent-a" });
+    const session = getOrCreateSession("session-stale", "agent-a", "/workspace/project");
     establishAttempt(session.sessionKey, "attempt-stale", "boot-stale");
     const lifecycle = createProviderStateLifecycle({
       provider: "test-provider",
       sessionKey: session.sessionKey,
-      admittedEpoch: session.lifecycleGeneration,
+      admittedEpoch: session.lifecycleGeneration!,
       currentAttempt: () => ({ attemptId: "attempt-stale", bootEpoch: "boot-stale" }),
     });
     getDb()
@@ -199,7 +199,7 @@ describe("request-scoped provider state lifecycle", () => {
 
 describe("provider state publish-intent reconciliation", () => {
   it("holds an active attempt, then recreates the exact published task after attempt loss", () => {
-    const session = getOrCreateSession("session-reconcile", { agentId: "agent-a" });
+    const session = getOrCreateSession("session-reconcile", "agent-a", "/workspace/project");
     establishAttempt(session.sessionKey, "attempt-reconcile", "boot-reconcile");
     const canonicalLocator = locator(
       "00000000-0000-4000-8000-000000000010",
