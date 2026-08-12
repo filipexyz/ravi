@@ -79,9 +79,10 @@ export function createRuntimeProvider(
 }
 
 export function resolveRuntimeProviderAvailability(
-  providerId: RuntimeProviderId,
+  providerId: RuntimeProviderId | null,
   env: Readonly<Record<string, string | undefined>>,
 ): RuntimeProviderAvailability {
+  if (providerId === null) return { available: true };
   return runtimeProviderRegistrations.get(providerId)?.availability?.(env) ?? { available: true };
 }
 
