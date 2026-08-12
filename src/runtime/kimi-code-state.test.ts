@@ -1249,6 +1249,69 @@ describe("Kimi Code durable ordinary cleanup executors", () => {
     expect(readdirSync(sessionDirectory).filter((name) => name.startsWith("revision-"))).toEqual([]);
   });
 
+  test("delete_state reopens the directory for an empty confirmation after an EOF pass did work", async () => {
+    const first = await firstCommit();
+    const sessionFile = String(first.session.params?.sessionFile);
+    const snapshotBytes = readFileSync(sessionFile);
+    const input = {
+      locatorJson: serializeKimiCodeCleanupLocator(first.session, first.env),
+      taskId: "task-delete-eof-confirmation",
+      env: first.env,
+      faultInjection: { platform: "linux" as const, strictSyncDirectory: async () => undefined },
+    };
+
+    expect(await executeKimiCodeDeleteStateCleanup(input)).toEqual({ complete: false, processed: 1 });
+    writeFileSync(sessionFile, snapshotBytes, { mode: 0o600 });
+    expect(await executeKimiCodeDeleteStateCleanup(input)).toEqual({ complete: false, processed: 1 });
+    expect(existsSync(sessionFile)).toBe(false);
+    expect(await executeKimiCodeDeleteStateCleanup(input)).toEqual({ complete: true, processed: 0 });
+  });
+
+  test("delete_state bounds active scanner handles and rejects overflow without allocating another", async () => {
+    const scannerLimit = 64;
+    const fixtures = await Promise.all(Array.from({ length: scannerLimit + 1 }, () => firstCommit()));
+    let entered = 0;
+    let releaseScanners!: () => void;
+    let resolveAllEntered!: () => void;
+    const allEntered = new Promise<void>((resolve) => {
+      resolveAllEntered = resolve;
+    });
+    const scannerBarrier = new Promise<void>((resolve) => {
+      releaseScanners = resolve;
+    });
+    const activeRuns = fixtures.slice(0, scannerLimit).map((fixture, index) =>
+      executeKimiCodeDeleteStateCleanup({
+        locatorJson: serializeKimiCodeCleanupLocator(fixture.session, fixture.env),
+        taskId: `task-delete-active-scanner-${index}`,
+        env: fixture.env,
+        faultInjection: {
+          platform: "linux",
+          strictSyncDirectory: async () => {
+            entered += 1;
+            if (entered === scannerLimit) resolveAllEntered();
+            await scannerBarrier;
+          },
+        },
+      }),
+    );
+
+    await allEntered;
+    const overflow = fixtures.at(-1)!;
+    try {
+      await expect(
+        executeKimiCodeDeleteStateCleanup({
+          locatorJson: serializeKimiCodeCleanupLocator(overflow.session, overflow.env),
+          taskId: "task-delete-active-scanner-overflow",
+          env: overflow.env,
+          faultInjection: { platform: "linux", strictSyncDirectory: async () => undefined },
+        }),
+      ).rejects.toMatchObject({ code: "state_busy" });
+    } finally {
+      releaseScanners();
+    }
+    expect((await Promise.all(activeRuns)).every((result) => !result.complete && result.processed === 1)).toBe(true);
+  }, 20_000);
+
   test.skipIf(process.platform !== "win32")(
     "delete_state retries a moved revision tombstone",
     async () => {

@@ -22,6 +22,7 @@ const KIMI_CODE_MAX_INTENT_PAGE_SIZE = 32;
 const KIMI_CODE_MAX_INTENT_SCAN_ENTRIES = 256;
 const KIMI_CODE_DELETE_BATCH_SIZE = 16;
 const KIMI_CODE_DELETE_SCAN_ENTRIES = 64;
+const KIMI_CODE_MAX_DELETE_SCANNERS = 64;
 const KIMI_CODE_WINDOWS_MOVE_TIMEOUT_MS = 10_000;
 const KIMI_CODE_WINDOWS_MOVE_COLLISION_EXIT = 17;
 const WINDOWS_SYSTEM_POWERSHELL_GLOBAL_PATH =
@@ -1211,7 +1212,6 @@ interface KimiCodeDeleteScannerState {
   sessionDirectory: string;
   directory?: Awaited<ReturnType<typeof opendir>>;
   active: boolean;
-  exhausted: boolean;
   resetRequired: boolean;
 }
 
@@ -1238,21 +1238,14 @@ export async function executeKimiCodeDeleteStateCleanup(
           scanner.active = false;
         }
         scanner = undefined;
-      } else if (scanner.exhausted) {
-        try {
-          await closeKimiCodeDeleteScanner(input.taskId, scanner);
-        } finally {
-          scanner.active = false;
-        }
-        return { complete: true, processed: 0 };
       }
     }
     if (!scanner) {
+      await reserveKimiCodeDeleteScannerCapacity();
       scanner = {
         binding: input.locatorJson,
         sessionDirectory,
         active: true,
-        exhausted: false,
         resetRequired: false,
       };
       kimiCodeDeleteScanners.set(input.taskId, scanner);
@@ -1305,10 +1298,7 @@ export async function executeKimiCodeDeleteStateCleanup(
         processed += 1;
       }
       if (reachedEnd) {
-        scanner.exhausted = true;
-        if (scanner.directory) await closeDirectoryHandle(scanner.directory, "session");
-        scanner.directory = undefined;
-        if (processed === 0) kimiCodeDeleteScanners.delete(input.taskId);
+        await closeKimiCodeDeleteScanner(input.taskId, scanner);
       }
       return { complete: reachedEnd && processed === 0, processed };
     } catch (error) {
@@ -1321,6 +1311,21 @@ export async function executeKimiCodeDeleteStateCleanup(
   } catch (error) {
     throw classifyKimiCodeStateError(error);
   }
+}
+
+async function reserveKimiCodeDeleteScannerCapacity(): Promise<void> {
+  if (kimiCodeDeleteScanners.size < KIMI_CODE_MAX_DELETE_SCANNERS) return;
+  for (const [taskId, candidate] of kimiCodeDeleteScanners) {
+    if (candidate.active) continue;
+    candidate.active = true;
+    try {
+      await closeKimiCodeDeleteScanner(taskId, candidate);
+    } finally {
+      candidate.active = false;
+    }
+    return;
+  }
+  throw new KimiCodeStateError("state_busy");
 }
 
 async function closeKimiCodeDeleteScanner(taskId: string, scanner: KimiCodeDeleteScannerState): Promise<void> {
