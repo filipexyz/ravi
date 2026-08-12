@@ -71,6 +71,9 @@ export const resetCommand: SlashCommand = {
     if (aborted) {
       return `⚠️ A execução foi interrompida, mas o reset não foi aplicado (${agentId})`;
     }
+    if (session) {
+      return `⚠️ A sessão mudou; o reset não foi aplicado (${agentId})`;
+    }
     return `✅ Nenhuma sessão ativa encontrada (${agentId})`;
   },
 };
