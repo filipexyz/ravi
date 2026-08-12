@@ -119,12 +119,12 @@ describe("session lifecycle-generation migration", () => {
          ORDER BY name`,
       )
       .all(
-        "idx_sessions_runtime_provider_invalid_json",
+        "idx_sessions_runtime_provider_json_display",
         "idx_sessions_runtime_provider_json_session",
       );
 
     expect(indexNames).toEqual([
-      { name: "idx_sessions_runtime_provider_invalid_json" },
+      { name: "idx_sessions_runtime_provider_json_display" },
       { name: "idx_sessions_runtime_provider_json_session" },
     ]);
 

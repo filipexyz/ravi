@@ -389,23 +389,40 @@ function installKimiCodeIntentReconciler(registry: ProviderStateCleanupExecutorR
 /** Install built-in providers before reconciliation, draining, or runtime intake. */
 export function installProviderStateCleanupExecutors(registry: ProviderStateCleanupExecutorRegistry): void {
   registry.registerLocatorOwnership(KIMI_CODE_PROVIDER_ID, (locatorJson, database) => {
-    let sessionId: string;
+    let targetLocator: ReturnType<typeof parseKimiCodeCleanupLocator>;
     try {
-      sessionId = parseKimiCodeCleanupLocator(locatorJson).sessionId;
+      targetLocator = parseKimiCodeCleanupLocator(locatorJson);
     } catch {
       return false;
     }
-    const malformedTarget = database
+    const exactDisplayCandidates = database
       .prepare(
-        `SELECT 1 FROM sessions
+        `SELECT runtime_session_json FROM sessions
          WHERE runtime_provider = ? AND runtime_session_display_id = ?
-           AND runtime_session_json IS NOT NULL AND NOT json_valid(runtime_session_json)
-         LIMIT 1`,
+           AND runtime_session_json IS NOT NULL
+         LIMIT ?`,
       )
-      .get(KIMI_CODE_PROVIDER_ID, sessionId);
-    if (malformedTarget) return true;
+      .all(
+        KIMI_CODE_PROVIDER_ID,
+        targetLocator.sessionId,
+        KIMI_OWNERSHIP_CANDIDATE_LIMIT + 1,
+      ) as Array<{ runtime_session_json: string }>;
+    if (exactDisplayCandidates.length > KIMI_OWNERSHIP_CANDIDATE_LIMIT) return true;
 
-    const candidates = database
+    const candidateProtectsTarget = (runtimeSessionJson: string): boolean => {
+      try {
+        const candidateLocatorJson = serializeKimiCodeCleanupLocator({ params: JSON.parse(runtimeSessionJson) });
+        if (candidateLocatorJson === locatorJson) return true;
+        const candidateLocator = parseKimiCodeCleanupLocator(candidateLocatorJson);
+        if (candidateLocator.sessionId !== targetLocator.sessionId) return true;
+        return candidateLocator.revision === targetLocator.revision;
+      } catch {
+        return true;
+      }
+    };
+    if (exactDisplayCandidates.some((row) => candidateProtectsTarget(row.runtime_session_json))) return true;
+
+    const canonicalSessionCandidates = database
       .prepare(
         `SELECT runtime_session_json FROM sessions
          WHERE runtime_provider = ? AND runtime_session_json IS NOT NULL
@@ -414,17 +431,13 @@ export function installProviderStateCleanupExecutors(registry: ProviderStateClea
            AND json_extract(runtime_session_json, '$.sessionId') = ?
          LIMIT ?`,
       )
-      .all(KIMI_CODE_PROVIDER_ID, sessionId, KIMI_OWNERSHIP_CANDIDATE_LIMIT + 1) as Array<{
-      runtime_session_json: string;
-    }>;
-    if (candidates.length > KIMI_OWNERSHIP_CANDIDATE_LIMIT) return true;
-    return candidates.some((row) => {
-      try {
-        return serializeKimiCodeCleanupLocator({ params: JSON.parse(row.runtime_session_json) }) === locatorJson;
-      } catch {
-        return true;
-      }
-    });
+      .all(
+        KIMI_CODE_PROVIDER_ID,
+        targetLocator.sessionId,
+        KIMI_OWNERSHIP_CANDIDATE_LIMIT + 1,
+      ) as Array<{ runtime_session_json: string }>;
+    if (canonicalSessionCandidates.length > KIMI_OWNERSHIP_CANDIDATE_LIMIT) return true;
+    return canonicalSessionCandidates.some((row) => candidateProtectsTarget(row.runtime_session_json));
   });
   registry.registerExecutor(KIMI_CODE_PROVIDER_ID, "provisional_exact", async (task, context) => {
     if (!task.ownerAttemptId) throw new ProviderStateCleanupTaskError("schema_mismatch");

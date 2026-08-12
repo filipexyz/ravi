@@ -2839,9 +2839,10 @@ function getDb(): Database {
     CREATE INDEX IF NOT EXISTS idx_sessions_runtime_provider_json_session
       ON sessions(runtime_provider, json_extract(runtime_session_json, '$.sessionId'))
       WHERE runtime_session_json IS NOT NULL AND json_valid(runtime_session_json);
-    CREATE INDEX IF NOT EXISTS idx_sessions_runtime_provider_invalid_json
+    DROP INDEX IF EXISTS idx_sessions_runtime_provider_invalid_json;
+    CREATE INDEX IF NOT EXISTS idx_sessions_runtime_provider_json_display
       ON sessions(runtime_provider, runtime_session_display_id)
-      WHERE runtime_session_json IS NOT NULL AND NOT json_valid(runtime_session_json);
+      WHERE runtime_session_json IS NOT NULL;
   `);
 
   // Migration: add policy column to routes if not exists
