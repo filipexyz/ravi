@@ -97,6 +97,9 @@ describe("Kimi Code private-live harness", () => {
       toolResultDeliveredCount: 1,
       toolCompletionAfterStart: true,
       toolResultAfterStart: true,
+      toolCompletionIdMatchesStart: true,
+      toolResultIdMatchesStart: true,
+      toolIdPreservedAcrossLifecycle: true,
       turnCompleteCount: 1,
       turnFailedCount: 1,
       turnInterruptedCount: 1,
@@ -118,5 +121,29 @@ describe("Kimi Code private-live harness", () => {
     ]) {
       expect(serialized).not.toContain(forbidden);
     }
+  });
+
+  it("reports native tool identifier mismatches without retaining either identifier", async () => {
+    const evidence = await reduceKimiCodeLiveEvidence(
+      (async function* () {
+        yield {
+          type: "tool.started",
+          toolUse: { id: "private-start-id", name: "synthetic_probe" },
+        } as RuntimeEvent;
+        yield {
+          type: "tool.completed",
+          toolUseId: "private-complete-id",
+          toolName: "synthetic_probe",
+        } as RuntimeEvent;
+        yield { type: "tool.result_delivered", toolCallId: "private-start-id" } as RuntimeEvent;
+      })(),
+    );
+
+    expect(evidence.toolCompletionIdMatchesStart).toBe(false);
+    expect(evidence.toolResultIdMatchesStart).toBe(true);
+    expect(evidence.toolIdPreservedAcrossLifecycle).toBe(false);
+    const serialized = JSON.stringify(evidence);
+    expect(serialized).not.toContain("private-start-id");
+    expect(serialized).not.toContain("private-complete-id");
   });
 });

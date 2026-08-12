@@ -186,6 +186,9 @@ liveIt(
       expect(evidence.toolResultDeliveredCount).toBe(1);
       expect(evidence.toolCompletionAfterStart).toBe(true);
       expect(evidence.toolResultAfterStart).toBe(true);
+      expect(evidence.toolCompletionIdMatchesStart).toBe(true);
+      expect(evidence.toolResultIdMatchesStart).toBe(true);
+      expect(evidence.toolIdPreservedAcrossLifecycle).toBe(true);
       expect(evidence.turnCompleteCount).toBe(1);
       expect(terminalCount(evidence)).toBe(1);
       expect(evidence.failureClassifications).toEqual([]);

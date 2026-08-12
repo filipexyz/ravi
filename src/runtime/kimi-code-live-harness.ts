@@ -16,6 +16,9 @@ export interface KimiCodeLiveEvidence {
   toolResultDeliveredCount: number;
   toolCompletionAfterStart: boolean;
   toolResultAfterStart: boolean;
+  toolCompletionIdMatchesStart: boolean;
+  toolResultIdMatchesStart: boolean;
+  toolIdPreservedAcrossLifecycle: boolean;
   turnCompleteCount: number;
   turnFailedCount: number;
   turnInterruptedCount: number;
@@ -88,12 +91,17 @@ export async function reduceKimiCodeLiveEvidence(events: AsyncIterable<RuntimeEv
     toolResultDeliveredCount: 0,
     toolCompletionAfterStart: false,
     toolResultAfterStart: false,
+    toolCompletionIdMatchesStart: false,
+    toolResultIdMatchesStart: false,
+    toolIdPreservedAcrossLifecycle: false,
     turnCompleteCount: 0,
     turnFailedCount: 0,
     turnInterruptedCount: 0,
     usageObserved: false,
     failureClassifications: [],
   };
+  let activeToolId: string | undefined;
+  let activeToolCompletionIdMatched = false;
   for await (const event of events) {
     evidence.eventCount += 1;
     switch (event.type) {
@@ -111,15 +119,26 @@ export async function reduceKimiCodeLiveEvidence(events: AsyncIterable<RuntimeEv
         break;
       case "tool.started":
         evidence.toolStartedCount += 1;
+        activeToolId = event.toolUse.id;
+        activeToolCompletionIdMatched = false;
         break;
-      case "tool.completed":
+      case "tool.completed": {
         evidence.toolCompletedCount += 1;
         evidence.toolCompletionAfterStart ||= evidence.toolStartedCount > 0;
+        activeToolCompletionIdMatched = activeToolId !== undefined && event.toolUseId === activeToolId;
+        evidence.toolCompletionIdMatchesStart ||= activeToolCompletionIdMatched;
         break;
-      case "tool.result_delivered":
+      }
+      case "tool.result_delivered": {
         evidence.toolResultDeliveredCount += 1;
         evidence.toolResultAfterStart ||= evidence.toolStartedCount > 0;
+        const resultIdMatchesStart = activeToolId !== undefined && event.toolCallId === activeToolId;
+        evidence.toolResultIdMatchesStart ||= resultIdMatchesStart;
+        evidence.toolIdPreservedAcrossLifecycle ||= activeToolCompletionIdMatched && resultIdMatchesStart;
+        activeToolId = undefined;
+        activeToolCompletionIdMatched = false;
         break;
+      }
       case "turn.complete":
         evidence.turnCompleteCount += 1;
         evidence.usageObserved ||= event.usage !== undefined;

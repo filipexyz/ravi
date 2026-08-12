@@ -20,6 +20,7 @@ import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
 const SESSION_KEY = "agent:main:dm:resolver";
 const SESSION_NAME = "main-dm-resolver";
 const FILE_BACKED_PROVIDER = "file-backed-test";
+const CAS_LOSS_PROVIDER = "cas-loss-test";
 
 let stateDir: string | null = null;
 
@@ -102,6 +103,7 @@ describe("runtime session resolver", () => {
 
   afterEach(async () => {
     unregisterRuntimeProvider(FILE_BACKED_PROVIDER);
+    unregisterRuntimeProvider(CAS_LOSS_PROVIDER);
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
   });
@@ -162,6 +164,42 @@ describe("runtime session resolver", () => {
     expect(cleanupSettled).toBe(false);
     await cleanup;
     expect(cleanupSettled).toBe(true);
+  });
+
+  it("returns no runtime after stale-state cleanup loses ownership", () => {
+    getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", { name: SESSION_NAME });
+    expect(updateProviderSession(getSession(SESSION_KEY)!, "codex", "provider-observed").won).toBe(true);
+    const observed = getSession(SESSION_KEY)!;
+    let advancedOwnership = false;
+    registerRuntimeProvider(
+      CAS_LOSS_PROVIDER,
+      (): SessionRuntimeProvider => {
+        advancedOwnership = updateProviderSession(getSession(SESSION_KEY)!, "codex", "provider-current").won;
+        return {
+          id: CAS_LOSS_PROVIDER,
+          getCapabilities: createFileBackedProviderCapabilities,
+          startSession: () => ({
+            provider: CAS_LOSS_PROVIDER,
+            events: (async function* () {})(),
+            interrupt: async () => {},
+          }),
+        };
+      },
+    );
+
+    const resolved = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      configModel: "global-model",
+      prompt: { prompt: "must not launch against stale ownership" },
+      defaultRuntimeProviderId: CAS_LOSS_PROVIDER,
+    });
+
+    expect(advancedOwnership).toBe(true);
+    expect(resolved).toBeNull();
+    expect(getSession(SESSION_KEY)).toMatchObject({
+      providerSessionId: "provider-current",
+      lifecycleGeneration: observed.lifecycleGeneration! + 1,
+    });
   });
 
   it("uses session runtime provider override before agent/default provider", () => {

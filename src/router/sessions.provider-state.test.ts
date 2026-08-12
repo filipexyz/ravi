@@ -123,6 +123,32 @@ describe("Session provider state", () => {
     ).toEqual([{ operation: "delete_state", status: "published" }]);
   });
 
+  it("keeps an invalid Kimi locator attached to its owner when redirect cannot queue cleanup", () => {
+    const admitted = getOrCreateSession("test:runtime-provider:invalid-redirect", "agent-a", "/tmp/agent-a");
+    expect(
+      updateProviderSession(admitted, "kimi-code", "synthetic-invalid-locator", {
+        runtimeSessionDisplayId: "synthetic-invalid-locator",
+        runtimeSessionParams: { provider: "kimi-code", revision: 1 },
+      }).won,
+    ).toBe(true);
+    const beforeRedirect = getSession(admitted.sessionKey)!;
+
+    const redirect = redirectSessionIfUnchanged(beforeRedirect, "agent-b", "/tmp/agent-b");
+
+    expect(redirect).toMatchObject({
+      won: false,
+      session: {
+        agentId: "agent-a",
+        providerSessionId: "synthetic-invalid-locator",
+        runtimeSessionParams: { provider: "kimi-code", revision: 1 },
+        lifecycleGeneration: beforeRedirect.lifecycleGeneration,
+      },
+    });
+    expect(
+      (getDb().prepare("SELECT COUNT(*) AS count FROM provider_state_cleanup_tasks").get() as { count: number }).count,
+    ).toBe(0);
+  });
+
   it("does not redirect or enqueue cleanup after ownership changes", () => {
     const admitted = getOrCreateSession(TEST_SESSION_KEYS[2]!, "agent-a", "/tmp/agent-a");
     getDb()

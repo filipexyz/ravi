@@ -3,6 +3,7 @@ import {
   clearProviderSessionIfUnchanged,
   expandHome,
   getOrCreateSession,
+  getSession,
   getSessionByName,
   redirectSessionIfUnchanged,
   type AgentConfig,
@@ -196,17 +197,26 @@ export function resolveRuntimeSession(options: RuntimeSessionResolutionOptions):
       mutate: () => clearProviderSessionIfUnchanged(session),
     });
     providerStateCleanup = lifecycleMutation.cleanup.then(() => lifecycleMutation.changed);
-    if (lifecycleMutation.changed) {
-      session.runtimeSessionParams = undefined;
-      session.runtimeSessionDisplayId = undefined;
-      session.providerSessionId = undefined;
-      session.sdkSessionId = undefined;
-      session.runtimeProvider = undefined;
-      session.lifecycleGeneration = (session.lifecycleGeneration ?? 0) + 1;
-      storedRuntimeSessionParams = undefined;
-      storedProviderSessionId = undefined;
-      resumeDecision.staleCleared = true;
+    if (!lifecycleMutation.changed) {
+      const current = getSession(session.sessionKey);
+      log.warn("Stale provider session cleanup lost ownership", {
+        sessionName: options.sessionName,
+        dbSessionKey: session.sessionKey,
+        observedLifecycleGeneration: session.lifecycleGeneration,
+        currentLifecycleGeneration: current?.lifecycleGeneration,
+        currentAgent: current?.agentId,
+      });
+      return null;
     }
+    session.runtimeSessionParams = undefined;
+    session.runtimeSessionDisplayId = undefined;
+    session.providerSessionId = undefined;
+    session.sdkSessionId = undefined;
+    session.runtimeProvider = undefined;
+    session.lifecycleGeneration = (session.lifecycleGeneration ?? 0) + 1;
+    storedRuntimeSessionParams = undefined;
+    storedProviderSessionId = undefined;
+    resumeDecision.staleCleared = true;
   }
 
   return {

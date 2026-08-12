@@ -399,12 +399,17 @@ export function redirectSessionIfUnchanged(
     return getDbChanges() === 1;
   };
   let validCleanupLocator = false;
-  if (session.runtimeProvider === "kimi-code" && session.runtimeSessionParams?.provider === "kimi-code") {
+  if (session.runtimeProvider === "kimi-code") {
     try {
+      if (session.runtimeSessionParams?.provider !== "kimi-code") {
+        throw new Error("Kimi Code session is missing its cleanup locator");
+      }
       serializeProviderStateCleanupLocator(session.runtimeSessionParams);
       validCleanupLocator = true;
     } catch {
-      // Corrupt/legacy provider state cannot authorize a filesystem mutation.
+      // Keep ownership and its locator together until an operator can repair or
+      // quarantine the invalid state. Redirecting here would strand cleanup.
+      return { won: false, session: getSession(session.sessionKey) };
     }
   }
   const won = validCleanupLocator
