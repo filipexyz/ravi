@@ -24,11 +24,15 @@ const KIMI_CODE_DELETE_BATCH_SIZE = 16;
 const KIMI_CODE_DELETE_SCAN_ENTRIES = 64;
 const KIMI_CODE_WINDOWS_MOVE_TIMEOUT_MS = 10_000;
 const KIMI_CODE_WINDOWS_MOVE_COLLISION_EXIT = 17;
+const WINDOWS_SYSTEM_POWERSHELL_GLOBAL_PATH =
+  "\\\\?\\GLOBALROOT\\SystemRoot\\System32\\WindowsPowerShell\\v1.0\\powershell.exe";
 const execFileAsync = promisify(execFile);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const RESERVATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const INTENT_FILENAME_PATTERN = /^\.publish-intent-([A-Za-z0-9][A-Za-z0-9._-]{0,127})\.json$/;
 const INTENT_STAGING_FILENAME_PATTERN = /^\.publish-intent-([A-Za-z0-9][A-Za-z0-9._-]{0,127})\.staging$/;
+const WORKER_TOMBSTONE_PATTERN =
+  /^\.cleanup-(delete|retire)-([A-Za-z0-9][A-Za-z0-9._-]{0,127})-(revision-(\d{8})-([0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\.json)-([0-9a-f]{24})\.tombstone$/;
 const WINDOWS_WRITE_THROUGH_MOVE_SCRIPT = [
   "$ErrorActionPreference = 'Stop'",
   "$member = '[System.Runtime.InteropServices.DllImport(\"kernel32.dll\", CharSet=System.Runtime.InteropServices.CharSet.Unicode, SetLastError=true)][return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)] public static extern bool MoveFileExW(string source, string destination, int flags);'",
@@ -1202,6 +1206,17 @@ export interface ExecuteKimiCodeDeleteStateCleanupResult {
   processed: number;
 }
 
+interface KimiCodeDeleteScannerState {
+  binding: string;
+  sessionDirectory: string;
+  directory?: Awaited<ReturnType<typeof opendir>>;
+  active: boolean;
+  exhausted: boolean;
+  resetRequired: boolean;
+}
+
+const kimiCodeDeleteScanners = new Map<string, KimiCodeDeleteScannerState>();
+
 export async function executeKimiCodeDeleteStateCleanup(
   input: ExecuteKimiCodeDeleteStateCleanupInput,
 ): Promise<ExecuteKimiCodeDeleteStateCleanupResult> {
@@ -1209,15 +1224,52 @@ export async function executeKimiCodeDeleteStateCleanup(
     validateReservationId(input.taskId, input.env);
     const locator = parseKimiCodeCleanupLocator(input.locatorJson, input.env);
     const { root, sessionDirectory } = resolveKimiCodeLocatorPath(locator, input.env);
-    if (!(await validateKimiCodeSessionDirectory(root, sessionDirectory))) return { complete: true, processed: 0 };
-    const targetInfo = await inspectExactArtifact(locator.sessionFile);
-    if (targetInfo) await readLocatorBoundSnapshot(locator, input.env);
-    const platform = input.faultInjection?.platform ?? process.platform;
-    const directory = await opendir(sessionDirectory);
-    let scanned = 0;
-    let processed = 0;
-    let reachedEnd = false;
+    let scanner = kimiCodeDeleteScanners.get(input.taskId);
+    if (scanner) {
+      if (scanner.binding !== input.locatorJson || !samePath(scanner.sessionDirectory, sessionDirectory)) {
+        throw new KimiCodeStateError("binding_mismatch");
+      }
+      if (scanner.active) throw new KimiCodeStateError("state_busy");
+      scanner.active = true;
+      if (scanner.resetRequired) {
+        try {
+          await closeKimiCodeDeleteScanner(input.taskId, scanner);
+        } finally {
+          scanner.active = false;
+        }
+        scanner = undefined;
+      } else if (scanner.exhausted) {
+        try {
+          await closeKimiCodeDeleteScanner(input.taskId, scanner);
+        } finally {
+          scanner.active = false;
+        }
+        return { complete: true, processed: 0 };
+      }
+    }
+    if (!scanner) {
+      scanner = {
+        binding: input.locatorJson,
+        sessionDirectory,
+        active: true,
+        exhausted: false,
+        resetRequired: false,
+      };
+      kimiCodeDeleteScanners.set(input.taskId, scanner);
+    }
     try {
+      if (!(await validateKimiCodeSessionDirectory(root, sessionDirectory))) {
+        await closeKimiCodeDeleteScanner(input.taskId, scanner);
+        return { complete: true, processed: 0 };
+      }
+      const targetInfo = await inspectExactArtifact(locator.sessionFile);
+      if (targetInfo) await readLocatorBoundSnapshot(locator, input.env);
+      const platform = input.faultInjection?.platform ?? process.platform;
+      scanner.directory ??= await opendir(sessionDirectory);
+      const directory = scanner.directory;
+      let scanned = 0;
+      let processed = 0;
+      let reachedEnd = false;
       while (scanned < KIMI_CODE_DELETE_SCAN_ENTRIES && processed < KIMI_CODE_DELETE_BATCH_SIZE) {
         const entry = await directory.read();
         if (!entry) {
@@ -1227,9 +1279,6 @@ export async function executeKimiCodeDeleteStateCleanup(
         scanned += 1;
         const tombstoneSource =
           platform === "win32" ? parseWorkerTombstoneSource(entry.name, "delete", input.taskId) : undefined;
-        if (platform === "win32" && entry.name.startsWith(`.cleanup-delete-${input.taskId}-`) && !tombstoneSource) {
-          throw new KimiCodeStateError("binding_mismatch");
-        }
         if (tombstoneSource) {
           const revision = revisionFromFilename(tombstoneSource);
           if (revision === undefined || revision > locator.revision) throw new KimiCodeStateError("binding_mismatch");
@@ -1255,13 +1304,27 @@ export async function executeKimiCodeDeleteStateCleanup(
         );
         processed += 1;
       }
+      if (reachedEnd) {
+        scanner.exhausted = true;
+        await closeKimiCodeDeleteScanner(input.taskId, scanner);
+      }
+      return { complete: reachedEnd && processed === 0, processed };
+    } catch (error) {
+      scanner.resetRequired = true;
+      await closeKimiCodeDeleteScanner(input.taskId, scanner);
+      throw error;
     } finally {
-      await closeDirectoryHandle(directory, "session");
+      scanner.active = false;
     }
-    return { complete: reachedEnd && processed === 0, processed };
   } catch (error) {
     throw classifyKimiCodeStateError(error);
   }
+}
+
+async function closeKimiCodeDeleteScanner(taskId: string, scanner: KimiCodeDeleteScannerState): Promise<void> {
+  if (scanner.directory) await closeDirectoryHandle(scanner.directory, "session");
+  scanner.directory = undefined;
+  if (kimiCodeDeleteScanners.get(taskId) === scanner) kimiCodeDeleteScanners.delete(taskId);
 }
 
 async function readOwnedRevisionSnapshot(
@@ -1375,11 +1438,15 @@ function workerTombstonePath(
 }
 
 function workerTombstoneFilename(operation: "delete" | "retire", taskId: string, sourceFilename: string): string {
-  const digest = createHash("sha256")
+  const digest = workerTombstoneDigest(operation, taskId, sourceFilename);
+  return `.cleanup-${operation}-${taskId}-${sourceFilename}-${digest}.tombstone`;
+}
+
+function workerTombstoneDigest(operation: "delete" | "retire", taskId: string, sourceFilename: string): string {
+  return createHash("sha256")
     .update(`${operation}\u0000${taskId}\u0000${sourceFilename}`)
     .digest("hex")
     .slice(0, 24);
-  return `.cleanup-${operation}-${taskId}-${sourceFilename}-${digest}.tombstone`;
 }
 
 function parseWorkerTombstoneSource(
@@ -1387,12 +1454,32 @@ function parseWorkerTombstoneSource(
   operation: "delete" | "retire",
   taskId: string,
 ): string | undefined {
-  const prefix = `.cleanup-${operation}-${taskId}-`;
-  const suffix = ".tombstone";
-  if (!filename.startsWith(prefix) || !filename.endsWith(suffix)) return undefined;
-  const sourceFilename = filename.slice(prefix.length, -(suffix.length + 25));
-  if (revisionFromFilename(sourceFilename) === undefined) return undefined;
-  return filename === workerTombstoneFilename(operation, taskId, sourceFilename) ? sourceFilename : undefined;
+  const parsed = parseWorkerTombstoneFilename(filename);
+  if (!parsed || parsed.operation !== operation || parsed.taskId !== taskId) return undefined;
+  if (parsed.digest !== workerTombstoneDigest(operation, taskId, parsed.sourceFilename)) {
+    throw new KimiCodeStateError("binding_mismatch");
+  }
+  return parsed.sourceFilename;
+}
+
+function parseWorkerTombstoneFilename(filename: string): {
+  operation: "delete" | "retire";
+  taskId: string;
+  sourceFilename: string;
+  revision: number;
+  digest: string;
+} | undefined {
+  const match = WORKER_TOMBSTONE_PATTERN.exec(filename);
+  if (!match) return undefined;
+  const revision = Number(match[4]);
+  if (!Number.isSafeInteger(revision) || revision < 1 || revisionFromFilename(match[3]) !== revision) return undefined;
+  return {
+    operation: match[1] as "delete" | "retire",
+    taskId: match[2],
+    sourceFilename: match[3],
+    revision,
+    digest: match[6],
+  };
 }
 
 export async function retireSupersededKimiCodeSessionState(
@@ -2058,13 +2145,12 @@ function windowsMoveProcessEnv(source: string, destination: string): NodeJS.Proc
 }
 
 function windowsPowerShellExecutable(): string {
-  const systemRoot = process.env.SystemRoot ?? process.env.WINDIR;
-  if (!systemRoot || !isAbsolute(systemRoot) || hasTraversalSegment(systemRoot)) {
+  const authority = windowsPowerShellAuthority();
+  const configuredRoot = process.env.SystemRoot ?? process.env.WINDIR;
+  if (!configuredRoot || !isAbsolute(configuredRoot) || hasTraversalSegment(configuredRoot)) {
     throw new KimiCodeStateError("invalid_locator");
   }
-  // SystemRoot is trusted only as same-process configuration. Every filesystem
-  // component used for execution is still resolved and checked before spawn.
-  const resolvedRoot = resolve(systemRoot);
+  const resolvedRoot = resolve(configuredRoot);
   const system32 = resolve(resolvedRoot, "System32");
   const executable = resolve(system32, "WindowsPowerShell", "v1.0", "powershell.exe");
   if (!isPathInside(resolvedRoot, executable)) throw new KimiCodeStateError("foreign_root");
@@ -2084,15 +2170,75 @@ function windowsPowerShellExecutable(): string {
   const realRoot = realpathSync(resolvedRoot);
   const realSystem32 = realpathSync(system32);
   const realExecutable = realpathSync(executable);
-  if (!samePath(realSystem32, resolve(realRoot, "System32")) || !samePath(realExecutable, executable)) {
+  if (
+    !sameWindowsPath(realRoot, resolvedRoot) ||
+    !sameWindowsPath(realSystem32, resolve(realRoot, "System32")) ||
+    !sameWindowsPath(realExecutable, executable) ||
+    !sameWindowsPath(realRoot, authority.root) ||
+    !sameWindowsPath(realExecutable, authority.executable)
+  ) {
     throw new KimiCodeStateError("foreign_root");
   }
-  return realExecutable;
+  return authority.executable;
+}
+
+interface WindowsPowerShellAuthority {
+  root: string;
+  executable: string;
+}
+
+let cachedWindowsPowerShellAuthority: WindowsPowerShellAuthority | undefined;
+
+function windowsPowerShellAuthority(): WindowsPowerShellAuthority {
+  if (cachedWindowsPowerShellAuthority) return cachedWindowsPowerShellAuthority;
+  const executable = stripWindowsExtendedPath(realpathSync(WINDOWS_SYSTEM_POWERSHELL_GLOBAL_PATH));
+  const v1Directory = dirname(executable);
+  const windowsPowerShellDirectory = dirname(v1Directory);
+  const system32 = dirname(windowsPowerShellDirectory);
+  const root = dirname(system32);
+  if (
+    basename(executable).toLowerCase() !== "powershell.exe" ||
+    basename(v1Directory).toLowerCase() !== "v1.0" ||
+    basename(windowsPowerShellDirectory).toLowerCase() !== "windowspowershell" ||
+    basename(system32).toLowerCase() !== "system32"
+  ) {
+    throw new KimiCodeStateError("foreign_root");
+  }
+  for (const [path, directory] of [
+    [root, true],
+    [system32, true],
+    [windowsPowerShellDirectory, true],
+    [v1Directory, true],
+    [executable, false],
+  ] as const) {
+    const info = lstatSync(path);
+    if (info.isSymbolicLink() || (directory ? !info.isDirectory() : !info.isFile())) {
+      throw new KimiCodeStateError("reparse_detected");
+    }
+    if (!sameWindowsPath(stripWindowsExtendedPath(realpathSync(path)), path)) {
+      throw new KimiCodeStateError("foreign_root");
+    }
+  }
+  cachedWindowsPowerShellAuthority = Object.freeze({ root, executable });
+  return cachedWindowsPowerShellAuthority;
+}
+
+function stripWindowsExtendedPath(path: string): string {
+  if (path.toLowerCase().startsWith("\\\\?\\unc\\")) return `\\\\${path.slice(8)}`;
+  if (path.startsWith("\\\\?\\")) return path.slice(4);
+  return path;
+}
+
+function sameWindowsPath(left: string, right: string): boolean {
+  return (
+    resolve(stripWindowsExtendedPath(left)).toLowerCase() === resolve(stripWindowsExtendedPath(right)).toLowerCase()
+  );
 }
 
 function minimalWindowsProcessEnv(): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {};
-  for (const key of ["SystemRoot", "WINDIR", "TEMP", "TMP"] as const) {
+  const authority = windowsPowerShellAuthority();
+  const env: NodeJS.ProcessEnv = { SystemRoot: authority.root, WINDIR: authority.root };
+  for (const key of ["TEMP", "TMP"] as const) {
     const value = process.env[key];
     if (value) env[key] = value;
   }

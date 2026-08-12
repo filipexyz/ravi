@@ -474,13 +474,15 @@ describe("Kimi Code prepared state publication", () => {
   );
 
   test.skipIf(process.platform !== "win32")(
-    "rejects an untrusted SystemRoot before spawning PowerShell",
+    "rejects a complete fake SystemRoot tree before spawning its PowerShell",
     async () => {
       const fixture = temporaryState();
       const originalSystemRoot = process.env.SystemRoot;
       const originalWindir = process.env.WINDIR;
       const fakeRoot = join(fixture.root, "fake-system-root");
-      mkdirSync(fakeRoot);
+      const fakePowerShell = join(fakeRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+      mkdirSync(dirname(fakePowerShell), { recursive: true });
+      copyFileSync(process.execPath, fakePowerShell);
       process.env.SystemRoot = fakeRoot;
       process.env.WINDIR = fakeRoot;
       try {
@@ -495,7 +497,8 @@ describe("Kimi Code prepared state publication", () => {
             ownerAttemptId: "attempt-fake-system-root",
             env: fixture.env,
           }),
-        ).rejects.toBeInstanceOf(KimiCodeStateError);
+        ).rejects.toMatchObject({ code: "foreign_root" });
+        expect(readFileSync(fakePowerShell)).toEqual(readFileSync(process.execPath));
       } finally {
         if (originalSystemRoot === undefined) delete process.env.SystemRoot;
         else process.env.SystemRoot = originalSystemRoot;
@@ -1180,6 +1183,31 @@ describe("Kimi Code provisional exact cleanup", () => {
 });
 
 describe("Kimi Code durable ordinary cleanup executors", () => {
+  test("delete_state advances past an unrelated full scan page instead of rescanning it forever", async () => {
+    const first = await firstCommit();
+    const sessionDirectory = dirname(String(first.session.params?.sessionFile));
+    for (let index = 0; index < 80; index += 1) {
+      writeFileSync(join(sessionDirectory, `unrelated-${index.toString().padStart(3, "0")}.txt`), "unrelated", {
+        mode: 0o600,
+      });
+    }
+    const input = {
+      locatorJson: serializeKimiCodeCleanupLocator(first.session, first.env),
+      taskId: "task-delete-unrelated-prefix",
+      env: first.env,
+      faultInjection: { platform: "linux" as const, strictSyncDirectory: async () => undefined },
+    };
+    const results = [];
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      results.push(await executeKimiCodeDeleteStateCleanup(input));
+      if (results.at(-1)?.complete) break;
+    }
+
+    expect(results.some((result) => !result.complete && result.processed === 0)).toBe(true);
+    expect(results.at(-1)).toEqual({ complete: true, processed: 0 });
+    expect(existsSync(String(first.session.params?.sessionFile))).toBe(false);
+  });
+
   test("delete_state processes a bounded batch and signals incomplete until an empty final pass", async () => {
     const first = await firstCommit();
     const sessionDirectory = dirname(String(first.session.params?.sessionFile));
@@ -1406,7 +1434,7 @@ describe("Kimi Code durable ordinary cleanup executors", () => {
 
       const forgedDelete = join(
         sessionDirectory,
-        `.cleanup-delete-task-forged-delete-${basename(String(second.session.params?.sessionFile))}.tombstone`,
+        `.cleanup-delete-task-forged-delete-${basename(String(second.session.params?.sessionFile))}-${"0".repeat(24)}.tombstone`,
       );
       writeFileSync(forgedDelete, "", { mode: 0o600 });
       await expect(
@@ -1420,6 +1448,37 @@ describe("Kimi Code durable ordinary cleanup executors", () => {
     },
     20_000,
   );
+
+  test("binds cleanup tombstones to the exact full task id when ids contain hyphens", async () => {
+    const first = await firstCommit();
+    const sourceFilename = basename(String(first.session.params?.sessionFile));
+    const sessionDirectory = dirname(String(first.session.params?.sessionFile));
+    rmSync(String(first.session.params?.sessionFile));
+    const tombstoneFor = (taskId: string) => {
+      const digest = createHash("sha256")
+        .update(`delete\u0000${taskId}\u0000${sourceFilename}`)
+        .digest("hex")
+        .slice(0, 24);
+      return join(sessionDirectory, `.cleanup-delete-${taskId}-${sourceFilename}-${digest}.tombstone`);
+    };
+    const fooTombstone = tombstoneFor("foo");
+    const fooBarTombstone = tombstoneFor("foo-bar");
+    writeFileSync(fooTombstone, "", { mode: 0o600 });
+    writeFileSync(fooBarTombstone, "", { mode: 0o600 });
+    const execute = (taskId: string) =>
+      executeKimiCodeDeleteStateCleanup({
+        locatorJson: serializeKimiCodeCleanupLocator(first.session, first.env),
+        taskId,
+        env: first.env,
+        faultInjection: { platform: "win32" },
+      });
+
+    await execute("foo");
+    expect(existsSync(fooTombstone)).toBe(false);
+    expect(existsSync(fooBarTombstone)).toBe(true);
+    await execute("foo-bar");
+    expect(existsSync(fooBarTombstone)).toBe(false);
+  });
 
   test.skipIf(process.platform !== "win32")(
     "classifies configured credentials in recovered delete tombstones",
