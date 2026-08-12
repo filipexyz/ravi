@@ -89,6 +89,8 @@
 - A prepared snapshot exposes a synchronous bounded publish callback; no async filesystem operation occurs inside the SQLite callback.
 - POSIX publication uses link plus directory fsync; Windows uses bounded `MoveFileExW(..., MOVEFILE_WRITE_THROUGH)` P/Invoke because Bun directory fsync returns `EPERM`, retaining intent on timeout/ambiguity.
 - `provisional_exact` cleanup deletes only the exact future revision and its intent/temp after proving no host owner; it never prunes `<= revision`.
+- Intent discovery uses a closeable process-local scanner cursor with typed canonical/staging/invalid candidates; every page has a hard scan budget and never rescans its prefix.
+- Worker-facing durable `delete_state` and `retire_revision` executors use canonical locators plus a validated task id; legacy wrappers remain compatibility-only.
 - Existing full-session cleanup and predecessor retirement retain their present binding/reparse guarantees.
 
 - [ ] Add RED for each typed error class without parsing messages.

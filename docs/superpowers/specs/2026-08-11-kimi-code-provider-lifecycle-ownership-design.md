@@ -186,6 +186,25 @@ the exact `published` task. The reconciler cannot run between the prepared inser
 and link because the publisher holds the same writer lock. It never infers
 ownership by scanning arbitrary revision files.
 
+Intent discovery is exposed as a bounded, process-local scanner rather than a
+string cursor over a rescanned directory tree. Its opaque cursor retains the
+open root/session directory handles between pages, advances at most the
+configured scan budget per call, and is explicitly closed by the caller (or by
+process exit). A page returns typed candidates: canonical intent, Windows
+staging intent, or invalid entry with only an allowlisted state-error code.
+Invalid entries cannot poison later candidates. The cursor is not persisted;
+after a crash the next startup restarts at the beginning, while already
+reconciled entries have been removed and therefore cannot permanently starve
+the tail. The scanner never returns transcript, reasoning, tool output, raw
+error text, or parsed host metadata.
+
+On Windows, the intent staging file is itself valid recovery evidence. If the
+write-through staging-to-canonical move times out or is otherwise ambiguous,
+the scanner validates and surfaces whichever of staging/canonical exists. If
+both exist, their canonical bytes/task/attempt binding must match before the
+staging duplicate can be removed. A staging-only intent is reconciled under the
+same attempt/session/task fences as a canonical intent; it is never ignored.
+
 Publication stops if the service fails. Its opaque reservation id is carried as
 a top-level, host-only field of `RuntimeSessionState`; it is not part of locator
 params or snapshot JSON.
@@ -236,6 +255,20 @@ containment, reparse status, and exact immutable filename, confirms no host
 session owns the canonical locator, and unlinks only that exact future revision
 plus its intent/temp. It MUST NOT invoke `cleanupKimiCodeSessionState`, prune
 `<= revision`, remove a predecessor, or remove a non-empty parent directory.
+
+`delete_state` and `retire_revision` also have worker-facing durable Kimi
+executors, distinct from the source-compatible legacy cleanup wrappers. They
+accept canonical locator bytes and an opaque validated task id. `delete_state`
+validates the locator-bound snapshot and removes only provider-owned published
+revisions at or below the owned revision; `retire_revision` additionally
+validates the canonical successor and removes only the exact predecessor.
+POSIX variants require unlink followed by strict directory fsync; unsupported
+directory fsync fails closed. Windows variants use task-id-bound write-through
+tombstones, truncate+flush them before best-effort unlink, and safely retry
+partial/zero-length tombstones. The generic ledger is completed only after
+these durable variants return. Legacy `cleanupKimiCodeSessionState` and
+`retireSupersededKimiCodeSessionState` remain compatibility APIs and do not
+constitute worker durability evidence.
 
 This service is a generic runtime-provider lifecycle interface with a registry
 of provider cleanup executors. The launcher, bot, channels, and task code do not
