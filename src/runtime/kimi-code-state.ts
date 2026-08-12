@@ -20,6 +20,8 @@ const KIMI_CODE_MAX_WORKSPACE_REALPATH_BYTES = 64 * 1024;
 const KIMI_CODE_MAX_INTENT_BYTES = 20 * 1024;
 const KIMI_CODE_MAX_INTENT_PAGE_SIZE = 32;
 const KIMI_CODE_MAX_INTENT_SCAN_ENTRIES = 256;
+const KIMI_CODE_DELETE_BATCH_SIZE = 16;
+const KIMI_CODE_DELETE_SCAN_ENTRIES = 64;
 const KIMI_CODE_WINDOWS_MOVE_TIMEOUT_MS = 10_000;
 const KIMI_CODE_WINDOWS_MOVE_COLLISION_EXIT = 17;
 const execFileAsync = promisify(execFile);
@@ -653,7 +655,7 @@ async function listKimiCodePublishIntentsInternal(
       if (scanner.sessionDirectory && scanner.sessionPath) {
         const entry = await scanner.sessionDirectory.read();
         if (!entry) {
-          await closeDirectoryHandle(scanner.sessionDirectory);
+          await closeDirectoryHandle(scanner.sessionDirectory, "session");
           scanner.sessionDirectory = undefined;
           scanner.sessionPath = undefined;
           continue;
@@ -695,20 +697,38 @@ async function listKimiCodePublishIntentsInternal(
   };
 }
 
-export async function closeKimiCodePublishIntentCursor(cursor: KimiCodePublishIntentCursor): Promise<void> {
+export async function closeKimiCodePublishIntentCursor(
+  cursor: KimiCodePublishIntentCursor,
+  faultInjection?: { closeDirectory?: (kind: "session" | "root") => void | Promise<void> },
+): Promise<void> {
   const scanner = kimiCodePublishIntentScanners.get(cursor);
   if (!scanner || scanner.closed) return;
-  scanner.closed = true;
-  kimiCodePublishIntentScanners.delete(cursor);
-  if (scanner.sessionDirectory) await closeDirectoryHandle(scanner.sessionDirectory);
-  await closeDirectoryHandle(scanner.rootDirectory);
+  try {
+    if (scanner.sessionDirectory) {
+      await closeDirectoryHandle(scanner.sessionDirectory, "session", faultInjection?.closeDirectory);
+      scanner.sessionDirectory = undefined;
+    }
+    await closeDirectoryHandle(scanner.rootDirectory, "root", faultInjection?.closeDirectory);
+    scanner.closed = true;
+    kimiCodePublishIntentScanners.delete(cursor);
+  } catch (error) {
+    throw classifyKimiCodeStateError(error);
+  }
 }
 
-async function closeDirectoryHandle(directory: Awaited<ReturnType<typeof opendir>>): Promise<void> {
+async function closeDirectoryHandle(
+  directory: Awaited<ReturnType<typeof opendir>>,
+  kind: "session" | "root",
+  injectedClose?: (kind: "session" | "root") => void | Promise<void>,
+): Promise<void> {
   try {
+    await injectedClose?.(kind);
     await directory.close();
-  } catch {
-    // Bun may auto-close a Dir when read() reaches EOF.
+  } catch (error) {
+    // Bun auto-closes a Dir when read() reaches EOF. Other close failures must
+    // keep the cursor live so its owner can retry and release both handles.
+    if (isRecord(error) && error.code === "ERR_DIR_CLOSED") return;
+    throw error;
   }
 }
 
@@ -1177,43 +1197,68 @@ async function cleanupKimiCodeSessionStateInternal(
   });
 }
 
-export async function executeKimiCodeDeleteStateCleanup(input: ExecuteKimiCodeDeleteStateCleanupInput): Promise<void> {
+export interface ExecuteKimiCodeDeleteStateCleanupResult {
+  complete: boolean;
+  processed: number;
+}
+
+export async function executeKimiCodeDeleteStateCleanup(
+  input: ExecuteKimiCodeDeleteStateCleanupInput,
+): Promise<ExecuteKimiCodeDeleteStateCleanupResult> {
   try {
     validateReservationId(input.taskId, input.env);
     const locator = parseKimiCodeCleanupLocator(input.locatorJson, input.env);
     const { root, sessionDirectory } = resolveKimiCodeLocatorPath(locator, input.env);
-    if (!(await validateKimiCodeSessionDirectory(root, sessionDirectory))) return;
+    if (!(await validateKimiCodeSessionDirectory(root, sessionDirectory))) return { complete: true, processed: 0 };
     const targetInfo = await inspectExactArtifact(locator.sessionFile);
     if (targetInfo) await readLocatorBoundSnapshot(locator, input.env);
-    if ((input.faultInjection?.platform ?? process.platform) === "win32") {
-      const tombstonePrefix = `.cleanup-${input.taskId}-revision-`;
-      for (const entry of await readdir(sessionDirectory, { withFileTypes: true })) {
-        if (!entry.name.startsWith(tombstonePrefix) || !entry.name.endsWith(".tombstone")) continue;
-        const tombstone = join(sessionDirectory, entry.name);
-        const info = await inspectExactArtifact(tombstone);
-        if (info?.size) await readOwnedRevisionSnapshot(locator, tombstone, input.env);
-        await durablyRemoveWindowsArtifact(join(sessionDirectory, ".missing-cleanup-source"), tombstone, "snapshot");
+    const platform = input.faultInjection?.platform ?? process.platform;
+    const directory = await opendir(sessionDirectory);
+    let scanned = 0;
+    let processed = 0;
+    let reachedEnd = false;
+    try {
+      while (scanned < KIMI_CODE_DELETE_SCAN_ENTRIES && processed < KIMI_CODE_DELETE_BATCH_SIZE) {
+        const entry = await directory.read();
+        if (!entry) {
+          reachedEnd = true;
+          break;
+        }
+        scanned += 1;
+        const tombstoneSource =
+          platform === "win32" ? parseWorkerTombstoneSource(entry.name, "delete", input.taskId) : undefined;
+        if (platform === "win32" && entry.name.startsWith(`.cleanup-delete-${input.taskId}-`) && !tombstoneSource) {
+          throw new KimiCodeStateError("binding_mismatch");
+        }
+        if (tombstoneSource) {
+          const revision = revisionFromFilename(tombstoneSource);
+          if (revision === undefined || revision > locator.revision) throw new KimiCodeStateError("binding_mismatch");
+          const tombstone = join(sessionDirectory, entry.name);
+          const info = await inspectExactArtifact(tombstone);
+          if (info?.size) await readOwnedRevisionSnapshot(locator, tombstone, input.env, revision);
+          await durablyRemoveWindowsArtifact(join(sessionDirectory, tombstoneSource), tombstone, "snapshot");
+          processed += 1;
+          continue;
+        }
+        const revision = revisionFromFilename(entry.name);
+        if (revision === undefined || revision > locator.revision) continue;
+        const path = join(sessionDirectory, entry.name);
+        await inspectExactArtifact(path);
+        await readOwnedRevisionSnapshot(locator, path, input.env, revision);
+        await durablyRemoveWorkerArtifact(
+          path,
+          sessionDirectory,
+          "delete",
+          input.taskId,
+          entry.name,
+          input.faultInjection,
+        );
+        processed += 1;
       }
+    } finally {
+      await closeDirectoryHandle(directory, "session");
     }
-    const candidates: Array<{ path: string; revision: number }> = [];
-    for (const entry of await readdir(sessionDirectory, { withFileTypes: true })) {
-      const revision = revisionFromFilename(entry.name);
-      if (revision === undefined || revision > locator.revision) continue;
-      const path = join(sessionDirectory, entry.name);
-      await inspectExactArtifact(path);
-      await readOwnedRevisionSnapshot(locator, path, input.env);
-      candidates.push({ path, revision });
-    }
-    candidates.sort((left, right) => left.revision - right.revision);
-    for (const candidate of candidates) {
-      await durablyRemoveWorkerArtifact(
-        candidate.path,
-        sessionDirectory,
-        input.taskId,
-        `revision-${candidate.revision.toString().padStart(8, "0")}`,
-        input.faultInjection,
-      );
-    }
+    return { complete: reachedEnd && processed === 0, processed };
   } catch (error) {
     throw classifyKimiCodeStateError(error);
   }
@@ -1223,7 +1268,8 @@ async function readOwnedRevisionSnapshot(
   maximumLocator: KimiCodeCleanupLocator,
   snapshotPath: string,
   env?: NodeJS.ProcessEnv,
-): Promise<void> {
+  exactRevision?: number,
+): Promise<KimiCodeSessionSnapshot> {
   const bytes = await open(snapshotPath, "r").then(async (file) => {
     try {
       return await file.readFile();
@@ -1238,6 +1284,7 @@ async function readOwnedRevisionSnapshot(
   } catch {
     throw new KimiCodeStateError("schema_mismatch");
   }
+  if (containsConfiguredCredential(snapshot, env)) throw new KimiCodeStateError("credential_detected");
   if (
     snapshot.provider !== maximumLocator.provider ||
     snapshot.sessionId !== maximumLocator.sessionId ||
@@ -1245,10 +1292,11 @@ async function readOwnedRevisionSnapshot(
     snapshot.revision > maximumLocator.revision ||
     !sameCwd(snapshot.cwd, maximumLocator.cwd) ||
     !sameWorkspaceIdentity(snapshot.workspaceIdentity, maximumLocator.workspaceIdentity) ||
-    containsConfiguredCredential(snapshot, env)
+    (exactRevision !== undefined && snapshot.revision !== exactRevision)
   ) {
     throw new KimiCodeStateError("binding_mismatch");
   }
+  return snapshot;
 }
 
 export async function executeKimiCodeRetireRevisionCleanup(
@@ -1272,13 +1320,24 @@ export async function executeKimiCodeRetireRevisionCleanup(
     }
     if (!(await validateKimiCodeSessionDirectory(successorPath.root, successorPath.sessionDirectory))) return;
     await readLocatorBoundSnapshot(successor, input.env);
+    const tombstone = workerTombstonePath(
+      previousPath.sessionDirectory,
+      "retire",
+      input.taskId,
+      basename(previous.sessionFile),
+    );
+    if ((input.faultInjection?.platform ?? process.platform) === "win32") {
+      const tombstoneInfo = await inspectExactArtifact(tombstone);
+      if (tombstoneInfo?.size) await readLocatorBoundSnapshot(previous, input.env, tombstone);
+    }
     const previousInfo = await inspectExactArtifact(previous.sessionFile);
     if (previousInfo) await readLocatorBoundSnapshot(previous, input.env);
     await durablyRemoveWorkerArtifact(
       previous.sessionFile,
       previousPath.sessionDirectory,
+      "retire",
       input.taskId,
-      "predecessor",
+      basename(previous.sessionFile),
       input.faultInjection,
     );
   } catch (error) {
@@ -1289,19 +1348,51 @@ export async function executeKimiCodeRetireRevisionCleanup(
 async function durablyRemoveWorkerArtifact(
   path: string,
   sessionDirectory: string,
+  operation: "delete" | "retire",
   taskId: string,
   label: string,
   faultInjection?: ExecuteKimiCodeDurableCleanupFaultInjection,
 ): Promise<void> {
   const platform = faultInjection?.platform ?? process.platform;
   if (platform === "win32") {
-    const tombstone = join(sessionDirectory, `.cleanup-${taskId}-${label}.tombstone`);
+    const tombstone = workerTombstonePath(sessionDirectory, operation, taskId, label);
     await durablyRemoveWindowsArtifact(path, tombstone, "snapshot", faultInjection?.afterWindowsArtifactMove);
   } else {
     await unlinkExactArtifact(path);
     await invokeStrictDirectorySync(sessionDirectory, faultInjection?.strictSyncDirectory);
   }
   await faultInjection?.afterArtifactDurable?.(path);
+}
+
+function workerTombstonePath(
+  sessionDirectory: string,
+  operation: "delete" | "retire",
+  taskId: string,
+  sourceFilename: string,
+): string {
+  if (revisionFromFilename(sourceFilename) === undefined) throw new KimiCodeStateError("binding_mismatch");
+  return join(sessionDirectory, workerTombstoneFilename(operation, taskId, sourceFilename));
+}
+
+function workerTombstoneFilename(operation: "delete" | "retire", taskId: string, sourceFilename: string): string {
+  const digest = createHash("sha256")
+    .update(`${operation}\u0000${taskId}\u0000${sourceFilename}`)
+    .digest("hex")
+    .slice(0, 24);
+  return `.cleanup-${operation}-${taskId}-${sourceFilename}-${digest}.tombstone`;
+}
+
+function parseWorkerTombstoneSource(
+  filename: string,
+  operation: "delete" | "retire",
+  taskId: string,
+): string | undefined {
+  const prefix = `.cleanup-${operation}-${taskId}-`;
+  const suffix = ".tombstone";
+  if (!filename.startsWith(prefix) || !filename.endsWith(suffix)) return undefined;
+  const sourceFilename = filename.slice(prefix.length, -(suffix.length + 25));
+  if (revisionFromFilename(sourceFilename) === undefined) return undefined;
+  return filename === workerTombstoneFilename(operation, taskId, sourceFilename) ? sourceFilename : undefined;
 }
 
 export async function retireSupersededKimiCodeSessionState(
@@ -1971,9 +2062,32 @@ function windowsPowerShellExecutable(): string {
   if (!systemRoot || !isAbsolute(systemRoot) || hasTraversalSegment(systemRoot)) {
     throw new KimiCodeStateError("invalid_locator");
   }
-  const executable = resolve(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-  if (!isPathInside(resolve(systemRoot), executable)) throw new KimiCodeStateError("foreign_root");
-  return executable;
+  // SystemRoot is trusted only as same-process configuration. Every filesystem
+  // component used for execution is still resolved and checked before spawn.
+  const resolvedRoot = resolve(systemRoot);
+  const system32 = resolve(resolvedRoot, "System32");
+  const executable = resolve(system32, "WindowsPowerShell", "v1.0", "powershell.exe");
+  if (!isPathInside(resolvedRoot, executable)) throw new KimiCodeStateError("foreign_root");
+  const rootInfo = lstatSync(resolvedRoot);
+  const system32Info = lstatSync(system32);
+  const executableInfo = lstatSync(executable);
+  if (
+    !rootInfo.isDirectory() ||
+    rootInfo.isSymbolicLink() ||
+    !system32Info.isDirectory() ||
+    system32Info.isSymbolicLink() ||
+    !executableInfo.isFile() ||
+    executableInfo.isSymbolicLink()
+  ) {
+    throw new KimiCodeStateError("reparse_detected");
+  }
+  const realRoot = realpathSync(resolvedRoot);
+  const realSystem32 = realpathSync(system32);
+  const realExecutable = realpathSync(executable);
+  if (!samePath(realSystem32, resolve(realRoot, "System32")) || !samePath(realExecutable, executable)) {
+    throw new KimiCodeStateError("foreign_root");
+  }
+  return realExecutable;
 }
 
 function minimalWindowsProcessEnv(): NodeJS.ProcessEnv {
