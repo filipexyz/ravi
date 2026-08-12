@@ -2835,6 +2835,14 @@ function getDb(): Database {
     WHERE runtime_session_display_id IS NULL AND sdk_session_id IS NOT NULL
   `);
   db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_runtime_display ON sessions(runtime_session_display_id)");
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_runtime_provider_json_session
+      ON sessions(runtime_provider, json_extract(runtime_session_json, '$.sessionId'))
+      WHERE runtime_session_json IS NOT NULL AND json_valid(runtime_session_json);
+    CREATE INDEX IF NOT EXISTS idx_sessions_runtime_provider_invalid_json
+      ON sessions(runtime_provider, runtime_session_display_id)
+      WHERE runtime_session_json IS NOT NULL AND NOT json_valid(runtime_session_json);
+  `);
 
   // Migration: add policy column to routes if not exists
   const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{

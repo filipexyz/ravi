@@ -395,26 +395,28 @@ export function installProviderStateCleanupExecutors(registry: ProviderStateClea
     } catch {
       return false;
     }
-    let candidates = database
+    const malformedTarget = database
+      .prepare(
+        `SELECT 1 FROM sessions
+         WHERE runtime_provider = ? AND runtime_session_display_id = ?
+           AND runtime_session_json IS NOT NULL AND NOT json_valid(runtime_session_json)
+         LIMIT 1`,
+      )
+      .get(KIMI_CODE_PROVIDER_ID, sessionId);
+    if (malformedTarget) return true;
+
+    const candidates = database
       .prepare(
         `SELECT runtime_session_json FROM sessions
-         WHERE runtime_provider = ? AND runtime_session_display_id = ? AND runtime_session_json IS NOT NULL
+         WHERE runtime_provider = ? AND runtime_session_json IS NOT NULL
+           AND json_valid(runtime_session_json)
+           AND json_type(runtime_session_json, '$.sessionId') = 'text'
+           AND json_extract(runtime_session_json, '$.sessionId') = ?
          LIMIT ?`,
       )
       .all(KIMI_CODE_PROVIDER_ID, sessionId, KIMI_OWNERSHIP_CANDIDATE_LIMIT + 1) as Array<{
       runtime_session_json: string;
     }>;
-    if (candidates.length === 0) {
-      candidates = database
-        .prepare(
-          `SELECT runtime_session_json FROM sessions
-           WHERE runtime_provider = ? AND runtime_session_display_id IS NULL AND runtime_session_json IS NOT NULL
-           LIMIT ?`,
-        )
-        .all(KIMI_CODE_PROVIDER_ID, KIMI_OWNERSHIP_CANDIDATE_LIMIT + 1) as Array<{
-        runtime_session_json: string;
-      }>;
-    }
     if (candidates.length > KIMI_OWNERSHIP_CANDIDATE_LIMIT) return true;
     return candidates.some((row) => {
       try {

@@ -359,7 +359,7 @@ describe("provider cleanup executor registry and runner", () => {
     expect(registry.locatorOwnershipFor(KIMI_CODE_PROVIDER_ID)?.(locatorJson, getDb())).toBe(true);
   });
 
-  it("bounds Kimi ownership candidates by the exact host session id and fails closed on inconsistent metadata", () => {
+  it("uses indexed canonical session ids for Kimi ownership despite inconsistent display metadata", () => {
     const registry = new ProviderStateCleanupExecutorRegistry();
     installProviderStateCleanupExecutors(registry);
     const ownership = registry.locatorOwnershipFor(KIMI_CODE_PROVIDER_ID)!;
@@ -385,6 +385,8 @@ describe("provider cleanup executor registry and runner", () => {
         )
         .run(KIMI_CODE_PROVIDER_ID, `unrelated-${index}`, JSON.stringify({ invalid: true }), unrelated.sessionKey);
     }
+    expect(ownership(locatorJson, getDb())).toBe(false);
+
     const inconsistent = getOrCreateSession("inconsistent-kimi", "agent-a", stateDir!);
     getDb()
       .prepare(
@@ -392,8 +394,18 @@ describe("provider cleanup executor registry and runner", () => {
       )
       .run(KIMI_CODE_PROVIDER_ID, "different-session-id", JSON.stringify(targetParams), inconsistent.sessionKey);
 
-    expect(ownership(locatorJson, getDb())).toBe(false);
+    expect(ownership(locatorJson, getDb())).toBe(true);
 
+    getDb().prepare("DELETE FROM sessions WHERE session_key = ?").run(inconsistent.sessionKey);
+    const malformedTarget = getOrCreateSession("malformed-target-kimi", "agent-a", stateDir!);
+    getDb()
+      .prepare(
+        "UPDATE sessions SET runtime_provider = ?, runtime_session_display_id = ?, runtime_session_json = ? WHERE session_key = ?",
+      )
+      .run(KIMI_CODE_PROVIDER_ID, targetSessionId, "{malformed", malformedTarget.sessionKey);
+    expect(ownership(locatorJson, getDb())).toBe(true);
+
+    getDb().prepare("DELETE FROM sessions WHERE session_key = ?").run(malformedTarget.sessionKey);
     const owned = getOrCreateSession("exact-owned-kimi", "agent-a", stateDir!);
     getDb()
       .prepare(
@@ -406,5 +418,29 @@ describe("provider cleanup executor registry and runner", () => {
         owned.sessionKey,
       );
     expect(ownership(locatorJson, getDb())).toBe(true);
+
+    const validPlan = getDb()
+      .prepare(
+        `EXPLAIN QUERY PLAN SELECT runtime_session_json FROM sessions
+         WHERE runtime_provider = ? AND runtime_session_json IS NOT NULL
+           AND json_valid(runtime_session_json)
+           AND json_type(runtime_session_json, '$.sessionId') = 'text'
+           AND json_extract(runtime_session_json, '$.sessionId') = ?
+         LIMIT ?`,
+      )
+      .all(KIMI_CODE_PROVIDER_ID, targetSessionId, 17) as Array<{ detail: string }>;
+    expect(validPlan.some(({ detail }) => detail.includes("idx_sessions_runtime_provider_json_session"))).toBe(true);
+
+    const malformedPlan = getDb()
+      .prepare(
+        `EXPLAIN QUERY PLAN SELECT 1 FROM sessions
+         WHERE runtime_provider = ? AND runtime_session_display_id = ?
+           AND runtime_session_json IS NOT NULL AND NOT json_valid(runtime_session_json)
+         LIMIT 1`,
+      )
+      .all(KIMI_CODE_PROVIDER_ID, targetSessionId) as Array<{ detail: string }>;
+    expect(malformedPlan.some(({ detail }) => detail.includes("idx_sessions_runtime_provider_invalid_json"))).toBe(
+      true,
+    );
   });
 });

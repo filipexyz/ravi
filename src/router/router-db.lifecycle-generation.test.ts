@@ -109,4 +109,31 @@ describe("session lifecycle-generation migration", () => {
       id: "cleanup-1",
     });
   });
+
+  it("installs provider session JSON ownership indexes idempotently", () => {
+    const db = getDb();
+    const indexNames = db
+      .prepare(
+        `SELECT name FROM sqlite_master
+         WHERE type = 'index' AND name IN (?, ?)
+         ORDER BY name`,
+      )
+      .all(
+        "idx_sessions_runtime_provider_invalid_json",
+        "idx_sessions_runtime_provider_json_session",
+      );
+
+    expect(indexNames).toEqual([
+      { name: "idx_sessions_runtime_provider_invalid_json" },
+      { name: "idx_sessions_runtime_provider_json_session" },
+    ]);
+
+    closeSessionStore();
+    closeRouterDb();
+    expect(
+      getDb()
+        .prepare("SELECT COUNT(*) AS count FROM sqlite_master WHERE type = 'index' AND name LIKE ?")
+        .get("idx_sessions_runtime_provider_%json%"),
+    ).toEqual({ count: 2 });
+  });
 });
