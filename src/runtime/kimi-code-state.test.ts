@@ -24,10 +24,13 @@ import {
   KIMI_CODE_STATE_ERROR_CODES,
   KimiCodeStateError,
   cleanupKimiCodeSessionState,
+  closeKimiCodePublishIntentCursor,
   classifyKimiCodeStateError,
   commitKimiCodeSessionState,
   createKimiCodeSessionId,
   executeKimiCodeProvisionalExactCleanup,
+  executeKimiCodeDeleteStateCleanup,
+  executeKimiCodeRetireRevisionCleanup,
   loadKimiCodeSessionState,
   parseKimiCodeCleanupLocator,
   listKimiCodePublishIntents,
@@ -121,13 +124,17 @@ function cloneSession(session: RuntimeSessionState): RuntimeSessionState {
 
 async function allPublishIntents(env: NodeJS.ProcessEnv): Promise<string[]> {
   const paths: string[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await listKimiCodePublishIntents({ env, limit: 32, cursor });
-    paths.push(...page.intentPaths);
-    cursor = page.nextCursor;
-  } while (cursor !== undefined);
-  return paths;
+  let cursor: Awaited<ReturnType<typeof listKimiCodePublishIntents>>["nextCursor"];
+  try {
+    do {
+      const page = await listKimiCodePublishIntents(cursor ? { cursor, limit: 32 } : { env, limit: 32 });
+      paths.push(...page.intentPaths);
+      cursor = page.nextCursor;
+    } while (cursor !== undefined);
+    return paths;
+  } finally {
+    if (cursor) await closeKimiCodePublishIntentCursor(cursor);
+  }
 }
 
 describe("Kimi Code state failure and cleanup locator contract", () => {
@@ -262,46 +269,101 @@ describe("Kimi Code prepared state publication", () => {
     expect("cause" in (failure as object)).toBe(false);
   });
 
-  test("lists intents through stable bounded pages and rejects an exceeded scan cap", async () => {
+  test("scans intents incrementally past the hard budget and isolates malformed candidates", async () => {
     const first = await firstCommit();
-    const prepared = [];
-    for (const suffix of ["c", "a", "b"]) {
-      prepared.push(
-        await prepareKimiCodeSessionState({
-          sessionId: first.snapshot.sessionId,
-          model: "k3",
-          cwd: first.cwd,
-          lastCommittedTurnId: `turn-page-${suffix}`,
-          messages: nativeMessages(`page-${suffix}`),
-          previousSnapshot: first.snapshot,
-          taskId: `task-page-${suffix}`,
-          ownerAttemptId: `attempt-page-${suffix}`,
-          env: first.env,
-        }),
-      );
+    const sessionDirectory = dirname(String(first.session.params?.sessionFile));
+    for (let index = 0; index < 300; index += 1) {
+      writeFileSync(join(sessionDirectory, `bounded-noise-${index.toString().padStart(3, "0")}`), "x");
     }
-    const expected = prepared.map((item) => item.intentPath).sort();
+    writeFileSync(join(sessionDirectory, ".publish-intent-malformed.json"), "not-json", { mode: 0o600 });
+    const prepared = await prepareKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-page-tail",
+      messages: nativeMessages("page-tail"),
+      previousSnapshot: first.snapshot,
+      taskId: "task-page-tail",
+      ownerAttemptId: "attempt-page-tail",
+      env: first.env,
+    });
 
-    const pageOne = await listKimiCodePublishIntents({ env: first.env, limit: 2 });
-    expect(pageOne.intentPaths).toEqual(expected.slice(0, 2));
-    expect(pageOne.nextCursor).toBeDefined();
-    const pageTwo = await listKimiCodePublishIntents({ env: first.env, limit: 2, cursor: pageOne.nextCursor });
-    expect(pageTwo).toEqual({ intentPaths: expected.slice(2), nextCursor: undefined });
+    const candidates = [];
+    let cursor: Awaited<ReturnType<typeof listKimiCodePublishIntents>>["nextCursor"];
+    let pages = 0;
+    try {
+      do {
+        const page = await listKimiCodePublishIntents(cursor ? { cursor, limit: 2 } : { env: first.env, limit: 2 });
+        candidates.push(...page.candidates);
+        cursor = page.nextCursor;
+        pages += 1;
+      } while (cursor);
+    } finally {
+      if (cursor) await closeKimiCodePublishIntentCursor(cursor);
+    }
+    expect(pages).toBeGreaterThan(1);
+    expect(candidates).toContainEqual({
+      kind: "invalid",
+      path: join(sessionDirectory, ".publish-intent-malformed.json"),
+      code: "schema_mismatch",
+    });
+    expect(candidates).toContainEqual({ kind: "canonical", path: prepared.intentPath });
+    const early = await listKimiCodePublishIntents({ env: first.env, limit: 1 });
+    expect(early.nextCursor).toBeDefined();
+    await closeKimiCodePublishIntentCursor(early.nextCursor!);
+    await expect(listKimiCodePublishIntents({ cursor: early.nextCursor!, limit: 1 })).rejects.toMatchObject({
+      code: "invalid_locator",
+    });
     await expect(listKimiCodePublishIntents({ env: first.env, limit: 0 })).rejects.toMatchObject({
       code: "invalid_locator",
     });
     await expect(listKimiCodePublishIntents({ env: first.env, limit: 33 })).rejects.toMatchObject({
       code: "invalid_locator",
     });
-
-    const sessionDirectory = dirname(expected[0]!);
-    for (let index = 0; index < 257; index += 1) {
-      writeFileSync(join(sessionDirectory, `bounded-noise-${index.toString().padStart(3, "0")}`), "x");
-    }
-    await expect(listKimiCodePublishIntents({ env: first.env, limit: 1 })).rejects.toMatchObject({
-      code: "state_busy",
-    });
   }, 20_000);
+
+  test.skipIf(process.platform !== "win32")(
+    "discovers a staging-only intent after an ambiguous Windows intent move",
+    async () => {
+      const first = await firstCommit();
+      await expect(
+        prepareKimiCodeSessionState({
+          sessionId: first.snapshot.sessionId,
+          model: "k3",
+          cwd: first.cwd,
+          lastCommittedTurnId: "turn-staging-timeout",
+          messages: nativeMessages("staging-timeout"),
+          previousSnapshot: first.snapshot,
+          taskId: "task-staging-timeout",
+          ownerAttemptId: "attempt-staging-timeout",
+          env: first.env,
+          faultInjection: { intentWindowsMoveTimeoutMs: 1 },
+        }),
+      ).rejects.toBeInstanceOf(KimiCodeStateError);
+
+      const page = await listKimiCodePublishIntents({ env: first.env, limit: 4 });
+      try {
+        const staging = page.candidates.find((candidate) => candidate.kind === "staging");
+        expect(staging?.path.endsWith(".publish-intent-task-staging-timeout.staging")).toBe(true);
+        const intent = await readKimiCodePublishIntent(staging!.path, first.env);
+        expect(intent).toMatchObject({
+          taskId: "task-staging-timeout",
+          ownerAttemptId: "attempt-staging-timeout",
+        });
+        await executeKimiCodeProvisionalExactCleanup({
+          locatorJson: intent.locatorJson,
+          taskId: intent.taskId,
+          ownerAttemptId: intent.ownerAttemptId,
+          env: first.env,
+          isLocatorOwned: () => false,
+        });
+        expect(existsSync(staging!.path)).toBe(false);
+      } finally {
+        if (page.nextCursor) await closeKimiCodePublishIntentCursor(page.nextCursor);
+      }
+    },
+    20_000,
+  );
 
   test("writes an exact redacted private intent and publishes synchronously exactly once", async () => {
     const first = await firstCommit();
@@ -355,6 +417,7 @@ describe("Kimi Code prepared state publication", () => {
     async () => {
       const first = await firstCommit();
       const observed: NodeJS.ProcessEnv[] = [];
+      const executables: string[] = [];
       const prepared = await prepareKimiCodeSessionState({
         sessionId: first.snapshot.sessionId,
         model: "k3",
@@ -365,7 +428,10 @@ describe("Kimi Code prepared state publication", () => {
         taskId: "task-windows-write-through",
         ownerAttemptId: "attempt-windows-write-through",
         env: first.env,
-        faultInjection: { observeWindowsMoveProcessEnv: (env) => observed.push(env) },
+        faultInjection: {
+          observeWindowsMoveProcessEnv: (env) => observed.push(env),
+          observePowerShellExecutable: (path) => executables.push(path),
+        },
       });
 
       expect(observed).toHaveLength(1);
@@ -376,7 +442,14 @@ describe("Kimi Code prepared state publication", () => {
         expect(env.RAVI_KIMI_MOVE_SOURCE).toBeDefined();
         expect(env.RAVI_KIMI_MOVE_DESTINATION).toBeDefined();
         expect(env.KIMI_API_KEY).toBeUndefined();
+        expect(env.PATH).toBeUndefined();
         expect(JSON.stringify(env)).not.toContain(first.env.KIMI_API_KEY);
+      }
+      expect(executables).toHaveLength(2);
+      for (const executable of executables) {
+        expect(executable).toBe(
+          join(process.env.SystemRoot!, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"),
+        );
       }
     },
     20_000,
@@ -583,6 +656,39 @@ describe("Kimi Code prepared state publication", () => {
     expect(existsSync(afterLink.temporaryPath)).toBe(false);
   }, 20_000);
 
+  test("persists discoverable intent before writing any transcript-bearing temporary snapshot", async () => {
+    const first = await firstCommit();
+    await expect(
+      prepareKimiCodeSessionState({
+        sessionId: first.snapshot.sessionId,
+        model: "k3",
+        cwd: first.cwd,
+        lastCommittedTurnId: "turn-intent-before-temp",
+        messages: nativeMessages("intent-before-temp"),
+        previousSnapshot: first.snapshot,
+        taskId: "task-intent-before-temp",
+        ownerAttemptId: "attempt-intent-before-temp",
+        env: first.env,
+        faultInjection: {
+          afterIntentBeforeTemporary: () => {
+            throw new Error("synthetic crash before temporary snapshot");
+          },
+        },
+      }),
+    ).rejects.toThrow("synthetic crash before temporary snapshot");
+
+    const page = await listKimiCodePublishIntents({ env: first.env, limit: 4 });
+    try {
+      const candidate = page.candidates.find((item) => item.kind !== "invalid");
+      expect(candidate).toBeDefined();
+      const intent = await readKimiCodePublishIntent(candidate!.path, first.env);
+      expect(intent.taskId).toBe("task-intent-before-temp");
+      expect(existsSync(join(dirname(candidate!.path), ".prepared-task-intent-before-temp.tmp"))).toBe(false);
+    } finally {
+      if (page.nextCursor) await closeKimiCodePublishIntentCursor(page.nextCursor);
+    }
+  });
+
   test("discard before publication removes only its own temp and intent", async () => {
     const first = await firstCommit();
     const unrelated = join(dirname(String(first.session.params?.sessionFile)), "unrelated.keep");
@@ -635,9 +741,75 @@ describe("Kimi Code prepared state publication", () => {
     expect(existsSync(prepared.intentPath)).toBe(false);
     expect(existsSync(String(first.session.params?.sessionFile))).toBe(true);
   });
+
+  test.skipIf(process.platform !== "win32")(
+    "discard resumes after its intent was moved to a tombstone",
+    async () => {
+      const first = await firstCommit();
+      let crash = true;
+      const prepared = await prepareKimiCodeSessionState({
+        sessionId: first.snapshot.sessionId,
+        model: "k3",
+        cwd: first.cwd,
+        lastCommittedTurnId: "turn-discard-intent-tombstone",
+        messages: nativeMessages("discard-intent-tombstone"),
+        previousSnapshot: first.snapshot,
+        taskId: "task-discard-intent-tombstone",
+        ownerAttemptId: "attempt-discard-intent-tombstone",
+        env: first.env,
+        faultInjection: {
+          afterDiscardWindowsArtifactMove: (kind) => {
+            if (kind === "intent" && crash) {
+              crash = false;
+              throw new Error("synthetic crash after intent tombstone move");
+            }
+          },
+        },
+      });
+      const tombstone = join(dirname(prepared.intentPath), `.cleanup-${prepared.taskId}-intent.tombstone`);
+
+      await expect(prepared.discard()).rejects.toThrow("synthetic crash after intent tombstone move");
+      expect(existsSync(prepared.intentPath)).toBe(false);
+      expect(existsSync(tombstone)).toBe(true);
+      await prepared.discard();
+      expect(existsSync(tombstone)).toBe(false);
+    },
+    20_000,
+  );
 });
 
 describe("Kimi Code provisional exact cleanup", () => {
+  test("fails closed when strict POSIX directory fsync is unsupported", async () => {
+    const first = await firstCommit();
+    const prepared = await prepareKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-strict-posix-sync",
+      messages: nativeMessages("strict-posix-sync"),
+      previousSnapshot: first.snapshot,
+      taskId: "task-strict-posix-sync",
+      ownerAttemptId: "attempt-strict-posix-sync",
+      env: first.env,
+    });
+    await expect(
+      executeKimiCodeProvisionalExactCleanup({
+        locatorJson: prepared.locatorJson,
+        taskId: prepared.taskId,
+        ownerAttemptId: prepared.ownerAttemptId,
+        env: first.env,
+        isLocatorOwned: () => false,
+        faultInjection: {
+          platform: "linux",
+          strictSyncDirectory: async () => {
+            throw { code: "EINVAL" };
+          },
+        },
+      }),
+    ).rejects.toMatchObject({ code: "io_transient" });
+    expect(existsSync(prepared.intentPath)).toBe(true);
+  });
+
   test("keeps intent until exact payload names are durably absent and then retries", async () => {
     const first = await firstCommit();
     const prepared = await prepareKimiCodeSessionState({
@@ -954,6 +1126,151 @@ describe("Kimi Code provisional exact cleanup", () => {
       expect(existsSync(exactPath)).toBe(true);
     }
   });
+});
+
+describe("Kimi Code durable ordinary cleanup executors", () => {
+  test.skipIf(process.platform !== "win32")(
+    "delete_state retries a moved revision tombstone",
+    async () => {
+      const first = await firstCommit();
+      let crash = true;
+      const input = {
+        locatorJson: serializeKimiCodeCleanupLocator(first.session, first.env),
+        taskId: "task-delete-tombstone",
+        env: first.env,
+        faultInjection: {
+          afterWindowsArtifactMove: () => {
+            if (crash) {
+              crash = false;
+              throw new Error("synthetic delete tombstone crash");
+            }
+          },
+        },
+      };
+
+      await expect(executeKimiCodeDeleteStateCleanup(input)).rejects.toThrow();
+      await executeKimiCodeDeleteStateCleanup(input);
+      expect(
+        readdirSync(dirname(String(first.session.params?.sessionFile))).filter((name) =>
+          name.includes("task-delete-tombstone"),
+        ),
+      ).toEqual([]);
+    },
+    20_000,
+  );
+
+  test("delete_state durably removes only owned revisions and retries a partial crash", async () => {
+    const first = await firstCommit();
+    const second = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-delete-owned-second",
+      messages: nativeMessages("delete-owned-second"),
+      previousSnapshot: first.snapshot,
+      env: first.env,
+    });
+    const newer = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-delete-owned-newer",
+      messages: nativeMessages("delete-owned-newer"),
+      previousSnapshot: second.snapshot,
+      env: first.env,
+    });
+    let crash = true;
+    const input = {
+      locatorJson: serializeKimiCodeCleanupLocator(second.session, first.env),
+      taskId: "task-delete-owned",
+      env: first.env,
+      faultInjection: {
+        afterArtifactDurable: () => {
+          if (crash) {
+            crash = false;
+            throw new Error("synthetic delete crash");
+          }
+        },
+      },
+    };
+
+    await expect(executeKimiCodeDeleteStateCleanup(input)).rejects.toThrow();
+    await executeKimiCodeDeleteStateCleanup(input);
+    expect(existsSync(String(first.session.params?.sessionFile))).toBe(false);
+    expect(existsSync(String(second.session.params?.sessionFile))).toBe(false);
+    expect(existsSync(String(newer.session.params?.sessionFile))).toBe(true);
+  }, 20_000);
+
+  test("retire_revision durably removes only the exact predecessor and preserves successor", async () => {
+    const first = await firstCommit();
+    const second = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-retire-successor",
+      messages: nativeMessages("retire-successor"),
+      previousSnapshot: first.snapshot,
+      env: first.env,
+    });
+
+    await executeKimiCodeRetireRevisionCleanup({
+      locatorJson: serializeKimiCodeCleanupLocator(first.session, first.env),
+      successorLocatorJson: serializeKimiCodeCleanupLocator(second.session, first.env),
+      taskId: "task-retire-exact",
+      env: first.env,
+    });
+    expect(existsSync(String(first.session.params?.sessionFile))).toBe(false);
+    expect(existsSync(String(second.session.params?.sessionFile))).toBe(true);
+    await executeKimiCodeRetireRevisionCleanup({
+      locatorJson: serializeKimiCodeCleanupLocator(first.session, first.env),
+      successorLocatorJson: serializeKimiCodeCleanupLocator(second.session, first.env),
+      taskId: "task-retire-exact",
+      env: first.env,
+    });
+  });
+
+  test.skipIf(process.platform !== "win32")(
+    "retire_revision retries from its task-bound zero-length tombstone",
+    async () => {
+      const first = await firstCommit();
+      const second = await commitKimiCodeSessionState({
+        sessionId: first.snapshot.sessionId,
+        model: "k3",
+        cwd: first.cwd,
+        lastCommittedTurnId: "turn-retire-tombstone-successor",
+        messages: nativeMessages("retire-tombstone-successor"),
+        previousSnapshot: first.snapshot,
+        env: first.env,
+      });
+      let crash = true;
+      const input = {
+        locatorJson: serializeKimiCodeCleanupLocator(first.session, first.env),
+        successorLocatorJson: serializeKimiCodeCleanupLocator(second.session, first.env),
+        taskId: "task-retire-tombstone",
+        env: first.env,
+        faultInjection: {
+          afterWindowsArtifactMove: () => {
+            if (crash) {
+              crash = false;
+              throw new Error("synthetic retire tombstone crash");
+            }
+          },
+        },
+      };
+      const tombstone = join(
+        dirname(String(first.session.params?.sessionFile)),
+        ".cleanup-task-retire-tombstone-predecessor.tombstone",
+      );
+
+      await expect(executeKimiCodeRetireRevisionCleanup(input)).rejects.toThrow();
+      expect(existsSync(tombstone)).toBe(true);
+      writeFileSync(tombstone, "", { mode: 0o600 });
+      await executeKimiCodeRetireRevisionCleanup(input);
+      expect(existsSync(tombstone)).toBe(false);
+      expect(existsSync(String(second.session.params?.sessionFile))).toBe(true);
+    },
+    20_000,
+  );
 });
 
 describe("Kimi Code immutable session state", () => {
