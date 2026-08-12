@@ -10,7 +10,8 @@
  */
 
 import { resolveRoute } from "../../router/resolver.js";
-import { resetSession } from "../../router/sessions.js";
+import { getSession, resetSessionIfUnchanged } from "../../router/sessions.js";
+import { runProviderSessionLifecycleMutation } from "../../runtime/provider-session-lifecycle.js";
 import { getBotInstance } from "../../daemon.js";
 import { logger } from "../../utils/logger.js";
 import type { SlashCommand, SlashContext } from "../registry.js";
@@ -55,7 +56,13 @@ export const resetCommand: SlashCommand = {
       }) ?? false;
     log.info("/reset abort result", { sessionName, aborted, botExists: !!bot });
 
-    const reset = resetSession(sessionKey);
+    const session = getSession(sessionKey);
+    const reset = session
+      ? await runProviderSessionLifecycleMutation({
+          session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+          mutate: () => resetSessionIfUnchanged(session),
+        })
+      : false;
     log.info("/reset result", { sessionKey, reset });
 
     if (aborted || reset) {

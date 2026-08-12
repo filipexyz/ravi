@@ -35,7 +35,6 @@ import {
   getSessionsByAgent,
   getSession,
   deleteSessionIfUnchanged,
-  resetSession,
   resetSessionIfUnchanged,
   resolveSession,
   getOrCreateSession,
@@ -3553,6 +3552,18 @@ export class SessionCommands {
       session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams },
       mutate: () => resetSessionIfUnchanged(s),
     });
+    if (!changed) {
+      if (asJson) {
+        const payload = buildSessionMutationJson("reset", s, resolveSession(s.sessionKey), false, {
+          conflict: "session_changed",
+          nextMessageStartsFreshConversation: false,
+        });
+        printJson(payload);
+        return payload;
+      }
+      console.log(`Session changed; reset was not applied: ${s.name ?? s.sessionKey}`);
+      return;
+    }
     const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
       reason: "cli_session_reset",
     });
@@ -3647,12 +3658,23 @@ export class SessionCommands {
       /* session may not be active */
     }
 
-    const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
-      reason: "cli_session_delete",
-    });
     const changed = await runProviderSessionLifecycleMutation({
       session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams },
       mutate: () => deleteSessionIfUnchanged(s),
+    });
+    if (!changed) {
+      if (asJson) {
+        const payload = buildSessionMutationJson("delete", s, resolveSession(s.sessionKey), false, {
+          conflict: "session_changed",
+        });
+        printJson(payload);
+        return payload;
+      }
+      console.log(`Session changed; delete was not applied: ${s.name ?? s.sessionKey}`);
+      return;
+    }
+    const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
+      reason: "cli_session_delete",
     });
     await emitSessionMutationAudit("delete", "completed", {
       cliInvocation,
@@ -5577,7 +5599,15 @@ export class SessionCommands {
             if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
               console.log("Permission denied.\n");
             } else {
-              resetSession(s.sessionKey);
+              const changed = await runProviderSessionLifecycleMutation({
+                session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams },
+                mutate: () => resetSessionIfUnchanged(s),
+              });
+              if (!changed) {
+                console.log("Session changed; reset was not applied.\n");
+                ask();
+                return;
+              }
               const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
                 reason: "cli_interactive_session_reset",
               });
