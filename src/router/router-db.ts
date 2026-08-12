@@ -3293,17 +3293,15 @@ function getDb(): Database {
     log.info("Created default agent: main");
   }
 
-  // Startup cleanup: remove any expired ephemeral sessions left over from previous runs
+  // Startup observes expired ephemeral sessions but leaves their deletion to the
+  // async lifecycle runner, which snapshots provider state before mutation.
   const expiredCount = (
     db
       .prepare("SELECT COUNT(*) as n FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?")
       .get(Date.now()) as { n: number }
   ).n;
   if (expiredCount > 0) {
-    db.prepare("DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?").run(
-      Date.now(),
-    );
-    log.info("Cleaned up expired ephemeral sessions at startup", {
+    log.info("Deferred expired ephemeral session cleanup to lifecycle runner", {
       count: expiredCount,
     });
   }

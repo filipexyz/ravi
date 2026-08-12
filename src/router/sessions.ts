@@ -528,6 +528,16 @@ export function clearProviderSession(sessionKey: string): void {
   log.debug("Cleared provider session state", { sessionKey });
 }
 
+/** Clears provider state only when no writer has replaced the observed session. */
+export function clearProviderSessionIfUnchanged(session: Pick<SessionEntry, "sessionKey" | "updatedAt">): boolean {
+  getDb()
+    .prepare(
+      "UPDATE sessions SET sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ? WHERE session_key = ? AND updated_at = ?",
+    )
+    .run(Date.now(), session.sessionKey, session.updatedAt);
+  return getDbChanges() > 0;
+}
+
 /**
  * Update token usage
  */
@@ -649,6 +659,12 @@ export function deleteSession(sessionKey: string): boolean {
   return getDbChanges() > 0;
 }
 
+/** Deletes a session only when no writer has replaced the observed session. */
+export function deleteSessionIfUnchanged(session: Pick<SessionEntry, "sessionKey" | "updatedAt">): boolean {
+  getDb().prepare("DELETE FROM sessions WHERE session_key = ? AND updated_at = ?").run(session.sessionKey, session.updatedAt);
+  return getDbChanges() > 0;
+}
+
 /**
  * Reset a session — clears conversation state but keeps the session entry
  * (name, agent, routing, display name, etc. are preserved).
@@ -673,6 +689,22 @@ export function resetSession(sessionKey: string): boolean {
     WHERE session_key = ?
   `,
   ).run(Date.now(), sessionKey);
+  return getDbChanges() > 0;
+}
+
+/** Resets a session only when no writer has replaced the observed session. */
+export function resetSessionIfUnchanged(session: Pick<SessionEntry, "sessionKey" | "updatedAt">): boolean {
+  const db = getDb();
+  db.prepare(
+    `
+    UPDATE sessions SET
+      sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL,
+      runtime_session_display_id = NULL, system_sent = 0, aborted_last_run = 0,
+      compaction_count = 0, input_tokens = 0, output_tokens = 0, total_tokens = 0,
+      context_tokens = 0, updated_at = ?
+    WHERE session_key = ? AND updated_at = ?
+  `,
+  ).run(Date.now(), session.sessionKey, session.updatedAt);
   return getDbChanges() > 0;
 }
 

@@ -34,8 +34,9 @@ import {
   listSessions,
   getSessionsByAgent,
   getSession,
-  deleteSession,
+  deleteSessionIfUnchanged,
   resetSession,
+  resetSessionIfUnchanged,
   resolveSession,
   getOrCreateSession,
   findSessionByChatId,
@@ -91,6 +92,7 @@ import {
 } from "../../channels/slack/thread-lifecycle.js";
 import { listStickers, stickerAllowedForAgent, stickerAllowedOnChannel } from "../../stickers/catalog.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
+import { runProviderSessionLifecycleMutation } from "../../runtime/provider-session-lifecycle.js";
 import {
   dbFindAgentChatMessageByRef,
   dbFindChat,
@@ -3539,7 +3541,7 @@ export class SessionCommands {
       /* session may not be active */
     }
 
-    const changed = resetSession(s.sessionKey);
+    const changed = await runProviderSessionLifecycleMutation({ session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams }, mutate: () => resetSessionIfUnchanged(s) });
     const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
       reason: "cli_session_reset",
     });
@@ -3637,7 +3639,7 @@ export class SessionCommands {
     const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
       reason: "cli_session_delete",
     });
-    const changed = deleteSession(s.sessionKey);
+    const changed = await runProviderSessionLifecycleMutation({ session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams }, mutate: () => deleteSessionIfUnchanged(s) });
     await emitSessionMutationAudit("delete", "completed", {
       cliInvocation,
       before,
@@ -3810,7 +3812,7 @@ export class SessionCommands {
       const revokedContexts = revokeAgentRuntimeContextsForSession(session.sessionKey, {
         reason: "cli_session_prune_inactive",
       });
-      const changed = deleteSession(session.sessionKey);
+      const changed = await runProviderSessionLifecycleMutation({ session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams }, mutate: () => deleteSessionIfUnchanged(session) });
       if (changed) deletedCount += 1;
       await emitSessionMutationAudit("prune", "completed", {
         cliInvocation,

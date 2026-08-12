@@ -1,6 +1,6 @@
 import { configStore } from "../config-store.js";
 import {
-  clearProviderSession,
+  clearProviderSessionIfUnchanged,
   expandHome,
   getOrCreateSession,
   getSessionByName,
@@ -17,6 +17,7 @@ import type { RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
 import { validateRuntimeSessionState, type RuntimeSessionStateInvalidReason } from "./session-state.js";
 import { resolveRuntimeForPrompt } from "./task-runtime-context.js";
+import { runProviderSessionLifecycleMutation } from "./provider-session-lifecycle.js";
 
 const log = logger.child("runtime:session-resolver");
 
@@ -38,6 +39,7 @@ export interface RuntimeSessionResolution {
   storedRuntimeProvider?: RuntimeProviderId;
   canResumeStoredSession: boolean;
   resumeDecision: RuntimeResumeDecision;
+  providerStateCleanup?: Promise<boolean>;
 }
 
 export interface RuntimeResumeDecision {
@@ -169,6 +171,7 @@ export function resolveRuntimeSession(options: RuntimeSessionResolutionOptions):
     staleCleared: false,
   };
 
+  let providerStateCleanup: Promise<boolean> | undefined;
   if (storedProviderSessionId && !canResumeStoredSession) {
     log.info("Clearing stale provider session state", {
       sessionName: options.sessionName,
@@ -177,7 +180,10 @@ export function resolveRuntimeSession(options: RuntimeSessionResolutionOptions):
       requestedProvider: runtimeProviderId,
       resumeDecision,
     });
-    clearProviderSession(session.sessionKey);
+    providerStateCleanup = runProviderSessionLifecycleMutation({
+      session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+      mutate: () => clearProviderSessionIfUnchanged(session),
+    });
     session.runtimeSessionParams = undefined;
     session.runtimeSessionDisplayId = undefined;
     session.providerSessionId = undefined;
@@ -206,6 +212,7 @@ export function resolveRuntimeSession(options: RuntimeSessionResolutionOptions):
     storedRuntimeProvider,
     canResumeStoredSession,
     resumeDecision,
+    ...(providerStateCleanup ? { providerStateCleanup } : {}),
   };
 }
 

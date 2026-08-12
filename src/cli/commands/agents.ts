@@ -41,7 +41,8 @@ import {
 import { DmScopeSchema, type ContextCapability } from "../../router/router-db.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import {
-  deleteSession,
+  deleteSessionIfUnchanged,
+  getSession,
   getSessionTurnUsageSummary,
   getSessionsByAgent,
   getMainSession,
@@ -49,6 +50,7 @@ import {
   type SessionTurnUsageSummary,
 } from "../../router/sessions.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
+import { runProviderSessionLifecycleMutation } from "../../runtime/provider-session-lifecycle.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
@@ -1613,7 +1615,12 @@ export class AgentsCommands {
         actor: "cli",
       };
       await nats.emit("ravi.session.abort", abortRequest);
-      return deleteSession(key);
+      const session = getSession(key);
+      if (!session) return false;
+      return runProviderSessionLifecycleMutation({
+        session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+        mutate: () => deleteSessionIfUnchanged(session),
+      });
     };
 
     // Reset all sessions for this agent

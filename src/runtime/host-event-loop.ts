@@ -7,7 +7,7 @@ import { nats } from "../nats.js";
 import { SILENT_TOKEN } from "../prompt-builder.js";
 import {
   dbInsertCostEvent,
-  deleteSession,
+  deleteSessionIfUnchanged,
   getAnnounceCompaction,
   getSession,
   resetSession,
@@ -21,6 +21,7 @@ import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-tra
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
+import { runProviderSessionLifecycleMutation } from "./provider-session-lifecycle.js";
 import {
   buildRuntimeContextRecoveryPrompt,
   classifyRuntimeContextWindowFailure,
@@ -2424,7 +2425,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           revokeAgentRuntimeContextsForSession(session.sessionKey, {
             reason: "prompt_too_long_reset",
           });
-          deleteSession(session.sessionKey);
+          await runProviderSessionLifecycleMutation({
+            session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+            mutate: () => deleteSessionIfUnchanged(session),
+          });
           streaming._promptTooLong = false;
 
           // Notify the user that the session was reset (skip for sentinel)

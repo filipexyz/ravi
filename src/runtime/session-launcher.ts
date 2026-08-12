@@ -125,7 +125,10 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     storedProviderSessionId,
     canResumeStoredSession,
     resumeDecision,
+    providerStateCleanup,
   } = resolvedSession;
+
+  await providerStateCleanup;
 
   log.info("startRuntimeSession", {
     sessionName,

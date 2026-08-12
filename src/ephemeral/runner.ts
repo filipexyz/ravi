@@ -9,8 +9,9 @@
 import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
-import { getExpiringSessions, getExpiredSessions } from "../router/sessions.js";
-import { dbCleanupMessageMeta, dbCleanupExpiredSessions, dbPruneStaleRows } from "../router/router-db.js";
+import { deleteSessionIfUnchanged, getExpiringSessions, getExpiredSessions } from "../router/sessions.js";
+import { dbCleanupMessageMeta, dbPruneStaleRows } from "../router/router-db.js";
+import { runProviderSessionLifecycleMutation } from "../runtime/provider-session-lifecycle.js";
 import { rollupDailyMetrics } from "../metrics/rollup.js";
 
 const log = logger.child("ephemeral");
@@ -85,9 +86,12 @@ Sem ação = sessão será excluída automaticamente.`;
         // Ignore abort errors — session may not be active
       }
       warned.delete(session.sessionKey);
+      await runProviderSessionLifecycleMutation({
+        session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+        mutate: () => deleteSessionIfUnchanged(session),
+      });
     }
-    // Bulk-delete all expired ephemeral sessions (catches any stragglers too)
-    const deletedCount = dbCleanupExpiredSessions();
+    const deletedCount = expired.length;
     if (deletedCount > 0) {
       log.info("Deleted expired ephemeral sessions", { count: deletedCount });
     }
