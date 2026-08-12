@@ -243,14 +243,6 @@ export function App() {
             break;
           }
           {
-            publish("ravi.session.abort", {
-              sessionKey: session.sessionKey,
-              sessionName,
-              source: "tui",
-              action: "reset",
-              reason: "tui_reset",
-              actor: "operator",
-            }).catch(() => {});
             const changed = await runProviderSessionLifecycleMutation({
               session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
               mutate: () => resetSessionIfUnchanged(session),
@@ -265,6 +257,14 @@ export function App() {
               });
               break;
             }
+            publish("ravi.session.abort", {
+              sessionKey: session.sessionKey,
+              sessionName,
+              source: "tui",
+              action: "reset",
+              reason: "tui_reset",
+              actor: "operator",
+            }).catch(() => {});
           }
           clearMessages();
           pushMessage({

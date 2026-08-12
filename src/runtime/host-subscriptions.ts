@@ -108,16 +108,25 @@ export class RuntimeHostSubscriptions {
     if (type && (type === "task.done" || type === "task.failed") && releaseSessionName) {
       const sessionEntry = getSessionByName(releaseSessionName);
       if (sessionEntry?.ephemeral === true && isTaskRuntimeSessionName(sessionEntry.name ?? releaseSessionName)) {
-        await runProviderSessionLifecycleMutation({
+        const deleted = await runProviderSessionLifecycleMutation({
           session: { displayId: sessionEntry.runtimeSessionDisplayId, params: sessionEntry.runtimeSessionParams },
           mutate: () => deleteSessionIfUnchanged(sessionEntry),
         });
-        log.info("Deleted ephemeral task-work session after task terminal event", {
-          sessionName: releaseSessionName,
-          sessionKey: sessionEntry.sessionKey,
-          taskId: data.taskId,
-          eventType: type,
-        });
+        if (deleted) {
+          log.info("Deleted ephemeral task-work session after task terminal event", {
+            sessionName: releaseSessionName,
+            sessionKey: sessionEntry.sessionKey,
+            taskId: data.taskId,
+            eventType: type,
+          });
+        } else {
+          log.warn("Skipped task-work session deletion after ownership changed", {
+            sessionName: releaseSessionName,
+            sessionKey: sessionEntry.sessionKey,
+            taskId: data.taskId,
+            eventType: type,
+          });
+        }
       }
     }
   }

@@ -139,6 +139,7 @@ export {
 // Sessions
 export {
   getOrCreateSession,
+  redirectSessionIfUnchanged,
   getSession,
   getSessionByName,
   getSessionBySdkId,

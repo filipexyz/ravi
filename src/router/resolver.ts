@@ -7,7 +7,13 @@
 import type { RouterConfig, AgentConfig, RouteConfig, MatchedRoute, ResolvedRoute, DmScope } from "./types.js";
 import { buildSessionKey } from "./session-key.js";
 import { generateSessionName, ensureUniqueName, slugify } from "./session-name.js";
-import { getOrCreateSession, getSession, updateSessionName, getSessionByName } from "./sessions.js";
+import {
+  getOrCreateSession,
+  getSession,
+  updateSessionName,
+  getSessionByName,
+  redirectSessionIfUnchanged,
+} from "./sessions.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router");
@@ -244,9 +250,16 @@ export function commitMatchedRoute(
     forcedRouteParentSessionKey: forcedRouteSession?.sessionKey ?? null,
   });
   const createdSession = !getSession(effectiveSessionKey);
-  const existing = getOrCreateSession(effectiveSessionKey, agentId, agentCwd, {
+  let existing = getOrCreateSession(effectiveSessionKey, agentId, agentCwd, {
     ...(threadId ? { lastThreadId: threadId } : {}),
   });
+  if (existing.agentId !== agentId || existing.agentCwd !== agentCwd) {
+    const redirect = redirectSessionIfUnchanged(existing, agentId, agentCwd);
+    if (!redirect.won) {
+      throw new Error(`Session ownership changed while committing route: ${effectiveSessionKey}`);
+    }
+    existing = redirect.session;
+  }
   let sessionName = existing.name;
 
   // Route-forced session name takes precedence

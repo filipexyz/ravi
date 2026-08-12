@@ -3527,21 +3527,6 @@ export class SessionCommands {
       before,
     });
 
-    // Abort active SDK subprocess so it doesn't keep the old context
-    try {
-      await nats.emit("ravi.session.abort", {
-        sessionKey: s.sessionKey,
-        sessionName: s.name,
-        source: "cli",
-        action: "sessions.reset",
-        reason: "cli_session_reset",
-        actor: cliInvocation.raviContext.agentId ?? cliInvocation.process.user ?? "cli",
-        correlationId: cliInvocation.invocationId,
-      });
-    } catch {
-      /* session may not be active */
-    }
-
     const changed = await runProviderSessionLifecycleMutation({
       session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams },
       mutate: () => resetSessionIfUnchanged(s),
@@ -3557,6 +3542,19 @@ export class SessionCommands {
       }
       console.log(`Session changed; reset was not applied: ${s.name ?? s.sessionKey}`);
       return;
+    }
+    try {
+      await nats.emit("ravi.session.abort", {
+        sessionKey: s.sessionKey,
+        sessionName: s.name,
+        source: "cli",
+        action: "sessions.reset",
+        reason: "cli_session_reset",
+        actor: cliInvocation.raviContext.agentId ?? cliInvocation.process.user ?? "cli",
+        correlationId: cliInvocation.invocationId,
+      });
+    } catch {
+      /* session may not be active */
     }
     const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
       reason: "cli_session_reset",
@@ -3637,21 +3635,6 @@ export class SessionCommands {
       before,
     });
 
-    // Abort SDK subprocess first
-    try {
-      await nats.emit("ravi.session.abort", {
-        sessionKey: s.sessionKey,
-        sessionName: s.name,
-        source: "cli",
-        action: "sessions.delete",
-        reason: "cli_session_delete",
-        actor: cliInvocation.raviContext.agentId ?? cliInvocation.process.user ?? "cli",
-        correlationId: cliInvocation.invocationId,
-      });
-    } catch {
-      /* session may not be active */
-    }
-
     const changed = await runProviderSessionLifecycleMutation({
       session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams },
       mutate: () => deleteSessionIfUnchanged(s),
@@ -3666,6 +3649,19 @@ export class SessionCommands {
       }
       console.log(`Session changed; delete was not applied: ${s.name ?? s.sessionKey}`);
       return;
+    }
+    try {
+      await nats.emit("ravi.session.abort", {
+        sessionKey: s.sessionKey,
+        sessionName: s.name,
+        source: "cli",
+        action: "sessions.delete",
+        reason: "cli_session_delete",
+        actor: cliInvocation.raviContext.agentId ?? cliInvocation.process.user ?? "cli",
+        correlationId: cliInvocation.invocationId,
+      });
+    } catch {
+      /* session may not be active */
     }
     const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
       reason: "cli_session_delete",
@@ -3825,27 +3821,30 @@ export class SessionCommands {
         before,
       });
 
-      try {
-        await nats.emit("ravi.session.abort", {
-          sessionKey: session.sessionKey,
-          sessionName: session.name,
-          source: "cli",
-          action: "sessions.prune",
-          reason: "cli_session_prune_inactive",
-          actor: cliInvocation.raviContext.agentId ?? cliInvocation.process.user ?? "cli",
-          correlationId: cliInvocation.invocationId,
-        });
-      } catch {
-        /* session may not be active */
-      }
-
-      const revokedContexts = revokeAgentRuntimeContextsForSession(session.sessionKey, {
-        reason: "cli_session_prune_inactive",
-      });
       const changed = await runProviderSessionLifecycleMutation({
         session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
         mutate: () => deleteSessionIfUnchanged(session),
       });
+      if (changed) {
+        try {
+          await nats.emit("ravi.session.abort", {
+            sessionKey: session.sessionKey,
+            sessionName: session.name,
+            source: "cli",
+            action: "sessions.prune",
+            reason: "cli_session_prune_inactive",
+            actor: cliInvocation.raviContext.agentId ?? cliInvocation.process.user ?? "cli",
+            correlationId: cliInvocation.invocationId,
+          });
+        } catch {
+          /* session may not be active */
+        }
+      }
+      const revokedContexts = changed
+        ? revokeAgentRuntimeContextsForSession(session.sessionKey, {
+            reason: "cli_session_prune_inactive",
+          })
+        : [];
       if (changed) deletedCount += 1;
       await emitSessionMutationAudit("prune", "completed", {
         cliInvocation,

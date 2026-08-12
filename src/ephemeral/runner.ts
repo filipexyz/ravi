@@ -10,8 +10,17 @@ import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { deleteSessionIfUnchanged, getExpiringSessions, getExpiredSessions } from "../router/sessions.js";
-import { dbCleanupMessageMeta, dbPruneStaleRows, type DbExpiredSessionSnapshot } from "../router/router-db.js";
-import { runProviderSessionLifecycleMutation } from "../runtime/provider-session-lifecycle.js";
+import {
+  dbCleanupMessageMeta,
+  dbPruneStaleRows,
+  getDb,
+  getDbChanges,
+  type DbExpiredSessionSnapshot,
+} from "../router/router-db.js";
+import {
+  runProviderSessionLifecycleMutation,
+  startProviderSessionLifecycleMutation,
+} from "../runtime/provider-session-lifecycle.js";
 import { rollupDailyMetrics } from "../metrics/rollup.js";
 
 const log = logger.child("ephemeral");
@@ -71,27 +80,29 @@ Sem ação = sessão será excluída automaticamente.`;
 
     // 2. Abort and delete expired sessions
     const expired = getExpiredSessions();
+    let deletedCount = 0;
     for (const session of expired) {
-      // Abort SDK subprocess first
-      try {
-        await nats.emit("ravi.session.abort", {
-          sessionKey: session.sessionKey,
-          sessionName: session.name,
-          source: "ephemeral-runner",
-          action: "expire-session",
-          reason: "ephemeral_session_expired",
-          actor: "system",
-        });
-      } catch {
-        // Ignore abort errors — session may not be active
-      }
-      warned.delete(session.sessionKey);
-      await runProviderSessionLifecycleMutation({
+      const changed = await runProviderSessionLifecycleMutation({
         session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
         mutate: () => deleteSessionIfUnchanged(session),
       });
+      if (changed) {
+        try {
+          await nats.emit("ravi.session.abort", {
+            sessionKey: session.sessionKey,
+            sessionName: session.name,
+            source: "ephemeral-runner",
+            action: "expire-session",
+            reason: "ephemeral_session_expired",
+            actor: "system",
+          });
+        } catch {
+          // Ignore abort errors — session may not be active
+        }
+        warned.delete(session.sessionKey);
+        deletedCount += 1;
+      }
     }
-    const deletedCount = expired.length;
     if (deletedCount > 0) {
       log.info("Deleted expired ephemeral sessions", { count: deletedCount });
     }
@@ -132,23 +143,10 @@ async function pruneTick(): Promise<void> {
   if (now - lastPruneAt < PRUNE_INTERVAL_MS / 2) return;
   lastPruneAt = now;
   try {
-    const expiredSessions: DbExpiredSessionSnapshot[] = [];
     const result = dbPruneStaleRows({
       walCheckpoint: true,
-      onExpiredSessionDeleted: (session) => expiredSessions.push(session),
+      deleteExpiredSession: deleteExpiredSessionWithDurableCleanup,
     });
-    await Promise.all(
-      expiredSessions.map((session) =>
-        runProviderSessionLifecycleMutation({
-          session: {
-            displayId: session.runtimeSessionDisplayId,
-            params: parseRuntimeSessionParamsForLifecycle(session.runtimeSessionJson),
-          },
-          // dbPruneStaleRows already performed the exact generation-guarded delete.
-          mutate: () => true,
-        }),
-      ),
-    );
     const total =
       result.messageMetadata +
       result.sessionEvents +
@@ -169,6 +167,24 @@ async function pruneTick(): Promise<void> {
   } catch (err) {
     log.error("TTL prune failed", err);
   }
+}
+
+function deleteExpiredSessionWithDurableCleanup(session: DbExpiredSessionSnapshot, now: number): boolean {
+  return startProviderSessionLifecycleMutation({
+    session: {
+      displayId: session.runtimeSessionDisplayId,
+      params: parseRuntimeSessionParamsForLifecycle(session.runtimeSessionJson),
+    },
+    mutate: () => {
+      getDb()
+        .prepare(
+          `DELETE FROM sessions WHERE session_key = ? AND lifecycle_generation = ?
+           AND ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?`,
+        )
+        .run(session.sessionKey, session.lifecycleGeneration, now);
+      return getDbChanges() === 1;
+    },
+  }).changed;
 }
 
 function parseRuntimeSessionParamsForLifecycle(raw: string | undefined): Record<string, unknown> | undefined {

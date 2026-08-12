@@ -1,5 +1,6 @@
 import { logger } from "../utils/logger.js";
-import { cleanupKimiCodeSessionState, retireSupersededKimiCodeSessionState } from "./kimi-code-state.js";
+import { retireSupersededKimiCodeSessionState } from "./kimi-code-state.js";
+import { mutateSessionAndEnqueueProviderStateCleanup } from "./provider-state-cleanup-store.js";
 import type { RuntimeSessionState } from "./types.js";
 
 export { adoptPublishedProviderState } from "./provider-state-lifecycle.js";
@@ -11,7 +12,7 @@ export interface ProviderSessionLifecycleMutationInput {
   session: RuntimeSessionState | null | undefined;
   /** Must perform an exact/CAS mutation and report whether it changed the row. */
   mutate: () => boolean;
-  /** Injectable only to keep the mutation/cleanup ordering independently testable. */
+  /** Legacy test hook. Production callers omit it and enqueue durable cleanup. */
   cleanupKimi?: (session: RuntimeSessionState) => Promise<void>;
   env?: NodeJS.ProcessEnv;
 }
@@ -70,16 +71,23 @@ export async function runProviderSessionLifecycleMutation(
   return started.changed;
 }
 
-/** Runs the exact database mutation synchronously and exposes cleanup separately. */
+/** Runs the exact database mutation synchronously and exposes legacy test cleanup separately. */
 export function startProviderSessionLifecycleMutation(
   input: ProviderSessionLifecycleMutationInput,
 ): StartedProviderSessionLifecycleMutation {
   const snapshot = snapshotRuntimeSessionState(input.session);
-  const changed = input.mutate();
+  const cleanupKimi = input.cleanupKimi;
+  const changed =
+    isKimiCodeSession(snapshot) && !cleanupKimi
+      ? mutateSessionAndEnqueueProviderStateCleanup(
+          { operation: "delete_state", locator: snapshot.params },
+          () => input.mutate(),
+        ).won
+      : input.mutate();
   const cleanup = (async () => {
-    if (!changed || !isKimiCodeSession(snapshot)) return;
+    if (!changed || !isKimiCodeSession(snapshot) || !cleanupKimi) return;
     try {
-      await (input.cleanupKimi ?? ((session) => cleanupKimiCodeSessionState(session, input.env)))(snapshot);
+      await cleanupKimi(snapshot);
     } catch (error) {
       log.warn("Failed to clean Kimi Code session state after host lifecycle mutation", { error });
     }

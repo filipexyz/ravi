@@ -2727,17 +2727,38 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           log.warn("Auto-resetting session due to 'Prompt is too long'", {
             sessionName,
           });
-          revokeAgentRuntimeContextsForSession(session.sessionKey, {
-            reason: "prompt_too_long_reset",
-          });
-          await runProviderSessionLifecycleMutation({
+          const resetApplied = await runProviderSessionLifecycleMutation({
             session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
             mutate: () => deleteSessionIfUnchanged(session),
           });
           streaming._promptTooLong = false;
 
-          // Notify the user that the session was reset (skip for sentinel)
-          if (streaming.currentSource && streaming.agentMode !== "sentinel") {
+          if (resetApplied) {
+            revokeAgentRuntimeContextsForSession(session.sessionKey, {
+              reason: "prompt_too_long_reset",
+            });
+          } else {
+            const currentSession = getSession(session.sessionKey);
+            log.warn("Prompt-too-long reset lost session ownership", {
+              runId,
+              sessionName,
+              admittedGeneration: session.lifecycleGeneration,
+              currentGeneration: currentSession?.lifecycleGeneration,
+            });
+            recordTraceEvent({
+              turnId: streaming.currentTraceTurnId,
+              provider: runtimeSession.provider,
+              model,
+              eventType: "session.prompt_too_long_reset_conflict",
+              eventGroup: "session",
+              status: "skipped",
+              source: streaming.currentSource,
+              payloadJson: { reason: "session_ownership_changed" },
+            });
+          }
+
+          // Notify the user only after the reset transaction committed.
+          if (resetApplied && streaming.currentSource && streaming.agentMode !== "sentinel") {
             nats
               .emit("ravi.outbound.deliver", {
                 channel: streaming.currentSource.channel,
@@ -2748,9 +2769,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               .catch((err) => log.warn("Failed to notify session reset", { error: err }));
           }
 
-          // Abort the streaming session so next message creates a fresh one
-          streaming.internalAbortReason = "prompt_too_long_reset";
-          streaming.abortController.abort();
+          if (resetApplied) {
+            // Abort the streaming session so next message creates a fresh one
+            streaming.internalAbortReason = "prompt_too_long_reset";
+            streaming.abortController.abort();
+          }
         }
 
         if (!streaming.interrupted && pendingGeneratedMedia.length > 0) {
@@ -3027,7 +3050,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           rawEvent: event.rawEvent,
         });
         if (contextWindowFailure && currentTurnReplaySafety.replayable) {
-          await projectRuntimeEventToChannel(event);
           const history = getRecentHistory(sessionName, 48);
           const recovery = buildRuntimeContextRecoveryPrompt({
             sessionName,
@@ -3040,93 +3062,118 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
             mutate: () => resetSessionIfUnchanged(session),
           });
-          session.sdkSessionId = undefined;
-          session.providerSessionId = undefined;
-          session.runtimeProvider = undefined;
-          session.runtimeSessionDisplayId = undefined;
-          session.runtimeSessionParams = undefined;
-          revokeAgentRuntimeContextsForSession(session.sessionKey, {
-            reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
-          });
-          const recoveredMessage = createQueuedRuntimeUserMessage({
-            prompt: recovery.prompt,
-            deliveryBarrier: "after_tool",
-            deliveryBarrierSource: "inferred",
-            source: streaming.currentSource,
-            taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
-            _agentId: agent.id,
-            _runtimeProviderId: runtimeSession.provider,
-          });
-          stashedMessages.set(sessionName, [recoveredMessage]);
-          restartStashedReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
-
-          log.warn("Recovering runtime after context window exhaustion", {
-            runId,
-            sessionName,
-            provider: runtimeSession.provider,
-            model,
-            matched: contextWindowFailure.matched,
-            confidence: contextWindowFailure.confidence,
-            resetApplied,
-            historyMessages: history.length,
-            recoveryPromptChars: recovery.chars,
-          });
-          recordTerminalTraceOnce({
-            status: "failed",
-            eventType: "turn.failed",
-            abortReason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
-            error: truncateLogDetail(event.error),
-            payloadJson: {
-              recoverable: event.recoverable ?? true,
-              autoRecovered: true,
-              matched: contextWindowFailure.matched,
-              confidence: contextWindowFailure.confidence,
-              failureDetails: formatRuntimeFailureDetails(event) ?? null,
-              rawEvent: rawEventSummary ?? null,
-              metadata: event.metadata ?? null,
-            },
-          });
-          recordTraceEvent({
-            turnId: streaming.currentTraceTurnId,
-            provider: runtimeSession.provider,
-            model,
-            eventType: "session.context_window_exhausted",
-            eventGroup: "session",
-            status: "recovering",
-            source: streaming.currentSource,
-            payloadJson: {
+          if (!resetApplied) {
+            const currentSession = getSession(session.sessionKey);
+            log.warn("Context-window recovery lost session ownership", {
+              runId,
+              sessionName,
+              admittedGeneration: session.lifecycleGeneration,
+              currentGeneration: currentSession?.lifecycleGeneration,
+            });
+            recordTraceEvent({
+              turnId: streaming.currentTraceTurnId,
+              provider: runtimeSession.provider,
+              model,
+              eventType: "session.context_window_recovery_conflict",
+              eventGroup: "session",
+              status: "skipped",
+              source: streaming.currentSource,
+              payloadJson: {
+                reason: "session_ownership_changed",
+                admittedGeneration: session.lifecycleGeneration ?? null,
+                currentGeneration: currentSession?.lifecycleGeneration ?? null,
+              },
+            });
+          } else {
+            await projectRuntimeEventToChannel(event);
+            session.sdkSessionId = undefined;
+            session.providerSessionId = undefined;
+            session.runtimeProvider = undefined;
+            session.runtimeSessionDisplayId = undefined;
+            session.runtimeSessionParams = undefined;
+            revokeAgentRuntimeContextsForSession(session.sessionKey, {
               reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
-              resetApplied,
+            });
+            const recoveredMessage = createQueuedRuntimeUserMessage({
+              prompt: recovery.prompt,
+              deliveryBarrier: "after_tool",
+              deliveryBarrierSource: "inferred",
+              source: streaming.currentSource,
+              taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
+              _agentId: agent.id,
+              _runtimeProviderId: runtimeSession.provider,
+            });
+            stashedMessages.set(sessionName, [recoveredMessage]);
+            restartStashedReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
+
+            log.warn("Recovering runtime after context window exhaustion", {
+              runId,
+              sessionName,
+              provider: runtimeSession.provider,
+              model,
               matched: contextWindowFailure.matched,
               confidence: contextWindowFailure.confidence,
+              resetApplied,
               historyMessages: history.length,
               recoveryPromptChars: recovery.chars,
-              recoveryMessageCount: recovery.messageCount,
-              recoveryTruncated: recovery.truncated,
-              currentTurnHadToolStarted,
-            },
-          });
-          updateRuntimeLiveState(sessionName, {
-            activity: "thinking",
-            summary: "recovering context",
-            agentId: agent.id,
-            runId,
-            provider: runtimeSession.provider,
-            model,
-            source: streaming.currentSource,
-          });
-          streaming.currentTurnToolStarted = false;
-          streaming.currentTurnInputMutated = false;
-          streaming.internalAbortReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
-          streaming.interrupted = true;
-          clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
-          signalTurnComplete();
-          clearTraceTurnState();
-          streaming.done = true;
-          streaming.currentChannelBackend = undefined;
-          break;
+            });
+            recordTerminalTraceOnce({
+              status: "failed",
+              eventType: "turn.failed",
+              abortReason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+              error: truncateLogDetail(event.error),
+              payloadJson: {
+                recoverable: event.recoverable ?? true,
+                autoRecovered: true,
+                matched: contextWindowFailure.matched,
+                confidence: contextWindowFailure.confidence,
+                failureDetails: formatRuntimeFailureDetails(event) ?? null,
+                rawEvent: rawEventSummary ?? null,
+                metadata: event.metadata ?? null,
+              },
+            });
+            recordTraceEvent({
+              turnId: streaming.currentTraceTurnId,
+              provider: runtimeSession.provider,
+              model,
+              eventType: "session.context_window_exhausted",
+              eventGroup: "session",
+              status: "recovering",
+              source: streaming.currentSource,
+              payloadJson: {
+                reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+                resetApplied,
+                matched: contextWindowFailure.matched,
+                confidence: contextWindowFailure.confidence,
+                historyMessages: history.length,
+                recoveryPromptChars: recovery.chars,
+                recoveryMessageCount: recovery.messageCount,
+                recoveryTruncated: recovery.truncated,
+                currentTurnHadToolStarted,
+              },
+            });
+            updateRuntimeLiveState(sessionName, {
+              activity: "thinking",
+              summary: "recovering context",
+              agentId: agent.id,
+              runId,
+              provider: runtimeSession.provider,
+              model,
+              source: streaming.currentSource,
+            });
+            streaming.currentTurnToolStarted = false;
+            streaming.currentTurnInputMutated = false;
+            streaming.internalAbortReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
+            streaming.interrupted = true;
+            clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
+            signalTurnComplete();
+            clearTraceTurnState();
+            streaming.done = true;
+            streaming.currentChannelBackend = undefined;
+            break;
+          }
         }
-        if (contextWindowFailure) {
+        if (contextWindowFailure && !currentTurnReplaySafety.replayable) {
           log.warn("Skipping context-window auto-recovery because the current turn is not replay-safe", {
             runId,
             sessionName,

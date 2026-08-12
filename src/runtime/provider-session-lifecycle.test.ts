@@ -2,7 +2,12 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { commitKimiCodeSessionState, createKimiCodeSessionId, loadKimiCodeSessionState } from "./kimi-code-state.js";
+import {
+  cleanupKimiCodeSessionState,
+  commitKimiCodeSessionState,
+  createKimiCodeSessionId,
+  loadKimiCodeSessionState,
+} from "./kimi-code-state.js";
 import {
   runProviderSessionLifecycleMutation,
   runProviderSessionPersistenceMutation,
@@ -175,6 +180,7 @@ describe("provider session lifecycle", () => {
         persisted = undefined;
         return true;
       },
+      cleanupKimi: (snapshot) => cleanupKimiCodeSessionState(snapshot, fixture.env),
       env: fixture.env,
     });
 

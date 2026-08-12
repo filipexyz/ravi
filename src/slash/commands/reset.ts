@@ -46,16 +46,6 @@ export const resetCommand: SlashCommand = {
 
     log.info("/reset called", { sessionName, sessionKey, agentId, isGroup: ctx.isGroup });
 
-    const bot = getBotInstance();
-    const aborted =
-      bot?.abortSession(sessionName, {
-        source: "slash",
-        action: "/reset",
-        reason: "slash_reset",
-        actor: ctx.senderId,
-      }) ?? false;
-    log.info("/reset abort result", { sessionName, aborted, botExists: !!bot });
-
     const session = getSession(sessionKey);
     const reset = session
       ? await runProviderSessionLifecycleMutation({
@@ -63,6 +53,16 @@ export const resetCommand: SlashCommand = {
           mutate: () => resetSessionIfUnchanged(session),
         })
       : false;
+    const bot = getBotInstance();
+    const aborted = reset
+      ? (bot?.abortSession(sessionName, {
+          source: "slash",
+          action: "/reset",
+          reason: "slash_reset",
+          actor: ctx.senderId,
+        }) ?? false)
+      : false;
+    log.info("/reset abort result", { sessionName, aborted, botExists: !!bot });
     log.info("/reset result", { sessionKey, reset });
 
     if (reset) {

@@ -27,6 +27,10 @@ import {
   type SessionChatSubscriptionRecord,
 } from "./router-db.js";
 import { executeWrite } from "../db/write-retry.js";
+import {
+  mutateSessionAndEnqueueProviderStateCleanup,
+  serializeProviderStateCleanupLocator,
+} from "../runtime/provider-state-cleanup-store.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router:sessions");
@@ -150,7 +154,6 @@ interface SessionStatements {
   delete: Statement;
   deleteByName: Statement;
   listAll: Statement;
-  updateAgent: Statement;
   updateSource: Statement;
   updateThreadId: Statement;
   updateDisplayName: Statement;
@@ -276,9 +279,6 @@ function getStatements(): SessionStatements {
     delete: db.prepare("DELETE FROM sessions WHERE session_key = ?"),
     deleteByName: db.prepare("DELETE FROM sessions WHERE name = ?"),
     listAll: db.prepare("SELECT * FROM sessions ORDER BY updated_at DESC"),
-    updateAgent: db.prepare(
-      "UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, lifecycle_generation = lifecycle_generation + 1, updated_at = ? WHERE session_key = ? AND lifecycle_generation = ?",
-    ),
     updateSource: db.prepare(
       "UPDATE sessions SET last_channel = ?, last_account_id = ?, last_to = ?, updated_at = ? WHERE session_key = ?",
     ),
@@ -311,26 +311,14 @@ export function getOrCreateSession(
   const existing = s.getByKey.get(sessionKey) as SessionRow | undefined;
 
   if (existing) {
-    // Update agent_id/cwd if changed (e.g., routing config updated)
+    // Ownership changes are lifecycle transitions. Callers that intentionally
+    // redirect must use redirectSessionIfUnchanged so cleanup is durable.
     if (existing.agent_id !== agentId || existing.agent_cwd !== agentCwd) {
-      log.info("Updating session agent", {
+      log.warn("Session owner differs; refusing implicit redirect", {
         sessionKey,
         oldAgent: existing.agent_id,
         newAgent: agentId,
       });
-      s.updateAgent.run(agentId, agentCwd, Date.now(), sessionKey, existing.lifecycle_generation);
-      if (getDbChanges() === 0) {
-        const current = s.getByKey.get(sessionKey) as SessionRow | undefined;
-        if (current) return rowToEntry(current);
-      } else {
-        existing.agent_id = agentId;
-        existing.agent_cwd = agentCwd;
-        existing.sdk_session_id = null;
-        existing.runtime_provider = null;
-        existing.runtime_session_json = null;
-        existing.runtime_session_display_id = null;
-        existing.lifecycle_generation += 1;
-      }
     }
     return rowToEntry(existing);
   }
@@ -376,6 +364,56 @@ export function getOrCreateSession(
   log.debug("Created session", { sessionKey, agentId });
 
   return getOrCreateSession(sessionKey, agentId, agentCwd);
+}
+
+export type SessionRedirectResult =
+  | { won: true; session: SessionEntry }
+  | { won: false; session: SessionEntry | null };
+
+/** Redirects a session owner under exact epoch CAS and durably queues old provider cleanup. */
+export function redirectSessionIfUnchanged(
+  session: SessionEntry,
+  agentId: string,
+  agentCwd: string,
+): SessionRedirectResult {
+  if (session.agentId === agentId && session.agentCwd === agentCwd) {
+    const current = getSession(session.sessionKey);
+    return current?.lifecycleGeneration === session.lifecycleGeneration
+      ? { won: true, session: current }
+      : { won: false, session: current };
+  }
+  const generation = session.lifecycleGeneration;
+  if (typeof generation !== "number" || !Number.isSafeInteger(generation)) {
+    return { won: false, session: getSession(session.sessionKey) };
+  }
+  const mutate = () => {
+    getDb()
+      .prepare(
+        `UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL,
+         runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL,
+         lifecycle_generation = lifecycle_generation + 1, updated_at = ?
+         WHERE session_key = ? AND lifecycle_generation = ?`,
+      )
+      .run(agentId, agentCwd, Date.now(), session.sessionKey, generation);
+    return getDbChanges() === 1;
+  };
+  let validCleanupLocator = false;
+  if (session.runtimeProvider === "kimi-code" && session.runtimeSessionParams?.provider === "kimi-code") {
+    try {
+      serializeProviderStateCleanupLocator(session.runtimeSessionParams);
+      validCleanupLocator = true;
+    } catch {
+      // Corrupt/legacy provider state cannot authorize a filesystem mutation.
+    }
+  }
+  const won = validCleanupLocator
+    ? mutateSessionAndEnqueueProviderStateCleanup(
+        { operation: "delete_state", locator: session.runtimeSessionParams },
+        mutate,
+      ).won
+    : executeWrite(getDb(), mutate, { label: "session-owner-redirect" });
+  const current = getSession(session.sessionKey);
+  return won && current ? { won: true, session: current } : { won: false, session: current };
 }
 
 /**

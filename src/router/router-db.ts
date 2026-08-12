@@ -10424,6 +10424,7 @@ export interface DbExpiredSessionSnapshot {
 export function dbCleanupExpiredSessions(
   onDeleted?: (session: DbExpiredSessionSnapshot) => void,
   now = Date.now(),
+  deleteCandidate?: (session: DbExpiredSessionSnapshot, now: number) => boolean,
 ): number {
   const db = getDb();
   const candidates = db
@@ -10443,17 +10444,20 @@ export function dbCleanupExpiredSessions(
   );
   let deleted = 0;
   for (const candidate of candidates) {
-    remove.run(candidate.session_key, candidate.lifecycle_generation, now);
-    if (getDbChanges() === 0) continue;
-    deleted += 1;
-    onDeleted?.({
+    const snapshot: DbExpiredSessionSnapshot = {
       sessionKey: candidate.session_key,
       lifecycleGeneration: candidate.lifecycle_generation,
       ...(candidate.runtime_session_display_id
         ? { runtimeSessionDisplayId: candidate.runtime_session_display_id }
         : {}),
       ...(candidate.runtime_session_json ? { runtimeSessionJson: candidate.runtime_session_json } : {}),
-    });
+    };
+    const changed = deleteCandidate
+      ? deleteCandidate(snapshot, now)
+      : (remove.run(candidate.session_key, candidate.lifecycle_generation, now), getDbChanges() === 1);
+    if (!changed) continue;
+    deleted += 1;
+    onDeleted?.(snapshot);
   }
   return deleted;
 }
@@ -10477,6 +10481,8 @@ export interface DbPruneOptions {
   now?: number;
   /** Internal lifecycle hook; never included in the public prune result. */
   onExpiredSessionDeleted?: (session: DbExpiredSessionSnapshot) => void;
+  /** Internal lifecycle boundary used to atomically delete and enqueue provider cleanup. */
+  deleteExpiredSession?: (session: DbExpiredSessionSnapshot, now: number) => boolean;
 }
 
 /**
@@ -10571,7 +10577,11 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   );
   result.auditLog = runDelete("DELETE FROM audit_log WHERE ts < ?", now - AUDIT_LOG_TTL_MS);
   result.costEvents = runDelete("DELETE FROM cost_events WHERE created_at < ?", now - COST_EVENTS_TTL_MS);
-  result.expiredSessions = dbCleanupExpiredSessions(options.onExpiredSessionDeleted, now);
+  result.expiredSessions = dbCleanupExpiredSessions(
+    options.onExpiredSessionDeleted,
+    now,
+    options.deleteExpiredSession,
+  );
 
   if (options.walCheckpoint) {
     db.exec("PRAGMA wal_checkpoint(PASSIVE)");

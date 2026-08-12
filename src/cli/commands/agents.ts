@@ -1614,13 +1614,14 @@ export class AgentsCommands {
         reason: "cli_agent_session_reset",
         actor: "cli",
       };
-      await nats.emit("ravi.session.abort", abortRequest);
       const session = getSession(key);
       if (!session) return false;
-      return runProviderSessionLifecycleMutation({
+      const deleted = await runProviderSessionLifecycleMutation({
         session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
         mutate: () => deleteSessionIfUnchanged(session),
       });
+      if (deleted) await nats.emit("ravi.session.abort", abortRequest);
+      return deleted;
     };
 
     // Reset all sessions for this agent

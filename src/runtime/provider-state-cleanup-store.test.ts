@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { executeWrite } from "../db/write-retry.js";
 import { getDb } from "../router/router-db.js";
-import { getOrCreateSession, getSession } from "../router/sessions.js";
+import { deleteSessionIfUnchanged, getOrCreateSession, getSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import * as providerStateCleanupStore from "./provider-state-cleanup-store.js";
 import {
@@ -23,6 +23,7 @@ import {
   renewProviderStateCleanupTaskLease,
   serializeProviderStateCleanupLocator,
 } from "./provider-state-cleanup-store.js";
+import { runProviderSessionLifecycleMutation } from "./provider-session-lifecycle.js";
 
 let stateDir: string | null = null;
 
@@ -90,6 +91,51 @@ function createAttempt(input: {
 }
 
 describe("provider state cleanup canonical locator", () => {
+  it("commits a lifecycle CAS and durable delete-state task as one boundary", async () => {
+    const session = getOrCreateSession("session:durable-lifecycle", "agent-a", "/workspace/project", {
+      runtimeProvider: "kimi-code",
+      providerSessionId: "00000000-0000-4000-8000-00000000000a",
+      runtimeSessionDisplayId: "00000000-0000-4000-8000-00000000000a",
+      runtimeSessionParams: locator(1, "a"),
+    });
+
+    expect(
+      await runProviderSessionLifecycleMutation({
+        session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+        mutate: () => deleteSessionIfUnchanged(session),
+      }),
+    ).toBe(true);
+    expect(getSession(session.sessionKey)).toBeNull();
+    expect(
+      getDb()
+        .prepare("SELECT operation, status FROM provider_state_cleanup_tasks")
+        .all(),
+    ).toEqual([{ operation: "delete_state", status: "published" }]);
+  });
+
+  it("rolls back a lifecycle cleanup task when the exact session CAS loses", async () => {
+    const session = getOrCreateSession("session:lost-lifecycle", "agent-a", "/workspace/project", {
+      runtimeProvider: "kimi-code",
+      providerSessionId: "00000000-0000-4000-8000-00000000000b",
+      runtimeSessionDisplayId: "00000000-0000-4000-8000-00000000000b",
+      runtimeSessionParams: locator(1, "b"),
+    });
+    getDb()
+      .prepare("UPDATE sessions SET lifecycle_generation = lifecycle_generation + 1 WHERE session_key = ?")
+      .run(session.sessionKey);
+
+    expect(
+      await runProviderSessionLifecycleMutation({
+        session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+        mutate: () => deleteSessionIfUnchanged(session),
+      }),
+    ).toBe(false);
+    expect(getSession(session.sessionKey)).not.toBeNull();
+    expect(
+      (getDb().prepare("SELECT COUNT(*) AS count FROM provider_state_cleanup_tasks").get() as { count: number }).count,
+    ).toBe(0);
+  });
+
   it("projects only allowlisted fields, parses exact canonical JSON, and derives stable task keys", () => {
     const source = {
       ...locator(),

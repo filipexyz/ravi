@@ -782,7 +782,13 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
   it("continues closing every provider when one shutdown terminal fence fails", async () => {
     const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-shutdown-cleanup-");
     try {
-      getOrCreateSession("agent:dev:test:shutdown-first", "dev", stateDir, { name: "shutdown-first" });
+      const durableFirst = getOrCreateSession("agent:dev:test:shutdown-first", "dev", stateDir, {
+        name: "shutdown-first",
+      });
+      updateProviderSession(durableFirst, "codex", "resumable-after-shutdown", {
+        runtimeSessionParams: { sessionId: "resumable-after-shutdown" },
+        runtimeSessionDisplayId: "resumable-after-shutdown",
+      });
       getOrCreateSession("agent:dev:test:shutdown-second", "dev", stateDir, { name: "shutdown-second" });
       const interrupted: string[] = [];
       const terminalizeTurnAttempt = mock((input: { attemptId: string; status: "aborted"; completedAt: number }) => {
@@ -837,6 +843,7 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
       expect(interrupted.sort()).toEqual(["first", "second"]);
       expect(dispatcher.streamingSessions.size).toBe(0);
       expect(terminalizeTurnAttempt).toHaveBeenCalledTimes(2);
+      expect(getSession(durableFirst.sessionKey)?.providerSessionId).toBe("resumable-after-shutdown");
     } finally {
       await cleanupIsolatedRaviState(stateDir);
     }

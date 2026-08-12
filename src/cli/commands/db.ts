@@ -8,8 +8,14 @@ import { existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { Arg, Command, CommandAccess, CliOnly, Group, Option, Scope } from "../decorators.js";
 import { getRaviStateDir } from "../../utils/paths.js";
-import { dbPruneStaleRows, type DbExpiredSessionSnapshot, type DbPruneResult } from "../../router/router-db.js";
-import { runProviderSessionLifecycleMutation } from "../../runtime/provider-session-lifecycle.js";
+import {
+  dbPruneStaleRows,
+  getDb,
+  getDbChanges,
+  type DbExpiredSessionSnapshot,
+  type DbPruneResult,
+} from "../../router/router-db.js";
+import { startProviderSessionLifecycleMutation } from "../../runtime/provider-session-lifecycle.js";
 import { join } from "node:path";
 
 interface ProcessHolder {
@@ -266,25 +272,12 @@ export class DbCommands {
   ): Promise<DbPruneResult> {
     const dbPathBefore = join(getRaviStateDir(), "ravi.db");
     const sizeBefore = fileSize(dbPathBefore);
-    const expiredSessions: DbExpiredSessionSnapshot[] = [];
     const result = dbPruneStaleRows({
       vacuum: vacuum === true,
       walCheckpoint: checkpoint === true,
       dryRun: dryRun === true,
-      onExpiredSessionDeleted: (session) => expiredSessions.push(session),
+      deleteExpiredSession: deleteExpiredSessionWithDurableCleanup,
     });
-    await Promise.all(
-      expiredSessions.map((session) =>
-        runProviderSessionLifecycleMutation({
-          session: {
-            displayId: session.runtimeSessionDisplayId,
-            params: parseRuntimeSessionParamsForLifecycle(session.runtimeSessionJson),
-          },
-          // dbPruneStaleRows already performed the exact generation-guarded delete.
-          mutate: () => true,
-        }),
-      ),
-    );
     const sizeAfter = fileSize(dbPathBefore);
 
     if (asJson) {
@@ -311,6 +304,24 @@ export class DbCommands {
     }
     return result;
   }
+}
+
+function deleteExpiredSessionWithDurableCleanup(session: DbExpiredSessionSnapshot, now: number): boolean {
+  return startProviderSessionLifecycleMutation({
+    session: {
+      displayId: session.runtimeSessionDisplayId,
+      params: parseRuntimeSessionParamsForLifecycle(session.runtimeSessionJson),
+    },
+    mutate: () => {
+      getDb()
+        .prepare(
+          `DELETE FROM sessions WHERE session_key = ? AND lifecycle_generation = ?
+           AND ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?`,
+        )
+        .run(session.sessionKey, session.lifecycleGeneration, now);
+      return getDbChanges() === 1;
+    },
+  }).changed;
 }
 
 function parseRuntimeSessionParamsForLifecycle(raw: string | undefined): Record<string, unknown> | undefined {

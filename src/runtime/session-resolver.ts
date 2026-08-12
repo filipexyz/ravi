@@ -4,6 +4,7 @@ import {
   expandHome,
   getOrCreateSession,
   getSessionByName,
+  redirectSessionIfUnchanged,
   type AgentConfig,
   type SessionEntry,
 } from "../router/index.js";
@@ -119,8 +120,18 @@ export function resolveRuntimeSession(options: RuntimeSessionResolutionOptions):
   const runtimeCapabilities = runtimeProvider.getCapabilities();
 
   let session: SessionEntry;
-  if (sessionEntry && sessionEntry.agentId !== agentId) {
-    session = getOrCreateSession(sessionEntry.sessionKey, agentId, agentCwd);
+  if (sessionEntry && (sessionEntry.agentId !== agentId || sessionEntry.agentCwd !== agentCwd)) {
+    const redirect = redirectSessionIfUnchanged(sessionEntry, agentId, agentCwd);
+    if (!redirect.won) {
+      log.warn("Runtime session redirect lost ownership", {
+        sessionName: options.sessionName,
+        sessionKey: sessionEntry.sessionKey,
+        requestedAgent: agentId,
+        currentAgent: redirect.session?.agentId,
+      });
+      return null;
+    }
+    session = redirect.session;
   } else {
     session = sessionEntry ?? getOrCreateSession(options.sessionName, agentId, agentCwd, { name: options.sessionName });
   }

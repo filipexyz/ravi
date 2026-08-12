@@ -3361,6 +3361,88 @@ describe("runtime session trace instrumentation", () => {
     expect(getSessionTurn("turn-context-limit")?.status).toBe("failed");
   });
 
+  it("does not replay or revoke current state when context recovery loses its reset CAS", async () => {
+    updateRuntimeProviderState(getSession(SESSION_KEY)!, PROVIDER, {
+      providerSessionId: "thread-current-owner",
+      runtimeSessionDisplayId: "thread-current-owner",
+      runtimeSessionParams: { sessionId: "thread-current-owner" },
+    });
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "continue safely",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-context-cas-loss");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      interrupt: async () => {},
+      events: (async function* () {
+        getDb()
+          .prepare("UPDATE sessions SET lifecycle_generation = lifecycle_generation + 1 WHERE session_key = ?")
+          .run(SESSION_KEY);
+        yield {
+          type: "turn.failed" as const,
+          error: "Codex ran out of room in the model's context window.",
+          recoverable: false,
+        };
+      })(),
+    };
+
+    await runTraceLoop(streaming, runtimeSession, {
+      stashedMessages,
+      restartStashedSession: async (input) => restartRequests.push(input),
+    });
+
+    expect(restartRequests).toEqual([]);
+    expect(stashedMessages.has(SESSION_NAME)).toBe(false);
+    expect(getSession(SESSION_KEY)?.providerSessionId).toBe("thread-current-owner");
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toContain(
+      "session.context_window_recovery_conflict",
+    );
+  });
+
+  it("does not report a prompt-too-long reset when the delete CAS loses", async () => {
+    updateRuntimeProviderState(getSession(SESSION_KEY)!, PROVIDER, {
+      providerSessionId: "prompt-too-long-current-owner",
+      runtimeSessionDisplayId: "prompt-too-long-current-owner",
+      runtimeSessionParams: { sessionId: "prompt-too-long-current-owner" },
+    });
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-prompt-too-long-cas-loss");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      interrupt: async () => {},
+      events: (async function* () {
+        yield { type: "assistant.message" as const, text: "Prompt is too long" };
+        getDb()
+          .prepare("UPDATE sessions SET lifecycle_generation = lifecycle_generation + 1 WHERE session_key = ?")
+          .run(SESSION_KEY);
+        yield {
+          type: "turn.complete" as const,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      })(),
+    };
+
+    await runTraceLoop(streaming, runtimeSession, {
+      safeEmit: async (topic, data) => emitted.push({ topic, data: data as Record<string, unknown> }),
+    });
+
+    expect(getSession(SESSION_KEY)?.providerSessionId).toBe("prompt-too-long-current-owner");
+    expect(emitted.some((entry) => String(entry.data.text ?? "").includes("Sessão resetada"))).toBe(false);
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toContain(
+      "session.prompt_too_long_reset_conflict",
+    );
+  });
+
   it("does not auto-replay retryable credential failures after a tool started", async () => {
     const queued = createQueuedRuntimeUserMessage({
       prompt: "do not replay after tool",
