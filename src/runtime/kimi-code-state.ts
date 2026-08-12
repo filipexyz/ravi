@@ -1,6 +1,6 @@
-import { execFile } from "node:child_process";
+import { execFile, spawnSync } from "node:child_process";
 import { closeSync, fsyncSync, linkSync, lstatSync, openSync, realpathSync, unlinkSync } from "node:fs";
-import { chmod, link, lstat, mkdir, open, readdir, realpath, rmdir, stat, unlink } from "node:fs/promises";
+import { chmod, link, lstat, mkdir, open, opendir, readdir, realpath, rmdir, stat, unlink } from "node:fs/promises";
 import { isAbsolute, basename, dirname, join, parse, relative, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import { promisify } from "node:util";
@@ -18,10 +18,22 @@ const KIMI_CODE_STATE_SCHEMA_VERSION = 1 as const;
 const KIMI_CODE_MAX_STATE_BYTES = 1 * 1024 * 1024;
 const KIMI_CODE_MAX_WORKSPACE_REALPATH_BYTES = 64 * 1024;
 const KIMI_CODE_MAX_INTENT_BYTES = 20 * 1024;
+const KIMI_CODE_MAX_INTENT_PAGE_SIZE = 32;
+const KIMI_CODE_MAX_INTENT_SCAN_ENTRIES = 256;
+const KIMI_CODE_WINDOWS_MOVE_TIMEOUT_MS = 10_000;
+const KIMI_CODE_WINDOWS_MOVE_COLLISION_EXIT = 17;
 const execFileAsync = promisify(execFile);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const RESERVATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const INTENT_FILENAME_PATTERN = /^\.publish-intent-([A-Za-z0-9][A-Za-z0-9._-]{0,127})\.json$/;
+const WINDOWS_WRITE_THROUGH_MOVE_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  "$member = '[System.Runtime.InteropServices.DllImport(\"kernel32.dll\", CharSet=System.Runtime.InteropServices.CharSet.Unicode, SetLastError=true)][return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)] public static extern bool MoveFileExW(string source, string destination, int flags);'",
+  "[void](Add-Type -MemberDefinition $member -Name 'KimiMove' -Namespace 'Ravi.Native' -ErrorAction Stop)",
+  "$deadline = [DateTime]::UtcNow.AddSeconds(1)",
+  `do { $moved = [Ravi.Native.KimiMove]::MoveFileExW($env:RAVI_KIMI_MOVE_SOURCE, $env:RAVI_KIMI_MOVE_DESTINATION, 8); if ($moved) { exit 0 }; $code = [Runtime.InteropServices.Marshal]::GetLastWin32Error(); if ($code -eq 80 -or $code -eq 183) { exit ${KIMI_CODE_WINDOWS_MOVE_COLLISION_EXIT} }; if ($code -ne 5 -and $code -ne 32 -and $code -ne 33) { exit 18 }; Start-Sleep -Milliseconds 20 } while ([DateTime]::UtcNow -lt $deadline)`,
+  "exit 18",
+].join("; ");
 const LOCATOR_KEYS = [
   "schemaVersion",
   "provider",
@@ -84,6 +96,26 @@ export class KimiCodeStateError extends Error {
     super(KIMI_CODE_STATE_ERROR_MESSAGES[code]);
     this.name = "KimiCodeStateError";
     this.code = code;
+  }
+}
+
+class KimiCodeWindowsMoveError extends KimiCodeStateError {
+  readonly ambiguous: boolean;
+
+  constructor(code: "io_transient" | "state_busy" | "unknown", ambiguous: boolean) {
+    super(code);
+    this.name = "KimiCodeWindowsMoveError";
+    this.ambiguous = ambiguous;
+  }
+}
+
+class KimiCodeFaultInjectionError extends Error {
+  readonly injected: unknown;
+
+  constructor(injected: unknown) {
+    super("Kimi Code test fault injected");
+    this.name = "KimiCodeFaultInjectionError";
+    this.injected = injected;
   }
 }
 
@@ -167,6 +199,9 @@ export interface PrepareKimiCodeSessionStateInput extends Omit<CommitKimiCodeSes
     afterIntentSync?: () => void | Promise<void>;
     beforePublishDirectorySync?: () => void;
     observeAclProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void;
+    observeWindowsMoveProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void;
+    publishWindowsMoveTimeoutMs?: number;
+    afterDiscardPayloadsDurable?: () => void | Promise<void>;
   };
 }
 
@@ -175,6 +210,17 @@ export interface KimiCodePublishIntent {
   locatorJson: string;
   taskId: string;
   ownerAttemptId: string;
+}
+
+export interface ListKimiCodePublishIntentsInput {
+  env?: NodeJS.ProcessEnv;
+  limit: number;
+  cursor?: string;
+}
+
+export interface KimiCodePublishIntentPage {
+  intentPaths: string[];
+  nextCursor: string | undefined;
 }
 
 export interface PreparedKimiCodeSessionState extends CommittedKimiCodeSessionState {
@@ -193,6 +239,11 @@ export interface ExecuteKimiCodeProvisionalExactCleanupInput {
   ownerAttemptId: string;
   env?: NodeJS.ProcessEnv;
   isLocatorOwned: (locator: Readonly<KimiCodeCleanupLocator>) => boolean | Promise<boolean>;
+  /** Test-only crash boundaries; production callers must omit it. */
+  faultInjection?: {
+    afterPayloadsDurable?: () => void | Promise<void>;
+    afterWindowsArtifactMove?: (kind: "snapshot" | "temporary" | "intent") => void | Promise<void>;
+  };
 }
 
 export async function executeKimiCodeProvisionalExactCleanup(
@@ -214,19 +265,48 @@ async function executeKimiCodeProvisionalExactCleanupInternal(
   const { root, sessionDirectory } = resolveKimiCodeLocatorPath(locator, input.env);
   const intentPath = join(sessionDirectory, `.publish-intent-${input.taskId}.json`);
   const temporaryPath = join(sessionDirectory, `.prepared-${input.taskId}.tmp`);
+  const snapshotTombstone = cleanupTombstonePath(sessionDirectory, input.taskId, "snapshot");
+  const temporaryTombstone = cleanupTombstonePath(sessionDirectory, input.taskId, "temporary");
+  const intentTombstone = cleanupTombstonePath(sessionDirectory, input.taskId, "intent");
 
   if (!(await validateKimiCodeSessionDirectory(root, sessionDirectory))) return;
 
   const finalInfo = await inspectExactArtifact(locator.sessionFile);
   const intentInfo = await inspectExactArtifact(intentPath);
   const temporaryInfo = await inspectExactArtifact(temporaryPath);
-  if (!finalInfo && !intentInfo && !temporaryInfo) return;
-  if (!intentInfo) {
+  const snapshotTombstoneInfo = await inspectExactArtifact(snapshotTombstone);
+  const temporaryTombstoneInfo = await inspectExactArtifact(temporaryTombstone);
+  const intentTombstoneInfo = await inspectExactArtifact(intentTombstone);
+  if (
+    !finalInfo &&
+    !intentInfo &&
+    !temporaryInfo &&
+    !snapshotTombstoneInfo &&
+    !temporaryTombstoneInfo &&
+    !intentTombstoneInfo
+  ) {
+    return;
+  }
+  if (!intentInfo && !intentTombstoneInfo) {
+    if (!finalInfo && !temporaryInfo && !snapshotTombstoneInfo && !temporaryTombstoneInfo) return;
     const hasOtherIntent = (await readdir(sessionDirectory)).some((name) => INTENT_FILENAME_PATTERN.test(name));
     throw new KimiCodeStateError(hasOtherIntent ? "binding_mismatch" : "state_missing");
   }
 
-  const intent = await readKimiCodePublishIntent(intentPath, input.env);
+  const intent = intentInfo
+    ? await readKimiCodePublishIntent(intentPath, input.env)
+    : intentTombstoneInfo && intentTombstoneInfo.size > 0
+      ? await readKimiCodePublishIntentArtifact(intentTombstone, input.taskId, input.env)
+      : undefined;
+  if (!intent) {
+    if (!finalInfo && !temporaryInfo && !snapshotTombstoneInfo && !temporaryTombstoneInfo) {
+      if (process.platform === "win32" && intentTombstoneInfo) {
+        await durablyRemoveWindowsArtifact(intentPath, intentTombstone, "intent");
+      }
+      return;
+    }
+    throw new KimiCodeStateError("state_missing");
+  }
   if (
     intent.locatorJson !== input.locatorJson ||
     intent.taskId !== input.taskId ||
@@ -235,7 +315,9 @@ async function executeKimiCodeProvisionalExactCleanupInternal(
     throw new KimiCodeStateError("binding_mismatch");
   }
   if (finalInfo) await readLocatorBoundSnapshot(locator, input.env);
+  if (snapshotTombstoneInfo?.size) await readLocatorBoundSnapshot(locator, input.env, snapshotTombstone);
   if (temporaryInfo) await readLocatorBoundSnapshot(locator, input.env, temporaryPath);
+  if (temporaryTombstoneInfo?.size) await readLocatorBoundSnapshot(locator, input.env, temporaryTombstone);
   let owned: boolean;
   try {
     owned = await input.isLocatorOwned(locator);
@@ -244,23 +326,65 @@ async function executeKimiCodeProvisionalExactCleanupInternal(
   }
   if (owned) throw new KimiCodeStateError("state_busy");
 
-  await unlinkExactArtifact(locator.sessionFile);
-  await unlinkExactArtifact(temporaryPath);
-  await unlinkExactArtifact(intentPath);
-  await syncDirectory(sessionDirectory);
+  if (process.platform === "win32") {
+    await durablyRemoveWindowsArtifact(
+      locator.sessionFile,
+      snapshotTombstone,
+      "snapshot",
+      input.faultInjection?.afterWindowsArtifactMove,
+    );
+    await durablyRemoveWindowsArtifact(
+      temporaryPath,
+      temporaryTombstone,
+      "temporary",
+      input.faultInjection?.afterWindowsArtifactMove,
+    );
+  } else {
+    await unlinkExactArtifact(locator.sessionFile);
+    await unlinkExactArtifact(temporaryPath);
+    await syncDirectory(sessionDirectory);
+  }
+  await input.faultInjection?.afterPayloadsDurable?.();
+  if (process.platform === "win32") {
+    await durablyRemoveWindowsArtifact(
+      intentPath,
+      intentTombstone,
+      "intent",
+      input.faultInjection?.afterWindowsArtifactMove,
+    );
+  } else {
+    await unlinkExactArtifact(intentPath);
+    await syncDirectory(sessionDirectory);
+  }
 }
 
 export async function prepareKimiCodeSessionState(
   input: PrepareKimiCodeSessionStateInput,
 ): Promise<PreparedKimiCodeSessionState> {
+  try {
+    return await prepareKimiCodeSessionStateInternal(input);
+  } catch (error) {
+    if (error instanceof KimiCodeFaultInjectionError) throw error.injected;
+    throw classifyKimiCodeStateError(error);
+  }
+}
+
+async function prepareKimiCodeSessionStateInternal(
+  input: PrepareKimiCodeSessionStateInput,
+): Promise<PreparedKimiCodeSessionState> {
   validateReservationId(input.taskId, input.env);
   validateReservationId(input.ownerAttemptId, input.env);
   const { snapshot, serialized, root, sessionDirectory } = await buildKimiCodeSnapshot(input);
-  await ensurePrivateSessionDirectory(root, sessionDirectory, input.faultInjection?.observeAclProcessEnv);
+  const observeAclProcessEnv = wrapFaultObserver(input.faultInjection?.observeAclProcessEnv);
+  const observeWindowsMoveProcessEnv = wrapFaultObserver(input.faultInjection?.observeWindowsMoveProcessEnv);
+  await ensurePrivateSessionDirectory(root, sessionDirectory, observeAclProcessEnv);
 
   const finalPath = join(sessionDirectory, revisionFilename(snapshot.revision));
   const temporaryPath = join(sessionDirectory, `.prepared-${input.taskId}.tmp`);
   const intentPath = join(sessionDirectory, `.publish-intent-${input.taskId}.json`);
+  const intentStagingPath = join(sessionDirectory, `.publish-intent-${input.taskId}.staging`);
+  const temporaryTombstone = cleanupTombstonePath(sessionDirectory, input.taskId, "temporary");
+  const intentTombstone = cleanupTombstonePath(sessionDirectory, input.taskId, "intent");
   const session = sessionStateForSnapshot(snapshot, finalPath);
   const locatorJson = serializeKimiCodeCleanupLocator(session, input.env);
   const intent: KimiCodePublishIntent = {
@@ -274,40 +398,52 @@ export async function prepareKimiCodeSessionState(
     throw new KimiCodeStateError("schema_mismatch");
   }
 
+  let temporaryCreated = false;
+  let intentCreated = false;
+  let intentStagingCreated = false;
   let intentDurable = false;
   try {
     const temporaryFile = await open(temporaryPath, "wx", 0o600);
+    temporaryCreated = true;
     try {
-      await applyPrivatePermissions(
-        [{ path: temporaryPath, directory: false }],
-        input.faultInjection?.observeAclProcessEnv,
-      );
+      await applyPrivatePermissions([{ path: temporaryPath, directory: false }], observeAclProcessEnv);
       await temporaryFile.writeFile(serialized, "utf8");
       await temporaryFile.sync();
     } finally {
       await temporaryFile.close();
     }
 
-    const intentFile = await open(intentPath, "wx", 0o600);
+    const intentWritePath = process.platform === "win32" ? intentStagingPath : intentPath;
+    const intentFile = await open(intentWritePath, "wx", 0o600);
+    if (process.platform === "win32") intentStagingCreated = true;
+    else intentCreated = true;
     try {
-      await applyPrivatePermissions(
-        [{ path: intentPath, directory: false }],
-        input.faultInjection?.observeAclProcessEnv,
-      );
+      await applyPrivatePermissions([{ path: intentWritePath, directory: false }], observeAclProcessEnv);
       await intentFile.writeFile(serializedIntent, "utf8");
-      await input.faultInjection?.beforeIntentSync?.();
+      await invokeFaultInjection(input.faultInjection?.beforeIntentSync);
       await intentFile.sync();
     } finally {
       await intentFile.close();
     }
-    await syncDirectory(sessionDirectory);
-    intentDurable = true;
-    await input.faultInjection?.afterIntentSync?.();
-  } catch (error) {
-    if (!intentDurable) {
-      await unlink(intentPath).catch(() => undefined);
-      await unlink(temporaryPath).catch(() => undefined);
+    if (process.platform === "win32") {
+      await moveFileWriteThroughWindows(intentStagingPath, intentPath, {
+        observeProcessEnv: observeWindowsMoveProcessEnv,
+      });
+      intentStagingCreated = false;
+      intentCreated = true;
+    } else {
+      await syncDirectory(sessionDirectory);
     }
+    intentDurable = true;
+    await invokeFaultInjection(input.faultInjection?.afterIntentSync);
+  } catch (error) {
+    const ambiguousWindowsMove = error instanceof KimiCodeWindowsMoveError && error.ambiguous;
+    if (!intentDurable && !ambiguousWindowsMove) {
+      if (intentCreated) await unlink(intentPath).catch(() => undefined);
+      if (intentStagingCreated) await unlink(intentStagingPath).catch(() => undefined);
+      if (temporaryCreated) await unlink(temporaryPath).catch(() => undefined);
+    }
+    if (isRecord(error) && error.code === "EEXIST") throw new KimiCodeStateError("state_busy");
     throw error;
   }
 
@@ -318,15 +454,24 @@ export async function prepareKimiCodeSessionState(
     assertNoExistingReparsePointsSync(sessionDirectory);
     assertRegularFileSync(temporaryPath, "state_missing");
     assertRegularFileSync(intentPath, "state_missing");
-    try {
-      linkSync(temporaryPath, finalPath);
-      unlinkSync(temporaryPath);
-    } catch (error) {
-      throw classifyKimiCodeStateError(error);
+    if (process.platform === "win32") {
+      moveFileWriteThroughWindowsSync(temporaryPath, finalPath, {
+        timeoutMs: input.faultInjection?.publishWindowsMoveTimeoutMs,
+        observeProcessEnv: input.faultInjection?.observeWindowsMoveProcessEnv,
+      });
+      input.faultInjection?.beforePublishDirectorySync?.();
+    } else {
+      try {
+        linkSync(temporaryPath, finalPath);
+        unlinkSync(temporaryPath);
+      } catch (error) {
+        throw classifyKimiCodeStateError(error);
+      }
+      input.faultInjection?.beforePublishDirectorySync?.();
+      syncDirectorySync(sessionDirectory);
     }
-    input.faultInjection?.beforePublishDirectorySync?.();
-    syncDirectorySync(sessionDirectory);
   };
+  let discardPayloadBoundaryCrossed = false;
   const discard = async (): Promise<void> => {
     if (publicationAttempted || (await pathExists(finalPath))) throw new KimiCodeStateError("binding_mismatch");
     const currentIntent = await readKimiCodePublishIntent(intentPath, input.env);
@@ -337,12 +482,28 @@ export async function prepareKimiCodeSessionState(
     ) {
       throw new KimiCodeStateError("binding_mismatch");
     }
-    await assertNoExistingReparsePoints(temporaryPath);
-    await unlink(temporaryPath).catch((error) => {
-      if (isRecord(error) && error.code === "ENOENT") return;
-      throw classifyKimiCodeStateError(error);
-    });
-    await removeKimiCodePublishIntent(intentPath, input.env);
+    const discardLocator = parseKimiCodeCleanupLocator(locatorJson, input.env);
+    const temporaryInfo = await inspectExactArtifact(temporaryPath);
+    const temporaryTombstoneInfo = await inspectExactArtifact(temporaryTombstone);
+    if (temporaryInfo) await readLocatorBoundSnapshot(discardLocator, input.env, temporaryPath);
+    if (temporaryTombstoneInfo?.size) {
+      await readLocatorBoundSnapshot(discardLocator, input.env, temporaryTombstone);
+    }
+    if (process.platform === "win32") {
+      await durablyRemoveWindowsArtifact(temporaryPath, temporaryTombstone, "temporary");
+    } else {
+      await unlinkExactArtifact(temporaryPath);
+      await syncDirectory(sessionDirectory);
+    }
+    if (!discardPayloadBoundaryCrossed) {
+      discardPayloadBoundaryCrossed = true;
+      await input.faultInjection?.afterDiscardPayloadsDurable?.();
+    }
+    if (process.platform === "win32") {
+      await durablyRemoveWindowsArtifact(intentPath, intentTombstone, "intent");
+    } else {
+      await removeKimiCodePublishIntent(intentPath, input.env);
+    }
   };
 
   return {
@@ -358,36 +519,68 @@ export async function prepareKimiCodeSessionState(
   };
 }
 
-export async function listKimiCodePublishIntents(env?: NodeJS.ProcessEnv): Promise<string[]> {
+export async function listKimiCodePublishIntents(
+  input: ListKimiCodePublishIntentsInput,
+): Promise<KimiCodePublishIntentPage> {
   try {
-    return await listKimiCodePublishIntentsInternal(env);
+    return await listKimiCodePublishIntentsInternal(input);
   } catch (error) {
     throw classifyKimiCodeStateError(error);
   }
 }
 
-async function listKimiCodePublishIntentsInternal(env?: NodeJS.ProcessEnv): Promise<string[]> {
-  const root = stateRoot(env);
+async function listKimiCodePublishIntentsInternal(
+  input: ListKimiCodePublishIntentsInput,
+): Promise<KimiCodePublishIntentPage> {
+  if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > KIMI_CODE_MAX_INTENT_PAGE_SIZE) {
+    throw new KimiCodeStateError("invalid_locator");
+  }
+  if (input.cursor !== undefined && !isKimiCodeIntentCursor(input.cursor)) {
+    throw new KimiCodeStateError("invalid_locator");
+  }
+  const root = stateRoot(input.env);
   const rootInfo = await lstatOrMissing(root);
-  if (!rootInfo) return [];
+  if (!rootInfo) return { intentPaths: [], nextCursor: undefined };
   if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new KimiCodeStateError("reparse_detected");
   await assertNoExistingReparsePoints(root);
-  const paths: string[] = [];
-  for (const sessionEntry of await readdir(root, { withFileTypes: true })) {
+  const candidates: Array<{ key: string; path: string }> = [];
+  let scannedEntries = 0;
+  for await (const sessionEntry of await opendir(root)) {
+    scannedEntries += 1;
+    if (scannedEntries > KIMI_CODE_MAX_INTENT_SCAN_ENTRIES) throw new KimiCodeStateError("state_busy");
     if (!UUID_PATTERN.test(sessionEntry.name)) continue;
     const sessionDirectory = join(root, sessionEntry.name);
     const sessionInfo = await lstatOrMissing(sessionDirectory);
     if (!sessionInfo?.isDirectory() || sessionInfo.isSymbolicLink()) {
       throw new KimiCodeStateError("reparse_detected");
     }
-    for (const entry of await readdir(sessionDirectory, { withFileTypes: true })) {
+    for await (const entry of await opendir(sessionDirectory)) {
+      scannedEntries += 1;
+      if (scannedEntries > KIMI_CODE_MAX_INTENT_SCAN_ENTRIES) throw new KimiCodeStateError("state_busy");
       if (!INTENT_FILENAME_PATTERN.test(entry.name)) continue;
       const path = join(sessionDirectory, entry.name);
-      await readKimiCodePublishIntent(path, env);
-      paths.push(path);
+      await readKimiCodePublishIntent(path, input.env);
+      const key = `${sessionEntry.name}/${entry.name}`;
+      if (input.cursor === undefined || key > input.cursor) candidates.push({ key, path });
     }
   }
-  return paths.sort();
+  candidates.sort((left, right) => (left.key < right.key ? -1 : left.key > right.key ? 1 : 0));
+  const selected = candidates.slice(0, input.limit);
+  return {
+    intentPaths: selected.map((candidate) => candidate.path),
+    nextCursor: candidates.length > input.limit ? selected.at(-1)?.key : undefined,
+  };
+}
+
+function isKimiCodeIntentCursor(value: string): boolean {
+  if (Buffer.byteLength(value, "utf8") > 256) return false;
+  const separator = value.indexOf("/");
+  return (
+    separator > 0 &&
+    value.indexOf("/", separator + 1) === -1 &&
+    UUID_PATTERN.test(value.slice(0, separator)) &&
+    INTENT_FILENAME_PATTERN.test(value.slice(separator + 1))
+  );
 }
 
 export async function readKimiCodePublishIntent(
@@ -418,12 +611,31 @@ async function readKimiCodePublishIntentInternal(
   ) {
     throw new KimiCodeStateError("foreign_root");
   }
-  await assertNoExistingReparsePoints(intentPath);
-  const info = await lstatOrMissing(intentPath);
+  return readKimiCodePublishIntentArtifact(intentPath, match[1], env);
+}
+
+async function readKimiCodePublishIntentArtifact(
+  path: string,
+  expectedTaskId: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<KimiCodePublishIntent> {
+  const root = stateRoot(env);
+  const sessionDirectory = dirname(path);
+  if (
+    !isAbsolute(path) ||
+    hasTraversalSegment(path) ||
+    !isPathInside(root, path) ||
+    !UUID_PATTERN.test(basename(sessionDirectory)) ||
+    !samePath(dirname(sessionDirectory), root)
+  ) {
+    throw new KimiCodeStateError("foreign_root");
+  }
+  await assertNoExistingReparsePoints(path);
+  const info = await lstatOrMissing(path);
   if (!info) throw new KimiCodeStateError("state_missing");
   if (!info.isFile() || info.isSymbolicLink()) throw new KimiCodeStateError("reparse_detected");
   if (info.size > KIMI_CODE_MAX_INTENT_BYTES) throw new KimiCodeStateError("schema_mismatch");
-  const bytes = await open(intentPath, "r").then(async (file) => {
+  const bytes = await open(path, "r").then(async (file) => {
     try {
       return await file.readFile();
     } finally {
@@ -450,7 +662,7 @@ async function readKimiCodePublishIntentInternal(
   }
   validateReservationId(parsed.taskId, env);
   validateReservationId(parsed.ownerAttemptId, env);
-  if (match[1] !== parsed.taskId) throw new KimiCodeStateError("binding_mismatch");
+  if (expectedTaskId !== parsed.taskId) throw new KimiCodeStateError("binding_mismatch");
   if (containsConfiguredCredential(parsed, env)) throw new KimiCodeStateError("credential_detected");
   const locator = parseKimiCodeCleanupLocator(parsed.locatorJson, env);
   if (!samePath(dirname(locator.sessionFile), sessionDirectory)) {
@@ -466,9 +678,21 @@ async function readKimiCodePublishIntentInternal(
 
 export async function removeKimiCodePublishIntent(intentPath: string, env?: NodeJS.ProcessEnv): Promise<void> {
   try {
-    await readKimiCodePublishIntent(intentPath, env);
-    await unlink(intentPath);
-    await syncDirectory(dirname(intentPath));
+    const match = INTENT_FILENAME_PATTERN.exec(basename(intentPath));
+    if (!match) throw new KimiCodeStateError("foreign_root");
+    if (process.platform === "win32") {
+      const tombstonePath = cleanupTombstonePath(dirname(intentPath), match[1], "intent");
+      const intentInfo = await inspectExactArtifact(intentPath);
+      const tombstoneInfo = await inspectExactArtifact(tombstonePath);
+      if (!intentInfo && !tombstoneInfo) return;
+      if (intentInfo) await readKimiCodePublishIntent(intentPath, env);
+      else if (tombstoneInfo?.size) await readKimiCodePublishIntentArtifact(tombstonePath, match[1], env);
+      await durablyRemoveWindowsArtifact(intentPath, tombstonePath, "intent");
+    } else {
+      await readKimiCodePublishIntent(intentPath, env);
+      await unlink(intentPath);
+      await syncDirectory(dirname(intentPath));
+    }
   } catch (error) {
     throw classifyKimiCodeStateError(error);
   }
@@ -588,6 +812,58 @@ async function unlinkExactArtifact(path: string): Promise<void> {
     if (isRecord(error) && error.code === "ENOENT") return;
     throw classifyKimiCodeStateError(error);
   });
+}
+
+type KimiCodeCleanupArtifactKind = "snapshot" | "temporary" | "intent";
+
+function cleanupTombstonePath(sessionDirectory: string, taskId: string, kind: KimiCodeCleanupArtifactKind): string {
+  return join(sessionDirectory, `.cleanup-${taskId}-${kind}.tombstone`);
+}
+
+async function invokeFaultInjection(callback: (() => void | Promise<void>) | undefined): Promise<void> {
+  if (!callback) return;
+  try {
+    await callback();
+  } catch (error) {
+    throw new KimiCodeFaultInjectionError(error);
+  }
+}
+
+function wrapFaultObserver<T>(observer: ((value: T) => void) | undefined): ((value: T) => void) | undefined {
+  if (!observer) return undefined;
+  return (value) => {
+    try {
+      observer(value);
+    } catch (error) {
+      throw new KimiCodeFaultInjectionError(error);
+    }
+  };
+}
+
+async function durablyRemoveWindowsArtifact(
+  canonicalPath: string,
+  tombstonePath: string,
+  kind: KimiCodeCleanupArtifactKind,
+  afterMove?: (kind: KimiCodeCleanupArtifactKind) => void | Promise<void>,
+): Promise<void> {
+  const canonicalInfo = await inspectExactArtifact(canonicalPath);
+  let tombstoneInfo = await inspectExactArtifact(tombstonePath);
+  if (canonicalInfo && tombstoneInfo) throw new KimiCodeStateError("state_busy");
+  if (canonicalInfo) {
+    await moveFileWriteThroughWindows(canonicalPath, tombstonePath);
+    await afterMove?.(kind);
+    tombstoneInfo = await inspectExactArtifact(tombstonePath);
+    if (!tombstoneInfo) throw new KimiCodeStateError("io_transient");
+  }
+  if (!tombstoneInfo) return;
+  const tombstone = await open(tombstonePath, "r+");
+  try {
+    await tombstone.truncate(0);
+    await tombstone.sync();
+  } finally {
+    await tombstone.close().catch(() => undefined);
+  }
+  await unlink(tombstonePath).catch(() => undefined);
 }
 
 async function buildKimiCodeSnapshot(input: CommitKimiCodeSessionStateInput): Promise<{
@@ -1311,6 +1587,92 @@ async function createPrivateWindowsDirectoriesAtomically(
   });
 }
 
+interface WindowsMoveOptions {
+  timeoutMs?: number;
+  observeProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void;
+}
+
+async function moveFileWriteThroughWindows(
+  source: string,
+  destination: string,
+  options: WindowsMoveOptions = {},
+): Promise<void> {
+  const childEnv = windowsMoveProcessEnv(source, destination);
+  options.observeProcessEnv?.({ ...childEnv });
+  try {
+    await execFileAsync(
+      "powershell",
+      ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_WRITE_THROUGH_MOVE_SCRIPT],
+      {
+        env: childEnv,
+        windowsHide: true,
+        timeout: resolveWindowsMoveTimeout(options.timeoutMs),
+        maxBuffer: 1024,
+      },
+    );
+  } catch (error) {
+    throw classifyWindowsMoveError(error);
+  }
+}
+
+function moveFileWriteThroughWindowsSync(source: string, destination: string, options: WindowsMoveOptions = {}): void {
+  const childEnv = windowsMoveProcessEnv(source, destination);
+  options.observeProcessEnv?.({ ...childEnv });
+  const result = spawnSync(
+    "powershell",
+    ["-NoProfile", "-NonInteractive", "-Command", WINDOWS_WRITE_THROUGH_MOVE_SCRIPT],
+    {
+      env: childEnv,
+      windowsHide: true,
+      timeout: resolveWindowsMoveTimeout(options.timeoutMs),
+      stdio: "ignore",
+    },
+  );
+  if (result.error) throw classifyWindowsMoveError(result.error);
+  if (result.status === 0 && result.signal === null) return;
+  if (result.status === KIMI_CODE_WINDOWS_MOVE_COLLISION_EXIT) {
+    throw new KimiCodeWindowsMoveError("state_busy", false);
+  }
+  throw new KimiCodeWindowsMoveError(result.status === null ? "unknown" : "io_transient", result.status === null);
+}
+
+function classifyWindowsMoveError(error: unknown): KimiCodeWindowsMoveError {
+  const code = isRecord(error) ? error.code : undefined;
+  if (code === KIMI_CODE_WINDOWS_MOVE_COLLISION_EXIT || code === String(KIMI_CODE_WINDOWS_MOVE_COLLISION_EXIT)) {
+    return new KimiCodeWindowsMoveError("state_busy", false);
+  }
+  if (code === "ETIMEDOUT" || (isRecord(error) && error.killed === true)) {
+    return new KimiCodeWindowsMoveError("io_transient", true);
+  }
+  if (typeof code === "number") return new KimiCodeWindowsMoveError("io_transient", false);
+  return new KimiCodeWindowsMoveError("unknown", false);
+}
+
+function resolveWindowsMoveTimeout(value: number | undefined): number {
+  if (value === undefined) return KIMI_CODE_WINDOWS_MOVE_TIMEOUT_MS;
+  if (!Number.isSafeInteger(value) || value < 1 || value > KIMI_CODE_WINDOWS_MOVE_TIMEOUT_MS) {
+    throw new KimiCodeStateError("invalid_locator");
+  }
+  return value;
+}
+
+function windowsMoveProcessEnv(source: string, destination: string): NodeJS.ProcessEnv {
+  return {
+    ...minimalWindowsProcessEnv(),
+    RAVI_KIMI_MOVE_SOURCE: source,
+    RAVI_KIMI_MOVE_DESTINATION: destination,
+  };
+}
+
+function minimalWindowsProcessEnv(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of ["SystemRoot", "WINDIR", "PATH", "PATHEXT", "ComSpec", "TEMP", "TMP"] as const) {
+    const value = process.env[key];
+    if (value) env[key] = value;
+  }
+  return env;
+}
+
 /*
  * Windows has no handle-relative openat/O_NOFOLLOW equivalent in the current
  * Node/Bun fs surface. The provider root and its descendants are therefore
@@ -1319,14 +1681,10 @@ async function createPrivateWindowsDirectoriesAtomically(
  * provider root; it does not claim protection from a hostile same-SID process.
  */
 function aclProcessEnv(targets: readonly PrivatePermissionTarget[]): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = {
+  return {
+    ...minimalWindowsProcessEnv(),
     RAVI_KIMI_ACL_TARGETS: JSON.stringify(targets),
   };
-  for (const key of ["SystemRoot", "WINDIR", "PATH", "PATHEXT", "ComSpec", "TEMP", "TMP"] as const) {
-    const value = process.env[key];
-    if (value) env[key] = value;
-  }
-  return env;
 }
 
 async function syncDirectory(directory: string): Promise<void> {
