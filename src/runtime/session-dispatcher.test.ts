@@ -43,6 +43,7 @@ import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { buildDaemonRestartResumePrompt, resolveCrashRecoveryRestartResumeMode } from "./daemon-restart-resume.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
+import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
 
 const crashRecoveryStub = { acceptingDeliveries: true } as unknown as RuntimeCrashRecoveryCoordinator;
 
@@ -2202,6 +2203,50 @@ describe("RuntimeSessionDispatcher abort resolution", () => {
     } finally {
       if (previousEnabled === undefined) delete process.env.RAVI_KIMI_CODE_ENABLED;
       else process.env.RAVI_KIMI_CODE_ENABLED = previousEnabled;
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
+  it("rejects any registered unavailable provider before reserving a runtime slot", async () => {
+    const providerId = "synthetic-unavailable";
+    const stateDir = await createIsolatedRaviState("ravi-runtime-dispatcher-unavailable-provider-");
+    try {
+      registerRuntimeProvider(
+        providerId,
+        () => {
+          throw new Error("unavailable provider factory must not run");
+        },
+        { availability: () => ({ available: false, reason: "synthetic provider disabled" }) },
+      );
+      const sessionName = "synthetic-unavailable-session";
+      const sessionKey = "agent:main:test:synthetic-unavailable";
+      getOrCreateSession(sessionKey, "main", stateDir, { name: sessionName });
+      updateSessionRuntimeProviderOverride(sessionKey, providerId);
+      const emitted: unknown[] = [];
+      const dispatcher = new RuntimeSessionDispatcher({
+        instanceId: "test",
+        maxConcurrentSessions: 1,
+        interactiveReservedSessions: 0,
+        safeEmit: async (_subject, event) => {
+          emitted.push(event);
+        },
+        notifyRuntimeRecoveryExhausted: async () => {},
+        getConfigModel: () => "global-model",
+        crashRecovery: crashRecoveryStub,
+      });
+
+      await dispatcher.startStreamingSession(sessionName, { prompt: "must be rejected generically" });
+
+      expect(dispatcher.streamingSessions.size).toBe(0);
+      expect(dispatcher.startReservations.size).toBe(0);
+      expect(emitted).toContainEqual({
+        type: "turn.failed",
+        provider: providerId,
+        error: "synthetic provider disabled",
+        recoverable: false,
+      });
+    } finally {
+      unregisterRuntimeProvider(providerId);
       await cleanupIsolatedRaviState(stateDir);
     }
   });

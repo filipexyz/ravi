@@ -2,6 +2,9 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { getDb } from "../router/router-db.js";
+import { deleteSessionIfUnchanged, getOrCreateSession } from "../router/sessions.js";
+import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   cleanupKimiCodeSessionState,
   commitKimiCodeSessionState,
@@ -12,6 +15,7 @@ import {
   runProviderSessionLifecycleMutation,
   runProviderSessionPersistenceMutation,
 } from "./provider-session-lifecycle.js";
+import { registerRuntimeProvider, unregisterRuntimeProvider } from "./provider-registry.js";
 import type { KimiCodeConversationMessage } from "./kimi-code-turn.js";
 import type { RuntimeSessionState } from "./types.js";
 
@@ -113,7 +117,7 @@ describe("provider session lifecycle", () => {
         current = undefined;
         return true;
       },
-      cleanupKimi: async (snapshot) => {
+      cleanupProviderState: async (snapshot) => {
         cleaned.push(snapshot);
       },
     });
@@ -129,7 +133,7 @@ describe("provider session lifecycle", () => {
     const changed = await runProviderSessionLifecycleMutation({
       session: kimiSession,
       mutate: () => false,
-      cleanupKimi: async (snapshot) => {
+      cleanupProviderState: async (snapshot) => {
         cleaned.push(snapshot);
       },
     });
@@ -138,12 +142,27 @@ describe("provider session lifecycle", () => {
     expect(cleaned).toEqual([]);
   });
 
+  it("fails closed before mutation when a registered provider locator is invalid", async () => {
+    let mutated = false;
+
+    const changed = await runProviderSessionLifecycleMutation({
+      session: { ...kimiSession, params: { provider: "kimi-code", schemaVersion: 99 } },
+      mutate: () => {
+        mutated = true;
+        return true;
+      },
+    });
+
+    expect(changed).toBe(false);
+    expect(mutated).toBe(false);
+  });
+
   it("never runs provider cleanup for non-Kimi state", async () => {
     const cleaned: RuntimeSessionState[] = [];
     const changed = await runProviderSessionLifecycleMutation({
       session: { ...kimiSession, params: { provider: "codex" } },
       mutate: () => true,
-      cleanupKimi: async (snapshot) => {
+      cleanupProviderState: async (snapshot) => {
         cleaned.push(snapshot);
       },
     });
@@ -160,7 +179,7 @@ describe("provider session lifecycle", () => {
         mutated = true;
         return true;
       },
-      cleanupKimi: async () => {
+      cleanupProviderState: async () => {
         throw new Error("disk unavailable");
       },
     });
@@ -180,7 +199,7 @@ describe("provider session lifecycle", () => {
         persisted = undefined;
         return true;
       },
-      cleanupKimi: (snapshot) => cleanupKimiCodeSessionState(snapshot, fixture.env),
+      cleanupProviderState: (snapshot) => cleanupKimiCodeSessionState(snapshot, fixture.env),
       env: fixture.env,
     });
 
@@ -188,4 +207,76 @@ describe("provider session lifecycle", () => {
     expect(persisted).toBeUndefined();
     expect(existsSync(sessionDirectory)).toBe(false);
   }, 20_000);
+
+  it("dispatches durable cleanup through a registered synthetic file-backed provider", async () => {
+    const providerId = "synthetic-file-backed";
+    const stateDir = await createIsolatedRaviState("ravi-synthetic-provider-lifecycle-");
+    try {
+      registerRuntimeProvider(
+        providerId,
+        () => ({
+          id: providerId,
+          getCapabilities: () => ({
+            runtimeControl: { supported: false, operations: [] },
+            dynamicTools: { mode: "none" },
+            execution: { mode: "subprocess-rpc" },
+            sessionState: { mode: "file-backed", requiresCwdMatch: true },
+            usage: { semantics: "terminal-event" },
+            tools: {
+              permissionMode: "provider-native",
+              accessRequirement: "tool_and_executable",
+              supportsParallelCalls: false,
+            },
+            systemPrompt: { mode: "append" },
+            terminalEvents: { guarantee: "adapter" },
+            skillVisibility: { availability: "none", loadedState: "none" },
+            supportsSessionResume: true,
+            supportsSessionFork: false,
+            supportsPartialText: false,
+            supportsToolHooks: false,
+            supportsPlugins: false,
+            supportsMcpServers: false,
+            supportsRemoteSpawn: false,
+          }),
+          startSession: () => ({
+            provider: providerId,
+            events: (async function* () {})(),
+            interrupt: async () => {},
+          }),
+        }),
+        {
+          sessionLifecycle: {
+            createDeleteStateCleanup(session) {
+              return session.params?.provider === providerId
+                ? { operation: "delete_state", locator: session.params }
+                : null;
+            },
+          },
+        },
+      );
+      const entry = getOrCreateSession("synthetic:lifecycle", "main", stateDir);
+      const session: RuntimeSessionState = {
+        params: {
+          ...kimiSession.params,
+          provider: providerId,
+          sessionFile: join(stateDir, "synthetic-session.json"),
+        },
+      };
+
+      const changed = await runProviderSessionLifecycleMutation({
+        session,
+        mutate: () => deleteSessionIfUnchanged(entry),
+      });
+
+      expect(changed).toBe(true);
+      expect(
+        getDb()
+          .prepare("SELECT provider, operation, status FROM provider_state_cleanup_tasks")
+          .get(),
+      ).toEqual({ provider: providerId, operation: "delete_state", status: "published" });
+    } finally {
+      unregisterRuntimeProvider(providerId);
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
 });

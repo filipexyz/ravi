@@ -1,51 +1,102 @@
 import { createClaudeRuntimeProvider } from "./claude-provider.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
 import { createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
+import { kimiCodeRuntimeExtensions } from "./kimi-code-runtime-extension.js";
 import { createPiRuntimeProvider } from "./pi-provider.js";
 import type {
   RuntimeCompatibilityIssue,
   RuntimeCompatibilityRequest,
   RuntimeProvider,
   RuntimeProviderId,
+  RuntimeSessionState,
   SessionRuntimeProvider,
 } from "./types.js";
 
 type RuntimeProviderFactory = () => SessionRuntimeProvider;
 
+export type RuntimeProviderAvailability = { available: true } | { available: false; reason: string };
+
+export interface RuntimeProviderSessionLifecycleStrategy {
+  createDeleteStateCleanup(session: RuntimeSessionState): {
+    operation: "delete_state";
+    locator: unknown;
+  } | null;
+  shouldRetirePersistedState?(previousSession: RuntimeSessionState, nextSession: RuntimeSessionState): boolean;
+  retirePersistedState?(
+    previousSession: RuntimeSessionState,
+    nextSession: RuntimeSessionState,
+    env?: NodeJS.ProcessEnv,
+  ): Promise<void>;
+}
+
+export interface RuntimeProviderRegistrationOptions {
+  availability?(env: Readonly<Record<string, string | undefined>>): RuntimeProviderAvailability;
+  sessionLifecycle?: RuntimeProviderSessionLifecycleStrategy;
+}
+
+interface RuntimeProviderRegistration extends RuntimeProviderRegistrationOptions {
+  factory: RuntimeProviderFactory;
+}
+
 export const DEFAULT_RUNTIME_PROVIDER_ID: RuntimeProviderId = "codex";
 
-const runtimeProviderFactories = new Map<RuntimeProviderId, RuntimeProviderFactory>([
-  ["claude", createClaudeRuntimeProvider],
-  ["codex", createCodexRuntimeProvider],
-  ["kimi-code", createKimiCodeRuntimeProvider],
-  ["pi", createPiRuntimeProvider],
+const runtimeProviderRegistrations = new Map<RuntimeProviderId, RuntimeProviderRegistration>([
+  ["claude", { factory: createClaudeRuntimeProvider }],
+  ["codex", { factory: createCodexRuntimeProvider }],
+  ["kimi-code", { factory: createKimiCodeRuntimeProvider, ...kimiCodeRuntimeExtensions }],
+  ["pi", { factory: createPiRuntimeProvider }],
 ]);
 
 const builtInRuntimeProviderIds = new Set<RuntimeProviderId>(["claude", "codex", "kimi-code", "pi"]);
 
-export function registerRuntimeProvider(providerId: RuntimeProviderId, factory: RuntimeProviderFactory): void {
-  runtimeProviderFactories.set(providerId, factory);
+export function registerRuntimeProvider(
+  providerId: RuntimeProviderId,
+  factory: RuntimeProviderFactory,
+  options: RuntimeProviderRegistrationOptions = {},
+): void {
+  runtimeProviderRegistrations.set(providerId, { factory, ...options });
 }
 
 export function unregisterRuntimeProvider(providerId: RuntimeProviderId): void {
   if (builtInRuntimeProviderIds.has(providerId)) {
     throw new Error(`Cannot unregister built-in runtime provider '${providerId}'`);
   }
-  runtimeProviderFactories.delete(providerId);
+  runtimeProviderRegistrations.delete(providerId);
 }
 
 export function listRegisteredRuntimeProviderIds(): RuntimeProviderId[] {
-  return [...runtimeProviderFactories.keys()];
+  return [...runtimeProviderRegistrations.keys()];
 }
 
 export function createRuntimeProvider(
   providerId: RuntimeProviderId = DEFAULT_RUNTIME_PROVIDER_ID,
 ): SessionRuntimeProvider {
-  const factory = runtimeProviderFactories.get(providerId);
-  if (!factory) {
+  const registration = runtimeProviderRegistrations.get(providerId);
+  if (!registration) {
     throw new Error(`Unknown runtime provider '${providerId}'`);
   }
-  return factory();
+  return registration.factory();
+}
+
+export function resolveRuntimeProviderAvailability(
+  providerId: RuntimeProviderId,
+  env: Readonly<Record<string, string | undefined>>,
+): RuntimeProviderAvailability {
+  return runtimeProviderRegistrations.get(providerId)?.availability?.(env) ?? { available: true };
+}
+
+export function resolveRuntimeProviderSessionLifecycle(
+  session: RuntimeSessionState | null | undefined,
+): RuntimeProviderSessionLifecycleStrategy | undefined {
+  const providerId = session?.params?.provider;
+  if (typeof providerId !== "string") return undefined;
+  return resolveRuntimeProviderSessionLifecycleById(providerId);
+}
+
+export function resolveRuntimeProviderSessionLifecycleById(
+  providerId: RuntimeProviderId | null | undefined,
+): RuntimeProviderSessionLifecycleStrategy | undefined {
+  return providerId ? runtimeProviderRegistrations.get(providerId)?.sessionLifecycle : undefined;
 }
 
 export function getRuntimeCompatibilityIssues(

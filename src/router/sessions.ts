@@ -27,10 +27,8 @@ import {
   type SessionChatSubscriptionRecord,
 } from "./router-db.js";
 import { executeWrite } from "../db/write-retry.js";
-import {
-  mutateSessionAndEnqueueProviderStateCleanup,
-  serializeProviderStateCleanupLocator,
-} from "../runtime/provider-state-cleanup-store.js";
+import { resolveRuntimeProviderSessionLifecycleById } from "../runtime/provider-registry.js";
+import { mutateSessionAndEnqueueProviderStateCleanup } from "../runtime/provider-state-cleanup-store.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router:sessions");
@@ -398,25 +396,16 @@ export function redirectSessionIfUnchanged(
       .run(agentId, agentCwd, Date.now(), session.sessionKey, generation);
     return getDbChanges() === 1;
   };
-  let validCleanupLocator = false;
-  if (session.runtimeProvider === "kimi-code") {
-    try {
-      if (session.runtimeSessionParams?.provider !== "kimi-code") {
-        throw new Error("Kimi Code session is missing its cleanup locator");
-      }
-      serializeProviderStateCleanupLocator(session.runtimeSessionParams);
-      validCleanupLocator = true;
-    } catch {
-      // Keep ownership and its locator together until an operator can repair or
-      // quarantine the invalid state. Redirecting here would strand cleanup.
-      return { won: false, session: getSession(session.sessionKey) };
-    }
+  const lifecycle = resolveRuntimeProviderSessionLifecycleById(session.runtimeProvider);
+  const cleanupRequest = lifecycle?.createDeleteStateCleanup({
+    displayId: session.runtimeSessionDisplayId,
+    params: session.runtimeSessionParams,
+  });
+  if (lifecycle && !cleanupRequest) {
+    return { won: false, session: getSession(session.sessionKey) };
   }
-  const won = validCleanupLocator
-    ? mutateSessionAndEnqueueProviderStateCleanup(
-        { operation: "delete_state", locator: session.runtimeSessionParams },
-        mutate,
-      ).won
+  const won = cleanupRequest
+    ? mutateSessionAndEnqueueProviderStateCleanup(cleanupRequest, mutate).won
     : executeWrite(getDb(), mutate, { label: "session-owner-redirect" });
   const current = getSession(session.sessionKey);
   return won && current ? { won: true, session: current } : { won: false, session: current };

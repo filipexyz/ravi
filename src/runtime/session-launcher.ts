@@ -10,13 +10,16 @@ import {
 } from "../router/index.js";
 import { createSessionTraceRunId, recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
-import { DEFAULT_RUNTIME_PROVIDER_ID, assertRuntimeCompatibility } from "./provider-registry.js";
+import {
+  DEFAULT_RUNTIME_PROVIDER_ID,
+  assertRuntimeCompatibility,
+  resolveRuntimeProviderAvailability,
+} from "./provider-registry.js";
 import { completeRuntimeCredentialAttempt, markRuntimeCredentialAttemptStarted } from "./credential-store.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
 import { runRuntimeEventLoop, type RuntimeSafeEmit } from "./host-event-loop.js";
-import { isKimiCodeSessionStartEnabled } from "./kimi-code-availability.js";
 import { getRuntimeToolAccessMode } from "./host-services.js";
 import {
   createPendingRuntimeHandle,
@@ -128,11 +131,12 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     configModel,
     defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
   });
-  if (requestedProvider === "kimi-code" && !isKimiCodeSessionStartEnabled(process.env)) {
+  const availability = resolveRuntimeProviderAvailability(requestedProvider, process.env);
+  if (!availability.available) {
     await safeEmit(`ravi.session.${sessionName}.runtime`, {
       type: "turn.failed",
-      provider: "kimi-code",
-      error: "Kimi Code session start is disabled",
+      provider: requestedProvider,
+      error: availability.reason,
       recoverable: false,
     });
     return;

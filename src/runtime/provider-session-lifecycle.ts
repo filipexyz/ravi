@@ -1,5 +1,5 @@
 import { logger } from "../utils/logger.js";
-import { retireSupersededKimiCodeSessionState } from "./kimi-code-state.js";
+import { resolveRuntimeProviderSessionLifecycle } from "./provider-registry.js";
 import { mutateSessionAndEnqueueProviderStateCleanup } from "./provider-state-cleanup-store.js";
 import type { RuntimeSessionState } from "./types.js";
 
@@ -12,8 +12,8 @@ export interface ProviderSessionLifecycleMutationInput {
   session: RuntimeSessionState | null | undefined;
   /** Must perform an exact/CAS mutation and report whether it changed the row. */
   mutate: () => boolean;
-  /** Legacy test hook. Production callers omit it and enqueue durable cleanup. */
-  cleanupKimi?: (session: RuntimeSessionState) => Promise<void>;
+  /** Test hook. Production callers omit it and enqueue durable cleanup. */
+  cleanupProviderState?: (session: RuntimeSessionState) => Promise<void>;
   env?: NodeJS.ProcessEnv;
 }
 
@@ -25,7 +25,7 @@ export interface ProviderSessionPersistenceMutationInput {
   /** Must synchronously durably store nextSession or throw. */
   persist: () => void;
   /** Injectable only to keep persistence/retirement ordering independently testable. */
-  retireKimi?: (
+  retireProviderState?: (
     previousSession: RuntimeSessionState,
     nextSession: RuntimeSessionState,
     env?: NodeJS.ProcessEnv,
@@ -44,18 +44,16 @@ export async function runProviderSessionPersistenceMutation(
   const previousSession = snapshotRuntimeSessionState(input.previousSession);
   const nextSession = snapshotRuntimeSessionState(input.nextSession);
   input.persist();
-  if (!isKimiCodeSession(previousSession) || !isKimiCodeSession(nextSession)) return;
-  if (
-    previousSession.params?.sessionId !== nextSession.params?.sessionId ||
-    Number(nextSession.params?.revision) <= Number(previousSession.params?.revision)
-  ) {
-    return;
-  }
+  if (!previousSession || !nextSession) return;
+  const lifecycle = resolveRuntimeProviderSessionLifecycle(previousSession);
+  if (!lifecycle?.shouldRetirePersistedState?.(previousSession, nextSession)) return;
+  const retireProviderState = input.retireProviderState ?? lifecycle.retirePersistedState;
+  if (!retireProviderState) return;
 
   try {
-    await (input.retireKimi ?? retireSupersededKimiCodeSessionState)(previousSession, nextSession, input.env);
+    await retireProviderState(previousSession, nextSession, input.env);
   } catch (error) {
-    log.warn("Failed to retire superseded Kimi Code session state after host persistence", { error });
+    log.warn("Failed to retire superseded provider session state after host persistence", { error });
   }
 }
 
@@ -71,44 +69,33 @@ export async function runProviderSessionLifecycleMutation(
   return started.changed;
 }
 
-/** Runs the exact database mutation synchronously and exposes legacy test cleanup separately. */
+/** Runs the exact database mutation synchronously and exposes test cleanup separately. */
 export function startProviderSessionLifecycleMutation(
   input: ProviderSessionLifecycleMutationInput,
 ): StartedProviderSessionLifecycleMutation {
   const snapshot = snapshotRuntimeSessionState(input.session);
-  const cleanupKimi = input.cleanupKimi;
+  const lifecycle = resolveRuntimeProviderSessionLifecycle(snapshot);
+  const cleanupRequest = snapshot ? lifecycle?.createDeleteStateCleanup(snapshot) : null;
+  const cleanupProviderState = input.cleanupProviderState;
+  if (lifecycle && !cleanupRequest) {
+    return { changed: false, cleanup: Promise.resolve() };
+  }
   const changed =
-    isKimiCodeSession(snapshot) && !cleanupKimi
+    cleanupRequest && !cleanupProviderState
       ? mutateSessionAndEnqueueProviderStateCleanup(
-          { operation: "delete_state", locator: snapshot.params },
+          cleanupRequest,
           () => input.mutate(),
         ).won
       : input.mutate();
   const cleanup = (async () => {
-    if (!changed || !isKimiCodeSession(snapshot) || !cleanupKimi) return;
+    if (!changed || !snapshot || !cleanupRequest || !cleanupProviderState) return;
     try {
-      await cleanupKimi(snapshot);
+      await cleanupProviderState(snapshot);
     } catch (error) {
-      log.warn("Failed to clean Kimi Code session state after host lifecycle mutation", { error });
+      log.warn("Failed to clean provider session state after host lifecycle mutation", { error });
     }
   })();
   return { changed, cleanup };
-}
-
-function isKimiCodeSession(session: RuntimeSessionState | undefined): session is RuntimeSessionState {
-  const params = session?.params;
-  return (
-    params?.provider === "kimi-code" &&
-    params.schemaVersion === 1 &&
-    typeof params.model === "string" &&
-    typeof params.sessionId === "string" &&
-    Number.isSafeInteger(params.revision) &&
-    typeof params.cwd === "string" &&
-    typeof params.workspaceIdentity === "object" &&
-    params.workspaceIdentity !== null &&
-    typeof params.sessionFile === "string" &&
-    typeof params.lastCommittedTurnId === "string"
-  );
 }
 
 function snapshotRuntimeSessionState(session: RuntimeSessionState | null | undefined): RuntimeSessionState | undefined {

@@ -6,6 +6,7 @@ import {
   getRuntimeCompatibilityIssues,
   listRegisteredRuntimeProviderIds,
   registerRuntimeProvider,
+  resolveRuntimeProviderAvailability,
   unregisterRuntimeProvider,
 } from "./index.js";
 import type { RuntimeProvider } from "./types.js";
@@ -94,39 +95,49 @@ describe("runtime compatibility preflight", () => {
 
   it("supports registering additional runtime providers without changing the factory switch", () => {
     try {
-      registerRuntimeProvider("test-provider", () => ({
-        id: "test-provider",
-        getCapabilities: () => ({
-          runtimeControl: { supported: false, operations: [] },
-          dynamicTools: { mode: "none" },
-          execution: { mode: "sdk" },
-          sessionState: { mode: "provider-session-id" },
-          usage: { semantics: "terminal-event" },
-          tools: {
-            permissionMode: "ravi-host",
-            accessRequirement: "tool_and_executable",
-            supportsParallelCalls: false,
-          },
-          systemPrompt: { mode: "append" },
-          terminalEvents: { guarantee: "adapter" },
-          skillVisibility: { availability: "none", loadedState: "none" },
-          supportsSessionResume: false,
-          supportsSessionFork: false,
-          supportsPartialText: false,
-          supportsToolHooks: true,
-          supportsPlugins: false,
-          supportsMcpServers: false,
-          supportsRemoteSpawn: false,
+      registerRuntimeProvider(
+        "test-provider",
+        () => ({
+          id: "test-provider",
+          getCapabilities: () => ({
+            runtimeControl: { supported: false, operations: [] },
+            dynamicTools: { mode: "none" },
+            execution: { mode: "sdk" },
+            sessionState: { mode: "provider-session-id" },
+            usage: { semantics: "terminal-event" },
+            tools: {
+              permissionMode: "ravi-host",
+              accessRequirement: "tool_and_executable",
+              supportsParallelCalls: false,
+            },
+            systemPrompt: { mode: "append" },
+            terminalEvents: { guarantee: "adapter" },
+            skillVisibility: { availability: "none", loadedState: "none" },
+            supportsSessionResume: false,
+            supportsSessionFork: false,
+            supportsPartialText: false,
+            supportsToolHooks: true,
+            supportsPlugins: false,
+            supportsMcpServers: false,
+            supportsRemoteSpawn: false,
+          }),
+          startSession: () => ({
+            provider: "test-provider",
+            events: (async function* () {})(),
+            interrupt: async () => {},
+          }),
         }),
-        startSession: () => ({
-          provider: "test-provider",
-          events: (async function* () {})(),
-          interrupt: async () => {},
-        }),
-      }));
+        {
+          availability: () => ({ available: false, reason: "synthetic provider disabled" }),
+        },
+      );
 
       expect(listRegisteredRuntimeProviderIds()).toContain("test-provider");
       expect(createRuntimeProvider("test-provider").id).toBe("test-provider");
+      expect(resolveRuntimeProviderAvailability("test-provider", {})).toEqual({
+        available: false,
+        reason: "synthetic provider disabled",
+      });
     } finally {
       unregisterRuntimeProvider("test-provider");
     }

@@ -45,11 +45,10 @@ import {
 } from "./host-session.js";
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
-import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
+import { DEFAULT_RUNTIME_PROVIDER_ID, resolveRuntimeProviderAvailability } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
-import { isKimiCodeSessionStartEnabled } from "./kimi-code-availability.js";
 import {
   startRuntimeSession,
   updateRuntimeSessionMetadata,
@@ -1339,11 +1338,12 @@ export class RuntimeSessionDispatcher {
       configModel: this.options.getConfigModel(),
       defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
     });
-    if (requestedProvider === "kimi-code" && !isKimiCodeSessionStartEnabled(process.env)) {
+    const availability = resolveRuntimeProviderAvailability(requestedProvider, process.env);
+    if (!availability.available) {
       await this.options.safeEmit(`ravi.session.${sessionName}.runtime`, {
         type: "turn.failed",
-        provider: "kimi-code",
-        error: "Kimi Code session start is disabled",
+        provider: requestedProvider,
+        error: availability.reason,
         recoverable: false,
       });
       return;
