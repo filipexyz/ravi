@@ -11,9 +11,9 @@
  *   4. Leader renews TTL periodically (keepalive)
  *   5. If leader dies, KV entry expires → another daemon wins `create` and takes over
  *
- * TTL is configured via the KV bucket's max_age. Key is recreated on each renewal
- * using `put` (update — doesn't fail if already exists, just resets TTL implicitly
- * by updating the value). The TTL is set at the bucket level.
+ * TTL is configured via the KV bucket's max_age. Each renewal conditionally updates
+ * the revision acquired by this daemon, so an expired leader cannot overwrite its
+ * successor. The TTL is set at the bucket level.
  */
 
 import { StringCodec, type KV } from "nats";
@@ -33,7 +33,21 @@ const LEASE_TTL_S = 30;
 const RENEWAL_INTERVAL_MS = 10_000; // 10s
 
 let kv: KV | null = null;
-let renewalTimer: ReturnType<typeof setInterval> | null = null;
+
+interface OwnedLeadershipLease {
+  readonly role: string;
+  onLeadershipLost: LeadershipLostHandler | undefined;
+  revision: number;
+  renewalTimer: ReturnType<typeof setInterval> | null;
+  renewalInFlight: Promise<void> | null;
+  releaseInFlight: Promise<void> | null;
+  releasing: boolean;
+  lost: boolean;
+}
+
+let ownedLease: OwnedLeadershipLease | null = null;
+
+export type LeadershipLostHandler = (error: unknown) => void | Promise<void>;
 
 /** Unique ID for this daemon instance */
 export const daemonId = `${process.pid}-${Math.random().toString(36).slice(2, 8)}`;
@@ -75,7 +89,17 @@ export async function tryAcquireLeadership(role: string): Promise<boolean> {
 
   try {
     // `create` is atomic — succeeds only if key doesn't exist
-    await store.create(role, sc.encode(daemonId));
+    const revision = await store.create(role, sc.encode(daemonId));
+    ownedLease = {
+      role,
+      onLeadershipLost: undefined,
+      revision,
+      renewalTimer: null,
+      renewalInFlight: null,
+      releaseInFlight: null,
+      releasing: false,
+      lost: false,
+    };
     log.info("Acquired leadership", { role, daemonId });
     return true;
   } catch {
@@ -91,23 +115,58 @@ export async function tryAcquireLeadership(role: string): Promise<boolean> {
  * Start renewing leadership for a role every RENEWAL_INTERVAL_MS.
  * Call this after successfully acquiring leadership.
  *
- * The renewal uses `put` to update the key (resets TTL on the value revision).
- * If renewal fails, logs a warning but keeps trying.
+ * The renewal uses a revision-conditional update. Any ambiguous failure forfeits
+ * the local lease because retrying could overwrite a successor after TTL expiry.
  */
-export function startLeadershipRenewal(role: string): void {
-  if (renewalTimer) return;
+export function startLeadershipRenewal(role: string, onLeadershipLost?: LeadershipLostHandler): void {
+  const lease = ownedLease;
+  if (!lease || lease.role !== role || lease.lost || lease.releasing) {
+    log.warn("Cannot renew leadership without an owned lease", { role, daemonId });
+    return;
+  }
+  if (lease.renewalTimer) return;
+  lease.onLeadershipLost = onLeadershipLost;
 
-  renewalTimer = setInterval(async () => {
-    try {
-      const store = await ensureLeaderBucket();
-      await store.put(role, sc.encode(daemonId));
-      log.debug("Leadership renewed", { role, daemonId });
-    } catch (err) {
-      log.warn("Failed to renew leadership", { role, daemonId, error: err });
-    }
+  lease.renewalTimer = setInterval(() => {
+    if (ownedLease !== lease || lease.lost || lease.releasing || lease.renewalInFlight) return;
+    const renewal = renewLeadershipLease(lease);
+    lease.renewalInFlight = renewal;
+    void renewal.finally(() => {
+      if (lease.renewalInFlight === renewal) lease.renewalInFlight = null;
+    });
+    return renewal;
   }, RENEWAL_INTERVAL_MS);
 
   log.debug("Leadership renewal started", { role, intervalMs: RENEWAL_INTERVAL_MS });
+}
+
+function stopLeadershipRenewal(lease: OwnedLeadershipLease): void {
+  if (!lease.renewalTimer) return;
+  clearInterval(lease.renewalTimer);
+  lease.renewalTimer = null;
+}
+
+async function markLeadershipLost(lease: OwnedLeadershipLease, error: unknown): Promise<void> {
+  lease.lost = true;
+  stopLeadershipRenewal(lease);
+  if (ownedLease === lease) ownedLease = null;
+  try {
+    await lease.onLeadershipLost?.(error);
+  } catch (callbackError) {
+    log.error("Leadership loss handler failed", { role: lease.role, daemonId, error: callbackError });
+  }
+}
+
+async function renewLeadershipLease(lease: OwnedLeadershipLease): Promise<void> {
+  try {
+    const store = await ensureLeaderBucket();
+    if (ownedLease !== lease || lease.lost || lease.releasing) return;
+    lease.revision = await store.update(lease.role, sc.encode(daemonId), lease.revision);
+    log.debug("Leadership renewed", { role: lease.role, daemonId, revision: lease.revision });
+  } catch (err) {
+    await markLeadershipLost(lease, err);
+    log.warn("Leadership lease lost while renewing", { role: lease.role, daemonId, error: err });
+  }
 }
 
 /**
@@ -128,6 +187,7 @@ export interface LeadershipVacancyWatcher {
 export interface LeadershipVacancyWatchOptions {
   signal?: AbortSignal;
   pollIntervalMs?: number;
+  onLeadershipLost?: LeadershipLostHandler;
 }
 
 function waitForLeadershipPoll(signal: AbortSignal, pollIntervalMs: number): Promise<boolean> {
@@ -151,6 +211,9 @@ export function watchForLeadershipVacancy(
   options: LeadershipVacancyWatchOptions = {},
 ): LeadershipVacancyWatcher {
   const pollIntervalMs = options.pollIntervalMs ?? RENEWAL_INTERVAL_MS;
+  if (!Number.isFinite(pollIntervalMs) || pollIntervalMs < 0) {
+    throw new RangeError("pollIntervalMs must be a finite non-negative number");
+  }
   log.info("Polling for leadership vacancy", { role, pollIntervalMs });
 
   const controller = new AbortController();
@@ -190,7 +253,7 @@ export function watchForLeadershipVacancy(
       }
       if (!won) continue;
 
-      startLeadershipRenewal(role);
+      startLeadershipRenewal(role, options.onLeadershipLost);
       try {
         await onVacancy();
       } catch (err) {
@@ -215,16 +278,27 @@ export function watchForLeadershipVacancy(
  * Called during graceful shutdown.
  */
 export async function releaseLeadership(role: string): Promise<void> {
-  if (renewalTimer) {
-    clearInterval(renewalTimer);
-    renewalTimer = null;
-  }
+  const lease = ownedLease;
+  if (!lease || lease.role !== role || lease.lost) return;
+  if (lease.releaseInFlight) return lease.releaseInFlight;
 
+  lease.releasing = true;
+  stopLeadershipRenewal(lease);
+  const release = releaseOwnedLeadership(lease);
+  lease.releaseInFlight = release;
+  return release;
+}
+
+async function releaseOwnedLeadership(lease: OwnedLeadershipLease): Promise<void> {
   try {
+    await lease.renewalInFlight;
+    if (lease.lost || ownedLease !== lease) return;
     const store = await ensureLeaderBucket();
-    await store.delete(role);
-    log.info("Leadership released", { role, daemonId });
+    await store.delete(lease.role, { previousSeq: lease.revision });
+    log.info("Leadership released", { role: lease.role, daemonId, revision: lease.revision });
   } catch (err) {
-    log.warn("Failed to release leadership", { role, error: err });
+    log.warn("Failed to release leadership", { role: lease.role, error: err });
+  } finally {
+    if (ownedLease === lease) ownedLease = null;
   }
 }

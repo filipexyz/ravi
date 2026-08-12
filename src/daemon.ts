@@ -215,6 +215,27 @@ async function stopRunnerLeadershipWatcher(): Promise<void> {
   }
 }
 
+async function stopLeaderOnlyRunnersAfterLeadershipLoss(error: unknown): Promise<void> {
+  if (shuttingDown) return;
+  log.error("Runner leadership lease lost; stopping leader-only runners", { error });
+  // Fence any runner startup phase that is still in flight before compensating
+  // already-started runners. Per-daemon services can continue safely.
+  daemonLifetimeController?.abort();
+  const runners = [
+    ["task checkpoint runner", stopTaskCheckpointRunner],
+    ["session followup runner", stopSessionFollowupRunner],
+    ["cron runner", stopCronRunner],
+    ["heartbeat runner", stopHeartbeatRunner],
+  ] as const;
+  for (const [label, stop] of runners) {
+    try {
+      await stop();
+    } catch (stopError) {
+      log.error(`Failed to stop ${label} after leadership loss`, { error: stopError });
+    }
+  }
+}
+
 async function rollbackDaemonStartup(cleanupRunner: ProviderStateCleanupRunner): Promise<void> {
   const stopSafely = async (label: string, stop: () => void | Promise<void>) => {
     try {
@@ -478,7 +499,7 @@ export async function startDaemon() {
   const isLeader = await runDaemonStartupPhase(startupSignal, () => tryAcquireLeadership("runners"));
 
   if (isLeader) {
-    startLeadershipRenewal("runners");
+    startLeadershipRenewal("runners", stopLeaderOnlyRunnersAfterLeadershipLoss);
     await runDaemonStartupPhase(startupSignal, startHeartbeatRunner);
     log.info("Heartbeat runner started (leader)");
     await runDaemonStartupPhase(startupSignal, startCronRunner);
@@ -529,7 +550,7 @@ export async function startDaemon() {
           throw error;
         }
       },
-      { signal: startupSignal },
+      { signal: startupSignal, onLeadershipLost: stopLeaderOnlyRunnersAfterLeadershipLoss },
     );
     void runnerLeadershipWatcher.done.catch((err) => log.error("Leadership watcher failed", err));
   }
