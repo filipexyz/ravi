@@ -243,6 +243,45 @@ describe("Kimi Code immutable session state", () => {
     expect(existsSync(sessionDirectory)).toBe(false);
   });
 
+  test("cleans an old locator without deleting a newer published locator", async () => {
+    const first = await firstCommit();
+    const second = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-newer",
+      messages: nativeMessages("newer"),
+      previousSnapshot: first.snapshot,
+      env: first.env,
+    });
+
+    await cleanupKimiCodeSessionState(first.session, first.env);
+
+    await expect(
+      loadKimiCodeSessionState({ session: second.session, model: "k3", cwd: first.cwd, env: first.env }),
+    ).resolves.toEqual(second.snapshot);
+    expect(existsSync(String(first.session.params?.sessionFile))).toBe(false);
+  });
+
+  test("accepts a negative nonzero device identity but rejects signed-zero and plus-prefixed locators", async () => {
+    const committed = await firstCommit();
+    const sessionFile = String(committed.session.params?.sessionFile);
+    const snapshot = JSON.parse(readFileSync(sessionFile, "utf8")) as { workspaceIdentity: { device: string } };
+    snapshot.workspaceIdentity.device = "-42";
+    writeFileSync(sessionFile, JSON.stringify(snapshot), { encoding: "utf8", mode: 0o600 });
+    const negative = cloneSession(committed.session);
+    Object.assign((negative.params?.workspaceIdentity as Record<string, unknown>) ?? {}, { device: "-42" });
+
+    await cleanupKimiCodeSessionState(negative, committed.env);
+    expect(existsSync(sessionFile)).toBe(false);
+
+    for (const device of ["-0", "+1", "00"]) {
+      const invalid = cloneSession(committed.session);
+      Object.assign((invalid.params?.workspaceIdentity as Record<string, unknown>) ?? {}, { device });
+      await expect(cleanupKimiCodeSessionState(invalid, committed.env)).rejects.toThrow("locator is invalid");
+    }
+  });
+
   test("retains a previously returned locator after a newer revision is published", async () => {
     const first = await firstCommit();
     await commitKimiCodeSessionState({

@@ -236,7 +236,7 @@ export async function cleanupKimiCodeSessionState(
   }
   await readLocatorBoundSnapshot(locator, env);
 
-  await removeOwnedSessionArtifacts(sessionDirectory);
+  await removeOwnedSessionArtifacts(sessionDirectory, basename(locator.sessionFile));
   await rmdir(sessionDirectory).catch((error) => {
     if (isRecord(error) && (error.code === "ENOENT" || error.code === "ENOTEMPTY")) return;
     throw error;
@@ -387,25 +387,18 @@ async function readLocatorBoundSnapshot(
   return snapshot;
 }
 
-async function removeOwnedSessionArtifacts(sessionDirectory: string): Promise<void> {
+async function removeOwnedSessionArtifacts(sessionDirectory: string, referencedFilename: string): Promise<void> {
   await assertNoExistingReparsePoints(sessionDirectory);
   for (const entry of await readdir(sessionDirectory, { withFileTypes: true })) {
-    if (!isOwnedSessionArtifactFilename(entry.name)) continue;
+    const isReferencedSnapshot = entry.name === referencedFilename;
+    const isAgedTemporary = isTemporaryRevisionFilename(entry.name);
+    if (!isReferencedSnapshot && !isAgedTemporary) continue;
     const path = join(sessionDirectory, entry.name);
     const info = await lstat(path);
     if (!info.isFile() || info.isSymbolicLink()) throw stateError("session path uses a reparse point");
+    if (!isReferencedSnapshot && Date.now() - info.mtimeMs < 60_000) continue;
     await unlink(path);
   }
-}
-
-function isOwnedSessionArtifactFilename(filename: string): boolean {
-  return revisionFromFilename(filename) !== undefined || isTemporaryRevisionFilename(filename);
-}
-
-function revisionFromFilename(filename: string): number | undefined {
-  const revision = /^revision-(\d{8})-([0-9a-f-]{36})\.json$/i.exec(filename);
-  if (revision === null || !UUID_PATTERN.test(revision[2])) return undefined;
-  return Number(revision[1]);
 }
 
 function isTemporaryRevisionFilename(filename: string): boolean {
@@ -780,7 +773,7 @@ function isWorkspaceIdentity(value: unknown): value is KimiCodeWorkspaceIdentity
     isAbsolute(value.realpath) &&
     Buffer.byteLength(value.realpath, "utf8") <= KIMI_CODE_MAX_WORKSPACE_REALPATH_BYTES &&
     typeof value.device === "string" &&
-    /^-?(?:0|[1-9]\d{0,39})$/.test(value.device) &&
+    /^(?:0|[1-9]\d{0,39}|-[1-9]\d{0,39})$/.test(value.device) &&
     typeof value.inode === "string" &&
     /^[1-9]\d{0,39}$/.test(value.inode)
   );
