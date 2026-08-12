@@ -644,7 +644,7 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
-  it("does not mute an existing primary output subscription on repeated inbound from the same chat", async () => {
+  it("keeps an existing primary output subscription on repeated inbound from the same chat", async () => {
     const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
     const sender = {
       send: mock(async () => {}),
@@ -687,11 +687,10 @@ describe("OmniConsumer channel context", () => {
     expect(subscriptions).toHaveLength(1);
     expect(subscriptions[0]).toMatchObject({
       role: "primary",
-      speechMode: "speak",
     });
     expect(subscriptions[0].outputAttachedAt).toBeDefined();
     expect(promptCalls).toHaveLength(2);
-    expect(promptCalls[1][1].prompt).toContain("source_speech=speak");
+    expect(promptCalls[1][1].prompt).not.toContain("[session surface");
   });
 
   it("records consumer lag from plugin received timestamps in channel traces", async () => {
@@ -808,7 +807,7 @@ describe("OmniConsumer channel context", () => {
     });
   });
 
-  it("renders attached input origin hints with attach-as-output guidance", async () => {
+  it("leaves session-surface instructions to the central dispatcher", async () => {
     const sessionKey = "agent:main:whatsapp:main:group:120363424772797713";
     const primaryChat = actualDbUpsertChat({
       channel: "whatsapp",
@@ -868,11 +867,9 @@ describe("OmniConsumer channel context", () => {
     });
     expect(promptCalls).toHaveLength(1);
     const [, prompt] = promptCalls[0];
-    expect(prompt.prompt).toContain(`[session surfaces] session=dev source_chat=${inputChat?.id}`);
-    expect(prompt.prompt).toContain("source_speech=muted");
-    expect(prompt.prompt).toContain(`ravi sessions unmute dev --chat ${inputChat?.id}`);
-    expect(prompt.prompt).toContain("Do not mention mute, unmute, attach, subscriptions, routing, or output mechanics");
-    expect(prompt.prompt).not.toContain("ravi sessions focus");
+    expect(prompt.prompt).not.toContain("[session surface");
+    expect(prompt.prompt).not.toContain("ravi sessions unmute");
+    expect(actualRouterSessionsModule.findSessionByAttachedChat(inputChat!.id)?.sessionKey).toBe(sessionKey);
   });
 
   it("stores inbound DM messages and runs contact intake before no-route return", async () => {

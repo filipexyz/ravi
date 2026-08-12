@@ -4319,13 +4319,6 @@ public struct SessionsNamespace: Sendable {
     return try await transport.call(groupSegments: ["sessions"], command: "list", body: requestBody, as: SessionsListReturn.self)
   }
 
-  public func mute(_ nameOrKey: String, _ options: SessionsMuteOptions = .init()) async throws -> SessionsMuteReturn {
-    var requestBody: [String: RaviJSON] = [:]
-    requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
-    try options.encodeBody(into: &requestBody)
-    return try await transport.call(groupSegments: ["sessions"], command: "mute", body: requestBody, as: SessionsMuteReturn.self)
-  }
-
   public func prune(_ options: SessionsPruneOptions = .init()) async throws -> SessionsPruneReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
@@ -4418,13 +4411,6 @@ public struct SessionsNamespace: Sendable {
     requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["sessions"], command: "trace", body: requestBody, as: SessionsTraceReturn.self)
-  }
-
-  public func unmute(_ nameOrKey: String, _ options: SessionsUnmuteOptions = .init()) async throws -> SessionsUnmuteReturn {
-    var requestBody: [String: RaviJSON] = [:]
-    requestBody["nameOrKey"] = try RaviJSON.fromEncodable(nameOrKey)
-    try options.encodeBody(into: &requestBody)
-    return try await transport.call(groupSegments: ["sessions"], command: "unmute", body: requestBody, as: SessionsUnmuteReturn.self)
   }
 
   public func visibility(_ nameOrKey: String) async throws -> SessionsVisibilityReturn {

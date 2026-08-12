@@ -1340,7 +1340,6 @@ export class GroupCommands {
           attachedByType: "system",
           attachedReason: "whatsapp.group.create",
           setOutputTarget: true,
-          speechMode: "speak",
         });
         jsonPayload.session = {
           status: "created",

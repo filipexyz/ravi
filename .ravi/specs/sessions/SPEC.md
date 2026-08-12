@@ -72,9 +72,10 @@ Sessions do NOT own:
 
 - A session MUST always belong to exactly one agent.
 - A session MUST have a stable `session_key`. Renaming the canonical `session_name` MUST NOT rewrite `session_key`.
-- A session MAY have one or more attached chats (see `sessions/attach`). Each active subscription has an independent speech mode: `speak` or `muted`. The original `session_chat_bindings` row identifies the primary chat for legacy compatibility.
-- A session MUST have at most one default attached output chat. Output delivery MUST prefer the current source chat when its subscription has `speech=speak`; otherwise it MUST resolve to the default output attachment when that subscription has `speech=speak`. The inbound source chat MUST NOT be used as an implicit output fallback when it is not an active speak-enabled subscription.
-- If a response has neither a speak-enabled source subscription nor a speak-enabled default output attachment, it MUST NOT emit externally.
+- A session MAY have one or more attached chats (see `sessions/attach`). The original `session_chat_bindings` row identifies the primary chat for legacy compatibility.
+- A physical provider turn MUST keep one immutable reply surface. Different chats and threads MUST be serialized into separate turns.
+- An inbound turn MUST reply to its attached source chat or thread. The default output attachment is used only when a turn has no inbound source.
+- An unattached inbound source or a source-less turn without a default output MUST NOT emit externally.
 - `ravi sessions send` and related inter-session commands inject prompt/context into a Ravi session. They MUST NOT be documented as direct external channel delivery primitives. Visible outbound channel delivery belongs to the session response path or to explicit channel/media/outbound commands.
 - Session reset MUST clear provider continuity state (per `runtime/session-continuity`) but MUST NOT silently drop attach subscriptions — those are routing/wiring, not provider state.
 - `ravi sessions set-effort <session> <level>` MUST persist an effort override using `none|minimal|low|medium|high|xhigh|max|ultra`; `clear` MUST remove only the session override.
@@ -133,7 +134,7 @@ Agents MUST consult `ravi sessions actions --json` before using a conversational
 - Confusing `session_key` identity with `session_name` (display) — leads to broken routing when a session is renamed.
 - Treating `session_chat_bindings` as "the only chat" instead of "the primary chat" — blocks multi-input attach.
 - Reintroducing `focus` as a separate primitive instead of using `attach` as the output attachment.
-- Falling back to inbound source for output after attach lands — causes sessions to reply in the wrong chat.
+- Mutating the active turn source when a later chat message arrives — causes cross-channel routing leaks.
 - Mentioning a conversational tool in the prompt without exposing it through `ravi sessions actions --json`.
 - Marking a not-yet-implemented action as available instead of `planned`.
 - Widening an empty chat scope to every message authored by the session's agent.

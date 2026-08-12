@@ -92,8 +92,10 @@ export interface RuntimeHostStreamingSession {
   pendingWake: boolean;
   /** Queue of messages - stays in queue until turn completes without interrupt */
   pendingMessages: RuntimeUserMessage[];
-  /** Current response source for routing */
+  /** Immutable reply source for the current physical provider turn. Set only when that turn starts. */
   currentSource?: RuntimeMessageTarget;
+  /** Immutable resolved output target for the current turn; null means the turn must not emit externally. */
+  currentReplyTarget?: RuntimeMessageTarget | null;
   /** Provider-neutral channel backend identity for the currently executing turn. */
   currentChannelBackend?: ChannelBackendPromptMetadata;
   /** Runtime model currently assigned to this live stream */

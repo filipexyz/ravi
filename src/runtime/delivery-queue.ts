@@ -9,7 +9,9 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import type { MessageActorMetadata, RaviCommandPromptMetadata, RuntimeLaunchPrompt } from "./message-types.js";
+import { combineSessionSurfacePromptContents } from "./session-surface-hint.js";
 import type { RuntimePromptMessage } from "./types.js";
+import { isSameRuntimeTurnSurface, runtimeTurnSurfaceKey } from "./turn-surface.js";
 
 const log = logger.child("runtime:delivery-queue");
 
@@ -67,7 +69,16 @@ export function prepareRuntimeInterruptSuccessor(
   const successors = session.pendingMessages.filter(
     (message) => !message.pendingId || !activePendingIds.has(message.pendingId),
   );
-  const eligible = successors.filter(
+  const activeSource =
+    session.currentSource ??
+    session.pendingMessages.find(
+      (message) => message.pendingId !== undefined && activePendingIds.has(message.pendingId),
+    )?.launchPrompt?.source;
+  const nextSurfaceIndex = successors.findIndex(
+    (message) => !isSameRuntimeTurnSurface(activeSource, message.launchPrompt?.source),
+  );
+  const sameSurfaceSuccessors = nextSurfaceIndex < 0 ? successors : successors.slice(0, nextSurfaceIndex);
+  const eligible = sameSurfaceSuccessors.filter(
     (message) =>
       shouldInterruptRuntimeForIncoming(
         sessionName,
@@ -312,26 +323,39 @@ export function getDeliverableRuntimeMessages(
   const firstIsolatedTurnIndex = deliverable.findIndex((message) =>
     hasIsolatedRuntimeTurnEnvelope(message.launchPrompt),
   );
-  if (firstIsolatedTurnIndex === 0) {
-    return deliverable.slice(0, 1);
-  }
-  if (firstIsolatedTurnIndex > 0) {
-    return deliverable.slice(0, firstIsolatedTurnIndex);
-  }
+  const envelopeBounded =
+    firstIsolatedTurnIndex === 0
+      ? deliverable.slice(0, 1)
+      : firstIsolatedTurnIndex > 0
+        ? deliverable.slice(0, firstIsolatedTurnIndex)
+        : deliverable;
+
+  if (envelopeBounded.length <= 1) return envelopeBounded;
 
   // An ambiguously stashed turn keeps its original delivery identity. Messages
   // that arrived later must wait for that turn to reconcile instead of being
   // folded into a different prompt and accidentally acknowledged with it.
-  const firstIsReplay = deliverable[0]?.replay === true;
+  const firstIsReplay = envelopeBounded[0]?.replay === true;
+  let replayBounded: RuntimeUserMessage[];
   if (!firstIsReplay) {
-    const firstReplayIndex = deliverable.findIndex((message) => message.replay === true);
-    return firstReplayIndex < 0 ? deliverable : deliverable.slice(0, firstReplayIndex);
+    const firstReplayIndex = envelopeBounded.findIndex((message) => message.replay === true);
+    replayBounded = firstReplayIndex < 0 ? envelopeBounded : envelopeBounded.slice(0, firstReplayIndex);
+  } else {
+    const firstReplayId = envelopeBounded[0]?.clientMessageId;
+    const nextAttemptIndex = envelopeBounded.findIndex(
+      (message) =>
+        message.replay !== true || (firstReplayId !== undefined && message.clientMessageId !== firstReplayId),
+    );
+    replayBounded = nextAttemptIndex < 0 ? envelopeBounded : envelopeBounded.slice(0, nextAttemptIndex);
   }
-  const firstReplayId = deliverable[0]?.clientMessageId;
-  const nextAttemptIndex = deliverable.findIndex(
-    (message) => message.replay !== true || (firstReplayId !== undefined && message.clientMessageId !== firstReplayId),
+
+  // One physical provider turn has one immutable reply surface. Adjacent
+  // messages from another chat or thread wait for the following turn.
+  const firstSurface = runtimeTurnSurfaceKey(replayBounded[0]?.launchPrompt?.source);
+  const nextSurfaceIndex = replayBounded.findIndex(
+    (message, index) => index > 0 && runtimeTurnSurfaceKey(message.launchPrompt?.source) !== firstSurface,
   );
-  return nextAttemptIndex < 0 ? deliverable : deliverable.slice(0, nextAttemptIndex);
+  return nextSurfaceIndex < 0 ? replayBounded : replayBounded.slice(0, nextSurfaceIndex);
 }
 
 export function hasDeliverableRuntimeMessages(sessionName: string, session: RuntimeHostStreamingSession): boolean {
@@ -463,7 +487,7 @@ export async function* createRuntimeMessageGenerator({
     }
     session.currentTurnPendingIds = [...yieldedIds];
     session.currentTurnSuperseded = false;
-    const combined = deliverable.map((m) => m.message.content).join("\n\n");
+    const combined = combineSessionSurfacePromptContents(deliverable.map((message) => message.message.content));
     log.info("Generator: yielding", {
       sessionName,
       count: deliverable.length,

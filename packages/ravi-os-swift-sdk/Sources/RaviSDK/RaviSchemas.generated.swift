@@ -57947,34 +57947,6 @@ public enum RaviSchemas {
   }
   """#
 
-  public static let SessionsMuteInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "chat": {
-        "description": "Canonical chat id (or platform/normalized id)",
-        "type": "string"
-      },
-      "nameOrKey": {
-        "description": "Session name or key",
-        "type": "string"
-      }
-    },
-    "required": [
-      "nameOrKey"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let SessionsMuteReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {},
-    "type": "object"
-  }
-  """#
-
   public static let SessionsPruneInputSchema = #"""
   {
     "additionalProperties": false,
@@ -59890,34 +59862,6 @@ public enum RaviSchemas {
   """#
 
   public static let SessionsTraceReturnSchema = #"""
-  {
-    "additionalProperties": {},
-    "properties": {},
-    "type": "object"
-  }
-  """#
-
-  public static let SessionsUnmuteInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "chat": {
-        "description": "Canonical chat id (or platform/normalized id)",
-        "type": "string"
-      },
-      "nameOrKey": {
-        "description": "Session name or key",
-        "type": "string"
-      }
-    },
-    "required": [
-      "nameOrKey"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let SessionsUnmuteReturnSchema = #"""
   {
     "additionalProperties": {},
     "properties": {},

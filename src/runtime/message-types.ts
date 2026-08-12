@@ -213,6 +213,8 @@ export interface PromptMessage {
   _resumeStashedMessages?: boolean;
   /** Internal daemon restart resume envelope used for idempotent fan-out. */
   _daemonRestartResume?: DaemonRestartResumePromptMetadata;
+  /** Internal marker preventing duplicate session-surface instructions after durable replay. */
+  _sessionSurfaceHint?: boolean;
   /** Provider-neutral identity for prompts accepted through a channel backend. */
   _channelBackend?: ChannelBackendPromptMetadata;
   /** Validated provenance asserted by a trusted internal producer; not a credential. */

@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "4ae8093208999bd5"
+    "version": "38af99ae073f84d7"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -71426,60 +71426,6 @@
         ]
       }
     },
-    "/api/v1/sessions/mute": {
-      "post": {
-        "operationId": "sessions.mute",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "chat": {
-                    "description": "Canonical chat id (or platform/normalized id)",
-                    "type": "string"
-                  },
-                  "nameOrKey": {
-                    "description": "Session name or key",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "nameOrKey"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {},
-                  "properties": {},
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success — body conforms to the `@Returns` schema."
-          },
-          "400": {
-            "description": "Bad request — body failed schema validation."
-          },
-          "500": {
-            "description": "Internal error."
-          }
-        },
-        "security": [],
-        "summary": "Keep a subscribed chat as listen-only for a session",
-        "tags": [
-          "sessions"
-        ]
-      }
-    },
     "/api/v1/sessions/prune": {
       "post": {
         "operationId": "sessions.prune",
@@ -73987,60 +73933,6 @@
         },
         "security": [],
         "summary": "Read the SQLite session trace timeline",
-        "tags": [
-          "sessions"
-        ]
-      }
-    },
-    "/api/v1/sessions/unmute": {
-      "post": {
-        "operationId": "sessions.unmute",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "chat": {
-                    "description": "Canonical chat id (or platform/normalized id)",
-                    "type": "string"
-                  },
-                  "nameOrKey": {
-                    "description": "Session name or key",
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "nameOrKey"
-                ],
-                "type": "object"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": {},
-                  "properties": {},
-                  "type": "object"
-                }
-              }
-            },
-            "description": "Success — body conforms to the `@Returns` schema."
-          },
-          "400": {
-            "description": "Bad request — body failed schema validation."
-          },
-          "500": {
-            "description": "Internal error."
-          }
-        },
-        "security": [],
-        "summary": "Allow a subscribed chat to receive session responses",
         "tags": [
           "sessions"
         ]

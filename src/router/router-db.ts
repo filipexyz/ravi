@@ -1033,7 +1033,6 @@ export interface UpsertSessionParticipantInput {
 // see .ravi/specs/sessions/attach/SPEC.md
 export type SubscriptionRole = "primary" | "input" | "mirror";
 export type AttachedByType = "user" | "agent" | "system";
-export type SubscriptionSpeechMode = "muted" | "speak";
 
 export interface SessionChatSubscriptionRecord {
   id: number;
@@ -1044,9 +1043,6 @@ export interface SessionChatSubscriptionRecord {
   attachedById?: string;
   attachedReason?: string;
   contextSnapshotAtAttach?: Record<string, unknown>;
-  speechMode: SubscriptionSpeechMode;
-  speechUpdatedAt?: number;
-  speechReason?: string;
   outputAttachedAt?: number;
   createdAt: number;
   updatedAt: number;
@@ -1061,9 +1057,6 @@ export interface CreateSessionChatSubscriptionInput {
   attachedById?: string | null;
   attachedReason?: string | null;
   contextSnapshotAtAttach?: Record<string, unknown> | null;
-  speechMode?: SubscriptionSpeechMode | null;
-  speechUpdatedAt?: number | null;
-  speechReason?: string | null;
   outputAttachedAt?: number | null;
 }
 
@@ -1671,9 +1664,6 @@ function getDb(): Database {
       attached_by_id TEXT,
       attached_reason TEXT,
       context_snapshot_at_attach_json TEXT,
-      speech_mode TEXT NOT NULL DEFAULT 'speak' CHECK(speech_mode IN ('muted', 'speak')),
-      speech_updated_at INTEGER,
-      speech_reason TEXT,
       output_attached_at INTEGER,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
@@ -3851,18 +3841,6 @@ function ensureIdentityChatMigrations(database: Database): void {
   // so old focus rows cannot surprise a future downgrade/inspection path.
   database.exec("DROP TABLE IF EXISTS session_focus");
   ensureColumn(database, "session_chat_subscriptions", "output_attached_at", "INTEGER");
-  const hadSubscriptionSpeechMode = tableHasColumn(database, "session_chat_subscriptions", "speech_mode");
-  ensureColumn(
-    database,
-    "session_chat_subscriptions",
-    "speech_mode",
-    "TEXT NOT NULL DEFAULT 'speak' CHECK(speech_mode IN ('muted', 'speak'))",
-  );
-  ensureColumn(database, "session_chat_subscriptions", "speech_updated_at", "INTEGER");
-  ensureColumn(database, "session_chat_subscriptions", "speech_reason", "TEXT");
-  if (!hadSubscriptionSpeechMode) {
-    backfillSessionSpeechModes(database);
-  }
 
   // sessions/attach: enforce the spec invariant that a chat can only be
   // active in one session at a time. Order matters here:
@@ -3900,14 +3878,6 @@ function ensureIdentityChatMigrations(database: Database): void {
  */
 export function dbRunSessionAttachMigrationForTests(): void {
   const db = getDb();
-  ensureColumn(
-    db,
-    "session_chat_subscriptions",
-    "speech_mode",
-    "TEXT NOT NULL DEFAULT 'speak' CHECK(speech_mode IN ('muted', 'speak'))",
-  );
-  ensureColumn(db, "session_chat_subscriptions", "speech_updated_at", "INTEGER");
-  ensureColumn(db, "session_chat_subscriptions", "speech_reason", "TEXT");
   dedupeSessionChatSubscriptions(db);
   db.exec("DROP INDEX IF EXISTS idx_session_chat_subscriptions_active_chat");
   db.exec(
@@ -3965,13 +3935,11 @@ function backfillSessionChatSubscriptionsFromBindings(database: Database): void 
       INSERT INTO session_chat_subscriptions (
         session_key, chat_id, role, attached_by_type, attached_by_id,
         attached_reason, context_snapshot_at_attach_json,
-        speech_mode, speech_updated_at, speech_reason,
         output_attached_at, created_at, updated_at, detached_at
       )
       SELECT
         ranked.session_key, ranked.chat_id, 'primary', 'system', NULL,
         'backfill-from-session-chat-bindings', NULL,
-        'speak', ?, 'backfill-from-session-chat-bindings',
         ?, ?, ?, NULL
       FROM (
         SELECT b.session_key,
@@ -3990,7 +3958,7 @@ function backfillSessionChatSubscriptionsFromBindings(database: Database): void 
         )
     `,
     )
-    .run(now, now, now, now);
+    .run(now, now, now);
   if (result.changes > 0) {
     log.info("Backfilled session_chat_subscriptions from session_chat_bindings", { rows: result.changes });
   }
@@ -4003,9 +3971,6 @@ function backfillSessionOutputAttachments(database: Database): void {
       `
       UPDATE session_chat_subscriptions
       SET output_attached_at = ?,
-          speech_mode = 'speak',
-          speech_updated_at = ?,
-          speech_reason = 'backfill-output-attachment',
           updated_at = ?
       WHERE id IN (
         SELECT id FROM (
@@ -4030,33 +3995,9 @@ function backfillSessionOutputAttachments(database: Database): void {
       )
     `,
     )
-    .run(now, now, now);
-  if (result.changes > 0) {
-    log.info("Backfilled session output attachments", { rows: result.changes });
-  }
-}
-
-function backfillSessionSpeechModes(database: Database): void {
-  const now = Date.now();
-  const result = database
-    .prepare(
-      `
-      UPDATE session_chat_subscriptions
-      SET speech_mode = CASE
-            WHEN output_attached_at IS NOT NULL OR role = 'primary' THEN 'speak'
-            ELSE 'muted'
-          END,
-          speech_updated_at = ?,
-          speech_reason = 'backfill-from-attach-output',
-          updated_at = ?
-      WHERE detached_at IS NULL
-    `,
-    )
     .run(now, now);
   if (result.changes > 0) {
-    log.info("Backfilled session subscription speech modes", {
-      rows: result.changes,
-    });
+    log.info("Backfilled session output attachments", { rows: result.changes });
   }
 }
 
@@ -8623,9 +8564,6 @@ interface SessionChatSubscriptionRow {
   attached_by_id: string | null;
   attached_reason: string | null;
   context_snapshot_at_attach_json: string | null;
-  speech_mode: string | null;
-  speech_updated_at: number | null;
-  speech_reason: string | null;
   output_attached_at: number | null;
   created_at: number;
   updated_at: number;
@@ -8642,9 +8580,6 @@ function rowToSessionChatSubscription(row: SessionChatSubscriptionRow): SessionC
     attachedById: row.attached_by_id ?? undefined,
     attachedReason: row.attached_reason ?? undefined,
     contextSnapshotAtAttach: parseJsonRecord(row.context_snapshot_at_attach_json),
-    speechMode: row.speech_mode === "muted" ? "muted" : "speak",
-    speechUpdatedAt: row.speech_updated_at ?? undefined,
-    speechReason: row.speech_reason ?? undefined,
     outputAttachedAt: row.output_attached_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -8663,8 +8598,6 @@ export function dbCreateSessionChatSubscription(
 ): SessionChatSubscriptionRecord {
   const db = getDb();
   const now = Date.now();
-  const speechMode = input.speechMode ?? "speak";
-  const speechUpdatedAt = input.speechUpdatedAt ?? now;
   const existingActive = db
     .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
     .get(input.sessionKey, input.chatId) as SessionChatSubscriptionRow | undefined;
@@ -8692,9 +8625,6 @@ export function dbCreateSessionChatSubscription(
             attached_by_id = ?,
             attached_reason = ?,
             context_snapshot_at_attach_json = ?,
-            speech_mode = ?,
-            speech_updated_at = ?,
-            speech_reason = ?,
             output_attached_at = ?,
             updated_at = ?
         WHERE session_key = ? AND chat_id = ? AND detached_at IS NOT NULL
@@ -8706,9 +8636,6 @@ export function dbCreateSessionChatSubscription(
         input.attachedById ?? null,
         input.attachedReason ?? null,
         cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
-        speechMode,
-        speechUpdatedAt,
-        input.speechReason ?? null,
         input.outputAttachedAt ?? null,
         now,
         input.sessionKey,
@@ -8733,10 +8660,9 @@ export function dbCreateSessionChatSubscription(
         INSERT INTO session_chat_subscriptions (
           session_key, chat_id, role, attached_by_type, attached_by_id,
           attached_reason, context_snapshot_at_attach_json,
-          speech_mode, speech_updated_at, speech_reason,
           output_attached_at, created_at, updated_at, detached_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
         `,
       )
       .run(
@@ -8747,9 +8673,6 @@ export function dbCreateSessionChatSubscription(
         input.attachedById ?? null,
         input.attachedReason ?? null,
         cleanJsonRecord(input.contextSnapshotAtAttach ?? null),
-        speechMode,
-        speechUpdatedAt,
-        input.speechReason ?? null,
         input.outputAttachedAt ?? null,
         now,
         now,
@@ -8880,53 +8803,18 @@ export function dbSetSessionOutputAttachment(sessionKey: string, chatId: string)
         `
         UPDATE session_chat_subscriptions
         SET output_attached_at = ?,
-            speech_mode = 'speak',
-            speech_updated_at = ?,
-            speech_reason = 'output-attachment',
             updated_at = ?
         WHERE session_key = ?
           AND chat_id = ?
           AND detached_at IS NULL
       `,
       )
-      .run(now, now, now, sessionKey, chatId);
+      .run(now, now, sessionKey, chatId);
     if (result.changes === 0) {
       throw new Error(`Cannot attach output: chat ${chatId} is not active in session ${sessionKey}`);
     }
   })();
 
-  const row = db
-    .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
-    .get(sessionKey, chatId) as SessionChatSubscriptionRow;
-  return rowToSessionChatSubscription(row);
-}
-
-export function dbSetSessionChatSpeechMode(
-  sessionKey: string,
-  chatId: string,
-  speechMode: SubscriptionSpeechMode,
-  reason?: string | null,
-): SessionChatSubscriptionRecord {
-  const db = getDb();
-  const now = Date.now();
-  const result = db
-    .prepare(
-      `
-      UPDATE session_chat_subscriptions
-      SET speech_mode = ?,
-          speech_updated_at = ?,
-          speech_reason = ?,
-          output_attached_at = CASE WHEN ? = 'muted' THEN NULL ELSE output_attached_at END,
-          updated_at = ?
-      WHERE session_key = ?
-        AND chat_id = ?
-        AND detached_at IS NULL
-    `,
-    )
-    .run(speechMode, now, reason ?? null, speechMode, now, sessionKey, chatId);
-  if (result.changes === 0) {
-    throw new Error(`Cannot set speech mode: chat ${chatId} is not active in session ${sessionKey}`);
-  }
   const row = db
     .prepare("SELECT * FROM session_chat_subscriptions WHERE session_key = ? AND chat_id = ? AND detached_at IS NULL")
     .get(sessionKey, chatId) as SessionChatSubscriptionRow;
@@ -8945,9 +8833,6 @@ export function dbClearSessionOutputAttachment(sessionKey: string, chatId?: stri
           `
           UPDATE session_chat_subscriptions
           SET output_attached_at = NULL,
-              speech_mode = 'muted',
-              speech_updated_at = ?,
-              speech_reason = 'output-detached',
               updated_at = ?
           WHERE session_key = ?
             AND chat_id = ?
@@ -8955,22 +8840,19 @@ export function dbClearSessionOutputAttachment(sessionKey: string, chatId?: stri
             AND output_attached_at IS NOT NULL
         `,
         )
-        .run(now, now, sessionKey, chatId)
+        .run(now, sessionKey, chatId)
     : getDb()
         .prepare(
           `
           UPDATE session_chat_subscriptions
           SET output_attached_at = NULL,
-              speech_mode = 'muted',
-              speech_updated_at = ?,
-              speech_reason = 'output-detached',
               updated_at = ?
           WHERE session_key = ?
             AND detached_at IS NULL
             AND output_attached_at IS NOT NULL
         `,
         )
-        .run(now, now, sessionKey);
+        .run(now, sessionKey);
   return result.changes > 0;
 }
 

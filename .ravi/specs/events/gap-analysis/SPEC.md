@@ -147,13 +147,12 @@ These subjects are emitted by publishers but are NOT in the trigger catalog:
 
 ## Gap Analysis By Domain
 
-### 1. Sessions — Attach / Mute / Unmute / Detach / Rename
+### 1. Sessions — Attach / Detach / Rename
 
 **Current state:** Session reset/delete/prune emit `ravi.session.{op}.{phase}` audit events. Session abort emits `ravi.session.abort`. Model changes emit `ravi.session.model.changed`.
 
 **Gaps:**
 - **No `session.attached` event** when a chat is wired to a session via `sessions attach`.
-- **No `session.muted` / `session.unmuted` event** when speech mode changes.
 - **No `session.detached` event** when a subscription is removed.
 - **No `session.renamed` event** when a session's canonical name changes.
 - **No `session.created` event** — covered by #165, not a duplicate recommendation.
@@ -337,14 +336,13 @@ The `ravi.triggers.refresh` signal carries no payload beyond `{}` and is not sui
 
 **Proposed subjects:**
 - `ravi.session.attach.created` — chat attached to session
-- `ravi.session.attach.speech.changed` — mute/unmute
 - `ravi.session.attach.removed` — chat detached
 
 **Owner:** sessions
 **Classification:** `public-trigger`
 **Replay:** yes — attach mutations affect routing and output behavior.
 **Trigger catalog:** yes — routines can react to session wiring changes.
-**Privacy risk:** Low. Payload contains session key, chat id, speech mode. No message content.
+**Privacy risk:** Low. Payload contains session key and chat id. No message content.
 
 **Payload sketch:**
 
@@ -352,8 +350,7 @@ The `ravi.triggers.refresh` signal carries no payload beyond `{}` and is not sui
 {
   sessionKey: string;
   chatId: string;
-  event: "attached" | "muted" | "unmuted" | "detached";
-  speechMode?: "speak" | "muted";
+  event: "attached" | "detached";
   isOutputTarget?: boolean;
   actor: string;     // "cli" | "agent" | "system"
   reason?: string;
@@ -796,7 +793,7 @@ Note: `agent.created` and `agent.deleted` are covered by #165.
 The following 7 candidates are recommended for follow-up implementation after human review:
 
 1. **Trigger lifecycle events** (#1) — quick-win, high value, safe payload, directly improves routine observability.
-2. **Session attach/mute/unmute/detach events** (#2) — quick-win, high value, required by `sessions/attach` spec.
+2. **Session attach/detach events** (#2) — quick-win, high value, required by `sessions/attach` spec.
 3. **Cron run lifecycle events** (#4) — quick-win, high value, safe payload, directly improves scheduling observability.
 4. **Permission changed events** (#3) — quick-win, high value, but requires privacy review before trigger catalog exposure.
 5. **Instance lifecycle events** (#5) — quick-win, moderate value, strengthens channel management observability.

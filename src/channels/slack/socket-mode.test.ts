@@ -639,7 +639,6 @@ describe("Slack Socket Mode routing", () => {
       expect.objectContaining({
         chatId: canonicalChatId,
         role: "primary",
-        speechMode: "speak",
       }),
     ]);
   });
@@ -837,7 +836,6 @@ describe("Slack Socket Mode routing", () => {
       role: "primary",
       attachedByType: "system",
       attachedReason: "test-owner",
-      speechMode: "speak",
       setOutputTarget: true,
     });
 
@@ -899,7 +897,6 @@ describe("Slack Socket Mode routing", () => {
       expect.objectContaining({
         chatId: chat.id,
         role: "primary",
-        speechMode: "speak",
       }),
     ]);
   });
@@ -1229,7 +1226,6 @@ describe("Slack Socket Mode routing", () => {
       expect.objectContaining({
         chatId: canonicalChatId,
         role: "primary",
-        speechMode: "speak",
       }),
     ]);
     expect(inboundEvents).toEqual([

@@ -23,6 +23,7 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { resolveSessionOutputTarget } from "./session-output-target.js";
 import {
   isRuntimeCredentialSessionCompatible,
   resolveRuntimeCredentialAttemptBinding,
@@ -473,7 +474,7 @@ export async function buildRuntimeStartRequest(
         (canResumeCredentialSession ? storedProviderSessionId : null) ??
         null,
       contextId: runtimeContext.contextId,
-      source: streamingSession.currentSource ?? resolvedSource ?? null,
+      source: streamingSession.currentSource ?? null,
       deliveryBarrier: firstMessage?.deliveryBarrier ?? null,
       deliveryBarrierSource: firstMessage?.deliveryBarrierSource ?? null,
       taskBarrierTaskId: firstMessage?.taskBarrierTaskId ?? null,
@@ -495,8 +496,7 @@ export async function buildRuntimeStartRequest(
     }
 
     const turnProvenance =
-      streamingSession.currentTurnProvenance ??
-      classifyTurnProvenance({ source: streamingSession.currentSource ?? resolvedSource });
+      streamingSession.currentTurnProvenance ?? classifyTurnProvenance({ source: streamingSession.currentSource });
     const pendingIds = input.deliverableMessages
       .map((message) => message.pendingId)
       .filter((id): id is string => Boolean(id));
@@ -516,7 +516,7 @@ export async function buildRuntimeStartRequest(
           userPromptSha256: traceTurn.userPromptSha256,
           systemPromptSha256: traceTurn.systemPromptSha256,
           originKind: turnProvenance.origin,
-          source: streamingSession.currentSource ?? resolvedSource ?? null,
+          source: streamingSession.currentSource ?? null,
           turnProvenance,
           taskBarrierTaskId: firstMessage?.taskBarrierTaskId ?? null,
           deliveryBarrier: firstMessage?.deliveryBarrier ?? DEFAULT_DELIVERY_BARRIER,
@@ -569,11 +569,15 @@ export async function buildRuntimeStartRequest(
     session: streamingSession,
     stashedMessages,
     beforeTurnStart: (input) => {
-      const turnPrompt = resolveRuntimeTurnPrompt(input.deliverableMessages, prompt);
-      const turnSource = turnPrompt.source ?? resolvedSource;
-      if (turnSource) {
-        streamingSession.currentSource = turnSource;
-      }
+      const queuedTurnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
+      const turnPrompt = queuedTurnPrompt ?? prompt;
+      const turnSource = queuedTurnPrompt ? queuedTurnPrompt.source : resolvedSource;
+      streamingSession.currentSource = turnSource ? { ...turnSource } : undefined;
+      const replyResolution = resolveSessionOutputTarget({
+        sessionKey: dbSessionKey,
+        fallback: streamingSession.currentSource,
+      });
+      streamingSession.currentReplyTarget = replyResolution.target ? { ...replyResolution.target } : null;
       streamingSession.currentChannelBackend = turnPrompt._channelBackend;
       streamingSession.currentTurnProvenance = classifyTurnProvenance({
         prompt: turnPrompt,
@@ -635,15 +639,12 @@ export async function buildRuntimeStartRequest(
   };
 }
 
-function resolveRuntimeTurnPrompt(
-  deliverableMessages: RuntimeUserMessage[],
-  fallback: RuntimeLaunchPrompt,
-): RuntimeLaunchPrompt {
+function findRuntimeTurnPrompt(deliverableMessages: RuntimeUserMessage[]): RuntimeLaunchPrompt | undefined {
   for (let index = deliverableMessages.length - 1; index >= 0; index--) {
     const launchPrompt = deliverableMessages[index]?.launchPrompt;
     if (launchPrompt) return launchPrompt;
   }
-  return fallback;
+  return undefined;
 }
 
 function mergeProviderCredentialEnv(

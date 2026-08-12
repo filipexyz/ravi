@@ -57036,32 +57036,6 @@ export const SessionsListReturnSchema = {
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
-/** JSON Schema for the input body of `sessions.mute`. */
-export const SessionsMuteInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "chat": {
-      "description": "Canonical chat id (or platform/normalized id)",
-      "type": "string"
-    },
-    "nameOrKey": {
-      "description": "Session name or key",
-      "type": "string"
-    }
-  },
-  "required": [
-    "nameOrKey"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `sessions.mute`. */
-export const SessionsMuteReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
 /** JSON Schema for the input body of `sessions.prune`. */
 export const SessionsPruneInputSchema = {
   "additionalProperties": false,
@@ -58939,32 +58913,6 @@ export const SessionsTraceInputSchema = {
 
 /** JSON Schema for the return shape of `sessions.trace`. */
 export const SessionsTraceReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the input body of `sessions.unmute`. */
-export const SessionsUnmuteInputSchema = {
-  "additionalProperties": false,
-  "properties": {
-    "chat": {
-      "description": "Canonical chat id (or platform/normalized id)",
-      "type": "string"
-    },
-    "nameOrKey": {
-      "description": "Session name or key",
-      "type": "string"
-    }
-  },
-  "required": [
-    "nameOrKey"
-  ],
-  "type": "object"
-} as const satisfies SdkJsonSchema;
-
-/** JSON Schema for the return shape of `sessions.unmute`. */
-export const SessionsUnmuteReturnSchema = {
   "additionalProperties": {},
   "properties": {},
   "type": "object"
