@@ -9,6 +9,8 @@ const DEFAULT_MAX_ATTEMPTS = 8;
 const DEFAULT_BASE_BACKOFF_MS = 1_000;
 const DEFAULT_MAX_BACKOFF_MS = 5 * 60_000;
 const DEFAULT_EXECUTOR_UNAVAILABLE_DELAY_MS = 10_000;
+const DEFAULT_CLAIM_SCAN_FACTOR = 4;
+const MAX_CLAIM_SCAN_LIMIT = 256;
 const SESSION_MUTATION_LOST = Symbol("provider-state-cleanup-session-mutation-lost");
 const RUNTIME_TURN_ATTEMPT_STATUSES = ["running", "complete", "failed", "interrupted", "timeout", "aborted"] as const;
 
@@ -475,6 +477,13 @@ interface AttemptIdentityRow {
   completed_at: unknown;
 }
 
+interface CleanupClaimScanCursor {
+  createdAt: number;
+  id: string;
+}
+
+const cleanupClaimScanCursors = new WeakMap<Database, CleanupClaimScanCursor>();
+
 function deadLetterInvalidProvisionalOwner(
   database: Database,
   task: CleanupTaskRow,
@@ -545,10 +554,21 @@ function provisionalTaskIsClaimable(database: Database, task: CleanupTaskRow, no
 export function claimProviderStateCleanupTasks(input: {
   now?: number;
   limit: number;
+  scanLimit?: number;
   leaseDurationMs: number;
 }): ProviderStateCleanupTask[] {
   const now = requireTimestamp(input.now ?? Date.now(), "now");
-  if (!Number.isSafeInteger(input.limit) || input.limit < 1) throw new Error("limit must be a positive safe integer");
+  if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > MAX_CLAIM_SCAN_LIMIT) {
+    throw new Error(`limit must be between 1 and ${MAX_CLAIM_SCAN_LIMIT}`);
+  }
+  const scanLimit = input.scanLimit ?? Math.min(MAX_CLAIM_SCAN_LIMIT, input.limit * DEFAULT_CLAIM_SCAN_FACTOR);
+  if (
+    !Number.isSafeInteger(scanLimit) ||
+    scanLimit < input.limit ||
+    scanLimit > MAX_CLAIM_SCAN_LIMIT
+  ) {
+    throw new Error(`scanLimit must be between limit and ${MAX_CLAIM_SCAN_LIMIT}`);
+  }
   if (!Number.isSafeInteger(input.leaseDurationMs) || input.leaseDurationMs < 1) {
     throw new Error("leaseDurationMs must be a positive safe integer");
   }
@@ -556,19 +576,37 @@ export function claimProviderStateCleanupTasks(input: {
   return executeWrite(
     getDb(),
     (database) => {
-      const candidates = database
-        .prepare(
-          `SELECT * FROM provider_state_cleanup_tasks
-           WHERE (
-             (status IN ('published','failed') AND next_attempt_at <= ?)
-             OR (status = 'leased' AND leased_until <= ?)
-           )
-           ORDER BY created_at, id`,
-        )
-        .all(now, now) as CleanupTaskRow[];
+      const readPage = (cursor: CleanupClaimScanCursor | undefined, limit: number): CleanupTaskRow[] =>
+        database
+          .prepare(
+            `SELECT * FROM provider_state_cleanup_tasks
+             WHERE (
+               (status IN ('published','failed') AND next_attempt_at <= ?)
+               OR (status = 'leased' AND leased_until <= ?)
+             )
+             ${cursor ? "AND (created_at > ? OR (created_at = ? AND id > ?))" : ""}
+             ORDER BY created_at, id
+             LIMIT ?`,
+          )
+          .all(
+            now,
+            now,
+            ...(cursor ? [cursor.createdAt, cursor.createdAt, cursor.id] : []),
+            limit,
+          ) as CleanupTaskRow[];
+      let cursor = cleanupClaimScanCursors.get(database);
+      let candidates = readPage(cursor, scanLimit);
+      if (cursor && candidates.length === 0) {
+        cursor = undefined;
+        cleanupClaimScanCursors.delete(database);
+        candidates = readPage(undefined, scanLimit);
+      }
       const claimed: ProviderStateCleanupTask[] = [];
+      let remainingScanBudget = scanLimit;
       for (const task of candidates) {
-        if (claimed.length >= input.limit) break;
+        if (remainingScanBudget <= 0) break;
+        remainingScanBudget -= 1;
+        cleanupClaimScanCursors.set(database, { createdAt: task.created_at, id: task.id });
         if (task.operation === "provisional_exact" && !provisionalTaskIsClaimable(database, task, now)) continue;
         const leaseId = `cleanup_lease_${randomUUID()}`;
         const result = database
@@ -587,6 +625,7 @@ export function claimProviderStateCleanupTasks(input: {
           .prepare("SELECT * FROM provider_state_cleanup_tasks WHERE id = ?")
           .get(task.id) as CleanupTaskRow;
         claimed.push(rowToTask(row));
+        if (claimed.length >= input.limit) break;
       }
       return claimed;
     },

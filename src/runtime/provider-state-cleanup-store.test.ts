@@ -433,6 +433,35 @@ describe("provider state cleanup durable store", () => {
     }
   });
 
+  it("bounds each claim scan while reaching ready work past many active provisional owners", () => {
+    for (let index = 0; index < 24; index += 1) {
+      const attemptId = `attempt-active-budget-${index}`;
+      const sessionKey = `session-active-budget-${index}`;
+      createAttempt({ attemptId, sessionKey, leaseExpiresAt: 10_000 });
+      const task = enqueuePreparedProviderStateCleanupTask({
+        locator: locator(index + 1, `active-${index}`),
+        owner: { attemptId, sessionKey, bootEpoch: `boot-${attemptId}` },
+        now: index,
+      });
+      publishTask(task.id);
+    }
+    const ready = enqueuePublishedProviderStateCleanupTask({
+      operation: "delete_state",
+      locator: locator(100, "ready"),
+      now: 100,
+    });
+
+    const claims = Array.from({ length: 7 }, () =>
+      claimProviderStateCleanupTasks({ now: 500, limit: 1, scanLimit: 4, leaseDurationMs: 100 }),
+    );
+    expect(claims.flat()).toEqual([expect.objectContaining({ id: ready.id, status: "leased" })]);
+    expect(
+      getDb()
+        .prepare("SELECT COUNT(*) AS count FROM provider_state_cleanup_tasks WHERE status = 'leased'")
+        .get(),
+    ).toEqual({ count: 1 });
+  });
+
   it("reclaims expired leases and rejects stale completion", () => {
     const task = enqueuePublishedProviderStateCleanupTask({
       operation: "delete_state",

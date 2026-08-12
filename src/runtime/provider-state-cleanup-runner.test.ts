@@ -232,6 +232,37 @@ describe("provider cleanup executor registry and runner", () => {
     expect(execute).toHaveBeenCalledTimes(1);
   });
 
+  it("aborts an active executor before stop waits and requeues without finalizing", async () => {
+    const task = enqueue();
+    let entered!: () => void;
+    const executorEntered = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const registry = new ProviderStateCleanupExecutorRegistry();
+    registry.registerExecutor("test-provider", "delete_state", async (_task, { signal }) => {
+      entered();
+      await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      return { complete: true };
+    });
+    const runner = new ProviderStateCleanupRunner({
+      registry,
+      claimLimit: 1,
+      leaseDurationMs: 1_000,
+      now: () => 200,
+    });
+
+    const starting = runner.start();
+    await executorEntered;
+    await runner.stop();
+    await starting;
+
+    expect(
+      getDb()
+        .prepare("SELECT status, lease_id, leased_until FROM provider_state_cleanup_tasks WHERE id = ?")
+        .get(task.id),
+    ).toEqual({ status: "failed", lease_id: null, leased_until: null });
+  });
+
   it("renews a running executor lease and aborts without finalizing after lease loss", async () => {
     const task = enqueue();
     let now = 200;
@@ -326,5 +357,54 @@ describe("provider cleanup executor registry and runner", () => {
       .run(KIMI_CODE_PROVIDER_ID, JSON.stringify({ ...params, reservationId: "host-only" }), session.sessionKey);
 
     expect(registry.locatorOwnershipFor(KIMI_CODE_PROVIDER_ID)?.(locatorJson, getDb())).toBe(true);
+  });
+
+  it("bounds Kimi ownership candidates by the exact host session id and fails closed on inconsistent metadata", () => {
+    const registry = new ProviderStateCleanupExecutorRegistry();
+    installProviderStateCleanupExecutors(registry);
+    const ownership = registry.locatorOwnershipFor(KIMI_CODE_PROVIDER_ID)!;
+    const targetSessionId = "00000000-0000-4000-8000-000000000098";
+    const targetParams = {
+      schemaVersion: 1 as const,
+      provider: KIMI_CODE_PROVIDER_ID,
+      model: "kimi-for-coding",
+      sessionId: targetSessionId,
+      revision: 1,
+      cwd: stateDir!,
+      workspaceIdentity: { realpath: stateDir!, device: "1", inode: "2" },
+      sessionFile: join(stateDir!, "runtime", "kimi-code", "sessions", targetSessionId, "revision-1.json"),
+      lastCommittedTurnId: "turn-1",
+    };
+    const locatorJson = serializeKimiCodeCleanupLocator({ params: targetParams });
+
+    for (let index = 0; index < 128; index += 1) {
+      const unrelated = getOrCreateSession(`unrelated-kimi-${index}`, "agent-a", stateDir!);
+      getDb()
+        .prepare(
+          "UPDATE sessions SET runtime_provider = ?, runtime_session_display_id = ?, runtime_session_json = ? WHERE session_key = ?",
+        )
+        .run(KIMI_CODE_PROVIDER_ID, `unrelated-${index}`, JSON.stringify({ invalid: true }), unrelated.sessionKey);
+    }
+    const inconsistent = getOrCreateSession("inconsistent-kimi", "agent-a", stateDir!);
+    getDb()
+      .prepare(
+        "UPDATE sessions SET runtime_provider = ?, runtime_session_display_id = ?, runtime_session_json = ? WHERE session_key = ?",
+      )
+      .run(KIMI_CODE_PROVIDER_ID, "different-session-id", JSON.stringify(targetParams), inconsistent.sessionKey);
+
+    expect(ownership(locatorJson, getDb())).toBe(false);
+
+    const owned = getOrCreateSession("exact-owned-kimi", "agent-a", stateDir!);
+    getDb()
+      .prepare(
+        "UPDATE sessions SET runtime_provider = ?, runtime_session_display_id = ?, runtime_session_json = ? WHERE session_key = ?",
+      )
+      .run(
+        KIMI_CODE_PROVIDER_ID,
+        targetSessionId,
+        JSON.stringify({ ...targetParams, hostMetadata: { source: "router" } }),
+        owned.sessionKey,
+      );
+    expect(ownership(locatorJson, getDb())).toBe(true);
   });
 });

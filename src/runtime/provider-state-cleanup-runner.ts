@@ -25,6 +25,7 @@ import {
   listKimiCodePublishIntents,
   readKimiCodePublishIntent,
   removeKimiCodePublishIntent,
+  parseKimiCodeCleanupLocator,
   serializeKimiCodeCleanupLocator,
   type KimiCodePublishIntentCursor,
 } from "./kimi-code-state.js";
@@ -35,6 +36,7 @@ const DEFAULT_CLAIM_LIMIT = 8;
 const DEFAULT_RECONCILE_LIMIT = 32;
 const DEFAULT_LEASE_DURATION_MS = 30_000;
 const DEFAULT_INTERVAL_MS = 10_000;
+const KIMI_OWNERSHIP_CANDIDATE_LIMIT = 16;
 
 export interface ProviderStateCleanupExecutorResult {
   complete: boolean;
@@ -164,8 +166,10 @@ export class ProviderStateCleanupRunner {
   private readonly onDrain: ((result: ProviderStateCleanupDrainResult) => void) | undefined;
   private timer: unknown;
   private active = false;
+  private stopping = false;
   private starting: Promise<void> | undefined;
   private inFlight: Promise<void> | undefined;
+  private readonly activeExecutorControllers = new Set<AbortController>();
 
   constructor(options: ProviderStateCleanupRunnerOptions) {
     this.registry = options.registry;
@@ -193,6 +197,7 @@ export class ProviderStateCleanupRunner {
     if (this.starting) return this.starting;
     if (this.active) return;
     this.active = true;
+    this.stopping = false;
     const startup = (async () => {
       this.registry.activate();
       await this.requestBoundedDrain();
@@ -216,10 +221,12 @@ export class ProviderStateCleanupRunner {
 
   async stop(): Promise<void> {
     this.active = false;
+    this.stopping = true;
     if (this.timer !== undefined) {
       this.cancel(this.timer);
       this.timer = undefined;
     }
+    for (const controller of this.activeExecutorControllers) controller.abort();
     await this.inFlight;
   }
 
@@ -245,6 +252,10 @@ export class ProviderStateCleanupRunner {
     for (const task of tasks) {
       const leaseId = task.leaseId;
       if (!leaseId) continue;
+      if (this.stopping) {
+        if (requeueIncompleteProviderStateCleanupTask(task.id, leaseId, this.now())) result.requeued += 1;
+        continue;
+      }
       const executor = this.registry.executorFor(task);
       if (!executor) {
         if (
@@ -260,6 +271,7 @@ export class ProviderStateCleanupRunner {
         continue;
       }
       const abortController = new AbortController();
+      this.activeExecutorControllers.add(abortController);
       let leaseLost = false;
       const leaseHeartbeat = this.scheduleLease(() => {
         try {
@@ -281,21 +293,25 @@ export class ProviderStateCleanupRunner {
       }, this.leaseRenewIntervalMs);
       try {
         const execution = await executor(task, { signal: abortController.signal });
-        this.cancelLease(leaseHeartbeat);
         if (leaseLost) continue;
         const finishedAt = this.now();
-        if (!execution.complete) {
-          requeueIncompleteProviderStateCleanupTask(task.id, leaseId, finishedAt);
-          result.requeued += 1;
+        if (abortController.signal.aborted || !execution.complete) {
+          if (requeueIncompleteProviderStateCleanupTask(task.id, leaseId, finishedAt)) result.requeued += 1;
         } else if (completeProviderStateCleanupTask({ id: task.id, leaseId, now: finishedAt })) {
           result.completed += 1;
         }
       } catch (error) {
-        this.cancelLease(leaseHeartbeat);
         if (leaseLost) continue;
+        if (abortController.signal.aborted) {
+          if (requeueIncompleteProviderStateCleanupTask(task.id, leaseId, this.now())) result.requeued += 1;
+          continue;
+        }
         const code = error instanceof ProviderStateCleanupTaskError ? error.code : "unknown";
         failProviderStateCleanupTask({ id: task.id, leaseId, errorCode: code, now: this.now() });
         result.failed += 1;
+      } finally {
+        this.cancelLease(leaseHeartbeat);
+        this.activeExecutorControllers.delete(abortController);
       }
     }
     return result;
@@ -305,6 +321,7 @@ export class ProviderStateCleanupRunner {
     if (this.inFlight) return this.inFlight;
     const drain = (async () => {
       await this.reconcileOnce();
+      if (!this.active) return;
       const result = await this.drainOnce();
       this.onDrain?.(result);
     })();
@@ -372,16 +389,38 @@ function installKimiCodeIntentReconciler(registry: ProviderStateCleanupExecutorR
 /** Install built-in providers before reconciliation, draining, or runtime intake. */
 export function installProviderStateCleanupExecutors(registry: ProviderStateCleanupExecutorRegistry): void {
   registry.registerLocatorOwnership(KIMI_CODE_PROVIDER_ID, (locatorJson, database) => {
-    const rows = database
+    let sessionId: string;
+    try {
+      sessionId = parseKimiCodeCleanupLocator(locatorJson).sessionId;
+    } catch {
+      return false;
+    }
+    let candidates = database
       .prepare(
-        "SELECT runtime_session_json FROM sessions WHERE runtime_provider = ? AND runtime_session_json IS NOT NULL",
+        `SELECT runtime_session_json FROM sessions
+         WHERE runtime_provider = ? AND runtime_session_display_id = ? AND runtime_session_json IS NOT NULL
+         LIMIT ?`,
       )
-      .all(KIMI_CODE_PROVIDER_ID) as Array<{ runtime_session_json: string }>;
-    return rows.some((row) => {
+      .all(KIMI_CODE_PROVIDER_ID, sessionId, KIMI_OWNERSHIP_CANDIDATE_LIMIT + 1) as Array<{
+      runtime_session_json: string;
+    }>;
+    if (candidates.length === 0) {
+      candidates = database
+        .prepare(
+          `SELECT runtime_session_json FROM sessions
+           WHERE runtime_provider = ? AND runtime_session_display_id IS NULL AND runtime_session_json IS NOT NULL
+           LIMIT ?`,
+        )
+        .all(KIMI_CODE_PROVIDER_ID, KIMI_OWNERSHIP_CANDIDATE_LIMIT + 1) as Array<{
+        runtime_session_json: string;
+      }>;
+    }
+    if (candidates.length > KIMI_OWNERSHIP_CANDIDATE_LIMIT) return true;
+    return candidates.some((row) => {
       try {
         return serializeKimiCodeCleanupLocator({ params: JSON.parse(row.runtime_session_json) }) === locatorJson;
       } catch {
-        return false;
+        return true;
       }
     });
   });
