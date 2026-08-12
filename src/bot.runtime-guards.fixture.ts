@@ -68,6 +68,7 @@ type RuntimePlugin = {
 
 type SessionState = {
   sessionKey: string;
+  lifecycleGeneration?: number;
   name?: string;
   agentId: string;
   agentCwd: string;
@@ -123,15 +124,18 @@ let calculateCostImpl: (
 ) => TestCostResult = () => null;
 const dbInsertCostEventMock = mock((_event: Record<string, unknown>) => {});
 
-const clearProviderSession = mock((sessionKey: string) => {
-  const session = sessions.get(sessionKey);
-  if (!session) return;
-  session.runtimeProvider = undefined;
-  session.runtimeSessionParams = undefined;
-  session.runtimeSessionDisplayId = undefined;
-  session.providerSessionId = undefined;
-  session.sdkSessionId = undefined;
-});
+const clearProviderSessionIfUnchanged = mock(
+  (expected: Pick<SessionState, "sessionKey" | "lifecycleGeneration">): boolean => {
+    const session = sessions.get(expected.sessionKey);
+    if (!session || session.lifecycleGeneration !== expected.lifecycleGeneration) return false;
+    session.runtimeProvider = undefined;
+    session.runtimeSessionParams = undefined;
+    session.runtimeSessionDisplayId = undefined;
+    session.providerSessionId = undefined;
+    session.sdkSessionId = undefined;
+    return true;
+  },
+);
 
 function resetRuntimeDoubles(): void {
   runtimeStartCalls = [];
@@ -295,6 +299,7 @@ function getOrCreateSessionState(
 ): SessionState {
   const existing = sessions.get(sessionKey);
   if (existing) {
+    existing.lifecycleGeneration ??= 1;
     const agentChanged = existing.agentId !== agentId || existing.agentCwd !== agentCwd;
     existing.agentId = agentId;
     existing.agentCwd = agentCwd;
@@ -311,6 +316,7 @@ function getOrCreateSessionState(
 
   const created: SessionState = {
     sessionKey,
+    lifecycleGeneration: defaults?.lifecycleGeneration ?? 1,
     name: defaults?.name ?? sessionKey,
     agentId,
     agentCwd,
@@ -362,16 +368,21 @@ mock.module("./router/index.js", () => ({
   ...actualRouterIndexModule,
   getOrCreateSession: (key: string, agentId: string, agentCwd: string, defaults?: Partial<SessionState>) =>
     getOrCreateSessionState(key, agentId, agentCwd, defaults),
-  getSession: (key: string) => sessions.get(key) ?? null,
+  getSession: (key: string) => {
+    const session = sessions.get(key);
+    if (session) session.lifecycleGeneration ??= 1;
+    return session ?? null;
+  },
   getSessionByName: (name: string) => {
     for (const session of sessions.values()) {
       if ((session.name ?? session.sessionKey) === name) {
+        session.lifecycleGeneration ??= 1;
         return session;
       }
     }
     return null;
   },
-  clearProviderSession,
+  clearProviderSessionIfUnchanged,
   updateProviderSession: mock(
     (
       sessionKey: string,
@@ -807,7 +818,7 @@ describe("RaviBot runtime guards", () => {
   beforeEach(async () => {
     emittedEvents.length = 0;
     sessions.clear();
-    clearProviderSession.mockClear();
+    clearProviderSessionIfUnchanged.mockClear();
     delete process.env.RAVI_BIN;
     activeProvider = "claude";
     resetRuntimeDoubles();
@@ -842,7 +853,9 @@ describe("RaviBot runtime guards", () => {
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(clearProviderSession).toHaveBeenCalledWith(sessionKey);
+    expect(clearProviderSessionIfUnchanged).toHaveBeenCalledWith(
+      expect.objectContaining({ sessionKey, lifecycleGeneration: 1 }),
+    );
     expect(runtimeStartCalls).toHaveLength(1);
     expect(runtimeStartCalls[0]?.resume).toBeUndefined();
     expect(sessions.get(sessionKey)?.runtimeProvider).toBe("codex");
@@ -1995,7 +2008,7 @@ describe("RaviBot streaming session lifecycle", () => {
   beforeEach(async () => {
     emittedEvents.length = 0;
     sessions.clear();
-    clearProviderSession.mockClear();
+    clearProviderSessionIfUnchanged.mockClear();
     activeProvider = "claude";
     resetRuntimeDoubles();
     saveMessageImpl = () => {};
