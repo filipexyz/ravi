@@ -402,7 +402,15 @@ mock.module("./router/index.js", () => ({
   ),
   updateRuntimeProviderState: mock(
     (
-      sessionKey: string,
+      expected: Pick<
+        SessionState,
+        | "sessionKey"
+        | "lifecycleGeneration"
+        | "runtimeProvider"
+        | "sdkSessionId"
+        | "runtimeSessionDisplayId"
+        | "runtimeSessionParams"
+      >,
       provider: RuntimeProviderId,
       options?: {
         providerSessionId?: string;
@@ -410,15 +418,29 @@ mock.module("./router/index.js", () => ({
         runtimeSessionDisplayId?: string;
       },
     ) => {
-      const session = sessions.get(sessionKey);
-      if (!session) return;
+      const session = sessions.get(expected.sessionKey);
+      if (!session) return { won: false, lifecycleGeneration: null };
+      if (typeof expected.lifecycleGeneration !== "number" || !Number.isSafeInteger(expected.lifecycleGeneration)) {
+        return { won: false, lifecycleGeneration: session.lifecycleGeneration ?? null };
+      }
+      if (session.lifecycleGeneration !== expected.lifecycleGeneration) {
+        return { won: false, lifecycleGeneration: session.lifecycleGeneration ?? null };
+      }
       session.runtimeProvider = provider;
+      const hasProviderSessionId =
+        typeof options?.providerSessionId === "string" && options.providerSessionId.trim().length > 0;
+      const hasRuntimeSessionParams = options?.runtimeSessionParams !== undefined;
+      const hasRuntimeSessionDisplayId = typeof options?.runtimeSessionDisplayId === "string";
+      if (!hasProviderSessionId && !hasRuntimeSessionParams && !hasRuntimeSessionDisplayId) {
+        return { won: true, lifecycleGeneration: expected.lifecycleGeneration };
+      }
       session.runtimeSessionParams = options?.runtimeSessionParams;
-      const providerSessionId = options?.providerSessionId;
+      const providerSessionId = options?.providerSessionId?.trim() || undefined;
       const displayId = options?.runtimeSessionDisplayId ?? providerSessionId;
       session.runtimeSessionDisplayId = displayId;
       session.providerSessionId = displayId;
       session.sdkSessionId = providerSessionId;
+      return { won: true, lifecycleGeneration: expected.lifecycleGeneration };
     },
   ),
   updateTokens: mock(() => {}),
@@ -988,9 +1010,7 @@ describe("RaviBot runtime guards", () => {
     await (bot as any).handlePromptImmediate(sessionKey, makePrompt("hello"));
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(clearProviderSessionIfUnchanged).toHaveBeenCalledWith(
-      expect.objectContaining({ sessionKey, lifecycleGeneration: 1 }),
-    );
+    expect(sessions.get(sessionKey)?.lifecycleGeneration).toBe(2);
     expect(runtimeStartCalls).toHaveLength(1);
     expect(runtimeStartCalls[0]?.resume).toBeUndefined();
     expect(sessions.get(sessionKey)?.runtimeProvider).toBe("codex");
