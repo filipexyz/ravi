@@ -21,10 +21,21 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, sep } from "node:path";
 import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js";
 import {
+  KIMI_CODE_STATE_ERROR_CODES,
+  KimiCodeStateError,
   cleanupKimiCodeSessionState,
+  classifyKimiCodeStateError,
   commitKimiCodeSessionState,
   createKimiCodeSessionId,
+  executeKimiCodeProvisionalExactCleanup,
   loadKimiCodeSessionState,
+  parseKimiCodeCleanupLocator,
+  listKimiCodePublishIntents,
+  prepareKimiCodeSessionState,
+  projectKimiCodeCleanupLocator,
+  readKimiCodePublishIntent,
+  removeKimiCodePublishIntent,
+  serializeKimiCodeCleanupLocator,
 } from "./kimi-code-state.js";
 import {
   emptySkillVisibilitySnapshot,
@@ -32,6 +43,7 @@ import {
   markLoadedFromSkillGate,
 } from "./skill-visibility.js";
 import type { KimiCodeConversationMessage } from "./kimi-code-turn.js";
+import type { KimiCodeStateErrorCode } from "./kimi-code-state.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { RuntimeSessionState } from "./types.js";
 
@@ -104,6 +116,502 @@ async function firstCommit() {
 function cloneSession(session: RuntimeSessionState): RuntimeSessionState {
   return { ...session, params: { ...session.params } };
 }
+
+describe("Kimi Code state failure and cleanup locator contract", () => {
+  test("exposes only the closed non-secret state codes and maps filesystem codes without reading messages", () => {
+    expect(KIMI_CODE_STATE_ERROR_CODES).toEqual([
+      "state_missing",
+      "io_transient",
+      "state_busy",
+      "invalid_locator",
+      "schema_mismatch",
+      "binding_mismatch",
+      "foreign_root",
+      "reparse_detected",
+      "credential_detected",
+      "unknown",
+    ]);
+
+    const secret = "must-not-escape";
+    const cases: Array<[unknown, KimiCodeStateErrorCode]> = [
+      [{ code: "ENOENT", message: secret }, "state_missing"],
+      [{ code: "EIO", message: secret }, "io_transient"],
+      [{ code: "EBUSY", message: secret }, "state_busy"],
+      [{ code: "UNRECOGNIZED", message: secret }, "unknown"],
+      [new Error(secret), "unknown"],
+    ];
+    for (const [cause, expectedCode] of cases) {
+      const classified = classifyKimiCodeStateError(cause);
+      expect(classified).toBeInstanceOf(KimiCodeStateError);
+      expect(classified.code).toBe(expectedCode);
+      expect(classified.message).not.toContain(secret);
+      expect("cause" in classified).toBe(false);
+    }
+
+    for (const code of KIMI_CODE_STATE_ERROR_CODES) {
+      const error = new KimiCodeStateError(code);
+      expect(error.code).toBe(code);
+      expect(error.message).not.toContain(secret);
+    }
+  });
+
+  test("projects canonical Kimi locator bytes while excluding every source-only field", async () => {
+    const committed = await firstCommit();
+    const source: RuntimeSessionState = {
+      ...committed.session,
+      params: {
+        ...committed.session.params,
+        runtimeCredential: { credentialId: "host-only" },
+        skillVisibility: { loadedSkills: ["host-only"] },
+        arbitrary: { nested: "host-only" },
+      },
+    };
+
+    const projected = projectKimiCodeCleanupLocator(source, committed.env);
+    const serialized = serializeKimiCodeCleanupLocator(source, committed.env);
+    expect(serialized).toBe(JSON.stringify(projected));
+    expect(Object.keys(projected)).toEqual([
+      "schemaVersion",
+      "provider",
+      "model",
+      "sessionId",
+      "revision",
+      "cwd",
+      "workspaceIdentity",
+      "sessionFile",
+      "lastCommittedTurnId",
+    ]);
+    expect(serialized).not.toContain("runtimeCredential");
+    expect(serialized).not.toContain("skillVisibility");
+    expect(serialized).not.toContain("arbitrary");
+    expect(Buffer.byteLength(serialized, "utf8")).toBeLessThanOrEqual(16 * 1024);
+    expect(parseKimiCodeCleanupLocator(serialized, committed.env)).toEqual(projected);
+  });
+
+  test("rejects noncanonical or invalid Kimi cleanup locators with typed semantic codes", async () => {
+    const committed = await firstCommit();
+    const canonical = JSON.parse(serializeKimiCodeCleanupLocator(committed.session, committed.env)) as Record<
+      string,
+      unknown
+    >;
+    const mutations: Array<[Record<string, unknown> | string, KimiCodeStateErrorCode]> = [
+      [{ ...canonical, provider: "other" }, "invalid_locator"],
+      [{ ...canonical, schemaVersion: 2 }, "schema_mismatch"],
+      [{ ...canonical, sessionId: "not-a-uuid" }, "invalid_locator"],
+      [{ ...canonical, revision: 0 }, "invalid_locator"],
+      [{ ...canonical, sessionFile: join(committed.root, "outside.json") }, "foreign_root"],
+      [
+        { ...canonical, sessionFile: `${dirname(String(canonical.sessionFile))}${sep}..${sep}escape.json` },
+        "foreign_root",
+      ],
+      [{ ...canonical, lastCommittedTurnId: "" }, "invalid_locator"],
+      [{ ...canonical, unknown: true }, "invalid_locator"],
+      [`${JSON.stringify(canonical)} `, "invalid_locator"],
+    ];
+
+    for (const [value, expectedCode] of mutations) {
+      try {
+        parseKimiCodeCleanupLocator(typeof value === "string" ? value : JSON.stringify(value), committed.env);
+        throw new Error("expected locator rejection");
+      } catch (error) {
+        expect(error).toBeInstanceOf(KimiCodeStateError);
+        expect((error as KimiCodeStateError).code).toBe(expectedCode);
+      }
+    }
+  });
+});
+
+describe("Kimi Code prepared state publication", () => {
+  test("writes an exact redacted private intent and publishes synchronously exactly once", async () => {
+    const first = await firstCommit();
+    const prepared = await prepareKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-prepared",
+      messages: nativeMessages("prepared"),
+      previousSnapshot: first.snapshot,
+      taskId: "task-prepared-01",
+      ownerAttemptId: "attempt-prepared-01",
+      env: first.env,
+    });
+    const finalPath = String(prepared.session.params?.sessionFile);
+
+    expect(existsSync(finalPath)).toBe(false);
+    expect(prepared.locatorJson).toBe(serializeKimiCodeCleanupLocator(prepared.session, first.env));
+    expect(prepared.taskId).toBe("task-prepared-01");
+    expect(prepared.ownerAttemptId).toBe("attempt-prepared-01");
+    const intents = await listKimiCodePublishIntents(first.env);
+    expect(intents).toEqual([prepared.intentPath]);
+    const intent = await readKimiCodePublishIntent(prepared.intentPath, first.env);
+    expect(Object.keys(intent)).toEqual(["schemaVersion", "locatorJson", "taskId", "ownerAttemptId"]);
+    expect(intent).toEqual({
+      schemaVersion: 1,
+      locatorJson: prepared.locatorJson,
+      taskId: prepared.taskId,
+      ownerAttemptId: prepared.ownerAttemptId,
+    });
+    const intentBytes = readFileSync(prepared.intentPath, "utf8");
+    expect(intentBytes).not.toContain("messages");
+    expect(intentBytes).not.toContain("reasoning");
+    expect(intentBytes).not.toContain(first.env.KIMI_API_KEY);
+    if (process.platform !== "win32") expect(lstatSync(prepared.intentPath).mode & 0o777).toBe(0o600);
+
+    const result = prepared.publish();
+    expect(result).toBeUndefined();
+    expect((result as unknown as { then?: unknown } | undefined)?.then).toBeUndefined();
+    expect(existsSync(finalPath)).toBe(true);
+    expect(existsSync(prepared.intentPath)).toBe(true);
+    expect(() => prepared.publish()).toThrow();
+
+    await removeKimiCodePublishIntent(prepared.intentPath, first.env);
+    expect(existsSync(prepared.intentPath)).toBe(false);
+    expect(existsSync(finalPath)).toBe(true);
+  });
+
+  test("validates bounded path-safe reservation identifiers before creating state", async () => {
+    const fixture = temporaryState();
+    const inputs = [
+      { taskId: "../escape", ownerAttemptId: "attempt-safe" },
+      { taskId: "task-safe", ownerAttemptId: "attempt/escape" },
+      { taskId: "x".repeat(129), ownerAttemptId: "attempt-safe" },
+      { taskId: "task-safe", ownerAttemptId: "" },
+    ];
+    for (const identifiers of inputs) {
+      await expect(
+        prepareKimiCodeSessionState({
+          sessionId: createKimiCodeSessionId(),
+          model: "k3",
+          cwd: fixture.cwd,
+          lastCommittedTurnId: "turn-invalid-id",
+          messages: nativeMessages("invalid-id"),
+          ...identifiers,
+          env: fixture.env,
+        }),
+      ).rejects.toMatchObject({ code: "invalid_locator" });
+    }
+    expect(existsSync(join(fixture.env.RAVI_STATE_DIR, "runtime", "kimi-code", "sessions"))).toBe(false);
+  });
+
+  test("retains only authoritative recovery evidence at each preparation and publication crash boundary", async () => {
+    const first = await firstCommit();
+    const base = {
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      messages: nativeMessages("crash-boundary"),
+      previousSnapshot: first.snapshot,
+      env: first.env,
+    };
+
+    await expect(
+      prepareKimiCodeSessionState({
+        ...base,
+        lastCommittedTurnId: "turn-before-intent-sync",
+        taskId: "task-before-intent-sync",
+        ownerAttemptId: "attempt-before-intent-sync",
+        faultInjection: {
+          beforeIntentSync: () => {
+            throw new Error("before intent sync");
+          },
+        },
+      }),
+    ).rejects.toThrow("before intent sync");
+    expect((await listKimiCodePublishIntents(first.env)).map((path) => basename(path))).not.toContain(
+      ".publish-intent-task-before-intent-sync.json",
+    );
+
+    await expect(
+      prepareKimiCodeSessionState({
+        ...base,
+        lastCommittedTurnId: "turn-after-intent-sync",
+        taskId: "task-after-intent-sync",
+        ownerAttemptId: "attempt-after-intent-sync",
+        faultInjection: {
+          afterIntentSync: () => {
+            throw new Error("after intent sync");
+          },
+        },
+      }),
+    ).rejects.toThrow("after intent sync");
+    const afterIntentPath = (await listKimiCodePublishIntents(first.env)).find((path) =>
+      path.endsWith(".publish-intent-task-after-intent-sync.json"),
+    );
+    expect(afterIntentPath).toBeDefined();
+    const afterIntent = await readKimiCodePublishIntent(afterIntentPath!, first.env);
+    const afterIntentLocator = parseKimiCodeCleanupLocator(afterIntent.locatorJson, first.env);
+    expect(existsSync(afterIntentLocator.sessionFile)).toBe(false);
+    expect(readdirSync(dirname(afterIntentPath!)).some((name) => name === ".prepared-task-after-intent-sync.tmp")).toBe(
+      true,
+    );
+
+    const afterLink = await prepareKimiCodeSessionState({
+      ...base,
+      lastCommittedTurnId: "turn-after-link",
+      taskId: "task-after-link",
+      ownerAttemptId: "attempt-after-link",
+      faultInjection: {
+        beforePublishDirectorySync: () => {
+          throw new Error("after link");
+        },
+      },
+    });
+    expect(() => afterLink.publish()).toThrow("after link");
+    expect(existsSync(String(afterLink.session.params?.sessionFile))).toBe(true);
+    expect(existsSync(afterLink.intentPath)).toBe(true);
+    expect(existsSync(afterLink.temporaryPath)).toBe(false);
+  }, 20_000);
+
+  test("discard before publication removes only its own temp and intent", async () => {
+    const first = await firstCommit();
+    const unrelated = join(dirname(String(first.session.params?.sessionFile)), "unrelated.keep");
+    writeFileSync(unrelated, "keep", { mode: 0o600 });
+    const prepared = await prepareKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-discard",
+      messages: nativeMessages("discard"),
+      previousSnapshot: first.snapshot,
+      taskId: "task-discard",
+      ownerAttemptId: "attempt-discard",
+      env: first.env,
+    });
+
+    await prepared.discard();
+
+    expect(existsSync(prepared.temporaryPath)).toBe(false);
+    expect(existsSync(prepared.intentPath)).toBe(false);
+    expect(existsSync(String(prepared.session.params?.sessionFile))).toBe(false);
+    expect(existsSync(String(first.session.params?.sessionFile))).toBe(true);
+    expect(existsSync(unrelated)).toBe(true);
+  });
+});
+
+describe("Kimi Code provisional exact cleanup", () => {
+  test("deletes only the exact provisional revision and matching recovery evidence", async () => {
+    const first = await firstCommit();
+    const prepared = await prepareKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-exact",
+      messages: nativeMessages("exact"),
+      previousSnapshot: first.snapshot,
+      taskId: "task-exact",
+      ownerAttemptId: "attempt-exact",
+      env: first.env,
+    });
+    prepared.publish();
+    const newer = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-newer-than-exact",
+      messages: nativeMessages("newer-than-exact"),
+      previousSnapshot: prepared.snapshot,
+      env: first.env,
+    });
+    const exactPath = String(prepared.session.params?.sessionFile);
+    let ownershipChecks = 0;
+
+    await executeKimiCodeProvisionalExactCleanup({
+      locatorJson: prepared.locatorJson,
+      taskId: prepared.taskId,
+      ownerAttemptId: prepared.ownerAttemptId,
+      env: first.env,
+      isLocatorOwned: () => {
+        ownershipChecks += 1;
+        expect(existsSync(exactPath)).toBe(true);
+        return false;
+      },
+    });
+
+    expect(ownershipChecks).toBe(1);
+    expect(existsSync(exactPath)).toBe(false);
+    expect(existsSync(prepared.intentPath)).toBe(false);
+    expect(existsSync(String(first.session.params?.sessionFile))).toBe(true);
+    expect(existsSync(String(newer.session.params?.sessionFile))).toBe(true);
+    expect(existsSync(dirname(exactPath))).toBe(true);
+
+    await executeKimiCodeProvisionalExactCleanup({
+      locatorJson: prepared.locatorJson,
+      taskId: prepared.taskId,
+      ownerAttemptId: prepared.ownerAttemptId,
+      env: first.env,
+      isLocatorOwned: () => {
+        throw new Error("must not inspect ownership after exact evidence is already gone");
+      },
+    });
+  });
+
+  test("cleans an unpublished matching temp but requires bound intent when any artifact exists", async () => {
+    const first = await firstCommit();
+    const prepared = await prepareKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-temp-only",
+      messages: nativeMessages("temp-only"),
+      previousSnapshot: first.snapshot,
+      taskId: "task-temp-only",
+      ownerAttemptId: "attempt-temp-only",
+      env: first.env,
+    });
+    await executeKimiCodeProvisionalExactCleanup({
+      locatorJson: prepared.locatorJson,
+      taskId: prepared.taskId,
+      ownerAttemptId: prepared.ownerAttemptId,
+      env: first.env,
+      isLocatorOwned: () => false,
+    });
+    expect(existsSync(prepared.temporaryPath)).toBe(false);
+    expect(existsSync(prepared.intentPath)).toBe(false);
+
+    const missingIntent = await prepareKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-missing-intent",
+      messages: nativeMessages("missing-intent"),
+      previousSnapshot: first.snapshot,
+      taskId: "task-missing-intent",
+      ownerAttemptId: "attempt-missing-intent",
+      env: first.env,
+    });
+    missingIntent.publish();
+    unlinkSync(missingIntent.intentPath);
+    await expect(
+      executeKimiCodeProvisionalExactCleanup({
+        locatorJson: missingIntent.locatorJson,
+        taskId: missingIntent.taskId,
+        ownerAttemptId: missingIntent.ownerAttemptId,
+        env: first.env,
+        isLocatorOwned: () => false,
+      }),
+    ).rejects.toMatchObject({ code: "state_missing" });
+    expect(existsSync(String(missingIntent.session.params?.sessionFile))).toBe(true);
+  });
+
+  test("fails closed before mutation for owned locators and mismatched task or attempt binding", async () => {
+    const first = await firstCommit();
+    const prepared = await prepareKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-owned",
+      messages: nativeMessages("owned"),
+      previousSnapshot: first.snapshot,
+      taskId: "task-owned",
+      ownerAttemptId: "attempt-owned",
+      env: first.env,
+    });
+    prepared.publish();
+    const exactPath = String(prepared.session.params?.sessionFile);
+
+    for (const mutation of [
+      { taskId: "task-other", ownerAttemptId: prepared.ownerAttemptId },
+      { taskId: prepared.taskId, ownerAttemptId: "attempt-other" },
+    ]) {
+      await expect(
+        executeKimiCodeProvisionalExactCleanup({
+          locatorJson: prepared.locatorJson,
+          ...mutation,
+          env: first.env,
+          isLocatorOwned: () => false,
+        }),
+      ).rejects.toMatchObject({ code: "binding_mismatch" });
+      expect(existsSync(exactPath)).toBe(true);
+      expect(existsSync(prepared.intentPath)).toBe(true);
+    }
+
+    await expect(
+      executeKimiCodeProvisionalExactCleanup({
+        locatorJson: prepared.locatorJson,
+        taskId: prepared.taskId,
+        ownerAttemptId: prepared.ownerAttemptId,
+        env: first.env,
+        isLocatorOwned: () => true,
+      }),
+    ).rejects.toMatchObject({ code: "state_busy" });
+    expect(existsSync(exactPath)).toBe(true);
+    expect(existsSync(prepared.intentPath)).toBe(true);
+  });
+
+  test("classifies foreign, binding, and reparse attacks without deleting exact or unrelated state", async () => {
+    const first = await firstCommit();
+    const prepared = await prepareKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-attacks",
+      messages: nativeMessages("attacks"),
+      previousSnapshot: first.snapshot,
+      taskId: "task-attacks",
+      ownerAttemptId: "attempt-attacks",
+      env: first.env,
+    });
+    prepared.publish();
+    const exactPath = String(prepared.session.params?.sessionFile);
+    const canonical = JSON.parse(prepared.locatorJson) as Record<string, unknown>;
+    const foreign = JSON.stringify({ ...canonical, sessionFile: join(first.root, "outside.json") });
+    const wrongRevision = JSON.stringify({ ...canonical, revision: Number(canonical.revision) + 1 });
+    await expect(
+      executeKimiCodeProvisionalExactCleanup({
+        locatorJson: foreign,
+        taskId: prepared.taskId,
+        ownerAttemptId: prepared.ownerAttemptId,
+        env: first.env,
+        isLocatorOwned: () => false,
+      }),
+    ).rejects.toMatchObject({ code: "foreign_root" });
+    await expect(
+      executeKimiCodeProvisionalExactCleanup({
+        locatorJson: wrongRevision,
+        taskId: prepared.taskId,
+        ownerAttemptId: prepared.ownerAttemptId,
+        env: first.env,
+        isLocatorOwned: () => false,
+      }),
+    ).rejects.toMatchObject({ code: "binding_mismatch" });
+
+    const outsideIntent = join(first.root, "outside-intent.json");
+    writeFileSync(outsideIntent, readFileSync(prepared.intentPath));
+    rmSync(prepared.intentPath);
+    let linked = false;
+    try {
+      symlinkSync(outsideIntent, prepared.intentPath, "file");
+      linked = true;
+    } catch {
+      copyFileSync(outsideIntent, prepared.intentPath);
+      const sessionDirectory = dirname(exactPath);
+      const outsideSessionDirectory = join(first.root, "outside-session-directory");
+      mkdirSync(outsideSessionDirectory);
+      for (const name of readdirSync(sessionDirectory)) {
+        copyFileSync(join(sessionDirectory, name), join(outsideSessionDirectory, name));
+      }
+      rmSync(sessionDirectory, { recursive: true });
+      try {
+        symlinkSync(outsideSessionDirectory, sessionDirectory, process.platform === "win32" ? "junction" : "dir");
+        linked = true;
+      } catch {
+        // The remaining foreign/binding assertions still run on hosts that deny every reparse primitive.
+      }
+    }
+    if (linked) {
+      await expect(
+        executeKimiCodeProvisionalExactCleanup({
+          locatorJson: prepared.locatorJson,
+          taskId: prepared.taskId,
+          ownerAttemptId: prepared.ownerAttemptId,
+          env: first.env,
+          isLocatorOwned: () => false,
+        }),
+      ).rejects.toMatchObject({ code: "reparse_detected" });
+      expect(existsSync(exactPath)).toBe(true);
+    }
+  });
+});
 
 describe("Kimi Code immutable session state", () => {
   test("creates random UUID sessions with the exact private locator fields", async () => {

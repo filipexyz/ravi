@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { closeSync, fsyncSync, linkSync, lstatSync, openSync, realpathSync, unlinkSync } from "node:fs";
 import { chmod, link, lstat, mkdir, open, readdir, realpath, rmdir, stat, unlink } from "node:fs/promises";
 import { isAbsolute, basename, dirname, join, parse, relative, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
@@ -6,13 +7,21 @@ import { promisify } from "node:util";
 import { getRaviStateDir } from "../utils/paths.js";
 import { KIMI_CODE_PROVIDER_ID } from "./kimi-code-models.js";
 import type { KimiCodeConversationMessage } from "./kimi-code-turn.js";
+import {
+  parseProviderStateCleanupLocator,
+  type ProviderStateCleanupLocator,
+  serializeProviderStateCleanupLocator,
+} from "./provider-state-cleanup-store.js";
 import type { RuntimeSessionState } from "./types.js";
 
 const KIMI_CODE_STATE_SCHEMA_VERSION = 1 as const;
 const KIMI_CODE_MAX_STATE_BYTES = 1 * 1024 * 1024;
 const KIMI_CODE_MAX_WORKSPACE_REALPATH_BYTES = 64 * 1024;
+const KIMI_CODE_MAX_INTENT_BYTES = 20 * 1024;
 const execFileAsync = promisify(execFile);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const RESERVATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
+const INTENT_FILENAME_PATTERN = /^\.publish-intent-([A-Za-z0-9][A-Za-z0-9._-]{0,127})\.json$/;
 const LOCATOR_KEYS = [
   "schemaVersion",
   "provider",
@@ -38,11 +47,69 @@ const SNAPSHOT_KEYS = [
   "messages",
 ] as const;
 const WORKSPACE_IDENTITY_KEYS = ["realpath", "device", "inode"] as const;
+const INTENT_KEYS = ["schemaVersion", "locatorJson", "taskId", "ownerAttemptId"] as const;
+
+export const KIMI_CODE_STATE_ERROR_CODES = [
+  "state_missing",
+  "io_transient",
+  "state_busy",
+  "invalid_locator",
+  "schema_mismatch",
+  "binding_mismatch",
+  "foreign_root",
+  "reparse_detected",
+  "credential_detected",
+  "unknown",
+] as const;
+
+export type KimiCodeStateErrorCode = (typeof KIMI_CODE_STATE_ERROR_CODES)[number];
+
+const KIMI_CODE_STATE_ERROR_MESSAGES: Record<KimiCodeStateErrorCode, string> = {
+  state_missing: "Kimi Code state is missing",
+  io_transient: "Kimi Code state filesystem operation failed transiently",
+  state_busy: "Kimi Code state is busy",
+  invalid_locator: "Kimi Code state locator is invalid",
+  schema_mismatch: "Kimi Code state schema is invalid",
+  binding_mismatch: "Kimi Code state binding does not match",
+  foreign_root: "Kimi Code state is outside its private root",
+  reparse_detected: "Kimi Code state path contains a reparse point",
+  credential_detected: "Kimi Code state contains configured credential material",
+  unknown: "Kimi Code state operation failed closed",
+};
+
+export class KimiCodeStateError extends Error {
+  readonly code: KimiCodeStateErrorCode;
+
+  constructor(code: KimiCodeStateErrorCode) {
+    super(KIMI_CODE_STATE_ERROR_MESSAGES[code]);
+    this.name = "KimiCodeStateError";
+    this.code = code;
+  }
+}
+
+export function classifyKimiCodeStateError(error: unknown): KimiCodeStateError {
+  if (error instanceof KimiCodeStateError) return error;
+  const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined;
+  if (code === "ENOENT") return new KimiCodeStateError("state_missing");
+  if (["EBUSY", "EAGAIN", "EWOULDBLOCK", "ETXTBSY"].includes(code ?? "")) {
+    return new KimiCodeStateError("state_busy");
+  }
+  if (["EIO", "ENOSPC", "EMFILE", "ENFILE", "ENOMEM", "EACCES", "EPERM"].includes(code ?? "")) {
+    return new KimiCodeStateError("io_transient");
+  }
+  return new KimiCodeStateError("unknown");
+}
 
 export interface KimiCodeWorkspaceIdentity {
   realpath: string;
   device: string;
   inode: string;
+}
+
+export interface KimiCodeCleanupLocator extends ProviderStateCleanupLocator {
+  schemaVersion: typeof KIMI_CODE_STATE_SCHEMA_VERSION;
+  provider: typeof KIMI_CODE_PROVIDER_ID;
+  workspaceIdentity: KimiCodeWorkspaceIdentity;
 }
 
 interface PrivatePermissionTarget {
@@ -91,59 +158,503 @@ export interface LoadKimiCodeSessionStateInput {
   env?: NodeJS.ProcessEnv;
 }
 
-export async function commitKimiCodeSessionState(
-  input: CommitKimiCodeSessionStateInput,
-): Promise<CommittedKimiCodeSessionState> {
+export interface PrepareKimiCodeSessionStateInput extends Omit<CommitKimiCodeSessionStateInput, "faultInjection"> {
+  taskId: string;
+  ownerAttemptId: string;
+  /** Test-only crash boundaries; production callers must omit it. */
+  faultInjection?: {
+    beforeIntentSync?: () => void | Promise<void>;
+    afterIntentSync?: () => void | Promise<void>;
+    beforePublishDirectorySync?: () => void;
+    observeAclProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void;
+  };
+}
+
+export interface KimiCodePublishIntent {
+  schemaVersion: typeof KIMI_CODE_STATE_SCHEMA_VERSION;
+  locatorJson: string;
+  taskId: string;
+  ownerAttemptId: string;
+}
+
+export interface PreparedKimiCodeSessionState extends CommittedKimiCodeSessionState {
+  locatorJson: string;
+  taskId: string;
+  ownerAttemptId: string;
+  intentPath: string;
+  temporaryPath: string;
+  publish: () => void;
+  discard: () => Promise<void>;
+}
+
+export interface ExecuteKimiCodeProvisionalExactCleanupInput {
+  locatorJson: string;
+  taskId: string;
+  ownerAttemptId: string;
+  env?: NodeJS.ProcessEnv;
+  isLocatorOwned: (locator: Readonly<KimiCodeCleanupLocator>) => boolean | Promise<boolean>;
+}
+
+export async function executeKimiCodeProvisionalExactCleanup(
+  input: ExecuteKimiCodeProvisionalExactCleanupInput,
+): Promise<void> {
+  try {
+    await executeKimiCodeProvisionalExactCleanupInternal(input);
+  } catch (error) {
+    throw classifyKimiCodeStateError(error);
+  }
+}
+
+async function executeKimiCodeProvisionalExactCleanupInternal(
+  input: ExecuteKimiCodeProvisionalExactCleanupInput,
+): Promise<void> {
+  validateReservationId(input.taskId, input.env);
+  validateReservationId(input.ownerAttemptId, input.env);
+  const locator = parseKimiCodeCleanupLocator(input.locatorJson, input.env);
+  const { root, sessionDirectory } = resolveKimiCodeLocatorPath(locator, input.env);
+  const intentPath = join(sessionDirectory, `.publish-intent-${input.taskId}.json`);
+  const temporaryPath = join(sessionDirectory, `.prepared-${input.taskId}.tmp`);
+
+  if (!(await validateKimiCodeSessionDirectory(root, sessionDirectory))) return;
+
+  const finalInfo = await inspectExactArtifact(locator.sessionFile);
+  const intentInfo = await inspectExactArtifact(intentPath);
+  const temporaryInfo = await inspectExactArtifact(temporaryPath);
+  if (!finalInfo && !intentInfo && !temporaryInfo) return;
+  if (!intentInfo) {
+    const hasOtherIntent = (await readdir(sessionDirectory)).some((name) => INTENT_FILENAME_PATTERN.test(name));
+    throw new KimiCodeStateError(hasOtherIntent ? "binding_mismatch" : "state_missing");
+  }
+
+  const intent = await readKimiCodePublishIntent(intentPath, input.env);
+  if (
+    intent.locatorJson !== input.locatorJson ||
+    intent.taskId !== input.taskId ||
+    intent.ownerAttemptId !== input.ownerAttemptId
+  ) {
+    throw new KimiCodeStateError("binding_mismatch");
+  }
+  if (finalInfo) await readLocatorBoundSnapshot(locator, input.env);
+  if (temporaryInfo) await readLocatorBoundSnapshot(locator, input.env, temporaryPath);
+  let owned: boolean;
+  try {
+    owned = await input.isLocatorOwned(locator);
+  } catch (error) {
+    throw classifyKimiCodeStateError(error);
+  }
+  if (owned) throw new KimiCodeStateError("state_busy");
+
+  await unlinkExactArtifact(locator.sessionFile);
+  await unlinkExactArtifact(temporaryPath);
+  await unlinkExactArtifact(intentPath);
+  await syncDirectory(sessionDirectory);
+}
+
+export async function prepareKimiCodeSessionState(
+  input: PrepareKimiCodeSessionStateInput,
+): Promise<PreparedKimiCodeSessionState> {
+  validateReservationId(input.taskId, input.env);
+  validateReservationId(input.ownerAttemptId, input.env);
+  const { snapshot, serialized, root, sessionDirectory } = await buildKimiCodeSnapshot(input);
+  await ensurePrivateSessionDirectory(root, sessionDirectory, input.faultInjection?.observeAclProcessEnv);
+
+  const finalPath = join(sessionDirectory, revisionFilename(snapshot.revision));
+  const temporaryPath = join(sessionDirectory, `.prepared-${input.taskId}.tmp`);
+  const intentPath = join(sessionDirectory, `.publish-intent-${input.taskId}.json`);
+  const session = sessionStateForSnapshot(snapshot, finalPath);
+  const locatorJson = serializeKimiCodeCleanupLocator(session, input.env);
+  const intent: KimiCodePublishIntent = {
+    schemaVersion: KIMI_CODE_STATE_SCHEMA_VERSION,
+    locatorJson,
+    taskId: input.taskId,
+    ownerAttemptId: input.ownerAttemptId,
+  };
+  const serializedIntent = JSON.stringify(intent);
+  if (Buffer.byteLength(serializedIntent, "utf8") > KIMI_CODE_MAX_INTENT_BYTES) {
+    throw new KimiCodeStateError("schema_mismatch");
+  }
+
+  let intentDurable = false;
+  try {
+    const temporaryFile = await open(temporaryPath, "wx", 0o600);
+    try {
+      await applyPrivatePermissions(
+        [{ path: temporaryPath, directory: false }],
+        input.faultInjection?.observeAclProcessEnv,
+      );
+      await temporaryFile.writeFile(serialized, "utf8");
+      await temporaryFile.sync();
+    } finally {
+      await temporaryFile.close();
+    }
+
+    const intentFile = await open(intentPath, "wx", 0o600);
+    try {
+      await applyPrivatePermissions(
+        [{ path: intentPath, directory: false }],
+        input.faultInjection?.observeAclProcessEnv,
+      );
+      await intentFile.writeFile(serializedIntent, "utf8");
+      await input.faultInjection?.beforeIntentSync?.();
+      await intentFile.sync();
+    } finally {
+      await intentFile.close();
+    }
+    await syncDirectory(sessionDirectory);
+    intentDurable = true;
+    await input.faultInjection?.afterIntentSync?.();
+  } catch (error) {
+    if (!intentDurable) {
+      await unlink(intentPath).catch(() => undefined);
+      await unlink(temporaryPath).catch(() => undefined);
+    }
+    throw error;
+  }
+
+  let publicationAttempted = false;
+  const publish = (): void => {
+    if (publicationAttempted) throw new KimiCodeStateError("binding_mismatch");
+    publicationAttempted = true;
+    assertNoExistingReparsePointsSync(sessionDirectory);
+    assertRegularFileSync(temporaryPath, "state_missing");
+    assertRegularFileSync(intentPath, "state_missing");
+    try {
+      linkSync(temporaryPath, finalPath);
+      unlinkSync(temporaryPath);
+    } catch (error) {
+      throw classifyKimiCodeStateError(error);
+    }
+    input.faultInjection?.beforePublishDirectorySync?.();
+    syncDirectorySync(sessionDirectory);
+  };
+  const discard = async (): Promise<void> => {
+    if (publicationAttempted || (await pathExists(finalPath))) throw new KimiCodeStateError("binding_mismatch");
+    const currentIntent = await readKimiCodePublishIntent(intentPath, input.env);
+    if (
+      currentIntent.locatorJson !== locatorJson ||
+      currentIntent.taskId !== input.taskId ||
+      currentIntent.ownerAttemptId !== input.ownerAttemptId
+    ) {
+      throw new KimiCodeStateError("binding_mismatch");
+    }
+    await assertNoExistingReparsePoints(temporaryPath);
+    await unlink(temporaryPath).catch((error) => {
+      if (isRecord(error) && error.code === "ENOENT") return;
+      throw classifyKimiCodeStateError(error);
+    });
+    await removeKimiCodePublishIntent(intentPath, input.env);
+  };
+
+  return {
+    snapshot,
+    session,
+    locatorJson,
+    taskId: input.taskId,
+    ownerAttemptId: input.ownerAttemptId,
+    intentPath,
+    temporaryPath,
+    publish,
+    discard,
+  };
+}
+
+export async function listKimiCodePublishIntents(env?: NodeJS.ProcessEnv): Promise<string[]> {
+  try {
+    return await listKimiCodePublishIntentsInternal(env);
+  } catch (error) {
+    throw classifyKimiCodeStateError(error);
+  }
+}
+
+async function listKimiCodePublishIntentsInternal(env?: NodeJS.ProcessEnv): Promise<string[]> {
+  const root = stateRoot(env);
+  const rootInfo = await lstatOrMissing(root);
+  if (!rootInfo) return [];
+  if (!rootInfo.isDirectory() || rootInfo.isSymbolicLink()) throw new KimiCodeStateError("reparse_detected");
+  await assertNoExistingReparsePoints(root);
+  const paths: string[] = [];
+  for (const sessionEntry of await readdir(root, { withFileTypes: true })) {
+    if (!UUID_PATTERN.test(sessionEntry.name)) continue;
+    const sessionDirectory = join(root, sessionEntry.name);
+    const sessionInfo = await lstatOrMissing(sessionDirectory);
+    if (!sessionInfo?.isDirectory() || sessionInfo.isSymbolicLink()) {
+      throw new KimiCodeStateError("reparse_detected");
+    }
+    for (const entry of await readdir(sessionDirectory, { withFileTypes: true })) {
+      if (!INTENT_FILENAME_PATTERN.test(entry.name)) continue;
+      const path = join(sessionDirectory, entry.name);
+      await readKimiCodePublishIntent(path, env);
+      paths.push(path);
+    }
+  }
+  return paths.sort();
+}
+
+export async function readKimiCodePublishIntent(
+  intentPath: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<KimiCodePublishIntent> {
+  try {
+    return await readKimiCodePublishIntentInternal(intentPath, env);
+  } catch (error) {
+    throw classifyKimiCodeStateError(error);
+  }
+}
+
+async function readKimiCodePublishIntentInternal(
+  intentPath: string,
+  env?: NodeJS.ProcessEnv,
+): Promise<KimiCodePublishIntent> {
+  const match = INTENT_FILENAME_PATTERN.exec(basename(intentPath));
+  const root = stateRoot(env);
+  const sessionDirectory = dirname(intentPath);
+  if (
+    !match ||
+    !isAbsolute(intentPath) ||
+    hasTraversalSegment(intentPath) ||
+    !isPathInside(root, intentPath) ||
+    !UUID_PATTERN.test(basename(sessionDirectory)) ||
+    !samePath(dirname(sessionDirectory), root)
+  ) {
+    throw new KimiCodeStateError("foreign_root");
+  }
+  await assertNoExistingReparsePoints(intentPath);
+  const info = await lstatOrMissing(intentPath);
+  if (!info) throw new KimiCodeStateError("state_missing");
+  if (!info.isFile() || info.isSymbolicLink()) throw new KimiCodeStateError("reparse_detected");
+  if (info.size > KIMI_CODE_MAX_INTENT_BYTES) throw new KimiCodeStateError("schema_mismatch");
+  const bytes = await open(intentPath, "r").then(async (file) => {
+    try {
+      return await file.readFile();
+    } finally {
+      await file.close().catch(() => undefined);
+    }
+  });
+  if (bytes.byteLength > KIMI_CODE_MAX_INTENT_BYTES) throw new KimiCodeStateError("schema_mismatch");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    throw new KimiCodeStateError("schema_mismatch");
+  }
+  if (
+    !isRecord(parsed) ||
+    !hasExactKeys(parsed, INTENT_KEYS) ||
+    parsed.schemaVersion !== KIMI_CODE_STATE_SCHEMA_VERSION ||
+    typeof parsed.locatorJson !== "string" ||
+    typeof parsed.taskId !== "string" ||
+    typeof parsed.ownerAttemptId !== "string" ||
+    JSON.stringify(parsed) !== bytes.toString("utf8")
+  ) {
+    throw new KimiCodeStateError("schema_mismatch");
+  }
+  validateReservationId(parsed.taskId, env);
+  validateReservationId(parsed.ownerAttemptId, env);
+  if (match[1] !== parsed.taskId) throw new KimiCodeStateError("binding_mismatch");
+  if (containsConfiguredCredential(parsed, env)) throw new KimiCodeStateError("credential_detected");
+  const locator = parseKimiCodeCleanupLocator(parsed.locatorJson, env);
+  if (!samePath(dirname(locator.sessionFile), sessionDirectory)) {
+    throw new KimiCodeStateError("binding_mismatch");
+  }
+  return {
+    schemaVersion: KIMI_CODE_STATE_SCHEMA_VERSION,
+    locatorJson: parsed.locatorJson,
+    taskId: parsed.taskId,
+    ownerAttemptId: parsed.ownerAttemptId,
+  };
+}
+
+export async function removeKimiCodePublishIntent(intentPath: string, env?: NodeJS.ProcessEnv): Promise<void> {
+  try {
+    await readKimiCodePublishIntent(intentPath, env);
+    await unlink(intentPath);
+    await syncDirectory(dirname(intentPath));
+  } catch (error) {
+    throw classifyKimiCodeStateError(error);
+  }
+}
+
+export function projectKimiCodeCleanupLocator(
+  session: RuntimeSessionState,
+  env?: NodeJS.ProcessEnv,
+): KimiCodeCleanupLocator {
+  const params = session.params;
+  if (!isRecord(params)) throw new KimiCodeStateError("invalid_locator");
+  if (params.schemaVersion !== KIMI_CODE_STATE_SCHEMA_VERSION) {
+    throw new KimiCodeStateError("schema_mismatch");
+  }
+  if (
+    params.provider !== KIMI_CODE_PROVIDER_ID ||
+    typeof params.model !== "string" ||
+    !params.model.trim() ||
+    typeof params.sessionId !== "string" ||
+    !UUID_PATTERN.test(params.sessionId) ||
+    typeof params.revision !== "number" ||
+    !Number.isSafeInteger(params.revision) ||
+    params.revision < 1 ||
+    typeof params.cwd !== "string" ||
+    !params.cwd.trim() ||
+    !isWorkspaceIdentity(params.workspaceIdentity) ||
+    typeof params.sessionFile !== "string" ||
+    typeof params.lastCommittedTurnId !== "string" ||
+    !params.lastCommittedTurnId.trim()
+  ) {
+    throw new KimiCodeStateError("invalid_locator");
+  }
+  const locator: KimiCodeCleanupLocator = {
+    schemaVersion: KIMI_CODE_STATE_SCHEMA_VERSION,
+    provider: KIMI_CODE_PROVIDER_ID,
+    model: params.model,
+    sessionId: params.sessionId,
+    revision: params.revision,
+    cwd: params.cwd,
+    workspaceIdentity: copyWorkspaceIdentity(params.workspaceIdentity),
+    sessionFile: params.sessionFile,
+    lastCommittedTurnId: params.lastCommittedTurnId,
+  };
+  validateKimiCodeCleanupLocator(locator, env);
+  return locator;
+}
+
+export function serializeKimiCodeCleanupLocator(session: RuntimeSessionState, env?: NodeJS.ProcessEnv): string {
+  const locator = projectKimiCodeCleanupLocator(session, env);
+  try {
+    return serializeProviderStateCleanupLocator(locator);
+  } catch {
+    throw new KimiCodeStateError("invalid_locator");
+  }
+}
+
+export function parseKimiCodeCleanupLocator(serialized: string, env?: NodeJS.ProcessEnv): KimiCodeCleanupLocator {
+  if (typeof serialized !== "string" || Buffer.byteLength(serialized, "utf8") > 16 * 1024) {
+    throw new KimiCodeStateError("invalid_locator");
+  }
+  let raw: unknown;
+  try {
+    raw = JSON.parse(serialized);
+  } catch {
+    throw new KimiCodeStateError("invalid_locator");
+  }
+  if (!isRecord(raw) || !hasExactKeys(raw, LOCATOR_KEYS)) {
+    throw new KimiCodeStateError("invalid_locator");
+  }
+  if (raw.schemaVersion !== KIMI_CODE_STATE_SCHEMA_VERSION) {
+    throw new KimiCodeStateError("schema_mismatch");
+  }
+  let canonical: ProviderStateCleanupLocator;
+  try {
+    canonical = parseProviderStateCleanupLocator(serialized);
+  } catch {
+    throw new KimiCodeStateError("invalid_locator");
+  }
+  const locator = projectKimiCodeCleanupLocator({ params: { ...canonical } }, env);
+  if (JSON.stringify(locator) !== serialized) throw new KimiCodeStateError("invalid_locator");
+  return locator;
+}
+
+function validateKimiCodeCleanupLocator(locator: KimiCodeCleanupLocator, env?: NodeJS.ProcessEnv): void {
+  if (containsConfiguredCredential(locator, env)) throw new KimiCodeStateError("credential_detected");
+  if (
+    !isAbsolute(locator.cwd) ||
+    hasTraversalSegment(locator.cwd) ||
+    hasTraversalSegment(locator.workspaceIdentity.realpath) ||
+    !isAbsolute(locator.sessionFile) ||
+    hasTraversalSegment(locator.sessionFile)
+  ) {
+    throw new KimiCodeStateError("foreign_root");
+  }
+  const root = stateRoot(env);
+  const expectedDirectory = join(root, locator.sessionId);
+  if (!isPathInside(root, locator.sessionFile)) throw new KimiCodeStateError("foreign_root");
+  if (
+    !samePath(dirname(locator.sessionFile), expectedDirectory) ||
+    !isRevisionFilename(basename(locator.sessionFile), locator.revision)
+  ) {
+    throw new KimiCodeStateError("binding_mismatch");
+  }
+}
+
+async function inspectExactArtifact(path: string): Promise<Awaited<ReturnType<typeof lstat>> | undefined> {
+  await assertNoExistingReparsePoints(path);
+  const info = await lstatOrMissing(path);
+  if (!info) return undefined;
+  if (info.isSymbolicLink()) throw new KimiCodeStateError("reparse_detected");
+  if (!info.isFile()) throw new KimiCodeStateError("schema_mismatch");
+  return info;
+}
+
+async function unlinkExactArtifact(path: string): Promise<void> {
+  await unlink(path).catch((error) => {
+    if (isRecord(error) && error.code === "ENOENT") return;
+    throw classifyKimiCodeStateError(error);
+  });
+}
+
+async function buildKimiCodeSnapshot(input: CommitKimiCodeSessionStateInput): Promise<{
+  snapshot: KimiCodeSessionSnapshot;
+  serialized: string;
+  root: string;
+  sessionDirectory: string;
+}> {
   const cwd = normalizeCwd(input.cwd);
   const workspaceIdentity = await resolveWorkspaceIdentity(cwd);
   const credentialProfileFingerprint = resolveCredentialProfileFingerprint(input.env);
   if (!UUID_PATTERN.test(input.sessionId)) throw stateError("session id is invalid");
-  const previous = input.previousSnapshot;
-  if (previous) {
-    validatePreviousSnapshot(previous, input.model, cwd, workspaceIdentity, credentialProfileFingerprint);
+  if (input.previousSnapshot) {
+    validatePreviousSnapshot(input.previousSnapshot, input.model, cwd, workspaceIdentity, credentialProfileFingerprint);
   }
-  if (previous && previous.sessionId !== input.sessionId) throw stateError("session id mismatch");
+  if (input.previousSnapshot && input.previousSnapshot.sessionId !== input.sessionId) {
+    throw stateError("session id mismatch");
+  }
   if (!input.lastCommittedTurnId.trim()) throw stateError("turn id is invalid");
   if (containsConfiguredCredential(input.messages, input.env)) {
-    throw new Error("Kimi Code session state contains configured credential");
+    throw stateErrorWithMessage("credential_detected", "Kimi Code session state contains configured credential");
   }
-  const messages = validateMessages(input.messages);
   const snapshot: KimiCodeSessionSnapshot = {
     schemaVersion: KIMI_CODE_STATE_SCHEMA_VERSION,
     provider: KIMI_CODE_PROVIDER_ID,
     model: input.model,
     sessionId: input.sessionId,
-    revision: (previous?.revision ?? 0) + 1,
+    revision: (input.previousSnapshot?.revision ?? 0) + 1,
     cwd,
     workspaceIdentity,
     lastCommittedTurnId: input.lastCommittedTurnId,
     credentialProfileFingerprint,
-    messages,
+    messages: validateMessages(input.messages),
   };
   if (containsConfiguredCredential(snapshot, input.env)) {
-    throw new Error("Kimi Code session state contains configured credential");
+    throw stateErrorWithMessage("credential_detected", "Kimi Code session state contains configured credential");
   }
   const serialized = JSON.stringify(snapshot);
   if (Buffer.byteLength(serialized, "utf8") > KIMI_CODE_MAX_STATE_BYTES) {
-    throw new Error("Kimi Code session state exceeds maximum size");
+    throw stateErrorWithMessage("schema_mismatch", "Kimi Code session state exceeds maximum size");
   }
-
   const root = stateRoot(input.env);
   if (containsConfiguredCredential(root, input.env)) {
-    throw new Error("Kimi Code session state contains configured credential");
+    throw stateErrorWithMessage("credential_detected", "Kimi Code session state contains configured credential");
   }
-  const sessionDirectory = join(root, snapshot.sessionId);
-  const privateDirectories = await ensureDurablePrivateStateDirectories(
-    root,
-    sessionDirectory,
-    input.faultInjection?.observeAclProcessEnv,
-  );
+  return { snapshot, serialized, root, sessionDirectory: join(root, snapshot.sessionId) };
+}
+
+async function ensurePrivateSessionDirectory(
+  root: string,
+  sessionDirectory: string,
+  observeAclProcessEnv?: (env: Readonly<NodeJS.ProcessEnv>) => void,
+): Promise<void> {
+  const privateDirectories = await ensureDurablePrivateStateDirectories(root, sessionDirectory, observeAclProcessEnv);
   if (privateDirectories.length > 0) {
     await applyPrivatePermissions(
       privateDirectories.map((path) => ({ path, directory: true })),
-      input.faultInjection?.observeAclProcessEnv,
+      observeAclProcessEnv,
     );
   }
+}
+
+export async function commitKimiCodeSessionState(
+  input: CommitKimiCodeSessionStateInput,
+): Promise<CommittedKimiCodeSessionState> {
+  const { snapshot, serialized, root, sessionDirectory } = await buildKimiCodeSnapshot(input);
+  await ensurePrivateSessionDirectory(root, sessionDirectory, input.faultInjection?.observeAclProcessEnv);
 
   const filename = revisionFilename(snapshot.revision);
   const finalPath = join(sessionDirectory, filename);
@@ -179,20 +690,7 @@ export async function commitKimiCodeSessionState(
 
   return {
     snapshot,
-    session: {
-      params: {
-        schemaVersion: snapshot.schemaVersion,
-        provider: snapshot.provider,
-        model: snapshot.model,
-        sessionId: snapshot.sessionId,
-        revision: snapshot.revision,
-        cwd: snapshot.cwd,
-        workspaceIdentity: copyWorkspaceIdentity(snapshot.workspaceIdentity),
-        sessionFile: finalPath,
-        lastCommittedTurnId: snapshot.lastCommittedTurnId,
-      },
-      displayId: snapshot.sessionId,
-    },
+    session: sessionStateForSnapshot(snapshot, finalPath),
   };
 }
 
@@ -202,6 +700,17 @@ export async function commitKimiCodeSessionState(
  * directory below this provider's derived state root.
  */
 export async function cleanupKimiCodeSessionState(
+  session: RuntimeSessionState,
+  env?: NodeJS.ProcessEnv,
+): Promise<void> {
+  try {
+    await cleanupKimiCodeSessionStateInternal(session, env);
+  } catch (error) {
+    throw classifyKimiCodeStateError(error);
+  }
+}
+
+async function cleanupKimiCodeSessionStateInternal(
   session: RuntimeSessionState,
   env?: NodeJS.ProcessEnv,
 ): Promise<void> {
@@ -219,6 +728,18 @@ export async function cleanupKimiCodeSessionState(
 }
 
 export async function retireSupersededKimiCodeSessionState(
+  previousSession: RuntimeSessionState,
+  nextSession: RuntimeSessionState,
+  env?: NodeJS.ProcessEnv,
+): Promise<void> {
+  try {
+    await retireSupersededKimiCodeSessionStateInternal(previousSession, nextSession, env);
+  } catch (error) {
+    throw classifyKimiCodeStateError(error);
+  }
+}
+
+async function retireSupersededKimiCodeSessionStateInternal(
   previousSession: RuntimeSessionState,
   nextSession: RuntimeSessionState,
   env?: NodeJS.ProcessEnv,
@@ -245,7 +766,7 @@ export async function retireSupersededKimiCodeSessionState(
   // predecessor can be retired. A fabricated terminal locator therefore
   // leaves the previous resumable state untouched.
   await readLocatorBoundSnapshot(next, env);
-  const previousInfo = await lstat(previous.sessionFile).catch(() => undefined);
+  const previousInfo = await lstatOrMissing(previous.sessionFile);
   if (!previousInfo) return;
   await readLocatorBoundSnapshot(previous, env);
   await unlink(previous.sessionFile).catch((error) => {
@@ -359,12 +880,16 @@ async function pruneUnpublishedSessionArtifacts(sessionDirectory: string, liveFi
 async function readLocatorBoundSnapshot(
   locator: ReturnType<typeof parseLocator>,
   env?: NodeJS.ProcessEnv,
+  snapshotPath = locator.sessionFile,
 ): Promise<KimiCodeSessionSnapshot> {
-  await assertNoExistingReparsePoints(locator.sessionFile);
-  const fileInfo = await lstat(locator.sessionFile).catch(() => undefined);
+  await assertNoExistingReparsePoints(snapshotPath);
+  const fileInfo = await lstatOrMissing(snapshotPath);
   if (!fileInfo?.isFile() || fileInfo.isSymbolicLink()) throw stateError("session file is missing");
   if (fileInfo.size > KIMI_CODE_MAX_STATE_BYTES) throw stateError("session file is oversized");
-  const file = await open(locator.sessionFile, "r").catch(() => undefined);
+  const file = await open(snapshotPath, "r").catch((error) => {
+    if (isRecord(error) && error.code === "ENOENT") return undefined;
+    throw classifyKimiCodeStateError(error);
+  });
   if (!file) throw stateError("session file is missing");
   let bytes: Buffer;
   try {
@@ -478,12 +1003,13 @@ function resolveKimiCodeLocatorPath(
 }
 
 async function validateKimiCodeSessionDirectory(root: string, sessionDirectory: string): Promise<boolean> {
-  const directoryInfo = await lstat(sessionDirectory).catch(() => undefined);
+  const directoryInfo = await lstatOrMissing(sessionDirectory);
   if (!directoryInfo) return false;
-  if (!directoryInfo.isDirectory() || directoryInfo.isSymbolicLink()) throw stateError("session directory is invalid");
+  if (directoryInfo.isSymbolicLink()) throw new KimiCodeStateError("reparse_detected");
+  if (!directoryInfo.isDirectory()) throw stateError("session directory is invalid");
   await assertNoExistingReparsePoints(sessionDirectory);
-  const rootRealPath = await realpath(root).catch(() => undefined);
-  const directoryRealPath = await realpath(sessionDirectory).catch(() => undefined);
+  const rootRealPath = await realpathOrMissing(root);
+  const directoryRealPath = await realpathOrMissing(sessionDirectory);
   if (!rootRealPath || !directoryRealPath || !isPathInside(rootRealPath, directoryRealPath)) {
     throw stateError("session path escaped its root");
   }
@@ -816,6 +1342,94 @@ async function syncDirectory(directory: string): Promise<void> {
   }
 }
 
+function syncDirectorySync(directory: string): void {
+  let descriptor: number | undefined;
+  try {
+    descriptor = openSync(directory, "r");
+    fsyncSync(descriptor);
+  } catch (error) {
+    const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined;
+    if (code !== "EISDIR" && code !== "EINVAL" && code !== "EPERM" && code !== "ENOSYS") {
+      throw classifyKimiCodeStateError(error);
+    }
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+  }
+}
+
+function assertNoExistingReparsePointsSync(target: string): void {
+  const resolvedTarget = resolve(target);
+  const filesystemRoot = parse(resolvedTarget).root;
+  let current = filesystemRoot;
+  for (const segment of relative(filesystemRoot, resolvedTarget).split(sep).filter(Boolean)) {
+    current = join(current, segment);
+    let info: ReturnType<typeof lstatSync>;
+    try {
+      info = lstatSync(current);
+    } catch (error) {
+      if (isRecord(error) && error.code === "ENOENT") return;
+      throw classifyKimiCodeStateError(error);
+    }
+    const canonicalMacOSVarAlias =
+      process.platform === "darwin" && current === `${sep}var` && realpathSync(current) === `${sep}private${sep}var`;
+    if (info.isSymbolicLink() && !canonicalMacOSVarAlias) throw new KimiCodeStateError("reparse_detected");
+  }
+}
+
+function assertRegularFileSync(path: string, missingCode: KimiCodeStateErrorCode): void {
+  let info: ReturnType<typeof lstatSync>;
+  try {
+    info = lstatSync(path);
+  } catch (error) {
+    if (isRecord(error) && error.code === "ENOENT") throw new KimiCodeStateError(missingCode);
+    throw classifyKimiCodeStateError(error);
+  }
+  if (info.isSymbolicLink()) throw new KimiCodeStateError("reparse_detected");
+  if (!info.isFile()) throw new KimiCodeStateError("schema_mismatch");
+}
+
+function validateReservationId(value: string, env?: NodeJS.ProcessEnv): void {
+  if (typeof value !== "string" || !RESERVATION_ID_PATTERN.test(value)) {
+    throw new KimiCodeStateError("invalid_locator");
+  }
+  if (containsConfiguredCredential(value, env)) throw new KimiCodeStateError("credential_detected");
+}
+
+function sessionStateForSnapshot(snapshot: KimiCodeSessionSnapshot, finalPath: string): RuntimeSessionState {
+  return {
+    params: {
+      schemaVersion: snapshot.schemaVersion,
+      provider: snapshot.provider,
+      model: snapshot.model,
+      sessionId: snapshot.sessionId,
+      revision: snapshot.revision,
+      cwd: snapshot.cwd,
+      workspaceIdentity: copyWorkspaceIdentity(snapshot.workspaceIdentity),
+      sessionFile: finalPath,
+      lastCommittedTurnId: snapshot.lastCommittedTurnId,
+    },
+    displayId: snapshot.sessionId,
+  };
+}
+
+async function pathExists(path: string): Promise<boolean> {
+  return (await lstatOrMissing(path)) !== undefined;
+}
+
+async function lstatOrMissing(path: string): Promise<Awaited<ReturnType<typeof lstat>> | undefined> {
+  return lstat(path).catch((error) => {
+    if (isRecord(error) && error.code === "ENOENT") return undefined;
+    throw classifyKimiCodeStateError(error);
+  });
+}
+
+async function realpathOrMissing(path: string): Promise<string | undefined> {
+  return realpath(path).catch((error) => {
+    if (isRecord(error) && error.code === "ENOENT") return undefined;
+    throw classifyKimiCodeStateError(error);
+  });
+}
+
 function normalizeCwd(cwd: string): string {
   if (!cwd.trim()) throw stateError("cwd is invalid");
   return resolve(cwd);
@@ -1056,6 +1670,42 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function stateError(reason: string): Error {
-  return new Error(`Kimi Code session state is invalid: ${reason}`);
+function stateError(reason: string): KimiCodeStateError {
+  const code: KimiCodeStateErrorCode = (() => {
+    switch (reason) {
+      case "session file is missing":
+      case "credential profile is unavailable":
+      case "workspace identity is unavailable":
+        return "state_missing";
+      case "session path uses a reparse point":
+        return "reparse_detected";
+      case "session path escaped its root":
+        return "foreign_root";
+      case "session file contains configured credential":
+        return "credential_detected";
+      case "locator lineage mismatch":
+      case "model mismatch":
+      case "cwd mismatch":
+      case "workspace identity mismatch":
+      case "credential profile mismatch":
+      case "snapshot binding mismatch":
+      case "previous snapshot is invalid":
+      case "session id mismatch":
+        return "binding_mismatch";
+      case "schema mismatch":
+      case "session file is oversized":
+      case "session file is corrupt":
+      case "native messages are invalid":
+        return "schema_mismatch";
+      default:
+        return "invalid_locator";
+    }
+  })();
+  return stateErrorWithMessage(code, `Kimi Code session state is invalid: ${reason}`);
+}
+
+function stateErrorWithMessage(code: KimiCodeStateErrorCode, staticMessage: string): KimiCodeStateError {
+  const error = new KimiCodeStateError(code);
+  error.message = staticMessage;
+  return error;
 }
