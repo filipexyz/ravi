@@ -119,21 +119,60 @@ export function startLeadershipRenewal(role: string): void {
  * Poll interval is set to RENEWAL_INTERVAL_MS so we detect vacancies within
  * one renewal cycle (≤ 10s after the leader's lease expires).
  */
-export async function watchForLeadershipVacancy(role: string, onVacancy: () => Promise<void>): Promise<void> {
+export interface LeadershipVacancyWatcher {
+  readonly signal: AbortSignal;
+  readonly done: Promise<void>;
+  cancel(): void;
+}
+
+export interface LeadershipVacancyWatchOptions {
+  signal?: AbortSignal;
+}
+
+function waitForLeadershipPoll(signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", abort);
+      resolve(true);
+    }, RENEWAL_INTERVAL_MS);
+    const abort = () => {
+      clearTimeout(timer);
+      resolve(false);
+    };
+    signal.addEventListener("abort", abort, { once: true });
+  });
+}
+
+export function watchForLeadershipVacancy(
+  role: string,
+  onVacancy: () => Promise<void>,
+  options: LeadershipVacancyWatchOptions = {},
+): LeadershipVacancyWatcher {
   log.info("Polling for leadership vacancy", { role, pollIntervalMs: RENEWAL_INTERVAL_MS });
 
-  (async () => {
-    while (true) {
-      await new Promise((r) => setTimeout(r, RENEWAL_INTERVAL_MS));
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  options.signal?.addEventListener("abort", abort, { once: true });
+  if (options.signal?.aborted) controller.abort();
+  const done = (async () => {
+    while (!controller.signal.aborted) {
+      if (!(await waitForLeadershipPoll(controller.signal))) return;
 
       try {
         const store = await ensureLeaderBucket();
+        if (controller.signal.aborted) return;
         const entry = await store.get(role).catch(() => null);
+        if (controller.signal.aborted) return;
 
         if (!entry) {
           // Key is gone — leader's TTL expired (or leader cleanly released it)
           log.info("Leadership vacancy detected (key missing), attempting takeover", { role });
           const won = await tryAcquireLeadership(role);
+          if (controller.signal.aborted) {
+            if (won) await releaseLeadership(role);
+            return;
+          }
           if (won) {
             startLeadershipRenewal(role);
             await onVacancy();
@@ -142,10 +181,15 @@ export async function watchForLeadershipVacancy(role: string, onVacancy: () => P
           // Lost the race — another daemon won; continue polling in case it also dies
         }
       } catch (err) {
-        log.warn("Leadership poll error, will retry", { role, error: err });
+        if (!controller.signal.aborted) log.warn("Leadership poll error, will retry", { role, error: err });
       }
     }
-  })();
+  })().finally(() => options.signal?.removeEventListener("abort", abort));
+  return {
+    signal: controller.signal,
+    done,
+    cancel: abort,
+  };
 }
 
 /**

@@ -1249,6 +1249,39 @@ describe("Kimi Code durable ordinary cleanup executors", () => {
     expect(readdirSync(sessionDirectory).filter((name) => name.startsWith("revision-"))).toEqual([]);
   });
 
+  test("delete_state stops before the next artifact mutation after execution cancellation", async () => {
+    const first = await firstCommit();
+    const second = await commitKimiCodeSessionState({
+      sessionId: first.snapshot.sessionId,
+      model: "k3",
+      cwd: first.cwd,
+      lastCommittedTurnId: "turn-delete-cancelled-second",
+      messages: nativeMessages("delete-cancelled-second"),
+      previousSnapshot: first.snapshot,
+      env: first.env,
+    });
+    const controller = new AbortController();
+
+    await expect(
+      executeKimiCodeDeleteStateCleanup({
+        locatorJson: serializeKimiCodeCleanupLocator(second.session, first.env),
+        taskId: "task-delete-cancelled",
+        env: first.env,
+        signal: controller.signal,
+        faultInjection: {
+          platform: "linux",
+          strictSyncDirectory: async () => undefined,
+          afterArtifactDurable: () => controller.abort(),
+        },
+      }),
+    ).rejects.toMatchObject({ code: "state_busy" });
+
+    const remainingRevisions = readdirSync(dirname(String(first.session.params?.sessionFile))).filter((name) =>
+      name.startsWith("revision-"),
+    );
+    expect(remainingRevisions).toHaveLength(1);
+  });
+
   test("delete_state reopens the directory for an empty confirmation after an EOF pass did work", async () => {
     const first = await firstCommit();
     const sessionFile = String(first.session.params?.sessionFile);

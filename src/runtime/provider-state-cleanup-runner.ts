@@ -385,13 +385,14 @@ export function installProviderStateCleanupExecutors(registry: ProviderStateClea
       }
     });
   });
-  registry.registerExecutor(KIMI_CODE_PROVIDER_ID, "provisional_exact", async (task) => {
+  registry.registerExecutor(KIMI_CODE_PROVIDER_ID, "provisional_exact", async (task, context) => {
     if (!task.ownerAttemptId) throw new ProviderStateCleanupTaskError("schema_mismatch");
     try {
       await executeKimiCodeProvisionalExactCleanup({
         locatorJson: task.locatorJson,
         taskId: task.id,
         ownerAttemptId: task.ownerAttemptId,
+        signal: context.signal,
         isLocatorOwned: () => {
           const predicate = registry.locatorOwnershipFor(KIMI_CODE_PROVIDER_ID);
           if (!predicate) throw new ProviderStateCleanupTaskError("executor_unavailable");
@@ -403,20 +404,25 @@ export function installProviderStateCleanupExecutors(registry: ProviderStateClea
       throw asKimiTaskError(error);
     }
   });
-  registry.registerExecutor(KIMI_CODE_PROVIDER_ID, "delete_state", async (task) => {
+  registry.registerExecutor(KIMI_CODE_PROVIDER_ID, "delete_state", async (task, context) => {
     try {
-      return await executeKimiCodeDeleteStateCleanup({ locatorJson: task.locatorJson, taskId: task.id });
+      return await executeKimiCodeDeleteStateCleanup({
+        locatorJson: task.locatorJson,
+        taskId: task.id,
+        signal: context.signal,
+      });
     } catch (error) {
       throw asKimiTaskError(error);
     }
   });
-  registry.registerExecutor(KIMI_CODE_PROVIDER_ID, "retire_revision", async (task) => {
+  registry.registerExecutor(KIMI_CODE_PROVIDER_ID, "retire_revision", async (task, context) => {
     if (!task.successorLocatorJson) throw new ProviderStateCleanupTaskError("schema_mismatch");
     try {
       await executeKimiCodeRetireRevisionCleanup({
         locatorJson: task.locatorJson,
         successorLocatorJson: task.successorLocatorJson,
         taskId: task.id,
+        signal: context.signal,
       });
       return { complete: true };
     } catch (error) {

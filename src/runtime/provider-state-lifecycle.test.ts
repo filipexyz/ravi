@@ -360,6 +360,63 @@ describe("provider state publish-intent reconciliation", () => {
     ).toBe("held_existing_task");
   });
 
+  it("keeps canonical durable evidence when an invalid intent reuses its idempotency key", () => {
+    const canonicalLocator = locator(
+      "00000000-0000-4000-8000-000000000025",
+      "/private/idempotency-collision/revision-1.json",
+    );
+    const locatorJson = serializeProviderStateCleanupLocator(canonicalLocator);
+    const session = getOrCreateSession("session-idempotency-collision", "agent-a", "/workspace/project");
+    establishAttempt(session.sessionKey, "attempt-valid-evidence", "boot-valid-evidence");
+    terminalizeRuntimeTurnAttempt({
+      attemptId: "attempt-valid-evidence",
+      status: "aborted",
+      completedAt: 200,
+    });
+    expect(
+      reconcileProviderStatePublishIntent({
+        provider: "test-provider",
+        intent: {
+          taskId: "reservation-valid-evidence",
+          ownerAttemptId: "attempt-valid-evidence",
+          locatorJson,
+        },
+        isLocatorOwned: () => false,
+        now: 201,
+      }),
+    ).toBe("published_cleanup");
+
+    expect(
+      reconcileProviderStatePublishIntent({
+        provider: "test-provider",
+        intent: {
+          taskId: "reservation-invalid-collision",
+          ownerAttemptId: "attempt-missing-collision",
+          locatorJson,
+        },
+        isLocatorOwned: () => false,
+        now: 202,
+      }),
+    ).toBe("held_existing_task");
+    expect(
+      getDb()
+        .prepare(
+          `SELECT id, status, owner_attempt_id, owner_session_key, owner_boot_epoch, last_error_code
+           FROM provider_state_cleanup_tasks`,
+        )
+        .all(),
+    ).toEqual([
+      {
+        id: "reservation-valid-evidence",
+        status: "published",
+        owner_attempt_id: "attempt-valid-evidence",
+        owner_session_key: session.sessionKey,
+        owner_boot_epoch: "boot-valid-evidence",
+        last_error_code: null,
+      },
+    ]);
+  });
+
   it("rejects an intent locator outside the registered provider scope", () => {
     const intent = {
       taskId: "reservation-foreign-provider",

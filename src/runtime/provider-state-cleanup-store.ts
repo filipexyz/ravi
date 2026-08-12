@@ -660,6 +660,19 @@ export function recordInvalidProviderStatePublishIntentInTransaction(
     throw new Error("Provider cleanup intent evidence does not match its provider");
   }
   const idempotencyKey = createProviderStateCleanupIdempotencyKey("provisional_exact", input.locatorJson, null);
+  const existing = getTaskByIdempotencyKey(database, idempotencyKey);
+  if (existing) {
+    if (
+      existing.schema_version !== CLEANUP_SCHEMA_VERSION ||
+      existing.provider !== locator.provider ||
+      existing.operation !== "provisional_exact" ||
+      existing.locator_json !== input.locatorJson ||
+      existing.successor_locator_json !== null
+    ) {
+      throw new Error("Provider cleanup intent evidence conflicts with durable task data");
+    }
+    return rowToTask(existing);
+  }
   database
     .prepare(
       `INSERT OR IGNORE INTO provider_state_cleanup_tasks (
@@ -685,9 +698,11 @@ export function recordInvalidProviderStatePublishIntentInTransaction(
   if (
     !row ||
     row.id !== taskId ||
+    row.schema_version !== CLEANUP_SCHEMA_VERSION ||
     row.provider !== locator.provider ||
     row.operation !== "provisional_exact" ||
     row.locator_json !== input.locatorJson ||
+    row.successor_locator_json !== null ||
     row.owner_attempt_id !== ownerAttemptId
   ) {
     throw new Error("Provider cleanup intent evidence conflicts with durable task data");

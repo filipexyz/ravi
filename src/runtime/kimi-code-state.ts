@@ -261,6 +261,7 @@ export interface ExecuteKimiCodeProvisionalExactCleanupInput {
   taskId: string;
   ownerAttemptId: string;
   env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
   isLocatorOwned: (locator: Readonly<KimiCodeCleanupLocator>) => boolean | Promise<boolean>;
   /** Test-only crash boundaries; production callers must omit it. */
   faultInjection?: {
@@ -285,6 +286,7 @@ export interface ExecuteKimiCodeDeleteStateCleanupInput {
   locatorJson: string;
   taskId: string;
   env?: NodeJS.ProcessEnv;
+  signal?: AbortSignal;
   /** Test-only crash boundaries; production callers must omit it. */
   faultInjection?: ExecuteKimiCodeDurableCleanupFaultInjection;
 }
@@ -306,6 +308,7 @@ export async function executeKimiCodeProvisionalExactCleanup(
 async function executeKimiCodeProvisionalExactCleanupInternal(
   input: ExecuteKimiCodeProvisionalExactCleanupInput,
 ): Promise<void> {
+  assertKimiCodeCleanupExecutionActive(input.signal);
   const platform = input.faultInjection?.platform ?? process.platform;
   validateReservationId(input.taskId, input.env);
   validateReservationId(input.ownerAttemptId, input.env);
@@ -356,7 +359,7 @@ async function executeKimiCodeProvisionalExactCleanupInternal(
   if (!intent) {
     if (!finalInfo && !temporaryInfo && !snapshotTombstoneInfo && !temporaryTombstoneInfo) {
       if (platform === "win32" && intentTombstoneInfo) {
-        await durablyRemoveWindowsArtifact(intentPath, intentTombstone, "intent");
+        await durablyRemoveWindowsArtifact(intentPath, intentTombstone, "intent", undefined, input.signal);
       }
       return;
     }
@@ -387,35 +390,42 @@ async function executeKimiCodeProvisionalExactCleanupInternal(
       snapshotTombstone,
       "snapshot",
       input.faultInjection?.afterWindowsArtifactMove,
+      input.signal,
     );
     await durablyRemoveWindowsArtifact(
       temporaryPath,
       temporaryTombstone,
       "temporary",
       input.faultInjection?.afterWindowsArtifactMove,
+      input.signal,
     );
   } else {
-    await unlinkExactArtifact(locator.sessionFile);
-    await unlinkExactArtifact(temporaryPath);
+    await unlinkExactArtifact(locator.sessionFile, input.signal);
+    await unlinkExactArtifact(temporaryPath, input.signal);
+    assertKimiCodeCleanupExecutionActive(input.signal);
     await invokeStrictDirectorySync(sessionDirectory, input.faultInjection?.strictSyncDirectory);
   }
   await input.faultInjection?.afterPayloadsDurable?.();
+  assertKimiCodeCleanupExecutionActive(input.signal);
   if (platform === "win32") {
     await durablyRemoveWindowsArtifact(
       intentPath,
       intentTombstone,
       "intent",
       input.faultInjection?.afterWindowsArtifactMove,
+      input.signal,
     );
     await durablyRemoveWindowsArtifact(
       intentStagingPath,
       intentTombstone,
       "intent",
       input.faultInjection?.afterWindowsArtifactMove,
+      input.signal,
     );
   } else {
-    await unlinkExactArtifact(intentPath);
-    await unlinkExactArtifact(intentStagingPath);
+    await unlinkExactArtifact(intentPath, input.signal);
+    await unlinkExactArtifact(intentStagingPath, input.signal);
+    assertKimiCodeCleanupExecutionActive(input.signal);
     await invokeStrictDirectorySync(sessionDirectory, input.faultInjection?.strictSyncDirectory);
   }
 }
@@ -1010,7 +1020,12 @@ async function inspectExactArtifact(path: string): Promise<Awaited<ReturnType<ty
   return info;
 }
 
-async function unlinkExactArtifact(path: string): Promise<void> {
+function assertKimiCodeCleanupExecutionActive(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new KimiCodeStateError("state_busy");
+}
+
+async function unlinkExactArtifact(path: string, signal?: AbortSignal): Promise<void> {
+  assertKimiCodeCleanupExecutionActive(signal);
   await unlink(path).catch((error) => {
     if (isRecord(error) && error.code === "ENOENT") return;
     throw classifyKimiCodeStateError(error);
@@ -1048,24 +1063,32 @@ async function durablyRemoveWindowsArtifact(
   tombstonePath: string,
   kind: KimiCodeCleanupArtifactKind,
   afterMove?: (kind: KimiCodeCleanupArtifactKind) => void | Promise<void>,
+  signal?: AbortSignal,
 ): Promise<void> {
+  assertKimiCodeCleanupExecutionActive(signal);
   const canonicalInfo = await inspectExactArtifact(canonicalPath);
   let tombstoneInfo = await inspectExactArtifact(tombstonePath);
   if (canonicalInfo && tombstoneInfo) throw new KimiCodeStateError("state_busy");
   if (canonicalInfo) {
+    assertKimiCodeCleanupExecutionActive(signal);
     await moveFileWriteThroughWindows(canonicalPath, tombstonePath);
     await afterMove?.(kind);
+    assertKimiCodeCleanupExecutionActive(signal);
     tombstoneInfo = await inspectExactArtifact(tombstonePath);
     if (!tombstoneInfo) throw new KimiCodeStateError("io_transient");
   }
   if (!tombstoneInfo) return;
+  assertKimiCodeCleanupExecutionActive(signal);
   const tombstone = await open(tombstonePath, "r+");
   try {
+    assertKimiCodeCleanupExecutionActive(signal);
     await tombstone.truncate(0);
+    assertKimiCodeCleanupExecutionActive(signal);
     await tombstone.sync();
   } finally {
     await tombstone.close().catch(() => undefined);
   }
+  assertKimiCodeCleanupExecutionActive(signal);
   await unlink(tombstonePath).catch(() => undefined);
 }
 
@@ -1227,6 +1250,7 @@ export async function executeKimiCodeDeleteStateCleanup(
   input: ExecuteKimiCodeDeleteStateCleanupInput,
 ): Promise<ExecuteKimiCodeDeleteStateCleanupResult> {
   try {
+    assertKimiCodeCleanupExecutionActive(input.signal);
     validateReservationId(input.taskId, input.env);
     const locator = parseKimiCodeCleanupLocator(input.locatorJson, input.env);
     const { root, sessionDirectory } = resolveKimiCodeLocatorPath(locator, input.env);
@@ -1269,6 +1293,7 @@ export async function executeKimiCodeDeleteStateCleanup(
       let processed = 0;
       let reachedEnd = false;
       while (scanned < KIMI_CODE_DELETE_SCAN_ENTRIES && processed < KIMI_CODE_DELETE_BATCH_SIZE) {
+        assertKimiCodeCleanupExecutionActive(input.signal);
         const entry = await directory.read();
         if (!entry) {
           reachedEnd = true;
@@ -1283,7 +1308,13 @@ export async function executeKimiCodeDeleteStateCleanup(
           const tombstone = join(sessionDirectory, entry.name);
           const info = await inspectExactArtifact(tombstone);
           if (info?.size) await readOwnedRevisionSnapshot(locator, tombstone, input.env, revision);
-          await durablyRemoveWindowsArtifact(join(sessionDirectory, tombstoneSource), tombstone, "snapshot");
+          await durablyRemoveWindowsArtifact(
+            join(sessionDirectory, tombstoneSource),
+            tombstone,
+            "snapshot",
+            undefined,
+            input.signal,
+          );
           processed += 1;
           continue;
         }
@@ -1299,6 +1330,7 @@ export async function executeKimiCodeDeleteStateCleanup(
           input.taskId,
           entry.name,
           input.faultInjection,
+          input.signal,
         );
         processed += 1;
       }
@@ -1425,6 +1457,7 @@ export async function executeKimiCodeRetireRevisionCleanup(
   input: ExecuteKimiCodeRetireRevisionCleanupInput,
 ): Promise<void> {
   try {
+    assertKimiCodeCleanupExecutionActive(input.signal);
     validateReservationId(input.taskId, input.env);
     const previous = parseKimiCodeCleanupLocator(input.locatorJson, input.env);
     const successor = parseKimiCodeCleanupLocator(input.successorLocatorJson, input.env);
@@ -1461,6 +1494,7 @@ export async function executeKimiCodeRetireRevisionCleanup(
       input.taskId,
       basename(previous.sessionFile),
       input.faultInjection,
+      input.signal,
     );
   } catch (error) {
     throw classifyKimiCodeStateError(error);
@@ -1474,16 +1508,26 @@ async function durablyRemoveWorkerArtifact(
   taskId: string,
   label: string,
   faultInjection?: ExecuteKimiCodeDurableCleanupFaultInjection,
+  signal?: AbortSignal,
 ): Promise<void> {
+  assertKimiCodeCleanupExecutionActive(signal);
   const platform = faultInjection?.platform ?? process.platform;
   if (platform === "win32") {
     const tombstone = workerTombstonePath(sessionDirectory, operation, taskId, label);
-    await durablyRemoveWindowsArtifact(path, tombstone, "snapshot", faultInjection?.afterWindowsArtifactMove);
+    await durablyRemoveWindowsArtifact(
+      path,
+      tombstone,
+      "snapshot",
+      faultInjection?.afterWindowsArtifactMove,
+      signal,
+    );
   } else {
-    await unlinkExactArtifact(path);
+    await unlinkExactArtifact(path, signal);
+    assertKimiCodeCleanupExecutionActive(signal);
     await invokeStrictDirectorySync(sessionDirectory, faultInjection?.strictSyncDirectory);
   }
   await faultInjection?.afterArtifactDurable?.(path);
+  assertKimiCodeCleanupExecutionActive(signal);
 }
 
 function workerTombstonePath(

@@ -253,7 +253,7 @@ export function reconcileProviderStatePublishIntent(input: {
         )
         .get(input.intent.ownerAttemptId) as OwnedAttemptRow | undefined;
       if (!reconcileAttemptIsValid(attempt) || attempt.provider !== input.provider) {
-        recordInvalidProviderStatePublishIntentInTransaction(transaction, {
+        const evidence = recordInvalidProviderStatePublishIntentInTransaction(transaction, {
           taskId: input.intent.taskId,
           provider: input.provider,
           locatorJson: input.intent.locatorJson,
@@ -261,7 +261,9 @@ export function reconcileProviderStatePublishIntent(input: {
           errorCode: !attempt ? "state_missing" : reconcileAttemptIsValid(attempt) ? "binding_mismatch" : "schema_mismatch",
           now,
         });
-        return "held_invalid_attempt";
+        return evidence.id === input.intent.taskId && evidence.ownerAttemptId === input.intent.ownerAttemptId
+          ? "held_invalid_attempt"
+          : "held_existing_task";
       }
       if (attempt.status === "running" && attempt.lease_expires_at > now) return "held_active_attempt";
       if (input.isLocatorOwned(input.intent.locatorJson, transaction)) {

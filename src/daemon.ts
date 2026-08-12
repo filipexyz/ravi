@@ -55,6 +55,7 @@ import {
   startLeadershipRenewal,
   watchForLeadershipVacancy,
   releaseLeadership,
+  type LeadershipVacancyWatcher,
 } from "./leader/index.js";
 import {
   installProviderStateCleanupExecutors,
@@ -193,6 +194,8 @@ let omniConsumer: OmniConsumer | null = null;
 let webhookHttpServer: WebhookHttpServerHandle | null = null;
 let workObjectNatsService: WorkObjectNatsServiceHandle | null = null;
 let providerStateCleanupRunner: ProviderStateCleanupRunner | null = null;
+let daemonLifetimeController: AbortController | null = null;
+let runnerLeadershipWatcher: LeadershipVacancyWatcher | null = null;
 
 /** Get the bot instance (for in-process access like /reset) */
 export function getBotInstance(): RaviBot | null {
@@ -208,6 +211,8 @@ async function rollbackDaemonStartup(cleanupRunner: ProviderStateCleanupRunner):
     }
   };
 
+  runnerLeadershipWatcher?.cancel();
+  runnerLeadershipWatcher = null;
   await stopSafely("webhook HTTP server", async () => webhookHttpServer?.stop());
   webhookHttpServer = null;
   await stopSafely("Work Object NATS service", async () => workObjectNatsService?.stop());
@@ -240,6 +245,10 @@ async function rollbackDaemonStartup(cleanupRunner: ProviderStateCleanupRunner):
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
+  daemonLifetimeController?.abort();
+  daemonLifetimeController = null;
+  runnerLeadershipWatcher?.cancel();
+  runnerLeadershipWatcher = null;
 
   log.info(`Received ${signal}, shutting down...`, { pid: process.pid });
 
@@ -339,7 +348,23 @@ async function shutdown(signal: string) {
   process.exit(0);
 }
 
+function assertDaemonStartupActive(signal: AbortSignal): void {
+  if (shuttingDown || signal.aborted) throw new Error("Daemon startup cancelled by shutdown");
+}
+
+async function runDaemonStartupPhase<T>(signal: AbortSignal, phase: () => Promise<T>): Promise<T> {
+  assertDaemonStartupActive(signal);
+  const result = await phase();
+  assertDaemonStartupActive(signal);
+  return result;
+}
+
 export async function startDaemon() {
+  if (daemonLifetimeController) throw new Error("Daemon startup is already active");
+  const lifetimeController = new AbortController();
+  daemonLifetimeController = lifetimeController;
+  const startupSignal = lifetimeController.signal;
+  assertDaemonStartupActive(startupSignal);
   // Provider lifecycle handlers and their initial recovery drain must succeed
   // before opening messaging/egress resources or accepting runtime input.
   const providerStateCleanupRegistry = new ProviderStateCleanupExecutorRegistry();
@@ -347,14 +372,14 @@ export async function startDaemon() {
   const cleanupRunner = new ProviderStateCleanupRunner({ registry: providerStateCleanupRegistry });
   providerStateCleanupRunner = cleanupRunner;
   try {
-    await cleanupRunner.start();
+    await runDaemonStartupPhase(startupSignal, () => cleanupRunner.start());
     log.info("Provider state cleanup runner started");
 
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
   log.info("Connecting to NATS...", { natsUrl });
   try {
-    await connectNats(natsUrl, { explicit: true });
+    await runDaemonStartupPhase(startupSignal, () => connectNats(natsUrl, { explicit: true }));
     setChannelBackendEgressRequesterForRuntime(createChannelBackendEgressRequester());
   } catch (error) {
     await cleanupRunner.stop();
@@ -370,7 +395,7 @@ export async function startDaemon() {
   log.info("Starting Ravi daemon...");
 
   // Step 2: Start config store (NATS sub + periodic refresh)
-  await configStore.startRefresh();
+  await runDaemonStartupPhase(startupSignal, () => configStore.startRefresh());
 
   // Step 3: Resolve omni connection
   let omniApiUrl: string | undefined;
@@ -389,15 +414,15 @@ export async function startDaemon() {
   // This stream replaces NATS core pub/sub for session routing,
   // enabling work queue semantics — each prompt delivered to exactly one daemon.
   log.info("Ensuring SESSION_PROMPTS JetStream stream...");
-  await ensureSessionPromptsStream();
+  await runDaemonStartupPhase(startupSignal, ensureSessionPromptsStream);
   log.info("SESSION_PROMPTS stream ready");
   log.info("Ensuring RAVI_EVENTS JetStream stream...");
-  await ensureRaviEventsStream();
+  await runDaemonStartupPhase(startupSignal, ensureRaviEventsStream);
   log.info("RAVI_EVENTS stream ready");
 
   // Step 5: Start bot
   bot = new RaviBot({ config });
-  await bot.start();
+  await runDaemonStartupPhase(startupSignal, () => bot!.start());
   log.info("Bot started");
 
   // Step 6: Set up omni sender + consumer + gateway
@@ -409,9 +434,10 @@ export async function startDaemon() {
     });
 
     try {
-      await omniConsumer.start();
+      await runDaemonStartupPhase(startupSignal, () => omniConsumer!.start());
       log.info("Omni consumer started");
     } catch (err) {
+      assertDaemonStartupActive(startupSignal);
       log.error("Failed to start omni consumer", err);
     }
 
@@ -432,56 +458,61 @@ export async function startDaemon() {
     });
   }
 
-  await gateway.start();
+  await runDaemonStartupPhase(startupSignal, () => gateway!.start());
   log.info("Gateway started");
 
   // Step 7: Start runners — leader election ensures only one daemon runs heartbeat/cron
   // Trigger, ephemeral, and inbox are per-daemon (each daemon handles its own).
-  const isLeader = await tryAcquireLeadership("runners");
+  const isLeader = await runDaemonStartupPhase(startupSignal, () => tryAcquireLeadership("runners"));
 
   if (isLeader) {
     startLeadershipRenewal("runners");
-    await startHeartbeatRunner();
+    await runDaemonStartupPhase(startupSignal, startHeartbeatRunner);
     log.info("Heartbeat runner started (leader)");
-    await startCronRunner();
+    await runDaemonStartupPhase(startupSignal, startCronRunner);
     log.info("Cron runner started (leader)");
-    await startSessionFollowupRunner();
+    await runDaemonStartupPhase(startupSignal, startSessionFollowupRunner);
     log.info("Session followup runner started (leader)");
-    await startTaskCheckpointRunner({
-      canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
-    });
+    await runDaemonStartupPhase(startupSignal, () =>
+      startTaskCheckpointRunner({
+        canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
+      }),
+    );
     log.info("Task checkpoint runner started (leader)");
   } else {
     log.info("Not leader — heartbeat, cron, and task checkpoint runners skipped (another daemon is running them)");
-    watchForLeadershipVacancy("runners", async () => {
+    runnerLeadershipWatcher = watchForLeadershipVacancy("runners", async () => {
       log.info("Leadership vacancy detected — starting heartbeat, cron, and task checkpoint runners");
-      await startHeartbeatRunner();
-      await startCronRunner();
-      await startSessionFollowupRunner();
-      await startTaskCheckpointRunner({
-        canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
-      });
+      await runDaemonStartupPhase(startupSignal, startHeartbeatRunner);
+      await runDaemonStartupPhase(startupSignal, startCronRunner);
+      await runDaemonStartupPhase(startupSignal, startSessionFollowupRunner);
+      await runDaemonStartupPhase(startupSignal, () =>
+        startTaskCheckpointRunner({
+          canPublishSessionPrompt: (sessionName) => bot?.canAcceptRuntimePrompt(sessionName) ?? true,
+        }),
+      );
       log.info("Heartbeat, cron, session followup, and task checkpoint runners started (new leader)");
-    }).catch((err) => log.error("Leadership watcher failed", err));
+    }, { signal: startupSignal });
+    void runnerLeadershipWatcher.done.catch((err) => log.error("Leadership watcher failed", err));
   }
 
-  await startTriggerRunner();
+  await runDaemonStartupPhase(startupSignal, startTriggerRunner);
   log.info("Trigger runner started");
 
-  await startHookRunner();
+  await runDaemonStartupPhase(startupSignal, startHookRunner);
   log.info("Hook runner started");
 
-  await startEphemeralRunner();
+  await runDaemonStartupPhase(startupSignal, startEphemeralRunner);
   log.info("Ephemeral runner started");
 
-  await startInboxRunner();
+  await runDaemonStartupPhase(startupSignal, startInboxRunner);
   log.info("Inbox runner started");
 
-  await startSyncRunner();
+  await runDaemonStartupPhase(startupSignal, startSyncRunner);
   log.info("Sync runner started");
 
   sessionAdapterBus = createSessionAdapterBus();
-  await sessionAdapterBus.start();
+  await runDaemonStartupPhase(startupSignal, () => sessionAdapterBus!.start());
   log.info("Session adapter bus started");
 
   workObjectNatsService = startWorkObjectNatsService();
@@ -501,13 +532,17 @@ export async function startDaemon() {
   // to start before publishing the inform, so it arrives between turns (not concatenated).
     bot.consumerReady
       .then(async () => {
+        if (startupSignal.aborted) return;
         await new Promise((r) => setTimeout(r, 3000));
+        if (startupSignal.aborted) return;
         await notifyRestartReason();
       })
       .catch((err) => {
         log.error("Failed to notify restart reason", err);
       });
   } catch (error) {
+    lifetimeController.abort();
+    if (daemonLifetimeController === lifetimeController) daemonLifetimeController = null;
     await rollbackDaemonStartup(cleanupRunner);
     throw error;
   }
