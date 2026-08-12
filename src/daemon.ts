@@ -199,6 +199,44 @@ export function getBotInstance(): RaviBot | null {
   return bot;
 }
 
+async function rollbackDaemonStartup(cleanupRunner: ProviderStateCleanupRunner): Promise<void> {
+  const stopSafely = async (label: string, stop: () => void | Promise<void>) => {
+    try {
+      await stop();
+    } catch (error) {
+      log.error(`Failed to roll back ${label} during daemon startup`, { error });
+    }
+  };
+
+  await stopSafely("webhook HTTP server", async () => webhookHttpServer?.stop());
+  webhookHttpServer = null;
+  await stopSafely("Work Object NATS service", async () => workObjectNatsService?.stop());
+  workObjectNatsService = null;
+  await stopSafely("session adapter bus", async () => sessionAdapterBus?.stop());
+  sessionAdapterBus = null;
+  await stopSafely("sync runner", stopSyncRunner);
+  await stopSafely("inbox runner", stopInboxRunner);
+  await stopSafely("ephemeral runner", stopEphemeralRunner);
+  await stopSafely("hook runner", stopHookRunner);
+  await stopSafely("trigger runner", stopTriggerRunner);
+  await stopSafely("task checkpoint runner", stopTaskCheckpointRunner);
+  await stopSafely("session followup runner", stopSessionFollowupRunner);
+  await stopSafely("cron runner", stopCronRunner);
+  await stopSafely("heartbeat runner", stopHeartbeatRunner);
+  await stopSafely("runner leadership", async () => releaseLeadership("runners"));
+  await stopSafely("gateway", async () => gateway?.stop());
+  gateway = null;
+  await stopSafely("omni consumer", async () => omniConsumer?.stop());
+  omniConsumer = null;
+  await stopSafely("bot", async () => bot?.stop());
+  bot = null;
+  configStore.stop();
+  setChannelBackendEgressRequesterForRuntime();
+  await stopSafely("NATS connection", closeNats);
+  await stopSafely("provider state cleanup runner", async () => cleanupRunner.stop());
+  if (providerStateCleanupRunner === cleanupRunner) providerStateCleanupRunner = null;
+}
+
 async function shutdown(signal: string) {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -307,9 +345,10 @@ export async function startDaemon() {
   const providerStateCleanupRegistry = new ProviderStateCleanupExecutorRegistry();
   installProviderStateCleanupExecutors(providerStateCleanupRegistry);
   const cleanupRunner = new ProviderStateCleanupRunner({ registry: providerStateCleanupRegistry });
-  await cleanupRunner.start();
   providerStateCleanupRunner = cleanupRunner;
-  log.info("Provider state cleanup runner started");
+  try {
+    await cleanupRunner.start();
+    log.info("Provider state cleanup runner started");
 
   // Step 1: Connect to NATS (with retry for PM2 parallel startup)
   const natsUrl = process.env.NATS_URL || "nats://127.0.0.1:4222";
@@ -460,14 +499,18 @@ export async function startDaemon() {
   // Notify restart reason after consumer is ready + delay to let sessions reconnect first.
   // The TUI sends "Continue from where you left off" on reconnect — we wait for that turn
   // to start before publishing the inform, so it arrives between turns (not concatenated).
-  bot.consumerReady
-    .then(async () => {
-      await new Promise((r) => setTimeout(r, 3000));
-      await notifyRestartReason();
-    })
-    .catch((err) => {
-      log.error("Failed to notify restart reason", err);
-    });
+    bot.consumerReady
+      .then(async () => {
+        await new Promise((r) => setTimeout(r, 3000));
+        await notifyRestartReason();
+      })
+      .catch((err) => {
+        log.error("Failed to notify restart reason", err);
+      });
+  } catch (error) {
+    await rollbackDaemonStartup(cleanupRunner);
+    throw error;
+  }
 }
 
 /**

@@ -8,6 +8,7 @@ const MAX_CANONICAL_LOCATOR_BYTES = 16 * 1024;
 const DEFAULT_MAX_ATTEMPTS = 8;
 const DEFAULT_BASE_BACKOFF_MS = 1_000;
 const DEFAULT_MAX_BACKOFF_MS = 5 * 60_000;
+const DEFAULT_EXECUTOR_UNAVAILABLE_DELAY_MS = 10_000;
 const SESSION_MUTATION_LOST = Symbol("provider-state-cleanup-session-mutation-lost");
 const RUNTIME_TURN_ATTEMPT_STATUSES = ["running", "complete", "failed", "interrupted", "timeout", "aborted"] as const;
 
@@ -125,6 +126,15 @@ export interface PublishPreparedProviderStateCleanupTaskInput {
   id: string;
   locator: unknown;
   owner: ProviderStateCleanupOwner;
+  now?: number;
+}
+
+export interface RecordInvalidProviderStatePublishIntentInput {
+  taskId: string;
+  provider: string;
+  locatorJson: string;
+  ownerAttemptId: string;
+  errorCode: "state_missing" | "schema_mismatch" | "binding_mismatch";
   now?: number;
 }
 
@@ -593,6 +603,98 @@ export function completeProviderStateCleanupTask(input: { id: string; leaseId: s
   );
 }
 
+export function renewProviderStateCleanupTaskLease(input: {
+  id: string;
+  leaseId: string;
+  leaseDurationMs: number;
+  now?: number;
+}): boolean {
+  const now = requireTimestamp(input.now ?? Date.now(), "now");
+  if (!Number.isSafeInteger(input.leaseDurationMs) || input.leaseDurationMs < 1) {
+    throw new Error("leaseDurationMs must be a positive safe integer");
+  }
+  const leasedUntil = requireTimestamp(now + input.leaseDurationMs, "leasedUntil");
+  return executeWrite(
+    getDb(),
+    (database) =>
+      database
+        .prepare(
+          `UPDATE provider_state_cleanup_tasks
+           SET leased_until = ?, updated_at = ?
+           WHERE id = ? AND status = 'leased' AND lease_id = ? AND leased_until > ?`,
+        )
+        .run(leasedUntil, now, input.id, input.leaseId, now).changes === 1,
+    { label: "provider-state-cleanup-renew-lease" },
+  );
+}
+
+/** Persist non-claimable evidence for an intent whose owner cannot be trusted. */
+export function recordInvalidProviderStatePublishIntent(
+  input: RecordInvalidProviderStatePublishIntentInput,
+): ProviderStateCleanupTask {
+  const now = requireTimestamp(input.now ?? Date.now(), "now");
+  const taskId = requireNonEmptyString(input.taskId, "taskId");
+  const ownerAttemptId = requireNonEmptyString(input.ownerAttemptId, "ownerAttemptId");
+  return executeWrite(
+    getDb(),
+    (database) =>
+      recordInvalidProviderStatePublishIntentInTransaction(database, {
+        ...input,
+        taskId,
+        ownerAttemptId,
+        now,
+      }),
+    { label: "provider-state-cleanup-record-invalid-intent" },
+  );
+}
+
+export function recordInvalidProviderStatePublishIntentInTransaction(
+  database: Database,
+  input: RecordInvalidProviderStatePublishIntentInput,
+): ProviderStateCleanupTask {
+  const now = requireTimestamp(input.now ?? Date.now(), "now");
+  const taskId = requireNonEmptyString(input.taskId, "taskId");
+  const ownerAttemptId = requireNonEmptyString(input.ownerAttemptId, "ownerAttemptId");
+  const locator = parseProviderStateCleanupLocator(input.locatorJson);
+  if (locator.provider !== requireNonEmptyString(input.provider, "provider")) {
+    throw new Error("Provider cleanup intent evidence does not match its provider");
+  }
+  const idempotencyKey = createProviderStateCleanupIdempotencyKey("provisional_exact", input.locatorJson, null);
+  database
+    .prepare(
+      `INSERT OR IGNORE INTO provider_state_cleanup_tasks (
+         id, idempotency_key, schema_version, provider, operation, locator_json,
+         successor_locator_json, status, owner_attempt_id, owner_session_key,
+         owner_boot_epoch, last_error_code, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, 'provisional_exact', ?, NULL, 'dead', ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      taskId,
+      idempotencyKey,
+      CLEANUP_SCHEMA_VERSION,
+      locator.provider,
+      input.locatorJson,
+      ownerAttemptId,
+      "reconciliation-invalid-evidence",
+      "reconciliation-invalid-evidence",
+      input.errorCode,
+      now,
+      now,
+    );
+  const row = getTaskByIdempotencyKey(database, idempotencyKey);
+  if (
+    !row ||
+    row.id !== taskId ||
+    row.provider !== locator.provider ||
+    row.operation !== "provisional_exact" ||
+    row.locator_json !== input.locatorJson ||
+    row.owner_attempt_id !== ownerAttemptId
+  ) {
+    throw new Error("Provider cleanup intent evidence conflicts with durable task data");
+  }
+  return rowToTask(row);
+}
+
 /**
  * Releases a task whose provider executor is not installed without consuming a
  * retry attempt. The durable diagnostic survives restarts and the task becomes
@@ -602,8 +704,15 @@ export function holdProviderStateCleanupTaskForUnavailableExecutor(input: {
   id: string;
   leaseId: string;
   now?: number;
+  retryDelayMs?: number;
 }): boolean {
   const now = requireTimestamp(input.now ?? Date.now(), "now");
+  const retryDelayMs = requireTimestamp(
+    input.retryDelayMs ?? DEFAULT_EXECUTOR_UNAVAILABLE_DELAY_MS,
+    "retryDelayMs",
+  );
+  if (retryDelayMs < 1) throw new Error("retryDelayMs must be positive");
+  const nextAttemptAt = requireTimestamp(now + retryDelayMs, "nextAttemptAt");
   return executeWrite(
     getDb(),
     (database) =>
@@ -615,7 +724,7 @@ export function holdProviderStateCleanupTaskForUnavailableExecutor(input: {
              last_error_code = 'executor_unavailable', updated_at = ?
            WHERE id = ? AND status = 'leased' AND lease_id = ? AND leased_until > ?`,
         )
-        .run(now, now, input.id, input.leaseId, now).changes === 1,
+        .run(nextAttemptAt, now, input.id, input.leaseId, now).changes === 1,
     { label: "provider-state-cleanup-hold-executor-unavailable" },
   );
 }

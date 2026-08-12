@@ -20,6 +20,7 @@ import {
   mutateSessionAndEnqueueProviderStateCleanup,
   parseProviderStateCleanupLocator,
   publishPreparedProviderStateCleanupTaskInTransaction,
+  renewProviderStateCleanupTaskLease,
   serializeProviderStateCleanupLocator,
 } from "./provider-state-cleanup-store.js";
 
@@ -402,6 +403,43 @@ describe("provider state cleanup durable store", () => {
     expect(completeProviderStateCleanupTask({ id: task.id, leaseId: first.leaseId!, now: 151 })).toBe(false);
     expect(completeProviderStateCleanupTask({ id: task.id, leaseId: second.leaseId!, now: 151 })).toBe(true);
     expect(getDb().prepare("SELECT id FROM provider_state_cleanup_tasks WHERE id = ?").get(task.id)).toBeNull();
+  });
+
+  it("renews only the current unexpired id-and-lease pair", () => {
+    const task = enqueuePublishedProviderStateCleanupTask({
+      operation: "delete_state",
+      locator: locator(),
+      now: 100,
+    });
+    const first = claimProviderStateCleanupTasks({ now: 100, limit: 1, leaseDurationMs: 50 })[0]!;
+
+    expect(
+      renewProviderStateCleanupTaskLease({
+        id: task.id,
+        leaseId: "wrong-lease",
+        now: 120,
+        leaseDurationMs: 100,
+      }),
+    ).toBe(false);
+    expect(
+      renewProviderStateCleanupTaskLease({
+        id: task.id,
+        leaseId: first.leaseId!,
+        now: 120,
+        leaseDurationMs: 100,
+      }),
+    ).toBe(true);
+    expect(claimProviderStateCleanupTasks({ now: 150, limit: 1, leaseDurationMs: 50 })).toEqual([]);
+    const second = claimProviderStateCleanupTasks({ now: 220, limit: 1, leaseDurationMs: 50 })[0]!;
+    expect(second.leaseId).not.toBe(first.leaseId);
+    expect(
+      renewProviderStateCleanupTaskLease({
+        id: task.id,
+        leaseId: first.leaseId!,
+        now: 221,
+        leaseDurationMs: 100,
+      }),
+    ).toBe(false);
   });
 
   it("applies bounded retry backoff and dead-letters non-retryable failures with allowlisted codes", () => {

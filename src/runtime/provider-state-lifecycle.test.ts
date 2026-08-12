@@ -284,8 +284,8 @@ describe("provider state publish-intent reconciliation", () => {
     expect(providerStatePublishIntentIsResolved("held_active_attempt")).toBe(false);
     expect(providerStatePublishIntentIsResolved("held_invalid_attempt")).toBe(false);
     expect(providerStatePublishIntentIsResolved("remove_owned_intent")).toBe(true);
-    expect(providerStatePublishIntentIsResolved("held_existing_task")).toBe(true);
-    expect(providerStatePublishIntentIsResolved("published_cleanup")).toBe(true);
+    expect(providerStatePublishIntentIsResolved("held_existing_task")).toBe(false);
+    expect(providerStatePublishIntentIsResolved("published_cleanup")).toBe(false);
   });
 
   it("holds an active attempt, then recreates the exact published task after attempt loss", () => {
@@ -324,7 +324,7 @@ describe("provider state publish-intent reconciliation", () => {
     expect(reconcile(302)).toBe("held_existing_task");
   });
 
-  it("holds missing attempt evidence without throwing or publishing a cleanup task", () => {
+  it("dead-letters missing attempt evidence without making it claimable", () => {
     const intent = {
       taskId: "reservation-missing-attempt",
       ownerAttemptId: "attempt-missing",
@@ -341,7 +341,23 @@ describe("provider state publish-intent reconciliation", () => {
         now: 200,
       }),
     ).toBe("held_invalid_attempt");
-    expect(getDb().prepare("SELECT id FROM provider_state_cleanup_tasks").get()).toBeNull();
+    expect(
+      getDb()
+        .prepare("SELECT id, status, last_error_code FROM provider_state_cleanup_tasks")
+        .get(),
+    ).toEqual({
+      id: intent.taskId,
+      status: "dead",
+      last_error_code: "state_missing",
+    });
+    expect(
+      reconcileProviderStatePublishIntent({
+        provider: "test-provider",
+        intent,
+        isLocatorOwned: () => false,
+        now: 201,
+      }),
+    ).toBe("held_existing_task");
   });
 
   it("rejects an intent locator outside the registered provider scope", () => {

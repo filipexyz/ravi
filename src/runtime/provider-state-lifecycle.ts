@@ -5,6 +5,7 @@ import {
   enqueuePreparedProviderStateCleanupTaskInTransaction,
   publishPreparedProviderStateCleanupTaskInTransaction,
   parseProviderStateCleanupLocator,
+  recordInvalidProviderStatePublishIntentInTransaction,
   serializeProviderStateCleanupLocator,
 } from "./provider-state-cleanup-store.js";
 import type { RuntimeProviderStateLifecycle, RuntimeProviderStatePublishInput } from "./types.js";
@@ -58,11 +59,7 @@ export type ProviderStatePublishIntentReconcileDecision =
 export function providerStatePublishIntentIsResolved(
   decision: ProviderStatePublishIntentReconcileDecision,
 ): boolean {
-  return (
-    decision === "remove_owned_intent" ||
-    decision === "held_existing_task" ||
-    decision === "published_cleanup"
-  );
+  return decision === "remove_owned_intent";
 }
 
 interface OwnedSessionRow {
@@ -242,7 +239,10 @@ export function reconcileProviderStatePublishIntent(input: {
         .prepare(
           `SELECT id FROM provider_state_cleanup_tasks
            WHERE id = ? AND provider = ? AND operation = 'provisional_exact'
-             AND locator_json = ? AND owner_attempt_id = ? AND status <> 'prepared'`,
+             AND locator_json = ? AND owner_attempt_id = ?
+             AND owner_session_key IS NOT NULL AND length(owner_session_key) > 0
+             AND owner_boot_epoch IS NOT NULL AND length(owner_boot_epoch) > 0
+             AND status IN ('published','leased','failed','dead')`,
         )
         .get(input.intent.taskId, input.provider, input.intent.locatorJson, input.intent.ownerAttemptId);
       if (existing) return "held_existing_task";
@@ -253,6 +253,14 @@ export function reconcileProviderStatePublishIntent(input: {
         )
         .get(input.intent.ownerAttemptId) as OwnedAttemptRow | undefined;
       if (!reconcileAttemptIsValid(attempt) || attempt.provider !== input.provider) {
+        recordInvalidProviderStatePublishIntentInTransaction(transaction, {
+          taskId: input.intent.taskId,
+          provider: input.provider,
+          locatorJson: input.intent.locatorJson,
+          ownerAttemptId: input.intent.ownerAttemptId,
+          errorCode: !attempt ? "state_missing" : reconcileAttemptIsValid(attempt) ? "binding_mismatch" : "schema_mismatch",
+          now,
+        });
         return "held_invalid_attempt";
       }
       if (attempt.status === "running" && attempt.lease_expires_at > now) return "held_active_attempt";

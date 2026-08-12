@@ -6,6 +6,7 @@ import {
   completeProviderStateCleanupTask,
   failProviderStateCleanupTask,
   holdProviderStateCleanupTaskForUnavailableExecutor,
+  renewProviderStateCleanupTaskLease,
   type ProviderStateCleanupErrorCode,
   type ProviderStateCleanupOperation,
   type ProviderStateCleanupTask,
@@ -40,8 +41,13 @@ export interface ProviderStateCleanupExecutorResult {
   processed?: number;
 }
 
+export interface ProviderStateCleanupExecutorContext {
+  signal: AbortSignal;
+}
+
 export type ProviderStateCleanupExecutor = (
   task: Readonly<ProviderStateCleanupTask>,
+  context: Readonly<ProviderStateCleanupExecutorContext>,
 ) => Promise<ProviderStateCleanupExecutorResult>;
 
 export interface ProviderStateIntentReconcileResult {
@@ -131,6 +137,9 @@ export interface ProviderStateCleanupRunnerOptions {
   now?: () => number;
   setInterval?: (callback: () => void, intervalMs: number) => unknown;
   clearInterval?: (timer: unknown) => void;
+  setLeaseInterval?: (callback: () => void, intervalMs: number) => unknown;
+  clearLeaseInterval?: (timer: unknown) => void;
+  unknownExecutorRetryDelayMs?: number;
   onDrain?: (result: ProviderStateCleanupDrainResult) => void;
 }
 
@@ -148,6 +157,10 @@ export class ProviderStateCleanupRunner {
   private readonly now: () => number;
   private readonly schedule: (callback: () => void, intervalMs: number) => unknown;
   private readonly cancel: (timer: unknown) => void;
+  private readonly scheduleLease: (callback: () => void, intervalMs: number) => unknown;
+  private readonly cancelLease: (timer: unknown) => void;
+  private readonly leaseRenewIntervalMs: number;
+  private readonly unknownExecutorRetryDelayMs: number;
   private readonly onDrain: ((result: ProviderStateCleanupDrainResult) => void) | undefined;
   private timer: unknown;
   private active = false;
@@ -164,6 +177,15 @@ export class ProviderStateCleanupRunner {
     this.schedule =
       options.setInterval ?? ((callback, intervalMs) => setInterval(callback, intervalMs));
     this.cancel = options.clearInterval ?? ((timer) => clearInterval(timer as ReturnType<typeof setInterval>));
+    this.scheduleLease =
+      options.setLeaseInterval ?? ((callback, intervalMs) => setInterval(callback, intervalMs));
+    this.cancelLease =
+      options.clearLeaseInterval ?? ((timer) => clearInterval(timer as ReturnType<typeof setInterval>));
+    this.leaseRenewIntervalMs = Math.max(1, Math.floor(this.leaseDurationMs / 4));
+    this.unknownExecutorRetryDelayMs = positiveInteger(
+      options.unknownExecutorRetryDelayMs ?? this.intervalMs,
+      "unknownExecutorRetryDelayMs",
+    );
     this.onDrain = options.onDrain;
   }
 
@@ -225,12 +247,42 @@ export class ProviderStateCleanupRunner {
       if (!leaseId) continue;
       const executor = this.registry.executorFor(task);
       if (!executor) {
-        holdProviderStateCleanupTaskForUnavailableExecutor({ id: task.id, leaseId, now: this.now() });
-        result.failed += 1;
+        if (
+          holdProviderStateCleanupTaskForUnavailableExecutor({
+            id: task.id,
+            leaseId,
+            now: this.now(),
+            retryDelayMs: this.unknownExecutorRetryDelayMs,
+          })
+        ) {
+          result.failed += 1;
+        }
         continue;
       }
+      const abortController = new AbortController();
+      let leaseLost = false;
+      const leaseHeartbeat = this.scheduleLease(() => {
+        try {
+          if (
+            !renewProviderStateCleanupTaskLease({
+              id: task.id,
+              leaseId,
+              leaseDurationMs: this.leaseDurationMs,
+              now: this.now(),
+            })
+          ) {
+            leaseLost = true;
+            abortController.abort();
+          }
+        } catch {
+          leaseLost = true;
+          abortController.abort();
+        }
+      }, this.leaseRenewIntervalMs);
       try {
-        const execution = await executor(task);
+        const execution = await executor(task, { signal: abortController.signal });
+        this.cancelLease(leaseHeartbeat);
+        if (leaseLost) continue;
         const finishedAt = this.now();
         if (!execution.complete) {
           requeueIncompleteProviderStateCleanupTask(task.id, leaseId, finishedAt);
@@ -239,6 +291,8 @@ export class ProviderStateCleanupRunner {
           result.completed += 1;
         }
       } catch (error) {
+        this.cancelLease(leaseHeartbeat);
+        if (leaseLost) continue;
         const code = error instanceof ProviderStateCleanupTaskError ? error.code : "unknown";
         failProviderStateCleanupTask({ id: task.id, leaseId, errorCode: code, now: this.now() });
         result.failed += 1;

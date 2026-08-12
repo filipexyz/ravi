@@ -5,7 +5,10 @@ import { getOrCreateSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { KIMI_CODE_PROVIDER_ID } from "./kimi-code-models.js";
 import { serializeKimiCodeCleanupLocator } from "./kimi-code-state.js";
-import { enqueuePublishedProviderStateCleanupTask } from "./provider-state-cleanup-store.js";
+import {
+  claimProviderStateCleanupTasks,
+  enqueuePublishedProviderStateCleanupTask,
+} from "./provider-state-cleanup-store.js";
 import {
   installProviderStateCleanupExecutors,
   ProviderStateCleanupExecutorRegistry,
@@ -72,16 +75,17 @@ describe("provider cleanup executor registry and runner", () => {
 
   it("holds unknown executors with only executor_unavailable diagnostics", async () => {
     const task = enqueue("missing-provider");
+    let now = 200;
     const runner = new ProviderStateCleanupRunner({
       registry: new ProviderStateCleanupExecutorRegistry(),
       claimLimit: 1,
       leaseDurationMs: 1_000,
-      now: () => 200,
+      intervalMs: 50,
+      now: () => now,
     });
 
-    for (let attempt = 0; attempt < 10; attempt += 1) {
-      expect(await runner.drainOnce()).toEqual({ claimed: 1, completed: 0, requeued: 0, failed: 1 });
-    }
+    expect(await runner.drainOnce()).toEqual({ claimed: 1, completed: 0, requeued: 0, failed: 1 });
+    expect(await runner.drainOnce()).toEqual({ claimed: 0, completed: 0, requeued: 0, failed: 0 });
     expect(
       getDb()
         .prepare(
@@ -101,10 +105,32 @@ describe("provider cleanup executor registry and runner", () => {
       registry: installedRegistry,
       claimLimit: 1,
       leaseDurationMs: 1_000,
-      now: () => 200,
+      now: () => now,
     });
+    now = 250;
     expect(await restartedRunner.drainOnce()).toEqual({ claimed: 1, completed: 1, requeued: 0, failed: 0 });
     expect(getDb().prepare("SELECT id FROM provider_state_cleanup_tasks WHERE id = ?").get(task.id)).toBeNull();
+  });
+
+  it("delays unknown executors so later registered work is not starved", async () => {
+    enqueue("missing-provider-a");
+    enqueue("missing-provider-b");
+    enqueue("missing-provider-c");
+    const known = enqueue("known-provider");
+    getDb().prepare("UPDATE provider_state_cleanup_tasks SET created_at = 101 WHERE id = ?").run(known.id);
+    const registry = new ProviderStateCleanupExecutorRegistry();
+    registry.registerExecutor("known-provider", "delete_state", async () => ({ complete: true }));
+    const runner = new ProviderStateCleanupRunner({
+      registry,
+      claimLimit: 2,
+      leaseDurationMs: 1_000,
+      intervalMs: 100,
+      now: () => 200,
+    });
+
+    expect(await runner.drainOnce()).toEqual({ claimed: 2, completed: 0, requeued: 0, failed: 2 });
+    expect(await runner.drainOnce()).toEqual({ claimed: 2, completed: 1, requeued: 0, failed: 1 });
+    expect(getDb().prepare("SELECT id FROM provider_state_cleanup_tasks WHERE id = ?").get(known.id)).toBeNull();
   });
 
   it("persists typed allowlisted failures without parsing secret error messages", async () => {
@@ -204,6 +230,59 @@ describe("provider cleanup executor registry and runner", () => {
     await stopping;
     expect(stopped).toBe(true);
     expect(execute).toHaveBeenCalledTimes(1);
+  });
+
+  it("renews a running executor lease and aborts without finalizing after lease loss", async () => {
+    const task = enqueue();
+    let now = 200;
+    let heartbeat!: () => void;
+    let heartbeatInterval = 0;
+    let heartbeatCleared = false;
+    let releaseExecution!: () => void;
+    const executionGate = new Promise<void>((resolve) => {
+      releaseExecution = resolve;
+    });
+    let executorSignal: AbortSignal | undefined;
+    const registry = new ProviderStateCleanupExecutorRegistry();
+    registry.registerExecutor("test-provider", "delete_state", async (_task, context) => {
+      executorSignal = context.signal;
+      await executionGate;
+      return { complete: true };
+    });
+    const runner = new ProviderStateCleanupRunner({
+      registry,
+      claimLimit: 1,
+      leaseDurationMs: 100,
+      now: () => now,
+      setLeaseInterval: (callback, intervalMs) => {
+        heartbeat = callback;
+        heartbeatInterval = intervalMs;
+        return 1;
+      },
+      clearLeaseInterval: () => {
+        heartbeatCleared = true;
+      },
+    });
+
+    const draining = runner.drainOnce();
+    await Promise.resolve();
+    expect(heartbeatInterval).toBeLessThan(100 / 3);
+    now = 225;
+    heartbeat();
+    expect(
+      getDb().prepare("SELECT leased_until FROM provider_state_cleanup_tasks WHERE id = ?").get(task.id),
+    ).toEqual({ leased_until: 325 });
+
+    now = 325;
+    const replacement = claimProviderStateCleanupTasks({ now, limit: 1, leaseDurationMs: 100 })[0]!;
+    heartbeat();
+    expect(executorSignal?.aborted).toBe(true);
+    releaseExecution();
+    expect(await draining).toEqual({ claimed: 1, completed: 0, requeued: 0, failed: 0 });
+    expect(heartbeatCleared).toBe(true);
+    expect(
+      getDb().prepare("SELECT lease_id FROM provider_state_cleanup_tasks WHERE id = ?").get(task.id),
+    ).toEqual({ lease_id: replacement.leaseId });
   });
 
   it("does not schedule periodic work when the initial reconciliation drain fails", async () => {
