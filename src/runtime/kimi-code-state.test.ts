@@ -172,9 +172,18 @@ describe("Kimi Code immutable session state", () => {
     expect(secondFile).not.toBe(firstFile);
     expect(sibling.snapshot.revision).toBe(2);
     expect(String(sibling.session.params?.sessionFile)).not.toBe(secondFile);
-    expect(existsSync(firstFile)).toBe(false);
+    expect(existsSync(firstFile)).toBe(true);
     expect(existsSync(secondFile)).toBe(true);
     expect(readFileSync(String(sibling.session.params?.sessionFile), "utf8")).toContain("answer-collision");
+    await expect(
+      loadKimiCodeSessionState({ session: first.session, model: "k3", cwd: first.cwd, env: first.env }),
+    ).resolves.toEqual(first.snapshot);
+    await expect(
+      loadKimiCodeSessionState({ session: second.session, model: "k3", cwd: first.cwd, env: first.env }),
+    ).resolves.toEqual(second.snapshot);
+    await expect(
+      loadKimiCodeSessionState({ session: sibling.session, model: "k3", cwd: first.cwd, env: first.env }),
+    ).resolves.toEqual(sibling.snapshot);
     expect(readdirSync(dirname(secondFile)).filter((name) => name.includes(".tmp"))).toEqual([]);
     if (process.platform !== "win32") {
       expect(lstatSync(secondFile).mode & 0o777).toBe(0o600);
@@ -204,10 +213,10 @@ describe("Kimi Code immutable session state", () => {
     });
     const liveFile = String(second.session.params?.sessionFile);
 
-    expect(existsSync(firstFile)).toBe(false);
+    expect(existsSync(firstFile)).toBe(true);
     expect(existsSync(staleTemporary)).toBe(false);
     expect(existsSync(liveFile)).toBe(true);
-    expect(readdirSync(sessionDirectory)).toEqual([basename(liveFile)]);
+    expect(readdirSync(sessionDirectory).sort()).toEqual([basename(firstFile), basename(liveFile)].sort());
   });
 
   test("cleans only a validated Kimi session directory and is idempotent", async () => {
@@ -223,15 +232,18 @@ describe("Kimi Code immutable session state", () => {
     await expect(cleanupKimiCodeSessionState(invalid, committed.env)).rejects.toThrow("session path is invalid");
     expect(existsSync(join(foreign, "keep.txt"))).toBe(true);
 
-    const signedDevice = cloneSession(committed.session);
-    Object.assign((signedDevice.params?.workspaceIdentity as Record<string, unknown>) ?? {}, { device: "-42" });
-    await cleanupKimiCodeSessionState(signedDevice, committed.env);
-    await cleanupKimiCodeSessionState(signedDevice, committed.env);
+    const fabricated = cloneSession(committed.session);
+    Object.assign(fabricated.params ?? {}, { lastCommittedTurnId: "fabricated-turn" });
+    await expect(cleanupKimiCodeSessionState(fabricated, committed.env)).rejects.toThrow("snapshot binding mismatch");
+    expect(existsSync(sessionFile)).toBe(true);
+
+    await cleanupKimiCodeSessionState(committed.session, committed.env);
+    await cleanupKimiCodeSessionState(committed.session, committed.env);
     expect(existsSync(sessionFile)).toBe(false);
     expect(existsSync(sessionDirectory)).toBe(false);
   });
 
-  test("rejects a superseded locator after its newer revision is published", async () => {
+  test("retains a previously returned locator after a newer revision is published", async () => {
     const first = await firstCommit();
     await commitKimiCodeSessionState({
       sessionId: first.snapshot.sessionId,
@@ -245,7 +257,7 @@ describe("Kimi Code immutable session state", () => {
 
     await expect(
       loadKimiCodeSessionState({ session: first.session, model: "k3", cwd: first.cwd, env: first.env }),
-    ).rejects.toThrow("session file is missing");
+    ).resolves.toEqual(first.snapshot);
   });
 
   test("cleans an unpublished temporary revision and permits retry after a pre-publication crash", async () => {

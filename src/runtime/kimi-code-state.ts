@@ -175,9 +175,7 @@ export async function commitKimiCodeSessionState(
   }
 
   // A failed best-effort prune must never invalidate the newly promoted locator.
-  await pruneUnpublishedSessionArtifacts(sessionDirectory, basename(finalPath), snapshot.revision).catch(
-    () => undefined,
-  );
+  await pruneUnpublishedSessionArtifacts(sessionDirectory, basename(finalPath)).catch(() => undefined);
 
   return {
     snapshot,
@@ -236,6 +234,7 @@ export async function cleanupKimiCodeSessionState(
   if (!rootRealPath || !directoryRealPath || !isPathInside(rootRealPath, directoryRealPath)) {
     throw stateError("session path escaped its root");
   }
+  await readLocatorBoundSnapshot(locator, env);
 
   await removeOwnedSessionArtifacts(sessionDirectory);
   await rmdir(sessionDirectory).catch((error) => {
@@ -325,27 +324,67 @@ export async function loadKimiCodeSessionState(input: LoadKimiCodeSessionStateIn
   return snapshot;
 }
 
-async function pruneUnpublishedSessionArtifacts(
-  sessionDirectory: string,
-  liveFilename: string,
-  liveRevision: number,
-): Promise<void> {
+async function pruneUnpublishedSessionArtifacts(sessionDirectory: string, liveFilename: string): Promise<void> {
   await assertNoExistingReparsePoints(sessionDirectory);
   for (const entry of await readdir(sessionDirectory, { withFileTypes: true })) {
     if (entry.name === liveFilename) continue;
     const path = join(sessionDirectory, entry.name);
-    const revision = revisionFromFilename(entry.name);
     const temporary = isTemporaryRevisionFilename(entry.name);
-    if (!revision && !temporary) continue;
+    if (!temporary) continue;
     const info = await lstat(path);
     if (!info.isFile() || info.isSymbolicLink()) throw stateError("session path uses a reparse point");
-    // A same/newer revision can still be a live locator from a concurrent
-    // publisher. A fresh temporary file can still be in that publisher's
-    // write/link window, so only reap abandoned temporaries.
-    if (revision !== undefined && revision >= liveRevision) continue;
-    if (temporary && Date.now() - info.mtimeMs < 60_000) continue;
+    // A fresh temporary file can still be in a concurrent publisher's
+    // write/link window, so only reap abandoned temporary artifacts. Published
+    // revisions remain until a lifecycle owner has proof that no locator lives.
+    if (Date.now() - info.mtimeMs < 60_000) continue;
     await unlink(path);
   }
+}
+
+async function readLocatorBoundSnapshot(
+  locator: ReturnType<typeof parseLocator>,
+  env?: NodeJS.ProcessEnv,
+): Promise<KimiCodeSessionSnapshot> {
+  await assertNoExistingReparsePoints(locator.sessionFile);
+  const fileInfo = await lstat(locator.sessionFile).catch(() => undefined);
+  if (!fileInfo?.isFile() || fileInfo.isSymbolicLink()) throw stateError("session file is missing");
+  if (fileInfo.size > KIMI_CODE_MAX_STATE_BYTES) throw stateError("session file is oversized");
+  const file = await open(locator.sessionFile, "r").catch(() => undefined);
+  if (!file) throw stateError("session file is missing");
+  let bytes: Buffer;
+  try {
+    const openedInfo = await file.stat();
+    if (!openedInfo.isFile() || openedInfo.size > KIMI_CODE_MAX_STATE_BYTES) {
+      throw stateError(
+        openedInfo.size > KIMI_CODE_MAX_STATE_BYTES ? "session file is oversized" : "session file is missing",
+      );
+    }
+    bytes = await file.readFile();
+  } finally {
+    await file.close().catch(() => undefined);
+  }
+  if (bytes.byteLength > KIMI_CODE_MAX_STATE_BYTES) throw stateError("session file is oversized");
+  let decoded: unknown;
+  try {
+    decoded = JSON.parse(bytes.toString("utf8"));
+  } catch {
+    throw stateError("session file is corrupt");
+  }
+  if (containsConfiguredCredential(decoded, env)) throw stateError("session file contains configured credential");
+  const snapshot = parseSnapshot(decoded);
+  if (
+    snapshot.schemaVersion !== locator.schemaVersion ||
+    snapshot.provider !== locator.provider ||
+    snapshot.model !== locator.model ||
+    snapshot.sessionId !== locator.sessionId ||
+    snapshot.revision !== locator.revision ||
+    !sameCwd(snapshot.cwd, locator.cwd) ||
+    !sameWorkspaceIdentity(snapshot.workspaceIdentity, locator.workspaceIdentity) ||
+    snapshot.lastCommittedTurnId !== locator.lastCommittedTurnId
+  ) {
+    throw stateError("snapshot binding mismatch");
+  }
+  return snapshot;
 }
 
 async function removeOwnedSessionArtifacts(sessionDirectory: string): Promise<void> {
