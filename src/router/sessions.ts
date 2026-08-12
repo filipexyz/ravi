@@ -82,6 +82,7 @@ interface SessionRow {
   expires_at: number | null;
   created_at: number;
   updated_at: number;
+  lifecycle_generation: number;
 }
 
 function rowToEntry(row: SessionRow): SessionEntry {
@@ -130,6 +131,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     expiresAt: row.expires_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    lifecycleGeneration: row.lifecycle_generation,
   };
 }
 
@@ -510,6 +512,32 @@ export function updateSessionRuntimeProviderOverride(
   });
 }
 
+/**
+ * Changes a provider override and, when required, clears the stale provider
+ * locator in the same generation-guarded write. Callers must capture the
+ * locator before invoking this so provider-owned cleanup can run only after a
+ * successful mutation.
+ */
+export function updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged(
+  session: Pick<SessionEntry, "sessionKey" | "lifecycleGeneration">,
+  runtimeProvider: SessionEntry["runtimeProviderOverride"] | null,
+  clearProviderState: boolean,
+): boolean {
+  const lifecycleGeneration = session.lifecycleGeneration;
+  if (typeof lifecycleGeneration !== "number" || !Number.isSafeInteger(lifecycleGeneration)) return false;
+  const now = Date.now();
+  const statement = clearProviderState
+    ? `UPDATE sessions SET runtime_provider_override = ?, sdk_session_id = NULL, runtime_provider = NULL,
+       runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ?
+       WHERE session_key = ? AND lifecycle_generation = ?`
+    : `UPDATE sessions SET runtime_provider_override = ?, updated_at = ?
+       WHERE session_key = ? AND lifecycle_generation = ?`;
+  getDb()
+    .prepare(statement)
+    .run(runtimeProvider ?? null, now, session.sessionKey, lifecycleGeneration);
+  return getDbChanges() > 0;
+}
+
 export function updateProviderSessionId(
   sessionKey: string,
   providerSessionId: string,
@@ -529,12 +557,16 @@ export function clearProviderSession(sessionKey: string): void {
 }
 
 /** Clears provider state only when no writer has replaced the observed session. */
-export function clearProviderSessionIfUnchanged(session: Pick<SessionEntry, "sessionKey" | "updatedAt">): boolean {
+export function clearProviderSessionIfUnchanged(
+  session: Pick<SessionEntry, "sessionKey" | "lifecycleGeneration">,
+): boolean {
+  const lifecycleGeneration = session.lifecycleGeneration;
+  if (typeof lifecycleGeneration !== "number" || !Number.isSafeInteger(lifecycleGeneration)) return false;
   getDb()
     .prepare(
-      "UPDATE sessions SET sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ? WHERE session_key = ? AND updated_at = ?",
+      "UPDATE sessions SET sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ? WHERE session_key = ? AND lifecycle_generation = ?",
     )
-    .run(Date.now(), session.sessionKey, session.updatedAt);
+    .run(Date.now(), session.sessionKey, lifecycleGeneration);
   return getDbChanges() > 0;
 }
 
@@ -660,8 +692,12 @@ export function deleteSession(sessionKey: string): boolean {
 }
 
 /** Deletes a session only when no writer has replaced the observed session. */
-export function deleteSessionIfUnchanged(session: Pick<SessionEntry, "sessionKey" | "updatedAt">): boolean {
-  getDb().prepare("DELETE FROM sessions WHERE session_key = ? AND updated_at = ?").run(session.sessionKey, session.updatedAt);
+export function deleteSessionIfUnchanged(session: Pick<SessionEntry, "sessionKey" | "lifecycleGeneration">): boolean {
+  const lifecycleGeneration = session.lifecycleGeneration;
+  if (typeof lifecycleGeneration !== "number" || !Number.isSafeInteger(lifecycleGeneration)) return false;
+  getDb()
+    .prepare("DELETE FROM sessions WHERE session_key = ? AND lifecycle_generation = ?")
+    .run(session.sessionKey, lifecycleGeneration);
   return getDbChanges() > 0;
 }
 
@@ -693,7 +729,9 @@ export function resetSession(sessionKey: string): boolean {
 }
 
 /** Resets a session only when no writer has replaced the observed session. */
-export function resetSessionIfUnchanged(session: Pick<SessionEntry, "sessionKey" | "updatedAt">): boolean {
+export function resetSessionIfUnchanged(session: Pick<SessionEntry, "sessionKey" | "lifecycleGeneration">): boolean {
+  const lifecycleGeneration = session.lifecycleGeneration;
+  if (typeof lifecycleGeneration !== "number" || !Number.isSafeInteger(lifecycleGeneration)) return false;
   const db = getDb();
   db.prepare(
     `
@@ -702,9 +740,9 @@ export function resetSessionIfUnchanged(session: Pick<SessionEntry, "sessionKey"
       runtime_session_display_id = NULL, system_sent = 0, aborted_last_run = 0,
       compaction_count = 0, input_tokens = 0, output_tokens = 0, total_tokens = 0,
       context_tokens = 0, updated_at = ?
-    WHERE session_key = ? AND updated_at = ?
+    WHERE session_key = ? AND lifecycle_generation = ?
   `,
-  ).run(Date.now(), session.sessionKey, session.updatedAt);
+  ).run(Date.now(), session.sessionKey, lifecycleGeneration);
   return getDbChanges() > 0;
 }
 

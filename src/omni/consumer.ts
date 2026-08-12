@@ -59,7 +59,8 @@ import {
   dbUpsertSessionParticipant,
   type SessionChatSubscriptionRecord,
 } from "../router/router-db.js";
-import { resetSession } from "../router/sessions.js";
+import { resetSessionIfUnchanged } from "../router/sessions.js";
+import { runProviderSessionLifecycleMutation } from "../runtime/provider-session-lifecycle.js";
 import {
   recordChannelMessageReceivedTrace,
   recordPresenceTrace,
@@ -1881,7 +1882,13 @@ export class OmniConsumer {
           editEventId: input.editInfo.editEventId,
         },
       }) ?? false;
-    const reset = resetSession(input.sessionKey);
+    const session = getSession(input.sessionKey);
+    const reset = session
+      ? await runProviderSessionLifecycleMutation({
+          session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+          mutate: () => resetSessionIfUnchanged(session),
+        })
+      : false;
     const workspace = await this.inspectWorkspaceChanges(input.agentCwd);
 
     try {

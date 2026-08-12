@@ -225,6 +225,7 @@ export interface SessionEntry {
   sdkSessionId?: string;
   sessionFile?: string;
   updatedAt: number;
+  lifecycleGeneration?: number;
   createdAt: number;
 
   // Agent

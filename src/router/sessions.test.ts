@@ -5,6 +5,7 @@ import {
   getSession,
   updateSessionContext,
   updateSessionEffortOverride,
+  updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged,
   updateSessionRuntimeProviderOverride,
   updateSessionThreadId,
 } from "./sessions.js";
@@ -63,6 +64,21 @@ describe("sessions store", () => {
       runtimeProvider: "codex",
       runtimeProviderOverride: undefined,
     });
+  });
+
+  it("clears stale provider state only when the observed lifecycle generation wins", () => {
+    const session = getOrCreateSession("agent:dev:provider-override-cas", "dev", "/tmp/dev", {
+      runtimeProvider: "kimi-code",
+      providerSessionId: "kimi-locator",
+      runtimeSessionParams: { provider: "kimi-code", sessionId: "state" },
+    });
+
+    expect(updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged(session, "claude", true)).toBe(true);
+    expect(getSession(session.sessionKey)).toMatchObject({ runtimeProviderOverride: "claude" });
+    expect(getSession(session.sessionKey)?.providerSessionId).toBeUndefined();
+
+    expect(updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged(session, "codex", true)).toBe(false);
+    expect(getSession(session.sessionKey)?.runtimeProviderOverride).toBe("claude");
   });
 
   it("persists and clears the provider thread id for programmatic session forks", () => {

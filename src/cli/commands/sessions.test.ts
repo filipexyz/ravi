@@ -213,9 +213,24 @@ mock.module("../../router/sessions.js", () => ({
     if (resolvedSession?.sessionKey === sessionKey) resolvedSession = null;
     return true;
   },
+  deleteSessionIfUnchanged: (session: { sessionKey: string; lifecycleGeneration?: number }) => {
+    if (!Number.isSafeInteger(session.lifecycleGeneration)) return false;
+    deletedSessionKeys.push(session.sessionKey);
+    listedSessions = listedSessions.filter((candidate) => candidate.sessionKey !== session.sessionKey);
+    if (resolvedSession?.sessionKey === session.sessionKey) resolvedSession = null;
+    return true;
+  },
   resetSession: (sessionKey: string) => {
     resetSessionCalls.push(sessionKey);
     if (resolvedSession?.sessionKey === sessionKey) {
+      resolvedSession = { ...resolvedSession, providerSessionId: undefined, sdkSessionId: undefined };
+    }
+    return true;
+  },
+  resetSessionIfUnchanged: (session: { sessionKey: string; lifecycleGeneration?: number }) => {
+    if (!Number.isSafeInteger(session.lifecycleGeneration)) return false;
+    resetSessionCalls.push(session.sessionKey);
+    if (resolvedSession?.sessionKey === session.sessionKey) {
       resolvedSession = { ...resolvedSession, providerSessionId: undefined, sdkSessionId: undefined };
     }
     return true;
@@ -838,6 +853,7 @@ describe("SessionCommands list --json", () => {
         agentId: "main",
         agentCwd: "/tmp/main",
         runtimeProvider: "codex",
+        lifecycleGeneration: 1,
         providerSessionId: "resp_1",
         totalTokens: 42,
         createdAt: 1000,
@@ -1475,6 +1491,7 @@ describe("SessionCommands prune", () => {
         agentId: "dev",
         agentCwd: "/tmp/dev",
         runtimeProvider: "codex",
+        lifecycleGeneration: 1,
         totalTokens: 100,
         createdAt: now - 10 * 86_400_000,
         updatedAt: now - 3 * 86_400_000,
@@ -2239,6 +2256,7 @@ describe("sessions agent-first contract", () => {
       agentCwd: "/tmp/dev",
       providerSessionId: "provider-session-before-reset",
       sdkSessionId: "sdk-session-before-reset",
+      lifecycleGeneration: 1,
     };
   });
 

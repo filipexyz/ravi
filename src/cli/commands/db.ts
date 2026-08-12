@@ -8,7 +8,8 @@ import { existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { Arg, Command, CommandAccess, CliOnly, Group, Option, Scope } from "../decorators.js";
 import { getRaviStateDir } from "../../utils/paths.js";
-import { dbPruneStaleRows, type DbPruneResult } from "../../router/router-db.js";
+import { dbPruneStaleRows, type DbExpiredSessionSnapshot, type DbPruneResult } from "../../router/router-db.js";
+import { runProviderSessionLifecycleMutation } from "../../runtime/provider-session-lifecycle.js";
 import { join } from "node:path";
 
 interface ProcessHolder {
@@ -265,11 +266,25 @@ export class DbCommands {
   ): Promise<DbPruneResult> {
     const dbPathBefore = join(getRaviStateDir(), "ravi.db");
     const sizeBefore = fileSize(dbPathBefore);
+    const expiredSessions: DbExpiredSessionSnapshot[] = [];
     const result = dbPruneStaleRows({
       vacuum: vacuum === true,
       walCheckpoint: checkpoint === true,
       dryRun: dryRun === true,
+      onExpiredSessionDeleted: (session) => expiredSessions.push(session),
     });
+    await Promise.all(
+      expiredSessions.map((session) =>
+        runProviderSessionLifecycleMutation({
+          session: {
+            displayId: session.runtimeSessionDisplayId,
+            params: parseRuntimeSessionParamsForLifecycle(session.runtimeSessionJson),
+          },
+          // dbPruneStaleRows already performed the exact generation-guarded delete.
+          mutate: () => true,
+        }),
+      ),
+    );
     const sizeAfter = fileSize(dbPathBefore);
 
     if (asJson) {
@@ -295,5 +310,17 @@ export class DbCommands {
       console.log(`DB size: ${formatBytes(sizeBefore)} → ${formatBytes(sizeAfter)}`);
     }
     return result;
+  }
+}
+
+function parseRuntimeSessionParamsForLifecycle(raw: string | undefined): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
   }
 }

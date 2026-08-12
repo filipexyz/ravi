@@ -10,7 +10,7 @@ import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
 import { deleteSessionIfUnchanged, getExpiringSessions, getExpiredSessions } from "../router/sessions.js";
-import { dbCleanupMessageMeta, dbPruneStaleRows } from "../router/router-db.js";
+import { dbCleanupMessageMeta, dbPruneStaleRows, type DbExpiredSessionSnapshot } from "../router/router-db.js";
 import { runProviderSessionLifecycleMutation } from "../runtime/provider-session-lifecycle.js";
 import { rollupDailyMetrics } from "../metrics/rollup.js";
 
@@ -127,12 +127,28 @@ function rollupTick(): void {
  * - each delete runs in its own short transaction (no long write lock)
  * - WAL checkpoint drains the WAL after pruning so the file actually shrinks
  */
-function pruneTick(): void {
+async function pruneTick(): Promise<void> {
   const now = Date.now();
   if (now - lastPruneAt < PRUNE_INTERVAL_MS / 2) return;
   lastPruneAt = now;
   try {
-    const result = dbPruneStaleRows({ walCheckpoint: true });
+    const expiredSessions: DbExpiredSessionSnapshot[] = [];
+    const result = dbPruneStaleRows({
+      walCheckpoint: true,
+      onExpiredSessionDeleted: (session) => expiredSessions.push(session),
+    });
+    await Promise.all(
+      expiredSessions.map((session) =>
+        runProviderSessionLifecycleMutation({
+          session: {
+            displayId: session.runtimeSessionDisplayId,
+            params: parseRuntimeSessionParamsForLifecycle(session.runtimeSessionJson),
+          },
+          // dbPruneStaleRows already performed the exact generation-guarded delete.
+          mutate: () => true,
+        }),
+      ),
+    );
     const total =
       result.messageMetadata +
       result.sessionEvents +
@@ -155,6 +171,18 @@ function pruneTick(): void {
   }
 }
 
+function parseRuntimeSessionParamsForLifecycle(raw: string | undefined): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function startEphemeralRunner(): Promise<void> {
   if (running) return;
   running = true;
@@ -167,12 +195,12 @@ export async function startEphemeralRunner(): Promise<void> {
   // missing days from the last shutdown without waiting an hour.
   rollupTick();
   // Run prune on startup so a long-stopped daemon catches up on stale rows.
-  pruneTick();
+  await pruneTick();
 
   // Then run periodically
   intervalTimer = setInterval(tick, CHECK_INTERVAL_MS);
   rollupTimer = setInterval(rollupTick, ROLLUP_INTERVAL_MS);
-  pruneTimer = setInterval(pruneTick, PRUNE_INTERVAL_MS);
+  pruneTimer = setInterval(() => void pruneTick(), PRUNE_INTERVAL_MS);
 
   log.info("Ephemeral runner started", {
     checkIntervalMs: CHECK_INTERVAL_MS,

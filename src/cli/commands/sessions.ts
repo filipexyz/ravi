@@ -45,8 +45,7 @@ import {
   updateSessionModelOverride,
   updateSessionEffortOverride,
   updateSessionThinkingLevel,
-  updateSessionRuntimeProviderOverride,
-  clearProviderSession,
+  updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged,
   setSessionEphemeral,
   extendSession,
   makeSessionPermanent,
@@ -3192,7 +3191,7 @@ export class SessionCommands {
     action: "set-provider",
     risk: "medium",
   })
-  setProvider(
+  async setProvider(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("provider", {
       description: "Runtime provider id (codex, claude, pi) or 'clear' to remove override",
@@ -3232,9 +3231,18 @@ export class SessionCommands {
 
     const label = s.name ?? s.sessionKey;
     const beforeProviderOverride = s.runtimeProviderOverride ?? null;
-    updateSessionRuntimeProviderOverride(s.sessionKey, providerOverride);
-    if (providerOverride && s.providerSessionId && s.runtimeProvider && s.runtimeProvider !== providerOverride) {
-      clearProviderSession(s.sessionKey);
+    const clearStaleProviderState = Boolean(
+      providerOverride && s.providerSessionId && s.runtimeProvider && s.runtimeProvider !== providerOverride,
+    );
+    const changed = clearStaleProviderState
+      ? await runProviderSessionLifecycleMutation({
+          session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams },
+          mutate: () => updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged(s, providerOverride, true),
+        })
+      : updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged(s, providerOverride, false);
+    if (!changed) {
+      fail(`Session changed before provider override could be applied: ${label}`);
+      return;
     }
 
     if (!asJson) {
@@ -3541,7 +3549,10 @@ export class SessionCommands {
       /* session may not be active */
     }
 
-    const changed = await runProviderSessionLifecycleMutation({ session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams }, mutate: () => resetSessionIfUnchanged(s) });
+    const changed = await runProviderSessionLifecycleMutation({
+      session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams },
+      mutate: () => resetSessionIfUnchanged(s),
+    });
     const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
       reason: "cli_session_reset",
     });
@@ -3639,7 +3650,10 @@ export class SessionCommands {
     const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
       reason: "cli_session_delete",
     });
-    const changed = await runProviderSessionLifecycleMutation({ session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams }, mutate: () => deleteSessionIfUnchanged(s) });
+    const changed = await runProviderSessionLifecycleMutation({
+      session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams },
+      mutate: () => deleteSessionIfUnchanged(s),
+    });
     await emitSessionMutationAudit("delete", "completed", {
       cliInvocation,
       before,
@@ -3812,7 +3826,10 @@ export class SessionCommands {
       const revokedContexts = revokeAgentRuntimeContextsForSession(session.sessionKey, {
         reason: "cli_session_prune_inactive",
       });
-      const changed = await runProviderSessionLifecycleMutation({ session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams }, mutate: () => deleteSessionIfUnchanged(session) });
+      const changed = await runProviderSessionLifecycleMutation({
+        session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+        mutate: () => deleteSessionIfUnchanged(session),
+      });
       if (changed) deletedCount += 1;
       await emitSessionMutationAudit("prune", "completed", {
         cliInvocation,

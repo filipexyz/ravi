@@ -10,7 +10,7 @@ import {
   deleteSessionIfUnchanged,
   getAnnounceCompaction,
   getSession,
-  resetSession,
+  resetSessionIfUnchanged,
   updateProviderSession,
   updateRuntimeProviderState,
   updateTokens,
@@ -2723,7 +2723,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             error: event.error,
             history,
           });
-          const resetApplied = resetSession(session.sessionKey);
+          const resetApplied = await runProviderSessionLifecycleMutation({
+            session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+            mutate: () => resetSessionIfUnchanged(session),
+          });
           session.sdkSessionId = undefined;
           session.providerSessionId = undefined;
           session.runtimeProvider = undefined;

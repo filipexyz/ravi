@@ -1375,6 +1375,7 @@ function getDb(): Database {
       system_sent INTEGER DEFAULT 0,
       aborted_last_run INTEGER DEFAULT 0,
       compaction_count INTEGER DEFAULT 0,
+      lifecycle_generation INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -2857,6 +2858,12 @@ function getDb(): Database {
   }
 
   // Migration: add ephemeral session columns
+  if (!sessionColumns.some((c) => c.name === "lifecycle_generation")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN lifecycle_generation INTEGER NOT NULL DEFAULT 1");
+  }
+  db.exec(`CREATE TRIGGER IF NOT EXISTS sessions_lifecycle_generation_after_update
+    AFTER UPDATE ON sessions FOR EACH ROW WHEN NEW.lifecycle_generation = OLD.lifecycle_generation
+    BEGIN UPDATE sessions SET lifecycle_generation = lifecycle_generation + 1 WHERE session_key = NEW.session_key; END`);
   if (!sessionColumns.some((c) => c.name === "ephemeral")) {
     db.exec("ALTER TABLE sessions ADD COLUMN ephemeral INTEGER DEFAULT 0");
     db.exec("ALTER TABLE sessions ADD COLUMN expires_at INTEGER");
@@ -10482,10 +10489,48 @@ export function dbCleanupMessageMeta(): number {
  * Safe to call at any time — idempotent, only removes rows with expires_at <= now.
  * Returns number of rows deleted.
  */
-export function dbCleanupExpiredSessions(): number {
-  const s = getStatements();
-  s.cleanupExpiredSessions.run(Date.now());
-  return getDbChanges();
+export interface DbExpiredSessionSnapshot {
+  sessionKey: string;
+  lifecycleGeneration: number;
+  runtimeSessionDisplayId?: string;
+  runtimeSessionJson?: string;
+}
+
+export function dbCleanupExpiredSessions(
+  onDeleted?: (session: DbExpiredSessionSnapshot) => void,
+  now = Date.now(),
+): number {
+  const db = getDb();
+  const candidates = db
+    .prepare(
+      `SELECT session_key, lifecycle_generation, runtime_session_display_id, runtime_session_json
+       FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?`,
+    )
+    .all(now) as Array<{
+    session_key: string;
+    lifecycle_generation: number;
+    runtime_session_display_id: string | null;
+    runtime_session_json: string | null;
+  }>;
+  const remove = db.prepare(
+    `DELETE FROM sessions WHERE session_key = ? AND lifecycle_generation = ?
+     AND ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?`,
+  );
+  let deleted = 0;
+  for (const candidate of candidates) {
+    remove.run(candidate.session_key, candidate.lifecycle_generation, now);
+    if (getDbChanges() === 0) continue;
+    deleted += 1;
+    onDeleted?.({
+      sessionKey: candidate.session_key,
+      lifecycleGeneration: candidate.lifecycle_generation,
+      ...(candidate.runtime_session_display_id
+        ? { runtimeSessionDisplayId: candidate.runtime_session_display_id }
+        : {}),
+      ...(candidate.runtime_session_json ? { runtimeSessionJson: candidate.runtime_session_json } : {}),
+    });
+  }
+  return deleted;
 }
 
 export interface DbPruneResult {
@@ -10505,6 +10550,8 @@ export interface DbPruneOptions {
   dryRun?: boolean;
   walCheckpoint?: boolean;
   now?: number;
+  /** Internal lifecycle hook; never included in the public prune result. */
+  onExpiredSessionDeleted?: (session: DbExpiredSessionSnapshot) => void;
 }
 
 /**
@@ -10599,7 +10646,7 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   );
   result.auditLog = runDelete("DELETE FROM audit_log WHERE ts < ?", now - AUDIT_LOG_TTL_MS);
   result.costEvents = runDelete("DELETE FROM cost_events WHERE created_at < ?", now - COST_EVENTS_TTL_MS);
-  result.expiredSessions = dbCleanupExpiredSessions();
+  result.expiredSessions = dbCleanupExpiredSessions(options.onExpiredSessionDeleted, now);
 
   if (options.walCheckpoint) {
     db.exec("PRAGMA wal_checkpoint(PASSIVE)");
