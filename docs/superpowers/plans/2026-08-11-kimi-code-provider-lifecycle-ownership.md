@@ -87,6 +87,7 @@
 - Canonical Kimi locator projection/parse API shared with the generic store without exposing messages or host metadata.
 - A private fsynced publish-intent journal contains only canonical locator, task id, owner attempt id.
 - A prepared snapshot exposes a synchronous bounded publish callback; no async filesystem operation occurs inside the SQLite callback.
+- POSIX publication uses link plus directory fsync; Windows uses bounded `MoveFileExW(..., MOVEFILE_WRITE_THROUGH)` P/Invoke because Bun directory fsync returns `EPERM`, retaining intent on timeout/ambiguity.
 - `provisional_exact` cleanup deletes only the exact future revision and its intent/temp after proving no host owner; it never prunes `<= revision`.
 - Existing full-session cleanup and predecessor retirement retain their present binding/reparse guarantees.
 
@@ -222,4 +223,3 @@
 - [ ] Fix all Critical/Important findings in one scoped wave and obtain one scoped re-review.
 - [ ] Push the existing PR branch and use upstream Linux CI as the repository-wide regression gate.
 - [ ] Do not merge while L-01..L-04 lack current private evidence.
-

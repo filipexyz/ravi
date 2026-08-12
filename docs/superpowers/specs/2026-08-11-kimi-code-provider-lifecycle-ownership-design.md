@@ -151,6 +151,30 @@ primitives and must finish within a configured short deadline; timeout or error
 rolls back SQLite and leaves the intent journal for reconciliation. No Promise or
 `await` is permitted inside the repository's synchronous `executeWrite` callback.
 
+On POSIX, publication uses a no-replace hard link followed by directory fsync.
+On Windows, Bun/Node directory `fsync` is not a usable durability primitive (it
+returns `EPERM` on the supported Windows runtime). The Windows path therefore
+uses the documented `MoveFileExW(..., MOVEFILE_WRITE_THROUGH)` no-replace rename,
+which does not return until the move is on disk. Because Bun FFI is explicitly
+experimental, the call is made through a fixed P/Invoke helper launched
+synchronously with a strict timeout, minimal environment, hidden window, and no
+provider data on stdout. Process timeout, non-zero exit, or an ambiguous result
+rolls back SQLite and retains the fsynced intent; it is never treated as success.
+The same write-through rename publishes the intent journal during async
+preparation, before the SQLite critical section. The bounded Windows subprocess
+is the sole platform exception to the ordinary no-subprocess callback rule.
+
+Windows cleanup cannot claim durable directory-unlink semantics from `fsync`.
+It first write-through-renames each exact owned artifact to a deterministic
+private tombstone, durably removing the canonical locator/intent/temp name, then
+truncates and flushes the tombstone before best-effort unlink. A crash may leave
+only a zero-length private tombstone; it must not leave transcript or reasoning
+under either the canonical or tombstone name. Retry recognizes and removes its
+own exact tombstone. POSIX cleanup uses unlink followed by directory fsync. In
+both cases the matching intent remains until the final/temp canonical names are
+durably absent, so no deletion is acknowledged from a one-phase best-effort
+unlink.
+
 If the callback publishes and a later SQLite operation or commit fails, the
 fsynced intent journal remains authoritative recovery evidence. A bounded
 provider-intent reconciler validates the journal and examines journal, matching
