@@ -120,7 +120,7 @@ export function resolveRuntimeSession(options: RuntimeSessionResolutionOptions):
   const runtimeCapabilities = runtimeProvider.getCapabilities();
 
   let session: SessionEntry;
-  if (sessionEntry && (sessionEntry.agentId !== agentId || sessionEntry.agentCwd !== agentCwd)) {
+  if (sessionEntry && sessionEntry.agentId !== agentId) {
     const redirect = redirectSessionIfUnchanged(sessionEntry, agentId, agentCwd);
     if (!redirect.won) {
       log.warn("Runtime session redirect lost ownership", {
