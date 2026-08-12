@@ -1,6 +1,6 @@
 # Kimi Code Provider Lifecycle Ownership Design
 
-**Status:** Accepted for implementation  
+**Status:** Accepted for implementation
 **Supersedes:** the cleanup-failure and post-publication retention decisions in
 `2026-08-11-kimi-code-provider-merge-blockers-design.md`
 
