@@ -31,7 +31,11 @@ import { buildSlackTopology } from "../../channels/slack/topology.js";
 import type { SlackSocketEnvelope } from "../../channels/slack/types.js";
 import { configStore } from "../../config-store.js";
 import { getContact } from "../../contacts.js";
-import { resolveSlackCredentialConfigFromEnv, type SlackCredentialConfig } from "../../channels/slack/credentials.js";
+import {
+  isSlackGatewayChannel,
+  resolveSlackCredentialConfigFromEnv,
+  type SlackCredentialConfig,
+} from "../../channels/slack/credentials.js";
 import { dbFindChat, dbFindChatMessage, type ChannelConfig } from "../../router/router-db.js";
 import {
   appendArtifactEvent,
@@ -258,7 +262,7 @@ function resolveSlackOpsTarget(channelName: string | undefined, contract: SlackC
     );
   }
 
-  if (!channel.credentialConnection?.trim()) {
+  if (!channel.credentialConnection?.trim() && !isSlackGatewayChannel(channel)) {
     contractFail(
       contract.op,
       "CREDENTIALS_NOT_CONFIGURED",
@@ -278,7 +282,7 @@ function resolveSlackOpsTarget(channelName: string | undefined, contract: SlackC
     summary: {
       accountId: channel.name,
       instanceId: channel.name,
-      source: "broker",
+      source: isSlackGatewayChannel(channel) ? "gateway" : "broker",
     },
   };
 }
@@ -319,6 +323,9 @@ async function createSlackOpsContext(
     client: new SlackWebApiClient({
       appToken: config.appToken,
       botToken: config.botToken,
+      apiBaseUrl: config.apiBaseUrl,
+      fileProxyUrl: config.fileProxyUrl,
+      defaultHeaders: config.requestHeaders,
     }),
   };
 }
@@ -3375,6 +3382,9 @@ export class SlackCommands {
       client: new SlackWebApiClient({
         appToken: config.appToken,
         botToken: config.botToken,
+        apiBaseUrl: config.apiBaseUrl,
+        fileProxyUrl: config.fileProxyUrl,
+        defaultHeaders: config.requestHeaders,
       }),
     };
   }

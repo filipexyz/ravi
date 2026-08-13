@@ -37,10 +37,13 @@ export type {
 } from "./client.js";
 export {
   credentialConnectionForChannel,
+  isSlackGatewayChannel,
   parseSlackSecretPayload,
   resolveSlackCredentialConfigFromEnv,
 } from "./credentials.js";
 export type { SlackCredentialConfig, SlackSecretPayload } from "./credentials.js";
+export { SlackGatewayModeService } from "./gateway-mode.js";
+export type { SlackGatewayEnvelopeProcessor, SlackGatewayModeServiceOptions } from "./gateway-mode.js";
 export {
   respondToSlackInteraction,
   storeSlackInteractionResponseUrl,

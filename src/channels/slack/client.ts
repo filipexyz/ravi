@@ -5,6 +5,8 @@ export interface SlackWebApiClientOptions {
   readonly appToken: string;
   readonly botToken: string;
   readonly apiBaseUrl?: string;
+  readonly fileProxyUrl?: string;
+  readonly defaultHeaders?: Readonly<Record<string, string>>;
   readonly fetchImpl?: typeof fetch;
 }
 
@@ -95,6 +97,10 @@ export interface SlackAuthTestResponse extends SlackApiResponse {
   readonly bot_id?: string;
   readonly scopes?: string[];
   readonly acceptedScopes?: string[];
+}
+
+export interface SlackUserInfoResponse extends SlackApiResponse {
+  readonly user?: unknown;
 }
 
 export interface SlackConversationListInput {
@@ -324,12 +330,16 @@ export class SlackWebApiClient {
   private readonly appToken: string;
   private readonly botToken: string;
   private readonly apiBaseUrl: string;
+  private readonly fileProxyUrl?: string;
+  private readonly defaultHeaders: Readonly<Record<string, string>>;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: SlackWebApiClientOptions) {
     this.appToken = options.appToken;
     this.botToken = options.botToken;
-    this.apiBaseUrl = options.apiBaseUrl ?? "https://slack.com/api";
+    this.apiBaseUrl = (options.apiBaseUrl ?? "https://slack.com/api").replace(/\/+$/, "");
+    this.fileProxyUrl = options.fileProxyUrl;
+    this.defaultHeaders = options.defaultHeaders ?? {};
     this.fetchImpl = options.fetchImpl ?? fetch;
   }
 
@@ -518,6 +528,10 @@ export class SlackWebApiClient {
       scopes: parseSlackScopeHeader(headers.get("x-oauth-scopes")),
       acceptedScopes: parseSlackScopeHeader(headers.get("x-accepted-oauth-scopes")),
     };
+  }
+
+  async usersInfo(user: string): Promise<SlackUserInfoResponse> {
+    return this.apiRequest<SlackUserInfoResponse>("users.info", this.botToken, { user });
   }
 
   async addReaction(input: SlackReactionInput): Promise<Record<string, unknown>> {
@@ -730,10 +744,16 @@ export class SlackWebApiClient {
   }
 
   async downloadFile(input: SlackDownloadFileInput): Promise<SlackDownloadFileResult> {
-    const res = await this.fetchImpl(input.url, {
+    const res = await this.fetchImpl(this.fileProxyUrl ?? input.url, {
+      method: this.fileProxyUrl ? "POST" : "GET",
       headers: {
+        ...this.defaultHeaders,
         authorization: `Bearer ${this.botToken}`,
+        ...(this.fileProxyUrl ? { "content-type": "application/json; charset=utf-8" } : {}),
       },
+      ...(this.fileProxyUrl
+        ? { body: JSON.stringify({ url: input.url, ...(input.maxBytes ? { maxBytes: input.maxBytes } : {}) }) }
+        : {}),
       signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) {
@@ -776,6 +796,7 @@ export class SlackWebApiClient {
     const res = await this.fetchImpl(`${this.apiBaseUrl}/${method}`, {
       method: "POST",
       headers: {
+        ...this.defaultHeaders,
         authorization: `Bearer ${token}`,
         "content-type": "application/json; charset=utf-8",
       },
@@ -802,6 +823,7 @@ export class SlackWebApiClient {
     const res = await this.fetchImpl(`${this.apiBaseUrl}/${method}`, {
       method: "POST",
       headers: {
+        ...this.defaultHeaders,
         authorization: `Bearer ${token}`,
         "content-type": "application/x-www-form-urlencoded",
       },
