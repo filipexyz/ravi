@@ -1,10 +1,15 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { createChannelRunnerHealthSnapshot, type ChannelRunnerRuntimeStatus } from "../../channels/health.js";
 import { dbGetChannel } from "../../router/router-db.js";
-import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
+import {
+  cleanupIsolatedRaviState,
+  createIsolatedRaviState,
+  withoutRaviRuntimeContextEnv,
+} from "../../test/ravi-state.js";
 
 // Manual v2 contract: hasContext() true makes the contract helpers throw
 // ContractError instead of process.exit, which is what tests need.
@@ -68,6 +73,86 @@ describe("channels command runner env", () => {
       RAVI_SLACK_THREAD_REPLY_MODE: "thread",
     });
   });
+});
+
+describe("channels runner lifecycle", () => {
+  it("recreates a stopped PM2 entry from the current bundle and persists it", () => {
+    const root = mkdtempSync(join(tmpdir(), "ravi-channels-restart-"));
+    tempDirs.push(root);
+    const runtimeRoot = join(root, "runtime");
+    const bundlePath = join(runtimeRoot, "dist", "bundle", "index.js");
+    const fakeBinDir = join(root, "bin");
+    const fakePm2Path = join(fakeBinDir, "pm2");
+    const pm2LogPath = join(root, "pm2.log");
+
+    mkdirSync(join(bundlePath, ".."), { recursive: true });
+    mkdirSync(fakeBinDir, { recursive: true });
+    writeFileSync(join(runtimeRoot, "package.json"), JSON.stringify({ name: "ravi.bot", version: "test" }), "utf8");
+    writeFileSync(bundlePath, "", "utf8");
+    writeFileSync(
+      fakePm2Path,
+      [
+        "#!/bin/sh",
+        'printf "%s\\n" "$*" >> "$CHANNELS_TEST_PM2_LOG"',
+        'if [ "$1" = "jlist" ]; then',
+        `  printf '%s\\n' '${JSON.stringify([
+          {
+            name: "ravi",
+            pm_id: 1,
+            pid: 1234,
+            pm2_env: {
+              status: "online",
+              pm_exec_path: bundlePath,
+              pm_cwd: runtimeRoot,
+              args: ["daemon", "run"],
+              env: {},
+            },
+            monit: { cpu: 0, memory: 0 },
+          },
+          {
+            name: "ravi-channels",
+            pm_id: 2,
+            pid: 0,
+            pm2_env: {
+              status: "stopped",
+              pm_exec_path: "/old/bun",
+              pm_cwd: "/old",
+              args: ["/old/index.js", "channels", "run"],
+              env: {},
+            },
+            monit: { cpu: 0, memory: 0 },
+          },
+        ])}'`,
+        "fi",
+        "exit 0",
+      ].join("\n"),
+      "utf8",
+    );
+    chmodSync(fakePm2Path, 0o755);
+
+    const result = spawnSync("bun", ["src/cli/index.ts", "channels", "restart", "--json"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: {
+        ...withoutRaviRuntimeContextEnv(process.env),
+        HOME: join(root, "home"),
+        PATH: `${fakeBinDir}${delimiter}${process.env.PATH ?? ""}`,
+        RAVI_STATE_DIR: join(root, "state"),
+        RAVI_CREDENTIALS_PATH: join(root, "missing-credentials.json"),
+        RAVI_BUNDLE: bundlePath,
+        RAVI_DAEMON_CWD: runtimeRoot,
+        RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+        CHANNELS_TEST_PM2_LOG: pm2LogPath,
+      },
+    });
+    const pm2Log = readFileSync(pm2LogPath, "utf8");
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(pm2Log).toContain("delete ravi-channels");
+    expect(pm2Log).toContain(`start bun --name ravi-channels -- ${realpathSync(bundlePath)} channels run`);
+    expect(pm2Log).toContain("save --force");
+  }, 20_000);
 });
 
 describe("channels config commands", () => {

@@ -1,9 +1,15 @@
 import { execFileSync, spawn } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
-import { buildPm2Env, CHANNELS_PM2_PROCESS_NAME, getPm2Processes, PM2_PROCESS_NAME } from "../../pm2.js";
+import {
+  findRaviPackageRoot,
+  readRaviVersion,
+  resolveManagedRuntimeTargetFromPackageRoot,
+  type ManagedRuntimeTarget,
+} from "../../managed-runtime.js";
+import { managedRuntimeSnapshot, runManagedRuntimeRebindSupervisor } from "../../managed-runtime-rebind.js";
+import { getPm2Processes, type Pm2Process } from "../../pm2.js";
 import { getRaviStateDir } from "../../utils/paths.js";
 import { CONTRACT_EXIT_USAGE, contractFail } from "../agent-contract.js";
 
@@ -55,15 +61,12 @@ interface UpdateReporter {
   warn(message: string): void;
 }
 
-export type ManagedRuntimeRestartStep = {
-  action: "stop" | "restart";
-  processName: typeof PM2_PROCESS_NAME | typeof CHANNELS_PM2_PROCESS_NAME;
-};
-
 const PACKAGE_NAME = "ravi.bot";
 const LOCAL_BIN = join(homedir(), ".local", "bin");
 const EXACT_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
 const SRI_PATTERN = /^sha512-[A-Za-z0-9+/]+={0,2}$/;
+
+export { findRaviPackageRoot as findPackageRoot };
 
 class UpdateFailure extends Error {
   constructor(
@@ -194,39 +197,6 @@ export function detectFromBinaryPath(binaryPath: string): InstallationType | nul
   return null;
 }
 
-function isRaviPackageRoot(dir: string): boolean {
-  const packagePath = join(dir, "package.json");
-  if (!existsSync(packagePath)) return false;
-  try {
-    const pkg = JSON.parse(readFileSync(packagePath, "utf8")) as { name?: string };
-    return pkg.name === PACKAGE_NAME || pkg.name === "@filipelabs/ravi";
-  } catch {
-    return false;
-  }
-}
-
-export function findPackageRoot(startPath: string | null | undefined): string | null {
-  const trimmed = startPath?.trim();
-  if (!trimmed) return null;
-
-  let dir = trimmed;
-  try {
-    const realPath = realpathSync(trimmed);
-    dir = statSync(realPath).isDirectory() ? realPath : dirname(realPath);
-  } catch {
-    dir = dirname(trimmed);
-  }
-
-  while (dir) {
-    if (isRaviPackageRoot(dir)) return dir;
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-
-  return null;
-}
-
 function sourceRootFromPackageRoot(packageRoot: string | null): string | null {
   if (!packageRoot) return null;
   return existsSync(join(packageRoot, ".git")) ? packageRoot : null;
@@ -234,10 +204,11 @@ function sourceRootFromPackageRoot(packageRoot: string | null): string | null {
 
 function resolveSourceRoot(): string | null {
   const configured = process.env.RAVI_REPO?.trim();
-  if (configured && isRaviPackageRoot(configured) && existsSync(join(configured, ".git"))) {
-    return safeRealpath(configured);
+  const configuredRoot = findRaviPackageRoot(configured);
+  if (configuredRoot && existsSync(join(configuredRoot, ".git"))) {
+    return safeRealpath(configuredRoot);
   }
-  return sourceRootFromPackageRoot(findPackageRoot(process.argv[1]));
+  return sourceRootFromPackageRoot(findRaviPackageRoot(process.argv[1]));
 }
 
 export function detectInstallationType(config = readUpdateConfig()): InstallationType {
@@ -281,23 +252,13 @@ export function validateExpectedIntegrity(value: string): string {
   return integrity;
 }
 
-function packageVersionAt(packageRoot: string | null): string | null {
-  if (!packageRoot) return null;
-  try {
-    const pkg = JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf8")) as { version?: unknown };
-    return typeof pkg.version === "string" ? pkg.version : null;
-  } catch {
-    return null;
-  }
-}
-
 export function detectInstalledVersion(): string | null {
   const which = runCommandSilent("which", ["ravi"]);
   if (which.success) {
-    const fromPath = packageVersionAt(findPackageRoot(which.output.trim()));
+    const fromPath = readRaviVersion(findRaviPackageRoot(which.output.trim()));
     if (fromPath) return fromPath;
   }
-  return packageVersionAt(findPackageRoot(process.argv[1]));
+  return readRaviVersion(findRaviPackageRoot(process.argv[1]));
 }
 
 async function verifyRegistryIntegrity(version: string, expectedIntegrity: string): Promise<void> {
@@ -323,122 +284,45 @@ async function verifyRegistryIntegrity(version: string, expectedIntegrity: strin
   }
 }
 
-export function planManagedRuntimeRestart(
-  processes: Array<{ name: string; status: string }>,
-): ManagedRuntimeRestartStep[] {
-  const online = new Set(processes.filter((process) => process.status === "online").map((process) => process.name));
-  const daemonWasRunning = online.has(PM2_PROCESS_NAME);
-  const channelsWereRunning = online.has(CHANNELS_PM2_PROCESS_NAME);
-  const plan: ManagedRuntimeRestartStep[] = [];
-
-  // Stop channel intake before changing the daemon bundle. This prevents an
-  // old channel runner from reading a schema migrated by a newer process.
-  if (channelsWereRunning) {
-    plan.push({ action: "stop", processName: CHANNELS_PM2_PROCESS_NAME });
+export function resolveUpdatedManagedRuntimeTarget(preferredPackageRoot?: string | null): ManagedRuntimeTarget | null {
+  const which = runCommandSilent("which", ["ravi"]);
+  const candidates = [
+    preferredPackageRoot,
+    which.success ? findRaviPackageRoot(which.output.trim()) : null,
+    findRaviPackageRoot(process.argv[1]),
+  ];
+  for (const candidate of candidates) {
+    const target = resolveManagedRuntimeTargetFromPackageRoot(candidate);
+    if (target) return target;
   }
-  if (daemonWasRunning) {
-    plan.push({ action: "restart", processName: PM2_PROCESS_NAME });
-  }
-  if (channelsWereRunning) {
-    plan.push({ action: "restart", processName: CHANNELS_PM2_PROCESS_NAME });
-  }
-
-  return plan;
-}
-
-export function managedRuntimeMatchesSnapshot(
-  previousProcesses: Array<{ name: string; status: string }>,
-  currentProcesses: Array<{ name: string; status: string }>,
-): boolean {
-  const expectedOnline = previousProcesses
-    .filter(
-      (process) =>
-        process.status === "online" &&
-        (process.name === PM2_PROCESS_NAME || process.name === CHANNELS_PM2_PROCESS_NAME),
-    )
-    .map((process) => process.name);
-  const currentOnline = new Set(
-    currentProcesses.filter((process) => process.status === "online").map((process) => process.name),
-  );
-  return expectedOnline.every((processName) => currentOnline.has(processName));
-}
-
-async function waitForManagedRuntime(
-  previousProcesses: Array<{ name: string; status: string }>,
-  timeoutMs = 10_000,
-): Promise<boolean> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (managedRuntimeMatchesSnapshot(previousProcesses, getPm2Processes())) return true;
-    await delay(250);
-  }
-  return managedRuntimeMatchesSnapshot(previousProcesses, getPm2Processes());
-}
-
-async function restartManagedRuntimeProcesses(
-  processes: Array<{ name: string; status: string }>,
-  reporter: UpdateReporter,
-): Promise<boolean> {
-  const plan = planManagedRuntimeRestart(processes);
-  if (plan.length === 0) return true;
-
-  reporter.log("Restarting managed Ravi runtime with the updated bundle");
-  let channelsStopped = false;
-  for (const step of plan) {
-    const result = await runCommand("pm2", [step.action, step.processName], {
-      env: buildPm2Env(),
-      stream: !reporter.json,
-    });
-    if (result.success) {
-      if (step.action === "stop" && step.processName === CHANNELS_PM2_PROCESS_NAME) {
-        channelsStopped = true;
-      }
-      if (step.action === "restart" && step.processName === CHANNELS_PM2_PROCESS_NAME) {
-        channelsStopped = false;
-      }
-      continue;
-    }
-
-    // Do not leave channel intake stopped if a later daemon transition fails.
-    if (channelsStopped && step.processName !== CHANNELS_PM2_PROCESS_NAME) {
-      await runCommand("pm2", ["restart", CHANNELS_PM2_PROCESS_NAME], {
-        env: buildPm2Env(),
-        stream: !reporter.json,
-      });
-    }
-    return false;
-  }
-
-  if (!(await waitForManagedRuntime(processes))) return false;
-  reporter.ok("Managed Ravi runtime restarted");
-  return true;
+  return null;
 }
 
 async function finishUpdate(
   restart: boolean,
-  previousProcesses: Array<{ name: string; status: string }>,
+  previousProcesses: Pm2Process[],
+  target: ManagedRuntimeTarget,
   reporter: UpdateReporter,
 ): Promise<boolean> {
   reporter.line();
   reporter.ok("Ravi CLI updated");
 
   if (!restart) {
-    reporter.line("Managed runtime restart skipped by request.");
-    reporter.line("Before handling new channel traffic, run:");
-    const online = new Set(
-      previousProcesses.filter((process) => process.status === "online").map((process) => process.name),
-    );
-    if (online.has(CHANNELS_PM2_PROCESS_NAME)) reporter.line("  ravi channels stop");
-    if (online.has(PM2_PROCESS_NAME)) reporter.line('  ravi daemon restart -m "load Ravi update"');
-    if (online.has(CHANNELS_PM2_PROCESS_NAME)) reporter.line("  ravi channels start");
+    reporter.line("Managed runtime reconciliation skipped; running processes were left unchanged.");
     return false;
   }
 
-  const restarted = await restartManagedRuntimeProcesses(previousProcesses, reporter);
-  if (!restarted) {
-    fail("Ravi updated, but the managed runtime restart failed. Restart daemon and channels before resuming traffic.");
+  const snapshot = managedRuntimeSnapshot(previousProcesses);
+  if (snapshot.length === 0) return false;
+  reporter.log(`Rebinding managed runtime to Ravi ${target.version}`);
+  const reconciled = await runManagedRuntimeRebindSupervisor(target, previousProcesses);
+  if (!reconciled) {
+    fail(
+      "Ravi updated, but PM2 did not converge on the updated runtime. Run `ravi daemon status` before resuming traffic.",
+    );
   }
-  return true;
+  reporter.ok(`Managed runtime reconciled to Ravi ${target.version}; PM2 startup state saved`);
+  return snapshot.some((process) => process.status === "online");
 }
 
 async function updateViaBun(packageTag: string, label: string, reporter: UpdateReporter): Promise<boolean> {
@@ -480,7 +364,7 @@ export function detectGlobalInstalls(): Set<"bun" | "npm"> {
   return found;
 }
 
-async function updateSource(channel: UpdateChannel, reporter: UpdateReporter): Promise<void> {
+async function updateSource(channel: UpdateChannel, reporter: UpdateReporter): Promise<string> {
   const sourceRoot = resolveSourceRoot();
   if (!sourceRoot) fail("Could not resolve Ravi source checkout. Set RAVI_REPO or use a global install.");
 
@@ -504,6 +388,7 @@ async function updateSource(channel: UpdateChannel, reporter: UpdateReporter): P
   }
 
   reporter.ok(`Source checkout updated from ${targetBranch}`);
+  return sourceRoot;
 }
 
 async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporter): Promise<RaviUpdateResult> {
@@ -552,15 +437,17 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
         CONTRACT_EXIT_USAGE,
       );
     }
-    await updateSource(channel as UpdateChannel, reporter);
-    const restarted = await finishUpdate(options.restart !== false, previousProcesses, reporter);
+    const sourceRoot = await updateSource(channel as UpdateChannel, reporter);
+    const target = resolveUpdatedManagedRuntimeTarget(sourceRoot);
+    if (!target) fail("Ravi updated, but its runnable bundle could not be resolved.");
+    const restarted = await finishUpdate(options.restart !== false, previousProcesses, target, reporter);
     return {
       success: true,
       package: PACKAGE_NAME,
       requested,
       channel,
       previousVersion,
-      currentVersion: detectInstalledVersion(),
+      currentVersion: target.version,
       installMethod: installType,
       restarted,
       integrityVerified: false,
@@ -589,14 +476,19 @@ async function performUpdate(options: RaviUpdateOptions, reporter: UpdateReporte
   if (exactVersion && currentVersion !== exactVersion) {
     fail(`The installation resolved to ${currentVersion ?? "an unknown version"}, not ${exactVersion}.`);
   }
-  const restarted = await finishUpdate(options.restart !== false, previousProcesses, reporter);
+  const target = resolveUpdatedManagedRuntimeTarget();
+  if (!target) fail("Ravi updated, but its runnable bundle could not be resolved.");
+  if (currentVersion && target.version !== currentVersion) {
+    fail(`The updated CLI reports ${currentVersion}, but its runtime bundle reports ${target.version}.`);
+  }
+  const restarted = await finishUpdate(options.restart !== false, previousProcesses, target, reporter);
   return {
     success: true,
     package: PACKAGE_NAME,
     requested,
     channel,
     previousVersion,
-    currentVersion,
+    currentVersion: target.version,
     installMethod: primary,
     restarted,
     integrityVerified: Boolean(expectedIntegrity),

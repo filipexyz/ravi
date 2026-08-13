@@ -9358,13 +9358,15 @@ public struct DaemonStatusReturn: Codable, Sendable {
   public var processName: String
   public var processes: [[String: RaviJSON]]
   public var ravi: [String: RaviJSON]
+  public var runtime: RaviJSON
 
-  public init(infrastructure: [String: RaviJSON], pm2Available: Bool, processName: String, processes: [[String: RaviJSON]], ravi: [String: RaviJSON]) {
+  public init(infrastructure: [String: RaviJSON], pm2Available: Bool, processName: String, processes: [[String: RaviJSON]], ravi: [String: RaviJSON], runtime: RaviJSON) {
     self.infrastructure = infrastructure
     self.pm2Available = pm2Available
     self.processName = processName
     self.processes = processes
     self.ravi = ravi
+    self.runtime = runtime
   }
 
   enum CodingKeys: String, CodingKey {
@@ -9373,6 +9375,7 @@ public struct DaemonStatusReturn: Codable, Sendable {
     case processName = "processName"
     case processes = "processes"
     case ravi = "ravi"
+    case runtime = "runtime"
   }
 }
 

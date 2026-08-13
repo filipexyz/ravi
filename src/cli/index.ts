@@ -28,6 +28,7 @@ import {
 } from "./agent-contract.js";
 import { runDoctor } from "./commands/doctor.js";
 import { runSetup } from "./commands/setup.js";
+import { maybeRunManagedRuntimeRebindFromEnv } from "../managed-runtime-rebind.js";
 import { runUpdate, type RaviUpdateOptions } from "./commands/update.js";
 import { runCloudAuthRootCommand, runLogin, runLogout, runWhoami } from "./commands/cloud-auth.js";
 import { emitCliAuditEvent, runWithCliAudit, wasContractErrorAudited } from "./audit.js";
@@ -355,6 +356,8 @@ void bootstrapCli().catch(async (error: unknown) => {
 });
 
 async function bootstrapCli(): Promise<void> {
+  if (await maybeRunManagedRuntimeRebindFromEnv()) return;
+
   const handledByAppAlias = await maybeRunAppAliasRoute(process.argv.slice(2), {
     staticRootCommands: rootCommandNames(program),
   });
