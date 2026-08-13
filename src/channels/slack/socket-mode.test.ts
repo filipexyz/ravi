@@ -294,6 +294,81 @@ describe("Slack Socket Mode routing", () => {
     ).toMatchObject({ ownerType: "contact", platformDisplayName: "Luis" });
   });
 
+  it("routes an approved Slack DM by the sender identity instead of the conversation id", async () => {
+    dbUpsertInstance({
+      name: "slack-main",
+      instanceId: "slack-main",
+      channel: "slack",
+      dmPolicy: "pairing",
+      groupPolicy: "allowlist",
+      contactIntakeMode: "pending",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      getRouterConfig: () => ({
+        agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+        routes: [
+          {
+            pattern: "u123",
+            accountId: "slack-main",
+            agent: "ravi-hil",
+            session: "main",
+            priority: 1_000,
+            policy: "open",
+            channel: "slack",
+            dmScope: "per-peer",
+          },
+        ],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: { "slack-main": "slack-main" },
+        instances: {
+          "slack-main": {
+            name: "slack-main",
+            instanceId: "slack-main",
+            channel: "slack",
+            dmPolicy: "pairing",
+            groupPolicy: "allowlist",
+            contactIntakeMode: "pending",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+      }),
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: {} as never,
+    });
+
+    await service.handleEnvelope({
+      envelope_id: "Ev-approved-owner",
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: "Ev-approved-owner",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          channel: "D123",
+          channel_type: "im",
+          user: "U123",
+          text: "oi Ravi",
+          ts: "1713000000.000200",
+        },
+      },
+    });
+
+    expect(published).toHaveLength(1);
+    expect(published[0]?.sessionName).toBe("main");
+  });
+
   it("keeps identical Slack user ids isolated between workspace instances", () => {
     const first = ensureContactFromInbound({
       channel: "slack",

@@ -1421,6 +1421,7 @@ export class SlackSocketModeService {
     const instanceConfig =
       instanceAliases.scopedAliases.map((alias) => routerConfig.instances?.[alias]).find(Boolean) ??
       routerConfig.instances?.[routeAccountId];
+    const routePeerId = isGroup ? message.channelId : (message.slackUserId ?? message.userId);
     const canonicalChat = dbUpsertChat({
       channel: "slack",
       instanceId,
@@ -1441,7 +1442,7 @@ export class SlackSocketModeService {
       seenAt: message.eventTimeMs,
     });
     let matched = matchRoute(routerConfig, {
-      phone: message.channelId,
+      phone: routePeerId,
       channel: "slack",
       accountId: routeAccountId,
       isGroup,
@@ -1531,7 +1532,7 @@ export class SlackSocketModeService {
     }
 
     const resolved = commitMatchedRoute(matched, {
-      phone: message.channelId,
+      phone: routePeerId,
       isGroup,
       groupId: isGroup ? message.channelId : undefined,
       peerKind,
