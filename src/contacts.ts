@@ -9151,9 +9151,13 @@ export function deleteContact(phone: string): boolean {
  */
 export function setContactStatus(phone: string, status: ContactStatus): void {
   const database = ensureDb();
-  const normalized = assertPersonOrOrgIdentity(phone, "setContactStatus");
-  const contact = resolveContact(normalized);
+  // Resolve the original reference first. Non-phone identities (for example a
+  // Slack user id) are already canonical platform identities and must not be
+  // passed through phone normalization, which would strip their letters and
+  // update a different compatibility contact.
+  const contact = resolveContact(phone);
   if (!contact) {
+    const normalized = assertPersonOrOrgIdentity(phone, "setContactStatus");
     upsertContact(normalized, null, status);
   } else {
     upsertCanonicalContactPolicy(database, {
