@@ -1596,12 +1596,42 @@ export const projectFixturesSeedReturnSchema = z
   })
   .passthrough();
 
+const managedRuntimeMemberReturnSchema = z
+  .object({
+    name: z.string(),
+    managed: z.boolean(),
+    online: z.boolean(),
+    status: z.string(),
+    pid: z.number().nullable(),
+    bundlePath: z.string().nullable(),
+    cwd: z.string().nullable(),
+    version: z.string().nullable(),
+    matchesCli: z.boolean().nullable(),
+  })
+  .strict();
+
+const managedRuntimeIdentityReturnSchema = z
+  .object({
+    alignment: z.enum(["aligned", "drifted", "unknown", "not_running"]),
+    cli: z
+      .object({
+        bundlePath: z.string().nullable(),
+        cwd: z.string().nullable(),
+        version: z.string().nullable(),
+      })
+      .strict(),
+    daemon: managedRuntimeMemberReturnSchema,
+    channels: managedRuntimeMemberReturnSchema,
+  })
+  .strict();
+
 export const daemonStatusReturnSchema = z
   .object({
     pm2Available: z.boolean(),
     processName: z.string(),
     ravi: looseObjectSchema,
     infrastructure: looseObjectSchema,
+    runtime: managedRuntimeIdentityReturnSchema,
     processes: z.array(looseObjectSchema),
   })
   .passthrough();

@@ -22,6 +22,57 @@ import type { NativeInboundChannelActionHandler } from "./native/driver.js";
 import type { ChannelRuntimeEventSink } from "./runtime-events.js";
 import { createSlackNativeChannelDriver } from "./slack/driver.js";
 import type { ChannelOutboundJob } from "./outbound-stream.js";
+import { buildRunnerPm2Env } from "./pm2-env.js";
+
+describe("channel runner PM2 environment", () => {
+  it("does not use Slack connection env as runner configuration", () => {
+    const previousConnection = process.env.RAVI_SLACK_CONNECTION;
+    const previousConnections = process.env.RAVI_SLACK_CONNECTIONS;
+    const previousCredentialConnection = process.env.RAVI_SLACK_CREDENTIAL_CONNECTION;
+
+    try {
+      process.env.RAVI_SLACK_CONNECTION = "primary-slack";
+      process.env.RAVI_SLACK_CONNECTIONS = "primary-slack,secondary-slack";
+      process.env.RAVI_SLACK_CREDENTIAL_CONNECTION = "legacy";
+
+      const env = buildRunnerPm2Env();
+
+      expect(env).not.toHaveProperty("RAVI_SLACK_CONNECTION");
+      expect(env).not.toHaveProperty("RAVI_SLACK_CONNECTIONS");
+      expect(env).not.toHaveProperty("RAVI_SLACK_CREDENTIAL_CONNECTION");
+    } finally {
+      setOptionalEnv("RAVI_SLACK_CONNECTION", previousConnection);
+      setOptionalEnv("RAVI_SLACK_CONNECTIONS", previousConnections);
+      setOptionalEnv("RAVI_SLACK_CREDENTIAL_CONNECTION", previousCredentialConnection);
+    }
+  });
+
+  it("preserves channel runner behavior flags", () => {
+    const previousConsumeOutbound = process.env.RAVI_CHANNELS_CONSUME_OUTBOUND;
+    const previousThreadReplyMode = process.env.RAVI_SLACK_THREAD_REPLY_MODE;
+
+    try {
+      process.env.RAVI_CHANNELS_CONSUME_OUTBOUND = "0";
+      process.env.RAVI_SLACK_THREAD_REPLY_MODE = "thread";
+
+      expect(buildRunnerPm2Env()).toMatchObject({
+        RAVI_CHANNELS_CONSUME_OUTBOUND: "0",
+        RAVI_SLACK_THREAD_REPLY_MODE: "thread",
+      });
+    } finally {
+      setOptionalEnv("RAVI_CHANNELS_CONSUME_OUTBOUND", previousConsumeOutbound);
+      setOptionalEnv("RAVI_SLACK_THREAD_REPLY_MODE", previousThreadReplyMode);
+    }
+  });
+});
+
+function setOptionalEnv(name: string, value: string | undefined): void {
+  if (value === undefined) {
+    delete process.env[name];
+    return;
+  }
+  process.env[name] = value;
+}
 
 describe("channel runner native delivery registry", () => {
   it("registers optional text, chat action, and presence adapters together", () => {

@@ -6,6 +6,7 @@ describe("buildPm2Env", () => {
   it("strips runtime context identity from PM2 child processes", () => {
     const env = buildPm2Env({
       RAVI_CONTEXT_KEY: "rctx_child",
+      RAVI_INTERNAL_UPDATE_RUNTIME_REBIND: "internal-request",
       RAVI_SESSION_KEY: "session_key",
       RAVI_SESSION_NAME: "main",
       RAVI_AGENT_ID: "agent-main",
@@ -19,6 +20,7 @@ describe("buildPm2Env", () => {
     });
 
     expect(env).not.toHaveProperty("RAVI_CONTEXT_KEY");
+    expect(env).not.toHaveProperty("RAVI_INTERNAL_UPDATE_RUNTIME_REBIND");
     expect(env).not.toHaveProperty("RAVI_SESSION_KEY");
     expect(env).not.toHaveProperty("RAVI_SESSION_NAME");
     expect(env).not.toHaveProperty("RAVI_AGENT_ID");

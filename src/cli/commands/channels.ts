@@ -12,6 +12,7 @@ import {
   type ChannelRunnerHealthSnapshot,
 } from "../../channels/health.js";
 import { ChannelRunner, runChannelRunnerFromEnv } from "../../channels/runner.js";
+import { buildRunnerPm2Env } from "../../channels/pm2-env.js";
 import { getCredentialConnection, listCredentialConnections } from "../../credentials/index.js";
 import { nats } from "../../nats.js";
 import {
@@ -251,14 +252,6 @@ function isClearValue(value: string): boolean {
   return ["-", "null", "none", "undefined", ""].includes(value.trim().toLowerCase());
 }
 
-const RUNNER_ENV_KEYS = [
-  "RAVI_CHANNELS_CONSUME_OUTBOUND",
-  "RAVI_SLACK_SUBSCRIPTION_SCOPE",
-  "RAVI_SLACK_THREAD_REPLY_MODE",
-  "RAVI_SLACK_ROOT_REPLY_MODE",
-  "RAVI_SLACK_WORKING_REACTION",
-] as const;
-
 function runPm2Quiet(
   args: string[],
   options: { cwd?: string; envOverrides?: Record<string, string> } = {},
@@ -272,41 +265,11 @@ function runPm2Quiet(
   return { status: result.status ?? 1 };
 }
 
-function cleanEnvValue(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  return trimmed ? trimmed : undefined;
+function persistPm2ProcessList(): number {
+  return runPm2Quiet(["save", "--force"]).status;
 }
 
-function readExistingPm2Env(processName: string): Record<string, unknown> {
-  const result = spawnSync("pm2", ["jlist"], {
-    stdio: ["ignore", "pipe", "pipe"],
-    encoding: "utf-8",
-  });
-  if ((result.status ?? 1) !== 0 || !result.stdout.trim()) return {};
-  try {
-    const list = JSON.parse(result.stdout) as unknown;
-    if (!Array.isArray(list)) return {};
-    const processInfo = list.find((item) => {
-      return item && typeof item === "object" && (item as { name?: unknown }).name === processName;
-    }) as { pm2_env?: { env?: Record<string, unknown> } } | undefined;
-    return processInfo?.pm2_env?.env ?? {};
-  } catch {
-    return {};
-  }
-}
-
-export function buildRunnerPm2Env(): Record<string, string> {
-  const existingPm2Env = readExistingPm2Env(CHANNELS_PM2_PROCESS_NAME);
-  const envOverrides: Record<string, string> = {};
-
-  for (const key of RUNNER_ENV_KEYS) {
-    const value = cleanEnvValue(process.env[key]) ?? cleanEnvValue(existingPm2Env[key]);
-    if (value) envOverrides[key] = value;
-  }
-
-  return envOverrides;
-}
+export { buildRunnerPm2Env };
 
 function publicRunnerEnv(envOverrides: Record<string, string>): Record<string, unknown> {
   return {
@@ -766,7 +729,7 @@ export class ChannelsCommands {
     const runnerEnv = buildRunnerPm2Env();
     const target = requireRuntimeTarget(build);
 
-    if (isPm2ProcessRunning(CHANNELS_PM2_PROCESS_NAME)) {
+    if (getPm2Process(CHANNELS_PM2_PROCESS_NAME)) {
       const stopped = asJson
         ? runPm2Quiet(["delete", CHANNELS_PM2_PROCESS_NAME])
         : runPm2(["delete", CHANNELS_PM2_PROCESS_NAME]);
@@ -777,9 +740,10 @@ export class ChannelsCommands {
     const { status } = asJson
       ? runPm2Quiet(args, { cwd: target.cwd, envOverrides: runnerEnv })
       : runPm2(args, runnerEnv, { cwd: target.cwd });
+    const saveStatus = status === 0 ? persistPm2ProcessList() : null;
     const payload = {
       action: "restart" as const,
-      changed: status === 0,
+      changed: status === 0 && saveStatus === 0,
       pm2Status: status,
       target,
       runnerEnv: publicRunnerEnv(runnerEnv),
@@ -788,10 +752,12 @@ export class ChannelsCommands {
     if (asJson) {
       printJson(payload);
       if (status !== 0) fail("Failed to restart channel runner");
+      if (saveStatus !== 0) fail("Channel runner restarted, but failed to save the PM2 process list");
       return payload;
     }
-    if (status === 0) console.log("Channel runner restarted");
-    else fail("Failed to restart channel runner");
+    if (status !== 0) fail("Failed to restart channel runner");
+    if (saveStatus !== 0) fail("Channel runner restarted, but failed to save the PM2 process list");
+    console.log("Channel runner restarted and PM2 startup state saved");
     return payload;
   }
 

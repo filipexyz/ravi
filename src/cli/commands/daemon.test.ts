@@ -243,7 +243,9 @@ describe("daemon runtime target", () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).not.toContain('"mode": "handoff"');
-    expect(readFileSync(pm2LogPath, "utf8")).toContain(`start ${realpathSync(fakeBundlePath)}`);
+    const pm2Log = readFileSync(pm2LogPath, "utf8");
+    expect(pm2Log).toContain(`start ${realpathSync(fakeBundlePath)}`);
+    expect(pm2Log).toContain("save --force");
     expect(existsSync(childMarkerPath)).toBe(false);
   }, 20_000);
 });
@@ -266,6 +268,7 @@ describe("DaemonCommands --json", () => {
     const payload = JSON.parse(lines[0] ?? "{}");
     expect(typeof payload.pm2Available).toBe("boolean");
     expect(payload.processName).toBe("ravi");
+    expect(["aligned", "drifted", "unknown", "not_running"]).toContain(payload.runtime.alignment);
     expect(payload.ravi).toEqual(
       expect.objectContaining({
         name: "ravi",

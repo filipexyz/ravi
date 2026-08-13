@@ -32050,6 +32050,226 @@ public enum RaviSchemas {
         "additionalProperties": {},
         "properties": {},
         "type": "object"
+      },
+      "runtime": {
+        "additionalProperties": false,
+        "properties": {
+          "alignment": {
+            "enum": [
+              "aligned",
+              "drifted",
+              "unknown",
+              "not_running"
+            ],
+            "type": "string"
+          },
+          "channels": {
+            "additionalProperties": false,
+            "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "matchesCli": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "online": {
+                "type": "boolean"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "managed",
+              "online",
+              "status",
+              "pid",
+              "bundlePath",
+              "cwd",
+              "version",
+              "matchesCli"
+            ],
+            "type": "object"
+          },
+          "cli": {
+            "additionalProperties": false,
+            "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "bundlePath",
+              "cwd",
+              "version"
+            ],
+            "type": "object"
+          },
+          "daemon": {
+            "additionalProperties": false,
+            "properties": {
+              "bundlePath": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "cwd": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "managed": {
+                "type": "boolean"
+              },
+              "matchesCli": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "name": {
+                "type": "string"
+              },
+              "online": {
+                "type": "boolean"
+              },
+              "pid": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "status": {
+                "type": "string"
+              },
+              "version": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "managed",
+              "online",
+              "status",
+              "pid",
+              "bundlePath",
+              "cwd",
+              "version",
+              "matchesCli"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "alignment",
+          "cli",
+          "daemon",
+          "channels"
+        ],
+        "type": "object"
       }
     },
     "required": [
@@ -32057,6 +32277,7 @@ public enum RaviSchemas {
       "processName",
       "ravi",
       "infrastructure",
+      "runtime",
       "processes"
     ],
     "type": "object"

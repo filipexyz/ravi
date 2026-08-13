@@ -10,6 +10,7 @@ export const PM2_PROCESS_NAME = "ravi";
 export const CHANNELS_PM2_PROCESS_NAME = "ravi-channels";
 const PM2_ENV_DENYLIST = [
   "RAVI_CONTEXT_KEY",
+  "RAVI_INTERNAL_UPDATE_RUNTIME_REBIND",
   "RAVI_SESSION_KEY",
   "RAVI_SESSION_NAME",
   "RAVI_AGENT_ID",
@@ -71,13 +72,17 @@ export function capturePm2(...args: string[]): string {
   }
 }
 
-interface Pm2Process {
+export interface Pm2Process {
   name: string;
   pm_id: number;
   pid: number;
   status: string;
   cpu: number;
   memory: number;
+  execPath?: string | null;
+  cwd?: string | null;
+  args?: string[];
+  createdAt?: number | null;
 }
 
 /**
@@ -99,6 +104,12 @@ function parsePm2List(): Pm2Process[] {
       status: p.pm2_env?.status ?? "unknown",
       cpu: p.monit?.cpu ?? 0,
       memory: p.monit?.memory ?? 0,
+      execPath: typeof p.pm2_env?.pm_exec_path === "string" ? p.pm2_env.pm_exec_path : null,
+      cwd: typeof p.pm2_env?.pm_cwd === "string" ? p.pm2_env.pm_cwd : null,
+      args: Array.isArray(p.pm2_env?.args)
+        ? p.pm2_env.args.filter((arg: unknown): arg is string => typeof arg === "string")
+        : [],
+      createdAt: typeof p.pm2_env?.created_at === "number" ? p.pm2_env.created_at : null,
     }));
   } catch {
     return [];

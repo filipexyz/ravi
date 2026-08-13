@@ -6340,6 +6340,36 @@ export type DaemonStatusReturn = {
   processName: string;
   processes: Array<Record<string, unknown>>;
   ravi: Record<string, unknown>;
+  runtime: {
+    alignment: "aligned" | "drifted" | "unknown" | "not_running";
+    channels: {
+      bundlePath: string | null;
+      cwd: string | null;
+      managed: boolean;
+      matchesCli: boolean | null;
+      name: string;
+      online: boolean;
+      pid: number | null;
+      status: string;
+      version: string | null;
+    };
+    cli: {
+      bundlePath: string | null;
+      cwd: string | null;
+      version: string | null;
+    };
+    daemon: {
+      bundlePath: string | null;
+      cwd: string | null;
+      managed: boolean;
+      matchesCli: boolean | null;
+      name: string;
+      online: boolean;
+      pid: number | null;
+      status: string;
+      version: string | null;
+    };
+  };
   [k: string]: unknown;
 };
 
