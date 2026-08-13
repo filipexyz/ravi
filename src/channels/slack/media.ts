@@ -84,13 +84,17 @@ export async function sendSlackMedia(
 
   const bytes = await readFile(input.filePath);
   const fetchImpl = dependencies.fetchImpl ?? fetch;
-  const apiBaseUrl = (dependencies.apiBaseUrl ?? DEFAULT_SLACK_API_BASE_URL).replace(/\/+$/, "");
+  const apiBaseUrl = (dependencies.apiBaseUrl ?? credentials.apiBaseUrl ?? DEFAULT_SLACK_API_BASE_URL).replace(
+    /\/+$/,
+    "",
+  );
 
   const uploadTicket = await slackFormRequest<SlackUploadUrlResponse>({
     fetchImpl,
     apiBaseUrl,
     method: "files.getUploadURLExternal",
     botToken: credentials.botToken,
+    defaultHeaders: credentials.requestHeaders,
     body: {
       filename: input.filename,
       length: String(bytes.byteLength),
@@ -119,6 +123,7 @@ export async function sendSlackMedia(
     apiBaseUrl,
     method: "files.completeUploadExternal",
     botToken: credentials.botToken,
+    defaultHeaders: credentials.requestHeaders,
     body: {
       files: JSON.stringify([{ id: ticketFileId, title: input.filename }]),
       channel_id: input.chatId,
@@ -146,11 +151,13 @@ async function slackFormRequest<T extends SlackApiResponse>(input: {
   readonly apiBaseUrl: string;
   readonly method: string;
   readonly botToken: string;
+  readonly defaultHeaders?: Readonly<Record<string, string>>;
   readonly body: Record<string, string>;
 }): Promise<T> {
   const response = await input.fetchImpl(`${input.apiBaseUrl}/${input.method}`, {
     method: "POST",
     headers: {
+      ...input.defaultHeaders,
       authorization: `Bearer ${input.botToken}`,
       "content-type": "application/x-www-form-urlencoded; charset=utf-8",
     },

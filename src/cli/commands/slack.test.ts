@@ -100,6 +100,8 @@ mock.module("../../config-store.js", () => ({
 }));
 
 mock.module("../../channels/slack/credentials.js", () => ({
+  isSlackGatewayChannel: (channel?: { enabled?: boolean; provider?: string; defaults?: { transport?: string } }) =>
+    channel?.enabled !== false && channel?.provider === "slack" && channel?.defaults?.transport === "hub_gateway_v1",
   resolveSlackCredentialConfigFromEnv: async (
     _env: NodeJS.ProcessEnv,
     options?: { action?: string; channel?: { name?: string; credentialConnection?: string } },

@@ -4,7 +4,9 @@ import { configStore } from "../../config-store.js";
 import {
   createContact,
   ensureContactFromInbound,
+  getPendingContacts,
   linkContactIdentity,
+  listAccountPendingContacts,
   resolvePlatformIdentity,
   upsertAgentPlatformIdentity,
 } from "../../contacts.js";
@@ -210,6 +212,107 @@ describe("Slack Socket Mode routing", () => {
         chatId: "C456",
       }),
     ).toBe(false);
+  });
+
+  it("holds an unknown Slack DM for owner review and hydrates its human profile", async () => {
+    dbUpsertInstance({
+      name: "slack-main",
+      instanceId: "slack-main",
+      channel: "slack",
+      dmPolicy: "pairing",
+      groupPolicy: "allowlist",
+      contactIntakeMode: "pending",
+    });
+    const published: Array<{ sessionName: string; payload: Record<string, unknown> }> = [];
+    const usersInfo = mock(async () => ({
+      ok: true,
+      user: {
+        id: "U123",
+        name: "luis",
+        profile: { display_name: "Luis", real_name: "Luis Filipe", image_72: "https://avatars.slack-edge.com/u123" },
+      },
+    }));
+    const service = new SlackSocketModeService({
+      appToken: "xapp-test",
+      botToken: "xoxb-test",
+      accountId: "slack-main",
+      instanceId: "slack-main",
+      getRouterConfig: () => ({
+        agents: { "ravi-hil": { id: "ravi-hil", cwd: "/tmp/ravi-hil", dmScope: "per-peer" } },
+        routes: [],
+        defaultAgent: "ravi-hil",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: { "slack-main": "slack-main" },
+        instances: {
+          "slack-main": {
+            name: "slack-main",
+            instanceId: "slack-main",
+            channel: "slack",
+            dmPolicy: "pairing",
+            groupPolicy: "allowlist",
+            contactIntakeMode: "pending",
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        },
+      }),
+      publishPrompt: async (sessionName, payload) => {
+        published.push({ sessionName, payload });
+      },
+      webClient: { usersInfo } as never,
+    });
+
+    await service.handleEnvelope({
+      envelope_id: "Ev-owner-candidate",
+      type: "events_api",
+      payload: {
+        type: "event_callback",
+        team_id: "T123",
+        event_id: "Ev-owner-candidate",
+        event_time: 1_713_000_000,
+        event: {
+          type: "message",
+          channel: "D123",
+          channel_type: "im",
+          user: "U123",
+          text: "oi Ravi",
+          ts: "1713000000.000100",
+        },
+      },
+    });
+
+    expect(published).toHaveLength(0);
+    expect(usersInfo).toHaveBeenCalledWith("U123");
+    expect(listAccountPendingContacts("slack-main")).toMatchObject([
+      { accountId: "slack-main", phone: "U123", name: "Luis", chatId: "D123", isGroup: false },
+    ]);
+    const contact = getPendingContacts()[0];
+    expect(contact?.name).toBe("Luis");
+    expect(
+      resolvePlatformIdentity({ channel: "slack", instanceId: "slack-main", platformUserId: "U123" }),
+    ).toMatchObject({ ownerType: "contact", platformDisplayName: "Luis" });
+  });
+
+  it("keeps identical Slack user ids isolated between workspace instances", () => {
+    const first = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: "slack-workspace-a",
+      platformSenderId: "U123",
+      displayName: "Luis A",
+      intakeMode: "pending",
+    });
+    const second = ensureContactFromInbound({
+      channel: "slack",
+      instanceId: "slack-workspace-b",
+      platformSenderId: "U123",
+      displayName: "Luis B",
+      intakeMode: "pending",
+    });
+
+    expect(first.contact?.id).toBeTruthy();
+    expect(second.contact?.id).toBeTruthy();
+    expect(first.contact?.id).not.toBe(second.contact?.id);
   });
 
   it("loads explicit Slack instance UUID aliases into outbound runtime scope", async () => {
@@ -948,7 +1051,7 @@ describe("Slack Socket Mode routing", () => {
             ts: "1713000000.000100",
             thread_ts: "1713000000.000100",
           },
-          response_url: "https://hooks.slack.test/secret",
+          response_url: "https://hooks.slack.com/actions/T1/B1/secret",
           actions: [
             {
               type: "button",
@@ -1003,7 +1106,7 @@ describe("Slack Socket Mode routing", () => {
         }),
       },
     ]);
-    expect(JSON.stringify(interactions[0]?.payload)).not.toContain("hooks.slack.test");
+    expect(JSON.stringify(interactions[0]?.payload)).not.toContain("hooks.slack.com");
   });
 
   it("publishes Slack Work Object link and detail events as inbound interactions", async () => {

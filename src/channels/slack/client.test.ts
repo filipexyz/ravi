@@ -2,6 +2,40 @@ import { describe, expect, it, mock } from "bun:test";
 import { SlackWebApiClient } from "./client.js";
 
 describe("Slack Web API client", () => {
+  it("routes requests and private file downloads through the authenticated Hub gateway", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const fetchImpl = mock(async (url: string | URL | Request, init?: RequestInit) => {
+      calls.push({ url: String(url), init: init ?? {} });
+      if (String(url).endsWith("/files")) {
+        return new Response(Buffer.from("file"), { headers: { "content-type": "text/plain" } });
+      }
+      return jsonResponse({ ok: true, team: "RBBT", user: "Ravi", team_id: "T1", user_id: "U1" });
+    }) as unknown as typeof fetch;
+    const client = new SlackWebApiClient({
+      appToken: "runtime-credential",
+      botToken: "runtime-credential",
+      apiBaseUrl: "https://hub.test/api/runtime/v1/slack/web-api/",
+      fileProxyUrl: "https://hub.test/api/runtime/v1/slack/files",
+      defaultHeaders: { "x-ravi-runtime-id": "runtime-1" },
+      fetchImpl,
+    });
+
+    await client.authTest();
+    const file = await client.downloadFile({ url: "https://files.slack.com/private/F1", maxBytes: 10 });
+
+    expect(calls[0]?.url).toBe("https://hub.test/api/runtime/v1/slack/web-api/auth.test");
+    expect(calls[0]?.init.headers).toMatchObject({
+      authorization: "Bearer runtime-credential",
+      "x-ravi-runtime-id": "runtime-1",
+    });
+    expect(calls[1]?.url).toBe("https://hub.test/api/runtime/v1/slack/files");
+    expect(JSON.parse(String(calls[1]?.init.body))).toEqual({
+      url: "https://files.slack.com/private/F1",
+      maxBytes: 10,
+    });
+    expect(file.buffer.toString()).toBe("file");
+  });
+
   it("reads token scopes from auth.test response headers", async () => {
     let requestSignal: AbortSignal | null | undefined;
     const fetchImpl = mock(async (_url: string | URL | Request, init?: RequestInit) => {

@@ -7655,6 +7655,7 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
   const platformSenderId = input.platformSenderId.trim();
   if (!platformSenderId) throw new Error("Platform sender id is required");
   const contactIdentity = (input.contactIdentity?.trim() || platformSenderId).trim();
+  const scopedPlatformIdentityOnly = channel === "slack";
   const desiredStatus = contactStatusFromIntakeMode(input.intakeMode ?? "off");
   const intakeSource = input.source?.trim() || "inbound_contact_intake";
   const eventIds: string[] = [];
@@ -7682,7 +7683,7 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
         contact = getCanonicalCompatContactById(database, existingIdentity.owner_id);
         platformIdentity = rowToPlatformIdentity(existingIdentity);
       }
-      if (!contact && contactIdentity) {
+      if (!contact && contactIdentity && !scopedPlatformIdentityOnly) {
         contact = findCanonicalContactByIdentity(database, contactIdentity);
       }
 
@@ -7700,13 +7701,32 @@ export function ensureContactFromInbound(input: EnsureContactFromInboundInput): 
       const evidence = inboundIntakeEventEvidence(input);
 
       if (!contact) {
-        contact = createCanonicalContactForIdentity(database, contactIdentity, {
-          name: input.displayName ?? null,
-          status: desiredStatus!,
-          source: "inbound",
-          tags: [],
-          notes: {},
-        });
+        if (scopedPlatformIdentityOnly) {
+          const id = generateId();
+          upsertCanonicalContactRecord(database, {
+            id,
+            displayName: input.displayName ?? null,
+            metadata: { source: "contacts", identityModel: "canonical" },
+          });
+          upsertCanonicalContactPolicy(database, {
+            contactId: id,
+            status: desiredStatus!,
+            replyMode: "auto",
+            tags: [],
+            notes: {},
+            source: "inbound",
+          });
+          contact = getCanonicalCompatContactById(database, id);
+        } else {
+          contact = createCanonicalContactForIdentity(database, contactIdentity, {
+            name: input.displayName ?? null,
+            status: desiredStatus!,
+            source: "inbound",
+            tags: [],
+            notes: {},
+          });
+        }
+        if (!contact) throw new Error("Inbound contact was not created.");
         createdContact = true;
         const createdEvent = insertContactEvent(database, {
           contactId: contact.id,
