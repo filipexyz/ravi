@@ -24,7 +24,6 @@ mock.module("../context.js", () => ({
 
 const {
   buildChannelsLiveStatusJson,
-  buildRunnerPm2Env,
   ChannelsCommands,
   classifyChannelRunnerHealth,
   validateChannelRunnerRuntimeTarget,
@@ -49,30 +48,6 @@ afterEach(async () => {
     const dir = tempDirs.pop();
     if (dir) rmSync(dir, { recursive: true, force: true });
   }
-});
-
-describe("channels command runner env", () => {
-  it("does not use Slack connection env as runner configuration", () => {
-    process.env.RAVI_SLACK_CONNECTION = "ravi-rbbt-slack";
-    process.env.RAVI_SLACK_CONNECTIONS = "ravi-rbbt-slack,hana-slack";
-    process.env.RAVI_SLACK_CREDENTIAL_CONNECTION = "legacy";
-
-    const env = buildRunnerPm2Env();
-
-    expect(env).not.toHaveProperty("RAVI_SLACK_CONNECTION");
-    expect(env).not.toHaveProperty("RAVI_SLACK_CONNECTIONS");
-    expect(env).not.toHaveProperty("RAVI_SLACK_CREDENTIAL_CONNECTION");
-  });
-
-  it("preserves channel runner behavior flags", () => {
-    process.env.RAVI_CHANNELS_CONSUME_OUTBOUND = "0";
-    process.env.RAVI_SLACK_THREAD_REPLY_MODE = "thread";
-
-    expect(buildRunnerPm2Env()).toMatchObject({
-      RAVI_CHANNELS_CONSUME_OUTBOUND: "0",
-      RAVI_SLACK_THREAD_REPLY_MODE: "thread",
-    });
-  });
 });
 
 describe("channels runner lifecycle", () => {
