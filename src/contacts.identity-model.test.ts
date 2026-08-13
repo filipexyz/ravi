@@ -89,7 +89,8 @@ afterEach(async () => {
 });
 
 describe("contacts identity graph schema", () => {
-  it("allows a Slack-only contact through its compatibility identity", () => {
+  it("prefers an exact Slack identity over a legacy phone-normalized shadow contact", () => {
+    upsertContact("021", "Legacy shadow", "blocked", "manual");
     const inbound = ensureContactFromInbound({
       channel: "slack",
       instanceId: "slack-main",
@@ -108,7 +109,8 @@ describe("contacts identity graph schema", () => {
 
     expect(getContact(inbound.contact!.id)?.status).toBe("allowed");
     expect(getContact("U0BAA2B1LTS")?.status).toBe("allowed");
-    expect(getAllContacts()).toHaveLength(1);
+    expect(getContact("021")?.status).toBe("blocked");
+    expect(getAllContacts()).toHaveLength(2);
   });
 
   it("writes canonical contacts, policies, and platform identities directly", () => {
