@@ -45,6 +45,7 @@ type SessionLike = {
   totalTokens?: number | null;
   contextTokens?: number | null;
   compactionCount?: number | null;
+  lifecycleGeneration?: number;
   createdAt: number;
   updatedAt: number;
 };
@@ -215,6 +216,12 @@ mock.module("../../router/sessions.js", () => ({
     deleteSessionCalls.push(sessionKey);
     return true;
   },
+  deleteSessionIfUnchanged: (session: { sessionKey: string; lifecycleGeneration?: number }) => {
+    if (!Number.isSafeInteger(session.lifecycleGeneration)) return false;
+    deleteSessionCalls.push(session.sessionKey);
+    return true;
+  },
+  getSession: (sessionKey: string) => sessionsByAgent.find((session) => session.sessionKey === sessionKey) ?? null,
   getSessionTurnUsageSummary: (sessionKey: string) =>
     sessionTurnUsageSummaries.get(sessionKey) ?? defaultTurnUsageSummary(),
   getSessionsByAgent: () => sessionsByAgent,
@@ -1399,6 +1406,7 @@ describe("agents agent-first contract", () => {
         name: "dev-main",
         agentId: "dev",
         agentCwd: "/tmp/dev",
+        lifecycleGeneration: 1,
         createdAt: 1,
         updatedAt: 1,
       },

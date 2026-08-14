@@ -1368,6 +1368,7 @@ function getDb(): Database {
       system_sent INTEGER DEFAULT 0,
       aborted_last_run INTEGER DEFAULT 0,
       compaction_count INTEGER DEFAULT 0,
+      lifecycle_generation INTEGER NOT NULL DEFAULT 1,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     );
@@ -2219,6 +2220,51 @@ function getDb(): Database {
       ON runtime_turn_attempts(recovery_claim_id)
       WHERE recovery_claim_id IS NOT NULL;
 
+    CREATE TABLE IF NOT EXISTS provider_state_cleanup_tasks (
+      id TEXT PRIMARY KEY,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      schema_version INTEGER NOT NULL CHECK(schema_version = 1),
+      provider TEXT NOT NULL,
+      operation TEXT NOT NULL CHECK(operation IN ('provisional_exact','delete_state','retire_revision')),
+      locator_json TEXT NOT NULL,
+      successor_locator_json TEXT,
+      status TEXT NOT NULL CHECK(status IN ('prepared','published','leased','failed','dead')),
+      owner_attempt_id TEXT,
+      owner_session_key TEXT,
+      owner_boot_epoch TEXT,
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      next_attempt_at INTEGER NOT NULL DEFAULT 0,
+      lease_id TEXT,
+      leased_until INTEGER,
+      last_error_code TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      CHECK(
+        (operation = 'provisional_exact'
+          AND owner_attempt_id IS NOT NULL
+          AND owner_session_key IS NOT NULL
+          AND owner_boot_epoch IS NOT NULL)
+        OR (operation != 'provisional_exact'
+          AND owner_attempt_id IS NULL
+          AND owner_session_key IS NULL
+          AND owner_boot_epoch IS NULL)
+      ),
+      CHECK(
+        (operation = 'retire_revision' AND successor_locator_json IS NOT NULL)
+        OR (operation != 'retire_revision' AND successor_locator_json IS NULL)
+      ),
+      CHECK(status != 'prepared' OR operation = 'provisional_exact'),
+      CHECK(
+        (status = 'leased' AND lease_id IS NOT NULL AND leased_until IS NOT NULL)
+        OR (status != 'leased' AND lease_id IS NULL AND leased_until IS NULL)
+      )
+    );
+    CREATE INDEX IF NOT EXISTS idx_provider_state_cleanup_ready
+      ON provider_state_cleanup_tasks(status, next_attempt_at, created_at);
+    CREATE INDEX IF NOT EXISTS idx_provider_state_cleanup_lease
+      ON provider_state_cleanup_tasks(status, leased_until)
+      WHERE leased_until IS NOT NULL;
+
     CREATE TABLE IF NOT EXISTS runtime_prompt_queue (
       queue_sequence INTEGER PRIMARY KEY AUTOINCREMENT,
       queue_item_id TEXT NOT NULL UNIQUE,
@@ -2789,6 +2835,15 @@ function getDb(): Database {
     WHERE runtime_session_display_id IS NULL AND sdk_session_id IS NOT NULL
   `);
   db.exec("CREATE INDEX IF NOT EXISTS idx_sessions_runtime_display ON sessions(runtime_session_display_id)");
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_sessions_runtime_provider_json_session
+      ON sessions(runtime_provider, json_extract(runtime_session_json, '$.sessionId'))
+      WHERE runtime_session_json IS NOT NULL AND json_valid(runtime_session_json);
+    DROP INDEX IF EXISTS idx_sessions_runtime_provider_invalid_json;
+    CREATE INDEX IF NOT EXISTS idx_sessions_runtime_provider_json_display
+      ON sessions(runtime_provider, runtime_session_display_id)
+      WHERE runtime_session_json IS NOT NULL;
+  `);
 
   // Migration: add policy column to routes if not exists
   const routeColumns = db.prepare("PRAGMA table_info(routes)").all() as Array<{
@@ -2847,6 +2902,10 @@ function getDb(): Database {
   }
 
   // Migration: add ephemeral session columns
+  if (!sessionColumns.some((c) => c.name === "lifecycle_generation")) {
+    db.exec("ALTER TABLE sessions ADD COLUMN lifecycle_generation INTEGER NOT NULL DEFAULT 1");
+  }
+  db.exec("DROP TRIGGER IF EXISTS sessions_lifecycle_generation_after_update");
   if (!sessionColumns.some((c) => c.name === "ephemeral")) {
     db.exec("ALTER TABLE sessions ADD COLUMN ephemeral INTEGER DEFAULT 0");
     db.exec("ALTER TABLE sessions ADD COLUMN expires_at INTEGER");
@@ -3283,17 +3342,15 @@ function getDb(): Database {
     log.info("Created default agent: main");
   }
 
-  // Startup cleanup: remove any expired ephemeral sessions left over from previous runs
+  // Startup observes expired ephemeral sessions but leaves their deletion to the
+  // async lifecycle runner, which snapshots provider state before mutation.
   const expiredCount = (
     db
       .prepare("SELECT COUNT(*) as n FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?")
       .get(Date.now()) as { n: number }
   ).n;
   if (expiredCount > 0) {
-    db.prepare("DELETE FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?").run(
-      Date.now(),
-    );
-    log.info("Cleaned up expired ephemeral sessions at startup", {
+    log.info("Deferred expired ephemeral session cleanup to lifecycle runner", {
       count: expiredCount,
     });
   }
@@ -10366,10 +10423,52 @@ export function dbCleanupMessageMeta(): number {
  * Safe to call at any time — idempotent, only removes rows with expires_at <= now.
  * Returns number of rows deleted.
  */
-export function dbCleanupExpiredSessions(): number {
-  const s = getStatements();
-  s.cleanupExpiredSessions.run(Date.now());
-  return getDbChanges();
+export interface DbExpiredSessionSnapshot {
+  sessionKey: string;
+  lifecycleGeneration: number;
+  runtimeSessionDisplayId?: string;
+  runtimeSessionJson?: string;
+}
+
+export function dbCleanupExpiredSessions(
+  onDeleted?: (session: DbExpiredSessionSnapshot) => void,
+  now = Date.now(),
+  deleteCandidate?: (session: DbExpiredSessionSnapshot, now: number) => boolean,
+): number {
+  const db = getDb();
+  const candidates = db
+    .prepare(
+      `SELECT session_key, lifecycle_generation, runtime_session_display_id, runtime_session_json
+       FROM sessions WHERE ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?`,
+    )
+    .all(now) as Array<{
+    session_key: string;
+    lifecycle_generation: number;
+    runtime_session_display_id: string | null;
+    runtime_session_json: string | null;
+  }>;
+  const remove = db.prepare(
+    `DELETE FROM sessions WHERE session_key = ? AND lifecycle_generation = ?
+     AND ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?`,
+  );
+  let deleted = 0;
+  for (const candidate of candidates) {
+    const snapshot: DbExpiredSessionSnapshot = {
+      sessionKey: candidate.session_key,
+      lifecycleGeneration: candidate.lifecycle_generation,
+      ...(candidate.runtime_session_display_id
+        ? { runtimeSessionDisplayId: candidate.runtime_session_display_id }
+        : {}),
+      ...(candidate.runtime_session_json ? { runtimeSessionJson: candidate.runtime_session_json } : {}),
+    };
+    const changed = deleteCandidate
+      ? deleteCandidate(snapshot, now)
+      : (remove.run(candidate.session_key, candidate.lifecycle_generation, now), getDbChanges() === 1);
+    if (!changed) continue;
+    deleted += 1;
+    onDeleted?.(snapshot);
+  }
+  return deleted;
 }
 
 export interface DbPruneResult {
@@ -10389,6 +10488,10 @@ export interface DbPruneOptions {
   dryRun?: boolean;
   walCheckpoint?: boolean;
   now?: number;
+  /** Internal lifecycle hook; never included in the public prune result. */
+  onExpiredSessionDeleted?: (session: DbExpiredSessionSnapshot) => void;
+  /** Internal lifecycle boundary used to atomically delete and enqueue provider cleanup. */
+  deleteExpiredSession?: (session: DbExpiredSessionSnapshot, now: number) => boolean;
 }
 
 /**
@@ -10483,7 +10586,11 @@ export function dbPruneStaleRows(options: DbPruneOptions = {}): DbPruneResult {
   );
   result.auditLog = runDelete("DELETE FROM audit_log WHERE ts < ?", now - AUDIT_LOG_TTL_MS);
   result.costEvents = runDelete("DELETE FROM cost_events WHERE created_at < ?", now - COST_EVENTS_TTL_MS);
-  result.expiredSessions = dbCleanupExpiredSessions();
+  result.expiredSessions = dbCleanupExpiredSessions(
+    options.onExpiredSessionDeleted,
+    now,
+    options.deleteExpiredSession,
+  );
 
   if (options.walCheckpoint) {
     db.exec("PRAGMA wal_checkpoint(PASSIVE)");

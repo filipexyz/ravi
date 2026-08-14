@@ -1,0 +1,2358 @@
+import { afterEach, describe, expect, test } from "bun:test";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { createKimiCodeCompletedTurnAccumulator, createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
+import { commitKimiCodeSessionState, createKimiCodeSessionId, loadKimiCodeSessionState } from "./kimi-code-state.js";
+import {
+  buildKimiCodeRequest,
+  createKimiCodeHttpTransport,
+  KimiCodeHttpError,
+  KimiCodePreflightError,
+  KimiCodeProtocolError,
+  KimiCodeTransportError,
+  type KimiCodePreflightErrorCode,
+} from "./kimi-code-transport.js";
+import { listRegisteredRuntimeProviderIds, unregisterRuntimeProvider } from "./provider-registry.js";
+import type { KimiCodeStreamEvent, KimiCodeTransport, KimiCodeTransportRequest } from "./kimi-code-transport.js";
+import type {
+  RuntimeDynamicToolCallRequest,
+  RuntimeDynamicToolCallResult,
+  RuntimeEvent,
+  RuntimeHostServices,
+  RuntimePromptMessage,
+  RuntimeSessionState,
+  RuntimeStartRequest,
+} from "./types.js";
+
+const temporaryStateRoots = new Set<string>();
+let reservationSequence = 0;
+
+afterEach(() => {
+  for (const root of temporaryStateRoots) rmSync(root, { recursive: true, force: true });
+  temporaryStateRoots.clear();
+});
+
+function isolatedStateEnv() {
+  const root = mkdtempSync(join(tmpdir(), "ravi-kimi-provider-state-"));
+  const cwd = join(root, "workspace");
+  mkdirSync(cwd);
+  temporaryStateRoots.add(root);
+  return {
+    root,
+    cwd,
+    env: {
+      RAVI_STATE_DIR: join(root, "state"),
+      KIMI_API_KEY: "provider-key-must-stay-private",
+      RAVI_KIMI_CODE_ENABLED: "1",
+    },
+  };
+}
+
+function prompts(...content: string[]): AsyncGenerator<RuntimePromptMessage> {
+  return (async function* () {
+    for (const text of content) {
+      yield {
+        type: "user",
+        message: { role: "user", content: text },
+        session_id: "synthetic-session",
+        parent_tool_use_id: null,
+      };
+    }
+  })();
+}
+
+function startRequest(overrides: Partial<RuntimeStartRequest> = {}): RuntimeStartRequest {
+  const fixture = isolatedStateEnv();
+  const reservationId = `reservation-test-${++reservationSequence}`;
+  return {
+    prompt: prompts("hello"),
+    model: "k3",
+    cwd: fixture.cwd,
+    abortController: new AbortController(),
+    systemPromptAppend: "Ravi policy.",
+    env: fixture.env,
+    providerStateLifecycle: {
+      reservePreparedState: () => ({ reservationId, ownerAttemptId: `attempt-test-${reservationSequence}` }),
+      cancelPreparedState: () => false,
+      publishPreparedState: (input) => {
+        input.publish();
+        return { reservationId: input.reservationId };
+      },
+    },
+    ...overrides,
+  };
+}
+
+function transportFrom(events: readonly KimiCodeStreamEvent[]): KimiCodeTransport {
+  return {
+    async *stream() {
+      yield* events;
+    },
+    async close() {},
+  };
+}
+
+function toolTurn(
+  calls: Array<{ index: number; id: string; name: string; arguments: string }>,
+  options: { content?: string; reasoning?: string } = {},
+): KimiCodeStreamEvent[] {
+  return [
+    {
+      type: "message",
+      data: {
+        choices: [
+          {
+            index: 0,
+            delta: {
+              content: options.content ?? "",
+              reasoning_content: options.reasoning ?? "",
+              tool_calls: calls.map((call) => ({
+                index: call.index,
+                id: call.id,
+                type: "function",
+                function: { name: call.name, arguments: call.arguments },
+              })),
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+      },
+    },
+    { type: "done" },
+  ];
+}
+
+function finalTurn(content: string): KimiCodeStreamEvent[] {
+  return [
+    {
+      type: "message",
+      data: { choices: [{ index: 0, delta: { content }, finish_reason: "stop" }] },
+    },
+    { type: "done" },
+  ];
+}
+
+function transportSequence(
+  turns: readonly (readonly KimiCodeStreamEvent[])[],
+  requests: KimiCodeTransportRequest[],
+): () => KimiCodeTransport {
+  let turnIndex = 0;
+  return () => {
+    const events = turns[turnIndex];
+    turnIndex += 1;
+    if (!events) throw new Error("unexpected synthetic provider request");
+    return {
+      async *stream(request) {
+        requests.push(request);
+        yield* events;
+      },
+      async close() {},
+    };
+  };
+}
+
+async function collectEvents(provider: ReturnType<typeof createKimiCodeRuntimeProvider>, input: RuntimeStartRequest) {
+  const events: RuntimeEvent[] = [];
+  for await (const event of provider.startSession(input).events) events.push(event);
+  return events;
+}
+
+function createHostServices(): RuntimeHostServices {
+  return {
+    authorizeCapability: async () => ({ allowed: true, inherited: false }),
+    authorizeCommandExecution: async () => ({ approved: true }),
+    authorizeToolUse: async () => ({ approved: true }),
+    requestUserInput: async () => ({ approved: true, answers: {} }),
+    listDynamicTools: () => [
+      {
+        name: "lookup_order",
+        description: "Looks up a synthetic order.",
+        inputSchema: { type: "object" },
+      },
+    ],
+    executeDynamicTool: async (request) => ({
+      success: request.toolName === "lookup_order",
+      contentItems: [{ type: "inputText", text: `handled:${request.toolName}` }],
+    }),
+  };
+}
+
+describe("createKimiCodeRuntimeProvider", () => {
+  test("publishes Kimi state only through a host-issued reservation kept outside locator params", async () => {
+    const publications: string[] = [];
+    const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        providerStateLifecycle: {
+          reservePreparedState: () => ({ reservationId: "reservation-host-a", ownerAttemptId: "attempt-host-a" }),
+          cancelPreparedState: () => false,
+          publishPreparedState: (input) => {
+            publications.push(input.reservationId);
+            input.publish();
+            return { reservationId: input.reservationId };
+          },
+        },
+      }),
+    );
+    const terminal = events.at(-1);
+
+    expect(publications).toEqual(["reservation-host-a"]);
+    expect(terminal).toMatchObject({
+      type: "turn.complete",
+      session: { providerStateReservationId: "reservation-host-a" },
+    });
+    if (terminal?.type !== "turn.complete") throw new Error("missing terminal");
+    expect(terminal.session?.params).not.toHaveProperty("providerStateReservationId");
+    expect(JSON.stringify(terminal.session?.params)).not.toContain("reservation-host-a");
+  });
+
+  test("cancels its host reservation when snapshot preparation fails before publication", async () => {
+    const fixture = isolatedStateEnv();
+    const cancelled: string[] = [];
+    let publications = 0;
+    const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        cwd: join(fixture.root, "missing-workspace"),
+        env: fixture.env,
+        providerStateLifecycle: {
+          reservePreparedState: () => ({
+            reservationId: "reservation-prepare-failure",
+            ownerAttemptId: "attempt-prepare-failure",
+          }),
+          cancelPreparedState: (reservationId) => {
+            cancelled.push(reservationId);
+            return true;
+          },
+          publishPreparedState: (input) => {
+            publications += 1;
+            input.publish();
+            return { reservationId: input.reservationId };
+          },
+        },
+      }),
+    );
+
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code session state commit failed" });
+    expect(cancelled).toEqual(["reservation-prepare-failure"]);
+    expect(publications).toBe(0);
+  });
+
+  test("rejects disabled session starts before transport creation without deleting persisted state", async () => {
+    const fixture = isolatedStateEnv();
+    const persisted = await commitKimiCodeSessionState({
+      sessionId: createKimiCodeSessionId(),
+      model: "k3",
+      cwd: fixture.cwd,
+      lastCommittedTurnId: "persisted-before-disable",
+      messages: [
+        { role: "user", content: "persisted user transcript" },
+        { role: "assistant", content: "persisted assistant transcript", reasoning_content: "", tool_calls: [] },
+      ],
+      env: fixture.env,
+    });
+    const sessionFile = String(persisted.session.params?.sessionFile);
+    const persistedContents = readFileSync(sessionFile, "utf8");
+    let transportCreations = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        transportCreations += 1;
+        return transportFrom(finalTurn("must not run"));
+      },
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        cwd: fixture.cwd,
+        env: { ...fixture.env, RAVI_KIMI_CODE_ENABLED: "0" },
+        resumeSession: persisted.session,
+      }),
+    );
+
+    expect(events).toEqual([
+      {
+        type: "turn.failed",
+        error: "Kimi Code session start is disabled",
+        recoverable: false,
+        metadata: { provider: "kimi-code" },
+      },
+    ]);
+    expect(transportCreations).toBe(0);
+    expect(readFileSync(sessionFile, "utf8")).toBe(persistedContents);
+  });
+
+  test("emits thread.started before the first turn of a new transcript and never on resume", async () => {
+    const fixture = isolatedStateEnv();
+    const fresh = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("seed")) });
+    const freshEvents = await collectEvents(
+      fresh,
+      startRequest({ cwd: join(fixture.root, "workspace"), env: fixture.env }),
+    );
+    const freshTerminal = freshEvents.at(-1);
+    if (freshTerminal?.type !== "turn.complete" || !freshTerminal.session) throw new Error("missing fresh state");
+
+    const resumed = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("resumed")) });
+    const resumedEvents = await collectEvents(
+      resumed,
+      startRequest({
+        prompt: prompts("resume"),
+        cwd: join(fixture.root, "workspace"),
+        env: fixture.env,
+        resumeSession: freshTerminal.session,
+      }),
+    );
+
+    expect(freshEvents.filter((event) => event.type === "thread.started" || event.type === "turn.started")).toEqual([
+      expect.objectContaining({ type: "thread.started", thread: { id: expect.any(String) } }),
+      expect.objectContaining({ type: "turn.started" }),
+    ]);
+    const thread = freshEvents.find((event) => event.type === "thread.started");
+    expect(thread?.type === "thread.started" ? thread.thread.id : undefined).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
+    );
+    expect(resumedEvents.some((event) => event.type === "thread.started")).toBe(false);
+
+    const forkEvents = await collectEvents(
+      createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("unused")) }),
+      startRequest({ forkSession: true }),
+    );
+    const emptyResumeEvents = await collectEvents(
+      createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("unused")) }),
+      startRequest({ resume: "" }),
+    );
+
+    expect(forkEvents.some((event) => event.type === "thread.started")).toBe(false);
+    expect(emptyResumeEvents.some((event) => event.type === "thread.started")).toBe(false);
+    expect(emptyResumeEvents.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code session state is invalid",
+    });
+  });
+
+  test("exports the transport request boundary for its provider-specific mapping", () => {
+    expect(typeof buildKimiCodeRequest).toBe("function");
+  });
+
+  test("declares the conservative Kimi Code v1 capability contract", () => {
+    expect(createKimiCodeRuntimeProvider().getCapabilities()).toEqual({
+      runtimeControl: { supported: false, operations: [] },
+      dynamicTools: { mode: "host" },
+      execution: { mode: "external-service" },
+      sessionState: { mode: "file-backed", requiresCwdMatch: true },
+      usage: { semantics: "terminal-event" },
+      tools: { permissionMode: "ravi-host", accessRequirement: "tool_surface", supportsParallelCalls: false },
+      systemPrompt: { mode: "append" },
+      terminalEvents: { guarantee: "adapter" },
+      skillVisibility: { availability: "none", loadedState: "none" },
+      supportsSessionResume: true,
+      supportsSessionFork: false,
+      supportsPartialText: true,
+      supportsToolHooks: false,
+      supportsHostSessionHooks: false,
+      supportsPlugins: false,
+      supportsMcpServers: false,
+      supportsRemoteSpawn: false,
+      toolAccessRequirement: "tool_surface",
+    });
+  });
+
+  test("prepares the host dynamic-tool bridge without enabling legacy tool hooks", async () => {
+    const provider = createKimiCodeRuntimeProvider();
+    const prepared = await provider.prepareSession?.({
+      agentId: "kimi-agent",
+      cwd: "C:/synthetic-workspace",
+      hostServices: createHostServices(),
+    });
+
+    expect(provider.getCapabilities().supportsToolHooks).toBe(false);
+    expect(prepared?.startRequest?.dynamicTools).toEqual([
+      {
+        name: "lookup_order",
+        description: "Looks up a synthetic order.",
+        inputSchema: { type: "object" },
+      },
+    ]);
+    expect(await prepared?.startRequest?.handleRuntimeToolCall?.({ toolName: "lookup_order" })).toEqual({
+      success: true,
+      contentItems: [{ type: "inputText", text: "handled:lookup_order" }],
+    });
+  });
+
+  test("is registered as a built-in provider and cannot be unregistered", () => {
+    expect(listRegisteredRuntimeProviderIds()).toContain("kimi-code");
+    expect(() => unregisterRuntimeProvider("kimi-code")).toThrow(
+      "Cannot unregister built-in runtime provider 'kimi-code'",
+    );
+  });
+
+  test("normalizes stream chunks without exposing private reasoning (catches public raw-chunk leakage)", async () => {
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          {
+            type: "message",
+            data: {
+              choices: [
+                {
+                  delta: {
+                    reasoning_content: "private chain of thought",
+                    content: "Hel",
+                  },
+                },
+              ],
+            },
+          },
+          {
+            type: "message",
+            data: {
+              choices: [
+                {
+                  delta: {
+                    content: "lo",
+                  },
+                  finish_reason: "stop",
+                },
+              ],
+            },
+          },
+          {
+            type: "message",
+            data: {
+              choices: [],
+              usage: {
+                prompt_tokens: 7,
+                completion_tokens: 2,
+                prompt_tokens_details: { cached_tokens: 3 },
+                cache_creation_input_tokens: 4,
+              },
+            },
+          },
+          { type: "done" },
+        ]),
+    });
+
+    const events = await collectEvents(provider, startRequest());
+
+    expect(events.map((event) => event.type)).toEqual([
+      "thread.started",
+      "turn.started",
+      "status",
+      "text.delta",
+      "text.delta",
+      "assistant.message",
+      "turn.complete",
+    ]);
+    expect(events[2]).toMatchObject({ type: "status", status: "thinking" });
+    expect(events[5]).toMatchObject({ type: "assistant.message", text: "Hello" });
+    expect(events[6]).toMatchObject({
+      type: "turn.complete",
+      execution: { provider: "kimi-code", model: "k3", billingType: "subscription" },
+      usage: { inputTokens: 7, outputTokens: 2, cacheReadTokens: 3, cacheCreationTokens: 4 },
+    });
+    expect(JSON.stringify(events)).not.toContain("private chain of thought");
+  });
+
+  test("emits one terminal event for duplicate provider finish chunks (catches duplicate terminal replay)", async () => {
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          { type: "message", data: { choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] } },
+          { type: "message", data: { choices: [{ delta: {}, finish_reason: "stop" }] } },
+          { type: "done" },
+        ]),
+    });
+
+    const events = await collectEvents(provider, startRequest());
+
+    expect(events.filter((event) => event.type.startsWith("turn.") && event.type !== "turn.started")).toHaveLength(1);
+    expect(events.at(-1)?.type).toBe("turn.complete");
+  });
+
+  test("fails with a redacted error for malformed chunks, provider errors, and EOF (catches transport-detail leakage)", async () => {
+    const malformed = createKimiCodeRuntimeProvider({
+      transportFactory: () => transportFrom([{ type: "message", data: "not an object" as unknown }, { type: "done" }]),
+    });
+    const providerError = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          { type: "message", data: { error: { message: "synthetic provider secret" } } },
+          { type: "done" },
+        ]),
+    });
+    const eof = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom([{ type: "eof" }]) });
+
+    const malformedEvents = await collectEvents(malformed, startRequest());
+    const providerErrorEvents = await collectEvents(providerError, startRequest());
+    const eofEvents = await collectEvents(eof, startRequest());
+
+    expect(malformedEvents.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code protocol error: malformed response chunk",
+      rawEvent: { protocol: "unrecognized_event" },
+    });
+    expect(providerErrorEvents.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code provider returned an error",
+      rawEvent: {},
+    });
+    expect(JSON.stringify(providerErrorEvents)).not.toContain("synthetic provider secret");
+    expect(eofEvents.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code stream ended before completion" });
+  });
+
+  test("projects only classified Kimi HTTP metadata into the canonical failure", async () => {
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        createKimiCodeHttpTransport({
+          fetch: (async () =>
+            new Response(
+              JSON.stringify({
+                error: {
+                  message: "We're receiving too many requests at the moment. Please wait a moment and try again.",
+                  code: "concurrency_limit",
+                  type: "rate_limit_error",
+                },
+              }),
+              {
+                status: 429,
+                headers: { "retry-after": "2", "x-request-id": "req-provider" },
+              },
+            )) as unknown as typeof fetch,
+        }),
+    });
+
+    const events = await collectEvents(provider, startRequest());
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "We're receiving too many requests at the moment. Please wait a moment and try again.",
+      rawEvent: {
+        status: 429,
+        code: "concurrency_limit",
+        type: "rate_limit_error",
+        headers: { "retry-after": "2", "x-request-id": "req-provider" },
+        requestId: "req-provider",
+      },
+    });
+  });
+
+  test("projects a bounded protocol diagnostic from transport failures", async () => {
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => ({
+        async *stream() {
+          yield* [] as KimiCodeStreamEvent[];
+          throw new KimiCodeProtocolError("malformed_json");
+        },
+        async close() {},
+      }),
+    });
+
+    expect((await collectEvents(provider, startRequest())).at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code protocol error: malformed JSON event",
+      rawEvent: { protocol: "malformed_json" },
+    });
+  });
+
+  test("projects missing native finish reason as a fixed non-recoverable provider protocol failure", async () => {
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          { type: "message", data: { choices: [{ index: 0, delta: { content: "unterminated" } }] } },
+          { type: "done" },
+        ]),
+    });
+
+    expect((await collectEvents(provider, startRequest())).at(-1)).toEqual(
+      expect.objectContaining({
+        type: "turn.failed",
+        error: "Kimi Code provider protocol failed",
+        recoverable: false,
+        rawEvent: { phase: "provider_protocol", protocol: "missing_finish_reason" },
+      }),
+    );
+  });
+
+  test("keeps terminal usage unavailable when the provider omits usage", async () => {
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => transportFrom(finalTurn("No usage frame")),
+    });
+
+    const terminal = (await collectEvents(provider, startRequest())).at(-1);
+
+    expect(terminal).toMatchObject({ type: "turn.complete" });
+    expect(terminal).not.toHaveProperty("usage");
+  });
+
+  test("projects preflight codes as non-recoverable canonical failures", async () => {
+    const codes: KimiCodePreflightErrorCode[] = [
+      "message_too_large",
+      "missing_api_key",
+      "request_too_large",
+      "unknown_model",
+      "untrusted_origin",
+      "unsupported_effort",
+    ];
+
+    for (const code of codes) {
+      const provider = createKimiCodeRuntimeProvider({
+        transportFactory: () => ({
+          async *stream() {
+            yield* [] as KimiCodeStreamEvent[];
+            throw new KimiCodePreflightError(code, "PRIVATE_PREFLIGHT_SENTINEL");
+          },
+          async close() {},
+        }),
+      });
+
+      const terminal = (await collectEvents(provider, startRequest())).at(-1);
+      expect(terminal).toEqual(
+        expect.objectContaining({
+          type: "turn.failed",
+          error: "Kimi Code request preflight failed",
+          recoverable: false,
+          rawEvent: { preflight: code },
+        }),
+      );
+      expect(JSON.stringify(terminal)).not.toContain("PRIVATE_PREFLIGHT_SENTINEL");
+    }
+  });
+
+  test("projects structured native errors without native message or body", async () => {
+    const sentinel = "PRIVATE_NATIVE_ERROR_SENTINEL";
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          {
+            type: "message",
+            data: {
+              error: {
+                status: 429,
+                code: "rate_limited",
+                type: "rate_limit_error",
+                request_id: "req-native-1",
+                message: sentinel,
+                body: sentinel,
+              },
+            },
+          },
+          { type: "done" },
+        ]),
+    });
+
+    const terminal = (await collectEvents(provider, startRequest())).at(-1);
+
+    expect(terminal).toEqual(
+      expect.objectContaining({
+        type: "turn.failed",
+        error: "Kimi Code provider returned an error",
+        rawEvent: { status: 429, code: "rate_limited", type: "rate_limit_error", requestId: "req-native-1" },
+      }),
+    );
+    expect(JSON.stringify(terminal)).not.toContain(sentinel);
+    expect(JSON.stringify(terminal)).not.toContain("body");
+    expect(JSON.stringify(terminal)).not.toContain("message");
+  });
+
+  test("marks acceptance_ambiguous without retrying the native request", async () => {
+    let transportStarts = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        transportStarts += 1;
+        return {
+          async *stream() {
+            yield* [] as KimiCodeStreamEvent[];
+            throw new KimiCodeTransportError("acceptance_ambiguous", "PRIVATE_HANDOFF_SENTINEL");
+          },
+          async close() {},
+        };
+      },
+    });
+
+    const terminal = (await collectEvents(provider, startRequest())).at(-1);
+
+    expect(transportStarts).toBe(1);
+    expect(terminal).toEqual(
+      expect.objectContaining({
+        type: "turn.failed",
+        error: "Kimi Code request delivery is ambiguous",
+        recoverable: false,
+        rawEvent: { phase: "acceptance_ambiguous" },
+      }),
+    );
+    expect(JSON.stringify(terminal)).not.toContain("PRIVATE_HANDOFF_SENTINEL");
+  });
+
+  test("re-sanitizes a custom transport Kimi HTTP error at the provider boundary", async () => {
+    const sentinel = "PRIVATE_CUSTOM_TRANSPORT_SENTINEL";
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => ({
+        async *stream() {
+          yield await Promise.reject(
+            new KimiCodeHttpError({
+              status: 429,
+              publicMessage: sentinel,
+              code: sentinel,
+              type: sentinel,
+              headers: { authorization: `Bearer ${sentinel}`, "x-request-id": sentinel },
+              requestId: sentinel,
+            }),
+          );
+        },
+        async close() {},
+      }),
+    });
+
+    const events = await collectEvents(provider, startRequest());
+    const serialized = JSON.stringify(events.at(-1));
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code membership request failed (HTTP 429)",
+      rawEvent: { status: 429 },
+    });
+    expect(serialized).not.toContain(sentinel);
+    expect(serialized).not.toContain("authorization");
+  });
+
+  test("emits interruption before or after output without a second terminal (catches abort terminal replay)", async () => {
+    const before = startRequest({ abortController: new AbortController() });
+    before.abortController.abort();
+    const after = startRequest({ abortController: new AbortController() });
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => ({
+        async *stream() {
+          yield { type: "message", data: { choices: [{ delta: { content: "partial" } }] } };
+          after.abortController.abort();
+          yield { type: "done" };
+        },
+        async close() {},
+      }),
+    });
+
+    const beforeEvents = await collectEvents(provider, before);
+    const afterEvents = await collectEvents(provider, after);
+
+    expect(beforeEvents.map((event) => event.type)).toEqual(["turn.interrupted"]);
+    expect(afterEvents.map((event) => event.type)).toEqual([
+      "thread.started",
+      "turn.started",
+      "text.delta",
+      "turn.interrupted",
+    ]);
+  });
+
+  test("does not emit assistant.message when public text is empty", async () => {
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          { type: "message", data: { choices: [{ delta: {}, finish_reason: "stop" }] } },
+          { type: "done" },
+        ]),
+    });
+
+    const events = await collectEvents(provider, startRequest());
+
+    expect(events.some((event) => event.type === "assistant.message")).toBe(false);
+    expect(events.at(-1)?.type).toBe("turn.complete");
+  });
+
+  test("maps an aborted pending reader to turn.interrupted", async () => {
+    let releaseReader!: () => void;
+    let markReaderPending!: () => void;
+    const readerReleased = new Promise<void>((resolve) => {
+      releaseReader = resolve;
+    });
+    const readerPending = new Promise<void>((resolve) => {
+      markReaderPending = resolve;
+    });
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => ({
+        async *stream() {
+          yield* [] as KimiCodeStreamEvent[];
+          markReaderPending();
+          await readerReleased;
+        },
+        async close() {
+          releaseReader();
+        },
+      }),
+    });
+    const handle = provider.startSession(startRequest());
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("thread.started");
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    const terminal = iterator.next();
+    await readerPending;
+    await handle.interrupt();
+
+    expect((await terminal).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).done).toBe(true);
+  });
+
+  test("makes interrupt and close idempotent while a stream is active (catches repeated transport teardown)", async () => {
+    let closeCalls = 0;
+    let release!: () => void;
+    let streamEntered!: () => void;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const entered = new Promise<void>((resolve) => {
+      streamEntered = resolve;
+    });
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => ({
+        async *stream() {
+          streamEntered();
+          await blocked;
+          yield { type: "eof" };
+        },
+        async close() {
+          closeCalls += 1;
+          release();
+        },
+      }),
+    });
+    const handle = provider.startSession(startRequest());
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("thread.started");
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    const terminal = iterator.next();
+    await entered;
+    await handle.interrupt();
+    await handle.interrupt();
+    await handle.close?.();
+    await handle.close?.();
+
+    expect(closeCalls).toBe(1);
+    expect((await terminal).value?.type).toBe("turn.interrupted");
+  });
+
+  test("forwards the host abort signal to the injected transport (catches uncancellable requests)", async () => {
+    let receivedSignal: AbortSignal | undefined;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => ({
+        async *stream(request) {
+          receivedSignal = request.signal;
+          yield { type: "done" };
+        },
+        async close() {},
+      }),
+    });
+    const input = startRequest();
+
+    await collectEvents(provider, input);
+
+    expect(receivedSignal).toBe(input.abortController.signal);
+  });
+
+  test("interrupts only the active turn and accepts a successor prompt (catches session-wide interruption latching)", async () => {
+    let calls = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        calls += 1;
+        return transportFrom(finalTurn(""));
+      },
+    });
+    const handle = provider.startSession(startRequest({ prompt: prompts("first", "second") }));
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("thread.started");
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    await handle.interrupt();
+    expect((await iterator.next()).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    expect((await iterator.next()).value?.type).toBe("turn.complete");
+    expect(calls).toBe(1);
+  });
+
+  test("does not start a transport after interrupt or close immediately follows turn.started (catches pre-transport race)", async () => {
+    for (const action of ["interrupt", "close"] as const) {
+      let calls = 0;
+      const provider = createKimiCodeRuntimeProvider({
+        transportFactory: () => {
+          calls += 1;
+          return transportFrom([{ type: "done" }]);
+        },
+      });
+      const handle = provider.startSession(startRequest());
+      const iterator = handle.events[Symbol.asyncIterator]();
+
+      expect((await iterator.next()).value?.type).toBe("thread.started");
+      expect((await iterator.next()).value?.type).toBe("turn.started");
+      await handle[action]?.();
+      expect((await iterator.next()).value?.type).toBe("turn.interrupted");
+      expect(calls).toBe(0);
+    }
+  });
+
+  test("interrupt wins over unsupported fork after turn.started", async () => {
+    let requests = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        requests += 1;
+        return transportFrom(finalTurn("must not run"));
+      },
+    });
+    const handle = provider.startSession(startRequest({ forkSession: true }));
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    await handle.interrupt();
+
+    expect((await iterator.next()).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).done).toBe(true);
+    expect(requests).toBe(0);
+  });
+
+  test("interrupt wins over invalid resume after turn.started", async () => {
+    let requests = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        requests += 1;
+        return transportFrom(finalTurn("must not run"));
+      },
+    });
+    const handle = provider.startSession(startRequest({ resume: "invalid-session-id" }));
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    await handle.interrupt();
+
+    expect((await iterator.next()).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).done).toBe(true);
+    expect(requests).toBe(0);
+  });
+
+  test("interrupt wins when resume state becomes invalid during asynchronous load", async () => {
+    const fixture = isolatedStateEnv();
+    const seed = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("seed")) });
+    const seedEvents = await collectEvents(
+      seed,
+      startRequest({ cwd: join(fixture.root, "workspace"), env: fixture.env }),
+    );
+    const seedTerminal = seedEvents.at(-1);
+    if (seedTerminal?.type !== "turn.complete" || !seedTerminal.session) throw new Error("missing seed session");
+    rmSync(String(seedTerminal.session.params?.sessionFile), { force: true });
+
+    let requests = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        requests += 1;
+        return transportFrom(finalTurn("must not run"));
+      },
+    });
+    const handle = provider.startSession(
+      startRequest({
+        prompt: prompts("resume race"),
+        cwd: join(fixture.root, "workspace"),
+        env: fixture.env,
+        resumeSession: seedTerminal.session,
+      }),
+    );
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    const terminal = iterator.next();
+    await handle.interrupt();
+
+    expect((await terminal).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).done).toBe(true);
+    expect(requests).toBe(0);
+  });
+
+  test("closes every active transport exactly once after each terminal path (catches transport leaks)", async () => {
+    const cases: Array<{ name: string; events: KimiCodeStreamEvent[]; abort?: boolean }> = [
+      { name: "success", events: [{ type: "done" }] },
+      { name: "provider failure", events: [{ type: "message", data: { error: { message: "secret" } } }] },
+      { name: "eof", events: [{ type: "eof" }] },
+      {
+        name: "host abort",
+        events: [{ type: "message", data: { choices: [{ delta: { content: "partial" } }] } }, { type: "done" }],
+        abort: true,
+      },
+    ];
+
+    for (const testCase of cases) {
+      let closeCalls = 0;
+      const input = startRequest();
+      const provider = createKimiCodeRuntimeProvider({
+        transportFactory: () => ({
+          async *stream() {
+            for (const event of testCase.events) {
+              yield event;
+              if (testCase.abort) input.abortController.abort();
+            }
+          },
+          async close() {
+            closeCalls += 1;
+          },
+        }),
+      });
+
+      await collectEvents(provider, input);
+      expect(closeCalls, testCase.name).toBe(1);
+    }
+  });
+
+  test("rejects unsupported choices and post-finish deltas while retaining a usage-only tail (catches choice-state corruption)", async () => {
+    const unsupportedIndex = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([{ type: "message", data: { choices: [{ index: 1, delta: {} }] } }, { type: "done" }]),
+    });
+    const multipleChoices = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([{ type: "message", data: { choices: [{ delta: {} }, { delta: {} }] } }, { type: "done" }]),
+    });
+    const malformedFinish = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          { type: "message", data: { choices: [{ index: 0, delta: {}, finish_reason: {} }] } },
+          { type: "done" },
+        ]),
+    });
+    const postFinish = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          { type: "message", data: { choices: [{ index: 0, delta: {}, finish_reason: "stop" }] } },
+          { type: "message", data: { choices: [{ index: 0, delta: { content: "late" } }] } },
+          { type: "done" },
+        ]),
+    });
+    const usageTail = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom([
+          { type: "message", data: { choices: [{ index: 0, delta: { content: "ok" }, finish_reason: "stop" }] } },
+          { type: "message", data: { choices: [], usage: { prompt_tokens: 1, completion_tokens: 2 } } },
+          { type: "done" },
+        ]),
+    });
+
+    expect((await collectEvents(unsupportedIndex, startRequest())).at(-1)?.type).toBe("turn.failed");
+    expect((await collectEvents(multipleChoices, startRequest())).at(-1)?.type).toBe("turn.failed");
+    expect((await collectEvents(malformedFinish, startRequest())).at(-1)?.type).toBe("turn.failed");
+    expect((await collectEvents(postFinish, startRequest())).at(-1)?.type).toBe("turn.failed");
+    expect((await collectEvents(usageTail, startRequest())).at(-1)).toMatchObject({
+      type: "turn.complete",
+      usage: { inputTokens: 1, outputTokens: 2 },
+    });
+  });
+
+  test("does not dispatch tools for length or content_filter", async () => {
+    for (const finishReason of ["length", "content_filter"] as const) {
+      let dispatches = 0;
+      const provider = createKimiCodeRuntimeProvider({
+        transportFactory: () =>
+          transportFrom([
+            {
+              type: "message",
+              data: {
+                choices: [
+                  {
+                    index: 0,
+                    delta: {
+                      tool_calls: [
+                        {
+                          index: 0,
+                          id: `call-${finishReason}`,
+                          type: "function",
+                          function: { name: "lookup_order", arguments: "{}" },
+                        },
+                      ],
+                    },
+                    finish_reason: finishReason,
+                  },
+                ],
+              },
+            },
+            { type: "done" },
+          ]),
+      });
+
+      const events = await collectEvents(
+        provider,
+        startRequest({
+          dynamicTools: createHostServices().listDynamicTools(),
+          handleRuntimeToolCall: async () => {
+            dispatches += 1;
+            return { success: true, contentItems: [] };
+          },
+        }),
+      );
+
+      expect(dispatches).toBe(0);
+      expect(events.at(-1)).toEqual(
+        expect.objectContaining({
+          type: "turn.failed",
+          rawEvent: { protocol: `terminal_${finishReason}` },
+        }),
+      );
+    }
+  });
+
+  test("reconstructs private reasoning and indexed tool fragments independently of public events (catches accumulator loss)", () => {
+    const accumulator = createKimiCodeCompletedTurnAccumulator();
+
+    expect(
+      accumulator.accept({
+        choices: [
+          {
+            index: 0,
+            delta: {
+              reasoning_content: "reason-1",
+              content: "answer",
+              tool_calls: [{ index: 2, id: "tool-2", function: { name: "later", arguments: "{" } }],
+            },
+          },
+        ],
+      }),
+    ).toMatchObject({ kind: "accepted", textDeltas: ["answer"], reasoningDelta: true, finished: false });
+    expect(
+      accumulator.accept({
+        choices: [
+          {
+            index: 0,
+            delta: {
+              reasoning_content: "reason-2",
+              tool_calls: [{ index: 1, id: "tool-1", function: { name: "first", arguments: "{}" } }],
+            },
+          },
+        ],
+      }),
+    ).toMatchObject({ kind: "accepted", reasoningDelta: true, finished: false });
+    expect(
+      accumulator.accept({
+        choices: [
+          {
+            index: 0,
+            delta: { tool_calls: [{ index: 2, function: { arguments: "}" } }] },
+            finish_reason: "tool_calls",
+          },
+        ],
+      }),
+    ).toMatchObject({ kind: "accepted", finished: true });
+
+    expect(accumulator.complete()).toEqual({
+      finishReason: "tool_calls",
+      text: "answer",
+      reasoning: "reason-1reason-2",
+      toolCalls: [
+        { index: 1, id: "tool-1", name: "first", arguments: "{}" },
+        { index: 2, id: "tool-2", name: "later", arguments: "{}" },
+      ],
+    });
+  });
+
+  test("routes one tool call through the host and preserves the native assistant continuation shape", async () => {
+    const requests: KimiCodeTransportRequest[] = [];
+    const hostCalls: RuntimeDynamicToolCallRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [
+          toolTurn([{ index: 0, id: "call-order-42", name: "lookup_order", arguments: '{"id":42}' }], {
+            reasoning: "private lookup plan",
+          }),
+          finalTurn("Order found"),
+        ],
+        requests,
+      ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        dynamicTools: createHostServices().listDynamicTools(),
+        handleRuntimeToolCall: async (request) => {
+          hostCalls.push(request);
+          return { success: true, contentItems: [{ type: "inputText", text: "order:42" }] };
+        },
+      }),
+    );
+
+    expect(hostCalls).toEqual([{ toolName: "lookup_order", callId: "call-order-42", arguments: { id: 42 } }]);
+    expect(events.map((event) => event.type)).toEqual([
+      "thread.started",
+      "turn.started",
+      "status",
+      "tool.started",
+      "tool.completed",
+      "tool.result_delivered",
+      "text.delta",
+      "assistant.message",
+      "turn.complete",
+    ]);
+    expect(events[3]).toMatchObject({
+      type: "tool.started",
+      toolUse: { id: "call-order-42", name: "lookup_order", input: { id: 42 } },
+    });
+    expect(events[4]).toMatchObject({
+      type: "tool.completed",
+      toolUseId: "call-order-42",
+      toolName: "lookup_order",
+      content: "order:42",
+      isError: false,
+    });
+    expect(events[5]).toMatchObject({ type: "tool.result_delivered", toolCallId: "call-order-42" });
+    expect(JSON.stringify(events)).not.toContain("private lookup plan");
+
+    const firstBody = requests[0]?.body as unknown as Record<string, unknown>;
+    expect(firstBody.tools).toEqual([
+      {
+        type: "function",
+        function: {
+          name: "lookup_order",
+          description: "Looks up a synthetic order.",
+          parameters: { type: "object" },
+        },
+      },
+    ]);
+    const continuation = requests[1]?.body as unknown as { messages: unknown[] };
+    expect(continuation.messages.slice(0, 4)).toEqual([
+      { role: "system", content: "Ravi policy." },
+      { role: "user", content: "hello" },
+      {
+        role: "assistant",
+        reasoning_content: "private lookup plan",
+        tool_calls: [
+          {
+            id: "call-order-42",
+            type: "function",
+            function: { name: "lookup_order", arguments: '{"id":42}' },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "call-order-42", content: "order:42" },
+    ]);
+  });
+
+  test("sanitizes public tool events while preserving exact host and native values", async () => {
+    const rawArguments = '{"apiKey":"sk-test_argument_secret_123456","orderId":42}';
+    const rawResult = "sk-test_result_secret_123456";
+    const requests: KimiCodeTransportRequest[] = [];
+    const hostCalls: RuntimeDynamicToolCallRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [
+          toolTurn([{ index: 0, id: "call-secret", name: "lookup_order", arguments: rawArguments }]),
+          finalTurn("Handled privately"),
+        ],
+        requests,
+      ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async (request) => {
+          hostCalls.push(request);
+          return { success: true, contentItems: [{ type: "inputText", text: rawResult }] };
+        },
+      }),
+    );
+
+    expect(hostCalls).toEqual([
+      {
+        toolName: "lookup_order",
+        callId: "call-secret",
+        arguments: { apiKey: "sk-test_argument_secret_123456", orderId: 42 },
+      },
+    ]);
+    expect(events.find((event) => event.type === "tool.started")).toMatchObject({
+      type: "tool.started",
+      toolUse: { id: "call-secret", name: "lookup_order", input: { apiKey: "[REDACTED]", orderId: 42 } },
+    });
+    expect(events.find((event) => event.type === "tool.completed")).toMatchObject({
+      type: "tool.completed",
+      toolUseId: "call-secret",
+      content: "[REDACTED:token]",
+      isError: false,
+    });
+    expect(JSON.stringify(events)).not.toContain("sk-test_argument_secret_123456");
+    expect(JSON.stringify(events)).not.toContain(rawResult);
+
+    const continuation = requests[1]?.body as unknown as { messages: Array<Record<string, unknown>> };
+    expect(continuation.messages[2]).toMatchObject({
+      role: "assistant",
+      tool_calls: [
+        {
+          id: "call-secret",
+          type: "function",
+          function: { name: "lookup_order", arguments: rawArguments },
+        },
+      ],
+    });
+    expect(continuation.messages[3]).toEqual({
+      role: "tool",
+      tool_call_id: "call-secret",
+      content: rawResult,
+    });
+  });
+
+  test("preserves a failed tool result as binary error semantics and continues", async () => {
+    const requests: KimiCodeTransportRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [
+          toolTurn([{ index: 0, id: "call-denied", name: "lookup_order", arguments: "{}" }]),
+          finalTurn("Cannot access that order"),
+        ],
+        requests,
+      ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async () => ({
+          success: false,
+          reason: "denied",
+          contentItems: [{ type: "inputText", text: "access denied" }],
+        }),
+      }),
+    );
+
+    expect(events.find((event) => event.type === "tool.completed")).toMatchObject({
+      type: "tool.completed",
+      toolUseId: "call-denied",
+      content: "access denied",
+      isError: true,
+    });
+    const continuation = requests[1]?.body as unknown as { messages: Array<Record<string, unknown>> };
+    expect(continuation.messages[3]).toEqual({
+      role: "tool",
+      tool_call_id: "call-denied",
+      content: "access denied",
+    });
+    expect(events.at(-1)?.type).toBe("turn.complete");
+  });
+
+  test("turns a thrown tool handler into one redacted failed result without replaying the call", async () => {
+    const requests: KimiCodeTransportRequest[] = [];
+    let dispatches = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [toolTurn([{ index: 0, id: "call-throw", name: "lookup_order", arguments: "{}" }]), finalTurn("Recovered")],
+        requests,
+      ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async () => {
+          dispatches += 1;
+          throw new Error("synthetic handler secret");
+        },
+      }),
+    );
+
+    expect(dispatches).toBe(1);
+    expect(events.filter((event) => event.type === "tool.started")).toHaveLength(1);
+    expect(events.filter((event) => event.type === "tool.completed")).toEqual([
+      expect.objectContaining({
+        type: "tool.completed",
+        toolUseId: "call-throw",
+        content: "Tool execution failed.",
+        isError: true,
+      }),
+    ]);
+    expect(events.filter((event) => event.type === "tool.result_delivered")).toHaveLength(1);
+    expect(JSON.stringify(events)).not.toContain("synthetic handler secret");
+    expect(JSON.stringify(requests[1]?.body)).not.toContain("synthetic handler secret");
+  });
+
+  test("pairs a malformed host result before failing the tool lifecycle", async () => {
+    let dispatches = 0;
+    const privateDetail = "synthetic malformed host result detail";
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom(toolTurn([{ index: 0, id: "call-malformed-result", name: "lookup_order", arguments: "{}" }])),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async () => {
+          dispatches += 1;
+          return { success: true, privateDetail } as unknown as RuntimeDynamicToolCallResult;
+        },
+      }),
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "thread.started",
+      "turn.started",
+      "tool.started",
+      "tool.completed",
+      "turn.failed",
+    ]);
+    expect(events.filter((event) => event.type === "tool.completed")).toEqual([
+      expect.objectContaining({
+        toolUseId: "call-malformed-result",
+        toolName: "lookup_order",
+        content: "Tool execution failed.",
+        isError: true,
+      }),
+    ]);
+    expect(events.some((event) => event.type === "tool.result_delivered")).toBe(false);
+    expect(dispatches).toBe(1);
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code stream failed" });
+    expect(JSON.stringify(events)).not.toContain(privateDetail);
+  });
+
+  test("rejects malformed, non-object, empty, and duplicate tool calls before host dispatch", async () => {
+    const invalidCases: Array<{
+      name: string;
+      calls: Array<{ index: number; id: string; name: string; arguments: string }>;
+      error?: string;
+    }> = [
+      {
+        name: "malformed JSON",
+        calls: [{ index: 0, id: "call-1", name: "lookup_order", arguments: '{"id":' }],
+      },
+      { name: "array arguments", calls: [{ index: 0, id: "call-1", name: "lookup_order", arguments: "[]" }] },
+      { name: "null arguments", calls: [{ index: 0, id: "call-1", name: "lookup_order", arguments: "null" }] },
+      {
+        name: "empty id",
+        calls: [{ index: 0, id: " ", name: "lookup_order", arguments: "{}" }],
+        error: "Kimi Code protocol error: malformed response chunk",
+      },
+      {
+        name: "empty name",
+        calls: [{ index: 0, id: "call-1", name: " ", arguments: "{}" }],
+        error: "Kimi Code protocol error: malformed response chunk",
+      },
+      {
+        name: "duplicate id",
+        calls: [
+          { index: 0, id: "duplicate", name: "lookup_order", arguments: "{}" },
+          { index: 1, id: "duplicate", name: "lookup_order", arguments: "{}" },
+        ],
+      },
+    ];
+
+    for (const testCase of invalidCases) {
+      let dispatches = 0;
+      const provider = createKimiCodeRuntimeProvider({
+        transportFactory: () => transportFrom(toolTurn(testCase.calls)),
+      });
+      const events = await collectEvents(
+        provider,
+        startRequest({
+          handleRuntimeToolCall: async () => {
+            dispatches += 1;
+            return { success: true, contentItems: [] };
+          },
+        }),
+      );
+
+      expect(dispatches, testCase.name).toBe(0);
+      expect(
+        events.some((event) => event.type === "tool.started"),
+        testCase.name,
+      ).toBe(false);
+      expect(events.at(-1), testCase.name).toMatchObject({
+        type: "turn.failed",
+        error: testCase.error ?? "Kimi Code tool call was invalid",
+      });
+    }
+  });
+
+  test("executes two tool calls serially in provider index order with exact paired events", async () => {
+    const requests: KimiCodeTransportRequest[] = [];
+    const dispatchOrder: string[] = [];
+    let releaseFirst!: () => void;
+    let firstStarted!: () => void;
+    const firstBlocked = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const firstDispatched = new Promise<void>((resolve) => {
+      firstStarted = resolve;
+    });
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [
+          toolTurn([
+            { index: 1, id: "call-second", name: "second", arguments: '{"step":2}' },
+            { index: 0, id: "call-first", name: "first", arguments: '{"step":1}' },
+          ]),
+          finalTurn("Both complete"),
+        ],
+        requests,
+      ),
+    });
+    const collecting = collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async (request) => {
+          dispatchOrder.push(request.callId ?? "missing");
+          if (request.callId === "call-first") {
+            firstStarted();
+            await firstBlocked;
+          }
+          return { success: true, contentItems: [{ type: "inputText", text: request.callId ?? "missing" }] };
+        },
+      }),
+    );
+
+    await Promise.race([firstDispatched, collecting]);
+    expect(dispatchOrder).toEqual(["call-first"]);
+    releaseFirst();
+    const events = await collecting;
+
+    expect(dispatchOrder).toEqual(["call-first", "call-second"]);
+    expect(
+      events
+        .filter(
+          (
+            event,
+          ): event is Extract<RuntimeEvent, { type: "tool.started" | "tool.completed" | "tool.result_delivered" }> =>
+            event.type === "tool.started" || event.type === "tool.completed" || event.type === "tool.result_delivered",
+        )
+        .map((event) =>
+          event.type === "tool.started"
+            ? `${event.type}:${event.toolUse.id}`
+            : event.type === "tool.completed"
+              ? `${event.type}:${event.toolUseId}`
+              : `${event.type}:${event.toolCallId}`,
+        ),
+    ).toEqual([
+      "tool.started:call-first",
+      "tool.completed:call-first",
+      "tool.result_delivered:call-first",
+      "tool.started:call-second",
+      "tool.completed:call-second",
+      "tool.result_delivered:call-second",
+    ]);
+  });
+
+  test("pairs the tool lifecycle when cancelled before dispatch", async () => {
+    let dispatches = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom(toolTurn([{ index: 0, id: "call-cancelled", name: "lookup_order", arguments: "{}" }])),
+    });
+    const handle = provider.startSession(
+      startRequest({
+        handleRuntimeToolCall: async () => {
+          dispatches += 1;
+          return { success: true, contentItems: [{ type: "inputText", text: "should not run" }] };
+        },
+      }),
+    );
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    const first = await iterator.next();
+    const second = await iterator.next();
+    const started = await iterator.next();
+    await handle.interrupt();
+    const completed = await iterator.next();
+    const interrupted = await iterator.next();
+    const final = await iterator.next();
+
+    expect([
+      first.value?.type,
+      second.value?.type,
+      started.value?.type,
+      completed.value?.type,
+      interrupted.value?.type,
+    ]).toEqual(["thread.started", "turn.started", "tool.started", "tool.completed", "turn.interrupted"]);
+    expect(completed.value).toMatchObject({
+      type: "tool.completed",
+      toolUseId: "call-cancelled",
+      toolName: "lookup_order",
+      content: "Tool execution cancelled.",
+      isError: true,
+    });
+    expect(dispatches).toBe(0);
+    expect(final.done).toBe(true);
+  });
+
+  test("pairs an interrupted running tool without delivering or continuing its result", async () => {
+    const dispatches: string[] = [];
+    let releaseHandler!: () => void;
+    let handlerStarted!: () => void;
+    const handlerBlocked = new Promise<void>((resolve) => {
+      releaseHandler = resolve;
+    });
+    const handlerDispatched = new Promise<void>((resolve) => {
+      handlerStarted = resolve;
+    });
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom(toolTurn([{ index: 0, id: "call-running", name: "lookup_order", arguments: "{}" }])),
+    });
+    const handle = provider.startSession(
+      startRequest({
+        handleRuntimeToolCall: async (request) => {
+          dispatches.push(request.callId ?? "missing");
+          handlerStarted();
+          await handlerBlocked;
+          return { success: true, contentItems: [{ type: "inputText", text: "finished once" }] };
+        },
+      }),
+    );
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    await iterator.next();
+    await iterator.next();
+    const started = await iterator.next();
+    const pendingCompleted = iterator.next();
+    await handlerDispatched;
+    await handle.interrupt();
+    releaseHandler();
+    const completed = await pendingCompleted;
+    const interrupted = await iterator.next();
+
+    expect(started.value).toMatchObject({ type: "tool.started", toolUse: { id: "call-running" } });
+    expect(completed.value).toMatchObject({
+      type: "tool.completed",
+      toolUseId: "call-running",
+      content: "Tool execution cancelled.",
+      isError: true,
+    });
+    expect(interrupted.value).toMatchObject({ type: "turn.interrupted" });
+    expect(dispatches).toEqual(["call-running"]);
+    expect((await iterator.next()).done).toBe(true);
+  });
+
+  test("stops the tool lifecycle between serialized calls without dispatching another call", async () => {
+    const dispatches: string[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom(
+          toolTurn([
+            { index: 0, id: "call-first", name: "first", arguments: "{}" },
+            { index: 1, id: "call-second", name: "second", arguments: "{}" },
+          ]),
+        ),
+    });
+    const handle = provider.startSession(
+      startRequest({
+        handleRuntimeToolCall: async (request) => {
+          dispatches.push(request.callId ?? "missing");
+          return { success: true, contentItems: [{ type: "inputText", text: "first only" }] };
+        },
+      }),
+    );
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    await iterator.next();
+    await iterator.next();
+    const firstStarted = await iterator.next();
+    const firstCompleted = await iterator.next();
+    const firstDelivered = await iterator.next();
+    await handle.interrupt();
+    const interrupted = await iterator.next();
+
+    expect(firstStarted.value).toMatchObject({ type: "tool.started", toolUse: { id: "call-first" } });
+    expect(firstCompleted.value).toMatchObject({ type: "tool.completed", toolUseId: "call-first" });
+    expect(firstDelivered.value).toMatchObject({ type: "tool.result_delivered", toolCallId: "call-first" });
+    expect(interrupted.value).toMatchObject({ type: "turn.interrupted" });
+    expect(dispatches).toEqual(["call-first"]);
+    expect((await iterator.next()).done).toBe(true);
+  });
+
+  test("stops tool dispatch between calls when the turn is aborted", async () => {
+    const abortController = new AbortController();
+    const dispatches: string[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom(
+          toolTurn([
+            { index: 0, id: "call-first", name: "first", arguments: "{}" },
+            { index: 1, id: "call-second", name: "second", arguments: "{}" },
+          ]),
+        ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        abortController,
+        handleRuntimeToolCall: async (request) => {
+          dispatches.push(request.callId ?? "missing");
+          abortController.abort();
+          return { success: true, contentItems: [{ type: "inputText", text: "done" }] };
+        },
+      }),
+    );
+
+    expect(dispatches).toEqual(["call-first"]);
+    expect(events.map((event) => event.type)).toEqual([
+      "thread.started",
+      "turn.started",
+      "tool.started",
+      "tool.completed",
+      "turn.interrupted",
+    ]);
+  });
+
+  test("bounds tool result text before the next provider request", async () => {
+    const requests: KimiCodeTransportRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [toolTurn([{ index: 0, id: "call-large", name: "lookup_order", arguments: "{}" }]), finalTurn("ok")],
+        requests,
+      ),
+    });
+
+    await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async () => ({
+          success: true,
+          contentItems: [
+            { type: "inputText", text: "x".repeat(80 * 1024) },
+            { type: "inputImage", imageUrl: "https://secret.invalid/signed-token" },
+          ],
+        }),
+      }),
+    );
+
+    const continuation = requests[1]?.body as unknown as { messages: Array<Record<string, unknown>> };
+    expect(continuation.messages[2]).not.toHaveProperty("content");
+    const content = continuation.messages[3]?.content;
+    expect(typeof content).toBe("string");
+    expect(new TextEncoder().encode(String(content)).byteLength).toBeLessThanOrEqual(64 * 1024);
+    expect(content).not.toContain("signed-token");
+  });
+
+  test("fails deterministically when the tool loop exceeds its finite round bound", async () => {
+    let providerRounds = 0;
+    let dispatches = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        providerRounds += 1;
+        if (providerRounds > 20) throw new Error("synthetic unbounded loop");
+        return transportFrom(
+          toolTurn([
+            {
+              index: 0,
+              id: `loop-${providerRounds}`,
+              name: "lookup_order",
+              arguments: "{}",
+            },
+          ]),
+        );
+      },
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async () => {
+          dispatches += 1;
+          return { success: true, contentItems: [{ type: "inputText", text: "again" }] };
+        },
+      }),
+    );
+
+    expect(providerRounds).toBeLessThanOrEqual(20);
+    expect(dispatches).toBeLessThan(20);
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code tool loop limit exceeded" });
+  });
+
+  test("rejects a tool fragment index outside the native bound before any host dispatch", async () => {
+    let dispatches = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        transportFrom(
+          toolTurn(
+            Array.from({ length: 33 }, (_, index) => ({
+              index,
+              id: `batch-${index}`,
+              name: "lookup_order",
+              arguments: "{}",
+            })),
+          ),
+        ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        handleRuntimeToolCall: async () => {
+          dispatches += 1;
+          return { success: true, contentItems: [] };
+        },
+      }),
+    );
+
+    expect(dispatches).toBe(0);
+    expect(events.some((event) => event.type === "tool.started")).toBe(false);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code protocol error: malformed response chunk",
+    });
+  });
+
+  test("commits complete private native state and publishes its locator only at successful terminal", async () => {
+    const fixture = isolatedStateEnv();
+    const requests: KimiCodeTransportRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [
+          toolTurn([{ index: 0, id: "state-call", name: "lookup_order", arguments: '{"id":42}' }], {
+            reasoning: "private tool reasoning",
+          }),
+          [
+            {
+              type: "message",
+              data: {
+                choices: [
+                  {
+                    index: 0,
+                    delta: { content: "Persisted answer", reasoning_content: "private final reasoning" },
+                    finish_reason: "stop",
+                  },
+                ],
+              },
+            },
+            { type: "done" },
+          ],
+        ],
+        requests,
+      ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        cwd: join(fixture.root, "workspace"),
+        env: fixture.env,
+        handleRuntimeToolCall: async () => ({
+          success: true,
+          contentItems: [{ type: "inputText", text: "order:42" }],
+        }),
+      }),
+    );
+    const terminal = events.at(-1);
+
+    expect(events.slice(0, -1).every((event) => !("session" in event))).toBe(true);
+    expect(terminal).toMatchObject({
+      type: "turn.complete",
+      session: { params: { revision: 1, provider: "kimi-code", model: "k3" } },
+    });
+    expect(JSON.stringify(events)).not.toContain("private tool reasoning");
+    expect(JSON.stringify(events)).not.toContain("private final reasoning");
+    expect(JSON.stringify(events)).not.toContain("provider-key-must-stay-private");
+
+    if (terminal?.type !== "turn.complete" || !terminal.session) throw new Error("missing committed test state");
+    const providerSessionId = terminal.providerSessionId;
+    if (!providerSessionId) throw new Error("missing provider session id");
+    expect(providerSessionId).toMatch(/^[0-9a-f-]{36}$/);
+    expect(requests).not.toHaveLength(0);
+    expect(requests.map((request) => request.body.prompt_cache_key)).toEqual(requests.map(() => providerSessionId));
+    expect(terminal.session.displayId).toBe(providerSessionId);
+    const snapshot = await loadKimiCodeSessionState({
+      session: terminal.session,
+      model: "k3",
+      cwd: join(fixture.root, "workspace"),
+      env: fixture.env,
+    });
+    expect(snapshot.messages).toEqual([
+      { role: "user", content: "hello" },
+      {
+        role: "assistant",
+        content: "",
+        reasoning_content: "private tool reasoning",
+        tool_calls: [
+          {
+            id: "state-call",
+            type: "function",
+            function: { name: "lookup_order", arguments: '{"id":42}' },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "state-call", content: "order:42" },
+      {
+        role: "assistant",
+        content: "Persisted answer",
+        reasoning_content: "private final reasoning",
+        tool_calls: [],
+      },
+    ]);
+  });
+
+  test("keeps end-to-end private sentinels out of host input, public events, and public state", async () => {
+    const fixture = isolatedStateEnv();
+    const managedKey = "sk-test_kimi_managed_secret_123456789";
+    const promptSentinel = "PRIVATE_PROMPT_SENTINEL";
+    const pathSentinel = "C:/synthetic/PRIVATE_PATH_SENTINEL.png";
+    const reasoningSentinel = "PRIVATE_REASONING_SENTINEL";
+    const toolInputSentinel = "sk-test_tool_input_secret_123456789";
+    const toolOutputSentinel = "sk-test_tool_output_secret_123456789";
+    const requests: KimiCodeTransportRequest[] = [];
+    const hostInputs: RuntimeDynamicToolCallRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [
+          toolTurn(
+            [
+              {
+                index: 0,
+                id: "sentinel-call",
+                name: "lookup_order",
+                arguments: JSON.stringify({ token: toolInputSentinel }),
+              },
+            ],
+            { reasoning: reasoningSentinel },
+          ),
+          finalTurn("Synthetic completion"),
+        ],
+        requests,
+      ),
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        prompt: prompts(`${promptSentinel} ${pathSentinel}`),
+        cwd: join(fixture.root, "workspace"),
+        env: { ...fixture.env, KIMI_API_KEY: managedKey },
+        handleRuntimeToolCall: async (request) => {
+          hostInputs.push(request);
+          return { success: true, contentItems: [{ type: "inputText", text: toolOutputSentinel }] };
+        },
+      }),
+    );
+
+    expect(JSON.stringify(hostInputs)).not.toContain(managedKey);
+    expect(requests[0]?.headers.Authorization).toBe(`Bearer ${managedKey}`);
+    expect(JSON.stringify(requests.map((request) => request.body))).not.toContain(managedKey);
+    const publicEvents = JSON.stringify(events);
+    for (const sentinel of [
+      managedKey,
+      promptSentinel,
+      pathSentinel,
+      reasoningSentinel,
+      toolInputSentinel,
+      toolOutputSentinel,
+    ]) {
+      expect(publicEvents).not.toContain(sentinel);
+    }
+
+    const terminal = events.at(-1);
+    if (terminal?.type !== "turn.complete" || !terminal.session) throw new Error("missing committed sentinel state");
+    const publicState = JSON.stringify(terminal.session);
+    expect(publicState).not.toContain(managedKey);
+    expect(publicState).not.toContain(reasoningSentinel);
+    const privateState = readFileSync(String(terminal.session.params?.sessionFile), "utf8");
+    expect(privateState).not.toContain(managedKey);
+    expect(privateState).toContain(promptSentinel);
+    expect(privateState).toContain(reasoningSentinel);
+  });
+
+  test("does not expose canonical absolute paths in public provider events", async () => {
+    const fixture = isolatedStateEnv();
+    const unavailableWorkspace = join(fixture.root, "canonical-absolute-path-sentinel");
+    const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
+
+    const events = await collectEvents(provider, startRequest({ cwd: unavailableWorkspace, env: fixture.env }));
+
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code session state commit failed" });
+    expect(JSON.stringify(events)).not.toContain(unavailableWorkspace);
+    expect(JSON.stringify(events)).not.toContain(fixture.root);
+  });
+
+  test("omits unsupported attachments and host integrations from native requests", async () => {
+    const requests: KimiCodeTransportRequest[] = [];
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence([finalTurn("Text only")], requests),
+    });
+    const mediaPaths = "C:/synthetic/image.png C:/synthetic/video.mp4";
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        prompt: prompts(mediaPaths),
+        mcpServers: { privateMcp: { command: "synthetic" } },
+        plugins: [{ type: "local", path: "C:/synthetic/plugin" }],
+        remoteSpawn: { target: "synthetic-worker" },
+      }),
+    );
+
+    const body = requests[0]?.body as unknown as Record<string, unknown>;
+    expect(body.messages).toEqual([
+      { role: "system", content: "Ravi policy." },
+      { role: "user", content: mediaPaths },
+    ]);
+    for (const unsupportedKey of ["images", "videos", "response_format", "plugins", "mcp_servers", "remote_spawn"]) {
+      expect(body).not.toHaveProperty(unsupportedKey);
+    }
+    expect(events.at(-1)?.type).toBe("turn.complete");
+    expect(createKimiCodeRuntimeProvider().getCapabilities().tools.supportsParallelCalls).toBe(false);
+  });
+
+  test("resumes byte-faithful reasoning and tool pairings before the next provider request", async () => {
+    const fixture = isolatedStateEnv();
+    const initialRequests: KimiCodeTransportRequest[] = [];
+    const initialProvider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence(
+        [
+          toolTurn([{ index: 0, id: "resume-call", name: "lookup_order", arguments: '{"raw":"exact"}' }], {
+            content: "tool preface",
+            reasoning: "resume-private-reasoning",
+          }),
+          finalTurn("initial final"),
+        ],
+        initialRequests,
+      ),
+    });
+    const initialEvents = await collectEvents(
+      initialProvider,
+      startRequest({
+        cwd: join(fixture.root, "workspace"),
+        env: fixture.env,
+        handleRuntimeToolCall: async () => ({
+          success: true,
+          contentItems: [{ type: "inputText", text: "exact-result" }],
+        }),
+      }),
+    );
+    const initialTerminal = initialEvents.at(-1);
+    if (initialTerminal?.type !== "turn.complete" || !initialTerminal.session) {
+      throw new Error("missing initial committed state");
+    }
+
+    const resumedRequests: KimiCodeTransportRequest[] = [];
+    const resumedProvider = createKimiCodeRuntimeProvider({
+      transportFactory: transportSequence([finalTurn("resumed final")], resumedRequests),
+    });
+    const resumedEvents = await collectEvents(
+      resumedProvider,
+      startRequest({
+        prompt: prompts("follow-up"),
+        cwd: join(fixture.root, "workspace"),
+        env: fixture.env,
+        resumeSession: initialTerminal.session,
+      }),
+    );
+
+    const requestBody = resumedRequests[0]?.body as unknown as { messages: unknown[] };
+    expect(requestBody.messages.slice(0, 6)).toEqual([
+      { role: "system", content: "Ravi policy." },
+      { role: "user", content: "hello" },
+      {
+        role: "assistant",
+        content: "tool preface",
+        reasoning_content: "resume-private-reasoning",
+        tool_calls: [
+          {
+            id: "resume-call",
+            type: "function",
+            function: { name: "lookup_order", arguments: '{"raw":"exact"}' },
+          },
+        ],
+      },
+      { role: "tool", tool_call_id: "resume-call", content: "exact-result" },
+      { role: "assistant", content: "initial final", reasoning_content: "", tool_calls: [] },
+      { role: "user", content: "follow-up" },
+    ]);
+    expect(resumedEvents.at(-1)).toMatchObject({
+      type: "turn.complete",
+      providerSessionId: initialTerminal.providerSessionId,
+      session: { params: { revision: 2 } },
+    });
+  });
+
+  test("preserves the previous commit on failed and interrupted turns", async () => {
+    const fixture = isolatedStateEnv();
+    const seedProvider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("seed")) });
+    const seedEvents = await collectEvents(
+      seedProvider,
+      startRequest({ cwd: join(fixture.root, "workspace"), env: fixture.env }),
+    );
+    const seedTerminal = seedEvents.at(-1);
+    if (seedTerminal?.type !== "turn.complete" || !seedTerminal.session) throw new Error("missing seed state");
+    const sessionDir = dirname(String(seedTerminal.session.params?.sessionFile));
+
+    const failed = createKimiCodeRuntimeProvider({
+      transportFactory: () => transportFrom([{ type: "message", data: { choices: "invalid" } }]),
+    });
+    const failedEvents = await collectEvents(
+      failed,
+      startRequest({
+        prompt: prompts("failed"),
+        cwd: join(fixture.root, "workspace"),
+        env: fixture.env,
+        resumeSession: seedTerminal.session,
+      }),
+    );
+
+    const abortController = new AbortController();
+    abortController.abort();
+    let interruptedRequests = 0;
+    const interrupted = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        interruptedRequests += 1;
+        return transportFrom(finalTurn("must not run"));
+      },
+    });
+    const interruptedEvents = await collectEvents(
+      interrupted,
+      startRequest({
+        prompt: prompts("interrupted"),
+        cwd: join(fixture.root, "workspace"),
+        env: fixture.env,
+        resumeSession: seedTerminal.session,
+        abortController,
+      }),
+    );
+
+    expect(failedEvents.at(-1)?.type).toBe("turn.failed");
+    expect(interruptedEvents.at(-1)?.type).toBe("turn.interrupted");
+    expect(interruptedRequests).toBe(0);
+    expect(readdirSync(sessionDir).filter((name) => name.endsWith(".json"))).toHaveLength(1);
+    expect(failedEvents.every((event) => !("session" in event))).toBe(true);
+    expect(interruptedEvents.every((event) => !("session" in event))).toBe(true);
+  });
+
+  test("committed native success wins over an abort after assistant publication", async () => {
+    const fixture = isolatedStateEnv();
+    const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
+    const handle = provider.startSession(startRequest({ cwd: join(fixture.root, "workspace"), env: fixture.env }));
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("thread.started");
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    expect((await iterator.next()).value?.type).toBe("text.delta");
+    expect((await iterator.next()).value?.type).toBe("assistant.message");
+    await handle.interrupt();
+    const terminal = (await iterator.next()).value;
+
+    expect(terminal?.type).toBe("turn.complete");
+    expect(terminal?.type === "turn.complete" ? terminal.session : undefined).toBeDefined();
+    expect((await iterator.next()).done).toBe(true);
+  });
+
+  test("an interrupt that wins during commit cannot transition back to completed", async () => {
+    const fixture = isolatedStateEnv();
+    let messageIdReads = 0;
+    let interruptDuringCommit = () => {};
+    const prompt = (async function* (): AsyncGenerator<RuntimePromptMessage> {
+      const message: RuntimePromptMessage = {
+        type: "user",
+        message: { role: "user", content: "commit race" },
+        session_id: "commit-race-session",
+        parent_tool_use_id: null,
+      };
+      Object.defineProperty(message, "clientMessageId", {
+        get() {
+          messageIdReads += 1;
+          if (messageIdReads === 2) interruptDuringCommit();
+          return "commit-race-message";
+        },
+      });
+      yield message;
+    })();
+    const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
+    const handle = provider.startSession(
+      startRequest({ prompt, cwd: join(fixture.root, "workspace"), env: fixture.env }),
+    );
+    interruptDuringCommit = () => {
+      void handle.interrupt();
+    };
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("thread.started");
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    expect((await iterator.next()).value?.type).toBe("text.delta");
+    expect((await iterator.next()).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).done).toBe(true);
+  });
+
+  test("an interrupt that wins during a rejected commit cannot transition to failed", async () => {
+    const fixture = isolatedStateEnv();
+    const invalidStateRoot = join(fixture.root, "state-file");
+    writeFileSync(invalidStateRoot, "not a directory");
+    let messageIdReads = 0;
+    let interruptDuringCommit = () => {};
+    const prompt = (async function* (): AsyncGenerator<RuntimePromptMessage> {
+      const message: RuntimePromptMessage = {
+        type: "user",
+        message: { role: "user", content: "rejected commit race" },
+        session_id: "rejected-commit-race-session",
+        parent_tool_use_id: null,
+      };
+      Object.defineProperty(message, "clientMessageId", {
+        get() {
+          messageIdReads += 1;
+          if (messageIdReads === 2) interruptDuringCommit();
+          return "rejected-commit-race-message";
+        },
+      });
+      yield message;
+    })();
+    const provider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("answer")) });
+    const handle = provider.startSession(
+      startRequest({
+        prompt,
+        cwd: join(fixture.root, "workspace"),
+        env: { ...fixture.env, RAVI_STATE_DIR: invalidStateRoot },
+      }),
+    );
+    interruptDuringCommit = () => {
+      void handle.interrupt();
+    };
+    const iterator = handle.events[Symbol.asyncIterator]();
+
+    expect((await iterator.next()).value?.type).toBe("thread.started");
+    expect((await iterator.next()).value?.type).toBe("turn.started");
+    expect((await iterator.next()).value?.type).toBe("text.delta");
+    expect((await iterator.next()).value?.type).toBe("turn.interrupted");
+    expect((await iterator.next()).done).toBe(true);
+  });
+
+  test("rejects invalid resume state before opening a provider request", async () => {
+    const fixture = isolatedStateEnv();
+    const seedProvider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("seed")) });
+    const seedEvents = await collectEvents(
+      seedProvider,
+      startRequest({ cwd: join(fixture.root, "workspace"), env: fixture.env }),
+    );
+    const seedTerminal = seedEvents.at(-1);
+    if (seedTerminal?.type !== "turn.complete" || !seedTerminal.session) throw new Error("missing seed state");
+    const invalid: RuntimeSessionState = {
+      ...seedTerminal.session,
+      params: { ...seedTerminal.session.params, model: "k2.5" },
+    };
+    let requests = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        requests += 1;
+        return transportFrom(finalTurn("must not run"));
+      },
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        prompt: prompts("resume invalid"),
+        cwd: join(fixture.root, "workspace"),
+        env: fixture.env,
+        resumeSession: invalid,
+      }),
+    );
+
+    expect(requests).toBe(0);
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code session state is invalid" });
+  });
+
+  test("rejects conflicting canonical resume identifiers before opening a provider request", async () => {
+    const fixture = isolatedStateEnv();
+    const seedProvider = createKimiCodeRuntimeProvider({ transportFactory: () => transportFrom(finalTurn("seed")) });
+    const seedEvents = await collectEvents(
+      seedProvider,
+      startRequest({ cwd: join(fixture.root, "workspace"), env: fixture.env }),
+    );
+    const seedTerminal = seedEvents.at(-1);
+    if (seedTerminal?.type !== "turn.complete" || !seedTerminal.session) throw new Error("missing seed state");
+
+    for (const conflict of [
+      { resume: "00000000-0000-4000-8000-000000000000" },
+      { resumeSession: { ...seedTerminal.session, displayId: "00000000-0000-4000-8000-000000000000" } },
+      { resumeSession: { ...seedTerminal.session, displayId: undefined } },
+    ]) {
+      let requests = 0;
+      const provider = createKimiCodeRuntimeProvider({
+        transportFactory: () => {
+          requests += 1;
+          return transportFrom(finalTurn("must not run"));
+        },
+      });
+      const events = await collectEvents(
+        provider,
+        startRequest({
+          prompt: prompts("resume conflicting id"),
+          cwd: join(fixture.root, "workspace"),
+          env: fixture.env,
+          resumeSession: seedTerminal.session,
+          ...conflict,
+        }),
+      );
+
+      expect(requests).toBe(0);
+      expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code session state is invalid" });
+    }
+  }, 15_000);
+
+  test("rejects fork state without opening a provider request", async () => {
+    const fixture = isolatedStateEnv();
+    let requests = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () => {
+        requests += 1;
+        return transportFrom(finalTurn("must not run"));
+      },
+    });
+
+    const events = await collectEvents(
+      provider,
+      startRequest({ cwd: join(fixture.root, "workspace"), env: fixture.env, forkSession: true }),
+    );
+
+    expect(requests).toBe(0);
+    expect(events.at(-1)).toMatchObject({ type: "turn.failed", error: "Kimi Code session fork is unsupported" });
+  });
+
+  test("fails before completion when the final serialized request exceeds its bound", async () => {
+    const fixture = isolatedStateEnv();
+    const committed = await commitKimiCodeSessionState({
+      sessionId: createKimiCodeSessionId(),
+      model: "k3",
+      cwd: join(fixture.root, "workspace"),
+      lastCommittedTurnId: "seed-small",
+      messages: [
+        { role: "user", content: "seed user" },
+        { role: "assistant", content: "seed assistant", reasoning_content: "", tool_calls: [] },
+      ],
+      env: fixture.env,
+    });
+    expect(Buffer.byteLength(JSON.stringify(committed.snapshot), "utf8")).toBeLessThanOrEqual(1024 * 1024);
+
+    let fetchCalls = 0;
+    const provider = createKimiCodeRuntimeProvider({
+      transportFactory: () =>
+        createKimiCodeHttpTransport({
+          fetch: (async () => {
+            fetchCalls += 1;
+            return new Response("data: [DONE]\\n\\n");
+          }) as unknown as typeof fetch,
+        }),
+    });
+    const events = await collectEvents(
+      provider,
+      startRequest({
+        prompt: prompts("p".repeat(850_000)),
+        cwd: join(fixture.root, "workspace"),
+        env: fixture.env,
+        resumeSession: committed.session,
+        systemPromptAppend: "s".repeat(850_000),
+        dynamicTools: [
+          {
+            name: "oversized_request_tool",
+            description: "d".repeat(500_000),
+            inputSchema: { type: "object" },
+          },
+        ],
+      }),
+    );
+
+    expect(events.at(-1)).toMatchObject({
+      type: "turn.failed",
+      error: "Kimi Code request preflight failed",
+      recoverable: false,
+      rawEvent: { preflight: "request_too_large" },
+    });
+    expect(fetchCalls).toBe(0);
+    expect(events.some((event) => event.type === "turn.complete")).toBe(false);
+  });
+});

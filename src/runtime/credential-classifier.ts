@@ -51,7 +51,10 @@ export function classifyRuntimeCredentialFailure(
   const limitDimensions = extractLimitDimensions(headers);
   const rawHeaders = redactHeaders(headers);
 
-  const classified = classifyKind({ status, providerCode, providerType, text });
+  const classified =
+    input.runtimeProvider === "kimi-code"
+      ? classifyKimiCodeKind({ status, text, providerCode, providerType })
+      : classifyKind({ status, providerCode, providerType, text });
   return {
     kind: classified.kind,
     confidence: classified.confidence,
@@ -70,10 +73,92 @@ export function classifyRuntimeCredentialFailure(
       : {}),
     ...(Object.keys(rawHeaders).length > 0 ? { rawHeaders } : {}),
     scope: classified.scope,
-    retryableByCredential: isRetryableByCredential(classified.kind, classified.scope),
+    retryableByCredential: isRetryableByCredential(input.runtimeProvider, classified.kind, classified.scope),
     source: input.source ?? (status ? "http" : "heuristic"),
     ...(limitDimensions.length > 0 ? { limitDimensions } : {}),
   };
+}
+
+function classifyKimiCodeKind(input: { status?: number; text: string; providerCode?: string; providerType?: string }): {
+  kind: RuntimeCredentialFailureKind;
+  confidence: RuntimeCredentialFailureConfidence;
+  scope: RuntimeCredentialFailureScope;
+} {
+  const text = input.text;
+  const tokens = [input.providerCode, input.providerType];
+  if (
+    input.status === 401 &&
+    (input.providerCode === "invalid_api_key" || input.providerType === "authentication_error")
+  ) {
+    return { kind: "auth_invalid", confidence: "high", scope: "credential" };
+  }
+  if (
+    (input.status === 403 || input.status === 429) &&
+    (tokens.includes("quota_exhausted") || tokens.includes("usage_limit_exceeded"))
+  ) {
+    return { kind: "quota_exhausted", confidence: "high", scope: "account" };
+  }
+  if (input.status === 429 && (input.providerCode === "rate_limited" || input.providerType === "rate_limit_error")) {
+    return { kind: "rate_limited", confidence: "high", scope: "account" };
+  }
+  if (
+    input.status === 401 &&
+    (text.includes("api key appears to be invalid") || text.includes("invalid authentication"))
+  ) {
+    return { kind: "auth_invalid", confidence: "high", scope: "credential" };
+  }
+  if (input.status === 401 && text.includes("supports only kimi-k3 up to 256k context")) {
+    return { kind: "permission_denied", confidence: "high", scope: "request" };
+  }
+  if (
+    input.status === 401 &&
+    (text.includes("subscription does not have access to") || text.includes("model id does not exist"))
+  ) {
+    return { kind: "permission_denied", confidence: "high", scope: "model" };
+  }
+  if (input.status === 402 && text.includes("unable to verify your membership benefits")) {
+    return { kind: "provider_overloaded", confidence: "high", scope: "provider" };
+  }
+  if (input.status === 403 && isKimiCodeQuotaMessage(text)) {
+    return { kind: "quota_exhausted", confidence: "high", scope: "account" };
+  }
+  if (input.status === 403 && text.includes("access terminated")) {
+    return { kind: "permission_denied", confidence: "high", scope: "account" };
+  }
+  if (input.status === 429 && text.includes("engine is currently overloaded")) {
+    return { kind: "provider_overloaded", confidence: "high", scope: "provider" };
+  }
+  if (input.status === 429 && text.includes("receiving too many requests")) {
+    return { kind: "rate_limited", confidence: "high", scope: "account" };
+  }
+  if (input.status === 429 && isKimiCodeQuotaMessage(text)) {
+    return { kind: "quota_exhausted", confidence: "high", scope: "account" };
+  }
+  if (input.status === 400 && (text.includes("total message size") || text.includes("exceeded model token limit"))) {
+    return { kind: "context_limit", confidence: "high", scope: "request" };
+  }
+  if (input.status === 400) {
+    return { kind: "invalid_request", confidence: "medium", scope: "request" };
+  }
+  if (input.status === 503 || text.includes("503 service unavailable")) {
+    return { kind: "provider_overloaded", confidence: "high", scope: "provider" };
+  }
+  if (input.status && input.status >= 500) {
+    return { kind: "network_transient", confidence: "medium", scope: "provider" };
+  }
+  return { kind: "unknown", confidence: "low", scope: "unknown" };
+}
+
+function isKimiCodeQuotaMessage(text: string): boolean {
+  if (
+    text.includes("kimi code membership quota is exhausted") ||
+    text.includes("usage limit for this billing cycle") ||
+    text.includes("usage limit for this period") ||
+    text.includes("kimi monthly usage limit")
+  ) {
+    return true;
+  }
+  return /(?:weekly|monthly|5[- ]hour).*usage limit|usage limit.*(?:weekly|monthly|5[- ]hour)/.test(text);
 }
 
 export function evaluateCredentialLimitPressure(
@@ -160,7 +245,12 @@ function classifyKind(input: { status?: number; providerCode?: string; providerT
   return { kind: "unknown", confidence: "low", scope: "unknown" };
 }
 
-function isRetryableByCredential(kind: RuntimeCredentialFailureKind, scope: RuntimeCredentialFailureScope): boolean {
+function isRetryableByCredential(
+  runtimeProvider: RuntimeProviderId,
+  kind: RuntimeCredentialFailureKind,
+  scope: RuntimeCredentialFailureScope,
+): boolean {
+  if (runtimeProvider === "kimi-code") return false;
   if (kind === "rate_limited" || kind === "quota_exhausted" || kind === "billing_blocked" || kind === "auth_invalid") {
     return scope !== "request" && scope !== "provider";
   }

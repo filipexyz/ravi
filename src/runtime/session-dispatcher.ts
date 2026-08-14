@@ -45,7 +45,7 @@ import {
 } from "./host-session.js";
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
-import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
+import { DEFAULT_RUNTIME_PROVIDER_ID, resolveRuntimeProviderAvailability } from "./provider-registry.js";
 import type { RuntimeProviderId } from "./types.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
@@ -55,6 +55,7 @@ import {
   type PendingRuntimeSessionStart,
 } from "./session-launcher.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import { resolveRuntimeProviderIdForSession } from "./session-resolver.js";
 import { isSameRuntimeTurnSurface } from "./turn-surface.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import { withSessionSurfaceHint } from "./session-surface-hint.js";
@@ -1331,6 +1332,22 @@ export class RuntimeSessionDispatcher {
     prompt: RuntimeLaunchPrompt,
     options: { retainReleasedSlot?: boolean } = {},
   ): Promise<void> {
+    const requestedProvider = resolveRuntimeProviderIdForSession({
+      sessionName,
+      prompt,
+      configModel: this.options.getConfigModel(),
+      defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
+    });
+    const availability = resolveRuntimeProviderAvailability(requestedProvider, process.env);
+    if (!availability.available) {
+      await this.options.safeEmit(`ravi.session.${sessionName}.runtime`, {
+        type: "turn.failed",
+        provider: requestedProvider,
+        error: availability.reason,
+        recoverable: false,
+      });
+      return;
+    }
     this.pendingStartSessions.add(sessionName);
     let reserved = false;
     try {

@@ -6,10 +6,15 @@ import {
   updateSessionContext,
   updateSessionDisplayName,
   updateSessionSource,
+  type SessionEntry,
 } from "../router/index.js";
 import { createSessionTraceRunId, recordRuntimeTraceEvent } from "../session-trace/runtime-trace.js";
 import { logger } from "../utils/logger.js";
-import { DEFAULT_RUNTIME_PROVIDER_ID, assertRuntimeCompatibility } from "./provider-registry.js";
+import {
+  DEFAULT_RUNTIME_PROVIDER_ID,
+  assertRuntimeCompatibility,
+  resolveRuntimeProviderAvailability,
+} from "./provider-registry.js";
 import { completeRuntimeCredentialAttempt, markRuntimeCredentialAttemptStarted } from "./credential-store.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
@@ -23,10 +28,11 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
+import type { RuntimeProviderId, RuntimeSessionHandle } from "./types.js";
 import { shouldUseTurnScopedAuthorityForPrompt } from "./runtime-request-context.js";
 import { buildRuntimeStartRequest, resolveRuntimePromptSource } from "./runtime-request-builder.js";
-import { resolveRuntimeSession } from "./session-resolver.js";
-import { markRuntimeTaskAcceptedForPrompt, resolveRuntimeForPrompt } from "./task-runtime-context.js";
+import { resolveRuntimeProviderIdForSession, resolveRuntimeSession } from "./session-resolver.js";
+import { markRuntimeTaskAcceptedForPrompt } from "./task-runtime-context.js";
 import { updateRuntimeLiveState } from "./live-state.js";
 import { ensureObserverBindingsForSession } from "./observation-plane.js";
 import { formatUserFacingTurnFailure, publicRuntimeFailureDetail } from "./public-failure.js";
@@ -67,6 +73,41 @@ export function updateRuntimeSessionMetadata(sessionKey: string, prompt: Runtime
   }
 }
 
+export async function persistStartedRuntimeProviderState(input: {
+  session: SessionEntry;
+  runtimeProviderId: RuntimeProviderId;
+  runtimeSession: RuntimeSessionHandle;
+  abortController: AbortController;
+  persistedRuntimeProviderSessionId?: string;
+  storedRuntimeSessionParams?: Record<string, unknown>;
+  canResumeStoredSession: boolean;
+}): Promise<void> {
+  const { session, runtimeProviderId, runtimeSession, abortController } = input;
+  const providerStateMutation = updateRuntimeProviderState(session, runtimeProviderId, {
+    ...(input.persistedRuntimeProviderSessionId
+      ? { providerSessionId: input.persistedRuntimeProviderSessionId }
+      : {}),
+    ...(input.canResumeStoredSession && input.storedRuntimeSessionParams
+      ? { runtimeSessionParams: input.storedRuntimeSessionParams }
+      : {}),
+    ...(input.canResumeStoredSession && (session.runtimeSessionDisplayId ?? input.persistedRuntimeProviderSessionId)
+      ? { runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? input.persistedRuntimeProviderSessionId }
+      : {}),
+  });
+  if (!providerStateMutation.won) {
+    if (!abortController.signal.aborted) abortController.abort();
+    await runtimeSession.close?.();
+    throw new Error("Session ownership changed while starting runtime provider");
+  }
+  session.runtimeProvider = runtimeProviderId;
+  if (input.persistedRuntimeProviderSessionId) {
+    session.runtimeSessionParams = input.storedRuntimeSessionParams;
+    session.runtimeSessionDisplayId = session.runtimeSessionDisplayId ?? input.persistedRuntimeProviderSessionId;
+    session.providerSessionId = session.runtimeSessionDisplayId ?? input.persistedRuntimeProviderSessionId;
+    session.sdkSessionId = session.runtimeSessionDisplayId ?? input.persistedRuntimeProviderSessionId;
+  }
+}
+
 export async function startRuntimeSession(options: StartRuntimeSessionOptions): Promise<void> {
   const {
     sessionName,
@@ -84,9 +125,27 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
   const runId = createSessionTraceRunId();
   const resumeStashedMessages = prompt._resumeStashedMessages === true;
 
+  const requestedProvider = resolveRuntimeProviderIdForSession({
+    sessionName,
+    prompt,
+    configModel,
+    defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
+  });
+  const availability = resolveRuntimeProviderAvailability(requestedProvider, process.env);
+  if (!availability.available) {
+    await safeEmit(`ravi.session.${sessionName}.runtime`, {
+      type: "turn.failed",
+      provider: requestedProvider,
+      error: availability.reason,
+      recoverable: false,
+    });
+    return;
+  }
+
   const resolvedSession = resolveRuntimeSession({
     sessionName,
     prompt,
+    configModel,
     defaultRuntimeProviderId: DEFAULT_RUNTIME_PROVIDER_ID,
   });
   if (!resolvedSession) {
@@ -98,6 +157,8 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     runtimeProviderId,
     runtimeProvider,
     runtimeCapabilities,
+    runtimeResolution,
+    model,
     session,
     sessionCwd,
     dbSessionKey,
@@ -105,7 +166,10 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     storedProviderSessionId,
     canResumeStoredSession,
     resumeDecision,
+    providerStateCleanup,
   } = resolvedSession;
+
+  await providerStateCleanup;
 
   log.info("startRuntimeSession", {
     sessionName,
@@ -131,14 +195,6 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     });
   }
 
-  const runtimeResolution = resolveRuntimeForPrompt({
-    sessionName,
-    prompt,
-    session,
-    agent,
-    configModel,
-  });
-  const model = runtimeResolution.options.model ?? configModel;
   try {
     const observation = ensureObserverBindingsForSession({
       sessionName,
@@ -292,24 +348,15 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     markRuntimeCredentialAttemptStarted(runtimeCredentialAttempt?.attemptId);
     streamingSession.currentRuntimeCredential = runtimeCredentialAttempt;
     const persistedRuntimeProviderSessionId = canResumeStoredSession ? storedProviderSessionId : undefined;
-    updateRuntimeProviderState(session.sessionKey, runtimeProviderId, {
-      ...(persistedRuntimeProviderSessionId ? { providerSessionId: persistedRuntimeProviderSessionId } : {}),
-      ...(canResumeStoredSession && storedRuntimeSessionParams
-        ? { runtimeSessionParams: storedRuntimeSessionParams }
-        : {}),
-      ...(canResumeStoredSession && (session.runtimeSessionDisplayId ?? storedProviderSessionId)
-        ? {
-            runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? storedProviderSessionId,
-          }
-        : {}),
+    await persistStartedRuntimeProviderState({
+      session,
+      runtimeProviderId,
+      runtimeSession,
+      abortController: streamingSession.abortController,
+      ...(persistedRuntimeProviderSessionId ? { persistedRuntimeProviderSessionId } : {}),
+      ...(storedRuntimeSessionParams ? { storedRuntimeSessionParams } : {}),
+      canResumeStoredSession,
     });
-    session.runtimeProvider = runtimeProviderId;
-    if (persistedRuntimeProviderSessionId) {
-      session.runtimeSessionParams = storedRuntimeSessionParams;
-      session.runtimeSessionDisplayId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
-      session.providerSessionId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
-      session.sdkSessionId = session.runtimeSessionDisplayId ?? storedProviderSessionId;
-    }
 
     await markRuntimeTaskAcceptedForPrompt(sessionName, prompt);
 

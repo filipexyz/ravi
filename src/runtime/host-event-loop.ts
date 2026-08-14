@@ -11,10 +11,10 @@ import { nats } from "../nats.js";
 import { SILENT_TOKEN } from "../prompt-builder.js";
 import {
   dbInsertCostEvent,
-  deleteSession,
+  deleteSessionIfUnchanged,
   getAnnounceCompaction,
   getSession,
-  resetSession,
+  resetSessionIfUnchanged,
   updateProviderSession,
   updateRuntimeProviderState,
   updateTokens,
@@ -25,6 +25,10 @@ import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-tra
 import { applyTaskSessionTtlForAgent, shouldRefreshTaskSessionTtlOnTurnComplete } from "../tasks/session-retention.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
+import {
+  adoptPublishedProviderState,
+  runProviderSessionLifecycleMutation,
+} from "./provider-session-lifecycle.js";
 import {
   buildRuntimeContextRecoveryPrompt,
   classifyRuntimeContextWindowFailure,
@@ -40,7 +44,7 @@ import {
   recordRuntimeCredentialSuccess,
 } from "./credential-store.js";
 import type { RuntimeCredentialFailureSignal } from "./credential-types.js";
-import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
+import type { RuntimeCrashRecoveryCoordinator, RuntimeCrashRecoveryTerminalInput } from "./crash-recovery.js";
 import { hasRuntimeTurnAttemptInputMutation, type RuntimeTurnAttemptTerminalStatus } from "./crash-recovery-store.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import {
@@ -432,25 +436,12 @@ function recordRuntimeCredentialTurnFailure(input: {
 }): RuntimeCredentialFailureSignal | undefined {
   const credential = input.streaming.currentRuntimeCredential;
   if (!credential) return undefined;
-  const rawError = asRecord(input.rawEvent?.error);
-  const headers = extractRuntimeFailureHeaders(input.rawEvent);
-  const signal = classifyRuntimeCredentialFailure({
-    runtimeProvider: input.provider,
-    upstreamProvider: credential.upstreamProvider,
+  const signal = classifyRuntimeCredentialTurnFailure({
+    provider: input.provider,
     model: input.model,
-    credentialId: credential.credentialId,
-    httpStatus: firstNumber(input.rawEvent?.status, input.rawEvent?.statusCode, rawError?.status, rawError?.statusCode),
-    providerCode: firstString(input.rawEvent?.code, rawError?.code),
-    providerType: firstString(input.rawEvent?.type, input.rawEvent?.subtype, rawError?.type),
-    message: input.error,
-    ...(headers ? { headers } : {}),
-    requestId: firstString(
-      input.rawEvent?.requestId,
-      input.rawEvent?.request_id,
-      rawError?.requestId,
-      rawError?.request_id,
-    ),
-    source: "sdk-error",
+    error: input.error,
+    rawEvent: input.rawEvent,
+    credential,
   });
 
   try {
@@ -467,6 +458,36 @@ function recordRuntimeCredentialTurnFailure(input: {
     });
   }
   return signal;
+}
+
+/** @internal Pure host-boundary projection used by credential regression tests. */
+export function classifyRuntimeCredentialTurnFailure(input: {
+  provider: RuntimeProviderId;
+  model: string;
+  error: string;
+  rawEvent?: Record<string, unknown>;
+  credential: { credentialId: string; upstreamProvider?: string };
+}): RuntimeCredentialFailureSignal {
+  const rawError = asRecord(input.rawEvent?.error);
+  const headers = extractRuntimeFailureHeaders(input.rawEvent);
+  return classifyRuntimeCredentialFailure({
+    runtimeProvider: input.provider,
+    upstreamProvider: input.credential.upstreamProvider,
+    model: input.model,
+    credentialId: input.credential.credentialId,
+    httpStatus: firstNumber(input.rawEvent?.status, input.rawEvent?.statusCode, rawError?.status, rawError?.statusCode),
+    providerCode: firstString(input.rawEvent?.code, rawError?.code),
+    providerType: firstString(input.rawEvent?.type, input.rawEvent?.subtype, rawError?.type),
+    message: input.error,
+    ...(headers ? { headers } : {}),
+    requestId: firstString(
+      input.rawEvent?.requestId,
+      input.rawEvent?.request_id,
+      rawError?.requestId,
+      rawError?.request_id,
+    ),
+    source: "sdk-error",
+  });
 }
 
 function buildProviderRawRuntimeEvent(
@@ -500,6 +521,11 @@ function buildProviderRawRuntimeEvent(
 function stripRuntimeRawEvent<T extends RuntimeEvent>(event: T): T {
   const safeEvent: Record<string, unknown> = { ...event };
   delete safeEvent.rawEvent;
+  if (event.type === "turn.complete" && event.session) {
+    const publicSession: Record<string, unknown> = { ...event.session };
+    delete publicSession.providerStateReservationId;
+    safeEvent.session = publicSession;
+  }
   if (event.type === "tool.completed" && isGeneratedImageToolCompletion(event)) {
     safeEvent.content = summarizeGeneratedImageToolOutput({
       content: event.content,
@@ -765,6 +791,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   const terminalizeCurrentCrashRecoveryAttempt = (
     status: RuntimeTurnAttemptTerminalStatus,
     requestedCompletedAt?: number,
+    metadata?: RuntimeCrashRecoveryTerminalInput["metadata"],
   ) => {
     if (streaming.currentCrashRecoveryTerminal) {
       return streaming.currentCrashRecoveryTerminal;
@@ -792,6 +819,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         attemptId: crashRecoveryAttemptId,
         status,
         completedAt,
+        ...(metadata ? { metadata } : {}),
       });
       if (terminalAttempt.status !== status || terminalAttempt.completedAt !== completedAt) {
         throw new Error(
@@ -1571,7 +1599,8 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     };
   };
 
-  const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot) => {
+  const persistRuntimeSkillVisibility = (skillVisibility: RuntimeSkillVisibilitySnapshot): boolean => {
+    const admittedSession = { ...session, runtimeSessionParams: session.runtimeSessionParams };
     const runtimeSessionParams: Record<string, unknown> = {
       ...(isRecord(session.runtimeSessionParams) ? session.runtimeSessionParams : {}),
       skillVisibility,
@@ -1582,19 +1611,21 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       session.sdkSessionId ??
       (typeof runtimeSessionParams.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
 
-    session.runtimeSessionParams = runtimeSessionParams;
-    runtimeSession.skillVisibility = skillVisibility;
+    let persisted = false;
     if (persistedSessionId) {
-      updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
+      persisted = updateProviderSession(admittedSession, runtimeSession.provider, persistedSessionId, {
         runtimeSessionParams,
         runtimeSessionDisplayId: session.runtimeSessionDisplayId ?? persistedSessionId,
-      });
+      }).won;
     } else {
-      updateRuntimeProviderState(session.sessionKey, runtimeSession.provider, {
+      persisted = updateRuntimeProviderState(admittedSession, runtimeSession.provider, {
         runtimeSessionParams,
-      });
+      }).won;
     }
-    return runtimeSessionParams;
+    if (!persisted) return false;
+    runtimeSession.skillVisibility = skillVisibility;
+    session.runtimeSessionParams = runtimeSessionParams;
+    return true;
   };
 
   const emitResponse = async (text: string, metadata?: RuntimeEventMetadata) => {
@@ -1914,7 +1945,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 ? "interrupted"
                 : "failed"
               : undefined;
-      if (receivedTerminalStatus) {
+      if (receivedTerminalStatus && receivedTerminalStatus !== "complete") {
         const terminal = terminalizeCurrentCrashRecoveryAttempt(receivedTerminalStatus);
         if (!terminal) {
           log.warn("Ignoring provider terminal event after crash recovery ownership loss", {
@@ -1936,11 +1967,9 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
           break;
         }
-        if (receivedTerminalStatus !== "complete") {
-          // Interrupted/failed native envelopes may contain partial assistant
-          // content that was never accepted by response policy.
-          suppressProviderRawForCurrentTurn = true;
-        }
+        // Interrupted/failed native envelopes may contain partial assistant
+        // content that was never accepted by response policy.
+        suppressProviderRawForCurrentTurn = true;
       }
 
       if (event.type === "text.delta") {
@@ -1974,18 +2003,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       await chunkEmitTail;
 
-      if (event.type !== "turn.failed" && event.type !== "assistant.message") {
-        await projectRuntimeEventToChannel(
-          event,
-          event.type === "turn.complete" && streaming.agentMode !== "sentinel" ? channelResponseText : undefined,
-        );
+      if (event.type !== "turn.failed" && event.type !== "assistant.message" && event.type !== "turn.complete") {
+        await projectRuntimeEventToChannel(event);
       }
 
-      if (event.type !== "turn.failed" && event.type !== "assistant.message") {
+      if (event.type !== "turn.failed" && event.type !== "assistant.message" && event.type !== "turn.complete") {
         await emitRuntimeEvent({ ...stripRuntimeRawEvent(event), provider: runtimeSession.provider });
       }
 
-      if (event.type === "turn.complete" || event.type === "turn.interrupted") {
+      if (event.type === "turn.interrupted") {
         await releasePendingProviderRawEvent(correlatedProviderRawEvent);
         suppressProviderRawForCurrentTurn = false;
       }
@@ -2039,14 +2065,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           statusSkillVisibility = resetLoadedSkillVisibilitySnapshot(
             runtimeSkillVisibilityFromParams(session.runtimeSessionParams) ?? readSkillVisibilityFromParams(undefined),
           );
-          persistRuntimeSkillVisibility(statusSkillVisibility);
-          await emitRuntimeEvent({
-            type: "skill.visibility.reset",
-            provider: runtimeSession.provider,
-            reason: "compact",
-            skillVisibility: statusSkillVisibility,
-            metadata: event.metadata,
-          });
+          if (persistRuntimeSkillVisibility(statusSkillVisibility)) {
+            await emitRuntimeEvent({
+              type: "skill.visibility.reset",
+              provider: runtimeSession.provider,
+              reason: "compact",
+              skillVisibility: statusSkillVisibility,
+              metadata: event.metadata,
+            });
+          }
         }
 
         const liveActivity = status === "idle" ? "idle" : streaming.compacting ? "compacting" : "thinking";
@@ -2436,8 +2463,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             output: event.content,
             metadata: event.metadata,
           });
-          if (nextSkillVisibility !== previousSkillVisibility) {
-            persistRuntimeSkillVisibility(nextSkillVisibility);
+          if (
+            nextSkillVisibility !== previousSkillVisibility &&
+            persistRuntimeSkillVisibility(nextSkillVisibility)
+          ) {
             patchLiveState(
               {
                 activity: "thinking",
@@ -2495,23 +2524,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       // Handle result (turn complete - save and wait for next message)
       if (event.type === "turn.complete") {
-        const inputTokens = event.usage.inputTokens;
-        const outputTokens = event.usage.outputTokens;
-        const cacheRead = event.usage.cacheReadTokens ?? 0;
-        const cacheCreation = event.usage.cacheCreationTokens ?? 0;
+        const inputTokens = event.usage?.inputTokens;
+        const outputTokens = event.usage?.outputTokens;
+        const cacheRead = event.usage?.cacheReadTokens;
+        const cacheCreation = event.usage?.cacheCreationTokens;
 
-        log.info("Turn complete", {
-          runId,
-          interrupted: streaming.interrupted,
-          total: inputTokens + cacheRead + cacheCreation,
-          new: inputTokens,
-          cached: cacheRead,
-          written: cacheCreation,
-          output: outputTokens,
-          sessionId: event.session?.displayId ?? event.providerSessionId,
-        });
         const completedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
-        recordRuntimeCredentialTurnSuccess(streaming);
 
         const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
         // Skill gates can be persisted by the Codex Bash hook in a separate process.
@@ -2526,40 +2544,123 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           runtimeSessionDisplayId ??
           (typeof runtimeSessionParams?.sessionId === "string" ? runtimeSessionParams.sessionId : undefined);
 
-        if (persistedSessionId) {
-          updateProviderSession(session.sessionKey, runtimeSession.provider, persistedSessionId, {
-            runtimeSessionParams,
-            runtimeSessionDisplayId,
+        const reservationId = event.session?.providerStateReservationId;
+        const requiresProviderStateReservation = runtimeCapabilities.sessionState.mode === "file-backed";
+        let providerStateWon = !requiresProviderStateReservation || Boolean(reservationId && persistedSessionId);
+        let providerStateLossReason =
+          requiresProviderStateReservation && !reservationId
+            ? "provider_state_reservation_missing"
+            : "provider_state_ownership_lost";
+        if (persistedSessionId && providerStateWon) {
+          if (reservationId) {
+            const attemptId = streaming.currentCrashRecoveryAttemptId;
+            const attempt = attemptId && crashRecovery ? crashRecovery.getActiveTurnAttempt(attemptId) : null;
+            providerStateWon = Boolean(
+              attempt &&
+                adoptPublishedProviderState({
+                  session,
+                  provider: runtimeSession.provider,
+                  providerSessionId: persistedSessionId,
+                  nextSession: { displayId: runtimeSessionDisplayId, params: runtimeSessionParams },
+                  reservationId,
+                  ownerAttemptId: attempt.attemptId,
+                  ownerBootEpoch: attempt.bootEpoch,
+                }).won,
+            );
+            providerStateLossReason = "provider_state_ownership_lost";
+          } else {
+            providerStateWon = updateProviderSession(session, runtimeSession.provider, persistedSessionId, {
+              runtimeSessionParams,
+              runtimeSessionDisplayId,
+            }).won;
+          }
+        }
+        if (!providerStateWon) {
+          streaming.internalAbortReason = providerStateLossReason;
+          streaming.interrupted = true;
+          const terminal = terminalizeCurrentCrashRecoveryAttempt("aborted", undefined, {
+            abortReason: providerStateLossReason,
           });
-          backfillProviderSessionId(sessionName, persistedSessionId);
+          if (terminal) {
+            recordTerminalTraceOnce({
+              status: "aborted",
+              eventType: "turn.interrupted",
+              abortReason: providerStateLossReason,
+              completedAt: terminal.completedAt,
+              payloadJson: { reason: providerStateLossReason },
+            });
+          }
+          if (!streaming.abortController.signal.aborted) streaming.abortController.abort();
+          await closeRuntimeSession();
+          break;
+        }
+        if (persistedSessionId) {
           session.runtimeSessionParams = runtimeSessionParams;
           session.runtimeSessionDisplayId = runtimeSessionDisplayId ?? persistedSessionId;
           session.providerSessionId = runtimeSessionDisplayId ?? persistedSessionId;
           session.sdkSessionId = runtimeSessionDisplayId ?? persistedSessionId;
           session.runtimeProvider = runtimeSession.provider;
+          backfillProviderSessionId(sessionName, persistedSessionId);
         }
+        const publicTerminalEvent = stripRuntimeRawEvent(event);
+        await projectRuntimeEventToChannel(
+          publicTerminalEvent,
+          streaming.agentMode !== "sentinel" ? channelResponseText : undefined,
+        );
+        await emitRuntimeEvent({ ...publicTerminalEvent, provider: runtimeSession.provider });
+        await releasePendingProviderRawEvent(correlatedProviderRawEvent);
+        suppressProviderRawForCurrentTurn = false;
+        log.info("Turn complete", {
+          runId,
+          interrupted: streaming.interrupted,
+          ...(event.usage
+            ? {
+                total: inputTokens! + (cacheRead ?? 0) + (cacheCreation ?? 0),
+                new: inputTokens,
+                cached: cacheRead ?? 0,
+                written: cacheCreation ?? 0,
+                output: outputTokens,
+              }
+            : { usage: "unavailable" }),
+          sessionId: event.session?.displayId ?? event.providerSessionId,
+        });
+        recordRuntimeCredentialTurnSuccess(streaming);
         clearRuntimeCredentialAttempt(streaming, completedCredentialAttemptId);
-        updateTokens(session.sessionKey, inputTokens, outputTokens, inputTokens + cacheRead + cacheCreation);
+        if (event.usage) {
+          updateTokens(
+            session.sessionKey,
+            inputTokens!,
+            outputTokens!,
+            inputTokens! + (cacheRead ?? 0) + (cacheCreation ?? 0),
+          );
+        }
 
         const executionModel = resolveCostTrackingModel(runtimeSession.provider, event.execution?.model, model);
-        const cost = executionModel
-          ? calculateCost(executionModel, {
-              inputTokens,
-              outputTokens,
-              cacheRead,
-              cacheCreation,
-            })
-          : null;
+        const cost =
+          executionModel && event.usage
+            ? calculateCost(
+                executionModel,
+                {
+                  inputTokens: inputTokens!,
+                  outputTokens: outputTokens!,
+                  cacheRead: cacheRead ?? 0,
+                  cacheCreation: cacheCreation ?? 0,
+                },
+                {
+                  runtimeProvider: runtimeSession.provider,
+                },
+              )
+            : null;
         const resolvedCost = cost ? await cost : null;
-        if (resolvedCost && executionModel) {
+        if (resolvedCost && executionModel && event.usage) {
           dbInsertCostEvent({
             sessionKey: session.sessionKey,
             agentId: agent.id,
             model: executionModel,
-            inputTokens,
-            outputTokens,
-            cacheReadTokens: cacheRead,
-            cacheCreationTokens: cacheCreation,
+            inputTokens: inputTokens!,
+            outputTokens: outputTokens!,
+            cacheReadTokens: cacheRead ?? 0,
+            cacheCreationTokens: cacheCreation ?? 0,
             inputCostUsd: resolvedCost.inputCost,
             outputCostUsd: resolvedCost.outputCost,
             cacheCostUsd: resolvedCost.cacheCost,
@@ -2583,7 +2684,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           responseChars: responseText.trim().length,
           payloadJson: {
             execution: event.execution ?? null,
-            session: event.session ?? null,
+            session: publicTerminalEvent.session ?? null,
             metadata: event.metadata ?? null,
             pricing:
               resolvedCost?.pricingStatus === "priced"
@@ -2626,14 +2727,38 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           log.warn("Auto-resetting session due to 'Prompt is too long'", {
             sessionName,
           });
-          revokeAgentRuntimeContextsForSession(session.sessionKey, {
-            reason: "prompt_too_long_reset",
+          const resetApplied = await runProviderSessionLifecycleMutation({
+            session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+            mutate: () => deleteSessionIfUnchanged(session),
           });
-          deleteSession(session.sessionKey);
           streaming._promptTooLong = false;
 
-          // Notify the user that the session was reset (skip for sentinel)
-          if (streaming.currentSource && streaming.agentMode !== "sentinel") {
+          if (resetApplied) {
+            revokeAgentRuntimeContextsForSession(session.sessionKey, {
+              reason: "prompt_too_long_reset",
+            });
+          } else {
+            const currentSession = getSession(session.sessionKey);
+            log.warn("Prompt-too-long reset lost session ownership", {
+              runId,
+              sessionName,
+              admittedGeneration: session.lifecycleGeneration,
+              currentGeneration: currentSession?.lifecycleGeneration,
+            });
+            recordTraceEvent({
+              turnId: streaming.currentTraceTurnId,
+              provider: runtimeSession.provider,
+              model,
+              eventType: "session.prompt_too_long_reset_conflict",
+              eventGroup: "session",
+              status: "skipped",
+              source: streaming.currentSource,
+              payloadJson: { reason: "session_ownership_changed" },
+            });
+          }
+
+          // Notify the user only after the reset transaction committed.
+          if (resetApplied && streaming.currentSource && streaming.agentMode !== "sentinel") {
             nats
               .emit("ravi.outbound.deliver", {
                 channel: streaming.currentSource.channel,
@@ -2644,9 +2769,11 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               .catch((err) => log.warn("Failed to notify session reset", { error: err }));
           }
 
-          // Abort the streaming session so next message creates a fresh one
-          streaming.internalAbortReason = "prompt_too_long_reset";
-          streaming.abortController.abort();
+          if (resetApplied) {
+            // Abort the streaming session so next message creates a fresh one
+            streaming.internalAbortReason = "prompt_too_long_reset";
+            streaming.abortController.abort();
+          }
         }
 
         if (!streaming.interrupted && pendingGeneratedMedia.length > 0) {
@@ -2923,7 +3050,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           rawEvent: event.rawEvent,
         });
         if (contextWindowFailure && currentTurnReplaySafety.replayable) {
-          await projectRuntimeEventToChannel(event);
           const history = getRecentHistory(sessionName, 48);
           const recovery = buildRuntimeContextRecoveryPrompt({
             sessionName,
@@ -2932,94 +3058,122 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             error: event.error,
             history,
           });
-          const resetApplied = resetSession(session.sessionKey);
-          session.sdkSessionId = undefined;
-          session.providerSessionId = undefined;
-          session.runtimeProvider = undefined;
-          session.runtimeSessionDisplayId = undefined;
-          session.runtimeSessionParams = undefined;
-          revokeAgentRuntimeContextsForSession(session.sessionKey, {
-            reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+          const resetApplied = await runProviderSessionLifecycleMutation({
+            session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+            mutate: () => resetSessionIfUnchanged(session),
           });
-          const recoveredMessage = createQueuedRuntimeUserMessage({
-            prompt: recovery.prompt,
-            deliveryBarrier: "after_tool",
-            deliveryBarrierSource: "inferred",
-            source: streaming.currentSource,
-            taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
-            _agentId: agent.id,
-            _runtimeProviderId: runtimeSession.provider,
-          });
-          stashedMessages.set(sessionName, [recoveredMessage]);
-          restartStashedReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
-
-          log.warn("Recovering runtime after context window exhaustion", {
-            runId,
-            sessionName,
-            provider: runtimeSession.provider,
-            model,
-            matched: contextWindowFailure.matched,
-            confidence: contextWindowFailure.confidence,
-            resetApplied,
-            historyMessages: history.length,
-            recoveryPromptChars: recovery.chars,
-          });
-          recordTerminalTraceOnce({
-            status: "failed",
-            eventType: "turn.failed",
-            abortReason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
-            error: truncateLogDetail(event.error),
-            payloadJson: {
-              recoverable: event.recoverable ?? true,
-              autoRecovered: true,
-              matched: contextWindowFailure.matched,
-              confidence: contextWindowFailure.confidence,
-              failureDetails: formatRuntimeFailureDetails(event) ?? null,
-              rawEvent: rawEventSummary ?? null,
-              metadata: event.metadata ?? null,
-            },
-          });
-          recordTraceEvent({
-            turnId: streaming.currentTraceTurnId,
-            provider: runtimeSession.provider,
-            model,
-            eventType: "session.context_window_exhausted",
-            eventGroup: "session",
-            status: "recovering",
-            source: streaming.currentSource,
-            payloadJson: {
+          if (!resetApplied) {
+            const currentSession = getSession(session.sessionKey);
+            log.warn("Context-window recovery lost session ownership", {
+              runId,
+              sessionName,
+              admittedGeneration: session.lifecycleGeneration,
+              currentGeneration: currentSession?.lifecycleGeneration,
+            });
+            recordTraceEvent({
+              turnId: streaming.currentTraceTurnId,
+              provider: runtimeSession.provider,
+              model,
+              eventType: "session.context_window_recovery_conflict",
+              eventGroup: "session",
+              status: "skipped",
+              source: streaming.currentSource,
+              payloadJson: {
+                reason: "session_ownership_changed",
+                admittedGeneration: session.lifecycleGeneration ?? null,
+                currentGeneration: currentSession?.lifecycleGeneration ?? null,
+              },
+            });
+          } else {
+            await projectRuntimeEventToChannel(event);
+            session.sdkSessionId = undefined;
+            session.providerSessionId = undefined;
+            session.runtimeProvider = undefined;
+            session.runtimeSessionDisplayId = undefined;
+            session.runtimeSessionParams = undefined;
+            revokeAgentRuntimeContextsForSession(session.sessionKey, {
               reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
-              resetApplied,
+            });
+            const recoveredMessage = createQueuedRuntimeUserMessage({
+              prompt: recovery.prompt,
+              deliveryBarrier: "after_tool",
+              deliveryBarrierSource: "inferred",
+              source: streaming.currentSource,
+              taskBarrierTaskId: streaming.currentTaskBarrierTaskId,
+              _agentId: agent.id,
+              _runtimeProviderId: runtimeSession.provider,
+            });
+            stashedMessages.set(sessionName, [recoveredMessage]);
+            restartStashedReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
+
+            log.warn("Recovering runtime after context window exhaustion", {
+              runId,
+              sessionName,
+              provider: runtimeSession.provider,
+              model,
               matched: contextWindowFailure.matched,
               confidence: contextWindowFailure.confidence,
+              resetApplied,
               historyMessages: history.length,
               recoveryPromptChars: recovery.chars,
-              recoveryMessageCount: recovery.messageCount,
-              recoveryTruncated: recovery.truncated,
-              currentTurnHadToolStarted,
-            },
-          });
-          updateRuntimeLiveState(sessionName, {
-            activity: "thinking",
-            summary: "recovering context",
-            agentId: agent.id,
-            runId,
-            provider: runtimeSession.provider,
-            model,
-            source: streaming.currentSource,
-          });
-          streaming.currentTurnToolStarted = false;
-          streaming.currentTurnInputMutated = false;
-          streaming.internalAbortReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
-          streaming.interrupted = true;
-          clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
-          signalTurnComplete();
-          clearTraceTurnState();
-          streaming.done = true;
-          streaming.currentChannelBackend = undefined;
-          break;
+            });
+            recordTerminalTraceOnce({
+              status: "failed",
+              eventType: "turn.failed",
+              abortReason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+              error: truncateLogDetail(event.error),
+              payloadJson: {
+                recoverable: event.recoverable ?? true,
+                autoRecovered: true,
+                matched: contextWindowFailure.matched,
+                confidence: contextWindowFailure.confidence,
+                failureDetails: formatRuntimeFailureDetails(event) ?? null,
+                rawEvent: rawEventSummary ?? null,
+                metadata: event.metadata ?? null,
+              },
+            });
+            recordTraceEvent({
+              turnId: streaming.currentTraceTurnId,
+              provider: runtimeSession.provider,
+              model,
+              eventType: "session.context_window_exhausted",
+              eventGroup: "session",
+              status: "recovering",
+              source: streaming.currentSource,
+              payloadJson: {
+                reason: RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON,
+                resetApplied,
+                matched: contextWindowFailure.matched,
+                confidence: contextWindowFailure.confidence,
+                historyMessages: history.length,
+                recoveryPromptChars: recovery.chars,
+                recoveryMessageCount: recovery.messageCount,
+                recoveryTruncated: recovery.truncated,
+                currentTurnHadToolStarted,
+              },
+            });
+            updateRuntimeLiveState(sessionName, {
+              activity: "thinking",
+              summary: "recovering context",
+              agentId: agent.id,
+              runId,
+              provider: runtimeSession.provider,
+              model,
+              source: streaming.currentSource,
+            });
+            streaming.currentTurnToolStarted = false;
+            streaming.currentTurnInputMutated = false;
+            streaming.internalAbortReason = RUNTIME_CONTEXT_WINDOW_RECOVERY_REASON;
+            streaming.interrupted = true;
+            clearRuntimeCredentialAttempt(streaming, failedCredentialAttemptId);
+            signalTurnComplete();
+            clearTraceTurnState();
+            streaming.done = true;
+            streaming.currentChannelBackend = undefined;
+            break;
+          }
         }
-        if (contextWindowFailure) {
+        if (contextWindowFailure && !currentTurnReplaySafety.replayable) {
           log.warn("Skipping context-window auto-recovery because the current turn is not replay-safe", {
             runId,
             sessionName,

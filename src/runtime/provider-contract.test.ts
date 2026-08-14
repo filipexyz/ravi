@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createClaudeRuntimeProvider } from "./claude-provider.js";
 import { createCodexRuntimeProvider } from "./codex-provider.js";
+import { createKimiCodeRuntimeProvider } from "./kimi-code-provider.js";
 import { createPiRuntimeProvider } from "./pi-provider.js";
 import type { RuntimeCapabilities, RuntimeHostServices, RuntimePrepareSessionResult } from "./types.js";
 
@@ -82,6 +83,7 @@ describe("runtime provider contract", () => {
   const builtInProviders = [
     { providerId: "claude", createProvider: createClaudeRuntimeProvider },
     { providerId: "codex", createProvider: createCodexRuntimeProvider },
+    { providerId: "kimi-code", createProvider: createKimiCodeRuntimeProvider },
     { providerId: "pi", createProvider: createPiRuntimeProvider },
   ] as const;
 
@@ -255,6 +257,27 @@ describe("runtime provider contract", () => {
       supportsMcpServers: false,
       supportsRemoteSpawn: false,
       toolAccessRequirement: "tool_and_executable",
+    });
+
+    expect(createKimiCodeRuntimeProvider().getCapabilities()).toEqual({
+      runtimeControl: { supported: false, operations: [] },
+      dynamicTools: { mode: "host" },
+      execution: { mode: "external-service" },
+      sessionState: { mode: "file-backed", requiresCwdMatch: true },
+      usage: { semantics: "terminal-event" },
+      tools: { permissionMode: "ravi-host", accessRequirement: "tool_surface", supportsParallelCalls: false },
+      systemPrompt: { mode: "append" },
+      terminalEvents: { guarantee: "adapter" },
+      skillVisibility: { availability: "none", loadedState: "none" },
+      supportsSessionResume: true,
+      supportsSessionFork: false,
+      supportsPartialText: true,
+      supportsToolHooks: false,
+      supportsHostSessionHooks: false,
+      supportsPlugins: false,
+      supportsMcpServers: false,
+      supportsRemoteSpawn: false,
+      toolAccessRequirement: "tool_surface",
     });
   });
 

@@ -19,7 +19,8 @@ import { useSessionMetadata } from "./hooks/useSessionMetadata.js";
 import { resolveRuntimeDisplayLabel } from "./hooks/runtime-display.js";
 import { applyAgentRuntimeSelection } from "./runtime-config.js";
 import { publish } from "../nats.js";
-import { resetSession } from "../router/sessions.js";
+import { resetSessionIfUnchanged } from "../router/sessions.js";
+import { runProviderSessionLifecycleMutation } from "../runtime/provider-session-lifecycle.js";
 
 const sessionName = process.argv[2] || "main";
 type ActiveView = "chat" | "cockpit";
@@ -227,20 +228,43 @@ export function App() {
   );
 
   const handleSlashCommand = useCallback(
-    (cmd: string) => {
+    async (cmd: string) => {
       switch (cmd) {
         case "reset": {
-          const sk = currentSession?.sessionKey;
-          if (sk) {
+          const session = currentSession;
+          if (!session) {
+            pushMessage({
+              id: `system-${Date.now()}`,
+              type: "chat",
+              role: "assistant",
+              content: "No active session to reset.",
+              timestamp: Date.now(),
+            });
+            break;
+          }
+          {
+            const changed = await runProviderSessionLifecycleMutation({
+              session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+              mutate: () => resetSessionIfUnchanged(session),
+            });
+            if (!changed) {
+              pushMessage({
+                id: `system-${Date.now()}`,
+                type: "chat",
+                role: "assistant",
+                content: "Session changed; reset was not applied.",
+                timestamp: Date.now(),
+              });
+              break;
+            }
             publish("ravi.session.abort", {
-              sessionKey: sk,
+              sessionKey: session.sessionKey,
               sessionName,
               source: "tui",
               action: "reset",
               reason: "tui_reset",
               actor: "operator",
             }).catch(() => {});
-            resetSession(sk);
           }
           clearMessages();
           pushMessage({

@@ -103,12 +103,12 @@ export interface CloudTraceExportEvent {
   safePreview: string | null;
   safePayload: unknown;
   usage?: {
-    inputTokens: number;
-    outputTokens: number;
-    cacheReadTokens: number;
-    cacheCreationTokens: number;
-    costUsd: number;
-  };
+    inputTokens: number | null;
+    outputTokens: number | null;
+    cacheReadTokens: number | null;
+    cacheCreationTokens: number | null;
+    costUsd: number | null;
+  } | null;
   durationMs: number | null;
   occurredAt: string;
   schemaVersion: 1;
@@ -707,12 +707,21 @@ function previewFromUnknown(value: unknown): string | null {
 }
 
 function usageFromTurn(turn: SessionTurnRow) {
+  if (
+    turn.input_tokens === null &&
+    turn.output_tokens === null &&
+    turn.cache_read_tokens === null &&
+    turn.cache_creation_tokens === null &&
+    turn.cost_usd === null
+  ) {
+    return null;
+  }
   return {
-    inputTokens: turn.input_tokens ?? 0,
-    outputTokens: turn.output_tokens ?? 0,
-    cacheReadTokens: turn.cache_read_tokens ?? 0,
-    cacheCreationTokens: turn.cache_creation_tokens ?? 0,
-    costUsd: turn.cost_usd ?? 0,
+    inputTokens: turn.input_tokens,
+    outputTokens: turn.output_tokens,
+    cacheReadTokens: turn.cache_read_tokens,
+    cacheCreationTokens: turn.cache_creation_tokens,
+    costUsd: turn.cost_usd,
   };
 }
 

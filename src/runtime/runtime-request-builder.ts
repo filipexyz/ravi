@@ -36,6 +36,7 @@ import {
 } from "./credential-store.js";
 import { buildRuntimeHostAttachments } from "./runtime-host-attachments.js";
 import { prepareRuntimeProviderBootstrap } from "./runtime-provider-bootstrap.js";
+import { createProviderStateLifecycle } from "./provider-state-lifecycle.js";
 import {
   buildRuntimeRequestContext,
   buildRuntimeRequestEnv,
@@ -349,6 +350,25 @@ export async function buildRuntimeStartRequest(
     session,
   });
   installCrashRecoveryApprovalFences({ hostServices, streamingSession, crashRecovery });
+  const admittedLifecycleEpoch = session.lifecycleGeneration;
+  if (
+    typeof admittedLifecycleEpoch !== "number" ||
+    !Number.isSafeInteger(admittedLifecycleEpoch) ||
+    admittedLifecycleEpoch < 1
+  ) {
+    throw new Error(`Session ${dbSessionKey} is missing a durable lifecycle ownership epoch`);
+  }
+  const providerStateLifecycle = createProviderStateLifecycle({
+    provider: runtimeProviderId,
+    sessionKey: dbSessionKey,
+    admittedEpoch: admittedLifecycleEpoch,
+    currentAttempt: () => {
+      const attemptId = streamingSession.currentCrashRecoveryAttemptId;
+      if (!attemptId) return null;
+      const attempt = crashRecovery.getActiveTurnAttempt(attemptId);
+      return attempt ? { attemptId: attempt.attemptId, bootEpoch: attempt.bootEpoch } : null;
+    },
+  });
   const credentialResolution = await resolveRuntimeCredentialAttemptBinding({
     runtimeProvider: runtimeProviderId,
     upstreamProvider: resolveRuntimeCredentialUpstreamProvider(runtimeProviderId, model),
@@ -625,6 +645,7 @@ export async function buildRuntimeStartRequest(
       },
       canUseTool,
       ...(providerBootstrap?.startRequest ?? {}),
+      providerStateLifecycle,
       env: runtimeEnv,
       ...(specServer ? { mcpServers: { spec: specServer } } : {}),
       systemPromptAppend,

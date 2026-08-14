@@ -3,7 +3,12 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { join } from "node:path";
 import { getRecentHistory, saveMessage } from "../db.js";
 import { nats } from "../nats.js";
-import { attachChatToSession, detachChatFromSession } from "../router/sessions.js";
+import {
+  attachChatToSession,
+  detachChatFromSession,
+  resetSessionIfUnchanged,
+  updateProviderSession,
+} from "../router/sessions.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import {
   getOrCreateSession,
@@ -361,7 +366,7 @@ async function runTraceLoop(
   await runRuntimeEventLoop({
     runId: streaming.traceRunId ?? "run-1",
     sessionName: SESSION_NAME,
-    session: makeSession(),
+    session: getSession(SESSION_KEY) ?? makeSession(),
     agent: makeAgent(),
     streaming,
     runtimeSession,
@@ -1152,6 +1157,170 @@ describe("runtime session trace instrumentation", () => {
     });
   });
 
+  it("rejects a deferred terminal after reset without restoring its locator or durable success", async () => {
+    const initial = getSession(SESSION_KEY)!;
+    expect(
+      updateProviderSession(initial, PROVIDER, "synthetic-provider-before", {
+        runtimeSessionParams: { sessionId: "synthetic-provider-before" },
+        runtimeSessionDisplayId: "synthetic-provider-before",
+      }).won,
+    ).toBe(true);
+    const admitted = getSession(SESSION_KEY)!;
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-ownership-reset");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    let providerClosed = 0;
+
+    let releaseTerminal!: () => void;
+    const terminalGate = new Promise<void>((resolve) => {
+      releaseTerminal = resolve;
+    });
+    let terminalDeferred!: () => void;
+    const terminalWasDeferred = new Promise<void>((resolve) => {
+      terminalDeferred = resolve;
+    });
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: (async function* () {
+        terminalDeferred();
+        await terminalGate;
+        yield {
+          type: "turn.complete",
+          providerSessionId: "synthetic-provider-after",
+          session: {
+            displayId: "synthetic-provider-after",
+            params: { sessionId: "synthetic-provider-after" },
+          },
+        } satisfies RuntimeEvent;
+      })(),
+      interrupt: async () => {},
+      close: async () => {
+        providerClosed += 1;
+      },
+    };
+
+    const loop = runTraceLoop(streaming, runtimeSession, { session: admitted });
+    await terminalWasDeferred;
+    expect(resetSessionIfUnchanged(admitted)).toBe(true);
+    releaseTerminal();
+
+    await expect(loop).resolves.toBeUndefined();
+    expect(getSession(SESSION_KEY)).toMatchObject({
+      lifecycleGeneration: admitted.lifecycleGeneration! + 1,
+      providerSessionId: undefined,
+      runtimeSessionParams: undefined,
+    });
+    expect(getSessionTurn("turn-ownership-reset")?.status).not.toBe("complete");
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).not.toContain("turn.complete");
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "aborted",
+      metadata: { abortReason: "provider_state_ownership_lost" },
+    });
+    expect(providerClosed).toBe(1);
+  });
+
+  it("rejects a file-backed terminal without its host reservation before any success effect", async () => {
+    const admitted = getSession(SESSION_KEY)!;
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-missing-provider-reservation");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    let providerClosed = 0;
+    const emitted: Array<Record<string, unknown>> = [];
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: (async function* () {
+        yield {
+          type: "turn.complete",
+          providerSessionId: "unreserved-provider-state",
+          session: {
+            displayId: "unreserved-provider-state",
+            params: { sessionId: "unreserved-provider-state" },
+          },
+          usage: { inputTokens: 17, outputTokens: 4 },
+        } satisfies RuntimeEvent;
+      })(),
+      interrupt: async () => {},
+      close: async () => {
+        providerClosed += 1;
+      },
+    };
+
+    await runTraceLoop(streaming, runtimeSession, {
+      session: admitted,
+      runtimeCapabilities: { ...capabilities, sessionState: { mode: "file-backed" } },
+      safeEmit: async (_subject, data) => {
+        emitted.push(data);
+      },
+    });
+
+    expect(getSession(SESSION_KEY)).toMatchObject({
+      providerSessionId: undefined,
+      runtimeSessionParams: undefined,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({
+      status: "aborted",
+      metadata: { abortReason: "provider_state_reservation_missing" },
+    });
+    expect(getSessionTurn("turn-missing-provider-reservation")?.status).not.toBe("complete");
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).not.toContain("turn.complete");
+    expect(emitted.some((event) => event.type === "turn.complete")).toBe(false);
+    expect(providerClosed).toBe(1);
+  });
+
+  it("rejects a deferred terminal after an agent redirect without recording success", async () => {
+    const initial = getSession(SESSION_KEY)!;
+    expect(
+      updateProviderSession(initial, PROVIDER, "synthetic-provider-before", {
+        runtimeSessionParams: { sessionId: "synthetic-provider-before" },
+        runtimeSessionDisplayId: "synthetic-provider-before",
+      }).won,
+    ).toBe(true);
+    const admitted = getSession(SESSION_KEY)!;
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-ownership-redirect");
+    const attemptId = streaming.currentCrashRecoveryAttemptId!;
+    let releaseTerminal!: () => void;
+    const terminalGate = new Promise<void>((resolve) => {
+      releaseTerminal = resolve;
+    });
+    let terminalDeferred!: () => void;
+    const terminalWasDeferred = new Promise<void>((resolve) => {
+      terminalDeferred = resolve;
+    });
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      events: (async function* () {
+        terminalDeferred();
+        await terminalGate;
+        yield {
+          type: "turn.complete",
+          providerSessionId: "synthetic-provider-after",
+          session: { displayId: "synthetic-provider-after", params: { sessionId: "synthetic-provider-after" } },
+        } satisfies RuntimeEvent;
+      })(),
+      interrupt: async () => {},
+      close: async () => {},
+    };
+
+    const loop = runTraceLoop(streaming, runtimeSession, { session: admitted });
+    await terminalWasDeferred;
+    const redirected = getOrCreateSession(SESSION_KEY, "redirected-agent", join(stateDir!, "redirected"));
+    expect(redirected.lifecycleGeneration).toBe(admitted.lifecycleGeneration! + 1);
+    releaseTerminal();
+
+    await expect(loop).resolves.toBeUndefined();
+    expect(getSession(SESSION_KEY)).toMatchObject({
+      lifecycleGeneration: admitted.lifecycleGeneration! + 1,
+      agentId: "redirected-agent",
+      providerSessionId: undefined,
+    });
+    expect(getRuntimeTurnAttempt(attemptId)).toMatchObject({ status: "aborted" });
+    expect(getSessionTurn("turn-ownership-redirect")?.status).not.toBe("complete");
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).not.toContain("turn.complete");
+  });
+
   it("releases queued delivery barriers after a tool completes without exposing callback failures", async () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming, "turn-tool-barrier-release");
@@ -1754,7 +1923,7 @@ describe("runtime session trace instrumentation", () => {
     session.providerSessionId = "provider-before";
     session.runtimeSessionDisplayId = "provider-before";
 
-    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+    updateRuntimeProviderState(getSession(SESSION_KEY)!, PROVIDER, {
       providerSessionId: "provider-before",
       runtimeSessionDisplayId: "provider-before",
       runtimeSessionParams: {
@@ -3128,7 +3297,7 @@ describe("runtime session trace instrumentation", () => {
       chatId: source.chatId,
       sourceMessageId: "wamid-latest",
     });
-    updateRuntimeProviderState(SESSION_KEY, PROVIDER, {
+    updateRuntimeProviderState(getSession(SESSION_KEY)!, PROVIDER, {
       providerSessionId: "thread-old",
       runtimeSessionDisplayId: "thread-old",
       runtimeSessionParams: { sessionId: "thread-old" },
@@ -3190,6 +3359,92 @@ describe("runtime session trace instrumentation", () => {
     expect(eventTypes).toContain("turn.failed");
     expect(eventTypes).toContain("session.context_window_exhausted");
     expect(getSessionTurn("turn-context-limit")?.status).toBe("failed");
+  });
+
+  it("does not replay or revoke current state when context recovery loses its reset CAS", async () => {
+    updateRuntimeProviderState(getSession(SESSION_KEY)!, PROVIDER, {
+      providerSessionId: "thread-current-owner",
+      runtimeSessionDisplayId: "thread-current-owner",
+      runtimeSessionParams: { sessionId: "thread-current-owner" },
+    });
+    const queued = createQueuedRuntimeUserMessage({
+      prompt: "continue safely",
+      deliveryBarrier: "after_tool",
+      source,
+      _agentId: AGENT_ID,
+    });
+    const streaming = makeStreamingSession({
+      pendingMessages: [queued],
+      currentTurnPendingIds: queued.pendingId ? [queued.pendingId] : [],
+    });
+    seedAdapterTrace(streaming, "turn-context-cas-loss");
+    const stashedMessages = new Map<string, RuntimeUserMessage[]>();
+    const restartRequests: Array<{ sessionName: string; reason: string }> = [];
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      interrupt: async () => {},
+      events: (async function* () {
+        getDb()
+          .prepare("UPDATE sessions SET lifecycle_generation = lifecycle_generation + 1 WHERE session_key = ?")
+          .run(SESSION_KEY);
+        yield {
+          type: "turn.failed" as const,
+          error: "Codex ran out of room in the model's context window.",
+          recoverable: false,
+        };
+      })(),
+    };
+
+    await runTraceLoop(streaming, runtimeSession, {
+      stashedMessages,
+      restartStashedSession: async (input) => {
+        restartRequests.push(input);
+      },
+    });
+
+    expect(restartRequests).toEqual([]);
+    expect(stashedMessages.has(SESSION_NAME)).toBe(false);
+    expect(getSession(SESSION_KEY)?.providerSessionId).toBe("thread-current-owner");
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toContain(
+      "session.context_window_recovery_conflict",
+    );
+  });
+
+  it("does not report a prompt-too-long reset when the delete CAS loses", async () => {
+    updateRuntimeProviderState(getSession(SESSION_KEY)!, PROVIDER, {
+      providerSessionId: "prompt-too-long-current-owner",
+      runtimeSessionDisplayId: "prompt-too-long-current-owner",
+      runtimeSessionParams: { sessionId: "prompt-too-long-current-owner" },
+    });
+    const streaming = makeStreamingSession();
+    seedAdapterTrace(streaming, "turn-prompt-too-long-cas-loss");
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
+    const runtimeSession: RuntimeSessionHandle = {
+      provider: PROVIDER,
+      interrupt: async () => {},
+      events: (async function* () {
+        yield { type: "assistant.message" as const, text: "Prompt is too long" };
+        getDb()
+          .prepare("UPDATE sessions SET lifecycle_generation = lifecycle_generation + 1 WHERE session_key = ?")
+          .run(SESSION_KEY);
+        yield {
+          type: "turn.complete" as const,
+          usage: { inputTokens: 1, outputTokens: 1 },
+        };
+      })(),
+    };
+
+    await runTraceLoop(streaming, runtimeSession, {
+      safeEmit: async (topic, data) => {
+        emitted.push({ topic, data: data as Record<string, unknown> });
+      },
+    });
+
+    expect(getSession(SESSION_KEY)?.providerSessionId).toBe("prompt-too-long-current-owner");
+    expect(emitted.some((entry) => String(entry.data.text ?? "").includes("Sessão resetada"))).toBe(false);
+    expect(listSessionEvents(SESSION_KEY).map((event) => event.eventType)).toContain(
+      "session.prompt_too_long_reset_conflict",
+    );
   });
 
   it("does not auto-replay retryable credential failures after a tool started", async () => {

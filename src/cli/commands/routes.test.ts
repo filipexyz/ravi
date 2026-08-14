@@ -221,9 +221,12 @@ mock.module("../../contacts.js", () => ({
 mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
   listSessions: () => sessions as SessionEntry[],
-  deleteSession: (sessionKey: string) => {
-    deletedSessionKeys.push(sessionKey);
-    sessions = sessions.filter((session) => session.sessionKey !== sessionKey);
+  deleteSessionIfUnchanged: (expected: Pick<SessionEntry, "sessionKey" | "lifecycleGeneration">) => {
+    const current = sessions.find((session) => session.sessionKey === expected.sessionKey);
+    if (!current || current.lifecycleGeneration !== expected.lifecycleGeneration) return false;
+    deletedSessionKeys.push(expected.sessionKey);
+    sessions = sessions.filter((session) => session.sessionKey !== expected.sessionKey);
+    return true;
   },
 }));
 
@@ -259,6 +262,22 @@ function captureLogs(run: () => void): string {
 
 function captureJson(run: () => void): Record<string, unknown> {
   return JSON.parse(captureLogs(run)) as Record<string, unknown>;
+}
+
+async function captureJsonAsync(run: () => Promise<unknown>): Promise<Record<string, unknown>> {
+  const lines: string[] = [];
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map((arg) => String(arg)).join(" "));
+  };
+
+  try {
+    await run();
+  } finally {
+    console.log = originalLog;
+  }
+
+  return JSON.parse(lines.join("\n")) as Record<string, unknown>;
 }
 
 describe("RoutesCommands", () => {
@@ -412,7 +431,7 @@ describe("RoutesCommands", () => {
     expect((payload.liveEffect as Record<string, unknown>).status).toBe("verified");
   });
 
-  it("prints route mutation results in --json mode", () => {
+  it("prints route mutation results in --json mode", async () => {
     pendingEntries = [
       {
         accountId: "main",
@@ -429,7 +448,7 @@ describe("RoutesCommands", () => {
       agentId: "sales",
     };
 
-    const payload = captureJson(() => {
+    const payload = await captureJsonAsync(() =>
       new InstancesRoutesCommands().add(
         "main",
         "5511999999999",
@@ -441,8 +460,8 @@ describe("RoutesCommands", () => {
         "whatsapp",
         undefined,
         true,
-      );
-    });
+      ),
+    );
 
     expect(payload.status).toBe("added");
     expect(payload.removedPending).toBe(true);
@@ -450,7 +469,7 @@ describe("RoutesCommands", () => {
     expect((payload.liveEffect as Record<string, unknown>).status).toBe("verified");
   });
 
-  it("cleans conflicting sessions only inside the mutated instance", () => {
+  it("cleans conflicting sessions only inside the mutated instance", async () => {
     instanceNames = new Set(["main", "hana-zap"]);
     routes = [
       {
@@ -465,27 +484,29 @@ describe("RoutesCommands", () => {
       {
         sessionKey: "agent:dev:whatsapp:main:group:120363424772797713",
         agentId: "dev",
+        lifecycleGeneration: 1,
         accountId: "main",
         lastAccountId: "main",
       },
       {
         sessionKey: "agent:dev:whatsapp:hana-zap:group:120363424772797713",
         agentId: "dev",
+        lifecycleGeneration: 1,
         accountId: "hana-zap",
         lastAccountId: "hana-zap",
       },
     ];
 
-    const payload = captureJson(() => {
-      new InstancesRoutesCommands().set("hana-zap", "group:120363424772797713", "agent", "hana-zap", undefined, true);
-    });
+    const payload = await captureJsonAsync(() =>
+      new InstancesRoutesCommands().set("hana-zap", "group:120363424772797713", "agent", "hana-zap", undefined, true),
+    );
 
     expect(payload.cleanedSessions).toBe(1);
     expect(deletedSessionKeys).toEqual(["agent:dev:whatsapp:hana-zap:group:120363424772797713"]);
     expect(sessions.map((session) => session.sessionKey)).toEqual(["agent:dev:whatsapp:main:group:120363424772797713"]);
   });
 
-  it("cleans Slack channel sessions case-insensitively", () => {
+  it("cleans Slack channel sessions case-insensitively", async () => {
     instanceNames = new Set(["ravi-rbbt-slack"]);
     routes = [
       {
@@ -501,12 +522,13 @@ describe("RoutesCommands", () => {
       {
         sessionKey: "agent:ravi-rbbt-slack:slack:ravi-rbbt-slack:group:C0BG33ZUWJC",
         agentId: "ravi-rbbt-slack",
+        lifecycleGeneration: 1,
         accountId: "ravi-rbbt-slack",
         lastAccountId: "ravi-rbbt-slack",
       },
     ];
 
-    const payload = captureJson(() => {
+    const payload = await captureJsonAsync(() =>
       new InstancesRoutesCommands().set(
         "ravi-rbbt-slack",
         "group:c0bg33zuwjc",
@@ -514,8 +536,8 @@ describe("RoutesCommands", () => {
         "ravi-channels-migration",
         undefined,
         true,
-      );
-    });
+      ),
+    );
 
     expect(payload.cleanedSessions).toBe(1);
     expect(deletedSessionKeys).toEqual(["agent:ravi-rbbt-slack:slack:ravi-rbbt-slack:group:C0BG33ZUWJC"]);

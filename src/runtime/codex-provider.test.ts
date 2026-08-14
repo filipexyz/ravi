@@ -927,7 +927,7 @@ rl.on("line", (line) => {
     expect(turnStarts.map((request) => request.params.threadId)).toEqual(["thread_main", "thread_main"]);
     expect(completions.map((event) => event.providerSessionId)).toEqual(["thread_main", "thread_main"]);
     expect(assistantMessages.map((event) => event.text)).toEqual(["root_1", "root_2"]);
-    expect(completions[0]?.usage.inputTokens).toBe(1);
+    expect(completions[0]?.usage?.inputTokens).toBe(1);
     expect(
       findEventsByType(events, "provider.raw").some(
         (event) => (event.rawEvent as { type?: string })?.type === "thread.resume_recovered",
@@ -1303,9 +1303,9 @@ process.on("SIGTERM", () => {
       model: null,
       billingType: "subscription",
     });
-    expect(completions[0]?.usage.inputTokens).toBe(11);
-    expect(completions[0]?.usage.outputTokens).toBe(7);
-    expect(completions[0]?.usage.cacheReadTokens).toBe(3);
+    expect(completions[0]?.usage?.inputTokens).toBe(11);
+    expect(completions[0]?.usage?.outputTokens).toBe(7);
+    expect(completions[0]?.usage?.cacheReadTokens).toBe(3);
   });
 
   it("chains resumed thread ids only after completed turns", async () => {

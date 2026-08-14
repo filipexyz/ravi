@@ -82,7 +82,8 @@ import {
   normalizePhone,
   type AccountPendingEntry,
 } from "../../contacts.js";
-import { listSessions, deleteSession } from "../../router/sessions.js";
+import { deleteSessionIfUnchanged, listSessions } from "../../router/sessions.js";
+import { runProviderSessionLifecycleMutation } from "../../runtime/provider-session-lifecycle.js";
 import type { SessionEntry } from "../../router/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
@@ -592,11 +593,11 @@ function sessionBelongsToRouteAccount(session: SessionEntry, accountId: string):
   );
 }
 
-function deleteConflictingSessions(
+async function deleteConflictingSessions(
   pattern: string,
   targetAgent: string,
   opts: { accountId: string; silent?: boolean },
-): number {
+): Promise<number> {
   const sessions = listSessions();
   let deleted = 0;
   const normalizedPattern = pattern.toLowerCase();
@@ -606,24 +607,39 @@ function deleteConflictingSessions(
     if (normalizedPattern.startsWith("group:")) {
       const groupId = normalizedPattern.replace("group:", "");
       if (normalizedSessionKey.includes(`group:${groupId}`) && session.agentId !== targetAgent) {
-        deleteSession(session.sessionKey);
-        if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
-        deleted++;
+        const changed = await runProviderSessionLifecycleMutation({
+          session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+          mutate: () => deleteSessionIfUnchanged(session),
+        });
+        if (changed) {
+          if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+          deleted++;
+        }
       }
     } else if (normalizedPattern.startsWith("lid:")) {
       const lid = normalizedPattern.replace("lid:", "");
       if (normalizedSessionKey.includes(`lid:${lid}`) && session.agentId !== targetAgent) {
-        deleteSession(session.sessionKey);
-        if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
-        deleted++;
+        const changed = await runProviderSessionLifecycleMutation({
+          session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+          mutate: () => deleteSessionIfUnchanged(session),
+        });
+        if (changed) {
+          if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+          deleted++;
+        }
       }
     } else if (pattern.includes("*")) {
       const regex = new RegExp(pattern.replace(/\*/g, ".*"), "i");
       const match = session.sessionKey.match(/dm:(\d+)/);
       if (match && regex.test(match[1]) && session.agentId !== targetAgent) {
-        deleteSession(session.sessionKey);
-        if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
-        deleted++;
+        const changed = await runProviderSessionLifecycleMutation({
+          session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+          mutate: () => deleteSessionIfUnchanged(session),
+        });
+        if (changed) {
+          if (!opts.silent) console.log(`  Deleted conflicting session: ${session.sessionKey}`);
+          deleted++;
+        }
       }
     }
   }
@@ -1690,7 +1706,7 @@ export class InstancesRoutesCommands {
 
   @Command({ name: "add", description: "Add a route to an instance" })
   @CommandAccess({ kind: "mutate", resource: "instances.routes", action: "add", risk: "medium" })
-  add(
+  async add(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern (e.g., group:123456, 5511*, thread:*, *)" }) pattern: string,
     @Arg("agent", { description: "Agent ID" }) agent: string,
@@ -1754,7 +1770,7 @@ export class InstancesRoutesCommands {
       }
 
       // Clean conflicting sessions
-      const cleaned = deleteConflictingSessions(pattern, agent, { accountId: name, silent: Boolean(asJson) });
+      const cleaned = await deleteConflictingSessions(pattern, agent, { accountId: name, silent: Boolean(asJson) });
 
       const payload = {
         status: "added" as const,
@@ -1902,7 +1918,7 @@ export class InstancesRoutesCommands {
 
   @Command({ name: "set", description: "Set a route property" })
   @CommandAccess({ kind: "mutate", resource: "instances.routes", action: "set", risk: "medium" })
-  set(
+  async set(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
     @Arg("key", { description: `Property key (${ROUTE_SETTABLE_KEYS.join(", ")})` }) key: string,
@@ -1953,7 +1969,7 @@ export class InstancesRoutesCommands {
 
       let cleaned = 0;
       if (key === "agent") {
-        cleaned = deleteConflictingSessions(pattern, value, { accountId: name, silent: Boolean(asJson) });
+        cleaned = await deleteConflictingSessions(pattern, value, { accountId: name, silent: Boolean(asJson) });
       }
 
       const payload = {

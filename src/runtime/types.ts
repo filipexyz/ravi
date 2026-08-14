@@ -370,9 +370,24 @@ export interface RuntimePrepareSessionResult {
   startRequest?: Partial<Pick<RuntimeStartRequest, "approveRuntimeRequest" | "dynamicTools" | "handleRuntimeToolCall">>;
 }
 
+export interface RuntimeProviderStatePublishInput {
+  reservationId: string;
+  locator: unknown;
+  /** Must be bounded and synchronous; returning a Promise fails closed. */
+  publish(): void;
+}
+
+export interface RuntimeProviderStateLifecycle {
+  reservePreparedState(): { reservationId: string; ownerAttemptId: string };
+  cancelPreparedState(reservationId: string): boolean;
+  publishPreparedState(input: RuntimeProviderStatePublishInput): { reservationId: string };
+}
+
 export interface RuntimeSessionState {
   params?: Record<string, unknown> | null;
   displayId?: string | null;
+  /** Opaque host-only binding; never persisted in params or provider snapshots. */
+  providerStateReservationId?: string;
 }
 
 export interface RuntimeExecutionMetadata {
@@ -435,6 +450,8 @@ export interface RuntimeStartRequest {
   hooks?: Record<string, RuntimeHookMatcher[]>;
   plugins?: RuntimePlugin[];
   remoteSpawn?: unknown;
+  /** Host-owned, request-scoped durable provider-state boundary. */
+  providerStateLifecycle?: RuntimeProviderStateLifecycle;
   /**
    * Per-agent skill visibility (spec skills/scoping/per-agent-visibility).
    * When present + non-empty the provider adapter narrows the runtime skill
@@ -525,7 +542,7 @@ export type RuntimeEvent =
       providerSessionId?: string;
       session?: RuntimeSessionState;
       execution?: RuntimeExecutionMetadata;
-      usage: RuntimeUsage;
+      usage?: RuntimeUsage;
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase);
 

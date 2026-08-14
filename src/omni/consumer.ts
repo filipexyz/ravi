@@ -57,7 +57,8 @@ import {
   dbUpsertChatParticipant,
   dbUpsertSessionParticipant,
 } from "../router/router-db.js";
-import { resetSession } from "../router/sessions.js";
+import { resetSessionIfUnchanged } from "../router/sessions.js";
+import { startProviderSessionLifecycleMutation } from "../runtime/provider-session-lifecycle.js";
 import {
   recordChannelMessageReceivedTrace,
   recordPresenceTrace,
@@ -1625,6 +1626,14 @@ export class OmniConsumer {
             rebasePlan: editRebasePlan,
           })
         : null;
+    if (editInfo && editRebasePlan && !editRestart) {
+      log.warn("Dropping edited-message replay after session ownership conflict", {
+        sessionName,
+        sessionKey: resolved.sessionKey,
+        editedMessageId: editInfo.editedMessageId,
+      });
+      return;
+    }
     const finalEnvelope =
       editRestart && editInfo && editRebasePlan
         ? renderRuntimeMessageEditRebasePrompt({
@@ -1839,7 +1848,14 @@ export class OmniConsumer {
     aborted: boolean;
     reset: boolean;
     workspace: WorkspaceChangeInspection;
-  }> {
+  } | null> {
+    const session = getSession(input.sessionKey);
+    if (!session) return null;
+    const reset = startProviderSessionLifecycleMutation({
+      session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+      mutate: () => resetSessionIfUnchanged(session),
+    }).changed;
+    if (!reset) return null;
     const aborted =
       this.options.abortRuntimeSession?.(input.sessionName, {
         source: "omni",
@@ -1852,7 +1868,6 @@ export class OmniConsumer {
           editEventId: input.editInfo.editEventId,
         },
       }) ?? false;
-    const reset = resetSession(input.sessionKey);
     const workspace = await this.inspectWorkspaceChanges(input.agentCwd);
 
     try {

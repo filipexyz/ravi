@@ -10,7 +10,8 @@
  */
 
 import { resolveRoute } from "../../router/resolver.js";
-import { resetSession } from "../../router/sessions.js";
+import { getSession, resetSessionIfUnchanged } from "../../router/sessions.js";
+import { runProviderSessionLifecycleMutation } from "../../runtime/provider-session-lifecycle.js";
 import { getBotInstance } from "../../daemon.js";
 import { logger } from "../../utils/logger.js";
 import type { SlashCommand, SlashContext } from "../registry.js";
@@ -45,21 +46,33 @@ export const resetCommand: SlashCommand = {
 
     log.info("/reset called", { sessionName, sessionKey, agentId, isGroup: ctx.isGroup });
 
+    const session = getSession(sessionKey);
+    const reset = session
+      ? await runProviderSessionLifecycleMutation({
+          session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+          mutate: () => resetSessionIfUnchanged(session),
+        })
+      : false;
     const bot = getBotInstance();
-    const aborted =
-      bot?.abortSession(sessionName, {
-        source: "slash",
-        action: "/reset",
-        reason: "slash_reset",
-        actor: ctx.senderId,
-      }) ?? false;
+    const aborted = reset
+      ? (bot?.abortSession(sessionName, {
+          source: "slash",
+          action: "/reset",
+          reason: "slash_reset",
+          actor: ctx.senderId,
+        }) ?? false)
+      : false;
     log.info("/reset abort result", { sessionName, aborted, botExists: !!bot });
-
-    const reset = resetSession(sessionKey);
     log.info("/reset result", { sessionKey, reset });
 
-    if (aborted || reset) {
+    if (reset) {
       return `✅ Sessão resetada (${agentId})`;
+    }
+    if (aborted) {
+      return `⚠️ A execução foi interrompida, mas o reset não foi aplicado (${agentId})`;
+    }
+    if (session) {
+      return `⚠️ A sessão mudou; o reset não foi aplicado (${agentId})`;
     }
     return `✅ Nenhuma sessão ativa encontrada (${agentId})`;
   },

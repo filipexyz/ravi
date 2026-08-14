@@ -34,8 +34,8 @@ import {
   listSessions,
   getSessionsByAgent,
   getSession,
-  deleteSession,
-  resetSession,
+  deleteSessionIfUnchanged,
+  resetSessionIfUnchanged,
   resolveSession,
   getOrCreateSession,
   findSessionByChatId,
@@ -44,8 +44,7 @@ import {
   updateSessionModelOverride,
   updateSessionEffortOverride,
   updateSessionThinkingLevel,
-  updateSessionRuntimeProviderOverride,
-  clearProviderSession,
+  updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged,
   setSessionEphemeral,
   extendSession,
   makeSessionPermanent,
@@ -90,6 +89,7 @@ import {
 } from "../../channels/slack/thread-lifecycle.js";
 import { listStickers, stickerAllowedForAgent, stickerAllowedOnChannel } from "../../stickers/catalog.js";
 import { revokeAgentRuntimeContextsForSession } from "../../runtime/context-registry.js";
+import { runProviderSessionLifecycleMutation } from "../../runtime/provider-session-lifecycle.js";
 import {
   dbFindAgentChatMessageByRef,
   dbFindChat,
@@ -2239,11 +2239,11 @@ function buildTraceTurnDetailLines(
       .filter(Boolean)
       .join(" "),
     [
-      `tokens=input:${turn.inputTokens}`,
-      `output:${turn.outputTokens}`,
-      `cacheRead:${turn.cacheReadTokens}`,
-      `cacheCreate:${turn.cacheCreationTokens}`,
-      `cost=${turn.costUsd.toFixed(6)}`,
+      `tokens=input:${turn.inputTokens ?? "unavailable"}`,
+      `output:${turn.outputTokens ?? "unavailable"}`,
+      `cacheRead:${turn.cacheReadTokens ?? "unavailable"}`,
+      `cacheCreate:${turn.cacheCreationTokens ?? "unavailable"}`,
+      `cost=${turn.costUsd === null ? "unavailable" : turn.costUsd.toFixed(6)}`,
     ].join(" "),
     `systemPrompt=${formatTraceSha(turn.systemPromptSha256)} userPrompt=${formatTraceSha(turn.userPromptSha256)} requestBlob=${formatTraceSha(turn.requestBlobSha256)}`,
   ];
@@ -3184,7 +3184,7 @@ export class SessionCommands {
     action: "set-provider",
     risk: "medium",
   })
-  setProvider(
+  async setProvider(
     @Arg("nameOrKey", { description: "Session name or key" }) nameOrKey: string,
     @Arg("provider", {
       description: "Runtime provider id (codex, claude, pi) or 'clear' to remove override",
@@ -3224,9 +3224,18 @@ export class SessionCommands {
 
     const label = s.name ?? s.sessionKey;
     const beforeProviderOverride = s.runtimeProviderOverride ?? null;
-    updateSessionRuntimeProviderOverride(s.sessionKey, providerOverride);
-    if (providerOverride && s.providerSessionId && s.runtimeProvider && s.runtimeProvider !== providerOverride) {
-      clearProviderSession(s.sessionKey);
+    const clearStaleProviderState = Boolean(
+      providerOverride && s.providerSessionId && s.runtimeProvider && s.runtimeProvider !== providerOverride,
+    );
+    const changed = clearStaleProviderState
+      ? await runProviderSessionLifecycleMutation({
+          session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams },
+          mutate: () => updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged(s, providerOverride, true),
+        })
+      : updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged(s, providerOverride, false);
+    if (!changed) {
+      fail(`Session changed before provider override could be applied: ${label}`);
+      return;
     }
 
     if (!asJson) {
@@ -3518,7 +3527,22 @@ export class SessionCommands {
       before,
     });
 
-    // Abort active SDK subprocess so it doesn't keep the old context
+    const changed = await runProviderSessionLifecycleMutation({
+      session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams },
+      mutate: () => resetSessionIfUnchanged(s),
+    });
+    if (!changed) {
+      if (asJson) {
+        const payload = buildSessionMutationJson("reset", s, resolveSession(s.sessionKey), false, {
+          conflict: "session_changed",
+          nextMessageStartsFreshConversation: false,
+        });
+        printJson(payload);
+        return payload;
+      }
+      console.log(`Session changed; reset was not applied: ${s.name ?? s.sessionKey}`);
+      return;
+    }
     try {
       await nats.emit("ravi.session.abort", {
         sessionKey: s.sessionKey,
@@ -3532,8 +3556,6 @@ export class SessionCommands {
     } catch {
       /* session may not be active */
     }
-
-    const changed = resetSession(s.sessionKey);
     const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
       reason: "cli_session_reset",
     });
@@ -3613,7 +3635,21 @@ export class SessionCommands {
       before,
     });
 
-    // Abort SDK subprocess first
+    const changed = await runProviderSessionLifecycleMutation({
+      session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams },
+      mutate: () => deleteSessionIfUnchanged(s),
+    });
+    if (!changed) {
+      if (asJson) {
+        const payload = buildSessionMutationJson("delete", s, resolveSession(s.sessionKey), false, {
+          conflict: "session_changed",
+        });
+        printJson(payload);
+        return payload;
+      }
+      console.log(`Session changed; delete was not applied: ${s.name ?? s.sessionKey}`);
+      return;
+    }
     try {
       await nats.emit("ravi.session.abort", {
         sessionKey: s.sessionKey,
@@ -3627,11 +3663,9 @@ export class SessionCommands {
     } catch {
       /* session may not be active */
     }
-
     const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
       reason: "cli_session_delete",
     });
-    const changed = deleteSession(s.sessionKey);
     await emitSessionMutationAudit("delete", "completed", {
       cliInvocation,
       before,
@@ -3787,24 +3821,30 @@ export class SessionCommands {
         before,
       });
 
-      try {
-        await nats.emit("ravi.session.abort", {
-          sessionKey: session.sessionKey,
-          sessionName: session.name,
-          source: "cli",
-          action: "sessions.prune",
-          reason: "cli_session_prune_inactive",
-          actor: cliInvocation.raviContext.agentId ?? cliInvocation.process.user ?? "cli",
-          correlationId: cliInvocation.invocationId,
-        });
-      } catch {
-        /* session may not be active */
-      }
-
-      const revokedContexts = revokeAgentRuntimeContextsForSession(session.sessionKey, {
-        reason: "cli_session_prune_inactive",
+      const changed = await runProviderSessionLifecycleMutation({
+        session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+        mutate: () => deleteSessionIfUnchanged(session),
       });
-      const changed = deleteSession(session.sessionKey);
+      if (changed) {
+        try {
+          await nats.emit("ravi.session.abort", {
+            sessionKey: session.sessionKey,
+            sessionName: session.name,
+            source: "cli",
+            action: "sessions.prune",
+            reason: "cli_session_prune_inactive",
+            actor: cliInvocation.raviContext.agentId ?? cliInvocation.process.user ?? "cli",
+            correlationId: cliInvocation.invocationId,
+          });
+        } catch {
+          /* session may not be active */
+        }
+      }
+      const revokedContexts = changed
+        ? revokeAgentRuntimeContextsForSession(session.sessionKey, {
+            reason: "cli_session_prune_inactive",
+          })
+        : [];
       if (changed) deletedCount += 1;
       await emitSessionMutationAudit("prune", "completed", {
         cliInvocation,
@@ -5552,7 +5592,15 @@ export class SessionCommands {
             if (isScopeEnforced(scopeCtx) && !canModifySession(scopeCtx, s.name ?? s.sessionKey)) {
               console.log("Permission denied.\n");
             } else {
-              resetSession(s.sessionKey);
+              const changed = await runProviderSessionLifecycleMutation({
+                session: { displayId: s.runtimeSessionDisplayId, params: s.runtimeSessionParams },
+                mutate: () => resetSessionIfUnchanged(s),
+              });
+              if (!changed) {
+                console.log("Session changed; reset was not applied.\n");
+                ask();
+                return;
+              }
               const revokedContexts = revokeAgentRuntimeContextsForSession(s.sessionKey, {
                 reason: "cli_interactive_session_reset",
               });

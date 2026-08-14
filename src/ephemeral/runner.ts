@@ -9,8 +9,18 @@
 import { nats } from "../nats.js";
 import { publishSessionPrompt } from "../omni/session-stream.js";
 import { logger } from "../utils/logger.js";
-import { getExpiringSessions, getExpiredSessions } from "../router/sessions.js";
-import { dbCleanupMessageMeta, dbCleanupExpiredSessions, dbPruneStaleRows } from "../router/router-db.js";
+import { deleteSessionIfUnchanged, getExpiringSessions, getExpiredSessions } from "../router/sessions.js";
+import {
+  dbCleanupMessageMeta,
+  dbPruneStaleRows,
+  getDb,
+  getDbChanges,
+  type DbExpiredSessionSnapshot,
+} from "../router/router-db.js";
+import {
+  runProviderSessionLifecycleMutation,
+  startProviderSessionLifecycleMutation,
+} from "../runtime/provider-session-lifecycle.js";
 import { rollupDailyMetrics } from "../metrics/rollup.js";
 
 const log = logger.child("ephemeral");
@@ -70,24 +80,29 @@ Sem ação = sessão será excluída automaticamente.`;
 
     // 2. Abort and delete expired sessions
     const expired = getExpiredSessions();
+    let deletedCount = 0;
     for (const session of expired) {
-      // Abort SDK subprocess first
-      try {
-        await nats.emit("ravi.session.abort", {
-          sessionKey: session.sessionKey,
-          sessionName: session.name,
-          source: "ephemeral-runner",
-          action: "expire-session",
-          reason: "ephemeral_session_expired",
-          actor: "system",
-        });
-      } catch {
-        // Ignore abort errors — session may not be active
+      const changed = await runProviderSessionLifecycleMutation({
+        session: { displayId: session.runtimeSessionDisplayId, params: session.runtimeSessionParams },
+        mutate: () => deleteSessionIfUnchanged(session),
+      });
+      if (changed) {
+        try {
+          await nats.emit("ravi.session.abort", {
+            sessionKey: session.sessionKey,
+            sessionName: session.name,
+            source: "ephemeral-runner",
+            action: "expire-session",
+            reason: "ephemeral_session_expired",
+            actor: "system",
+          });
+        } catch {
+          // Ignore abort errors — session may not be active
+        }
+        warned.delete(session.sessionKey);
+        deletedCount += 1;
       }
-      warned.delete(session.sessionKey);
     }
-    // Bulk-delete all expired ephemeral sessions (catches any stragglers too)
-    const deletedCount = dbCleanupExpiredSessions();
     if (deletedCount > 0) {
       log.info("Deleted expired ephemeral sessions", { count: deletedCount });
     }
@@ -123,12 +138,15 @@ function rollupTick(): void {
  * - each delete runs in its own short transaction (no long write lock)
  * - WAL checkpoint drains the WAL after pruning so the file actually shrinks
  */
-function pruneTick(): void {
+async function pruneTick(): Promise<void> {
   const now = Date.now();
   if (now - lastPruneAt < PRUNE_INTERVAL_MS / 2) return;
   lastPruneAt = now;
   try {
-    const result = dbPruneStaleRows({ walCheckpoint: true });
+    const result = dbPruneStaleRows({
+      walCheckpoint: true,
+      deleteExpiredSession: deleteExpiredSessionWithDurableCleanup,
+    });
     const total =
       result.messageMetadata +
       result.sessionEvents +
@@ -151,6 +169,36 @@ function pruneTick(): void {
   }
 }
 
+function deleteExpiredSessionWithDurableCleanup(session: DbExpiredSessionSnapshot, now: number): boolean {
+  return startProviderSessionLifecycleMutation({
+    session: {
+      displayId: session.runtimeSessionDisplayId,
+      params: parseRuntimeSessionParamsForLifecycle(session.runtimeSessionJson),
+    },
+    mutate: () => {
+      getDb()
+        .prepare(
+          `DELETE FROM sessions WHERE session_key = ? AND lifecycle_generation = ?
+           AND ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?`,
+        )
+        .run(session.sessionKey, session.lifecycleGeneration, now);
+      return getDbChanges() === 1;
+    },
+  }).changed;
+}
+
+function parseRuntimeSessionParamsForLifecycle(raw: string | undefined): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function startEphemeralRunner(): Promise<void> {
   if (running) return;
   running = true;
@@ -163,12 +211,12 @@ export async function startEphemeralRunner(): Promise<void> {
   // missing days from the last shutdown without waiting an hour.
   rollupTick();
   // Run prune on startup so a long-stopped daemon catches up on stale rows.
-  pruneTick();
+  await pruneTick();
 
   // Then run periodically
   intervalTimer = setInterval(tick, CHECK_INTERVAL_MS);
   rollupTimer = setInterval(rollupTick, ROLLUP_INTERVAL_MS);
-  pruneTimer = setInterval(pruneTick, PRUNE_INTERVAL_MS);
+  pruneTimer = setInterval(() => void pruneTick(), PRUNE_INTERVAL_MS);
 
   log.info("Ephemeral runner started", {
     checkIntervalMs: CHECK_INTERVAL_MS,

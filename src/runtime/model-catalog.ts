@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { KIMI_CODE_MODELS } from "./kimi-code-models.js";
 import type { RuntimeProviderId } from "./types.js";
 
 export interface RuntimeProviderOption {
@@ -81,6 +82,11 @@ const PROVIDER_OPTIONS: RuntimeProviderOption[] = [
     name: "Codex",
     description: "Local Codex CLI runtime with native Codex skills.",
   },
+  {
+    id: "kimi-code",
+    name: "Kimi Code",
+    description: "Kimi Code membership API runtime with Ravi-hosted dynamic tools.",
+  },
 ];
 
 export interface RuntimeModelCatalogOptions {
@@ -102,6 +108,10 @@ export function listRuntimeModels(
   if (provider === "codex") {
     const models = readCodexModelOptions(options.codexCachePath);
     return models.length > 0 ? models : FALLBACK_CODEX_MODEL_OPTIONS;
+  }
+
+  if (provider === "kimi-code") {
+    return [...KIMI_CODE_MODELS];
   }
 
   return [];

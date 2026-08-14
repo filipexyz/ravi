@@ -8,7 +8,14 @@ import { existsSync, statSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { Arg, Command, CommandAccess, CliOnly, Group, Option, Scope } from "../decorators.js";
 import { getRaviStateDir } from "../../utils/paths.js";
-import { dbPruneStaleRows, type DbPruneResult } from "../../router/router-db.js";
+import {
+  dbPruneStaleRows,
+  getDb,
+  getDbChanges,
+  type DbExpiredSessionSnapshot,
+  type DbPruneResult,
+} from "../../router/router-db.js";
+import { startProviderSessionLifecycleMutation } from "../../runtime/provider-session-lifecycle.js";
 import { join } from "node:path";
 
 interface ProcessHolder {
@@ -269,6 +276,7 @@ export class DbCommands {
       vacuum: vacuum === true,
       walCheckpoint: checkpoint === true,
       dryRun: dryRun === true,
+      deleteExpiredSession: deleteExpiredSessionWithDurableCleanup,
     });
     const sizeAfter = fileSize(dbPathBefore);
 
@@ -295,5 +303,35 @@ export class DbCommands {
       console.log(`DB size: ${formatBytes(sizeBefore)} → ${formatBytes(sizeAfter)}`);
     }
     return result;
+  }
+}
+
+function deleteExpiredSessionWithDurableCleanup(session: DbExpiredSessionSnapshot, now: number): boolean {
+  return startProviderSessionLifecycleMutation({
+    session: {
+      displayId: session.runtimeSessionDisplayId,
+      params: parseRuntimeSessionParamsForLifecycle(session.runtimeSessionJson),
+    },
+    mutate: () => {
+      getDb()
+        .prepare(
+          `DELETE FROM sessions WHERE session_key = ? AND lifecycle_generation = ?
+           AND ephemeral = 1 AND expires_at IS NOT NULL AND expires_at <= ?`,
+        )
+        .run(session.sessionKey, session.lifecycleGeneration, now);
+      return getDbChanges() === 1;
+    },
+  }).changed;
+}
+
+function parseRuntimeSessionParamsForLifecycle(raw: string | undefined): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return undefined;
   }
 }

@@ -32,6 +32,18 @@ afterEach(() => {
 });
 
 describe("model catalog", () => {
+  test("lists and resolves only the documented Kimi Code membership models", () => {
+    expect(listRuntimeModels("kimi-code").map((model) => model.id)).toEqual([
+      "k3",
+      "k3-256k",
+      "kimi-for-coding",
+      "kimi-for-coding-highspeed",
+    ]);
+    expect(getDefaultModelForProvider("kimi-code")).toBe("k3");
+    expect(resolvePreferredRuntimeModel("kimi-code", "kimi-for-coding-highspeed")).toBe("kimi-for-coding-highspeed");
+    expect(resolvePreferredRuntimeModel("kimi-code", "unknown-model")).toBe("k3");
+  });
+
   test("parses visible codex models sorted by priority", () => {
     const dir = mkdtempSync(join(tmpdir(), "ravi-codex-models-"));
     tempDirs.push(dir);

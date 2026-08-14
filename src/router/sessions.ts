@@ -7,7 +7,7 @@
 
 import type { Statement } from "bun:sqlite";
 import { toPersistedChannelContext, type ChannelContext } from "../channels/context.js";
-import type { SessionEntry } from "./types.js";
+import type { SessionEntry, SessionProviderStateMutationResult, SessionProviderStateOwnership } from "./types.js";
 import {
   dbCreateSessionChatSubscription,
   dbDetachSessionChatSubscription,
@@ -27,6 +27,8 @@ import {
   type SessionChatSubscriptionRecord,
 } from "./router-db.js";
 import { executeWrite } from "../db/write-retry.js";
+import { resolveRuntimeProviderSessionLifecycleById } from "../runtime/provider-registry.js";
+import { mutateSessionAndEnqueueProviderStateCleanup } from "../runtime/provider-state-cleanup-store.js";
 import { logger } from "../utils/logger.js";
 
 const log = logger.child("router:sessions");
@@ -79,6 +81,7 @@ interface SessionRow {
   expires_at: number | null;
   created_at: number;
   updated_at: number;
+  lifecycle_generation: number;
 }
 
 function rowToEntry(row: SessionRow): SessionEntry {
@@ -127,6 +130,7 @@ function rowToEntry(row: SessionRow): SessionEntry {
     expiresAt: row.expires_at ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    lifecycleGeneration: row.lifecycle_generation,
   };
 }
 
@@ -141,18 +145,13 @@ interface SessionStatements {
   getBySdkId: Statement;
   getByAgent: Statement;
   findByAttributes: Statement;
-  updateSdkId: Statement;
-  updateProviderState: Statement;
-  updateRuntimeProviderOnly: Statement;
   updateRuntimeProviderOverride: Statement;
-  clearProviderState: Statement;
   updateTokens: Statement;
   updateName: Statement;
   nameExists: Statement;
   delete: Statement;
   deleteByName: Statement;
   listAll: Statement;
-  updateAgent: Statement;
   updateSource: Statement;
   updateThreadId: Statement;
   updateDisplayName: Statement;
@@ -261,20 +260,8 @@ function getStatements(): SessionStatements {
     findByAttributes: db.prepare(
       "SELECT * FROM sessions WHERE agent_id = ? AND channel = ? AND group_id = ? ORDER BY updated_at DESC LIMIT 1",
     ),
-    updateSdkId: db.prepare(
-      "UPDATE sessions SET sdk_session_id = ?, runtime_session_display_id = COALESCE(runtime_session_display_id, ?), updated_at = ? WHERE session_key = ?",
-    ),
-    updateProviderState: db.prepare(
-      "UPDATE sessions SET sdk_session_id = ?, runtime_provider = ?, runtime_session_json = ?, runtime_session_display_id = ?, updated_at = ? WHERE session_key = ?",
-    ),
-    updateRuntimeProviderOnly: db.prepare(
-      "UPDATE sessions SET runtime_provider = ?, updated_at = ? WHERE session_key = ?",
-    ),
     updateRuntimeProviderOverride: db.prepare(
       "UPDATE sessions SET runtime_provider_override = ?, updated_at = ? WHERE session_key = ?",
-    ),
-    clearProviderState: db.prepare(
-      "UPDATE sessions SET sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ? WHERE session_key = ?",
     ),
     updateTokens: db.prepare(`
       UPDATE sessions SET
@@ -290,9 +277,6 @@ function getStatements(): SessionStatements {
     delete: db.prepare("DELETE FROM sessions WHERE session_key = ?"),
     deleteByName: db.prepare("DELETE FROM sessions WHERE name = ?"),
     listAll: db.prepare("SELECT * FROM sessions ORDER BY updated_at DESC"),
-    updateAgent: db.prepare(
-      "UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, updated_at = ? WHERE session_key = ?",
-    ),
     updateSource: db.prepare(
       "UPDATE sessions SET last_channel = ?, last_account_id = ?, last_to = ?, updated_at = ? WHERE session_key = ?",
     ),
@@ -325,20 +309,14 @@ export function getOrCreateSession(
   const existing = s.getByKey.get(sessionKey) as SessionRow | undefined;
 
   if (existing) {
-    // Update agent_id/cwd if changed (e.g., routing config updated)
+    // Ownership changes are lifecycle transitions. Callers that intentionally
+    // redirect must use redirectSessionIfUnchanged so cleanup is durable.
     if (existing.agent_id !== agentId || existing.agent_cwd !== agentCwd) {
-      log.info("Updating session agent", {
+      log.warn("Session owner differs; refusing implicit redirect", {
         sessionKey,
         oldAgent: existing.agent_id,
         newAgent: agentId,
       });
-      s.updateAgent.run(agentId, agentCwd, Date.now(), sessionKey);
-      existing.agent_id = agentId;
-      existing.agent_cwd = agentCwd;
-      existing.sdk_session_id = null;
-      existing.runtime_provider = null;
-      existing.runtime_session_json = null;
-      existing.runtime_session_display_id = null;
     }
     return rowToEntry(existing);
   }
@@ -386,6 +364,53 @@ export function getOrCreateSession(
   return getOrCreateSession(sessionKey, agentId, agentCwd);
 }
 
+export type SessionRedirectResult =
+  | { won: true; session: SessionEntry }
+  | { won: false; session: SessionEntry | null };
+
+/** Redirects a session owner under exact epoch CAS and durably queues old provider cleanup. */
+export function redirectSessionIfUnchanged(
+  session: SessionEntry,
+  agentId: string,
+  agentCwd: string,
+): SessionRedirectResult {
+  if (session.agentId === agentId && session.agentCwd === agentCwd) {
+    const current = getSession(session.sessionKey);
+    if (!current || current.lifecycleGeneration !== session.lifecycleGeneration) {
+      return { won: false, session: current };
+    }
+    return { won: true, session: current };
+  }
+  const generation = session.lifecycleGeneration;
+  if (typeof generation !== "number" || !Number.isSafeInteger(generation)) {
+    return { won: false, session: getSession(session.sessionKey) };
+  }
+  const mutate = () => {
+    getDb()
+      .prepare(
+        `UPDATE sessions SET agent_id = ?, agent_cwd = ?, sdk_session_id = NULL,
+         runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL,
+         lifecycle_generation = lifecycle_generation + 1, updated_at = ?
+         WHERE session_key = ? AND lifecycle_generation = ?`,
+      )
+      .run(agentId, agentCwd, Date.now(), session.sessionKey, generation);
+    return getDbChanges() === 1;
+  };
+  const lifecycle = resolveRuntimeProviderSessionLifecycleById(session.runtimeProvider);
+  const cleanupRequest = lifecycle?.createDeleteStateCleanup({
+    displayId: session.runtimeSessionDisplayId,
+    params: session.runtimeSessionParams,
+  });
+  if (lifecycle && !cleanupRequest) {
+    return { won: false, session: getSession(session.sessionKey) };
+  }
+  const won = cleanupRequest
+    ? mutateSessionAndEnqueueProviderStateCleanup(cleanupRequest, mutate).won
+    : executeWrite(getDb(), mutate, { label: "session-owner-redirect" });
+  const current = getSession(session.sessionKey);
+  return won && current ? { won: true, session: current } : { won: false, session: current };
+}
+
 /**
  * Get session by key
  */
@@ -420,79 +445,167 @@ export function getSessionsByAgent(agentId: string): SessionEntry[] {
 /**
  * Update SDK session ID
  */
-export function updateSdkSessionId(sessionKey: string, sdkSessionId: string): void {
-  const s = getStatements();
-  s.updateSdkId.run(sdkSessionId, sdkSessionId, Date.now(), sessionKey);
-  log.debug("Updated SDK session ID", { sessionKey, sdkSessionId });
+export function updateSdkSessionId(
+  session: SessionProviderStateOwnership,
+  sdkSessionId: string,
+): SessionProviderStateMutationResult {
+  if (!isProviderStateOwnership(session)) return { won: false, lifecycleGeneration: null };
+  return persistProviderStateIfOwned(
+    session,
+    sdkSessionId,
+    session.runtimeProvider ?? null,
+    serializeRuntimeSessionParams(session.runtimeSessionParams),
+    session.runtimeSessionDisplayId ?? sdkSessionId,
+  );
 }
 
 export function updateProviderSession(
-  sessionKey: string,
+  session: SessionProviderStateOwnership,
   runtimeProvider: SessionEntry["runtimeProvider"],
   providerSessionId: string,
   options: {
     runtimeSessionParams?: SessionEntry["runtimeSessionParams"];
     runtimeSessionDisplayId?: string;
   } = {},
-): void {
-  const s = getStatements();
+): SessionProviderStateMutationResult {
+  if (!isProviderStateOwnership(session)) return { won: false, lifecycleGeneration: null };
   const runtimeSessionDisplayId = options.runtimeSessionDisplayId ?? providerSessionId;
-  s.updateProviderState.run(
+  const result = persistProviderStateIfOwned(
+    session,
     providerSessionId,
     runtimeProvider ?? null,
     serializeRuntimeSessionParams(options.runtimeSessionParams),
     runtimeSessionDisplayId,
-    Date.now(),
-    sessionKey,
   );
-  log.debug("Updated provider session state", {
-    sessionKey,
+  log.debug("Attempted provider session state update", {
+    sessionKey: session.sessionKey,
     runtimeProvider,
     providerSessionId,
     runtimeSessionDisplayId,
+    won: result.won,
   });
+  return result;
 }
 
 export function updateRuntimeProviderState(
-  sessionKey: string,
+  session: SessionProviderStateOwnership,
   runtimeProvider: SessionEntry["runtimeProvider"],
   options: {
     providerSessionId?: string;
     runtimeSessionParams?: SessionEntry["runtimeSessionParams"];
     runtimeSessionDisplayId?: string;
   } = {},
-): void {
-  const s = getStatements();
+): SessionProviderStateMutationResult {
+  if (!isProviderStateOwnership(session)) return { won: false, lifecycleGeneration: null };
   const hasProviderSessionId =
     typeof options.providerSessionId === "string" && options.providerSessionId.trim().length > 0;
   const hasRuntimeSessionParams = options.runtimeSessionParams !== undefined;
   const hasRuntimeSessionDisplayId = typeof options.runtimeSessionDisplayId === "string";
 
   if (!hasProviderSessionId && !hasRuntimeSessionParams && !hasRuntimeSessionDisplayId) {
-    s.updateRuntimeProviderOnly.run(runtimeProvider ?? null, Date.now(), sessionKey);
+    const result = persistRuntimeProviderMetadataIfOwned(session, runtimeProvider ?? null);
     log.debug("Updated runtime provider metadata without clearing provider session state", {
-      sessionKey,
+      sessionKey: session.sessionKey,
       runtimeProvider,
+      won: result.won,
     });
-    return;
+    return result;
   }
 
   const providerSessionId = options.providerSessionId?.trim() || null;
   const runtimeSessionDisplayId = options.runtimeSessionDisplayId ?? providerSessionId;
-  s.updateProviderState.run(
+  const result = persistProviderStateIfOwned(
+    session,
     providerSessionId,
     runtimeProvider ?? null,
     serializeRuntimeSessionParams(options.runtimeSessionParams),
     runtimeSessionDisplayId,
-    Date.now(),
-    sessionKey,
   );
-  log.debug("Updated runtime provider state", {
-    sessionKey,
+  log.debug("Attempted runtime provider state update", {
+    sessionKey: session.sessionKey,
     runtimeProvider,
     providerSessionId,
     runtimeSessionDisplayId,
+    won: result.won,
   });
+  return result;
+}
+
+function isProviderStateOwnership(value: unknown): value is SessionProviderStateOwnership {
+  return Boolean(
+    value && typeof value === "object" && typeof (value as { sessionKey?: unknown }).sessionKey === "string",
+  );
+}
+
+function readLifecycleGeneration(sessionKey: string): number | null {
+  const row = getDb().prepare("SELECT lifecycle_generation FROM sessions WHERE session_key = ?").get(sessionKey) as {
+    lifecycle_generation: number;
+  } | null;
+  return row?.lifecycle_generation ?? null;
+}
+
+function persistProviderStateIfOwned(
+  session: SessionProviderStateOwnership,
+  providerSessionId: string | null,
+  runtimeProvider: string | null,
+  runtimeSessionJson: string | null,
+  runtimeSessionDisplayId: string | null,
+): SessionProviderStateMutationResult {
+  const lifecycleGeneration = session.lifecycleGeneration;
+  if (typeof lifecycleGeneration !== "number" || !Number.isSafeInteger(lifecycleGeneration)) {
+    return { won: false, lifecycleGeneration: readLifecycleGeneration(session.sessionKey) };
+  }
+  getDb()
+    .prepare(
+      `UPDATE sessions SET sdk_session_id = ?, runtime_provider = ?, runtime_session_json = ?,
+       runtime_session_display_id = ?, updated_at = ?
+       WHERE session_key = ? AND lifecycle_generation = ?
+         AND sdk_session_id IS ? AND runtime_session_display_id IS ? AND runtime_session_json IS ?`,
+    )
+    .run(
+      providerSessionId,
+      runtimeProvider,
+      runtimeSessionJson,
+      runtimeSessionDisplayId,
+      Date.now(),
+      session.sessionKey,
+      lifecycleGeneration,
+      session.sdkSessionId ?? null,
+      session.runtimeSessionDisplayId ?? null,
+      serializeRuntimeSessionParams(session.runtimeSessionParams),
+    );
+  const won = getDbChanges() > 0;
+  return won
+    ? { won: true, lifecycleGeneration }
+    : { won: false, lifecycleGeneration: readLifecycleGeneration(session.sessionKey) };
+}
+
+function persistRuntimeProviderMetadataIfOwned(
+  session: SessionProviderStateOwnership,
+  runtimeProvider: string | null,
+): SessionProviderStateMutationResult {
+  const lifecycleGeneration = session.lifecycleGeneration;
+  if (typeof lifecycleGeneration !== "number" || !Number.isSafeInteger(lifecycleGeneration)) {
+    return { won: false, lifecycleGeneration: readLifecycleGeneration(session.sessionKey) };
+  }
+  getDb()
+    .prepare(
+      `UPDATE sessions SET runtime_provider = ?, updated_at = ?
+       WHERE session_key = ? AND lifecycle_generation = ?
+         AND sdk_session_id IS ? AND runtime_session_display_id IS ? AND runtime_session_json IS ?`,
+    )
+    .run(
+      runtimeProvider,
+      Date.now(),
+      session.sessionKey,
+      lifecycleGeneration,
+      session.sdkSessionId ?? null,
+      session.runtimeSessionDisplayId ?? null,
+      serializeRuntimeSessionParams(session.runtimeSessionParams),
+    );
+  return getDbChanges() > 0
+    ? { won: true, lifecycleGeneration }
+    : { won: false, lifecycleGeneration: readLifecycleGeneration(session.sessionKey) };
 }
 
 export function updateSessionRuntimeProviderOverride(
@@ -507,22 +620,60 @@ export function updateSessionRuntimeProviderOverride(
   });
 }
 
-export function updateProviderSessionId(
-  sessionKey: string,
-  providerSessionId: string,
-  runtimeProvider?: SessionEntry["runtimeProvider"],
-): void {
-  if (runtimeProvider) {
-    updateProviderSession(sessionKey, runtimeProvider, providerSessionId);
-    return;
-  }
-  updateSdkSessionId(sessionKey, providerSessionId);
+/**
+ * Changes a provider override and, when required, clears the stale provider
+ * locator in the same generation-guarded write. Callers must capture the
+ * locator before invoking this so provider-owned cleanup can run only after a
+ * successful mutation.
+ */
+export function updateSessionRuntimeProviderOverrideAndClearProviderStateIfUnchanged(
+  session: Pick<SessionEntry, "sessionKey" | "lifecycleGeneration">,
+  runtimeProvider: SessionEntry["runtimeProviderOverride"] | null,
+  clearProviderState: boolean,
+): boolean {
+  const lifecycleGeneration = session.lifecycleGeneration;
+  if (typeof lifecycleGeneration !== "number" || !Number.isSafeInteger(lifecycleGeneration)) return false;
+  const now = Date.now();
+  const statement = clearProviderState
+    ? `UPDATE sessions SET runtime_provider_override = ?, sdk_session_id = NULL, runtime_provider = NULL,
+       runtime_session_json = NULL, runtime_session_display_id = NULL,
+       lifecycle_generation = lifecycle_generation + 1, updated_at = ?
+       WHERE session_key = ? AND lifecycle_generation = ?`
+    : `UPDATE sessions SET runtime_provider_override = ?, updated_at = ?
+       WHERE session_key = ? AND lifecycle_generation = ?`;
+  getDb()
+    .prepare(statement)
+    .run(runtimeProvider ?? null, now, session.sessionKey, lifecycleGeneration);
+  return getDbChanges() > 0;
 }
 
-export function clearProviderSession(sessionKey: string): void {
-  const s = getStatements();
-  s.clearProviderState.run(Date.now(), sessionKey);
-  log.debug("Cleared provider session state", { sessionKey });
+export function updateProviderSessionId(
+  session: SessionProviderStateOwnership,
+  providerSessionId: string,
+  runtimeProvider?: SessionEntry["runtimeProvider"],
+): SessionProviderStateMutationResult {
+  if (runtimeProvider) {
+    return updateProviderSession(session, runtimeProvider, providerSessionId);
+  }
+  return updateSdkSessionId(session, providerSessionId);
+}
+
+export function clearProviderSession(session: Pick<SessionEntry, "sessionKey" | "lifecycleGeneration">): boolean {
+  return clearProviderSessionIfUnchanged(session);
+}
+
+/** Clears provider state only when no writer has replaced the observed session. */
+export function clearProviderSessionIfUnchanged(
+  session: Pick<SessionEntry, "sessionKey" | "lifecycleGeneration">,
+): boolean {
+  const lifecycleGeneration = session.lifecycleGeneration;
+  if (typeof lifecycleGeneration !== "number" || !Number.isSafeInteger(lifecycleGeneration)) return false;
+  getDb()
+    .prepare(
+      "UPDATE sessions SET sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL, runtime_session_display_id = NULL, lifecycle_generation = lifecycle_generation + 1, updated_at = ? WHERE session_key = ? AND lifecycle_generation = ?",
+    )
+    .run(Date.now(), session.sessionKey, lifecycleGeneration);
+  return getDbChanges() > 0;
 }
 
 /**
@@ -641,8 +792,17 @@ export function getSessionTurnUsageSummary(
  * Delete a session
  */
 export function deleteSession(sessionKey: string): boolean {
-  const s = getStatements();
-  s.delete.run(sessionKey);
+  const session = getSession(sessionKey);
+  return session ? deleteSessionIfUnchanged(session) : false;
+}
+
+/** Deletes a session only when no writer has replaced the observed session. */
+export function deleteSessionIfUnchanged(session: Pick<SessionEntry, "sessionKey" | "lifecycleGeneration">): boolean {
+  const lifecycleGeneration = session.lifecycleGeneration;
+  if (typeof lifecycleGeneration !== "number" || !Number.isSafeInteger(lifecycleGeneration)) return false;
+  getDb()
+    .prepare("DELETE FROM sessions WHERE session_key = ? AND lifecycle_generation = ?")
+    .run(session.sessionKey, lifecycleGeneration);
   return getDbChanges() > 0;
 }
 
@@ -651,25 +811,25 @@ export function deleteSession(sessionKey: string): boolean {
  * (name, agent, routing, display name, etc. are preserved).
  */
 export function resetSession(sessionKey: string): boolean {
+  const session = getSession(sessionKey);
+  return session ? resetSessionIfUnchanged(session) : false;
+}
+
+/** Resets a session only when no writer has replaced the observed session. */
+export function resetSessionIfUnchanged(session: Pick<SessionEntry, "sessionKey" | "lifecycleGeneration">): boolean {
+  const lifecycleGeneration = session.lifecycleGeneration;
+  if (typeof lifecycleGeneration !== "number" || !Number.isSafeInteger(lifecycleGeneration)) return false;
   const db = getDb();
   db.prepare(
     `
     UPDATE sessions SET
-      sdk_session_id = NULL,
-      runtime_provider = NULL,
-      runtime_session_json = NULL,
-      runtime_session_display_id = NULL,
-      system_sent = 0,
-      aborted_last_run = 0,
-      compaction_count = 0,
-      input_tokens = 0,
-      output_tokens = 0,
-      total_tokens = 0,
-      context_tokens = 0,
-      updated_at = ?
-    WHERE session_key = ?
+      sdk_session_id = NULL, runtime_provider = NULL, runtime_session_json = NULL,
+      runtime_session_display_id = NULL, system_sent = 0, aborted_last_run = 0,
+      compaction_count = 0, input_tokens = 0, output_tokens = 0, total_tokens = 0,
+      context_tokens = 0, lifecycle_generation = lifecycle_generation + 1, updated_at = ?
+    WHERE session_key = ? AND lifecycle_generation = ?
   `,
-  ).run(Date.now(), sessionKey);
+  ).run(Date.now(), session.sessionKey, lifecycleGeneration);
   return getDbChanges() > 0;
 }
 

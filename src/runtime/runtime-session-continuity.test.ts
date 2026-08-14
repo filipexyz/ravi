@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { getDb } from "../router/router-db.js";
-import { getOrCreateSession, updateProviderSession } from "../router/sessions.js";
+import { getOrCreateSession, getSession, updateProviderSession } from "../router/sessions.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 
@@ -35,7 +35,7 @@ describe("runtime session continuity", () => {
 
   it("forks a thread from the parent when stale stored state is not resumable", () => {
     getOrCreateSession(PARENT_SESSION_KEY, "agent-a", "/tmp/agent-a");
-    updateProviderSession(PARENT_SESSION_KEY, "codex", "parent-provider-session");
+    updateProviderSession(getSession(PARENT_SESSION_KEY)!, "codex", "parent-provider-session");
 
     const continuity = resolveRuntimeSessionContinuity({
       dbSessionKey: THREAD_SESSION_KEY,
@@ -55,7 +55,7 @@ describe("runtime session continuity", () => {
 
   it("prefers resumable stored state over parent fork", () => {
     getOrCreateSession(PARENT_SESSION_KEY, "agent-a", "/tmp/agent-a");
-    updateProviderSession(PARENT_SESSION_KEY, "codex", "parent-provider-session");
+    updateProviderSession(getSession(PARENT_SESSION_KEY)!, "codex", "parent-provider-session");
 
     const continuity = resolveRuntimeSessionContinuity({
       dbSessionKey: THREAD_SESSION_KEY,
@@ -74,7 +74,7 @@ describe("runtime session continuity", () => {
 
   it("forks from a forced route parent session key", () => {
     getOrCreateSession(ALIAS_PARENT_SESSION_KEY, "ravi-hil", "/tmp/ravi-hil", { name: "ravi-hil" });
-    updateProviderSession(ALIAS_PARENT_SESSION_KEY, "codex", "parent-provider-session");
+    updateProviderSession(getSession(ALIAS_PARENT_SESSION_KEY)!, "codex", "parent-provider-session");
 
     const continuity = resolveRuntimeSessionContinuity({
       dbSessionKey: ALIAS_THREAD_SESSION_KEY,

@@ -8,7 +8,8 @@ export type RuntimeSessionStateInvalidReason =
   | "missing_session_file"
   | "session_file_missing"
   | "missing_cwd"
-  | "cwd_mismatch";
+  | "cwd_mismatch"
+  | "model_mismatch";
 
 export interface RuntimeSessionStateValidation {
   valid: boolean;
@@ -20,6 +21,8 @@ export interface ValidateRuntimeSessionStateInput {
   storedProviderSessionId?: string;
   storedRuntimeSessionParams?: Record<string, unknown>;
   sessionCwd: string;
+  runtimeProviderId?: string;
+  model?: string;
 }
 
 export function validateRuntimeSessionState(input: ValidateRuntimeSessionStateInput): RuntimeSessionStateValidation {
@@ -29,6 +32,11 @@ export function validateRuntimeSessionState(input: ValidateRuntimeSessionStateIn
 
   const params = input.storedRuntimeSessionParams;
   const mode = input.capabilities.sessionState.mode;
+
+  const storedModel = firstString(params?.model);
+  if (input.runtimeProviderId === "kimi-code" && storedModel && input.model && storedModel !== input.model) {
+    return { valid: false, reason: "model_mismatch" };
+  }
 
   if (mode === "file-backed") {
     if (!params) {

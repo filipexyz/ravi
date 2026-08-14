@@ -34,7 +34,12 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
  */
 
 // Import DB functions directly for testing
-import { getOrCreateSession, getSessionByName, generateSessionName } from "../router/index.js";
+import {
+  generateSessionName,
+  getOrCreateSession,
+  getSessionByName,
+  redirectSessionIfUnchanged,
+} from "../router/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 
 describe("Heartbeat Session Bug", () => {
@@ -78,8 +83,8 @@ describe("Heartbeat Session Bug", () => {
       getOrCreateSession("agent:supervisor:main", "supervisor", supervisorCwd, { name: "supervisor" });
     }).toThrow();
 
-    // Step 3: The fix is to use getOrCreateSession with the SAME key to update agent_id
-    const fixed = getOrCreateSession("supervisor", "supervisor", supervisorCwd);
+    // Step 3: ownership changes use the explicit lifecycle redirect.
+    const fixed = redirectSessionIfUnchanged(botSession, "supervisor", supervisorCwd).session!;
     expect(fixed.agentId).toBe("supervisor");
   });
 
@@ -102,13 +107,13 @@ describe("Heartbeat Session Bug", () => {
     expect(found?.agentId).toBe("supervisor");
   });
 
-  test("getOrCreateSession updates agent_id when called with same key but different agent", () => {
+test("redirectSessionIfUnchanged updates agent ownership explicitly", () => {
     // Create session with wrong agent first (simulating the bug)
     const session1 = getOrCreateSession("supervisor", "main", mainCwd, { name: "supervisor" });
     expect(session1.agentId).toBe("main");
 
     // Call again with correct agent — should UPDATE
-    const session2 = getOrCreateSession("supervisor", "supervisor", supervisorCwd);
+    const session2 = redirectSessionIfUnchanged(session1, "supervisor", supervisorCwd).session!;
     expect(session2.agentId).toBe("supervisor");
 
     // Verify in DB

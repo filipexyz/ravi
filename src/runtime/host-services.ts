@@ -16,7 +16,7 @@ import { authorizeRuntimeContext, requestPollAnswer, type ApprovalTarget } from 
 import { buildAuditContextProvenance } from "../permissions/audit-provenance.js";
 import { emitPermissionDeniedAudit, recordAndEmitPermissionDenial } from "../permissions/denials.js";
 import { agentCan, canWithCapabilityContext, isDelegatedAuthorityContext } from "../permissions/provider-runtime.js";
-import type { ContextRecord } from "../router/index.js";
+import type { ContextRecord, SessionEntry } from "../router/index.js";
 import type {
   RuntimeApprovalResult,
   RuntimeCapabilityAuthorizationRequest,
@@ -44,6 +44,8 @@ type RuntimeAuditOptions = Pick<RuntimeHostServicesOptions, "context" | "agentId
 
 export interface RuntimeHostServicesOptions {
   context: ContextRecord;
+  /** Provider-turn ownership snapshot captured before any asynchronous callback. */
+  admittedSession?: SessionEntry;
   agentId: string;
   sessionName: string;
   resolvedSource?: ApprovalTarget;
@@ -222,7 +224,7 @@ async function authorizeRuntimeCapability(
 async function executeRuntimeDynamicTool(
   options: Pick<
     RuntimeHostServicesOptions,
-    "context" | "agentId" | "sessionName" | "toolContext" | "onSkillGatePersisted"
+    "context" | "admittedSession" | "agentId" | "sessionName" | "toolContext" | "onSkillGatePersisted"
   >,
   request: RuntimeDynamicToolCallRequest,
   executionOptions?: RuntimeDynamicToolExecutionOptions,
@@ -245,6 +247,7 @@ async function executeRuntimeDynamicTool(
 
   const gateDecision = evaluateRuntimeToolSkillGate({
     context: options.context,
+    ...(options.admittedSession ? { admittedSession: options.admittedSession } : {}),
     toolName: tool.name,
     onSkillGatePersisted: options.onSkillGatePersisted,
   });
@@ -416,7 +419,10 @@ function toDynamicToolContentItems(content: ToolResult["content"]): RuntimeDynam
 }
 
 async function authorizeRuntimeCommandExecution(
-  options: Pick<RuntimeHostServicesOptions, "context" | "agentId" | "sessionName" | "onSkillGatePersisted">,
+  options: Pick<
+    RuntimeHostServicesOptions,
+    "context" | "admittedSession" | "agentId" | "sessionName" | "onSkillGatePersisted"
+  >,
   request: RuntimeCommandAuthorizationRequest,
 ): Promise<RuntimeApprovalResult> {
   const command = request.command;
@@ -557,6 +563,7 @@ async function authorizeRuntimeCommandExecution(
     commandLine: command,
     executables: parsed.executables,
     context: options.context,
+    ...(options.admittedSession ? { admittedSession: options.admittedSession } : {}),
     toolName: "Bash",
     onSkillGatePersisted: options.onSkillGatePersisted,
   });

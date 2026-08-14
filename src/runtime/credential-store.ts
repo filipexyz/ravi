@@ -953,6 +953,7 @@ function statusForFailure(
 
 function cooldownUntilForFailure(signal: RuntimeCredentialFailureSignal, now: number): number | undefined {
   if (signal.resetAt) return signal.resetAt;
+  if (signal.runtimeProvider === "kimi-code" && signal.kind === "quota_exhausted") return undefined;
   if (signal.retryAfterMs) return now + signal.retryAfterMs;
   if (signal.kind === "rate_limited") return now + 60_000;
   if (signal.kind === "quota_exhausted" || signal.kind === "billing_blocked") return now + 24 * 60 * 60_000;

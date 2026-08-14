@@ -101,6 +101,22 @@ describe("pricing catalog", () => {
     }
   });
 
+  it("does not let a Kimi Code model inherit an unrelated unqualified price", async () => {
+    const usage = { inputTokens: 1_000_000, outputTokens: 1_000_000, cacheRead: 0, cacheCreation: 0 };
+    const entries = {
+      k3: { input_cost_per_token: 0.000001, output_cost_per_token: 0.000002 },
+    };
+
+    const cost = await calculateCost("k3", usage, {
+      runtimeProvider: "kimi-code",
+      catalog: catalog(entries),
+    });
+
+    expect(cost.pricingStatus).toBe("unpriced");
+    expect(cost.totalCost).toBe(0);
+    expect(cost.pricing).toBeUndefined();
+  });
+
   it("fetches and caches a remote catalog", async () => {
     const root = mkdtempSync(join(tmpdir(), "ravi-pricing-test-"));
     const cachePath = join(root, "pricing.json");

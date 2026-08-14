@@ -183,4 +183,48 @@ describe("runtime credential store and pool", () => {
     expect(transition.health.lastFailureConfidence).toBeUndefined();
     expect(transition.health.consecutiveFailures).toBe(0);
   });
+
+  it("keeps Kimi quota exhausted indefinitely when no authoritative reset exists", () => {
+    const input = credentialInput("rcred_kimi_quota", "Kimi membership", 10);
+    input.runtimeProvider = "kimi-code";
+    input.upstreamProvider = "kimi-code";
+    createRuntimeCredential(input);
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "kimi-code",
+      upstreamProvider: "kimi-code",
+      credentialId: "rcred_kimi_quota",
+      httpStatus: 403,
+      message:
+        "You've reached your usage limit for this billing cycle. Your quota will be refreshed in the next cycle.",
+    });
+
+    const transition = recordRuntimeCredentialFailure("rcred_kimi_quota", signal, 10_000);
+
+    expect(transition.credential.status).toBe("exhausted");
+    expect(transition.credential.resetAt).toBeUndefined();
+    expect(transition.health.cooldownUntil).toBeUndefined();
+    expect(transition.health.resetAt).toBeUndefined();
+  });
+
+  it("does not treat Retry-After as an authoritative Kimi quota reset", () => {
+    const input = credentialInput("rcred_kimi_retry_after", "Kimi membership", 10);
+    input.runtimeProvider = "kimi-code";
+    input.upstreamProvider = "kimi-code";
+    createRuntimeCredential(input);
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "kimi-code",
+      upstreamProvider: "kimi-code",
+      credentialId: "rcred_kimi_retry_after",
+      httpStatus: 429,
+      message: "Your 5-hour usage limit has been reached.",
+      headers: { "retry-after": "60" },
+    });
+
+    const transition = recordRuntimeCredentialFailure("rcred_kimi_retry_after", signal, 10_000);
+
+    expect(transition.credential.status).toBe("exhausted");
+    expect(transition.credential.resetAt).toBeUndefined();
+    expect(transition.health.cooldownUntil).toBeUndefined();
+    expect(transition.health.resetAt).toBeUndefined();
+  });
 });

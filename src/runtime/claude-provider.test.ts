@@ -265,8 +265,8 @@ describe("createClaudeRuntimeProvider", () => {
       model: null,
       billingType: "api",
     });
-    expect(completions[0]?.usage.cacheReadTokens).toBe(2);
-    expect(completions[0]?.usage.cacheCreationTokens).toBe(1);
+    expect(completions[0]?.usage?.cacheReadTokens).toBe(2);
+    expect(completions[0]?.usage?.cacheCreationTokens).toBe(1);
   });
 
   it("maps error results into turn.failed", async () => {

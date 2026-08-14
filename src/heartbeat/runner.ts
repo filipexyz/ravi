@@ -14,6 +14,7 @@ import {
   expandHome,
   getOrCreateSession,
   getSessionByName,
+  redirectSessionIfUnchanged,
   generateSessionName,
   ensureUniqueName,
   updateSessionName,
@@ -219,7 +220,7 @@ export class HeartbeatRunner {
 
     if (mainSession) {
       // Session exists — fix agent_id if it was created with wrong agent (race from previous bug)
-      if (mainSession.agentId !== agentId) {
+      if (mainSession.agentId !== agentId || mainSession.agentCwd !== agentCwd) {
         log.info("Fixing session agent_id", {
           sessionName: baseName,
           oldAgent: mainSession.agentId,
@@ -227,8 +228,16 @@ export class HeartbeatRunner {
         });
         // Re-create session entry with correct agent via getOrCreateSession
         // (it updates agent_id if session_key matches)
-        getOrCreateSession(mainSession.sessionKey, agentId, agentCwd);
-        mainSession.agentId = agentId;
+        const redirect = redirectSessionIfUnchanged(mainSession, agentId, agentCwd);
+        if (!redirect.won) {
+          log.warn("Skipping heartbeat after session ownership conflict", {
+            sessionName: baseName,
+            requestedAgent: agentId,
+            currentAgent: redirect.session?.agentId,
+          });
+          return false;
+        }
+        mainSession = redirect.session;
       }
     } else {
       // Session doesn't exist — create it using name as key (matches bot.ts convention)

@@ -1,5 +1,6 @@
 import { nats } from "../nats.js";
-import { deleteSession, getSessionByName } from "../router/sessions.js";
+import { deleteSessionIfUnchanged, getSessionByName } from "../router/sessions.js";
+import { runProviderSessionLifecycleMutation } from "./provider-session-lifecycle.js";
 import { SESSION_MODEL_CHANGED_TOPIC, type SessionModelChangedEvent } from "../session-control.js";
 import { logger } from "../utils/logger.js";
 import {
@@ -107,13 +108,25 @@ export class RuntimeHostSubscriptions {
     if (type && (type === "task.done" || type === "task.failed") && releaseSessionName) {
       const sessionEntry = getSessionByName(releaseSessionName);
       if (sessionEntry?.ephemeral === true && isTaskRuntimeSessionName(sessionEntry.name ?? releaseSessionName)) {
-        deleteSession(sessionEntry.sessionKey);
-        log.info("Deleted ephemeral task-work session after task terminal event", {
-          sessionName: releaseSessionName,
-          sessionKey: sessionEntry.sessionKey,
-          taskId: data.taskId,
-          eventType: type,
+        const deleted = await runProviderSessionLifecycleMutation({
+          session: { displayId: sessionEntry.runtimeSessionDisplayId, params: sessionEntry.runtimeSessionParams },
+          mutate: () => deleteSessionIfUnchanged(sessionEntry),
         });
+        if (deleted) {
+          log.info("Deleted ephemeral task-work session after task terminal event", {
+            sessionName: releaseSessionName,
+            sessionKey: sessionEntry.sessionKey,
+            taskId: data.taskId,
+            eventType: type,
+          });
+        } else {
+          log.warn("Skipped task-work session deletion after ownership changed", {
+            sessionName: releaseSessionName,
+            sessionKey: sessionEntry.sessionKey,
+            taskId: data.taskId,
+            eventType: type,
+          });
+        }
       }
     }
   }

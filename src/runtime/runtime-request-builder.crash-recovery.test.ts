@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { getOrCreateSession, type AgentConfig, type SessionEntry } from "../router/index.js";
+import { getOrCreateSession, resetSessionIfUnchanged, type AgentConfig, type SessionEntry } from "../router/index.js";
 import { getSessionTurn, listSessionEvents } from "../session-trace/session-trace-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
@@ -7,6 +7,7 @@ import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import type { RuntimeHostStreamingSession, RuntimeMessageTarget } from "./host-session.js";
 import { installCrashRecoveryApprovalFences } from "./runtime-request-builder.js";
 import { buildRuntimeStartRequest } from "./runtime-request-builder.js";
+import { persistStartedRuntimeProviderState } from "./session-launcher.js";
 import type {
   RuntimeCapabilities,
   RuntimeHostServices,
@@ -38,6 +39,39 @@ function coordinatorWithMarker(
 }
 
 describe("runtime request crash recovery approval fences", () => {
+  it("closes a provider started from stale session ownership before launcher callbacks continue", async () => {
+    const stateDir = await createIsolatedRaviState("ravi-launcher-ownership-loss-");
+    try {
+      const admitted = getOrCreateSession("session:launcher-loss", "agent-a", stateDir);
+      expect(resetSessionIfUnchanged(admitted)).toBe(true);
+      const abortController = new AbortController();
+      let closed = 0;
+      const runtimeSession: RuntimeSessionHandle = {
+        provider: "trace-provider",
+        events: (async function* () {})(),
+        interrupt: async () => {},
+        close: async () => {
+          closed += 1;
+        },
+      };
+
+      await expect(
+        persistStartedRuntimeProviderState({
+          session: admitted,
+          runtimeProviderId: "trace-provider",
+          runtimeSession,
+          abortController,
+          canResumeStoredSession: false,
+        }),
+      ).rejects.toThrow("ownership changed");
+      expect(abortController.signal.aborted).toBe(true);
+      expect(closed).toBe(1);
+      expect(admitted.runtimeProvider).toBeUndefined();
+    } finally {
+      await cleanupIsolatedRaviState(stateDir);
+    }
+  });
+
   it("mutates the host services object captured by Codex-style approval and user-input closures", async () => {
     const order: string[] = [];
     const hostServices = createHostServices({

@@ -139,6 +139,7 @@ export {
 // Sessions
 export {
   getOrCreateSession,
+  redirectSessionIfUnchanged,
   getSession,
   getSessionByName,
   getSessionBySdkId,
@@ -153,6 +154,7 @@ export {
   updateSessionRuntimeProviderOverride,
   updateProviderSessionId,
   clearProviderSession,
+  clearProviderSessionIfUnchanged,
   updateTokens,
   updateSessionName,
   updateSessionSource,
@@ -163,8 +165,10 @@ export {
   updateSessionHeartbeat,
   isNameTaken,
   deleteSession,
+  deleteSessionIfUnchanged,
   deleteSessionByName,
   resetSession,
+  resetSessionIfUnchanged,
   listSessions,
   setSessionEphemeral,
   extendSession,
