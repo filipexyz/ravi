@@ -11,6 +11,8 @@ import { createSessionTraceRunId, recordRuntimeTraceEvent } from "../session-tra
 import { logger } from "../utils/logger.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID, assertRuntimeCompatibility } from "./provider-registry.js";
 import { completeRuntimeCredentialAttempt, markRuntimeCredentialAttemptStarted } from "./credential-store.js";
+import { reportRuntimeIntelligenceAttemptFeedback } from "./intelligence-identity-client.js";
+import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
 import { normalizePromptTaskBarrierTaskId } from "./host-env.js";
@@ -346,10 +348,7 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
     });
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err);
-    completeRuntimeCredentialAttempt(runtimeCredentialAttempt?.attemptId, {
-      status: "abandoned",
-      metadata: { phase: "runtime.start", error: errorMessage },
-    });
+    await abandonRuntimeStartAttempt(runtimeCredentialAttempt, errorMessage);
 
     log.error("Failed to start streaming session", {
       sessionName,
@@ -410,5 +409,42 @@ export async function startRuntimeSession(options: StartRuntimeSessionOptions): 
         _v: 2,
       });
     }
+  }
+}
+
+async function abandonRuntimeStartAttempt(
+  binding: RuntimeCredentialAttemptBinding | undefined,
+  errorMessage: string,
+): Promise<void> {
+  if (binding?.authMethod !== "hub-proxy") {
+    completeRuntimeCredentialAttempt(binding?.attemptId, {
+      status: "abandoned",
+      metadata: { phase: "runtime.start", error: errorMessage },
+    });
+    return;
+  }
+  if (
+    !binding.attemptId ||
+    !binding.intelligenceGrantId ||
+    !binding.intelligenceRuntimeId ||
+    !binding.intelligenceSessionKey ||
+    !binding.connectionId
+  ) {
+    return;
+  }
+  try {
+    await reportRuntimeIntelligenceAttemptFeedback({
+      attemptId: binding.attemptId,
+      grantId: binding.intelligenceGrantId,
+      runtimeId: binding.intelligenceRuntimeId,
+      connectionId: binding.connectionId,
+      sessionKey: binding.intelligenceSessionKey,
+      outcome: "abandoned",
+      effectState: "none",
+      failureKind: "runtime_start_failed",
+    });
+    binding.intelligenceAttemptTerminal = true;
+  } catch (error) {
+    log.warn("Failed to abandon Hub intelligence attempt after runtime start failure", { error });
   }
 }

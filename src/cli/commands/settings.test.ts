@@ -108,7 +108,7 @@ describe("SettingsCommands", () => {
       new SettingsCommands().list(true);
     });
 
-    expect(output).toContain("Settings (13 returned of 13, limit 50, offset 0):");
+    expect(output).toContain("Settings (14 returned of 14, limit 50, offset 0):");
     expect(output).toContain("account.main.dmPolicy: pairing");
     expect(output).toContain("section: legacy");
   });
@@ -124,6 +124,13 @@ describe("SettingsCommands", () => {
 
     expect(output).toContain("Legacy setting shadowed by instances: account.main.dmPolicy: pairing");
     expect(output).toContain("Use `ravi instances set main dmPolicy <value>` instead.");
+  });
+
+  it("registers a strict global intelligence proxy-required switch", () => {
+    const commands = new SettingsCommands();
+    expect(() => commands.set("runtime.intelligence.proxy_required", "yes")).toThrow(/true, false/);
+    expect(() => commands.set("runtime.intelligence.proxy_required", "true", true)).not.toThrow();
+    expect(settingsStore["runtime.intelligence.proxy_required"]).toBe("true");
   });
 
   it("rejects writes to legacy account settings", () => {

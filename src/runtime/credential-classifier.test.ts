@@ -46,6 +46,21 @@ describe("runtime credential classifier", () => {
     expect(JSON.stringify(signal)).not.toContain("sk-proj-secret_token_value");
   });
 
+  it("classifies identityd/forwarder failures as credential failover only", () => {
+    const signal = classifyRuntimeCredentialFailure({
+      runtimeProvider: "codex",
+      upstreamProvider: "openai",
+      credentialId: "conn_a",
+      message: "Could not complete the intelligence request through local identityd.",
+    });
+
+    expect(signal).toMatchObject({
+      kind: "auth_invalid",
+      scope: "credential",
+      retryableByCredential: true,
+    });
+  });
+
   it("keeps provider overload separate from credential retry", () => {
     const signal = classifyRuntimeCredentialFailure({
       runtimeProvider: "claude",

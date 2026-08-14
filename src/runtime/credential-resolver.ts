@@ -97,6 +97,18 @@ export function buildRuntimeCredentialSessionMetadata(
   return {
     attemptId: binding.attemptId ?? null,
     credentialId: binding.credentialId,
+    ...(binding.connectionId ? { connectionId: binding.connectionId } : {}),
+    ...(binding.profileId ? { profileId: binding.profileId } : {}),
+    ...(binding.intelligenceGrantId ? { intelligenceGrantId: binding.intelligenceGrantId } : {}),
+    ...(binding.intelligenceRuntimeId ? { intelligenceRuntimeId: binding.intelligenceRuntimeId } : {}),
+    ...(binding.intelligenceSessionKey ? { intelligenceSessionKey: binding.intelligenceSessionKey } : {}),
+    ...(binding.intelligenceConnectionRevision
+      ? { intelligenceConnectionRevision: binding.intelligenceConnectionRevision }
+      : {}),
+    ...(binding.intelligencePolicyCompatibilityKey
+      ? { intelligencePolicyCompatibilityKey: binding.intelligencePolicyCompatibilityKey }
+      : {}),
+    ...(binding.intelligenceGrantExpiresAt ? { intelligenceGrantExpiresAt: binding.intelligenceGrantExpiresAt } : {}),
     fingerprint: binding.fingerprint,
     runtimeProvider: binding.runtimeProvider,
     ...(binding.upstreamProvider ? { upstreamProvider: binding.upstreamProvider } : {}),
@@ -132,6 +144,24 @@ export function readRuntimeCredentialSessionMetadata(
   return {
     ...(typeof record.attemptId === "string" ? { attemptId: record.attemptId } : {}),
     credentialId: record.credentialId,
+    ...(typeof record.connectionId === "string" ? { connectionId: record.connectionId } : {}),
+    ...(typeof record.profileId === "string" ? { profileId: record.profileId } : {}),
+    ...(typeof record.intelligenceGrantId === "string" ? { intelligenceGrantId: record.intelligenceGrantId } : {}),
+    ...(typeof record.intelligenceRuntimeId === "string"
+      ? { intelligenceRuntimeId: record.intelligenceRuntimeId }
+      : {}),
+    ...(typeof record.intelligenceSessionKey === "string"
+      ? { intelligenceSessionKey: record.intelligenceSessionKey }
+      : {}),
+    ...(typeof record.intelligenceConnectionRevision === "string"
+      ? { intelligenceConnectionRevision: record.intelligenceConnectionRevision }
+      : {}),
+    ...(typeof record.intelligencePolicyCompatibilityKey === "string"
+      ? { intelligencePolicyCompatibilityKey: record.intelligencePolicyCompatibilityKey }
+      : {}),
+    ...(typeof record.intelligenceGrantExpiresAt === "number"
+      ? { intelligenceGrantExpiresAt: record.intelligenceGrantExpiresAt }
+      : {}),
     fingerprint: record.fingerprint,
     runtimeProvider: record.runtimeProvider,
     ...(typeof record.upstreamProvider === "string" ? { upstreamProvider: record.upstreamProvider } : {}),
@@ -150,7 +180,13 @@ export function isRuntimeCredentialSessionCompatible(
   const stored = readRuntimeCredentialSessionMetadata(params);
   if (!stored) return false;
   if (stored.runtimeProvider !== binding.runtimeProvider) return false;
+  if ((stored.connectionId ?? stored.credentialId) !== (binding.connectionId ?? binding.credentialId)) return false;
+  if ((stored.profileId ?? "") !== (binding.profileId ?? "")) return false;
   if ((stored.upstreamProvider ?? "") !== (binding.upstreamProvider ?? "")) return false;
+  if ((stored.intelligenceConnectionRevision ?? "") !== (binding.intelligenceConnectionRevision ?? "")) return false;
+  if ((stored.intelligencePolicyCompatibilityKey ?? "") !== (binding.intelligencePolicyCompatibilityKey ?? "")) {
+    return false;
+  }
   if (stored.fingerprint !== binding.fingerprint) return false;
   return (
     (stored.sessionCompatibilityKey ?? stored.credentialId) ===
@@ -162,6 +198,14 @@ export function serializeRuntimeCredentialAttemptBinding(binding: RuntimeCredent
   return {
     attemptId: binding.attemptId ?? null,
     credentialId: binding.credentialId,
+    connectionId: binding.connectionId ?? null,
+    profileId: binding.profileId ?? null,
+    intelligenceGrantId: binding.intelligenceGrantId ?? null,
+    intelligenceRuntimeId: binding.intelligenceRuntimeId ?? null,
+    intelligenceSessionKey: binding.intelligenceSessionKey ?? null,
+    intelligenceConnectionRevision: binding.intelligenceConnectionRevision ?? null,
+    intelligencePolicyCompatibilityKey: binding.intelligencePolicyCompatibilityKey ?? null,
+    intelligenceGrantExpiresAt: binding.intelligenceGrantExpiresAt ?? null,
     label: binding.label,
     fingerprint: binding.fingerprint,
     runtimeProvider: binding.runtimeProvider,
@@ -189,6 +233,10 @@ function tryResolveAttemptBinding(
   env: Record<string, string | undefined>,
 ): { ok: true; binding: RuntimeCredentialAttemptBinding } | { ok: false; reason: string } {
   const resolvedEnv: Record<string, string> = {};
+
+  if (credential.authMethod === "hub-proxy") {
+    return { ok: false, reason: "hub_proxy_requires_identityd_grant" };
+  }
 
   for (const binding of credential.bindings) {
     if (binding.targetKind !== "env") continue;

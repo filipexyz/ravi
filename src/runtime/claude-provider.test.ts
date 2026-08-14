@@ -561,5 +561,74 @@ describe("createClaudeRuntimeProvider", () => {
       }
     }
   });
+
+  it("never backfills upstream auth into a Hub proxy runtime", () => {
+    const originalToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+    const originalApiKey = process.env.ANTHROPIC_API_KEY;
+    process.env.CLAUDE_CODE_OAUTH_TOKEN = "daemon-oauth-secret";
+    process.env.ANTHROPIC_API_KEY = "daemon-api-secret";
+    try {
+      const env = buildClaudeCodeEnvironment({
+        RAVI_INTELLIGENCE_BINDING_HANDLE: "binding_anthropic",
+        ANTHROPIC_BASE_URL: "http://127.0.0.1:43123",
+      });
+      expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
+      expect(env.ANTHROPIC_API_KEY).toBeUndefined();
+      expect(env.ANTHROPIC_BASE_URL).toBe("http://127.0.0.1:43123");
+    } finally {
+      if (originalToken === undefined) delete process.env.CLAUDE_CODE_OAUTH_TOKEN;
+      else process.env.CLAUDE_CODE_OAUTH_TOKEN = originalToken;
+      if (originalApiKey === undefined) delete process.env.ANTHROPIC_API_KEY;
+      else process.env.ANTHROPIC_API_KEY = originalApiKey;
+    }
+  });
+
+  it("loads only protected user settings in proxy mode and excludes malicious project overrides", async () => {
+    nextMessages = [{ type: "result", subtype: "success", session_id: "claude-proxy", result: "ok", usage: {} }];
+    const handle = createClaudeRuntimeProvider().startSession(
+      makeStartRequest(
+        (async function* () {
+          yield {
+            type: "user" as const,
+            message: { role: "user" as const, content: "hello" },
+            session_id: "",
+            parent_tool_use_id: null,
+          };
+        })(),
+        {
+          settingSources: ["project"],
+          intelligence: {
+            version: 1,
+            grantId: "grant_claude_1",
+            attemptId: "attempt_claude_1",
+            grantExpiresAt: Date.now() + 60_000,
+            runtimeId: "runtime_a",
+            profileId: "profile_main",
+            connectionId: "conn_anthropic",
+            connectionRevision: "revision_1",
+            sessionCompatibilityKey: "compat_claude_1",
+            policyCompatibilityKey: "policy_main_required",
+            runtimeProvider: "claude",
+            upstreamProvider: "anthropic",
+            model: "claude-sonnet",
+            protocol: "anthropic-messages",
+            localSigningForwarderBaseUrl: "http://127.0.0.1:43123",
+            localSigningForwarderRequestPath: "/v1/messages",
+            bindingHandle: "binding_claude_1",
+            audience: "ravi-hub-intelligence",
+            providerRuntimeId: "ravi-hub-claude",
+            providerPrincipalIsolation: "cgroup",
+          },
+          env: {
+            RAVI_INTELLIGENCE_BINDING_HANDLE: "binding_anthropic",
+            CLAUDE_CONFIG_DIR: "/tmp/ravi-intelligence/claude",
+          },
+        },
+      ),
+    );
+    await collectEvents(handle.events);
+    expect(queryCalls[0]?.options.settingSources).toEqual(["user"]);
+    expect(queryCalls[0]?.options.settingSources).not.toContain("project");
+  });
 });
 afterAll(() => mock.restore());

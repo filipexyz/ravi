@@ -19,6 +19,7 @@ const REQUIRED_CAPABILITY_KEYS: Array<keyof RuntimeCapabilities> = [
   "systemPrompt",
   "terminalEvents",
   "skillVisibility",
+  "intelligenceProxy",
   "supportsSessionResume",
   "supportsSessionFork",
   "supportsPartialText",
@@ -112,6 +113,10 @@ describe("runtime provider contract", () => {
       expect(typeof capabilities.terminalEvents.guarantee).toBe("string");
       expect(typeof capabilities.skillVisibility.availability).toBe("string");
       expect(typeof capabilities.skillVisibility.loadedState).toBe("string");
+      expect(capabilities.intelligenceProxy?.localSigningForwarder).toBe(true);
+      expect(typeof capabilities.intelligenceProxy?.transport.protocol).toBe("string");
+      expect(capabilities.intelligenceProxy?.transport.endpointPath.startsWith("/")).toBe(true);
+      expect(capabilities.intelligenceProxy?.providerPrincipalIsolation).toBe("none");
     }
   });
 

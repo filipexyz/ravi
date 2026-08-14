@@ -50,4 +50,25 @@ describe("runtime host env", () => {
     expect(env.RAVI_TASK_ID).toBeUndefined();
     expect(env.PROVIDER_FLAG).toBe("1");
   });
+
+  it("removes every known upstream credential in Hub proxy mode even when hooks exist", () => {
+    const env = buildRuntimeEnv(
+      {
+        OPENAI_API_KEY: "secret-openai",
+        ANTHROPIC_AUTH_TOKEN: "secret-anthropic",
+        OPENROUTER_API_KEY: "secret-openrouter",
+        AWS_SECRET_ACCESS_KEY: "secret-aws",
+        PATH: "/usr/bin",
+      },
+      { RAVI_CONTEXT_KEY: "runtime-context" },
+      { RAVI_INTELLIGENCE_BINDING_HANDLE: "binding_a" },
+      capabilities,
+      true,
+    );
+    expect(env.OPENAI_API_KEY).toBeUndefined();
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    expect(env.OPENROUTER_API_KEY).toBeUndefined();
+    expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
+    expect(env.RAVI_INTELLIGENCE_BINDING_HANDLE).toBe("binding_a");
+  });
 });

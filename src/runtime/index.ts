@@ -5,6 +5,7 @@ export * from "./credential-store.js";
 export * from "./credential-pool.js";
 export * from "./credential-refresh.js";
 export * from "./credential-resolver.js";
+export * from "./intelligence-proxy.js";
 export * from "./claude-provider.js";
 export * from "./codex-provider.js";
 export * from "./pi-provider.js";

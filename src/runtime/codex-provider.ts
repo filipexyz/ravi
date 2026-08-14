@@ -58,6 +58,7 @@ import type {
 } from "./types.js";
 import { toCodexRuntimeEffort } from "./effort.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
+import { materializeRuntimeIntelligenceProxy } from "./intelligence-materializer.js";
 
 const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
@@ -247,6 +248,15 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           availability: "codex-skills",
           loadedState: "instruction-sources",
         },
+        intelligenceProxy: {
+          transport: {
+            protocol: "openai-responses",
+            basePath: "/v1",
+            endpointPath: "/v1/responses",
+          },
+          localSigningForwarder: true,
+          providerPrincipalIsolation: "none",
+        },
         supportsSessionResume: true,
         supportsSessionFork: true,
         supportsPartialText: true,
@@ -260,18 +270,23 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
       ensureAgentInstructionFiles(input.cwd);
-      ensureGlobalCodexBashHookConfig();
-      const syncedSkills = syncSkills(input.plugins ?? []);
+      const materialized = input.intelligence ? materializeRuntimeIntelligenceProxy(input.intelligence) : undefined;
+      ensureCodexBashHookConfig(materialized?.configDir);
+      const syncedSkills = materialized
+        ? syncCodexSkills(input.plugins ?? [], {
+            codexSkillsDir: join(materialized.configDir, "skills"),
+            manifestPath: join(materialized.configDir, ".ravi-skills-manifest.json"),
+          })
+        : syncSkills(input.plugins ?? []);
       const syncedSkillNames = Array.isArray(syncedSkills) ? syncedSkills : [];
       skillVisibilityByCwd.set(input.cwd, {
         syncedSkillNames,
         snapshot: buildCodexSkillVisibilitySnapshot(syncedSkillNames),
       });
-      return input.hostServices
-        ? {
-            startRequest: createCodexRuntimeStartRequest(input.hostServices),
-          }
-        : {};
+      return {
+        ...(materialized ? { env: materialized.env } : {}),
+        ...(input.hostServices ? { startRequest: createCodexRuntimeStartRequest(input.hostServices) } : {}),
+      };
     },
     startSession(input) {
       const transport = options.transport ?? createCodexAppServerTransport({ command: options.command });
@@ -1036,7 +1051,7 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
 
   const spawnChild = async (input: CodexCliTurnRequest): Promise<void> => {
     if (shouldMaterializeCodexHookForCommand(command)) {
-      ensureGlobalCodexBashHookConfig();
+      ensureCodexBashHookConfig(input.env?.CODEX_HOME);
     }
     // RUST_LOG defaults to `warn` so only warnings/errors from codex reach our stderr forwarder.
     // Override via `RAVI_CODEX_RUST_LOG` (e.g. "codex_app_server=debug,codex=info,warn") when
@@ -3395,9 +3410,9 @@ function extractAppServerErrorMessage(params: Record<string, unknown>): string |
   return extractJsonRpcError(params.error);
 }
 
-function ensureGlobalCodexBashHookConfig(): void {
-  const hooksPath = getGlobalCodexHooksPath();
-  mkdirSync(getGlobalCodexConfigDir(), { recursive: true });
+function ensureCodexBashHookConfig(configDir = getGlobalCodexConfigDir()): void {
+  const hooksPath = join(configDir, "hooks.json");
+  mkdirSync(configDir, { recursive: true });
 
   const nextConfig = upsertRaviCodexBashHook(readCodexHooksConfig(hooksPath));
   const nextJson = JSON.stringify(nextConfig, null, 2) + "\n";
@@ -3405,10 +3420,6 @@ function ensureGlobalCodexBashHookConfig(): void {
   if (currentJson !== nextJson) {
     writeFileSync(hooksPath, nextJson, "utf8");
   }
-}
-
-function getGlobalCodexHooksPath(): string {
-  return join(getGlobalCodexConfigDir(), "hooks.json");
 }
 
 function getGlobalCodexConfigDir(): string {

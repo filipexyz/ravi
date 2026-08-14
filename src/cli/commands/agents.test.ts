@@ -246,8 +246,13 @@ mock.module("../../runtime/model-preset-store.js", () => ({
 
 const { AgentsCommands } = await import("./agents.js");
 const { ContractError } = await import("../agent-contract.js");
-const { agentPermissionsReturnSchema, agentSetReturnSchema, agentShowReturnSchema, agentsListReturnSchema } =
-  await import("./operational-return-schemas.js");
+const {
+  agentIntelligenceReturnSchema,
+  agentPermissionsReturnSchema,
+  agentSetReturnSchema,
+  agentShowReturnSchema,
+  agentsListReturnSchema,
+} = await import("./operational-return-schemas.js");
 
 describe("AgentsCommands public return contracts", () => {
   beforeEach(() => {
@@ -935,6 +940,67 @@ describe("AgentsCommands permissions", () => {
       afterProfile: "bootstrap",
       afterCapabilitiesCount: 1,
     });
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+});
+
+describe("AgentsCommands intelligence", () => {
+  beforeEach(() => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", defaults: { preserved: true } };
+    updateAgentCalls = [];
+  });
+
+  it("sets and reads an ordered public Hub connection profile without secrets", () => {
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const changed = commands.intelligence("dev", "profile_main", "conn_a,conn_b", "false", undefined, true);
+      expect(agentIntelligenceReturnSchema.parse(changed)).toMatchObject({
+        action: "intelligence",
+        changed: true,
+        intelligence: {
+          profileId: "profile_main",
+          connectionIds: ["conn_a", "conn_b"],
+          required: false,
+        },
+      });
+      expect(updateAgentCalls[0]?.partial).toEqual({
+        defaults: {
+          preserved: true,
+          intelligence: {
+            profileId: "profile_main",
+            connectionIds: ["conn_a", "conn_b"],
+            required: false,
+          },
+        },
+      });
+      expect(commands.intelligence("dev", undefined, undefined, undefined, undefined, true)).toMatchObject({
+        changed: false,
+        intelligence: { connectionIds: ["conn_a", "conn_b"] },
+      });
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  it("rejects duplicate connection IDs", () => {
+    const commands = new AgentsCommands();
+    expect(() => commands.intelligence("dev", "profile_main", "conn_a,conn_a", undefined, undefined, true)).toThrow(
+      /duplicates/,
+    );
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("fails typed preflight without persisting an active proxy on an unisolated adapter", () => {
+    const commands = new AgentsCommands();
+    try {
+      commands.intelligence("dev", "profile_main", "conn_a", "true", undefined, true, true);
+      throw new Error("expected typed proxy preflight failure");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ContractError);
+      expect((error as InstanceType<typeof ContractError>).code).toBe("INTELLIGENCE_PROXY_UNAVAILABLE");
+    }
     expect(updateAgentCalls).toHaveLength(0);
   });
 });

@@ -1996,6 +1996,21 @@ export const agentPermissionsReturnSchema = z.object({
   agent: agentJsonSummaryReturnSchema.optional(),
 });
 
+export const agentIntelligenceReturnSchema = z.object({
+  action: z.literal("intelligence"),
+  changed: z.boolean(),
+  agentId: z.string(),
+  intelligence: z
+    .object({
+      profileId: z.string(),
+      connectionIds: z.array(z.string()),
+      required: z.boolean().optional(),
+    })
+    .nullable(),
+  defaults: jsonObjectSchema.nullable().optional(),
+  agent: agentJsonSummaryReturnSchema.optional(),
+});
+
 export const agentDebounceReturnSchema = z
   .object({
     action: z.string().optional(),

@@ -20,8 +20,6 @@ export type RuntimeCredentialSourceKind =
 
 export type RuntimeCredentialTargetKind = "env" | "auth-profile" | "provider-config";
 
-export type RuntimeCredentialPoolStrategy = "fill_first" | "round_robin" | "random" | "least_used";
-
 export interface RuntimeCredentialSecretBinding {
   id: string;
   credentialId: string;
@@ -46,12 +44,10 @@ export interface RuntimeCredentialRecord {
   agentAllowlist: string[];
   taskProfileAllowlist: string[];
   priority: number;
-  weight?: number;
   enabled: boolean;
   status: RuntimeCredentialStatus;
   authMethod?: string;
   sourceKind?: RuntimeCredentialSourceKind;
-  strategyHint?: RuntimeCredentialPoolStrategy;
   sessionCompatibilityKey?: string;
   authProfileRef?: string;
   fingerprint: string;
@@ -77,12 +73,10 @@ export interface RuntimeCredentialInput {
   agentAllowlist?: string[];
   taskProfileAllowlist?: string[];
   priority?: number;
-  weight?: number;
   enabled?: boolean;
   status?: RuntimeCredentialStatus;
   authMethod?: string;
   sourceKind?: RuntimeCredentialSourceKind;
-  strategyHint?: RuntimeCredentialPoolStrategy;
   sessionCompatibilityKey?: string;
   authProfileRef?: string;
   sensitiveEnvKeys?: string[];
@@ -181,6 +175,16 @@ export interface RuntimeCredentialSelectionRequest {
 export interface RuntimeCredentialAttemptBinding {
   attemptId?: string;
   credentialId: string;
+  connectionId?: string;
+  profileId?: string;
+  intelligenceGrantId?: string;
+  intelligenceRuntimeId?: string;
+  intelligenceSessionKey?: string;
+  intelligenceConnectionRevision?: string;
+  intelligencePolicyCompatibilityKey?: string;
+  intelligenceGrantExpiresAt?: number;
+  /** In-memory lifecycle marker; never persisted as session authority. */
+  intelligenceAttemptTerminal?: boolean;
   label: string;
   fingerprint: string;
   runtimeProvider: RuntimeProviderId;
@@ -260,6 +264,14 @@ export interface RuntimeCredentialRefreshResult {
 export interface RuntimeCredentialSessionMetadata {
   attemptId?: string | null;
   credentialId: string;
+  connectionId?: string;
+  profileId?: string;
+  intelligenceGrantId?: string;
+  intelligenceRuntimeId?: string;
+  intelligenceSessionKey?: string;
+  intelligenceConnectionRevision?: string;
+  intelligencePolicyCompatibilityKey?: string;
+  intelligenceGrantExpiresAt?: number;
   fingerprint: string;
   runtimeProvider: RuntimeProviderId;
   upstreamProvider?: string;

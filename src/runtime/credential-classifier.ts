@@ -116,6 +116,10 @@ function classifyKind(input: { status?: number; providerCode?: string; providerT
   const code = input.providerCode;
   const type = input.providerType;
 
+  if (text.includes("identityd") || text.includes("intelligence signing forwarder")) {
+    return { kind: "auth_invalid", confidence: "high", scope: "credential" };
+  }
+
   if (input.status === 401 || code === "authentication_error" || type === "authentication_error") {
     return { kind: "auth_invalid", confidence: "high", scope: "credential" };
   }

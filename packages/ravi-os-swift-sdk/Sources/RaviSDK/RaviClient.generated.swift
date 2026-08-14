@@ -334,6 +334,13 @@ public struct AgentsNamespace: Sendable {
     return try await transport.call(groupSegments: ["agents"], command: "delete", body: requestBody, as: AgentsDeleteReturn.self)
   }
 
+  public func intelligence(_ id: String, _ options: AgentsIntelligenceOptions = .init()) async throws -> AgentsIntelligenceReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["agents"], command: "intelligence", body: requestBody, as: AgentsIntelligenceReturn.self)
+  }
+
   public func list(_ options: AgentsListOptions = .init()) async throws -> AgentsListReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)

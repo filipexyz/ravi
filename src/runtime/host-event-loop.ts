@@ -32,6 +32,11 @@ import {
 } from "./context-window-recovery.js";
 import { compactionAnnouncementForTurn } from "./compaction-announcement.js";
 import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
+import {
+  reportRuntimeIntelligenceAttemptFeedback,
+  type RuntimeIntelligenceAttemptFeedbackResult,
+  type RuntimeIntelligenceEffectState,
+} from "./intelligence-identity-client.js";
 import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js";
 import { refreshRuntimeCredential } from "./credential-refresh.js";
 import {
@@ -399,11 +404,19 @@ function extractRuntimeFailureHeaders(
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
-function recordRuntimeCredentialTurnSuccess(streaming: RuntimeHostStreamingSession): void {
+async function recordRuntimeCredentialTurnSuccess(
+  streaming: RuntimeHostStreamingSession,
+  effectState: RuntimeIntelligenceEffectState,
+): Promise<void> {
   const credential = streaming.currentRuntimeCredential;
   const credentialId = credential?.credentialId;
   if (!credentialId) return;
   try {
+    if (credential.authMethod === "hub-proxy") {
+      await reportHubIntelligenceFeedback(credential, "succeeded", effectState);
+      credential.intelligenceAttemptTerminal = true;
+      return;
+    }
     recordRuntimeCredentialSuccess(credentialId);
     completeRuntimeCredentialAttempt(credential?.attemptId, {
       status: "succeeded",
@@ -418,18 +431,26 @@ function recordRuntimeCredentialTurnSuccess(streaming: RuntimeHostStreamingSessi
 
 function clearRuntimeCredentialAttempt(streaming: RuntimeHostStreamingSession, attemptId: string | undefined): void {
   if (!attemptId) return;
+  if (streaming.currentRuntimeCredential?.authMethod === "hub-proxy") return;
   if (streaming.currentRuntimeCredential?.attemptId === attemptId) {
     streaming.currentRuntimeCredential.attemptId = undefined;
   }
 }
 
-function recordRuntimeCredentialTurnFailure(input: {
+async function recordRuntimeCredentialTurnFailure(input: {
   streaming: RuntimeHostStreamingSession;
   provider: RuntimeProviderId;
   model: string;
   error: string;
   rawEvent?: Record<string, unknown>;
-}): RuntimeCredentialFailureSignal | undefined {
+  effectState: RuntimeIntelligenceEffectState;
+}): Promise<
+  | {
+      signal: RuntimeCredentialFailureSignal;
+      hubFeedback?: RuntimeIntelligenceAttemptFeedbackResult;
+    }
+  | undefined
+> {
   const credential = input.streaming.currentRuntimeCredential;
   if (!credential) return undefined;
   const rawError = asRecord(input.rawEvent?.error);
@@ -454,11 +475,18 @@ function recordRuntimeCredentialTurnFailure(input: {
   });
 
   try {
+    if (credential.authMethod === "hub-proxy") {
+      const hubFeedback = await reportHubIntelligenceFeedback(
+        credential,
+        signal.retryableByCredential ? "credential_failed" : "provider_failed",
+        input.effectState,
+        signal.kind,
+      );
+      credential.intelligenceAttemptTerminal = true;
+      return { signal, hubFeedback };
+    }
     recordRuntimeCredentialFailure(credential.credentialId, signal);
-    completeRuntimeCredentialAttempt(credential.attemptId, {
-      status: "failed",
-      signal,
-    });
+    completeRuntimeCredentialAttempt(credential.attemptId, { status: "failed", signal });
   } catch (error) {
     log.warn("Failed to record runtime credential failure", {
       credentialId: credential.credentialId,
@@ -466,7 +494,45 @@ function recordRuntimeCredentialTurnFailure(input: {
       error,
     });
   }
-  return signal;
+  return { signal };
+}
+
+async function reportHubIntelligenceFeedback(
+  credential: NonNullable<RuntimeHostStreamingSession["currentRuntimeCredential"]>,
+  outcome: "succeeded" | "credential_failed" | "provider_failed",
+  effectState: RuntimeIntelligenceEffectState,
+  failureKind?: string,
+): Promise<RuntimeIntelligenceAttemptFeedbackResult> {
+  if (
+    !credential.attemptId ||
+    !credential.intelligenceGrantId ||
+    !credential.intelligenceRuntimeId ||
+    !credential.intelligenceSessionKey ||
+    !credential.connectionId
+  ) {
+    throw new Error("Hub intelligence attempt is missing authoritative feedback metadata.");
+  }
+  return reportRuntimeIntelligenceAttemptFeedback({
+    attemptId: credential.attemptId,
+    grantId: credential.intelligenceGrantId,
+    runtimeId: credential.intelligenceRuntimeId,
+    connectionId: credential.connectionId,
+    sessionKey: credential.intelligenceSessionKey,
+    outcome,
+    effectState,
+    ...(failureKind ? { failureKind } : {}),
+  });
+}
+
+function resolveIntelligenceEffectState(safety: {
+  inputMutated: boolean;
+  startedTool: boolean;
+  materializedOutput: boolean;
+}): RuntimeIntelligenceEffectState {
+  if (safety.materializedOutput) return "output_materialized";
+  if (safety.startedTool) return "tool_started";
+  if (safety.inputMutated) return "input_mutated";
+  return "none";
 }
 
 function buildProviderRawRuntimeEvent(
@@ -2495,6 +2561,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       // Handle result (turn complete - save and wait for next message)
       if (event.type === "turn.complete") {
+        const proxyCredential = streaming.currentRuntimeCredential;
+        if (proxyCredential?.authMethod === "hub-proxy") {
+          const providerPrefix = proxyCredential.upstreamProvider ? `${proxyCredential.upstreamProvider}/` : "";
+          event.execution = {
+            provider: proxyCredential.upstreamProvider ?? null,
+            model: providerPrefix && model.startsWith(providerPrefix) ? model.slice(providerPrefix.length) : model,
+            billingType: "api",
+          };
+        }
         const inputTokens = event.usage.inputTokens;
         const outputTokens = event.usage.outputTokens;
         const cacheRead = event.usage.cacheReadTokens ?? 0;
@@ -2511,7 +2586,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           sessionId: event.session?.displayId ?? event.providerSessionId,
         });
         const completedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
-        recordRuntimeCredentialTurnSuccess(streaming);
+        await recordRuntimeCredentialTurnSuccess(
+          streaming,
+          resolveIntelligenceEffectState(getRuntimeTurnReplaySafety(streaming, crashRecovery)),
+        );
 
         const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
         // Skill gates can be persisted by the Codex Bash hook in a separate process.
@@ -2751,15 +2829,17 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const currentTurnReplaySafety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
         const currentTurnHadToolStarted = currentTurnReplaySafety.startedTool;
         const currentTurnHadMaterializedOutput = currentTurnReplaySafety.materializedOutput;
-        const credentialFailureSignal = !suppressedRecoverable
-          ? recordRuntimeCredentialTurnFailure({
+        const credentialFailureRecord = !suppressedRecoverable
+          ? await recordRuntimeCredentialTurnFailure({
               streaming,
               provider: runtimeSession.provider,
               model,
               error: event.error,
               rawEvent: event.rawEvent,
+              effectState: resolveIntelligenceEffectState(currentTurnReplaySafety),
             })
           : undefined;
+        const credentialFailureSignal = credentialFailureRecord?.signal;
         const failedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
         log[suppressedRecoverable ? "info" : "warn"](
           suppressedRecoverable ? "Turn interrupted by recoverable runtime failure" : "Turn failed",
@@ -2853,7 +2933,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           break;
         }
 
-        if (credentialFailureSignal?.retryableByCredential) {
+        const hubCredentialRetryApproved =
+          streaming.currentRuntimeCredential?.authMethod !== "hub-proxy" ||
+          credentialFailureRecord?.hubFeedback?.nextAction === "advance";
+        if (credentialFailureSignal?.retryableByCredential && hubCredentialRetryApproved) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
           const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
             crashRecovery,
@@ -2878,17 +2961,19 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 metadata: event.metadata ?? null,
               },
             });
-            try {
-              await refreshRuntimeCredential(streaming.currentRuntimeCredential.credentialId, {
-                reason: "retryable_failure",
-              });
-            } catch (error) {
-              log.warn("Runtime credential refresh after failure failed", {
-                runId,
-                sessionName,
-                credentialId: streaming.currentRuntimeCredential.credentialId,
-                error,
-              });
+            if (streaming.currentRuntimeCredential.authMethod !== "hub-proxy") {
+              try {
+                await refreshRuntimeCredential(streaming.currentRuntimeCredential.credentialId, {
+                  reason: "retryable_failure",
+                });
+              } catch (error) {
+                log.warn("Runtime credential refresh after failure failed", {
+                  runId,
+                  sessionName,
+                  credentialId: streaming.currentRuntimeCredential.credentialId,
+                  error,
+                });
+              }
             }
             restartStashedReason = restartReason;
             log.info("Closing runtime after retryable credential failure", {
@@ -2914,6 +2999,15 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
             startedTool: currentTurnHadToolStarted,
             materializedOutput: currentTurnHadMaterializedOutput,
             durableBinding: currentTurnReplaySafety.durableBinding,
+          });
+        }
+
+        if (credentialFailureSignal?.retryableByCredential && !hubCredentialRetryApproved) {
+          log.warn("Skipping Hub intelligence failover without authoritative pre-effect advance", {
+            runId,
+            sessionName,
+            attemptId: streaming.currentRuntimeCredential?.attemptId,
+            effectState: resolveIntelligenceEffectState(currentTurnReplaySafety),
           });
         }
 
@@ -3168,10 +3262,23 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       streamingSessions.delete(sessionName);
     }
     try {
-      completeRuntimeCredentialAttempt(streaming.currentRuntimeCredential?.attemptId, {
-        status: "abandoned",
-        metadata: { phase: "runtime.event_loop.finally" },
-      });
+      const finalCredential = streaming.currentRuntimeCredential;
+      if (
+        finalCredential?.authMethod === "hub-proxy" &&
+        finalCredential.attemptId &&
+        finalCredential.intelligenceAttemptTerminal !== true
+      ) {
+        await reportHubIntelligenceAbandoned(
+          finalCredential,
+          resolveIntelligenceEffectState(getRuntimeTurnReplaySafety(streaming, crashRecovery)),
+        );
+        finalCredential.intelligenceAttemptTerminal = true;
+      } else if (finalCredential?.authMethod !== "hub-proxy") {
+        completeRuntimeCredentialAttempt(finalCredential?.attemptId, {
+          status: "abandoned",
+          metadata: { phase: "runtime.event_loop.finally" },
+        });
+      }
     } catch (error) {
       log.warn("Failed to abandon runtime credential attempt during cleanup", {
         runId,
@@ -3192,6 +3299,30 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
       }
     }
   }
+}
+
+async function reportHubIntelligenceAbandoned(
+  credential: NonNullable<RuntimeHostStreamingSession["currentRuntimeCredential"]>,
+  effectState: RuntimeIntelligenceEffectState,
+): Promise<RuntimeIntelligenceAttemptFeedbackResult> {
+  if (
+    !credential.attemptId ||
+    !credential.intelligenceGrantId ||
+    !credential.intelligenceRuntimeId ||
+    !credential.intelligenceSessionKey ||
+    !credential.connectionId
+  ) {
+    throw new Error("Hub intelligence attempt is missing authoritative abandonment metadata.");
+  }
+  return reportRuntimeIntelligenceAttemptFeedback({
+    attemptId: credential.attemptId,
+    grantId: credential.intelligenceGrantId,
+    runtimeId: credential.intelligenceRuntimeId,
+    connectionId: credential.connectionId,
+    sessionKey: credential.intelligenceSessionKey,
+    outcome: "abandoned",
+    effectState,
+  });
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

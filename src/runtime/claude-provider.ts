@@ -25,10 +25,12 @@ import type {
 import { toStrongestCompatibleRuntimeEffort } from "./effort.js";
 import { buildPluginSkillVisibilitySnapshot, emptySkillVisibilitySnapshot } from "./skill-visibility.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
+import { materializeRuntimeIntelligenceProxy } from "./intelligence-materializer.js";
+import { SANITIZED_ENV_VARS } from "../hooks/sanitize-bash.js";
 
 const nodeRequire = createRequire(import.meta.url);
 const CLAUDE_CODE_EXECUTABLE_ENV_KEYS = ["RAVI_CLAUDE_CODE_EXECUTABLE", "CLAUDE_CODE_EXECUTABLE"] as const;
-const CLAUDE_CODE_AUTH_ENV_KEYS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"] as const;
+const CLAUDE_CODE_AUTH_ENV_KEYS = ["CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] as const;
 
 /**
  * Discover the agent's own local skills (its curated arsenal) from the setting
@@ -126,6 +128,15 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
           availability: "plugins",
           loadedState: "provider-events",
         },
+        intelligenceProxy: {
+          transport: {
+            protocol: "anthropic-messages",
+            basePath: "",
+            endpointPath: "/v1/messages",
+          },
+          localSigningForwarder: true,
+          providerPrincipalIsolation: "none",
+        },
         supportsSessionResume: true,
         supportsSessionFork: true,
         supportsPartialText: true,
@@ -139,10 +150,12 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
       ensureClaudeSettings(input.cwd);
+      const materialized = input.intelligence ? materializeRuntimeIntelligenceProxy(input.intelligence) : undefined;
       return {
         env: {
           CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
           CLAUDECODE: "",
+          ...(materialized?.env ?? {}),
         },
       };
     },
@@ -184,6 +197,9 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
           queryResult?.close();
         },
         setModel: async (model: string) => {
+          if (request.intelligence && model !== request.intelligence.model) {
+            throw new Error("Changing models requires selecting a matching Hub intelligence connection.");
+          }
           currentModel = model;
           if (activeQuery) {
             try {
@@ -336,7 +352,10 @@ function buildClaudeQueryOptions(
       preset: "claude_code",
       append: input.systemPromptAppend,
     },
-    settingSources: input.settingSources ?? ["project"],
+    // The materialized user settings contain the protected proxy and sandbox
+    // policy. Project settings are intentionally excluded in proxy mode so a
+    // repository cannot override the forwarder, auth helper, or sandbox.
+    settingSources: input.intelligence ? ["user"] : (input.settingSources ?? ["project"]),
     ...(input.hooks ? { hooks: input.hooks } : {}),
     ...(input.plugins && input.plugins.length > 0 ? { plugins: input.plugins } : {}),
     ...(input.allowedSkills && input.allowedSkills.length > 0 ? { skills: input.allowedSkills } : {}),
@@ -393,6 +412,11 @@ export function buildClaudeCodeEnvironment(inputEnv?: Record<string, string>): R
     : Object.fromEntries(
         Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
       );
+
+  if (env.RAVI_INTELLIGENCE_BINDING_HANDLE) {
+    for (const key of SANITIZED_ENV_VARS) delete env[key];
+    return env;
+  }
 
   for (const key of CLAUDE_CODE_AUTH_ENV_KEYS) {
     const processValue = process.env[key]?.trim();

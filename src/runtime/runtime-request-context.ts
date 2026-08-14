@@ -794,11 +794,18 @@ export function buildRuntimeRequestEnv(options: {
   raviEnv: Record<string, string>;
   providerEnv?: Record<string, string>;
   runtimeCapabilities: RuntimeCapabilities;
+  forceSanitizeSecrets?: boolean;
 }): Record<string, string> {
   const baseRuntimeEnv = Object.fromEntries(
     Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   );
-  return buildRuntimeEnv(baseRuntimeEnv, options.raviEnv, options.providerEnv, options.runtimeCapabilities);
+  return buildRuntimeEnv(
+    baseRuntimeEnv,
+    options.raviEnv,
+    options.providerEnv,
+    options.runtimeCapabilities,
+    options.forceSanitizeSecrets,
+  );
 }
 
 function buildRaviRuntimeEnv(options: {

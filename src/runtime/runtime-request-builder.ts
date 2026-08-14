@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
-import { dbGetChat, dbGetSessionChatBinding } from "../router/router-db.js";
+import { dbGetChat, dbGetSessionChatBinding, dbGetSetting } from "../router/router-db.js";
 import { configStore } from "../config-store.js";
 import {
   buildRuntimeTracePromptSectionMetadata,
@@ -11,6 +11,7 @@ import {
   summarizeRuntimeCapabilities,
 } from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
+import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
@@ -43,6 +44,20 @@ import {
 } from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
+import {
+  INTELLIGENCE_PROXY_REQUIRED_SETTING,
+  assertRuntimeIntelligenceProxyCapability,
+  buildRuntimeIntelligenceAttemptBinding,
+  buildRuntimeIntelligenceProxyBinding,
+  isRuntimeIntelligencePhysicalBindingCompatible,
+  resolveRequiredRuntimeIntelligenceProfileSelection,
+  serializeRuntimeIntelligenceProxyBinding,
+  type RuntimeIntelligenceProxyBinding,
+} from "./intelligence-proxy.js";
+import {
+  reportRuntimeIntelligenceAttemptFeedback,
+  requestRuntimeIntelligenceGrant,
+} from "./intelligence-identity-client.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type {
   RuntimeApprovalResult,
@@ -297,6 +312,21 @@ function isSourceForChat(source: RuntimeMessageTarget, chat: NonNullable<ReturnT
 export async function buildRuntimeStartRequest(
   options: RuntimeStartRequestBuildOptions,
 ): Promise<RuntimeStartRequestBuildResult> {
+  const lifecycle: { pendingIntelligence?: PendingIntelligenceAttempt } = {};
+  try {
+    return await buildRuntimeStartRequestInternal(options, lifecycle);
+  } catch (error) {
+    if (lifecycle.pendingIntelligence) {
+      await reportAbandonedIntelligenceBinding(lifecycle.pendingIntelligence, options.dbSessionKey);
+    }
+    throw error;
+  }
+}
+
+async function buildRuntimeStartRequestInternal(
+  options: RuntimeStartRequestBuildOptions,
+  lifecycle: { pendingIntelligence?: PendingIntelligenceAttempt },
+): Promise<RuntimeStartRequestBuildResult> {
   const {
     runId,
     sessionName,
@@ -336,7 +366,85 @@ export async function buildRuntimeStartRequest(
     approvalSource,
   });
 
-  const { hostServices, providerBootstrap, runtimePlugins } = await prepareRuntimeProviderBootstrap({
+  const intelligenceSelection = resolveRequiredRuntimeIntelligenceProfileSelection(
+    agent,
+    dbGetSetting(INTELLIGENCE_PROXY_REQUIRED_SETTING) ?? undefined,
+  );
+  const upstreamProvider = resolveRuntimeCredentialUpstreamProvider(runtimeProviderId, model);
+  const taskProfile = runtimeResolution.taskProfileId ?? resolveRuntimeCredentialTaskProfile(sessionName, prompt);
+  const intelligenceResolution = intelligenceSelection
+    ? await (async () => {
+        assertRuntimeIntelligenceProxyCapability(runtimeCapabilities, runtimeProviderId);
+        const runtimeId = process.env.RAVI_RUNTIME_ID?.trim();
+        if (!runtimeId) {
+          throw new Error("The intelligence proxy requires a public RAVI_RUNTIME_ID binding.");
+        }
+        if (!upstreamProvider) {
+          throw new Error(`The intelligence proxy does not support runtime provider ${runtimeProviderId}.`);
+        }
+        return requestRuntimeIntelligenceGrant({
+          selection: intelligenceSelection,
+          runtimeProvider: runtimeProviderId,
+          upstreamProvider,
+          model,
+          runtimeId,
+          agentId: agent.id,
+          sessionKey: dbSessionKey,
+          ...(taskProfile ? { taskProfile } : {}),
+        });
+      })()
+    : undefined;
+  if (intelligenceResolution) {
+    lifecycle.pendingIntelligence = {
+      attemptId: intelligenceResolution.grant.attemptId,
+      grantId: intelligenceResolution.grant.grantId,
+      runtimeId: intelligenceResolution.grant.runtimeId,
+      connectionId: intelligenceResolution.grant.connectionId,
+      sessionKey: dbSessionKey,
+    };
+  }
+  const intelligence = intelligenceSelection
+    ? buildRuntimeIntelligenceProxyBinding({
+        selection: intelligenceSelection,
+        grant: intelligenceResolution!.grant,
+        forwarder: intelligenceResolution!.forwarder,
+        runtimeCapabilities,
+        runtimeProvider: runtimeProviderId,
+        model,
+      })
+    : undefined;
+  const credentialResolution = intelligence
+    ? {
+        attemptBinding: buildRuntimeIntelligenceAttemptBinding(intelligence, dbSessionKey),
+        selected: null,
+        candidates: [],
+        rejected: [],
+        managedPoolConfigured: true,
+      }
+    : await resolveRuntimeCredentialAttemptBinding({
+        runtimeProvider: runtimeProviderId,
+        upstreamProvider,
+        model,
+        agentId: agent.id,
+        taskProfile,
+        sessionKey: dbSessionKey,
+        sessionName,
+        runId,
+      });
+  if (!credentialResolution.attemptBinding && credentialResolution.managedPoolConfigured) {
+    throw new Error(formatRuntimeCredentialResolutionFailure(runtimeProviderId, model, credentialResolution.rejected));
+  }
+  if (credentialResolution.attemptBinding) {
+    (toolContext as Record<string, unknown>).runtimeCredential = serializeRuntimeCredentialAttemptBinding(
+      credentialResolution.attemptBinding,
+    );
+  }
+  if (intelligence) {
+    assertHubProxyAttemptBinding(credentialResolution.attemptBinding);
+    (toolContext as Record<string, unknown>).intelligence = serializeRuntimeIntelligenceProxyBinding(intelligence);
+  }
+
+  const preparedBootstrap = await prepareRuntimeProviderBootstrap({
     runtimeProvider,
     runtimeCapabilities,
     agent,
@@ -347,25 +455,10 @@ export async function buildRuntimeStartRequest(
     toolContext,
     context: runtimeContext,
     session,
+    ...(intelligence ? { intelligence } : {}),
   });
+  const { hostServices, providerBootstrap, runtimePlugins } = preparedBootstrap;
   installCrashRecoveryApprovalFences({ hostServices, streamingSession, crashRecovery });
-  const credentialResolution = await resolveRuntimeCredentialAttemptBinding({
-    runtimeProvider: runtimeProviderId,
-    upstreamProvider: resolveRuntimeCredentialUpstreamProvider(runtimeProviderId, model),
-    model,
-    agentId: agent.id,
-    sessionKey: dbSessionKey,
-    sessionName,
-    runId,
-  });
-  if (!credentialResolution.attemptBinding && credentialResolution.managedPoolConfigured) {
-    throw new Error(formatRuntimeCredentialResolutionFailure(runtimeProviderId, model, credentialResolution.rejected));
-  }
-  if (credentialResolution.attemptBinding) {
-    (toolContext as Record<string, unknown>).runtimeCredential = serializeRuntimeCredentialAttemptBinding(
-      credentialResolution.attemptBinding,
-    );
-  }
   const providerEnv = mergeProviderCredentialEnv(
     providerBootstrap?.env,
     buildRuntimeCredentialProfileEnv(runtimeProviderId, credentialResolution.attemptBinding ?? undefined),
@@ -375,6 +468,7 @@ export async function buildRuntimeStartRequest(
     raviEnv,
     ...(providerEnv ? { providerEnv } : {}),
     runtimeCapabilities,
+    forceSanitizeSecrets: Boolean(intelligence),
   });
   const canUseTool = async (toolName: string, input: Record<string, unknown>) => {
     const result = await hostServices.authorizeToolUse({ toolName, input });
@@ -429,12 +523,70 @@ export async function buildRuntimeStartRequest(
       ? resolvedAllowedSkills.allowlist
       : undefined;
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
-  const traceTurnStart = (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
+  let initialIntelligenceAttemptAvailable = Boolean(intelligence);
+  const reserveIntelligenceAttemptForTurn = async (): Promise<void> => {
+    if (!intelligence || !intelligenceSelection) return;
+    if (initialIntelligenceAttemptAvailable && intelligence.grantExpiresAt - Date.now() >= 30_000) {
+      initialIntelligenceAttemptAvailable = false;
+      return;
+    }
+
+    const resolution = await requestRuntimeIntelligenceGrant({
+      selection: intelligenceSelection,
+      runtimeProvider: runtimeProviderId,
+      upstreamProvider: intelligence.upstreamProvider,
+      model,
+      runtimeId: intelligence.runtimeId,
+      agentId: agent.id,
+      sessionKey: dbSessionKey,
+      ...(taskProfile ? { taskProfile } : {}),
+    });
+    const candidate = buildRuntimeIntelligenceProxyBinding({
+      selection: intelligenceSelection,
+      grant: resolution.grant,
+      forwarder: resolution.forwarder,
+      runtimeCapabilities,
+      runtimeProvider: runtimeProviderId,
+      model,
+      proxyRequired: true,
+    });
+    if (!isRuntimeIntelligencePhysicalBindingCompatible(intelligence, candidate)) {
+      await reportAbandonedIntelligenceBinding(candidate, dbSessionKey);
+      throw new Error("The Hub intelligence connection changed and requires a fresh physical runtime session.");
+    }
+
+    if (initialIntelligenceAttemptAvailable) {
+      await reportRuntimeIntelligenceAttemptFeedback({
+        attemptId: intelligence.attemptId,
+        grantId: intelligence.grantId,
+        runtimeId: intelligence.runtimeId,
+        connectionId: intelligence.connectionId,
+        sessionKey: dbSessionKey,
+        outcome: "abandoned",
+        effectState: "none",
+      });
+    }
+    const activeCredential = credentialResolution.attemptBinding;
+    if (!activeCredential) {
+      await reportAbandonedIntelligenceBinding(candidate, dbSessionKey);
+      throw new Error("The Hub intelligence turn has no reserved attempt binding.");
+    }
+    Object.assign(intelligence, candidate);
+    Object.assign(activeCredential, buildRuntimeIntelligenceAttemptBinding(candidate, dbSessionKey), {
+      intelligenceAttemptTerminal: false,
+    });
+    (toolContext as Record<string, unknown>).runtimeCredential =
+      serializeRuntimeCredentialAttemptBinding(activeCredential);
+    (toolContext as Record<string, unknown>).intelligence = serializeRuntimeIntelligenceProxyBinding(intelligence);
+    initialIntelligenceAttemptAvailable = false;
+  };
+  const traceTurnStart = async (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
+    await reserveIntelligenceAttemptForTurn();
     const firstMessage = input.deliverableMessages[0];
     const turnId = createSessionTraceTurnId();
     const currentModel = streamingSession.currentModel;
     const runtimeCredential = credentialResolution.attemptBinding;
-    if (runtimeCredential && !runtimeCredential.attemptId) {
+    if (runtimeCredential && runtimeCredential.authMethod !== "hub-proxy" && !runtimeCredential.attemptId) {
       runtimeCredential.attemptId = reserveRuntimeCredentialAttempt({
         credentialId: runtimeCredential.credentialId,
         sessionKey: dbSessionKey,
@@ -602,7 +754,7 @@ export async function buildRuntimeStartRequest(
     traceTurnStart,
   });
 
-  return {
+  const result = {
     runtimeRequest: {
       prompt: messageGenerator,
       model,
@@ -633,10 +785,38 @@ export async function buildRuntimeStartRequest(
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
       ...(allowedSkills ? { allowedSkills } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),
+      ...(intelligence ? { intelligence } : {}),
     },
     toolContext,
     ...(credentialResolution.attemptBinding ? { runtimeCredentialAttempt: credentialResolution.attemptBinding } : {}),
   };
+  lifecycle.pendingIntelligence = undefined;
+  return result;
+}
+
+async function reportAbandonedIntelligenceBinding(
+  binding: RuntimeIntelligenceProxyBinding | PendingIntelligenceAttempt,
+  sessionKey?: string,
+): Promise<void> {
+  const resolvedSessionKey = sessionKey ?? ("sessionKey" in binding ? binding.sessionKey : undefined);
+  if (!resolvedSessionKey) return;
+  await reportRuntimeIntelligenceAttemptFeedback({
+    attemptId: binding.attemptId,
+    grantId: binding.grantId,
+    runtimeId: binding.runtimeId,
+    connectionId: binding.connectionId,
+    sessionKey: resolvedSessionKey,
+    outcome: "abandoned",
+    effectState: "none",
+  }).catch(() => undefined);
+}
+
+interface PendingIntelligenceAttempt {
+  attemptId: string;
+  grantId: string;
+  runtimeId: string;
+  connectionId: string;
+  sessionKey: string;
 }
 
 function findRuntimeTurnPrompt(deliverableMessages: RuntimeUserMessage[]): RuntimeLaunchPrompt | undefined {
@@ -697,6 +877,28 @@ function buildRuntimeCredentialProfileEnv(
     return { CLAUDE_CONFIG_DIR: profilePath };
   }
   return undefined;
+}
+
+function assertHubProxyAttemptBinding(binding: RuntimeCredentialAttemptBinding | null): void {
+  if (
+    !binding ||
+    binding.authMethod !== "hub-proxy" ||
+    binding.authProfileRef !== undefined ||
+    Object.keys(binding.resolvedEnv).length > 0 ||
+    binding.bindings.length > 0 ||
+    binding.sensitiveEnvKeys.length > 0 ||
+    binding.remoteForwardEnvKeys.length > 0
+  ) {
+    throw new Error("Refusing an intelligence proxy attempt that contains local credential material.");
+  }
+}
+
+function resolveRuntimeCredentialTaskProfile(
+  sessionName: string,
+  prompt: Pick<RuntimeLaunchPrompt, "taskBarrierTaskId">,
+): string | undefined {
+  const binding = dbResolveActiveTaskBindingForSession(sessionName, prompt.taskBarrierTaskId);
+  return binding?.task.profileId ?? binding?.task.profileSnapshot?.id;
 }
 
 function expandHomePath(value: string): string {

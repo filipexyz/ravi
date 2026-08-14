@@ -179,6 +179,79 @@ export type AgentsDeleteReturn = {
   [k: string]: unknown;
 };
 
+/** Input shape for `agents.intelligence`. */
+export type AgentsIntelligenceInput = {
+  clear?: boolean;
+  connections?: string;
+  execute?: boolean;
+  id: string;
+  profile?: string;
+  required?: string;
+};
+
+/** Return shape for `agents.intelligence`. */
+export type AgentsIntelligenceReturn = {
+  action: "intelligence";
+  agent?: {
+    allowedSessions?: string[];
+    contactScope?: string;
+    cwd: string;
+    debounceMs?: number;
+    defaults?: (Record<string, unknown>) | null;
+    dmScope?: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
+    effectiveModel: string | null;
+    effectiveProvider: string;
+    effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
+    groupDebounceMs?: number;
+    heartbeat?: {
+      accountId?: string;
+      activeEnd?: string;
+      activeStart?: string;
+      enabled: boolean;
+      intervalMs: number;
+      lastRunAt?: number;
+      model?: string;
+    };
+    id: string;
+    isDefault: boolean;
+    matrixAccount?: string;
+    memoryModel?: string;
+    mode?: "active" | "sentinel";
+    model?: string;
+    modelPresetId: string | null;
+    modelPresetVersion: number | null;
+    modelSource: ("agent_preset" | "agent_default" | "global_default") | null;
+    name?: string;
+    provider?: string;
+    remote?: string;
+    remoteUser?: string;
+    settingSources?: Array<"user" | "project">;
+    specMode?: boolean;
+    systemPromptAppend?: string;
+    tags: Array<{
+      assetId: string;
+      assetType: "agent" | "automation" | "app" | "session" | "task" | "project" | "profile" | "contact" | "chat" | "route" | "instance" | "artifact" | "insight" | "workflow_spec" | "workflow_run" | "workflow_node" | "cron_job" | "trigger" | "hook" | "task_automation" | "observer_rule" | "observer_binding" | "observer_profile" | "command" | "skill" | "skill_gate_rule" | "context" | "call_profile" | "call_request" | "call_voice_agent" | "call_tool" | "outbound_queue" | "outbound_entry" | "spec" | "devin_session";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+  };
+  agentId: string;
+  changed: boolean;
+  defaults?: (Record<string, unknown>) | null;
+  intelligence: ({
+    connectionIds: string[];
+    profileId: string;
+    required?: boolean;
+  }) | null;
+};
+
 /** Input shape for `agents.list`. */
 export type AgentsListInput = {
   fields?: string;

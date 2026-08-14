@@ -10,7 +10,11 @@ import {
 } from "../delivery-barriers.js";
 import { nats } from "../nats.js";
 import { getSession, getSessionByName, type SessionEntry } from "../router/index.js";
-import { dbGetDaemonRestartPendingMessages, dbRecordDaemonRestartSessionSnapshot } from "../router/router-db.js";
+import {
+  dbGetDaemonRestartPendingMessages,
+  dbGetSetting,
+  dbRecordDaemonRestartSessionSnapshot,
+} from "../router/router-db.js";
 import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
 import { dbHasActiveAssignedTaskForSession, dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
@@ -46,6 +50,12 @@ import {
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
+import {
+  INTELLIGENCE_PROXY_REQUIRED_SETTING,
+  buildRuntimeIntelligencePolicyCompatibilityKey,
+  isRuntimeIntelligenceProxyRequired,
+  readRuntimeIntelligenceProfileSelection,
+} from "./intelligence-proxy.js";
 import type { RuntimeProviderId } from "./types.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
@@ -849,9 +859,11 @@ export class RuntimeSessionDispatcher {
           configModel: this.options.getConfigModel(),
         });
         const requestedModel = requestedRuntime.options.model ?? this.options.getConfigModel();
-        if (runtimePromptRequiresRestart(existing, requestedRuntime, prompt)) {
+        const intelligenceConfigurationChanged = runtimeIntelligenceConfigurationRequiresRestart(existing, agent);
+        if (intelligenceConfigurationChanged || runtimePromptRequiresRestart(existing, requestedRuntime, prompt)) {
           log.info("Streaming: restarting session after runtime task settings change", {
             sessionName,
+            intelligenceConfigurationChanged,
             currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
             requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
             currentEffort: existing.currentEffort ?? null,
@@ -1980,6 +1992,24 @@ export class RuntimeSessionDispatcher {
 
     return "accepted";
   }
+}
+
+export function runtimeIntelligenceConfigurationRequiresRestart(
+  existing: Pick<RuntimeHostStreamingSession, "currentRuntimeCredential">,
+  agent: Parameters<typeof readRuntimeIntelligenceProfileSelection>[0],
+): boolean {
+  const globalSetting = dbGetSetting(INTELLIGENCE_PROXY_REQUIRED_SETTING) ?? undefined;
+  const required = isRuntimeIntelligenceProxyRequired(agent, globalSetting);
+  const selection = readRuntimeIntelligenceProfileSelection(agent);
+  const current = existing.currentRuntimeCredential;
+  if (!required) return current?.authMethod === "hub-proxy";
+  if (!selection) return true;
+  if (current?.authMethod !== "hub-proxy") return true;
+  return (
+    current.intelligencePolicyCompatibilityKey !== buildRuntimeIntelligencePolicyCompatibilityKey(selection, true) ||
+    current.profileId !== selection.profileId ||
+    !selection.connectionIds.includes(current.connectionId ?? "")
+  );
 }
 
 export function fenceRuntimeNativeSteerInput(

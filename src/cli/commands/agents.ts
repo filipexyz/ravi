@@ -16,6 +16,7 @@ import {
   agentDebugReturnSchema,
   agentDeleteReturnSchema,
   agentInstructionSyncReturnSchema,
+  agentIntelligenceReturnSchema,
   agentPermissionsReturnSchema,
   agentResetReturnSchema,
   agentSessionReturnSchema,
@@ -38,7 +39,7 @@ import {
   loadRouterConfig,
   setAgentSpecMode,
 } from "../../router/config.js";
-import { DmScopeSchema, type ContextCapability } from "../../router/router-db.js";
+import { dbGetSetting, DmScopeSchema, type ContextCapability } from "../../router/router-db.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import {
   deleteSession,
@@ -48,7 +49,7 @@ import {
   resolveSession,
   type SessionTurnUsageSummary,
 } from "../../router/sessions.js";
-import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
+import { createRuntimeProvider, DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
@@ -72,6 +73,12 @@ import {
   normalizeAgentRuntimePermissionProfile,
   type AgentRuntimePermissionsConfig,
 } from "../../permissions/agent-default-capabilities-provider.js";
+import {
+  INTELLIGENCE_PROXY_REQUIRED_SETTING,
+  isRuntimeIntelligenceProxyRequired,
+  readRuntimeIntelligenceProfileSelection,
+  resolveRequiredRuntimeIntelligenceProfileSelection,
+} from "../../runtime/intelligence-proxy.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -1352,6 +1359,156 @@ export class AgentsCommands {
     return payload;
   }
 
+  @Command({
+    name: "intelligence",
+    description: "Set or show the ordered Hub intelligence connections for an agent",
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "intelligence",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
+  intelligence(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Option({ flags: "--profile <id>", description: "Public Hub intelligence profile ID" }) profileId?: string,
+    @Option({
+      flags: "--connections <ids>",
+      description: "Comma-separated connection IDs in failover order",
+    })
+    connectionsInput?: string,
+    @Option({ flags: "--required <boolean>", description: "Require the Hub proxy (true or false)" })
+    requiredInput?: string,
+    @Option({ flags: "--clear", description: "Remove this agent's intelligence selection" }) clear?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Apply an active proxy configuration after adapter preflight" })
+    execute?: boolean,
+  ) {
+    const agent = getAgent(id);
+    if (!agent) failAgentNotFound("agents intelligence", id, asJson);
+    const current = readRuntimeIntelligenceProfileSelection(agent);
+    const currentRaw = agent.defaults?.intelligence;
+    const currentRequired =
+      currentRaw && typeof currentRaw === "object" && !Array.isArray(currentRaw)
+        ? (currentRaw as Record<string, unknown>).required
+        : undefined;
+    const hasMutation =
+      clear === true || profileId !== undefined || connectionsInput !== undefined || requiredInput !== undefined;
+
+    if (!hasMutation) {
+      const payload = {
+        action: "intelligence" as const,
+        changed: false,
+        agentId: id,
+        intelligence: current
+          ? { ...current, ...(typeof currentRequired === "boolean" ? { required: currentRequired } : {}) }
+          : null,
+        agent: buildAgentJson(agent, loadRouterConfig().defaultAgent),
+      };
+      if (asJson) printJson(payload);
+      else
+        console.log(
+          payload.intelligence ? JSON.stringify(payload.intelligence, null, 2) : "No intelligence profile selected",
+        );
+      return payload;
+    }
+    if (clear && (profileId !== undefined || connectionsInput !== undefined || requiredInput !== undefined)) {
+      fail("Use --clear by itself");
+    }
+
+    const defaults = { ...(agent.defaults ?? {}) };
+    if (clear) {
+      delete defaults.intelligence;
+    } else {
+      const normalizedProfile = profileId?.trim() || current?.profileId;
+      const connectionIds = connectionsInput
+        ? connectionsInput
+            .split(",")
+            .map((value) => value.trim())
+            .filter(Boolean)
+        : current?.connectionIds;
+      if (!normalizedProfile || !connectionIds?.length) {
+        fail("Both --profile and --connections are required when no intelligence profile is already configured");
+      }
+      let required = typeof currentRequired === "boolean" ? currentRequired : undefined;
+      if (requiredInput !== undefined) {
+        if (requiredInput !== "true" && requiredInput !== "false") fail("--required must be true or false");
+        required = requiredInput === "true";
+      }
+      defaults.intelligence = {
+        profileId: normalizedProfile,
+        connectionIds,
+        ...(required !== undefined ? { required } : {}),
+      };
+      readRuntimeIntelligenceProfileSelection({ defaults });
+    }
+
+    const nextDefaults = Object.keys(defaults).length > 0 ? defaults : null;
+    const prospectiveAgent = { ...agent, defaults: nextDefaults };
+    const globalProxyRequired = dbGetSetting(INTELLIGENCE_PROXY_REQUIRED_SETTING) ?? undefined;
+    const proxyRequired = isRuntimeIntelligenceProxyRequired(prospectiveAgent, globalProxyRequired);
+    resolveRequiredRuntimeIntelligenceProfileSelection(prospectiveAgent, globalProxyRequired);
+    if (proxyRequired) {
+      const providerId = prospectiveAgent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID;
+      const isolation =
+        createRuntimeProvider(providerId).getCapabilities().intelligenceProxy?.providerPrincipalIsolation;
+      if (execute !== true) {
+        contractDryRun(
+          "agents intelligence",
+          {
+            agentId: id,
+            provider: providerId,
+            proxyRequired: true,
+            providerPrincipalIsolation: isolation ?? "none",
+          },
+          { asJson },
+        );
+      }
+      if (!isolation || isolation === "none") {
+        contractFail(
+          "agents intelligence",
+          "INTELLIGENCE_PROXY_UNAVAILABLE",
+          `Runtime provider ${providerId} has no verified provider-principal isolation; active proxy configuration was not persisted.`,
+          {
+            asJson,
+            details: {
+              provider: providerId,
+              providerPrincipalIsolation: isolation ?? "none",
+              suggestedAction:
+                "Keep the profile as a draft with --required false until the runtime adapter is verified",
+            },
+          },
+        );
+      }
+    }
+    updateAgent(id, { defaults: nextDefaults });
+    const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
+    const next = readRuntimeIntelligenceProfileSelection(updated);
+    const nextRaw = updated.defaults?.intelligence;
+    const nextRequired =
+      nextRaw && typeof nextRaw === "object" && !Array.isArray(nextRaw)
+        ? (nextRaw as Record<string, unknown>).required
+        : undefined;
+    const payload = {
+      action: "intelligence" as const,
+      changed: true,
+      agentId: id,
+      intelligence: next ? { ...next, ...(typeof nextRequired === "boolean" ? { required: nextRequired } : {}) } : null,
+      defaults: nextDefaults,
+      agent: buildAgentJson(updated, loadRouterConfig().defaultAgent),
+    };
+    if (asJson) printJson(payload);
+    else
+      console.log(
+        next
+          ? `\u2713 Intelligence connections set: ${next.connectionIds.join(", ")}`
+          : "\u2713 Intelligence selection cleared",
+      );
+    emitConfigChanged();
+    return payload;
+  }
+
   @Command({ name: "debounce", description: "Set message debounce time" })
   @CommandAccess({
     kind: "mutate",
@@ -1922,6 +2079,7 @@ declareCommandReturns(AgentsCommands, {
   delete: agentDeleteReturnSchema,
   list: agentsListReturnSchema,
   permissions: agentPermissionsReturnSchema,
+  intelligence: agentIntelligenceReturnSchema,
   reset: agentResetReturnSchema,
   session: agentSessionReturnSchema,
   set: agentSetReturnSchema,
