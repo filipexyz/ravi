@@ -11,6 +11,7 @@ import {
   runQualityGate,
   runSpecGate,
 } from "./quality-gate.js";
+import "./release-workflow-security.test.js";
 
 const tempRoots: string[] = [];
 let isolatedStateDir: string | null = null;

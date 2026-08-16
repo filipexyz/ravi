@@ -1,68 +1,946 @@
-name: Release
+name: Create GitHub Release
 
-on:
-  push:
-    tags:
-      - "v3.*"
+"on":
   workflow_dispatch:
     inputs:
       tag:
-        description: "Tag to release, e.g. v3.260418.1"
+        description: "Existing published tag (v<version> or ravi-os-sdk-v<version>)"
         required: true
         type: string
 
 permissions:
-  contents: write
+  actions: read
+  contents: read
+  pull-requests: read
+
+# Different releases never share a pending slot. A rerun for the same tag is
+# serialized and is safe because existing release state is checked exactly.
+concurrency:
+  group: ravi-github-release-${{ inputs.tag }}
+  cancel-in-progress: false
+
+env:
+  NPM_REGISTRY: https://registry.npmjs.org/
 
 jobs:
-  github-release:
-    name: GitHub Release
+  verify:
+    name: Verify Exact Published Tag
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      base: ${{ steps.tag.outputs.base }}
+      current_base_sha: ${{ steps.tag.outputs.current_base_sha }}
+      immutable_npm_tag: ${{ steps.tag.outputs.immutable_npm_tag }}
+      integrity: ${{ steps.tag.outputs.integrity }}
+      package_name: ${{ steps.tag.outputs.package_name }}
+      package_path: ${{ steps.tag.outputs.package_path }}
+      pr_number: ${{ steps.tag.outputs.pr_number }}
+      tag: ${{ steps.tag.outputs.tag }}
+      target_sha: ${{ steps.tag.outputs.target_sha }}
+      version: ${{ steps.tag.outputs.version }}
 
+    # No release job checks out or executes repository code.
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v4
         with:
-          fetch-depth: 0
+          node-version: "24"
+          registry-url: https://registry.npmjs.org/
 
-      - name: Resolve tag
+      - name: Verify full published tag provenance
         id: tag
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            TAG="${{ github.event.inputs.tag }}"
-          else
-            TAG="${GITHUB_REF#refs/tags/}"
-          fi
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-
-      - name: Determine release channel
-        id: channel
-        run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          git fetch origin main --tags
-          git fetch origin dev --tags || true
-          if git branch -r --contains "$TAG" | grep -q "origin/main"; then
-            echo "prerelease=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "prerelease=true" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
+          REQUESTED_TAG: ${{ inputs.tag }}
         run: |
-          TAG="${{ steps.tag.outputs.tag }}"
-          if gh release view "${TAG}" >/dev/null 2>&1; then
-            echo "Release ${TAG} already exists"
+          set -euo pipefail
+          export LC_ALL=C
+
+          semver_valid() {
+            [[ "$1" =~ ^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$ ]]
+          }
+          semver_gt() {
+            local newer="$1" older="$2" left right
+            local newer_a newer_b newer_c older_a older_b older_c
+            semver_valid "$newer" && semver_valid "$older" || return 1
+            IFS=. read -r newer_a newer_b newer_c <<<"$newer"
+            IFS=. read -r older_a older_b older_c <<<"$older"
+            for pair in "$newer_a:$older_a" "$newer_b:$older_b" "$newer_c:$older_c"; do
+              left="${pair%%:*}"; right="${pair#*:}"
+              if [ "${#left}" -gt "${#right}" ]; then return 0; fi
+              if [ "${#left}" -lt "${#right}" ]; then return 1; fi
+              if [[ "$left" > "$right" ]]; then return 0; fi
+              if [[ "$left" < "$right" ]]; then return 1; fi
+            done
+            return 1
+          }
+
+          TAG="$REQUESTED_TAG"
+          case "$TAG" in
+            v*)
+              if [[ ! "$TAG" =~ ^v((0|[1-9][0-9]{0,8})\.([0-9]{6})\.([1-9][0-9]{0,8}))$ ]]; then
+                echo "Root release tag '${TAG}' is invalid." >&2
+                exit 1
+              fi
+              VERSION="${BASH_REMATCH[1]}"
+              DATE_PART="${BASH_REMATCH[3]}"
+              PACKAGE_PATH="package.json"
+              EXPECTED_PACKAGE="ravi.bot"
+              PUBLISH_WORKFLOW="version.yml"
+              RELEASE_KIND="root"
+              ;;
+            ravi-os-sdk-v*)
+              if [[ ! "$TAG" =~ ^ravi-os-sdk-v((0|[1-9][0-9]{0,8})\.([0-9]{6})\.([1-9][0-9]{0,8}))$ ]]; then
+                echo "SDK release tag '${TAG}' is invalid." >&2
+                exit 1
+              fi
+              VERSION="${BASH_REMATCH[1]}"
+              DATE_PART="${BASH_REMATCH[3]}"
+              PACKAGE_PATH="packages/ravi-os-sdk/package.json"
+              EXPECTED_PACKAGE="@ravi-os/sdk"
+              PUBLISH_WORKFLOW="sdk-release.yml"
+              RELEASE_KIND="sdk"
+              ;;
+            *)
+              echo "Tag '${TAG}' is outside the release namespaces." >&2
+              exit 1
+              ;;
+          esac
+          NORMALIZED_DATE="$(
+            date -u \
+              -d "20${DATE_PART:0:2}-${DATE_PART:2:2}-${DATE_PART:4:2}" \
+              +%y%m%d 2>/dev/null
+          )" || {
+            echo "Version date '${DATE_PART}' is not a real UTC calendar date." >&2
+            exit 1
+          }
+          if [ "$NORMALIZED_DATE" != "$DATE_PART" ]; then
+            echo "Version date '${DATE_PART}' is not a real UTC calendar date." >&2
+            exit 1
+          fi
+
+          REF_JSON="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}"
+          )"
+          if ! jq -e \
+            --arg ref "refs/tags/${TAG}" \
+            '.ref == $ref and .object.type == "commit" and (.object.sha | test("^[0-9a-f]{40}$"))' \
+            >/dev/null \
+            <<<"$REF_JSON"; then
+            echo "Tag '${TAG}' must be an existing lightweight commit tag." >&2
+            exit 1
+          fi
+          TARGET_SHA="$(jq -er '.object.sha' <<<"$REF_JSON")"
+
+          TARGET_CONTENT="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/contents/${PACKAGE_PATH}?ref=${TARGET_SHA}"
+          )"
+          if ! jq -e \
+            '.type == "file" and .encoding == "base64" and (.content | type == "string")' \
+            >/dev/null \
+            <<<"$TARGET_CONTENT"; then
+            echo "Tagged package manifest response is ambiguous." >&2
+            exit 1
+          fi
+          TARGET_MANIFEST="${RUNNER_TEMP}/release-target-manifest.json"
+          jq -er '.content' <<<"$TARGET_CONTENT" | tr -d '\n' | base64 --decode > "$TARGET_MANIFEST"
+          if [ "$(jq -er '.name' "$TARGET_MANIFEST")" != "$EXPECTED_PACKAGE" ] ||
+            [ "$(jq -er '.version' "$TARGET_MANIFEST")" != "$VERSION" ]; then
+            echo "Tag does not target the expected package version." >&2
+            exit 1
+          fi
+
+          ASSOCIATED_PRS="$(
+            gh api --paginate --slurp \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/commits/${TARGET_SHA}/pulls?per_page=100"
+          )"
+          if ! jq -e \
+            'type == "array" and all(.[]; type == "array" and all(.[]; type == "object"))' \
+            >/dev/null \
+            <<<"$ASSOCIATED_PRS"; then
+            echo "Associated PR response is ambiguous." >&2
+            exit 1
+          fi
+          MATCHING_PRS="$(
+            jq -c \
+              --arg repo "$GITHUB_REPOSITORY" \
+              --arg sha "$TARGET_SHA" \
+              '[
+                (add // [])[]
+                | select(
+                    .merged_at != null
+                    and .merge_commit_sha == $sha
+                    and .head.repo.full_name == $repo
+                    and .base.repo.full_name == $repo
+                    and (.base.ref == "dev" or .base.ref == "main")
+                    and (.number | type == "number")
+                  )
+              ]' \
+              <<<"$ASSOCIATED_PRS"
+          )"
+          if [ "$(jq -er 'length' <<<"$MATCHING_PRS")" -ne 1 ]; then
+            echo "Expected one same-repository merged PR for the exact tag target." >&2
+            exit 1
+          fi
+          BASE="$(jq -er '.[0].base.ref' <<<"$MATCHING_PRS")"
+          PR_NUMBER="$(jq -er '.[0].number | tostring' <<<"$MATCHING_PRS")"
+          if [[ ! "$PR_NUMBER" =~ ^[1-9][0-9]{0,9}$ ]]; then
+            echo "Associated PR number is invalid." >&2
+            exit 1
+          fi
+
+          PR_JSON="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}"
+          )"
+          if ! jq -e \
+            --argjson number "$PR_NUMBER" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg base "$BASE" \
+            --arg target "$TARGET_SHA" \
+            '
+              .number == $number
+              and .merged_at != null
+              and .merge_commit_sha == $target
+              and .head.repo.full_name == $repo
+              and .base.repo.full_name == $repo
+              and .base.ref == $base
+            ' \
+            >/dev/null \
+            <<<"$PR_JSON"; then
+            echo "Merged PR provenance is ambiguous." >&2
+            exit 1
+          fi
+
+          # Full paginated files, not historical base metadata, are the reviewed delta.
+          PR_FILE_PAGES="$(
+            gh api --paginate --slurp \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files?per_page=100"
+          )"
+          if ! jq -e \
+            --arg path "$PACKAGE_PATH" \
+            '
+              type == "array"
+              and all(.[]; type == "array" and all(.[]; type == "object"))
+              and ((add // []) | length) == 1
+              and (add // [])[0].filename == $path
+              and (add // [])[0].status == "modified"
+              and ((add // [])[0].previous_filename == null)
+            ' \
+            >/dev/null \
+            <<<"$PR_FILE_PAGES"; then
+            echo "Release PR must modify only the package manifest." >&2
+            exit 1
+          fi
+
+          BRANCH_REF="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/git/ref/heads/${BASE}"
+          )"
+          if ! jq -e \
+            --arg ref "refs/heads/${BASE}" \
+            '.ref == $ref and .object.type == "commit" and (.object.sha | test("^[0-9a-f]{40}$"))' \
+            >/dev/null \
+            <<<"$BRANCH_REF"; then
+            echo "Current base branch ref is ambiguous." >&2
+            exit 1
+          fi
+          CURRENT_BASE_SHA="$(jq -er '.object.sha' <<<"$BRANCH_REF")"
+          REACHABILITY="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/compare/${TARGET_SHA}...${CURRENT_BASE_SHA}"
+          )"
+          if ! jq -e \
+            --arg target "$TARGET_SHA" \
+            --arg current "$CURRENT_BASE_SHA" \
+            '
+              .base_commit.sha == $target
+              and .merge_base_commit.sha == $target
+              and .head_commit.sha == $current
+              and (.status == "ahead" or .status == "identical")
+            ' \
+            >/dev/null \
+            <<<"$REACHABILITY"; then
+            echo "Tagged commit is not reachable from the current base tip." >&2
+            exit 1
+          fi
+
+          CURRENT_CONTENT="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/contents/${PACKAGE_PATH}?ref=${CURRENT_BASE_SHA}"
+          )"
+          if ! jq -e \
+            '.type == "file" and .encoding == "base64" and (.content | type == "string")' \
+            >/dev/null \
+            <<<"$CURRENT_CONTENT"; then
+            echo "Current base manifest response is ambiguous." >&2
+            exit 1
+          fi
+          CURRENT_MANIFEST="${RUNNER_TEMP}/release-current-manifest.json"
+          jq -er '.content' <<<"$CURRENT_CONTENT" | tr -d '\n' | base64 --decode > "$CURRENT_MANIFEST"
+          if [ "$(jq -er '.name' "$CURRENT_MANIFEST")" != "$EXPECTED_PACKAGE" ] ||
+            ! diff -u \
+              <(jq -S 'del(.version)' "$TARGET_MANIFEST") \
+              <(jq -S 'del(.version)' "$CURRENT_MANIFEST"); then
+            echo "Current base manifest diverges outside version." >&2
+            exit 1
+          fi
+          CURRENT_VERSION="$(jq -er '.version' "$CURRENT_MANIFEST")"
+          if ! semver_valid "$CURRENT_VERSION" ||
+            { [ "$CURRENT_VERSION" != "$VERSION" ] && ! semver_gt "$CURRENT_VERSION" "$VERSION"; }; then
+            echo "Current base version is older than the published target." >&2
+            exit 1
+          fi
+
+          case "$BASE" in
+            dev) IMMUTABLE_NPM_TAG="next-v${VERSION//./-}" ;;
+            main) IMMUTABLE_NPM_TAG="stable-v${VERSION//./-}" ;;
+            *)
+              echo "Unsupported release base." >&2
+              exit 1
+              ;;
+          esac
+
+          validate_tar_layout() {
+            local tarball="$1"
+            local listing="$2"
+            local verbose="$3"
+            local manifest_entries manifest_regular_entries
+            tar -tzf "$tarball" > "$listing"
+            tar -tvzf "$tarball" > "$verbose"
+            if grep -Eq '(^$|^/|//|(^|/)\.\.?(/|$)|\\)' "$listing" ||
+              [ "$(sort "$listing" | uniq -d | wc -l | tr -d ' ')" -ne 0 ]; then
+              echo "Published provenance tarball has a duplicate or ambiguous path." >&2
+              return 1
+            fi
+            if awk '$1 !~ /^[-d]/ { unsafe=1 } END { exit !unsafe }' "$verbose"; then
+              echo "Published provenance tarball contains a link or special entry." >&2
+              return 1
+            fi
+            manifest_entries="$(
+              awk '$0 == "package/package.json" { count++ } END { print count + 0 }' "$listing"
+            )"
+            manifest_regular_entries="$(
+              awk '
+                $1 ~ /^-/ && $NF == "package\/package.json" { count++ }
+                END { print count + 0 }
+              ' "$verbose"
+            )"
+            if [ "$manifest_entries" -ne 1 ] || [ "$manifest_regular_entries" -ne 1 ]; then
+              echo "Published provenance must contain exactly one regular package/package.json." >&2
+              return 1
+            fi
+          }
+
+          ssri_sha512() {
+            printf 'sha512-%s\n' "$(
+              openssl dgst -sha512 -binary "$1" | openssl base64 -A
+            )"
+          }
+
+          # Recover the immutable v4 artifact from a successful tag-push run.
+          # The requested tag supplies no digest; the downloaded sealed bytes do.
+          WORKFLOW_RUN_PAGES="$(
+            gh api --paginate --slurp \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/${PUBLISH_WORKFLOW}/runs?event=push&status=completed&head_sha=${TARGET_SHA}&per_page=100"
+          )"
+          if ! jq -e '
+            type == "array"
+            and all(.[];
+              type == "object"
+              and (.workflow_runs | type == "array")
+              and all(.workflow_runs[]; type == "object")
+            )
+          ' >/dev/null <<<"$WORKFLOW_RUN_PAGES"; then
+            echo "Publishing workflow-run response is ambiguous." >&2
+            exit 1
+          fi
+          CANDIDATE_RUNS="${RUNNER_TEMP}/publish-run-candidates.tsv"
+          jq -r \
+            --arg sha "$TARGET_SHA" \
+            '
+              [
+                .[].workflow_runs[]
+                | select(
+                    .event == "push"
+                    and .status == "completed"
+                    and .conclusion == "success"
+                    and .head_sha == $sha
+                    and (.id | type == "number")
+                    and (.run_attempt | type == "number" and . >= 1)
+                  )
+              ]
+              | unique_by(.id)
+              | sort_by(.id)
+              | reverse[]
+              | [.id, .run_attempt]
+              | @tsv
+            ' \
+            <<<"$WORKFLOW_RUN_PAGES" > "$CANDIDATE_RUNS"
+
+          PROVENANCE_ROOT="${RUNNER_TEMP}/published-provenance"
+          mkdir -p "$PROVENANCE_ROOT"
+          FOUND_PROVENANCE=0
+          EXPECTED_INTEGRITY=""
+          while IFS=$'\t' read -r RUN_ID RUN_ATTEMPT; do
+            [ -n "$RUN_ID" ] || continue
+            if [[ ! "$RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]] ||
+              [[ ! "$RUN_ATTEMPT" =~ ^[1-9][0-9]{0,9}$ ]]; then
+              echo "Publishing workflow run identity is invalid." >&2
+              exit 1
+            fi
+            ARTIFACT_NAME="ravi-${RELEASE_KIND}-package-${RUN_ID}-${RUN_ATTEMPT}"
+            ARTIFACT_INDEX_PAGES="$(
+              gh api --paginate --slurp \
+                -H "Accept: application/vnd.github+json" \
+                "repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/artifacts?per_page=100"
+            )"
+            if ! ARTIFACT_INDEX="$(
+              jq -ce '
+                if type != "array" or length == 0 then
+                  error("missing artifact pages")
+                elif (all(.[]; type == "object") | not) then
+                  error("invalid artifact page")
+                elif (all(.[];
+                  (.total_count
+                    | type == "number"
+                    and . >= 0
+                    and floor == .
+                  )
+                ) | not) then
+                  error("invalid artifact total")
+                elif (all(.[]; (.artifacts | type == "array")) | not) then
+                  error("invalid artifact collection")
+                elif (all(.[].artifacts[];
+                  type == "object"
+                  and (.name | type == "string")
+                  and (.expired | type == "boolean")
+                ) | not) then
+                  error("invalid artifact")
+                elif ([.[].total_count] | unique | length) != 1 then
+                  error("artifact totals disagree")
+                elif ([.[].artifacts[]] | length) != .[0].total_count then
+                  error("artifact total is incomplete")
+                else
+                  {
+                    totalCount: .[0].total_count,
+                    artifacts: [.[].artifacts[]]
+                  }
+                end
+              ' <<<"$ARTIFACT_INDEX_PAGES"
+            )"; then
+              echo "Publishing artifact pages are incomplete or ambiguous." >&2
+              exit 1
+            fi
+            if ! jq -e \
+              --arg name "$ARTIFACT_NAME" \
+              '
+                type == "object"
+                and (.artifacts | type == "array")
+                and ([.artifacts[] | select(.name == $name)] | length) <= 1
+              ' \
+              >/dev/null \
+              <<<"$ARTIFACT_INDEX"; then
+              echo "Publishing artifact index is ambiguous." >&2
+              exit 1
+            fi
+            if [ "$(
+              jq -r \
+                --arg name "$ARTIFACT_NAME" \
+                '[.artifacts[] | select(.name == $name and .expired == false)] | length' \
+                <<<"$ARTIFACT_INDEX"
+            )" -eq 0 ]; then
+              continue
+            fi
+
+            CANDIDATE_DIR="${PROVENANCE_ROOT}/${RUN_ID}-${RUN_ATTEMPT}"
+            mkdir -p "$CANDIDATE_DIR"
+            if ! gh run download "$RUN_ID" \
+              --repo "$GITHUB_REPOSITORY" \
+              --name "$ARTIFACT_NAME" \
+              --dir "$CANDIDATE_DIR"; then
+              echo "Failed to download authoritative publishing provenance." >&2
+              exit 1
+            fi
+            CANDIDATE_METADATA="${CANDIDATE_DIR}/metadata.json"
+            if [ -L "$CANDIDATE_DIR" ] ||
+              [ ! -f "$CANDIDATE_METADATA" ] ||
+              [ -L "$CANDIDATE_METADATA" ] ||
+              [ "$(find "$CANDIDATE_DIR" -mindepth 1 -maxdepth 1 -print | wc -l | tr -d ' ')" -ne 2 ] ||
+              [ "$(find "$CANDIDATE_DIR" -mindepth 1 -maxdepth 1 -type f -links 1 -print | wc -l | tr -d ' ')" -ne 2 ]; then
+              echo "Downloaded publishing provenance layout is unsafe." >&2
+              exit 1
+            fi
+            if ! jq -e \
+              --arg artifact "$ARTIFACT_NAME" \
+              --arg base "$BASE" \
+              --arg npmTag "$IMMUTABLE_NPM_TAG" \
+              --arg name "$EXPECTED_PACKAGE" \
+              --arg path "$PACKAGE_PATH" \
+              --arg pr "$PR_NUMBER" \
+              --arg registry "$NPM_REGISTRY" \
+              --arg tag "$TAG" \
+              --arg sha "$TARGET_SHA" \
+              --arg version "$VERSION" \
+              '
+                type == "object"
+                and .schema == 2
+                and .artifactName == $artifact
+                and .base == $base
+                and (.currentBaseSha | type == "string" and test("^[0-9a-f]{40}$"))
+                and .immutableNpmTag == $npmTag
+                and .packageName == $name
+                and .packagePath == $path
+                and .prNumber == $pr
+                and .registry == $registry
+                and .tag == $tag
+                and .targetSha == $sha
+                and .version == $version
+                and (.tarball | type == "string" and test("^[A-Za-z0-9._-]+[.]tgz$"))
+                and (.tarballIntegrity | type == "string" and test("^sha512-[A-Za-z0-9+/]{86}==$"))
+                and (.tarballSha512 | type == "string" and test("^[0-9a-f]{128}$"))
+              ' \
+              "$CANDIDATE_METADATA" >/dev/null; then
+              echo "Downloaded publishing provenance does not bind the requested release." >&2
+              exit 1
+            fi
+            CANDIDATE_TARBALL="$(
+              jq -er --arg dir "$CANDIDATE_DIR" '$dir + "/" + .tarball' "$CANDIDATE_METADATA"
+            )"
+            CANDIDATE_INTEGRITY="$(jq -er '.tarballIntegrity' "$CANDIDATE_METADATA")"
+            if [ ! -f "$CANDIDATE_TARBALL" ] || [ -L "$CANDIDATE_TARBALL" ] ||
+              [ "$(sha512sum "$CANDIDATE_TARBALL" | awk '{print $1}')" != "$(jq -er '.tarballSha512' "$CANDIDATE_METADATA")" ] ||
+              [ "$(ssri_sha512 "$CANDIDATE_TARBALL")" != "$CANDIDATE_INTEGRITY" ]; then
+              echo "Downloaded publishing provenance digest is invalid." >&2
+              exit 1
+            fi
+            if ! validate_tar_layout \
+              "$CANDIDATE_TARBALL" \
+              "${CANDIDATE_DIR}/tar-files.txt" \
+              "${CANDIDATE_DIR}/tar-verbose.txt"; then
+              exit 1
+            fi
+            CANDIDATE_MANIFEST="${CANDIDATE_DIR}/package.json"
+            tar -xOf "$CANDIDATE_TARBALL" package/package.json > "$CANDIDATE_MANIFEST"
+            if ! jq -e -s \
+              --arg name "$EXPECTED_PACKAGE" \
+              --arg version "$VERSION" \
+              --arg sha "$TARGET_SHA" \
+              '
+                length == 1
+                and .[0].name == $name
+                and .[0].version == $version
+                and .[0].gitHead == $sha
+                and .[0].publishConfig == {"access":"public"}
+              ' \
+              "$CANDIDATE_MANIFEST" >/dev/null; then
+              echo "Downloaded publishing manifest is not exactly one bound JSON document." >&2
+              exit 1
+            fi
+            if [ -n "$EXPECTED_INTEGRITY" ] &&
+              [ "$CANDIDATE_INTEGRITY" != "$EXPECTED_INTEGRITY" ]; then
+              echo "Successful publishing runs disagree on sealed package integrity." >&2
+              exit 1
+            fi
+            EXPECTED_INTEGRITY="$CANDIDATE_INTEGRITY"
+            FOUND_PROVENANCE=$((FOUND_PROVENANCE + 1))
+          done < "$CANDIDATE_RUNS"
+          if [ "$FOUND_PROVENANCE" -eq 0 ] || [ -z "$EXPECTED_INTEGRITY" ]; then
+            echo "No unexpired successful tag-push artifact proves the published tarball." >&2
+            exit 1
+          fi
+
+          REGISTRY_METADATA="$(
+            npm view \
+              "${EXPECTED_PACKAGE}@${VERSION}" \
+              version gitHead dist.integrity --json \
+              --registry="$NPM_REGISTRY"
+          )"
+          DIST_TAGS="$(
+            npm view "$EXPECTED_PACKAGE" dist-tags --json \
+              --registry="$NPM_REGISTRY"
+          )"
+          if ! jq -e \
+            --arg version "$VERSION" \
+            --arg sha "$TARGET_SHA" \
+            --arg integrity "$EXPECTED_INTEGRITY" \
+            '
+              .version == $version
+              and .gitHead == $sha
+              and .["dist.integrity"] == $integrity
+            ' \
+            >/dev/null \
+            <<<"$REGISTRY_METADATA" ||
+            [ "$(jq -r --arg tag "$IMMUTABLE_NPM_TAG" '.[$tag] // empty' <<<"$DIST_TAGS")" != "$VERSION" ]; then
+            echo "Published version, integrity, gitHead, or immutable dist-tag does not match sealed provenance." >&2
+            exit 1
+          fi
+
+          echo "base=${BASE}" >> "$GITHUB_OUTPUT"
+          echo "current_base_sha=${CURRENT_BASE_SHA}" >> "$GITHUB_OUTPUT"
+          echo "immutable_npm_tag=${IMMUTABLE_NPM_TAG}" >> "$GITHUB_OUTPUT"
+          echo "integrity=${EXPECTED_INTEGRITY}" >> "$GITHUB_OUTPUT"
+          echo "package_name=${EXPECTED_PACKAGE}" >> "$GITHUB_OUTPUT"
+          echo "package_path=${PACKAGE_PATH}" >> "$GITHUB_OUTPUT"
+          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "target_sha=${TARGET_SHA}" >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+  create:
+    name: Revalidate Published SHA And Create Release
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+
+    # The only write-capable job also has no checkout or repository execution.
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org/
+
+      - name: Revalidate published artifact and create GitHub Release
+        env:
+          EXPECTED_BASE: ${{ needs.verify.outputs.base }}
+          EXPECTED_CURRENT_BASE_SHA: ${{ needs.verify.outputs.current_base_sha }}
+          EXPECTED_IMMUTABLE_NPM_TAG: ${{ needs.verify.outputs.immutable_npm_tag }}
+          EXPECTED_INTEGRITY: ${{ needs.verify.outputs.integrity }}
+          EXPECTED_PACKAGE: ${{ needs.verify.outputs.package_name }}
+          EXPECTED_PACKAGE_PATH: ${{ needs.verify.outputs.package_path }}
+          EXPECTED_PR_NUMBER: ${{ needs.verify.outputs.pr_number }}
+          EXPECTED_TAG: ${{ needs.verify.outputs.tag }}
+          EXPECTED_TARGET_SHA: ${{ needs.verify.outputs.target_sha }}
+          EXPECTED_VERSION: ${{ needs.verify.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          export LC_ALL=C
+
+          TAG="$EXPECTED_TAG"
+          TARGET_SHA="$EXPECTED_TARGET_SHA"
+          VERSION="$EXPECTED_VERSION"
+          case "$TAG" in
+            v*)
+              [[ "$TAG" =~ ^v((0|[1-9][0-9]{0,8})\.([0-9]{6})\.([1-9][0-9]{0,8}))$ ]] || exit 1
+              DERIVED_VERSION="${BASH_REMATCH[1]}"
+              DATE_PART="${BASH_REMATCH[3]}"
+              PACKAGE_PATH="package.json"
+              PACKAGE_NAME="ravi.bot"
+              ;;
+            ravi-os-sdk-v*)
+              [[ "$TAG" =~ ^ravi-os-sdk-v((0|[1-9][0-9]{0,8})\.([0-9]{6})\.([1-9][0-9]{0,8}))$ ]] || exit 1
+              DERIVED_VERSION="${BASH_REMATCH[1]}"
+              DATE_PART="${BASH_REMATCH[3]}"
+              PACKAGE_PATH="packages/ravi-os-sdk/package.json"
+              PACKAGE_NAME="@ravi-os/sdk"
+              ;;
+            *) exit 1 ;;
+          esac
+          NORMALIZED_DATE="$(
+            date -u \
+              -d "20${DATE_PART:0:2}-${DATE_PART:2:2}-${DATE_PART:4:2}" \
+              +%y%m%d 2>/dev/null
+          )" || {
+            echo "Release date is not a real UTC calendar date." >&2
+            exit 1
+          }
+          if [ "$NORMALIZED_DATE" != "$DATE_PART" ] ||
+            [ "$DERIVED_VERSION" != "$VERSION" ] ||
+            [ "$PACKAGE_PATH" != "$EXPECTED_PACKAGE_PATH" ] ||
+            [ "$PACKAGE_NAME" != "$EXPECTED_PACKAGE" ] ||
+            [[ ! "$TARGET_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+            [[ ! "$EXPECTED_CURRENT_BASE_SHA" =~ ^[0-9a-f]{40}$ ]] ||
+            [[ ! "$EXPECTED_PR_NUMBER" =~ ^[1-9][0-9]{0,9}$ ]]; then
+            echo "Verified release outputs are malformed." >&2
+            exit 1
+          fi
+          case "$EXPECTED_BASE" in
+            dev)
+              EXPECTED_PRERELEASE=true
+              EXPECTED_NPM_TAG="next-v${VERSION//./-}"
+              RELEASE_FLAGS=(--prerelease --latest=false)
+              ;;
+            main)
+              EXPECTED_PRERELEASE=false
+              EXPECTED_NPM_TAG="stable-v${VERSION//./-}"
+              RELEASE_FLAGS=(--latest=false)
+              ;;
+            *) exit 1 ;;
+          esac
+          if [ "$EXPECTED_NPM_TAG" != "$EXPECTED_IMMUTABLE_NPM_TAG" ]; then
+            echo "Immutable npm tag output is inconsistent." >&2
+            exit 1
+          fi
+
+          revalidate_published_authorities() {
+            local phase="$1"
+            local ref_json branch_ref reachability registry_metadata dist_tags
+
+            ref_json="$(
+              gh api -H "Accept: application/vnd.github+json" \
+                "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}"
+            )"
+            if ! jq -e \
+              --arg ref "refs/tags/${TAG}" \
+              --arg sha "$TARGET_SHA" \
+              '.ref == $ref and .object.type == "commit" and .object.sha == $sha' \
+              >/dev/null \
+              <<<"$ref_json"; then
+              echo "Tag changed ${phase}." >&2
+              exit 1
+            fi
+
+            branch_ref="$(
+              gh api -H "Accept: application/vnd.github+json" \
+                "repos/${GITHUB_REPOSITORY}/git/ref/heads/${EXPECTED_BASE}"
+            )"
+            if ! jq -e \
+              --arg ref "refs/heads/${EXPECTED_BASE}" \
+              --arg sha "$EXPECTED_CURRENT_BASE_SHA" \
+              '.ref == $ref and .object.type == "commit" and .object.sha == $sha' \
+              >/dev/null \
+              <<<"$branch_ref"; then
+              echo "Base branch moved ${phase}; fail closed." >&2
+              exit 1
+            fi
+            reachability="$(
+              gh api -H "Accept: application/vnd.github+json" \
+                "repos/${GITHUB_REPOSITORY}/compare/${TARGET_SHA}...${EXPECTED_CURRENT_BASE_SHA}"
+            )"
+            if ! jq -e \
+              --arg target "$TARGET_SHA" \
+              --arg current "$EXPECTED_CURRENT_BASE_SHA" \
+              '
+                .base_commit.sha == $target
+                and .merge_base_commit.sha == $target
+                and .head_commit.sha == $current
+                and (.status == "ahead" or .status == "identical")
+              ' \
+              >/dev/null \
+              <<<"$reachability"; then
+              echo "Target is no longer reachable from the sealed current base ${phase}." >&2
+              exit 1
+            fi
+
+            registry_metadata="$(
+              npm view \
+                "${EXPECTED_PACKAGE}@${VERSION}" \
+                version gitHead dist.integrity --json \
+                --registry="$NPM_REGISTRY"
+            )"
+            dist_tags="$(
+              npm view "$EXPECTED_PACKAGE" dist-tags --json \
+                --registry="$NPM_REGISTRY"
+            )"
+            if ! jq -e \
+              --arg version "$VERSION" \
+              --arg sha "$TARGET_SHA" \
+              --arg integrity "$EXPECTED_INTEGRITY" \
+              '
+                .version == $version
+                and .gitHead == $sha
+                and .["dist.integrity"] == $integrity
+              ' \
+              >/dev/null \
+              <<<"$registry_metadata" ||
+              [ "$(jq -r --arg tag "$EXPECTED_IMMUTABLE_NPM_TAG" '.[$tag] // empty' <<<"$dist_tags")" != "$VERSION" ]; then
+              echo "Exact published version no longer has the required integrity, gitHead, or immutable dist-tag ${phase}." >&2
+              exit 1
+            fi
+          }
+
+          revalidate_pr_authority() {
+            local phase="$1"
+            local associated_pr_pages eligible_prs
+
+            associated_pr_pages="$(
+              gh api --paginate --slurp \
+                -H "Accept: application/vnd.github+json" \
+                "repos/${GITHUB_REPOSITORY}/commits/${TARGET_SHA}/pulls?per_page=100"
+            )"
+            if ! jq -e \
+              'type == "array" and all(.[]; type == "array" and all(.[]; type == "object"))' \
+              >/dev/null \
+              <<<"$associated_pr_pages"; then
+              echo "Associated PR pages became ambiguous ${phase}." >&2
+              exit 1
+            fi
+            eligible_prs="$(
+              jq -c \
+                --arg repo "$GITHUB_REPOSITORY" \
+                --arg sha "$TARGET_SHA" \
+                '[
+                  (add // [])[]
+                  | select(
+                      .merged_at != null
+                      and .merge_commit_sha == $sha
+                      and .head.repo.full_name == $repo
+                      and .base.repo.full_name == $repo
+                      and (.base.ref == "dev" or .base.ref == "main")
+                      and (.number | type == "number")
+                    )
+                ]' \
+                <<<"$associated_pr_pages"
+            )"
+            if [ "$(jq -er 'length' <<<"$eligible_prs")" -ne 1 ]; then
+              echo "Associated PR authority is not unique ${phase}." >&2
+              exit 1
+            fi
+            if ! jq -e \
+              --argjson number "$EXPECTED_PR_NUMBER" \
+              --arg base "$EXPECTED_BASE" \
+              '.[0].number == $number and .[0].base.ref == $base' \
+              >/dev/null \
+              <<<"$eligible_prs"; then
+              echo "Associated PR authority does not match sealed provenance ${phase}." >&2
+              exit 1
+            fi
+          }
+
+          revalidate_published_authorities "after verification"
+          revalidate_pr_authority "after verification"
+
+          PR_JSON="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/pulls/${EXPECTED_PR_NUMBER}"
+          )"
+          if ! jq -e \
+            --argjson number "$EXPECTED_PR_NUMBER" \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg base "$EXPECTED_BASE" \
+            --arg target "$TARGET_SHA" \
+            '
+              .number == $number
+              and .merged_at != null
+              and .merge_commit_sha == $target
+              and .head.repo.full_name == $repo
+              and .base.repo.full_name == $repo
+              and .base.ref == $base
+            ' \
+            >/dev/null \
+            <<<"$PR_JSON"; then
+            echo "PR provenance changed after verification." >&2
+            exit 1
+          fi
+          PR_FILE_PAGES="$(
+            gh api --paginate --slurp \
+              -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/pulls/${EXPECTED_PR_NUMBER}/files?per_page=100"
+          )"
+          if ! jq -e \
+            --arg path "$PACKAGE_PATH" \
+            '
+              type == "array"
+              and all(.[]; type == "array" and all(.[]; type == "object"))
+              and ((add // []) | length) == 1
+              and (add // [])[0].filename == $path
+              and (add // [])[0].status == "modified"
+              and ((add // [])[0].previous_filename == null)
+            ' \
+            >/dev/null \
+            <<<"$PR_FILE_PAGES"; then
+            echo "Full paginated PR delta changed after verification." >&2
+            exit 1
+          fi
+
+          TARGET_CONTENT="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/contents/${PACKAGE_PATH}?ref=${TARGET_SHA}"
+          )"
+          CURRENT_CONTENT="$(
+            gh api -H "Accept: application/vnd.github+json" \
+              "repos/${GITHUB_REPOSITORY}/contents/${PACKAGE_PATH}?ref=${EXPECTED_CURRENT_BASE_SHA}"
+          )"
+          for response in "$TARGET_CONTENT" "$CURRENT_CONTENT"; do
+            jq -e '.type == "file" and .encoding == "base64" and (.content | type == "string")' \
+              >/dev/null <<<"$response" || {
+              echo "Manifest response became ambiguous." >&2
+              exit 1
+            }
+          done
+          TARGET_MANIFEST="${RUNNER_TEMP}/release-write-target.json"
+          CURRENT_MANIFEST="${RUNNER_TEMP}/release-write-current.json"
+          jq -er '.content' <<<"$TARGET_CONTENT" | tr -d '\n' | base64 --decode > "$TARGET_MANIFEST"
+          jq -er '.content' <<<"$CURRENT_CONTENT" | tr -d '\n' | base64 --decode > "$CURRENT_MANIFEST"
+          if [ "$(jq -er '.name' "$TARGET_MANIFEST")" != "$EXPECTED_PACKAGE" ] ||
+            [ "$(jq -er '.version' "$TARGET_MANIFEST")" != "$VERSION" ] ||
+            [ "$(jq -er '.name' "$CURRENT_MANIFEST")" != "$EXPECTED_PACKAGE" ] ||
+            ! diff -u \
+              <(jq -S 'del(.version)' "$TARGET_MANIFEST") \
+              <(jq -S 'del(.version)' "$CURRENT_MANIFEST"); then
+            echo "Package manifest invariant changed." >&2
+            exit 1
+          fi
+
+          validate_release() {
+            local file="$1"
+            jq -e \
+              --arg tag "$TAG" \
+              --arg title "$TAG" \
+              --arg target "$TARGET_SHA" \
+              --argjson prerelease "$EXPECTED_PRERELEASE" \
+              '
+                .tag_name == $tag
+                and .name == $title
+                and .draft == false
+                and .prerelease == $prerelease
+                and .target_commitish == $target
+              ' \
+              "$file" >/dev/null
+          }
+
+          RELEASE_JSON="${RUNNER_TEMP}/existing-release.json"
+          RELEASE_ERROR="${RUNNER_TEMP}/existing-release.err"
+          set +e
+          gh api \
+            -H "Accept: application/vnd.github+json" \
+            "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+            > "$RELEASE_JSON" 2> "$RELEASE_ERROR"
+          LOOKUP_STATUS=$?
+          set -e
+          if [ "$LOOKUP_STATUS" -eq 0 ]; then
+            if ! validate_release "$RELEASE_JSON"; then
+              echo "Existing GitHub Release metadata does not exactly match the request." >&2
+              exit 1
+            fi
             exit 0
           fi
-
-          FLAGS=""
-          if [ "${{ steps.channel.outputs.prerelease }}" = "true" ]; then
-            FLAGS="--prerelease"
+          if ! grep -Eq '(^|[^0-9])404([^0-9]|$)' "$RELEASE_ERROR"; then
+            echo "GitHub Release lookup failed ambiguously." >&2
+            cat "$RELEASE_ERROR" >&2
+            exit 1
           fi
 
-          gh release create "${TAG}" \
-            --title "${TAG}" \
+          # A failed create can be an ambiguous network response. Re-read the
+          # canonical API object and accept only an exact match.
+          set +e
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --target "$TARGET_SHA" \
+            --title "$TAG" \
             --generate-notes \
-            ${FLAGS}
+            "${RELEASE_FLAGS[@]}"
+          CREATE_STATUS=$?
+          set -e
+          if ! gh api \
+            -H "Accept: application/vnd.github+json" \
+            "repos/${GITHUB_REPOSITORY}/releases/tags/${TAG}" \
+            > "$RELEASE_JSON"; then
+            echo "GitHub Release is absent after create attempt (status ${CREATE_STATUS})." >&2
+            exit 1
+          fi
+          if ! validate_release "$RELEASE_JSON"; then
+            echo "Created GitHub Release metadata does not exactly match the request." >&2
+            exit 1
+          fi
+          revalidate_published_authorities "after GitHub Release create attempt"
+          revalidate_pr_authority "after GitHub Release create attempt"
