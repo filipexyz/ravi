@@ -167,5 +167,5 @@ jobs:
             npm dist-tag add "${PACKAGE}@${VERSION}" "${NPM_TAG}"
           else
             echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > ~/.npmrc
-            bun publish --access public --tag "${NPM_TAG}"
+            npm publish --access public --tag "${NPM_TAG}" --provenance
           fi
