@@ -340,6 +340,13 @@ public struct AgentsNamespace: Sendable {
     return try await transport.call(groupSegments: ["agents"], command: "list", body: requestBody, as: AgentsListReturn.self)
   }
 
+  public func modelBroker(_ id: String, _ options: AgentsModelBrokerOptions = .init()) async throws -> AgentsModelBrokerReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["agents"], command: "model-broker", body: requestBody, as: AgentsModelBrokerReturn.self)
+  }
+
   public func permissions(_ id: String, _ profile: String? = nil, _ options: AgentsPermissionsOptions = .init()) async throws -> AgentsPermissionsReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["id"] = try RaviJSON.fromEncodable(id)

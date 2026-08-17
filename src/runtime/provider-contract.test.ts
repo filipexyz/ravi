@@ -19,6 +19,7 @@ const REQUIRED_CAPABILITY_KEYS: Array<keyof RuntimeCapabilities> = [
   "systemPrompt",
   "terminalEvents",
   "skillVisibility",
+  "modelBroker",
   "supportsSessionResume",
   "supportsSessionFork",
   "supportsPartialText",
@@ -112,6 +113,11 @@ describe("runtime provider contract", () => {
       expect(typeof capabilities.terminalEvents.guarantee).toBe("string");
       expect(typeof capabilities.skillVisibility.availability).toBe("string");
       expect(typeof capabilities.skillVisibility.loadedState).toBe("string");
+      expect(Array.isArray(capabilities.modelBroker?.protocols)).toBe(true);
+      expect(capabilities.modelBroker?.protocols.length).toBeGreaterThan(0);
+      expect(capabilities.modelBroker?.principalIsolation).toBe(
+        providerId === "claude" ? "one-shot-capability" : "none",
+      );
     }
   });
 

@@ -3,7 +3,7 @@ import { dbBindSessionToChat, dbUpsertChat } from "../router/router-db.js";
 import { getOrCreateSession } from "../router/index.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
-import { resolveRuntimePromptSource } from "./runtime-request-builder.js";
+import { resolveRuntimePromptSource, rotateRuntimeProviderEnvironment } from "./runtime-request-builder.js";
 
 let stateDir: string | null = null;
 
@@ -56,5 +56,41 @@ describe("resolveRuntimePromptSource", () => {
       canonicalChatId: chat.id,
       instanceId: "main",
     });
+  });
+});
+
+describe("rotateRuntimeProviderEnvironment", () => {
+  it("restores host values and refuses secret or Ravi-owned provider overrides", () => {
+    const runtimeEnv: Record<string, string> = {
+      PATH: "/broker:/base",
+      OLD_BINDING: "old",
+      RAVI_CONTEXT_KEY: "ctx",
+    };
+    const activeProviderEnvKeys = new Set(["PATH", "OLD_BINDING"]);
+    const next = rotateRuntimeProviderEnvironment({
+      runtimeEnv,
+      baselineRuntimeEnv: { PATH: "/base", RAVI_CONTEXT_KEY: "ctx" },
+      raviEnv: { RAVI_CONTEXT_KEY: "ctx" },
+      activeProviderEnvKeys,
+      nextProviderEnv: {
+        NEXT_BINDING: "next",
+        RAVI_CONTEXT_KEY: "provider-override",
+        RAVI_BIN: "/untrusted/ravi",
+        DATABASE_URL: "secret",
+      },
+      nextResolvedRuntimeEnv: {
+        PATH: "/base",
+        NEXT_BINDING: "next",
+        RAVI_CONTEXT_KEY: "ctx",
+        RAVI_BIN: "/trusted/ravi",
+      },
+    });
+
+    expect(runtimeEnv).toEqual({
+      PATH: "/base",
+      NEXT_BINDING: "next",
+      RAVI_CONTEXT_KEY: "ctx",
+    });
+    expect([...next]).toEqual(["NEXT_BINDING"]);
   });
 });

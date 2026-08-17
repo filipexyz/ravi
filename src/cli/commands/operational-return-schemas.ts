@@ -1996,6 +1996,21 @@ export const agentPermissionsReturnSchema = z.object({
   agent: agentJsonSummaryReturnSchema.optional(),
 });
 
+export const agentModelBrokerReturnSchema = z.object({
+  action: z.literal("model-broker"),
+  changed: z.boolean(),
+  agentId: z.string(),
+  modelBroker: z
+    .object({
+      brokerId: z.string(),
+      profileRef: z.string(),
+      required: z.boolean().optional(),
+    })
+    .nullable(),
+  defaults: jsonObjectSchema.nullable().optional(),
+  agent: agentJsonSummaryReturnSchema.optional(),
+});
+
 export const agentDebounceReturnSchema = z
   .object({
     action: z.string().optional(),

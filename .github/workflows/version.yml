@@ -16,6 +16,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 concurrency:
   group: version-${{ github.event.workflow_run.head_branch || github.event.inputs.branch || 'manual' }}
@@ -150,6 +151,7 @@ jobs:
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: "true"
           NPM_TAG: ${{ steps.target.outputs.npm_tag }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |

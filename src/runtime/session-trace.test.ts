@@ -35,6 +35,8 @@ import {
   runRuntimeEventLoop,
   shouldSuppressUserFacingRuntimeLimitFailure,
 } from "./host-event-loop.js";
+import type { ModelBrokerAttemptFeedback } from "./model-broker.js";
+import { registerModelBroker, unregisterModelBroker } from "./model-broker-registry.js";
 import { getRuntimeLiveStateForSession } from "./live-state.js";
 import type { RuntimeRecoveryExhaustedAlertInput } from "./runtime-recovery-alert.js";
 import { buildRuntimeStartRequest, resolveRuntimeCredentialUpstreamProvider } from "./runtime-request-builder.js";
@@ -2199,6 +2201,71 @@ describe("runtime session trace instrumentation", () => {
     expect(terminal?.status).toBe("interrupted");
     expect(terminal?.payloadJson).toMatchObject({ abort_reason: "provider_interrupted" });
     expect(getSessionTurn("turn-interrupted")?.status).toBe("interrupted");
+  });
+
+  it("reports an interrupted model-broker attempt once with its durable effect boundary", async () => {
+    const brokerId = "interrupted-model-broker-test";
+    const feedback: ModelBrokerAttemptFeedback[] = [];
+    registerModelBroker(brokerId, () => ({
+      id: brokerId,
+      async resolveRoute() {
+        throw new Error("not used");
+      },
+      async reportAttempt(input) {
+        feedback.push(input);
+        return { recorded: true, nextAction: "retain" };
+      },
+    }));
+    try {
+      const streaming = makeStreamingSession({
+        currentRuntimeCredential: {
+          attemptId: "attempt_interrupted",
+          credentialId: `model-broker:${brokerId}:profile_main`,
+          modelBrokerId: brokerId,
+          modelBrokerProfileRef: "profile_main",
+          modelBrokerLeaseId: "lease_interrupted",
+          modelBrokerRuntimeId: "runtime_a",
+          modelBrokerSessionKey: SESSION_KEY,
+          modelBrokerTurnId: "turn-model-broker-interrupted",
+          modelBrokerRouteRevision: "route_a",
+          modelBrokerCompatibilityRevision: "compat_a",
+          modelBrokerSelectionCompatibilityKey: "selection_a",
+          modelBrokerLeaseExpiresAt: Date.now() + 60_000,
+          modelBrokerAttemptTerminal: false,
+          label: "Interrupted broker attempt",
+          fingerprint: "sha256:interrupted",
+          runtimeProvider: PROVIDER,
+          authMethod: "model-broker",
+          resolvedEnv: {},
+          sensitiveEnvKeys: [],
+          remoteForwardEnvKeys: [],
+          bindings: [],
+        },
+      });
+      seedAdapterTrace(streaming, "turn-model-broker-interrupted");
+
+      await runTraceLoop(
+        streaming,
+        makeRuntimeSession([
+          {
+            type: "tool.started",
+            toolUse: { id: "tool-interrupted-broker", name: "Bash", input: { cmd: "true" } },
+          },
+          { type: "turn.interrupted" },
+        ]),
+      );
+
+      expect(feedback).toEqual([
+        expect.objectContaining({
+          attemptId: "attempt_interrupted",
+          outcome: "abandoned",
+          effectState: "tool_started",
+        }),
+      ]);
+      expect(streaming.currentRuntimeCredential?.modelBrokerAttemptTerminal).toBe(true);
+    } finally {
+      unregisterModelBroker(brokerId);
+    }
   });
 
   it("drops an interrupted physical turn after durable tool activity while preserving its successor", async () => {

@@ -6,6 +6,8 @@ import {
   buildStashedRestartPrompt,
   canUseNativeRuntimeSteer,
   fenceRuntimeNativeSteerInput,
+  runtimeModelBrokerConfigurationRequiresRestart,
+  runtimeModelBrokerRouteRequiresRestart,
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
 import { createQueuedRuntimeUserMessage } from "./delivery-queue.js";
@@ -30,8 +32,124 @@ import { dbCompleteTask, dbCreateTask, dbDispatchTask } from "../tasks/task-db.j
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { buildDaemonRestartResumePrompt, resolveCrashRecoveryRestartResumeMode } from "./daemon-restart-resume.js";
+import {
+  buildRuntimeModelBrokerPhysicalFingerprint,
+  buildRuntimeModelBrokerSelectionCompatibilityKey,
+} from "./model-broker.js";
 
 const crashRecoveryStub = { acceptingDeliveries: true } as unknown as RuntimeCrashRecoveryCoordinator;
+
+describe("RuntimeSessionDispatcher model-broker preflight", () => {
+  it("keeps a canonical supervised session when no explicit profile is persisted", () => {
+    const canonicalSelection = { brokerId: "hub", profileRef: "canonical", required: true } as const;
+    const existing = {
+      currentRuntimeCredential: {
+        authMethod: "model-broker",
+        modelBrokerId: "hub",
+        modelBrokerProfileRef: "canonical",
+        modelBrokerSelectionCompatibilityKey: buildRuntimeModelBrokerSelectionCompatibilityKey(canonicalSelection),
+      },
+    } as unknown as Parameters<typeof runtimeModelBrokerConfigurationRequiresRestart>[0];
+
+    expect(runtimeModelBrokerConfigurationRequiresRestart(existing, { defaults: null }, "false", "true")).toBe(false);
+  });
+
+  it("restarts a live Codex session when the authoritative lease selects Pi", () => {
+    const existing = {
+      currentModel: "gpt-5.5",
+      queryHandle: { provider: "codex" },
+      currentRuntimeCredential: {
+        authMethod: "model-broker",
+        modelBrokerId: "hub",
+        modelBrokerProfileRef: "profile_main",
+        modelBrokerRouteRevision: "route_codex",
+        modelBrokerCompatibilityRevision: "compat_codex",
+      },
+    } as unknown as Parameters<typeof runtimeModelBrokerRouteRequiresRestart>[0];
+    const plan = {
+      brokerId: "hub",
+      runtimeId: "runtime_a",
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      turnId: "turn_pi",
+      selection: { brokerId: "hub", profileRef: "profile_main", required: true },
+      lease: {
+        version: 1,
+        brokerId: "hub",
+        leaseId: "lease_pi",
+        attemptId: "attempt_pi",
+        turnId: "turn_pi",
+        runtimeId: "runtime_a",
+        runtimeProvider: "pi",
+        model: "openai/kimi-k2.5",
+        routeRevision: "route_pi",
+        compatibilityRevision: "compat_pi",
+        expiresAt: Date.now() + 60_000,
+        transport: {
+          scheme: "local-http-forwarder-v1",
+          protocol: "openai-completions",
+          origin: "http://127.0.0.1:43123",
+          path: "/v1/chat/completions",
+          publicHeaders: {},
+        },
+      },
+    } as const;
+
+    expect(runtimeModelBrokerRouteRequiresRestart(existing, plan)).toBe(true);
+  });
+
+  it("keeps the physical session when only the per-turn public binding handle rotates", () => {
+    const first = modelBrokerPlan("turn_first", "binding_first");
+    const second = modelBrokerPlan("turn_second", "binding_second");
+    const existing = {
+      currentModel: first.lease.model,
+      queryHandle: { provider: first.lease.runtimeProvider },
+      currentRuntimeCredential: {
+        authMethod: "model-broker",
+        modelBrokerId: first.selection.brokerId,
+        modelBrokerProfileRef: first.selection.profileRef,
+        modelBrokerRouteRevision: first.lease.routeRevision,
+        modelBrokerCompatibilityRevision: first.lease.compatibilityRevision,
+        fingerprint: buildRuntimeModelBrokerPhysicalFingerprint(first.selection, first.lease),
+      },
+    } as unknown as Parameters<typeof runtimeModelBrokerRouteRequiresRestart>[0];
+
+    expect(runtimeModelBrokerRouteRequiresRestart(existing, first)).toBe(false);
+    expect(runtimeModelBrokerRouteRequiresRestart(existing, second)).toBe(false);
+  });
+});
+
+function modelBrokerPlan(turnId: string, bindingHandle: string) {
+  const selection = { brokerId: "hub", profileRef: "profile_main", required: true } as const;
+  return {
+    brokerId: "hub",
+    runtimeId: "runtime_a",
+    agentId: "main",
+    sessionKey: "agent:main:main",
+    turnId,
+    selection,
+    lease: {
+      version: 1,
+      brokerId: "hub",
+      leaseId: `lease_${turnId}`,
+      attemptId: `attempt_${turnId}`,
+      turnId,
+      runtimeId: "runtime_a",
+      runtimeProvider: "codex",
+      model: "gpt-5.5",
+      routeRevision: "route_shared",
+      compatibilityRevision: "compat_shared",
+      expiresAt: Date.now() + 60_000,
+      transport: {
+        scheme: "local-http-forwarder-v1",
+        protocol: "openai-responses",
+        origin: "http://127.0.0.1:43123",
+        path: "/v1/responses",
+        publicHeaders: { "x-ravi-binding": bindingHandle },
+      },
+    },
+  } as const;
+}
 
 function createDispatcher(
   maxConcurrentSessions = 10,

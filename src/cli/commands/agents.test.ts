@@ -246,8 +246,13 @@ mock.module("../../runtime/model-preset-store.js", () => ({
 
 const { AgentsCommands } = await import("./agents.js");
 const { ContractError } = await import("../agent-contract.js");
-const { agentPermissionsReturnSchema, agentSetReturnSchema, agentShowReturnSchema, agentsListReturnSchema } =
-  await import("./operational-return-schemas.js");
+const {
+  agentModelBrokerReturnSchema,
+  agentPermissionsReturnSchema,
+  agentSetReturnSchema,
+  agentShowReturnSchema,
+  agentsListReturnSchema,
+} = await import("./operational-return-schemas.js");
 
 describe("AgentsCommands public return contracts", () => {
   beforeEach(() => {
@@ -936,6 +941,97 @@ describe("AgentsCommands permissions", () => {
       afterCapabilitiesCount: 1,
     });
     expect(updateAgentCalls).toHaveLength(0);
+  });
+});
+
+describe("AgentsCommands model-broker", () => {
+  beforeEach(() => {
+    currentAgent = { id: "dev", cwd: "/tmp/dev", defaults: { preserved: true } };
+    updateAgentCalls = [];
+  });
+
+  it("sets and reads a public broker profile without secrets", () => {
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const changed = commands.modelBroker("dev", "hub", "profile_main", "false", undefined, true);
+      expect(agentModelBrokerReturnSchema.parse(changed)).toMatchObject({
+        action: "model-broker",
+        changed: true,
+        modelBroker: {
+          brokerId: "hub",
+          profileRef: "profile_main",
+          required: false,
+        },
+      });
+      expect(updateAgentCalls[0]?.partial).toEqual({
+        defaults: {
+          preserved: true,
+          modelBroker: {
+            brokerId: "hub",
+            profileRef: "profile_main",
+            required: false,
+          },
+        },
+      });
+      expect(commands.modelBroker("dev", undefined, undefined, undefined, undefined, true)).toMatchObject({
+        changed: false,
+        modelBroker: { brokerId: "hub", profileRef: "profile_main" },
+      });
+    } finally {
+      console.log = originalLog;
+    }
+  });
+
+  it("requires both public references for a new selection", () => {
+    const commands = new AgentsCommands();
+    expect(() => commands.modelBroker("dev", "hub", undefined, undefined, undefined, true)).toThrow(/Both --broker/);
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("reports the verified isolated provider during required-broker dry-run", () => {
+    const commands = new AgentsCommands();
+    let thrown: unknown;
+    try {
+      commands.modelBroker("dev", "hub", "profile_main", "true", undefined, true);
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect(thrown).toMatchObject({
+      code: "WRITE_REQUIRES_EXECUTE",
+      exitCode: 3,
+      op: "agents model-broker",
+    });
+    expect((thrown as InstanceType<typeof ContractError>).envelope().error.plan).toMatchObject({
+      agentId: "dev",
+      brokerId: "hub",
+      brokerRequired: true,
+      capableProviders: ["claude"],
+    });
+    expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("persists a required broker after isolated-provider preflight", () => {
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const changed = commands.modelBroker("dev", "hub", "profile_main", "true", undefined, true, true);
+      expect(changed).toMatchObject({
+        changed: true,
+        modelBroker: {
+          brokerId: "hub",
+          profileRef: "profile_main",
+          required: true,
+        },
+      });
+    } finally {
+      console.log = originalLog;
+    }
+    expect(updateAgentCalls).toHaveLength(1);
   });
 });
 

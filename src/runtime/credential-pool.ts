@@ -73,6 +73,7 @@ function getIneligibilityReason(
   now: number,
 ): string | null {
   if (!credential.enabled) return "disabled";
+  if (credential.authMethod === "model-broker") return "model_broker_requires_route_lease";
   if (INELIGIBLE_STATUSES.has(credential.status)) return `status:${credential.status}`;
   const health = getRuntimeCredentialHealth(credential.id);
   if (health?.cooldownUntil && health.cooldownUntil > now) return "cooldown";

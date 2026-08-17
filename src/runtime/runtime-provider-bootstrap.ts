@@ -2,6 +2,7 @@ import { discoverPlugins } from "../plugins/index.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
 import { createRuntimeHostServices } from "./host-services.js";
 import type { RuntimeMessageTarget } from "./host-session.js";
+import type { RuntimeModelBrokerBinding } from "./model-broker.js";
 import type {
   RuntimeCapabilities,
   RuntimeHostServices,
@@ -21,6 +22,7 @@ export interface RuntimeProviderBootstrapOptions {
   toolContext: Record<string, unknown>;
   context: Parameters<typeof createRuntimeHostServices>[0]["context"];
   session?: SessionEntry;
+  modelBroker?: RuntimeModelBrokerBinding;
 }
 
 export interface RuntimeProviderBootstrap {
@@ -52,6 +54,7 @@ export async function prepareRuntimeProviderBootstrap(
     cwd: options.sessionCwd,
     ...(discoveredPlugins.length > 0 ? { plugins: discoveredPlugins } : {}),
     hostServices,
+    ...(options.modelBroker ? { modelBroker: options.modelBroker } : {}),
   });
   const runtimePlugins =
     options.runtimeCapabilities.supportsPlugins ||

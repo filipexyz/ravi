@@ -6,7 +6,7 @@ import "reflect-metadata";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isDeepStrictEqual } from "node:util";
-import { Group, Command, CommandAccess, Arg, Option } from "../decorators.js";
+import { Group, Command, CommandAccess, Arg, Option, Returns } from "../decorators.js";
 import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
@@ -16,6 +16,7 @@ import {
   agentDebugReturnSchema,
   agentDeleteReturnSchema,
   agentInstructionSyncReturnSchema,
+  agentModelBrokerReturnSchema,
   agentPermissionsReturnSchema,
   agentResetReturnSchema,
   agentSessionReturnSchema,
@@ -38,7 +39,7 @@ import {
   loadRouterConfig,
   setAgentSpecMode,
 } from "../../router/config.js";
-import { DmScopeSchema, type ContextCapability } from "../../router/router-db.js";
+import { dbGetSetting, DmScopeSchema, type ContextCapability } from "../../router/router-db.js";
 import { canWithCapabilities } from "../../permissions/capability-snapshot.js";
 import {
   deleteSession,
@@ -48,7 +49,11 @@ import {
   resolveSession,
   type SessionTurnUsageSummary,
 } from "../../router/sessions.js";
-import { DEFAULT_RUNTIME_PROVIDER_ID } from "../../runtime/provider-registry.js";
+import {
+  createRuntimeProvider,
+  DEFAULT_RUNTIME_PROVIDER_ID,
+  listRegisteredRuntimeProviderIds,
+} from "../../runtime/provider-registry.js";
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
@@ -72,6 +77,12 @@ import {
   normalizeAgentRuntimePermissionProfile,
   type AgentRuntimePermissionsConfig,
 } from "../../permissions/agent-default-capabilities-provider.js";
+import {
+  MODEL_BROKER_REQUIRED_SETTING,
+  isRuntimeModelBrokerRequired,
+  readRuntimeModelBrokerSelection,
+  resolveRequiredRuntimeModelBrokerSelection,
+} from "../../runtime/model-broker.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -1348,6 +1359,157 @@ export class AgentsCommands {
         );
       }
     }
+    emitConfigChanged();
+    return payload;
+  }
+
+  @Command({
+    name: "model-broker",
+    description: "Set or inspect an agent's generic model-broker profile",
+    helpAfter: `
+USE
+  Select a broker-managed model profile without storing provider accounts or credentials in Ravi.
+
+DO NOT USE
+  Do not pass API keys, tokens, connection IDs, provider URLs, or transport headers. Configure those in the broker.
+
+RULES
+  --broker and --profile are public opaque references. --required true activates fail-closed routing only when a runtime adapter declares verified principal isolation.
+
+EXAMPLES
+  ravi agents model-broker support --broker hub --profile 550e8400-e29b-41d4-a716-446655440000 --required false --json
+  ravi agents model-broker support --clear --json
+
+ON ERROR
+  MODEL_BROKER_UNAVAILABLE: keep the selection as a draft with --required false until an isolated runtime adapter is available.
+  Invalid boolean/reference: correct the shown flag and rerun the same command.
+
+OUTPUT
+  --json returns { action, changed, agentId, modelBroker, defaults, agent }. Exit 0=success, 1=execution error, 2=usage error, 3=policy block.
+
+SEE ALSO
+  ravi settings set runtime.model_broker.required true --json
+
+SOURCES
+  src/runtime/model-broker.ts; src/cli/commands/agents.ts`,
+  })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "agents",
+    action: "model-broker",
+    risk: "medium",
+    requiresConfirmation: true,
+  })
+  @Returns(agentModelBrokerReturnSchema)
+  modelBroker(
+    @Arg("id", { description: "Agent ID" }) id: string,
+    @Option({ flags: "--broker <id>", description: "Registered model-broker ID" }) brokerId?: string,
+    @Option({ flags: "--profile <ref>", description: "Opaque public profile reference owned by the broker" })
+    profileRef?: string,
+    @Option({ flags: "--required <boolean>", description: "Require broker routing (true or false)" })
+    requiredInput?: string,
+    @Option({ flags: "--clear", description: "Remove this agent's model-broker selection" }) clear?: boolean,
+    @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
+    @Option({ flags: "--execute", description: "Apply a required broker selection after capability preflight" })
+    execute?: boolean,
+  ) {
+    const agent = getAgent(id);
+    if (!agent) failAgentNotFound("agents model-broker", id, asJson);
+    const current = readRuntimeModelBrokerSelection(agent);
+    const hasMutation =
+      clear === true || brokerId !== undefined || profileRef !== undefined || requiredInput !== undefined;
+
+    if (!hasMutation) {
+      const payload = {
+        action: "model-broker" as const,
+        changed: false,
+        agentId: id,
+        modelBroker: current ?? null,
+        agent: buildAgentJson(agent, loadRouterConfig().defaultAgent),
+      };
+      if (asJson) printJson(payload);
+      else console.log(payload.modelBroker ? JSON.stringify(payload.modelBroker, null, 2) : "No model broker selected");
+      return payload;
+    }
+    if (clear && (brokerId !== undefined || profileRef !== undefined || requiredInput !== undefined)) {
+      fail("Use --clear by itself");
+    }
+
+    const defaults = { ...(agent.defaults ?? {}) };
+    if (clear) {
+      delete defaults.modelBroker;
+    } else {
+      const normalizedBrokerId = brokerId?.trim() || current?.brokerId;
+      const normalizedProfileRef = profileRef?.trim() || current?.profileRef;
+      if (!normalizedBrokerId || !normalizedProfileRef) {
+        fail("Both --broker and --profile are required when no model-broker selection is configured");
+      }
+      let required = current?.required;
+      if (requiredInput !== undefined) {
+        if (requiredInput !== "true" && requiredInput !== "false") fail("--required must be true or false");
+        required = requiredInput === "true";
+      }
+      defaults.modelBroker = {
+        brokerId: normalizedBrokerId,
+        profileRef: normalizedProfileRef,
+        ...(required !== undefined ? { required } : {}),
+      };
+      readRuntimeModelBrokerSelection({ defaults });
+    }
+
+    const nextDefaults = Object.keys(defaults).length > 0 ? defaults : null;
+    const prospectiveAgent = { ...agent, defaults: nextDefaults };
+    const globalRequired = dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined;
+    const brokerRequired = isRuntimeModelBrokerRequired(prospectiveAgent, globalRequired);
+    resolveRequiredRuntimeModelBrokerSelection(prospectiveAgent, globalRequired);
+    if (brokerRequired) {
+      const capableProviders = listRegisteredRuntimeProviderIds().filter((providerId) => {
+        const isolation = createRuntimeProvider(providerId).getCapabilities().modelBroker?.principalIsolation;
+        return isolation !== undefined && isolation !== "none";
+      });
+      if (execute !== true) {
+        contractDryRun(
+          "agents model-broker",
+          {
+            agentId: id,
+            brokerId: readRuntimeModelBrokerSelection(prospectiveAgent)?.brokerId,
+            brokerRequired: true,
+            capableProviders,
+          },
+          { asJson },
+        );
+      }
+      if (capableProviders.length === 0) {
+        contractFail(
+          "agents model-broker",
+          "MODEL_BROKER_UNAVAILABLE",
+          "No registered runtime provider has verified principal isolation; the required broker selection was not persisted.",
+          {
+            asJson,
+            details: {
+              suggestedAction:
+                "Keep the selection as a draft with --required false until a runtime adapter is verified",
+            },
+          },
+        );
+      }
+    }
+    updateAgent(id, { defaults: nextDefaults });
+    const updated = getAgent(id) ?? { ...agent, defaults: nextDefaults };
+    const next = readRuntimeModelBrokerSelection(updated);
+    const payload = {
+      action: "model-broker" as const,
+      changed: true,
+      agentId: id,
+      modelBroker: next ?? null,
+      defaults: nextDefaults,
+      agent: buildAgentJson(updated, loadRouterConfig().defaultAgent),
+    };
+    if (asJson) printJson(payload);
+    else
+      console.log(
+        next ? `\u2713 Model broker set: ${next.brokerId}/${next.profileRef}` : "\u2713 Model-broker selection cleared",
+      );
     emitConfigChanged();
     return payload;
   }

@@ -186,6 +186,8 @@ export interface PromptMessage {
   _runtimeProviderId?: RuntimeProviderId;
   /** Explicit runtime model override for internal dispatch paths such as observers. */
   _runtimeModel?: string;
+  /** Internal in-memory model-broker plan lookup; never contains a lease or credential. */
+  _modelBrokerTurnId?: string;
   /** Observation Plane metadata for observer-session prompts. */
   _observation?: ObservationPromptMetadata;
   /** Heartbeat runner prompt marker. */

@@ -181,6 +181,18 @@ export interface RuntimeCredentialSelectionRequest {
 export interface RuntimeCredentialAttemptBinding {
   attemptId?: string;
   credentialId: string;
+  modelBrokerId?: string;
+  modelBrokerProfileRef?: string;
+  modelBrokerLeaseId?: string;
+  modelBrokerRuntimeId?: string;
+  modelBrokerSessionKey?: string;
+  modelBrokerTurnId?: string;
+  modelBrokerRouteRevision?: string;
+  modelBrokerCompatibilityRevision?: string;
+  modelBrokerSelectionCompatibilityKey?: string;
+  modelBrokerLeaseExpiresAt?: number;
+  /** In-memory lifecycle marker; never persisted as session authority. */
+  modelBrokerAttemptTerminal?: boolean;
   label: string;
   fingerprint: string;
   runtimeProvider: RuntimeProviderId;
@@ -260,6 +272,16 @@ export interface RuntimeCredentialRefreshResult {
 export interface RuntimeCredentialSessionMetadata {
   attemptId?: string | null;
   credentialId: string;
+  modelBrokerId?: string;
+  modelBrokerProfileRef?: string;
+  modelBrokerLeaseId?: string;
+  modelBrokerRuntimeId?: string;
+  modelBrokerSessionKey?: string;
+  modelBrokerTurnId?: string;
+  modelBrokerRouteRevision?: string;
+  modelBrokerCompatibilityRevision?: string;
+  modelBrokerSelectionCompatibilityKey?: string;
+  modelBrokerLeaseExpiresAt?: number;
   fingerprint: string;
   runtimeProvider: RuntimeProviderId;
   upstreamProvider?: string;

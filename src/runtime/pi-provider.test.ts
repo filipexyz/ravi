@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   createPiRuntimeProvider,
+  buildPiRpcSpawnEnv,
   type PiRpcCommand,
   type PiRpcEvent,
   type PiRpcResponse,
@@ -55,6 +56,31 @@ class FakePiRpcTransport implements PiRpcTransport {
 }
 
 describe("Pi runtime provider", () => {
+  it("never reintroduces daemon secrets into the subprocess spawn envelope", () => {
+    const previous = process.env.OPENAI_API_KEY;
+    process.env.OPENAI_API_KEY = "daemon-secret-must-not-leak";
+    try {
+      const env = buildPiRpcSpawnEnv({ env: { PATH: "/usr/bin", RAVI_CONTEXT_KEY: "rctx_runtime" } });
+      expect(env.OPENAI_API_KEY).toBeUndefined();
+      expect(env).toEqual({ PATH: "/usr/bin", RAVI_CONTEXT_KEY: "rctx_runtime" });
+    } finally {
+      if (previous === undefined) delete process.env.OPENAI_API_KEY;
+      else process.env.OPENAI_API_KEY = previous;
+    }
+  });
+
+  it("rejects upstream credentials before starting a proxied Pi transport", () => {
+    const transport = new FakePiRpcTransport();
+    expect(() =>
+      createPiRuntimeProvider({ transport }).startSession(
+        createStartRequest("blocked", {
+          modelBroker: modelBrokerBinding(),
+          env: { OPENAI_API_KEY: "must-not-reach-pi" },
+        }),
+      ),
+    ).toThrow(/refuses upstream credential environment variable OPENAI_API_KEY/);
+    expect(transport.starts).toHaveLength(0);
+  });
   it("advertises an explicit subprocess RPC capability matrix", () => {
     expect(createPiRuntimeProvider().getCapabilities()).toMatchObject({
       runtimeControl: {
@@ -568,6 +594,32 @@ function createStartRequest(text: string, overrides: Partial<RuntimeStartRequest
     abortController: new AbortController(),
     systemPromptAppend: "Ravi runtime instructions",
     ...overrides,
+  };
+}
+
+function modelBrokerBinding(): NonNullable<RuntimeStartRequest["modelBroker"]> {
+  return {
+    version: 1,
+    brokerId: "hub",
+    leaseId: "grant_pi_test",
+    attemptId: "attempt_pi_test",
+    turnId: "turn_pi_test",
+    runtimeId: "runtime_test",
+    runtimeProvider: "pi",
+    model: "openai/gpt-5.5",
+    routeRevision: "route_test",
+    compatibilityRevision: "compat_test",
+    expiresAt: Date.now() + 60_000,
+    transport: {
+      scheme: "local-http-forwarder-v1",
+      protocol: "openai-completions",
+      origin: "http://127.0.0.1:43123",
+      path: "/v1/chat/completions",
+      publicHeaders: { "x-public-route": "binding_test" },
+    },
+    profileRef: "profile_test",
+    selectionCompatibilityKey: "selection_test",
+    principalIsolation: "cgroup",
   };
 }
 

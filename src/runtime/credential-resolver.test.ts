@@ -154,6 +154,53 @@ describe("runtime credential resolver", () => {
     });
   });
 
+  it("refuses to treat locally stored model-broker metadata as authority", async () => {
+    expect(() =>
+      createRuntimeCredential({
+        id: "conn_local",
+        label: "Local broker metadata",
+        runtimeProvider: "codex",
+        upstreamProvider: "openai",
+        authMethod: "model-broker",
+        sourceKind: "helper",
+        bindings: [],
+      }),
+    ).toThrow("must be leased by a registered broker");
+  });
+
+  it("rejects local model-broker rows even when they carry an authProfileRef", async () => {
+    const credential = createRuntimeCredential({
+      id: "conn_legacy",
+      label: "Legacy local row",
+      runtimeProvider: "codex",
+      upstreamProvider: "openai",
+      bindings: [
+        {
+          sourceKind: "env",
+          targetKind: "env",
+          targetName: "OPENAI_API_KEY",
+          secretRef: "env:RAVI_TEST_LEGACY_KEY",
+          sensitive: true,
+          remoteForward: false,
+        },
+      ],
+    });
+    getDb()
+      .prepare("UPDATE runtime_credentials SET auth_method = 'model-broker', auth_profile_ref = ? WHERE id = ?")
+      .run("/tmp/must-never-load", credential.id);
+    const result = await resolveRuntimeCredentialAttemptBinding({
+      runtimeProvider: "codex",
+      upstreamProvider: "openai",
+      env: { RAVI_TEST_LEGACY_KEY: "must-not-be-read" },
+    });
+    expect(result.attemptBinding).toBeNull();
+    expect(result.rejected).toContainEqual({
+      credentialId: "conn_legacy",
+      label: "Legacy local row",
+      reason: "model_broker_requires_route_lease",
+    });
+  });
+
   it("reserves an active attempt so the next equivalent selection uses a free slot", async () => {
     createRuntimeCredential({
       id: "rcred_a",

@@ -1,7 +1,7 @@
 import { homedir } from "node:os";
 import { DEFAULT_DELIVERY_BARRIER } from "../delivery-barriers.js";
 import type { AgentConfig, SessionEntry } from "../router/index.js";
-import { dbGetChat, dbGetSessionChatBinding } from "../router/router-db.js";
+import { dbGetChat, dbGetSessionChatBinding, dbGetSetting } from "../router/router-db.js";
 import { configStore } from "../config-store.js";
 import {
   buildRuntimeTracePromptSectionMetadata,
@@ -43,6 +43,25 @@ import {
 } from "./runtime-request-context.js";
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
+import {
+  MODEL_BROKER_REQUIRED_SETTING,
+  MODEL_BROKER_MIN_LEASE_REMAINING_MS,
+  assertRuntimeModelBrokerCapability,
+  buildRuntimeModelBrokerAttemptBinding,
+  buildRuntimeModelBrokerBinding,
+  isRuntimeModelBrokerPhysicalBindingCompatible,
+  resolveRequiredRuntimeModelBrokerSelection,
+  reportRuntimeModelBrokerAttempt,
+  serializeRuntimeModelBrokerBinding,
+  type RuntimeModelBrokerBinding,
+} from "./model-broker.js";
+import { createModelBroker } from "./model-broker-registry.js";
+import {
+  abandonClaimedRuntimeModelBrokerPlan,
+  buildRuntimeModelBrokerPlanIdentity,
+  claimRuntimeModelBrokerPlan,
+  type ClaimedRuntimeModelBrokerPlan,
+} from "./model-broker-planning.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type {
   RuntimeApprovalResult,
@@ -85,6 +104,7 @@ export interface RuntimeStartRequestBuildOptions {
   stashedMessages: Map<string, RuntimeUserMessage[]>;
   defaultRuntimeProviderId: RuntimeProviderId;
   crashRecovery: RuntimeCrashRecoveryCoordinator;
+  modelBrokerPlanClaim?: ClaimedRuntimeModelBrokerPlan;
 }
 
 export interface RuntimeStartRequestBuildResult {
@@ -297,6 +317,25 @@ function isSourceForChat(source: RuntimeMessageTarget, chat: NonNullable<ReturnT
 export async function buildRuntimeStartRequest(
   options: RuntimeStartRequestBuildOptions,
 ): Promise<RuntimeStartRequestBuildResult> {
+  const lifecycle: { pendingModelBroker?: PendingModelBrokerAttempt } = {};
+  try {
+    return await buildRuntimeStartRequestInternal(options, lifecycle);
+  } catch (error) {
+    if (options.modelBrokerPlanClaim) {
+      await abandonClaimedRuntimeModelBrokerPlan(options.modelBrokerPlanClaim, "runtime_request_build_failed").catch(
+        () => undefined,
+      );
+    } else if (lifecycle.pendingModelBroker) {
+      await reportAbandonedModelBrokerBinding(lifecycle.pendingModelBroker, options.dbSessionKey);
+    }
+    throw error;
+  }
+}
+
+async function buildRuntimeStartRequestInternal(
+  options: RuntimeStartRequestBuildOptions,
+  lifecycle: { pendingModelBroker?: PendingModelBrokerAttempt },
+): Promise<RuntimeStartRequestBuildResult> {
   const {
     runId,
     sessionName,
@@ -322,6 +361,7 @@ export async function buildRuntimeStartRequest(
   } = options;
   const toolEffectFence = resolveRuntimeToolEffectFence(runtimeProviderId, runtimeCapabilities.tools.permissionMode);
   streamingSession.toolEffectFence = toolEffectFence;
+  const preflightModel = options.modelBrokerPlanClaim?.plan.lease.model ?? model;
 
   const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
     dbSessionKey,
@@ -330,13 +370,86 @@ export async function buildRuntimeStartRequest(
     agent,
     prompt,
     runtimeProviderId,
-    model,
+    model: preflightModel,
     runtimeResolution,
     resolvedSource,
     approvalSource,
   });
 
-  const { hostServices, providerBootstrap, runtimePlugins } = await prepareRuntimeProviderBootstrap({
+  const modelBrokerSelection =
+    options.modelBrokerPlanClaim?.plan.selection ??
+    resolveRequiredRuntimeModelBrokerSelection(agent, dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined);
+  const initialModelBrokerTurnId =
+    options.modelBrokerPlanClaim?.plan.lease.turnId ?? (modelBrokerSelection ? createSessionTraceTurnId() : undefined);
+  const upstreamProvider = resolveRuntimeCredentialUpstreamProvider(runtimeProviderId, model);
+  const modelBrokerLease =
+    options.modelBrokerPlanClaim?.plan.lease ??
+    (modelBrokerSelection
+      ? await (async () => {
+          assertRuntimeModelBrokerCapability(runtimeCapabilities, runtimeProviderId);
+          const runtimeId = process.env.RAVI_RUNTIME_ID?.trim();
+          if (!runtimeId) {
+            throw new Error("The model broker requires a public RAVI_RUNTIME_ID binding.");
+          }
+          return createModelBroker(modelBrokerSelection.brokerId).resolveRoute({
+            profileRef: modelBrokerSelection.profileRef,
+            runtimeId,
+            agentId: agent.id,
+            sessionKey: dbSessionKey,
+            turnId: initialModelBrokerTurnId!,
+          });
+        })()
+      : undefined);
+  if (modelBrokerLease) {
+    lifecycle.pendingModelBroker = {
+      brokerId: modelBrokerLease.brokerId,
+      attemptId: modelBrokerLease.attemptId,
+      turnId: modelBrokerLease.turnId,
+      leaseId: modelBrokerLease.leaseId,
+      runtimeId: modelBrokerLease.runtimeId,
+      sessionKey: dbSessionKey,
+    };
+  }
+  const modelBroker = modelBrokerSelection
+    ? buildRuntimeModelBrokerBinding({
+        selection: modelBrokerSelection,
+        lease: modelBrokerLease!,
+        runtimeCapabilities,
+        expectedRuntimeProvider: runtimeProviderId,
+      })
+    : undefined;
+  const effectiveModel = modelBroker?.model ?? model;
+  const credentialResolution = modelBroker
+    ? {
+        attemptBinding: buildRuntimeModelBrokerAttemptBinding(modelBroker, dbSessionKey),
+        selected: null,
+        candidates: [],
+        rejected: [],
+        managedPoolConfigured: true,
+      }
+    : await resolveRuntimeCredentialAttemptBinding({
+        runtimeProvider: runtimeProviderId,
+        upstreamProvider,
+        model,
+        agentId: agent.id,
+        sessionKey: dbSessionKey,
+        sessionName,
+        runId,
+      });
+  if (!credentialResolution.attemptBinding && credentialResolution.managedPoolConfigured) {
+    throw new Error(formatRuntimeCredentialResolutionFailure(runtimeProviderId, model, credentialResolution.rejected));
+  }
+  if (credentialResolution.attemptBinding) {
+    (toolContext as Record<string, unknown>).runtimeCredential = serializeRuntimeCredentialAttemptBinding(
+      credentialResolution.attemptBinding,
+    );
+  }
+  if (modelBroker) {
+    assertModelBrokerAttemptBinding(credentialResolution.attemptBinding);
+    (toolContext as Record<string, unknown>).modelBroker = serializeRuntimeModelBrokerBinding(modelBroker);
+  }
+
+  const preparedBootstrap = await prepareRuntimeProviderBootstrap({
     runtimeProvider,
     runtimeCapabilities,
     agent,
@@ -347,35 +460,27 @@ export async function buildRuntimeStartRequest(
     toolContext,
     context: runtimeContext,
     session,
+    ...(modelBroker ? { modelBroker } : {}),
   });
+  const { hostServices, providerBootstrap, runtimePlugins } = preparedBootstrap;
   installCrashRecoveryApprovalFences({ hostServices, streamingSession, crashRecovery });
-  const credentialResolution = await resolveRuntimeCredentialAttemptBinding({
-    runtimeProvider: runtimeProviderId,
-    upstreamProvider: resolveRuntimeCredentialUpstreamProvider(runtimeProviderId, model),
-    model,
-    agentId: agent.id,
-    sessionKey: dbSessionKey,
-    sessionName,
-    runId,
-  });
-  if (!credentialResolution.attemptBinding && credentialResolution.managedPoolConfigured) {
-    throw new Error(formatRuntimeCredentialResolutionFailure(runtimeProviderId, model, credentialResolution.rejected));
-  }
-  if (credentialResolution.attemptBinding) {
-    (toolContext as Record<string, unknown>).runtimeCredential = serializeRuntimeCredentialAttemptBinding(
-      credentialResolution.attemptBinding,
-    );
-  }
   const providerEnv = mergeProviderCredentialEnv(
     providerBootstrap?.env,
     buildRuntimeCredentialProfileEnv(runtimeProviderId, credentialResolution.attemptBinding ?? undefined),
     credentialResolution.attemptBinding?.resolvedEnv,
   );
+  const baselineRuntimeEnv = buildRuntimeRequestEnv({
+    raviEnv,
+    runtimeCapabilities,
+    forceSanitizeSecrets: Boolean(modelBroker),
+  });
   const runtimeEnv = buildRuntimeRequestEnv({
     raviEnv,
     ...(providerEnv ? { providerEnv } : {}),
     runtimeCapabilities,
+    forceSanitizeSecrets: Boolean(modelBroker),
   });
+  let activeProviderEnvKeys = resolveRuntimeProviderEnvKeys(providerEnv, raviEnv, runtimeEnv);
   const canUseTool = async (toolName: string, input: Record<string, unknown>) => {
     const result = await hostServices.authorizeToolUse({ toolName, input });
     if (!result.approved) {
@@ -429,12 +534,132 @@ export async function buildRuntimeStartRequest(
       ? resolvedAllowedSkills.allowlist
       : undefined;
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
-  const traceTurnStart = (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
+  let initialModelBrokerAttemptAvailable = Boolean(modelBroker);
+  let pendingModelBrokerTurnId = initialModelBrokerTurnId;
+  const reserveModelBrokerAttemptForTurn = async (
+    turnId: string,
+    planned?: ClaimedRuntimeModelBrokerPlan,
+  ): Promise<void> => {
+    if (!modelBroker || !modelBrokerSelection) return;
+    if (
+      initialModelBrokerAttemptAvailable &&
+      pendingModelBrokerTurnId === turnId &&
+      modelBroker.expiresAt - Date.now() >= MODEL_BROKER_MIN_LEASE_REMAINING_MS
+    ) {
+      initialModelBrokerAttemptAvailable = false;
+      pendingModelBrokerTurnId = undefined;
+      return;
+    }
+
+    const lease =
+      planned?.plan.lease ??
+      (await createModelBroker(modelBrokerSelection.brokerId).resolveRoute({
+        profileRef: modelBrokerSelection.profileRef,
+        runtimeId: modelBroker.runtimeId,
+        agentId: agent.id,
+        sessionKey: dbSessionKey,
+        turnId,
+      }));
+    const candidate = buildRuntimeModelBrokerBinding({
+      selection: modelBrokerSelection,
+      lease,
+      runtimeCapabilities,
+      expectedRuntimeProvider: runtimeProviderId,
+    });
+    if (!isRuntimeModelBrokerPhysicalBindingCompatible(modelBroker, candidate)) {
+      await reportAbandonedModelBrokerBinding(candidate, dbSessionKey);
+      throw new Error("The model-broker route changed and requires a fresh physical runtime session.");
+    }
+
+    if (initialModelBrokerAttemptAvailable) {
+      await reportRuntimeModelBrokerAttempt(createModelBroker(modelBroker.brokerId), {
+        attemptId: modelBroker.attemptId,
+        turnId: modelBroker.turnId,
+        leaseId: modelBroker.leaseId,
+        runtimeId: modelBroker.runtimeId,
+        sessionKey: dbSessionKey,
+        outcome: "abandoned",
+        effectState: "none",
+      });
+    }
+    const activeCredential = credentialResolution.attemptBinding;
+    if (!activeCredential) {
+      await reportAbandonedModelBrokerBinding(candidate, dbSessionKey);
+      throw new Error("The model-broker turn has no reserved attempt binding.");
+    }
+    const candidateCredential = buildRuntimeModelBrokerAttemptBinding(candidate, dbSessionKey);
+    let rotatedBootstrap;
+    try {
+      rotatedBootstrap = await runtimeProvider.prepareSession?.({
+        agentId: agent.id,
+        cwd: sessionCwd,
+        ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
+        hostServices,
+        modelBroker: candidate,
+      });
+    } catch (error) {
+      if (planned) {
+        await abandonClaimedRuntimeModelBrokerPlan(planned, "provider_reconfiguration_failed").catch(() => undefined);
+      } else {
+        await reportAbandonedModelBrokerBinding(candidate, dbSessionKey);
+      }
+      throw error;
+    }
+    const nextProviderEnv = mergeProviderCredentialEnv(
+      rotatedBootstrap?.env,
+      buildRuntimeCredentialProfileEnv(runtimeProviderId, candidateCredential),
+      candidateCredential.resolvedEnv,
+    );
+    const nextResolvedRuntimeEnv = buildRuntimeRequestEnv({
+      raviEnv,
+      ...(nextProviderEnv ? { providerEnv: nextProviderEnv } : {}),
+      runtimeCapabilities,
+      forceSanitizeSecrets: true,
+    });
+    activeProviderEnvKeys = rotateRuntimeProviderEnvironment({
+      runtimeEnv,
+      baselineRuntimeEnv,
+      raviEnv,
+      activeProviderEnvKeys,
+      nextProviderEnv,
+      nextResolvedRuntimeEnv,
+    });
+    Object.assign(modelBroker, candidate);
+    Object.assign(activeCredential, candidateCredential, {
+      modelBrokerAttemptTerminal: false,
+    });
+    (toolContext as Record<string, unknown>).runtimeCredential =
+      serializeRuntimeCredentialAttemptBinding(activeCredential);
+    (toolContext as Record<string, unknown>).modelBroker = serializeRuntimeModelBrokerBinding(modelBroker);
+    initialModelBrokerAttemptAvailable = false;
+    pendingModelBrokerTurnId = undefined;
+  };
+  const traceTurnStart = async (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
+    const turnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
+    let planned: ClaimedRuntimeModelBrokerPlan | undefined;
+    if (turnPrompt?._modelBrokerTurnId && modelBrokerSelection) {
+      const runtimeId = process.env.RAVI_RUNTIME_ID?.trim();
+      if (!runtimeId) throw new Error("The model broker requires a public RAVI_RUNTIME_ID binding.");
+      planned = claimRuntimeModelBrokerPlan(
+        buildRuntimeModelBrokerPlanIdentity({
+          selection: modelBrokerSelection,
+          runtimeId,
+          agentId: agent.id,
+          sessionKey: dbSessionKey,
+          turnId: turnPrompt._modelBrokerTurnId,
+        }),
+      );
+    }
+    const turnId =
+      pendingModelBrokerTurnId ??
+      planned?.plan.lease.turnId ??
+      turnPrompt?._modelBrokerTurnId ??
+      createSessionTraceTurnId();
+    await reserveModelBrokerAttemptForTurn(turnId, planned);
     const firstMessage = input.deliverableMessages[0];
-    const turnId = createSessionTraceTurnId();
-    const currentModel = streamingSession.currentModel;
+    const currentModel = modelBroker?.model ?? streamingSession.currentModel;
     const runtimeCredential = credentialResolution.attemptBinding;
-    if (runtimeCredential && !runtimeCredential.attemptId) {
+    if (runtimeCredential && runtimeCredential.authMethod !== "model-broker" && !runtimeCredential.attemptId) {
       runtimeCredential.attemptId = reserveRuntimeCredentialAttempt({
         credentialId: runtimeCredential.credentialId,
         sessionKey: dbSessionKey,
@@ -443,7 +668,7 @@ export async function buildRuntimeStartRequest(
         turnId,
         runtimeProvider: runtimeCredential.runtimeProvider,
         upstreamProvider: runtimeCredential.upstreamProvider,
-        model: currentModel,
+        model: modelBroker?.model ?? currentModel,
         metadata: { reason: "turn" },
       });
     }
@@ -593,7 +818,7 @@ export async function buildRuntimeStartRequest(
         agent,
         prompt: turnPrompt,
         runtimeProviderId,
-        model,
+        model: effectiveModel,
         runtimeResolution,
         resolvedSource: turnSource,
         approvalSource,
@@ -602,10 +827,10 @@ export async function buildRuntimeStartRequest(
     traceTurnStart,
   });
 
-  return {
+  const result = {
     runtimeRequest: {
       prompt: messageGenerator,
-      model,
+      model: effectiveModel,
       ...(runtimeResolution.options.effort ? { effort: runtimeResolution.options.effort } : {}),
       ...(runtimeResolution.options.thinking ? { thinking: runtimeResolution.options.thinking } : {}),
       cwd: sessionCwd,
@@ -633,10 +858,39 @@ export async function buildRuntimeStartRequest(
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
       ...(allowedSkills ? { allowedSkills } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),
+      ...(modelBroker ? { modelBroker } : {}),
     },
     toolContext,
     ...(credentialResolution.attemptBinding ? { runtimeCredentialAttempt: credentialResolution.attemptBinding } : {}),
   };
+  lifecycle.pendingModelBroker = undefined;
+  return result;
+}
+
+async function reportAbandonedModelBrokerBinding(
+  binding: RuntimeModelBrokerBinding | PendingModelBrokerAttempt,
+  sessionKey?: string,
+): Promise<void> {
+  const resolvedSessionKey = sessionKey ?? ("sessionKey" in binding ? binding.sessionKey : undefined);
+  if (!resolvedSessionKey) return;
+  await reportRuntimeModelBrokerAttempt(createModelBroker(binding.brokerId), {
+    attemptId: binding.attemptId,
+    turnId: binding.turnId,
+    leaseId: binding.leaseId,
+    runtimeId: binding.runtimeId,
+    sessionKey: resolvedSessionKey,
+    outcome: "abandoned",
+    effectState: "none",
+  }).catch(() => undefined);
+}
+
+interface PendingModelBrokerAttempt {
+  brokerId: string;
+  attemptId: string;
+  turnId: string;
+  leaseId: string;
+  runtimeId: string;
+  sessionKey: string;
 }
 
 function findRuntimeTurnPrompt(deliverableMessages: RuntimeUserMessage[]): RuntimeLaunchPrompt | undefined {
@@ -655,6 +909,43 @@ function mergeProviderCredentialEnv(
   return {
     ...Object.assign({}, ...present),
   };
+}
+
+export function rotateRuntimeProviderEnvironment(options: {
+  runtimeEnv: Record<string, string>;
+  baselineRuntimeEnv: Record<string, string>;
+  raviEnv: Record<string, string>;
+  activeProviderEnvKeys: ReadonlySet<string>;
+  nextProviderEnv: Record<string, string> | undefined;
+  nextResolvedRuntimeEnv: Record<string, string>;
+}): Set<string> {
+  const nextProviderEnvKeys = resolveRuntimeProviderEnvKeys(
+    options.nextProviderEnv,
+    options.raviEnv,
+    options.nextResolvedRuntimeEnv,
+  );
+  for (const key of options.activeProviderEnvKeys) {
+    if (nextProviderEnvKeys.has(key)) continue;
+    const baselineValue = options.baselineRuntimeEnv[key];
+    if (baselineValue === undefined) delete options.runtimeEnv[key];
+    else options.runtimeEnv[key] = baselineValue;
+  }
+  for (const key of nextProviderEnvKeys) {
+    options.runtimeEnv[key] = options.nextResolvedRuntimeEnv[key]!;
+  }
+  return nextProviderEnvKeys;
+}
+
+function resolveRuntimeProviderEnvKeys(
+  providerEnv: Record<string, string> | undefined,
+  raviEnv: Record<string, string>,
+  resolvedRuntimeEnv: Record<string, string>,
+): Set<string> {
+  return new Set(
+    Object.keys(providerEnv ?? {}).filter(
+      (key) => key !== "RAVI_BIN" && !(key in raviEnv) && resolvedRuntimeEnv[key] !== undefined,
+    ),
+  );
 }
 
 export function resolveRuntimeCredentialUpstreamProvider(
@@ -697,6 +988,20 @@ function buildRuntimeCredentialProfileEnv(
     return { CLAUDE_CONFIG_DIR: profilePath };
   }
   return undefined;
+}
+
+function assertModelBrokerAttemptBinding(binding: RuntimeCredentialAttemptBinding | null): void {
+  if (
+    !binding ||
+    binding.authMethod !== "model-broker" ||
+    binding.authProfileRef !== undefined ||
+    Object.keys(binding.resolvedEnv).length > 0 ||
+    binding.bindings.length > 0 ||
+    binding.sensitiveEnvKeys.length > 0 ||
+    binding.remoteForwardEnvKeys.length > 0
+  ) {
+    throw new Error("Refusing a model-broker attempt that contains local credential material.");
+  }
 }
 
 function expandHomePath(value: string): string {

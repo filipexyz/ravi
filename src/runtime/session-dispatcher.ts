@@ -10,8 +10,16 @@ import {
 } from "../delivery-barriers.js";
 import { nats } from "../nats.js";
 import { getSession, getSessionByName, type SessionEntry } from "../router/index.js";
-import { dbGetDaemonRestartPendingMessages, dbRecordDaemonRestartSessionSnapshot } from "../router/router-db.js";
-import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
+import {
+  dbGetDaemonRestartPendingMessages,
+  dbGetSetting,
+  dbRecordDaemonRestartSessionSnapshot,
+} from "../router/router-db.js";
+import {
+  createSessionTraceTurnId,
+  recordRuntimeTraceEvent,
+  recordTerminalTurnTrace,
+} from "../session-trace/runtime-trace.js";
 import { dbHasActiveAssignedTaskForSession, dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
@@ -46,6 +54,13 @@ import {
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
+import {
+  MODEL_BROKER_REQUIRED_SETTING,
+  buildRuntimeModelBrokerPhysicalFingerprint,
+  buildRuntimeModelBrokerSelectionCompatibilityKey,
+  resolveRequiredRuntimeModelBrokerSelection,
+} from "./model-broker.js";
+import { planRuntimeModelBrokerRoute, type RuntimeModelBrokerPlan } from "./model-broker-planning.js";
 import type { RuntimeProviderId } from "./types.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
@@ -778,11 +793,22 @@ export class RuntimeSessionDispatcher {
       log.error("No agent found for prompt", { sessionName, agentId });
       return;
     }
+    const modelBrokerTurnId = prompt._modelBrokerTurnId ?? createSessionTraceTurnId();
+    const modelBrokerPlan = await planRuntimeModelBrokerRoute({
+      agent,
+      sessionKey: sessionEntry?.sessionKey ?? sessionName,
+      turnId: modelBrokerTurnId,
+      globalRequiredSetting: dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined,
+    });
+    if (modelBrokerPlan && prompt._modelBrokerTurnId !== modelBrokerTurnId) {
+      prompt = { ...prompt, _modelBrokerTurnId: modelBrokerTurnId };
+    }
     const agentSelection = resolveAgentModelSelection(agent);
     const sessionRuntimeProviderOverride =
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
-    const requestedProvider: RuntimeProviderId =
-      prompt._observation && prompt._runtimeProviderId
+    const requestedProvider: RuntimeProviderId = modelBrokerPlan
+      ? modelBrokerPlan.lease.runtimeProvider
+      : prompt._observation && prompt._runtimeProviderId
         ? prompt._runtimeProviderId
         : sessionRuntimeProviderOverride
           ? sessionRuntimeProviderOverride
@@ -848,10 +874,19 @@ export class RuntimeSessionDispatcher {
           agent,
           configModel: this.options.getConfigModel(),
         });
-        const requestedModel = requestedRuntime.options.model ?? this.options.getConfigModel();
-        if (runtimePromptRequiresRestart(existing, requestedRuntime, prompt)) {
+        const requestedModel =
+          modelBrokerPlan?.lease.model ?? requestedRuntime.options.model ?? this.options.getConfigModel();
+        const modelBrokerConfigurationChanged = runtimeModelBrokerConfigurationRequiresRestart(existing, agent);
+        const modelBrokerRouteChanged = runtimeModelBrokerRouteRequiresRestart(existing, modelBrokerPlan);
+        if (
+          modelBrokerConfigurationChanged ||
+          modelBrokerRouteChanged ||
+          runtimePromptRequiresRestart(existing, requestedRuntime, prompt)
+        ) {
           log.info("Streaming: restarting session after runtime task settings change", {
             sessionName,
+            modelBrokerConfigurationChanged,
+            modelBrokerRouteChanged,
             currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
             requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
             currentEffort: existing.currentEffort ?? null,
@@ -934,13 +969,9 @@ export class RuntimeSessionDispatcher {
         }
 
         const barrier = getRuntimePromptDeliveryBarrier(prompt);
-        const nativeSteer = await this.tryNativeRuntimeSteer(
-          sessionName,
-          existing,
-          prompt,
-          barrier,
-          sessionEntry?.sessionKey,
-        );
+        const nativeSteer = modelBrokerPlan
+          ? "fallback"
+          : await this.tryNativeRuntimeSteer(sessionName, existing, prompt, barrier, sessionEntry?.sessionKey);
         if (nativeSteer === "accepted") {
           updateRuntimeLiveState(sessionName, {
             activity: "thinking",
@@ -1980,6 +2011,41 @@ export class RuntimeSessionDispatcher {
 
     return "accepted";
   }
+}
+
+export function runtimeModelBrokerConfigurationRequiresRestart(
+  existing: Pick<RuntimeHostStreamingSession, "currentRuntimeCredential">,
+  agent: Parameters<typeof resolveRequiredRuntimeModelBrokerSelection>[0],
+  globalSetting = dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined,
+  environmentSetting?: string,
+): boolean {
+  const selection = resolveRequiredRuntimeModelBrokerSelection(agent, globalSetting, environmentSetting);
+  const current = existing.currentRuntimeCredential;
+  if (!selection) return current?.authMethod === "model-broker";
+  if (current?.authMethod !== "model-broker") return true;
+  return (
+    current.modelBrokerSelectionCompatibilityKey !== buildRuntimeModelBrokerSelectionCompatibilityKey(selection) ||
+    current.modelBrokerId !== selection.brokerId ||
+    current.modelBrokerProfileRef !== selection.profileRef
+  );
+}
+
+export function runtimeModelBrokerRouteRequiresRestart(
+  existing: Pick<RuntimeHostStreamingSession, "currentRuntimeCredential" | "currentModel" | "queryHandle">,
+  plan: RuntimeModelBrokerPlan | undefined,
+): boolean {
+  if (!plan) return false;
+  const current = existing.currentRuntimeCredential;
+  if (current?.authMethod !== "model-broker") return true;
+  return (
+    existing.queryHandle.provider !== plan.lease.runtimeProvider ||
+    existing.currentModel !== plan.lease.model ||
+    current.modelBrokerId !== plan.selection.brokerId ||
+    current.modelBrokerProfileRef !== plan.selection.profileRef ||
+    current.modelBrokerRouteRevision !== plan.lease.routeRevision ||
+    current.modelBrokerCompatibilityRevision !== plan.lease.compatibilityRevision ||
+    current.fingerprint !== buildRuntimeModelBrokerPhysicalFingerprint(plan.selection, plan.lease)
+  );
 }
 
 export function fenceRuntimeNativeSteerInput(

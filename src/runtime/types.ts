@@ -1,4 +1,5 @@
 import type { RuntimeEffort } from "./effort.js";
+import type { RuntimeModelBrokerBinding, RuntimeModelBrokerCapabilities } from "./model-broker.js";
 
 export type { RuntimeEffort } from "./effort.js";
 
@@ -363,6 +364,8 @@ export interface RuntimePrepareSessionRequest {
   cwd: string;
   plugins?: RuntimePlugin[];
   hostServices?: RuntimeHostServices;
+  /** Secretless broker route; adapters fail closed without principal isolation. */
+  modelBroker?: RuntimeModelBrokerBinding;
 }
 
 export interface RuntimePrepareSessionResult {
@@ -435,6 +438,8 @@ export interface RuntimeStartRequest {
   hooks?: Record<string, RuntimeHookMatcher[]>;
   plugins?: RuntimePlugin[];
   remoteSpawn?: unknown;
+  /** Same immutable secretless broker route prepared for this physical provider session. */
+  modelBroker?: RuntimeModelBrokerBinding;
   /**
    * Per-agent skill visibility (spec skills/scoping/per-agent-visibility).
    * When present + non-empty the provider adapter narrows the runtime skill
@@ -561,6 +566,8 @@ export interface RuntimeCapabilities {
   systemPrompt: RuntimeSystemPromptCapabilities;
   terminalEvents: RuntimeTerminalEventCapabilities;
   skillVisibility: RuntimeSkillVisibilityCapabilities;
+  /** Omitted when unsupported; `principalIsolation: "none"` is explicitly disabled. */
+  modelBroker?: RuntimeModelBrokerCapabilities;
   supportsSessionResume: boolean;
   supportsSessionFork: boolean;
   supportsPartialText: boolean;

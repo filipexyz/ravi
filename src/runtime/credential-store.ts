@@ -846,7 +846,12 @@ export function serializeRuntimeCredential(
 function validateRuntimeCredentialInput(input: RuntimeCredentialInput): void {
   if (!input.label.trim()) throw new Error("Credential label is required");
   if (!input.runtimeProvider.trim()) throw new Error("Runtime provider is required");
-  if (!input.bindings.length) throw new Error("At least one secret binding is required");
+  if (input.authMethod === "model-broker") {
+    throw new Error("Model-broker routes must be leased by a registered broker, not stored as local credentials");
+  }
+  if (!input.bindings.length) {
+    throw new Error("At least one secret binding is required");
+  }
   for (const binding of input.bindings) {
     if (!binding.targetName.trim()) throw new Error("Secret binding targetName is required");
     if (!binding.secretRef.trim()) throw new Error("Secret binding secretRef is required");
