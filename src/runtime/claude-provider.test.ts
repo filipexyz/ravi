@@ -562,14 +562,14 @@ describe("createClaudeRuntimeProvider", () => {
     }
   });
 
-  it("never backfills upstream auth into a Hub proxy runtime", () => {
+  it("never backfills upstream auth into a model-broker runtime", () => {
     const originalToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
     const originalApiKey = process.env.ANTHROPIC_API_KEY;
     process.env.CLAUDE_CODE_OAUTH_TOKEN = "daemon-oauth-secret";
     process.env.ANTHROPIC_API_KEY = "daemon-api-secret";
     try {
       const env = buildClaudeCodeEnvironment({
-        RAVI_INTELLIGENCE_BINDING_HANDLE: "binding_anthropic",
+        RAVI_MODEL_BROKER_ACTIVE: "1",
         ANTHROPIC_BASE_URL: "http://127.0.0.1:43123",
       });
       expect(env.CLAUDE_CODE_OAUTH_TOKEN).toBeUndefined();
@@ -583,7 +583,7 @@ describe("createClaudeRuntimeProvider", () => {
     }
   });
 
-  it("loads only protected user settings in proxy mode and excludes malicious project overrides", async () => {
+  it("loads only protected user settings in model-broker mode and excludes malicious project overrides", async () => {
     nextMessages = [{ type: "result", subtype: "success", session_id: "claude-proxy", result: "ok", usage: {} }];
     const handle = createClaudeRuntimeProvider().startSession(
       makeStartRequest(
@@ -597,31 +597,32 @@ describe("createClaudeRuntimeProvider", () => {
         })(),
         {
           settingSources: ["project"],
-          intelligence: {
+          modelBroker: {
             version: 1,
-            grantId: "grant_claude_1",
+            brokerId: "hub",
+            leaseId: "grant_claude_1",
             attemptId: "attempt_claude_1",
-            grantExpiresAt: Date.now() + 60_000,
+            turnId: "turn_claude_1",
             runtimeId: "runtime_a",
-            profileId: "profile_main",
-            connectionId: "conn_anthropic",
-            connectionRevision: "revision_1",
-            sessionCompatibilityKey: "compat_claude_1",
-            policyCompatibilityKey: "policy_main_required",
             runtimeProvider: "claude",
-            upstreamProvider: "anthropic",
             model: "claude-sonnet",
-            protocol: "anthropic-messages",
-            localSigningForwarderBaseUrl: "http://127.0.0.1:43123",
-            localSigningForwarderRequestPath: "/v1/messages",
-            bindingHandle: "binding_claude_1",
-            audience: "ravi-hub-intelligence",
-            providerRuntimeId: "ravi-hub-claude",
-            providerPrincipalIsolation: "cgroup",
+            routeRevision: "route_1",
+            compatibilityRevision: "compat_claude_1",
+            expiresAt: Date.now() + 60_000,
+            transport: {
+              scheme: "local-http-forwarder-v1",
+              protocol: "anthropic-messages",
+              origin: "http://127.0.0.1:43123",
+              path: "/v1/messages",
+              publicHeaders: { "x-public-route": "binding_claude_1" },
+            },
+            profileRef: "profile_main",
+            selectionCompatibilityKey: "selection_main",
+            principalIsolation: "cgroup",
           },
           env: {
-            RAVI_INTELLIGENCE_BINDING_HANDLE: "binding_anthropic",
-            CLAUDE_CONFIG_DIR: "/tmp/ravi-intelligence/claude",
+            RAVI_MODEL_BROKER_ACTIVE: "1",
+            CLAUDE_CONFIG_DIR: "/tmp/ravi-model-broker/claude",
           },
         },
       ),

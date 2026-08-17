@@ -74,7 +74,7 @@ describe("Pi runtime provider", () => {
     expect(() =>
       createPiRuntimeProvider({ transport }).startSession(
         createStartRequest("blocked", {
-          intelligence: proxyIntelligenceBinding(),
+          modelBroker: modelBrokerBinding(),
           env: { OPENAI_API_KEY: "must-not-reach-pi" },
         }),
       ),
@@ -597,28 +597,29 @@ function createStartRequest(text: string, overrides: Partial<RuntimeStartRequest
   };
 }
 
-function proxyIntelligenceBinding(): NonNullable<RuntimeStartRequest["intelligence"]> {
+function modelBrokerBinding(): NonNullable<RuntimeStartRequest["modelBroker"]> {
   return {
     version: 1,
-    grantId: "grant_pi_test",
+    brokerId: "hub",
+    leaseId: "grant_pi_test",
     attemptId: "attempt_pi_test",
-    grantExpiresAt: Date.now() + 60_000,
+    turnId: "turn_pi_test",
     runtimeId: "runtime_test",
-    profileId: "profile_test",
-    connectionId: "connection_test",
-    connectionRevision: "revision_test",
-    sessionCompatibilityKey: "compat_test",
-    policyCompatibilityKey: "policy_main_required",
     runtimeProvider: "pi",
-    upstreamProvider: "openai",
     model: "openai/gpt-5.5",
-    protocol: "openai-completions",
-    localSigningForwarderBaseUrl: "http://127.0.0.1:43123/v1",
-    localSigningForwarderRequestPath: "/v1/chat/completions",
-    bindingHandle: "binding_test",
-    audience: "ravi-hub-intelligence",
-    providerRuntimeId: "ravi-hub-test",
-    providerPrincipalIsolation: "cgroup",
+    routeRevision: "route_test",
+    compatibilityRevision: "compat_test",
+    expiresAt: Date.now() + 60_000,
+    transport: {
+      scheme: "local-http-forwarder-v1",
+      protocol: "openai-completions",
+      origin: "http://127.0.0.1:43123",
+      path: "/v1/chat/completions",
+      publicHeaders: { "x-public-route": "binding_test" },
+    },
+    profileRef: "profile_test",
+    selectionCompatibilityKey: "selection_test",
+    principalIsolation: "cgroup",
   };
 }
 

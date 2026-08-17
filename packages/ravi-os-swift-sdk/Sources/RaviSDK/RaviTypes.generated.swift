@@ -255,75 +255,6 @@ public struct AgentsDeleteReturn: Codable, Sendable {
   }
 }
 
-public struct AgentsIntelligenceOptions: Codable, Sendable {
-  public var clear: Bool?
-  public var connections: String?
-  public var execute: Bool?
-  public var profile: String?
-  public var required: String?
-
-  public init(clear: Bool? = nil, connections: String? = nil, execute: Bool? = nil, profile: String? = nil, required: String? = nil) {
-    self.clear = clear
-    self.connections = connections
-    self.execute = execute
-    self.profile = profile
-    self.required = required
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case clear = "clear"
-    case connections = "connections"
-    case execute = "execute"
-    case profile = "profile"
-    case required = "required"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.clear {
-      body["clear"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.connections {
-      body["connections"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.execute {
-      body["execute"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.profile {
-      body["profile"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.required {
-      body["required"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
-public struct AgentsIntelligenceReturn: Codable, Sendable {
-  public var action: String
-  public var agent: RaviJSON?
-  public var agentId: String
-  public var changed: Bool
-  public var defaults: RaviJSON?
-  public var intelligence: RaviJSON
-
-  public init(action: String, agent: RaviJSON? = nil, agentId: String, changed: Bool, defaults: RaviJSON? = nil, intelligence: RaviJSON) {
-    self.action = action
-    self.agent = agent
-    self.agentId = agentId
-    self.changed = changed
-    self.defaults = defaults
-    self.intelligence = intelligence
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case action = "action"
-    case agent = "agent"
-    case agentId = "agentId"
-    case changed = "changed"
-    case defaults = "defaults"
-    case intelligence = "intelligence"
-  }
-}
-
 public struct AgentsListOptions: Codable, Sendable {
   public var fields: String?
   public var limit: String?
@@ -384,6 +315,75 @@ public struct AgentsListReturn: Codable, Sendable {
     case items = "items"
     case pagination = "pagination"
     case total = "total"
+  }
+}
+
+public struct AgentsModelBrokerOptions: Codable, Sendable {
+  public var broker: String?
+  public var clear: Bool?
+  public var execute: Bool?
+  public var profile: String?
+  public var required: String?
+
+  public init(broker: String? = nil, clear: Bool? = nil, execute: Bool? = nil, profile: String? = nil, required: String? = nil) {
+    self.broker = broker
+    self.clear = clear
+    self.execute = execute
+    self.profile = profile
+    self.required = required
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case broker = "broker"
+    case clear = "clear"
+    case execute = "execute"
+    case profile = "profile"
+    case required = "required"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.broker {
+      body["broker"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.clear {
+      body["clear"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.execute {
+      body["execute"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.profile {
+      body["profile"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.required {
+      body["required"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct AgentsModelBrokerReturn: Codable, Sendable {
+  public var action: String
+  public var agent: RaviJSON?
+  public var agentId: String
+  public var changed: Bool
+  public var defaults: RaviJSON?
+  public var modelBroker: RaviJSON
+
+  public init(action: String, agent: RaviJSON? = nil, agentId: String, changed: Bool, defaults: RaviJSON? = nil, modelBroker: RaviJSON) {
+    self.action = action
+    self.agent = agent
+    self.agentId = agentId
+    self.changed = changed
+    self.defaults = defaults
+    self.modelBroker = modelBroker
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case action = "action"
+    case agent = "agent"
+    case agentId = "agentId"
+    case changed = "changed"
+    case defaults = "defaults"
+    case modelBroker = "modelBroker"
   }
 }
 

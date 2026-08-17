@@ -1996,14 +1996,14 @@ export const agentPermissionsReturnSchema = z.object({
   agent: agentJsonSummaryReturnSchema.optional(),
 });
 
-export const agentIntelligenceReturnSchema = z.object({
-  action: z.literal("intelligence"),
+export const agentModelBrokerReturnSchema = z.object({
+  action: z.literal("model-broker"),
   changed: z.boolean(),
   agentId: z.string(),
-  intelligence: z
+  modelBroker: z
     .object({
-      profileId: z.string(),
-      connectionIds: z.array(z.string()),
+      brokerId: z.string(),
+      profileRef: z.string(),
       required: z.boolean().optional(),
     })
     .nullable(),

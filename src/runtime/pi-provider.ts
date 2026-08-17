@@ -22,9 +22,12 @@ import type {
 } from "./types.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
 import { buildPluginSkillVisibilitySnapshot } from "./skill-visibility.js";
-import { materializeRuntimeIntelligenceProxy } from "./intelligence-materializer.js";
+import {
+  materializeRuntimeModelBroker,
+  resolveRuntimeModelBrokerLocalProviderId,
+} from "./model-broker-materializer.js";
 import { SANITIZED_ENV_VARS } from "../hooks/sanitize-bash.js";
-import { resolveRuntimeIntelligenceProviderModel } from "./intelligence-proxy.js";
+import { resolveRuntimeModelBrokerProviderModel } from "./model-broker.js";
 
 const DEFAULT_PI_COMMAND = "pi";
 const DEFAULT_PI_RESPONSE_TIMEOUT_MS = 30_000;
@@ -200,14 +203,9 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
           availability: "provider",
           loadedState: "none",
         },
-        intelligenceProxy: {
-          transport: {
-            protocol: "openai-completions",
-            basePath: "/v1",
-            endpointPath: "/v1/chat/completions",
-          },
-          localSigningForwarder: true,
-          providerPrincipalIsolation: "none",
+        modelBroker: {
+          protocols: ["openai-completions"],
+          principalIsolation: "none",
         },
         supportsSessionResume: true,
         supportsSessionFork: false,
@@ -221,11 +219,11 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
       };
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
-      const materialized = input.intelligence ? materializeRuntimeIntelligenceProxy(input.intelligence) : undefined;
+      const materialized = input.modelBroker ? materializeRuntimeModelBroker(input.modelBroker) : undefined;
       return materialized ? { env: materialized.env } : {};
     },
     startSession(input) {
-      if (input.intelligence) assertNoPiProxyCredentialEnv(input.env);
+      if (input.modelBroker) assertNoPiModelBrokerCredentialEnv(input.env);
       const createTransport =
         options.transportFactory ??
         (options.transport
@@ -283,28 +281,30 @@ export function createPiRuntimeProvider(options: CreatePiRuntimeProviderOptions 
           await transport?.close();
         },
         setModel: async (model) => {
-          if (input.intelligence && model !== input.intelligence.model) {
-            throw new Error("Changing models requires selecting a matching Hub intelligence connection.");
+          if (input.modelBroker && model !== input.modelBroker.model) {
+            throw new Error("Changing models requires resolving a matching model-broker route.");
           }
           const parsed = parsePiModelSelector(model);
           await sendPiCommand(requireTransport(), {
             type: "set_model",
-            provider: input.intelligence?.providerRuntimeId ?? parsed.provider ?? defaultPiModelProvider(),
+            provider: input.modelBroker
+              ? resolveRuntimeModelBrokerLocalProviderId(input.modelBroker)
+              : (parsed.provider ?? defaultPiModelProvider()),
             modelId: parsed.modelId ?? model,
           });
         },
-        control: (request) => controlPiRuntime(state, request, input.intelligence),
+        control: (request) => controlPiRuntime(state, request, input.modelBroker),
       };
     },
   };
 }
 
-function assertNoPiProxyCredentialEnv(env: Record<string, string> | undefined): void {
+function assertNoPiModelBrokerCredentialEnv(env: Record<string, string> | undefined): void {
   if (!env) return;
   const credentialKeys = SANITIZED_ENV_VARS.filter((key) => key !== "DATABASE_URL");
   const leaked = credentialKeys.find((key) => env[key]?.trim());
   if (leaked) {
-    throw new Error(`Pi intelligence proxy refuses upstream credential environment variable ${leaked}.`);
+    throw new Error(`Pi model broker refuses upstream credential environment variable ${leaked}.`);
   }
 }
 
@@ -525,11 +525,11 @@ async function* runPiTurns(
   const abortSignal = input.abortController.signal;
   const startInput: PiRpcStartInput = {
     cwd: input.cwd,
-    env: input.intelligence ? (input.env ?? {}) : (input.env ?? process.env),
-    provider: input.intelligence?.providerRuntimeId ?? modelSelector.provider,
+    env: input.modelBroker ? (input.env ?? {}) : (input.env ?? process.env),
+    provider: input.modelBroker ? resolveRuntimeModelBrokerLocalProviderId(input.modelBroker) : modelSelector.provider,
     model: modelSelector.modelId,
-    modelArg: input.intelligence
-      ? `${input.intelligence.providerRuntimeId}/${resolveRuntimeIntelligenceProviderModel(input.intelligence)}`
+    modelArg: input.modelBroker
+      ? `${resolveRuntimeModelBrokerLocalProviderId(input.modelBroker)}/${resolveRuntimeModelBrokerProviderModel(input.modelBroker)}`
       : modelSelector.modelArg,
     thinkingLevel,
     systemPromptAppend: input.systemPromptAppend,
@@ -851,7 +851,7 @@ async function maybeBuildPiTerminalEvent(
 async function controlPiRuntime(
   state: PiSessionRuntimeState,
   request: RuntimeControlRequest,
-  intelligence?: RuntimeStartRequest["intelligence"],
+  modelBroker?: RuntimeStartRequest["modelBroker"],
 ): Promise<RuntimeControlResult> {
   const buildState = (): RuntimeControlState => ({
     provider: "pi",
@@ -907,10 +907,10 @@ async function controlPiRuntime(
         if (!model) {
           return failControl(request, "Missing model for Pi model.set", buildState());
         }
-        if (intelligence && model !== intelligence.model) {
+        if (modelBroker && model !== modelBroker.model) {
           return failControl(
             request,
-            "Changing models requires selecting a matching Hub intelligence connection.",
+            "Changing models requires resolving a matching model-broker route.",
             buildState(),
           );
         }
@@ -919,7 +919,9 @@ async function controlPiRuntime(
           request,
           await sendPiCommand(transport, {
             type: "set_model",
-            provider: intelligence?.providerRuntimeId ?? parsed.provider ?? defaultPiModelProvider(),
+            provider: modelBroker
+              ? resolveRuntimeModelBrokerLocalProviderId(modelBroker)
+              : (parsed.provider ?? defaultPiModelProvider()),
             modelId: parsed.modelId ?? model,
           }),
           buildState(),

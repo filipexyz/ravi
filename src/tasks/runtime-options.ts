@@ -92,7 +92,7 @@ export function formatTaskRuntimeOptions(options?: TaskRuntimeOptions | null): s
 export function resolveTaskRuntimeOptions(input: {
   promptOverride?: TaskRuntimeOptionsInput | null;
   task?: Pick<TaskRecord, "runtimeOverride"> | null;
-  profile?: { id?: TaskProfileDefinition["id"]; runtimeDefaults?: TaskProfileDefinition["runtimeDefaults"] } | null;
+  profile?: Pick<TaskProfileDefinition, "runtimeDefaults"> | null;
   assignment?: Pick<TaskAssignment, "runtimeOverride"> | null;
   launchPlan?: Pick<TaskLaunchPlan, "runtimeOverride"> | null;
   sessionModelOverride?: string | null;
@@ -170,7 +170,6 @@ export function resolveTaskRuntimeOptions(input: {
           modelPresetVersion: input.agentModelPreset!.version,
         }
       : {}),
-    ...(input.profile?.id ? { taskProfileId: input.profile.id } : {}),
     hasTaskRuntimeContext: Boolean(dispatchOverride || taskOverride || profileDefaults),
   };
 }

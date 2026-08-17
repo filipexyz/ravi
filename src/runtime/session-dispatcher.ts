@@ -15,7 +15,11 @@ import {
   dbGetSetting,
   dbRecordDaemonRestartSessionSnapshot,
 } from "../router/router-db.js";
-import { recordRuntimeTraceEvent, recordTerminalTurnTrace } from "../session-trace/runtime-trace.js";
+import {
+  createSessionTraceTurnId,
+  recordRuntimeTraceEvent,
+  recordTerminalTurnTrace,
+} from "../session-trace/runtime-trace.js";
 import { dbHasActiveAssignedTaskForSession, dbHasActiveTaskForSession } from "../tasks/task-db.js";
 import { logger } from "../utils/logger.js";
 import { revokeAgentRuntimeContextsForSession } from "./context-registry.js";
@@ -51,11 +55,13 @@ import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from
 import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
 import {
-  INTELLIGENCE_PROXY_REQUIRED_SETTING,
-  buildRuntimeIntelligencePolicyCompatibilityKey,
-  isRuntimeIntelligenceProxyRequired,
-  readRuntimeIntelligenceProfileSelection,
-} from "./intelligence-proxy.js";
+  MODEL_BROKER_REQUIRED_SETTING,
+  buildRuntimeModelBrokerPhysicalFingerprint,
+  buildRuntimeModelBrokerSelectionCompatibilityKey,
+  isRuntimeModelBrokerRequired,
+  readRuntimeModelBrokerSelection,
+} from "./model-broker.js";
+import { planRuntimeModelBrokerRoute, type RuntimeModelBrokerPlan } from "./model-broker-planning.js";
 import type { RuntimeProviderId } from "./types.js";
 import type { RuntimeSafeEmit } from "./host-event-loop.js";
 import { markRuntimeLiveIdle, updateRuntimeLiveState } from "./live-state.js";
@@ -788,11 +794,22 @@ export class RuntimeSessionDispatcher {
       log.error("No agent found for prompt", { sessionName, agentId });
       return;
     }
+    const modelBrokerTurnId = prompt._modelBrokerTurnId ?? createSessionTraceTurnId();
+    const modelBrokerPlan = await planRuntimeModelBrokerRoute({
+      agent,
+      sessionKey: sessionEntry?.sessionKey ?? sessionName,
+      turnId: modelBrokerTurnId,
+      globalRequiredSetting: dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined,
+    });
+    if (modelBrokerPlan && prompt._modelBrokerTurnId !== modelBrokerTurnId) {
+      prompt = { ...prompt, _modelBrokerTurnId: modelBrokerTurnId };
+    }
     const agentSelection = resolveAgentModelSelection(agent);
     const sessionRuntimeProviderOverride =
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
-    const requestedProvider: RuntimeProviderId =
-      prompt._observation && prompt._runtimeProviderId
+    const requestedProvider: RuntimeProviderId = modelBrokerPlan
+      ? modelBrokerPlan.lease.runtimeProvider
+      : prompt._observation && prompt._runtimeProviderId
         ? prompt._runtimeProviderId
         : sessionRuntimeProviderOverride
           ? sessionRuntimeProviderOverride
@@ -858,12 +875,19 @@ export class RuntimeSessionDispatcher {
           agent,
           configModel: this.options.getConfigModel(),
         });
-        const requestedModel = requestedRuntime.options.model ?? this.options.getConfigModel();
-        const intelligenceConfigurationChanged = runtimeIntelligenceConfigurationRequiresRestart(existing, agent);
-        if (intelligenceConfigurationChanged || runtimePromptRequiresRestart(existing, requestedRuntime, prompt)) {
+        const requestedModel =
+          modelBrokerPlan?.lease.model ?? requestedRuntime.options.model ?? this.options.getConfigModel();
+        const modelBrokerConfigurationChanged = runtimeModelBrokerConfigurationRequiresRestart(existing, agent);
+        const modelBrokerRouteChanged = runtimeModelBrokerRouteRequiresRestart(existing, modelBrokerPlan);
+        if (
+          modelBrokerConfigurationChanged ||
+          modelBrokerRouteChanged ||
+          runtimePromptRequiresRestart(existing, requestedRuntime, prompt)
+        ) {
           log.info("Streaming: restarting session after runtime task settings change", {
             sessionName,
-            intelligenceConfigurationChanged,
+            modelBrokerConfigurationChanged,
+            modelBrokerRouteChanged,
             currentTaskBarrierTaskId: existing.currentTaskBarrierTaskId ?? null,
             requestedTaskBarrierTaskId: normalizePromptTaskBarrierTaskId(prompt.taskBarrierTaskId) ?? null,
             currentEffort: existing.currentEffort ?? null,
@@ -946,13 +970,9 @@ export class RuntimeSessionDispatcher {
         }
 
         const barrier = getRuntimePromptDeliveryBarrier(prompt);
-        const nativeSteer = await this.tryNativeRuntimeSteer(
-          sessionName,
-          existing,
-          prompt,
-          barrier,
-          sessionEntry?.sessionKey,
-        );
+        const nativeSteer = modelBrokerPlan
+          ? "fallback"
+          : await this.tryNativeRuntimeSteer(sessionName, existing, prompt, barrier, sessionEntry?.sessionKey);
         if (nativeSteer === "accepted") {
           updateRuntimeLiveState(sessionName, {
             activity: "thinking",
@@ -1994,21 +2014,39 @@ export class RuntimeSessionDispatcher {
   }
 }
 
-export function runtimeIntelligenceConfigurationRequiresRestart(
+export function runtimeModelBrokerConfigurationRequiresRestart(
   existing: Pick<RuntimeHostStreamingSession, "currentRuntimeCredential">,
-  agent: Parameters<typeof readRuntimeIntelligenceProfileSelection>[0],
+  agent: Parameters<typeof readRuntimeModelBrokerSelection>[0],
 ): boolean {
-  const globalSetting = dbGetSetting(INTELLIGENCE_PROXY_REQUIRED_SETTING) ?? undefined;
-  const required = isRuntimeIntelligenceProxyRequired(agent, globalSetting);
-  const selection = readRuntimeIntelligenceProfileSelection(agent);
+  const globalSetting = dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined;
+  const required = isRuntimeModelBrokerRequired(agent, globalSetting);
+  const selection = readRuntimeModelBrokerSelection(agent);
   const current = existing.currentRuntimeCredential;
-  if (!required) return current?.authMethod === "hub-proxy";
+  if (!required) return current?.authMethod === "model-broker";
   if (!selection) return true;
-  if (current?.authMethod !== "hub-proxy") return true;
+  if (current?.authMethod !== "model-broker") return true;
   return (
-    current.intelligencePolicyCompatibilityKey !== buildRuntimeIntelligencePolicyCompatibilityKey(selection, true) ||
-    current.profileId !== selection.profileId ||
-    !selection.connectionIds.includes(current.connectionId ?? "")
+    current.modelBrokerSelectionCompatibilityKey !== buildRuntimeModelBrokerSelectionCompatibilityKey(selection) ||
+    current.modelBrokerId !== selection.brokerId ||
+    current.modelBrokerProfileRef !== selection.profileRef
+  );
+}
+
+export function runtimeModelBrokerRouteRequiresRestart(
+  existing: Pick<RuntimeHostStreamingSession, "currentRuntimeCredential" | "currentModel" | "queryHandle">,
+  plan: RuntimeModelBrokerPlan | undefined,
+): boolean {
+  if (!plan) return false;
+  const current = existing.currentRuntimeCredential;
+  if (current?.authMethod !== "model-broker") return true;
+  return (
+    existing.queryHandle.provider !== plan.lease.runtimeProvider ||
+    existing.currentModel !== plan.lease.model ||
+    current.modelBrokerId !== plan.selection.brokerId ||
+    current.modelBrokerProfileRef !== plan.selection.profileRef ||
+    current.modelBrokerRouteRevision !== plan.lease.routeRevision ||
+    current.modelBrokerCompatibilityRevision !== plan.lease.compatibilityRevision ||
+    current.fingerprint !== buildRuntimeModelBrokerPhysicalFingerprint(plan.selection, plan.lease)
   );
 }
 

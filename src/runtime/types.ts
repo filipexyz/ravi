@@ -1,5 +1,5 @@
 import type { RuntimeEffort } from "./effort.js";
-import type { RuntimeIntelligenceProxyBinding, RuntimeIntelligenceProxyCapabilities } from "./intelligence-proxy.js";
+import type { RuntimeModelBrokerBinding, RuntimeModelBrokerCapabilities } from "./model-broker.js";
 
 export type { RuntimeEffort } from "./effort.js";
 
@@ -364,12 +364,8 @@ export interface RuntimePrepareSessionRequest {
   cwd: string;
   plugins?: RuntimePlugin[];
   hostServices?: RuntimeHostServices;
-  /**
-   * Public identityd-attested signing-forwarder binding. It never contains an
-   * upstream credential; adapters must fail closed unless their declared
-   * principal isolation prevents model tools from reaching the local forwarder.
-   */
-  intelligence?: RuntimeIntelligenceProxyBinding;
+  /** Secretless broker route; adapters fail closed without principal isolation. */
+  modelBroker?: RuntimeModelBrokerBinding;
 }
 
 export interface RuntimePrepareSessionResult {
@@ -442,8 +438,8 @@ export interface RuntimeStartRequest {
   hooks?: Record<string, RuntimeHookMatcher[]>;
   plugins?: RuntimePlugin[];
   remoteSpawn?: unknown;
-  /** Same immutable public forwarder binding prepared for this physical provider session. */
-  intelligence?: RuntimeIntelligenceProxyBinding;
+  /** Same immutable secretless broker route prepared for this physical provider session. */
+  modelBroker?: RuntimeModelBrokerBinding;
   /**
    * Per-agent skill visibility (spec skills/scoping/per-agent-visibility).
    * When present + non-empty the provider adapter narrows the runtime skill
@@ -570,8 +566,8 @@ export interface RuntimeCapabilities {
   systemPrompt: RuntimeSystemPromptCapabilities;
   terminalEvents: RuntimeTerminalEventCapabilities;
   skillVisibility: RuntimeSkillVisibilityCapabilities;
-  /** Omitted when unsupported; `providerPrincipalIsolation: "none"` is explicitly disabled. */
-  intelligenceProxy?: RuntimeIntelligenceProxyCapabilities;
+  /** Omitted when unsupported; `principalIsolation: "none"` is explicitly disabled. */
+  modelBroker?: RuntimeModelBrokerCapabilities;
   supportsSessionResume: boolean;
   supportsSessionFork: boolean;
   supportsPartialText: boolean;

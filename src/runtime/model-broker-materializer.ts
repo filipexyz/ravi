@@ -15,30 +15,28 @@ import {
 } from "node:fs";
 import { dirname, isAbsolute, join, resolve } from "node:path";
 import { getRaviStateDir } from "../utils/paths.js";
-import { resolveRuntimeIntelligenceProviderModel, type RuntimeIntelligenceProxyBinding } from "./intelligence-proxy.js";
+import type { RuntimeModelBrokerBinding } from "./model-broker.js";
+import { resolveRuntimeModelBrokerProviderModel } from "./model-broker.js";
 
-const BINDING_HEADER = "x-ravi-binding";
 const LOCAL_DUMMY_KEY_HELPER = "printf ravi-local-forwarder";
 
-export interface RuntimeIntelligenceMaterialization {
+export interface RuntimeModelBrokerMaterialization {
   env: Record<string, string>;
   configDir: string;
 }
 
-export function materializeRuntimeIntelligenceProxy(
-  binding: RuntimeIntelligenceProxyBinding,
+export function materializeRuntimeModelBroker(
+  binding: RuntimeModelBrokerBinding,
   env: NodeJS.ProcessEnv = process.env,
-): RuntimeIntelligenceMaterialization {
-  const isolation = (binding as { providerPrincipalIsolation?: string }).providerPrincipalIsolation;
-  if (!isolation || isolation === "none") {
-    throw new Error("Refusing intelligence proxy materialization without an isolated provider principal.");
+): RuntimeModelBrokerMaterialization {
+  if (!("uid,cgroup,one-shot-capability".split(",") as string[]).includes(binding.principalIsolation)) {
+    throw new Error("Refusing model-broker materialization without an isolated provider principal.");
   }
-  const root = ensurePrivateTree(getRaviStateDir(env), ["intelligence", "bindings", materializationDigest(binding)]);
-  const sharedEnv = publicBindingEnv(binding);
+  const root = ensurePrivateTree(getRaviStateDir(env), ["model-broker", "bindings", materializationDigest(binding)]);
   if (binding.runtimeProvider === "codex") {
     const configDir = ensurePrivateTree(root, ["codex"]);
     atomicPrivateWrite(join(configDir, "config.toml"), codexConfig(binding));
-    return { env: { ...sharedEnv, CODEX_HOME: configDir }, configDir };
+    return { env: { RAVI_MODEL_BROKER_ACTIVE: "1", CODEX_HOME: configDir }, configDir };
   }
   if (binding.runtimeProvider === "claude") {
     const configDir = ensurePrivateTree(root, ["claude"]);
@@ -67,10 +65,10 @@ export function materializeRuntimeIntelligenceProxy(
     );
     return {
       env: {
-        ...sharedEnv,
+        RAVI_MODEL_BROKER_ACTIVE: "1",
         CLAUDE_CONFIG_DIR: configDir,
-        ANTHROPIC_BASE_URL: binding.localSigningForwarderBaseUrl,
-        ANTHROPIC_CUSTOM_HEADERS: `${BINDING_HEADER}: ${binding.bindingHandle}`,
+        ANTHROPIC_BASE_URL: providerBaseUrl(binding),
+        ANTHROPIC_CUSTOM_HEADERS: headerLines(binding),
       },
       configDir,
     };
@@ -78,70 +76,86 @@ export function materializeRuntimeIntelligenceProxy(
   if (binding.runtimeProvider === "pi") {
     const configDir = ensurePrivateTree(root, ["pi"]);
     atomicPrivateWrite(join(configDir, "models.json"), `${JSON.stringify(piModelsConfig(binding), null, 2)}\n`);
-    return {
-      env: { ...sharedEnv, PI_CODING_AGENT_DIR: configDir },
-      configDir,
-    };
+    return { env: { RAVI_MODEL_BROKER_ACTIVE: "1", PI_CODING_AGENT_DIR: configDir }, configDir };
   }
-  throw new Error(`Runtime provider ${binding.runtimeProvider} cannot materialize Hub proxy configuration.`);
+  throw new Error(`Runtime provider ${binding.runtimeProvider} cannot materialize model-broker configuration.`);
 }
 
-function publicBindingEnv(binding: RuntimeIntelligenceProxyBinding): Record<string, string> {
-  return {
-    RAVI_INTELLIGENCE_BINDING_HANDLE: binding.bindingHandle,
-  };
-}
-
-function codexConfig(binding: RuntimeIntelligenceProxyBinding): string {
+function codexConfig(binding: RuntimeModelBrokerBinding): string {
+  const providerId = resolveRuntimeModelBrokerLocalProviderId(binding);
+  const headerEntries = Object.entries(binding.transport.publicHeaders)
+    .map(([name, value]) => `${tomlString(name)} = ${tomlString(value)}`)
+    .join(", ");
   return [
-    `model_provider = ${tomlString(binding.providerRuntimeId)}`,
+    `model_provider = ${tomlString(providerId)}`,
     "",
-    `[model_providers.${tomlKey(binding.providerRuntimeId)}]`,
-    `name = ${tomlString("Ravi Hub")}`,
-    `base_url = ${tomlString(binding.localSigningForwarderBaseUrl)}`,
+    `[model_providers.${tomlKey(providerId)}]`,
+    `name = ${tomlString(`Model broker ${binding.brokerId}`)}`,
+    `base_url = ${tomlString(providerBaseUrl(binding))}`,
     `wire_api = ${tomlString("responses")}`,
     "requires_openai_auth = false",
-    `http_headers = { ${tomlString(BINDING_HEADER)} = ${tomlString(binding.bindingHandle)} }`,
+    `http_headers = { ${headerEntries} }`,
     "",
   ].join("\n");
 }
 
-function piModelsConfig(binding: RuntimeIntelligenceProxyBinding): Record<string, unknown> {
+function piModelsConfig(binding: RuntimeModelBrokerBinding): Record<string, unknown> {
+  const providerId = resolveRuntimeModelBrokerLocalProviderId(binding);
+  const model = resolveRuntimeModelBrokerProviderModel(binding);
   return {
     providers: {
-      [binding.providerRuntimeId]: {
-        baseUrl: binding.localSigningForwarderBaseUrl,
+      [providerId]: {
+        baseUrl: providerBaseUrl(binding),
         api: "openai-completions",
         apiKey: "ravi-local-forwarder",
         authHeader: true,
-        headers: { [BINDING_HEADER]: binding.bindingHandle },
-        models: [
-          {
-            id: resolveRuntimeIntelligenceProviderModel(binding),
-            name: resolveRuntimeIntelligenceProviderModel(binding),
-          },
-        ],
+        headers: binding.transport.publicHeaders,
+        models: [{ id: model, name: model }],
       },
     },
   };
 }
 
-function materializationDigest(binding: RuntimeIntelligenceProxyBinding): string {
+function providerBaseUrl(binding: RuntimeModelBrokerBinding): string {
+  const suffix =
+    binding.transport.protocol === "openai-responses"
+      ? "/responses"
+      : binding.transport.protocol === "openai-completions"
+        ? "/chat/completions"
+        : "/v1/messages";
+  if (!binding.transport.path.endsWith(suffix)) {
+    throw new Error(`Model-broker path ${binding.transport.path} does not match ${binding.transport.protocol}.`);
+  }
+  const basePath = binding.transport.path.slice(0, -suffix.length);
+  return `${binding.transport.origin}${basePath}`;
+}
+
+function headerLines(binding: RuntimeModelBrokerBinding): string {
+  return Object.entries(binding.transport.publicHeaders)
+    .map(([name, value]) => `${name}: ${value}`)
+    .join("\n");
+}
+
+export function resolveRuntimeModelBrokerLocalProviderId(binding: RuntimeModelBrokerBinding): string {
+  return `ravi-broker-${createHash("sha256")
+    .update(`${binding.brokerId}\u0000${binding.profileRef}\u0000${binding.routeRevision}`)
+    .digest("hex")
+    .slice(0, 16)}`;
+}
+
+function materializationDigest(binding: RuntimeModelBrokerBinding): string {
   return createHash("sha256")
     .update(
       JSON.stringify({
+        brokerId: binding.brokerId,
+        profileRef: binding.profileRef,
         runtimeId: binding.runtimeId,
-        connectionId: binding.connectionId,
-        connectionRevision: binding.connectionRevision,
-        sessionCompatibilityKey: binding.sessionCompatibilityKey,
-        policyCompatibilityKey: binding.policyCompatibilityKey,
+        routeRevision: binding.routeRevision,
+        compatibilityRevision: binding.compatibilityRevision,
+        selectionCompatibilityKey: binding.selectionCompatibilityKey,
         runtimeProvider: binding.runtimeProvider,
         model: binding.model,
-        forwarderIdentity: binding.bindingHandle,
-        audience: binding.audience,
-        protocol: binding.protocol,
-        requestPath: binding.localSigningForwarderRequestPath,
-        bindingHandle: binding.bindingHandle,
+        transport: binding.transport,
       }),
     )
     .digest("hex")
@@ -150,7 +164,7 @@ function materializationDigest(binding: RuntimeIntelligenceProxyBinding): string
 
 function ensurePrivateTree(rootPath: string, segments: string[]): string {
   const absoluteRoot = resolve(rootPath);
-  if (!isAbsolute(absoluteRoot)) throw new Error("Intelligence materialization root must be absolute.");
+  if (!isAbsolute(absoluteRoot)) throw new Error("Model-broker materialization root must be absolute.");
   try {
     assertPrivateDirectory(absoluteRoot);
   } catch (error) {
@@ -159,13 +173,11 @@ function ensurePrivateTree(rootPath: string, segments: string[]): string {
   }
   assertPrivateDirectory(absoluteRoot);
   const canonicalRoot = realpathSync(absoluteRoot);
-  if (canonicalRoot !== absoluteRoot) {
-    throw new Error(`Refusing a non-canonical intelligence materialization root: ${absoluteRoot}`);
-  }
+  if (canonicalRoot !== absoluteRoot) throw new Error(`Refusing a non-canonical model-broker root: ${absoluteRoot}`);
   let current = canonicalRoot;
   for (const segment of segments) {
     if (!/^[A-Za-z0-9._-]+$/.test(segment) || segment === "." || segment === "..") {
-      throw new Error("Refusing unsafe intelligence materialization path segment.");
+      throw new Error("Refusing unsafe model-broker materialization path segment.");
     }
     current = join(current, segment);
     try {
@@ -175,7 +187,7 @@ function ensurePrivateTree(rootPath: string, segments: string[]): string {
     }
     assertPrivateDirectory(current);
     if (realpathSync(current) !== current) {
-      throw new Error(`Refusing non-canonical intelligence materialization directory: ${current}`);
+      throw new Error(`Refusing non-canonical model-broker materialization directory: ${current}`);
     }
   }
   return current;
@@ -188,7 +200,7 @@ function isErrno(error: unknown, code: string): boolean {
 function assertPrivateDirectory(path: string): void {
   const stats = lstatSync(path);
   if (!stats.isDirectory() || stats.isSymbolicLink()) {
-    throw new Error(`Refusing unsafe intelligence materialization directory: ${path}`);
+    throw new Error(`Refusing unsafe model-broker materialization directory: ${path}`);
   }
   chmodSync(path, 0o700);
 }

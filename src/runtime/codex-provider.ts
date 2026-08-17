@@ -58,7 +58,7 @@ import type {
 } from "./types.js";
 import { toCodexRuntimeEffort } from "./effort.js";
 import { createRuntimeTerminalEventTracker } from "./terminality.js";
-import { materializeRuntimeIntelligenceProxy } from "./intelligence-materializer.js";
+import { materializeRuntimeModelBroker } from "./model-broker-materializer.js";
 
 const DEFAULT_CODEX_MODEL = "gpt-5";
 const INTERRUPT_GRACE_MS = 1_500;
@@ -248,14 +248,9 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
           availability: "codex-skills",
           loadedState: "instruction-sources",
         },
-        intelligenceProxy: {
-          transport: {
-            protocol: "openai-responses",
-            basePath: "/v1",
-            endpointPath: "/v1/responses",
-          },
-          localSigningForwarder: true,
-          providerPrincipalIsolation: "none",
+        modelBroker: {
+          protocols: ["openai-responses"],
+          principalIsolation: "none",
         },
         supportsSessionResume: true,
         supportsSessionFork: true,
@@ -270,7 +265,7 @@ export function createCodexRuntimeProvider(options: CreateCodexRuntimeProviderOp
     },
     prepareSession(input: RuntimePrepareSessionRequest): RuntimePrepareSessionResult {
       ensureAgentInstructionFiles(input.cwd);
-      const materialized = input.intelligence ? materializeRuntimeIntelligenceProxy(input.intelligence) : undefined;
+      const materialized = input.modelBroker ? materializeRuntimeModelBroker(input.modelBroker) : undefined;
       ensureCodexBashHookConfig(materialized?.configDir);
       const syncedSkills = materialized
         ? syncCodexSkills(input.plugins ?? [], {

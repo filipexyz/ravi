@@ -154,21 +154,21 @@ describe("runtime credential resolver", () => {
     });
   });
 
-  it("refuses to treat locally stored Hub connection metadata as authority", async () => {
+  it("refuses to treat locally stored model-broker metadata as authority", async () => {
     expect(() =>
       createRuntimeCredential({
         id: "conn_local",
-        label: "Local Hub metadata",
+        label: "Local broker metadata",
         runtimeProvider: "codex",
         upstreamProvider: "openai",
-        authMethod: "hub-proxy",
+        authMethod: "model-broker",
         sourceKind: "helper",
         bindings: [],
       }),
-    ).toThrow("must be granted by identityd");
+    ).toThrow("must be leased by a registered broker");
   });
 
-  it("rejects legacy local Hub rows even when they carry an authProfileRef", async () => {
+  it("rejects local model-broker rows even when they carry an authProfileRef", async () => {
     const credential = createRuntimeCredential({
       id: "conn_legacy",
       label: "Legacy local row",
@@ -186,7 +186,7 @@ describe("runtime credential resolver", () => {
       ],
     });
     getDb()
-      .prepare("UPDATE runtime_credentials SET auth_method = 'hub-proxy', auth_profile_ref = ? WHERE id = ?")
+      .prepare("UPDATE runtime_credentials SET auth_method = 'model-broker', auth_profile_ref = ? WHERE id = ?")
       .run("/tmp/must-never-load", credential.id);
     const result = await resolveRuntimeCredentialAttemptBinding({
       runtimeProvider: "codex",
@@ -197,7 +197,7 @@ describe("runtime credential resolver", () => {
     expect(result.rejected).toContainEqual({
       credentialId: "conn_legacy",
       label: "Legacy local row",
-      reason: "hub_proxy_requires_identityd_grant",
+      reason: "model_broker_requires_route_lease",
     });
   });
 

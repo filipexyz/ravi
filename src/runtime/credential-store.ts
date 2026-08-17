@@ -23,10 +23,12 @@ interface RuntimeCredentialRow {
   agent_allowlist_json: string | null;
   task_profile_allowlist_json: string | null;
   priority: number;
+  weight: number | null;
   enabled: number;
   status: RuntimeCredentialStatus;
   auth_method: string | null;
   source_kind: string | null;
+  strategy_hint: string | null;
   session_compatibility_key: string | null;
   auth_profile_ref: string | null;
   fingerprint: string;
@@ -132,10 +134,12 @@ export function ensureRuntimeCredentialTables(): void {
       agent_allowlist_json TEXT,
       task_profile_allowlist_json TEXT,
       priority INTEGER NOT NULL DEFAULT 0,
+      weight INTEGER,
       enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
       status TEXT NOT NULL DEFAULT 'healthy',
       auth_method TEXT,
       source_kind TEXT,
+      strategy_hint TEXT,
       session_compatibility_key TEXT,
       auth_profile_ref TEXT,
       fingerprint TEXT NOT NULL,
@@ -234,10 +238,10 @@ export function createRuntimeCredential(input: RuntimeCredentialInput): RuntimeC
         `
         INSERT INTO runtime_credentials (
           id, label, runtime_provider, upstream_provider, model_allowlist_json, model_denylist_json,
-          agent_allowlist_json, task_profile_allowlist_json, priority, enabled, status,
-          auth_method, source_kind, session_compatibility_key, auth_profile_ref, fingerprint,
+          agent_allowlist_json, task_profile_allowlist_json, priority, weight, enabled, status,
+          auth_method, source_kind, strategy_hint, session_compatibility_key, auth_profile_ref, fingerprint,
           sensitive_env_keys_json, remote_forward_env_keys_json, notes, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
       ).run(
         id,
@@ -249,10 +253,12 @@ export function createRuntimeCredential(input: RuntimeCredentialInput): RuntimeC
         stringifyList(input.agentAllowlist),
         stringifyList(input.taskProfileAllowlist),
         input.priority ?? 0,
+        input.weight ?? null,
         enabled ? 1 : 0,
         status,
         normalizeOptional(input.authMethod),
         normalizeOptional(input.sourceKind),
+        normalizeOptional(input.strategyHint),
         normalizeOptional(input.sessionCompatibilityKey) ?? fingerprint,
         normalizeOptional(input.authProfileRef),
         fingerprint,
@@ -802,10 +808,12 @@ export function serializeRuntimeCredential(
     agentAllowlist: record.agentAllowlist,
     taskProfileAllowlist: record.taskProfileAllowlist,
     priority: record.priority,
+    weight: record.weight ?? null,
     enabled: record.enabled,
     status: record.status,
     authMethod: record.authMethod ?? null,
     sourceKind: record.sourceKind ?? null,
+    strategyHint: record.strategyHint ?? null,
     sessionCompatibilityKey: record.sessionCompatibilityKey ?? null,
     authProfileRef: record.authProfileRef ? redactPath(record.authProfileRef) : null,
     fingerprint: record.fingerprint,
@@ -838,8 +846,8 @@ export function serializeRuntimeCredential(
 function validateRuntimeCredentialInput(input: RuntimeCredentialInput): void {
   if (!input.label.trim()) throw new Error("Credential label is required");
   if (!input.runtimeProvider.trim()) throw new Error("Runtime provider is required");
-  if (input.authMethod === "hub-proxy") {
-    throw new Error("Hub-managed intelligence connections must be granted by identityd, not stored locally");
+  if (input.authMethod === "model-broker") {
+    throw new Error("Model-broker routes must be leased by a registered broker, not stored as local credentials");
   }
   if (!input.bindings.length) {
     throw new Error("At least one secret binding is required");
@@ -866,10 +874,12 @@ function rowToCredential(
     agentAllowlist: parseList(row.agent_allowlist_json),
     taskProfileAllowlist: parseList(row.task_profile_allowlist_json),
     priority: row.priority,
+    ...(row.weight !== null ? { weight: row.weight } : {}),
     enabled: Boolean(row.enabled),
     status: row.status,
     ...(row.auth_method ? { authMethod: row.auth_method } : {}),
     ...(row.source_kind ? { sourceKind: row.source_kind as RuntimeCredentialRecord["sourceKind"] } : {}),
+    ...(row.strategy_hint ? { strategyHint: row.strategy_hint as RuntimeCredentialRecord["strategyHint"] } : {}),
     ...(row.session_compatibility_key ? { sessionCompatibilityKey: row.session_compatibility_key } : {}),
     ...(row.auth_profile_ref ? { authProfileRef: row.auth_profile_ref } : {}),
     fingerprint: row.fingerprint,

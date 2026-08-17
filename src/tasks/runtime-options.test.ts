@@ -4,7 +4,7 @@ import { resolveTaskRuntimeOptions } from "./runtime-options.js";
 describe("task runtime options", () => {
   it("uses profile runtime defaults ahead of session overrides", () => {
     const resolved = resolveTaskRuntimeOptions({
-      profile: { id: "workspace", runtimeDefaults: { model: "profile-model", effort: "high" } },
+      profile: { runtimeDefaults: { model: "profile-model", effort: "high" } },
       sessionModelOverride: "session-model",
       sessionEffortOverride: "ultra",
       agentModel: "agent-model",
@@ -15,7 +15,6 @@ describe("task runtime options", () => {
     expect(resolved.options).toEqual({ model: "profile-model", effort: "high" });
     expect(resolved.sources.model).toBe("profile_default");
     expect(resolved.sources.effort).toBe("profile_default");
-    expect(resolved.taskProfileId).toBe("workspace");
     expect(resolved.hasTaskRuntimeContext).toBe(true);
   });
 

@@ -33,10 +33,12 @@ import {
 import { compactionAnnouncementForTurn } from "./compaction-announcement.js";
 import { classifyRuntimeCredentialFailure } from "./credential-classifier.js";
 import {
-  reportRuntimeIntelligenceAttemptFeedback,
-  type RuntimeIntelligenceAttemptFeedbackResult,
-  type RuntimeIntelligenceEffectState,
-} from "./intelligence-identity-client.js";
+  reportRuntimeModelBrokerAttempt,
+  type ModelBrokerAttemptFeedbackResult,
+  type RuntimeModelBrokerEffectState,
+} from "./model-broker.js";
+import { createModelBroker } from "./model-broker-registry.js";
+import { releaseRuntimeModelBrokerPlanForAdvance } from "./model-broker-planning.js";
 import { mergeRuntimeCredentialSessionMetadata } from "./credential-resolver.js";
 import { refreshRuntimeCredential } from "./credential-refresh.js";
 import {
@@ -408,15 +410,15 @@ function extractRuntimeFailureHeaders(
 
 async function recordRuntimeCredentialTurnSuccess(
   streaming: RuntimeHostStreamingSession,
-  effectState: RuntimeIntelligenceEffectState,
+  effectState: RuntimeModelBrokerEffectState,
 ): Promise<void> {
   const credential = streaming.currentRuntimeCredential;
   const credentialId = credential?.credentialId;
   if (!credentialId) return;
   try {
-    if (credential.authMethod === "hub-proxy") {
-      await reportHubIntelligenceFeedback(credential, "succeeded", effectState);
-      credential.intelligenceAttemptTerminal = true;
+    if (credential.authMethod === "model-broker") {
+      await reportModelBrokerFeedback(credential, streaming.agentId, "succeeded", effectState);
+      credential.modelBrokerAttemptTerminal = true;
       return;
     }
     recordRuntimeCredentialSuccess(credentialId);
@@ -433,7 +435,7 @@ async function recordRuntimeCredentialTurnSuccess(
 
 function clearRuntimeCredentialAttempt(streaming: RuntimeHostStreamingSession, attemptId: string | undefined): void {
   if (!attemptId) return;
-  if (streaming.currentRuntimeCredential?.authMethod === "hub-proxy") return;
+  if (streaming.currentRuntimeCredential?.authMethod === "model-broker") return;
   if (streaming.currentRuntimeCredential?.attemptId === attemptId) {
     streaming.currentRuntimeCredential.attemptId = undefined;
   }
@@ -445,11 +447,11 @@ async function recordRuntimeCredentialTurnFailure(input: {
   model: string;
   error: string;
   rawEvent?: Record<string, unknown>;
-  effectState: RuntimeIntelligenceEffectState;
+  effectState: RuntimeModelBrokerEffectState;
 }): Promise<
   | {
       signal: RuntimeCredentialFailureSignal;
-      hubFeedback?: RuntimeIntelligenceAttemptFeedbackResult;
+      modelBrokerFeedback?: ModelBrokerAttemptFeedbackResult;
     }
   | undefined
 > {
@@ -477,15 +479,16 @@ async function recordRuntimeCredentialTurnFailure(input: {
   });
 
   try {
-    if (credential.authMethod === "hub-proxy") {
-      const hubFeedback = await reportHubIntelligenceFeedback(
+    if (credential.authMethod === "model-broker") {
+      const modelBrokerFeedback = await reportModelBrokerFeedback(
         credential,
+        input.streaming.agentId,
         signal.retryableByCredential ? "credential_failed" : "provider_failed",
         input.effectState,
         signal.kind,
       );
-      credential.intelligenceAttemptTerminal = true;
-      return { signal, hubFeedback };
+      credential.modelBrokerAttemptTerminal = true;
+      return { signal, modelBrokerFeedback };
     }
     recordRuntimeCredentialFailure(credential.credentialId, signal);
     completeRuntimeCredentialAttempt(credential.attemptId, { status: "failed", signal });
@@ -499,38 +502,52 @@ async function recordRuntimeCredentialTurnFailure(input: {
   return { signal };
 }
 
-async function reportHubIntelligenceFeedback(
+async function reportModelBrokerFeedback(
   credential: NonNullable<RuntimeHostStreamingSession["currentRuntimeCredential"]>,
+  agentId: string,
   outcome: "succeeded" | "credential_failed" | "provider_failed",
-  effectState: RuntimeIntelligenceEffectState,
+  effectState: RuntimeModelBrokerEffectState,
   failureKind?: string,
-): Promise<RuntimeIntelligenceAttemptFeedbackResult> {
+): Promise<ModelBrokerAttemptFeedbackResult> {
   if (
     !credential.attemptId ||
-    !credential.intelligenceGrantId ||
-    !credential.intelligenceRuntimeId ||
-    !credential.intelligenceSessionKey ||
-    !credential.connectionId
+    !credential.modelBrokerId ||
+    !credential.modelBrokerLeaseId ||
+    !credential.modelBrokerRuntimeId ||
+    !credential.modelBrokerSessionKey ||
+    !credential.modelBrokerTurnId
   ) {
-    throw new Error("Hub intelligence attempt is missing authoritative feedback metadata.");
+    throw new Error("Model-broker attempt is missing authoritative feedback metadata.");
   }
-  return reportRuntimeIntelligenceAttemptFeedback({
+  const result = await reportRuntimeModelBrokerAttempt(createModelBroker(credential.modelBrokerId), {
     attemptId: credential.attemptId,
-    grantId: credential.intelligenceGrantId,
-    runtimeId: credential.intelligenceRuntimeId,
-    connectionId: credential.connectionId,
-    sessionKey: credential.intelligenceSessionKey,
+    turnId: credential.modelBrokerTurnId,
+    leaseId: credential.modelBrokerLeaseId,
+    runtimeId: credential.modelBrokerRuntimeId,
+    sessionKey: credential.modelBrokerSessionKey,
     outcome,
     effectState,
     ...(failureKind ? { failureKind } : {}),
   });
+  if (result.nextAction === "advance") {
+    releaseRuntimeModelBrokerPlanForAdvance({
+      brokerId: credential.modelBrokerId,
+      runtimeId: credential.modelBrokerRuntimeId,
+      agentId,
+      sessionKey: credential.modelBrokerSessionKey,
+      turnId: credential.modelBrokerTurnId,
+      leaseId: credential.modelBrokerLeaseId,
+      attemptId: credential.attemptId,
+    });
+  }
+  return result;
 }
 
-function resolveIntelligenceEffectState(safety: {
+function resolveModelBrokerEffectState(safety: {
   inputMutated: boolean;
   startedTool: boolean;
   materializedOutput: boolean;
-}): RuntimeIntelligenceEffectState {
+}): RuntimeModelBrokerEffectState {
   if (safety.materializedOutput) return "output_materialized";
   if (safety.startedTool) return "tool_started";
   if (safety.inputMutated) return "input_mutated";
@@ -2595,15 +2612,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       // Handle result (turn complete - save and wait for next message)
       if (event.type === "turn.complete") {
-        const proxyCredential = streaming.currentRuntimeCredential;
-        if (proxyCredential?.authMethod === "hub-proxy") {
-          const providerPrefix = proxyCredential.upstreamProvider ? `${proxyCredential.upstreamProvider}/` : "";
-          event.execution = {
-            provider: proxyCredential.upstreamProvider ?? null,
-            model: providerPrefix && model.startsWith(providerPrefix) ? model.slice(providerPrefix.length) : model,
-            billingType: "api",
-          };
-        }
         const inputTokens = event.usage.inputTokens;
         const outputTokens = event.usage.outputTokens;
         const cacheRead = event.usage.cacheReadTokens ?? 0;
@@ -2622,7 +2630,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         const completedCredentialAttemptId = streaming.currentRuntimeCredential?.attemptId;
         await recordRuntimeCredentialTurnSuccess(
           streaming,
-          resolveIntelligenceEffectState(getRuntimeTurnReplaySafety(streaming, crashRecovery)),
+          resolveModelBrokerEffectState(getRuntimeTurnReplaySafety(streaming, crashRecovery)),
         );
 
         const runtimeSessionDisplayId = event.session?.displayId ?? event.providerSessionId;
@@ -2811,6 +2819,28 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
 
       if (event.type === "turn.interrupted") {
         log.info("Turn interrupted", { runId, sessionName });
+        const interruptedReplaySafety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
+        const interruptedCredential = streaming.currentRuntimeCredential;
+        if (
+          interruptedCredential?.authMethod === "model-broker" &&
+          interruptedCredential.attemptId &&
+          interruptedCredential.modelBrokerAttemptTerminal !== true
+        ) {
+          try {
+            await reportModelBrokerAbandoned(
+              interruptedCredential,
+              resolveModelBrokerEffectState(interruptedReplaySafety),
+            );
+            interruptedCredential.modelBrokerAttemptTerminal = true;
+          } catch (error) {
+            log.warn("Failed to terminalize model-broker attempt after provider interruption", {
+              runId,
+              sessionName,
+              attemptId: interruptedCredential.attemptId,
+              error,
+            });
+          }
+        }
         recordTerminalTraceOnce({
           status: "interrupted",
           eventType: "turn.interrupted",
@@ -2836,7 +2866,6 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
         streaming.currentTurnInputMutated = false;
         streaming.currentChannelBackend = undefined;
         streaming.turnActive = false;
-        const interruptedReplaySafety = getRuntimeTurnReplaySafety(streaming, crashRecovery);
         if (!interruptedReplaySafety.replayable) {
           const queuedBefore = streaming.pendingMessages.length;
           streaming.pendingMessages = getCrashRecoveryReplayablePendingRuntimeMessages(streaming, crashRecovery);
@@ -2870,7 +2899,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
               model,
               error: event.error,
               rawEvent: event.rawEvent,
-              effectState: resolveIntelligenceEffectState(currentTurnReplaySafety),
+              effectState: resolveModelBrokerEffectState(currentTurnReplaySafety),
             })
           : undefined;
         const credentialFailureSignal = credentialFailureRecord?.signal;
@@ -2967,10 +2996,10 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           break;
         }
 
-        const hubCredentialRetryApproved =
-          streaming.currentRuntimeCredential?.authMethod !== "hub-proxy" ||
-          credentialFailureRecord?.hubFeedback?.nextAction === "advance";
-        if (credentialFailureSignal?.retryableByCredential && hubCredentialRetryApproved) {
+        const modelBrokerRetryApproved =
+          streaming.currentRuntimeCredential?.authMethod !== "model-broker" ||
+          credentialFailureRecord?.modelBrokerFeedback?.nextAction === "advance";
+        if (credentialFailureSignal?.retryableByCredential && modelBrokerRetryApproved) {
           const restartReason = `runtime_credential_${credentialFailureSignal.kind}`;
           const stashedCount = stashCurrentTurnRuntimeMessages(sessionName, streaming, stashedMessages, {
             crashRecovery,
@@ -2995,7 +3024,7 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
                 metadata: event.metadata ?? null,
               },
             });
-            if (streaming.currentRuntimeCredential.authMethod !== "hub-proxy") {
+            if (streaming.currentRuntimeCredential.authMethod !== "model-broker") {
               try {
                 await refreshRuntimeCredential(streaming.currentRuntimeCredential.credentialId, {
                   reason: "retryable_failure",
@@ -3036,12 +3065,12 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
           });
         }
 
-        if (credentialFailureSignal?.retryableByCredential && !hubCredentialRetryApproved) {
-          log.warn("Skipping Hub intelligence failover without authoritative pre-effect advance", {
+        if (credentialFailureSignal?.retryableByCredential && !modelBrokerRetryApproved) {
+          log.warn("Skipping model-broker failover without authoritative pre-effect advance", {
             runId,
             sessionName,
             attemptId: streaming.currentRuntimeCredential?.attemptId,
-            effectState: resolveIntelligenceEffectState(currentTurnReplaySafety),
+            effectState: resolveModelBrokerEffectState(currentTurnReplaySafety),
           });
         }
 
@@ -3298,16 +3327,16 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
     try {
       const finalCredential = streaming.currentRuntimeCredential;
       if (
-        finalCredential?.authMethod === "hub-proxy" &&
+        finalCredential?.authMethod === "model-broker" &&
         finalCredential.attemptId &&
-        finalCredential.intelligenceAttemptTerminal !== true
+        finalCredential.modelBrokerAttemptTerminal !== true
       ) {
-        await reportHubIntelligenceAbandoned(
+        await reportModelBrokerAbandoned(
           finalCredential,
-          resolveIntelligenceEffectState(getRuntimeTurnReplaySafety(streaming, crashRecovery)),
+          resolveModelBrokerEffectState(getRuntimeTurnReplaySafety(streaming, crashRecovery)),
         );
-        finalCredential.intelligenceAttemptTerminal = true;
-      } else if (finalCredential?.authMethod !== "hub-proxy") {
+        finalCredential.modelBrokerAttemptTerminal = true;
+      } else if (finalCredential?.authMethod !== "model-broker") {
         completeRuntimeCredentialAttempt(finalCredential?.attemptId, {
           status: "abandoned",
           metadata: { phase: "runtime.event_loop.finally" },
@@ -3335,25 +3364,26 @@ export async function runRuntimeEventLoop(options: RunRuntimeEventLoopOptions): 
   }
 }
 
-async function reportHubIntelligenceAbandoned(
+async function reportModelBrokerAbandoned(
   credential: NonNullable<RuntimeHostStreamingSession["currentRuntimeCredential"]>,
-  effectState: RuntimeIntelligenceEffectState,
-): Promise<RuntimeIntelligenceAttemptFeedbackResult> {
+  effectState: RuntimeModelBrokerEffectState,
+): Promise<ModelBrokerAttemptFeedbackResult> {
   if (
     !credential.attemptId ||
-    !credential.intelligenceGrantId ||
-    !credential.intelligenceRuntimeId ||
-    !credential.intelligenceSessionKey ||
-    !credential.connectionId
+    !credential.modelBrokerId ||
+    !credential.modelBrokerLeaseId ||
+    !credential.modelBrokerRuntimeId ||
+    !credential.modelBrokerSessionKey ||
+    !credential.modelBrokerTurnId
   ) {
-    throw new Error("Hub intelligence attempt is missing authoritative abandonment metadata.");
+    throw new Error("Model-broker attempt is missing authoritative abandonment metadata.");
   }
-  return reportRuntimeIntelligenceAttemptFeedback({
+  return reportRuntimeModelBrokerAttempt(createModelBroker(credential.modelBrokerId), {
     attemptId: credential.attemptId,
-    grantId: credential.intelligenceGrantId,
-    runtimeId: credential.intelligenceRuntimeId,
-    connectionId: credential.connectionId,
-    sessionKey: credential.intelligenceSessionKey,
+    turnId: credential.modelBrokerTurnId,
+    leaseId: credential.modelBrokerLeaseId,
+    runtimeId: credential.modelBrokerRuntimeId,
+    sessionKey: credential.modelBrokerSessionKey,
     outcome: "abandoned",
     effectState,
   });

@@ -334,17 +334,17 @@ public struct AgentsNamespace: Sendable {
     return try await transport.call(groupSegments: ["agents"], command: "delete", body: requestBody, as: AgentsDeleteReturn.self)
   }
 
-  public func intelligence(_ id: String, _ options: AgentsIntelligenceOptions = .init()) async throws -> AgentsIntelligenceReturn {
-    var requestBody: [String: RaviJSON] = [:]
-    requestBody["id"] = try RaviJSON.fromEncodable(id)
-    try options.encodeBody(into: &requestBody)
-    return try await transport.call(groupSegments: ["agents"], command: "intelligence", body: requestBody, as: AgentsIntelligenceReturn.self)
-  }
-
   public func list(_ options: AgentsListOptions = .init()) async throws -> AgentsListReturn {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["agents"], command: "list", body: requestBody, as: AgentsListReturn.self)
+  }
+
+  public func modelBroker(_ id: String, _ options: AgentsModelBrokerOptions = .init()) async throws -> AgentsModelBrokerReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["agents"], command: "model-broker", body: requestBody, as: AgentsModelBrokerReturn.self)
   }
 
   public func permissions(_ id: String, _ profile: String? = nil, _ options: AgentsPermissionsOptions = .init()) async throws -> AgentsPermissionsReturn {

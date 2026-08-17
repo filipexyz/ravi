@@ -77,8 +77,8 @@ function isValidTimezone(tz: string): boolean {
 }
 
 const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: string) => void }> = {
-  "runtime.intelligence.proxy_required": {
-    description: "Require the Hub signing proxy for agent intelligence; each active agent must select a profile",
+  "runtime.model_broker.required": {
+    description: "Require every active agent to resolve inference through its selected model broker",
     validate: (value: string) => {
       if (value !== "true" && value !== "false") {
         throw new Error("Invalid value. Must be one of: true, false");

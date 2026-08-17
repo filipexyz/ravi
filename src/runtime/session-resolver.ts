@@ -36,6 +36,16 @@ export interface RuntimeSessionResolution {
   resumeDecision: RuntimeResumeDecision;
 }
 
+export interface RuntimeSessionIdentity {
+  sessionEntry: SessionEntry | null;
+  agentId: string;
+  agent: AgentConfig;
+  agentCwd: string;
+  session: SessionEntry;
+  sessionCwd: string;
+  dbSessionKey: string;
+}
+
 export interface RuntimeResumeDecision {
   hadStoredProviderSessionId: boolean;
   storedProviderSessionAgeMs?: number;
@@ -60,25 +70,20 @@ export function resolveRuntimeSession(options: {
   sessionName: string;
   prompt: RuntimeLaunchPrompt;
   defaultRuntimeProviderId: RuntimeProviderId;
+  runtimeProviderIdOverride?: RuntimeProviderId;
+  identity?: RuntimeSessionIdentity;
 }): RuntimeSessionResolution | null {
-  const routerConfig = configStore.getConfig();
-  const sessionEntry = getSessionByName(options.sessionName);
-  const agentId = options.prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
-  const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
-
-  if (!agent) {
-    log.error("No agent found", { sessionName: options.sessionName, agentId });
-    return null;
-  }
-
-  const agentCwd = expandHome(agent.cwd);
+  const identity = options.identity ?? resolveRuntimeSessionIdentity(options);
+  if (!identity) return null;
+  const { sessionEntry, agent, session, sessionCwd, dbSessionKey } = identity;
   const agentSelection = resolveAgentModelSelection(agent);
   const sessionRuntimeProviderOverride =
     options.prompt._observation && options.prompt._runtimeProviderId
       ? undefined
       : sessionEntry?.runtimeProviderOverride;
-  const runtimeProviderId: RuntimeProviderId =
-    options.prompt._observation && options.prompt._runtimeProviderId
+  const runtimeProviderId: RuntimeProviderId = options.runtimeProviderIdOverride
+    ? options.runtimeProviderIdOverride
+    : options.prompt._observation && options.prompt._runtimeProviderId
       ? options.prompt._runtimeProviderId
       : sessionRuntimeProviderOverride
         ? sessionRuntimeProviderOverride
@@ -87,13 +92,6 @@ export function resolveRuntimeSession(options: {
           : (agent.provider ?? options.defaultRuntimeProviderId);
   const runtimeProvider = createRuntimeProvider(runtimeProviderId);
   const runtimeCapabilities = runtimeProvider.getCapabilities();
-
-  let session: SessionEntry;
-  if (sessionEntry && sessionEntry.agentId !== agentId) {
-    session = getOrCreateSession(sessionEntry.sessionKey, agentId, agentCwd);
-  } else {
-    session = sessionEntry ?? getOrCreateSession(options.sessionName, agentId, agentCwd, { name: options.sessionName });
-  }
 
   let storedRuntimeSessionParams = session.runtimeSessionParams;
   let storedProviderSessionId =
@@ -104,7 +102,7 @@ export function resolveRuntimeSession(options: {
     capabilities: runtimeCapabilities,
     storedProviderSessionId,
     storedRuntimeSessionParams,
-    sessionCwd: expandHome(session.agentCwd),
+    sessionCwd,
   });
   const canResumeStoredSession =
     !!storedProviderSessionId &&
@@ -134,7 +132,7 @@ export function resolveRuntimeSession(options: {
   if (storedProviderSessionId && !canResumeStoredSession) {
     log.info("Clearing stale provider session state", {
       sessionName: options.sessionName,
-      dbSessionKey: session.sessionKey,
+      dbSessionKey,
       storedProvider: storedRuntimeProvider,
       requestedProvider: runtimeProviderId,
       resumeDecision,
@@ -151,21 +149,48 @@ export function resolveRuntimeSession(options: {
   }
 
   return {
-    sessionEntry,
-    agentId,
-    agent,
-    agentCwd,
+    ...identity,
     runtimeProviderId,
     runtimeProvider,
     runtimeCapabilities,
-    session,
-    sessionCwd: expandHome(session.agentCwd),
-    dbSessionKey: session.sessionKey,
     storedRuntimeSessionParams,
     storedProviderSessionId,
     storedRuntimeProvider,
     canResumeStoredSession,
     resumeDecision,
+  };
+}
+
+export function resolveRuntimeSessionIdentity(options: {
+  sessionName: string;
+  prompt: RuntimeLaunchPrompt;
+}): RuntimeSessionIdentity | null {
+  const routerConfig = configStore.getConfig();
+  const sessionEntry = getSessionByName(options.sessionName);
+  const agentId = options.prompt._agentId ?? sessionEntry?.agentId ?? routerConfig.defaultAgent;
+  const agent = routerConfig.agents[agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
+
+  if (!agent) {
+    log.error("No agent found", { sessionName: options.sessionName, agentId });
+    return null;
+  }
+
+  const agentCwd = expandHome(agent.cwd);
+  let session: SessionEntry;
+  if (sessionEntry && sessionEntry.agentId !== agentId) {
+    session = getOrCreateSession(sessionEntry.sessionKey, agentId, agentCwd);
+  } else {
+    session = sessionEntry ?? getOrCreateSession(options.sessionName, agentId, agentCwd, { name: options.sessionName });
+  }
+
+  return {
+    sessionEntry,
+    agentId,
+    agent,
+    agentCwd,
+    session,
+    sessionCwd: expandHome(session.agentCwd),
+    dbSessionKey: session.sessionKey,
   };
 }
 

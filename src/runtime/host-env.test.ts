@@ -51,7 +51,7 @@ describe("runtime host env", () => {
     expect(env.PROVIDER_FLAG).toBe("1");
   });
 
-  it("removes every known upstream credential in Hub proxy mode even when hooks exist", () => {
+  it("removes every known upstream credential in model-broker mode even when hooks exist", () => {
     const env = buildRuntimeEnv(
       {
         OPENAI_API_KEY: "secret-openai",
@@ -61,7 +61,7 @@ describe("runtime host env", () => {
         PATH: "/usr/bin",
       },
       { RAVI_CONTEXT_KEY: "runtime-context" },
-      { RAVI_INTELLIGENCE_BINDING_HANDLE: "binding_a" },
+      { RAVI_MODEL_BROKER_ACTIVE: "1" },
       capabilities,
       true,
     );
@@ -69,6 +69,6 @@ describe("runtime host env", () => {
     expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
     expect(env.OPENROUTER_API_KEY).toBeUndefined();
     expect(env.AWS_SECRET_ACCESS_KEY).toBeUndefined();
-    expect(env.RAVI_INTELLIGENCE_BINDING_HANDLE).toBe("binding_a");
+    expect(env.RAVI_MODEL_BROKER_ACTIVE).toBe("1");
   });
 });

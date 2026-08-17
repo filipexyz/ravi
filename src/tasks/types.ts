@@ -56,8 +56,6 @@ export interface TaskRuntimeResolution {
   modelPresetId?: string;
   /** Runtime model preset version when the effective model was resolved via an agent preset. */
   modelPresetVersion?: number;
-  /** Effective task profile resolved alongside runtime option precedence. */
-  taskProfileId?: string;
   hasTaskRuntimeContext: boolean;
 }
 

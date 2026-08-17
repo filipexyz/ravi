@@ -126,11 +126,11 @@ describe("SettingsCommands", () => {
     expect(output).toContain("Use `ravi instances set main dmPolicy <value>` instead.");
   });
 
-  it("registers a strict global intelligence proxy-required switch", () => {
+  it("registers a strict global model-broker-required switch", () => {
     const commands = new SettingsCommands();
-    expect(() => commands.set("runtime.intelligence.proxy_required", "yes")).toThrow(/true, false/);
-    expect(() => commands.set("runtime.intelligence.proxy_required", "true", true)).not.toThrow();
-    expect(settingsStore["runtime.intelligence.proxy_required"]).toBe("true");
+    expect(() => commands.set("runtime.model_broker.required", "yes")).toThrow(/true, false/);
+    expect(() => commands.set("runtime.model_broker.required", "true", true)).not.toThrow();
+    expect(settingsStore["runtime.model_broker.required"]).toBe("true");
   });
 
   it("rejects writes to legacy account settings", () => {

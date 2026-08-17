@@ -46,12 +46,12 @@ describe("runtime credential classifier", () => {
     expect(JSON.stringify(signal)).not.toContain("sk-proj-secret_token_value");
   });
 
-  it("classifies identityd/forwarder failures as credential failover only", () => {
+  it("classifies model-broker forwarder failures as credential failover only", () => {
     const signal = classifyRuntimeCredentialFailure({
       runtimeProvider: "codex",
       upstreamProvider: "openai",
       credentialId: "conn_a",
-      message: "Could not complete the intelligence request through local identityd.",
+      message: "Could not complete the model-broker request through the local forwarder.",
     });
 
     expect(signal).toMatchObject({

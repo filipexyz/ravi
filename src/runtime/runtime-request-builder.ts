@@ -11,7 +11,6 @@ import {
   summarizeRuntimeCapabilities,
 } from "../session-trace/runtime-trace.js";
 import type { TaskRuntimeResolution } from "../tasks/types.js";
-import { dbResolveActiveTaskBindingForSession } from "../tasks/task-db.js";
 import { classifyTurnProvenance } from "./turn-provenance.js";
 import { resolveAgentSkills } from "./allowed-skills.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
@@ -45,19 +44,24 @@ import {
 import { resolveRuntimeSessionContinuity } from "./runtime-session-continuity.js";
 import { buildRuntimeSystemPrompt } from "./runtime-system-prompt.js";
 import {
-  INTELLIGENCE_PROXY_REQUIRED_SETTING,
-  assertRuntimeIntelligenceProxyCapability,
-  buildRuntimeIntelligenceAttemptBinding,
-  buildRuntimeIntelligenceProxyBinding,
-  isRuntimeIntelligencePhysicalBindingCompatible,
-  resolveRequiredRuntimeIntelligenceProfileSelection,
-  serializeRuntimeIntelligenceProxyBinding,
-  type RuntimeIntelligenceProxyBinding,
-} from "./intelligence-proxy.js";
+  MODEL_BROKER_REQUIRED_SETTING,
+  MODEL_BROKER_MIN_LEASE_REMAINING_MS,
+  assertRuntimeModelBrokerCapability,
+  buildRuntimeModelBrokerAttemptBinding,
+  buildRuntimeModelBrokerBinding,
+  isRuntimeModelBrokerPhysicalBindingCompatible,
+  resolveRequiredRuntimeModelBrokerSelection,
+  reportRuntimeModelBrokerAttempt,
+  serializeRuntimeModelBrokerBinding,
+  type RuntimeModelBrokerBinding,
+} from "./model-broker.js";
+import { createModelBroker } from "./model-broker-registry.js";
 import {
-  reportRuntimeIntelligenceAttemptFeedback,
-  requestRuntimeIntelligenceGrant,
-} from "./intelligence-identity-client.js";
+  abandonClaimedRuntimeModelBrokerPlan,
+  buildRuntimeModelBrokerPlanIdentity,
+  claimRuntimeModelBrokerPlan,
+  type ClaimedRuntimeModelBrokerPlan,
+} from "./model-broker-planning.js";
 import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type {
   RuntimeApprovalResult,
@@ -100,6 +104,7 @@ export interface RuntimeStartRequestBuildOptions {
   stashedMessages: Map<string, RuntimeUserMessage[]>;
   defaultRuntimeProviderId: RuntimeProviderId;
   crashRecovery: RuntimeCrashRecoveryCoordinator;
+  modelBrokerPlanClaim?: ClaimedRuntimeModelBrokerPlan;
 }
 
 export interface RuntimeStartRequestBuildResult {
@@ -312,12 +317,16 @@ function isSourceForChat(source: RuntimeMessageTarget, chat: NonNullable<ReturnT
 export async function buildRuntimeStartRequest(
   options: RuntimeStartRequestBuildOptions,
 ): Promise<RuntimeStartRequestBuildResult> {
-  const lifecycle: { pendingIntelligence?: PendingIntelligenceAttempt } = {};
+  const lifecycle: { pendingModelBroker?: PendingModelBrokerAttempt } = {};
   try {
     return await buildRuntimeStartRequestInternal(options, lifecycle);
   } catch (error) {
-    if (lifecycle.pendingIntelligence) {
-      await reportAbandonedIntelligenceBinding(lifecycle.pendingIntelligence, options.dbSessionKey);
+    if (options.modelBrokerPlanClaim) {
+      await abandonClaimedRuntimeModelBrokerPlan(options.modelBrokerPlanClaim, "runtime_request_build_failed").catch(
+        () => undefined,
+      );
+    } else if (lifecycle.pendingModelBroker) {
+      await reportAbandonedModelBrokerBinding(lifecycle.pendingModelBroker, options.dbSessionKey);
     }
     throw error;
   }
@@ -325,7 +334,7 @@ export async function buildRuntimeStartRequest(
 
 async function buildRuntimeStartRequestInternal(
   options: RuntimeStartRequestBuildOptions,
-  lifecycle: { pendingIntelligence?: PendingIntelligenceAttempt },
+  lifecycle: { pendingModelBroker?: PendingModelBrokerAttempt },
 ): Promise<RuntimeStartRequestBuildResult> {
   const {
     runId,
@@ -352,6 +361,7 @@ async function buildRuntimeStartRequestInternal(
   } = options;
   const toolEffectFence = resolveRuntimeToolEffectFence(runtimeProviderId, runtimeCapabilities.tools.permissionMode);
   streamingSession.toolEffectFence = toolEffectFence;
+  const preflightModel = options.modelBrokerPlanClaim?.plan.lease.model ?? model;
 
   const { runtimeContext, toolContext, raviEnv } = buildRuntimeRequestContext({
     dbSessionKey,
@@ -360,62 +370,58 @@ async function buildRuntimeStartRequestInternal(
     agent,
     prompt,
     runtimeProviderId,
-    model,
+    model: preflightModel,
     runtimeResolution,
     resolvedSource,
     approvalSource,
   });
 
-  const intelligenceSelection = resolveRequiredRuntimeIntelligenceProfileSelection(
-    agent,
-    dbGetSetting(INTELLIGENCE_PROXY_REQUIRED_SETTING) ?? undefined,
-  );
+  const modelBrokerSelection =
+    options.modelBrokerPlanClaim?.plan.selection ??
+    resolveRequiredRuntimeModelBrokerSelection(agent, dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined);
+  const initialModelBrokerTurnId =
+    options.modelBrokerPlanClaim?.plan.lease.turnId ?? (modelBrokerSelection ? createSessionTraceTurnId() : undefined);
   const upstreamProvider = resolveRuntimeCredentialUpstreamProvider(runtimeProviderId, model);
-  const taskProfile = runtimeResolution.taskProfileId ?? resolveRuntimeCredentialTaskProfile(sessionName, prompt);
-  const intelligenceResolution = intelligenceSelection
-    ? await (async () => {
-        assertRuntimeIntelligenceProxyCapability(runtimeCapabilities, runtimeProviderId);
-        const runtimeId = process.env.RAVI_RUNTIME_ID?.trim();
-        if (!runtimeId) {
-          throw new Error("The intelligence proxy requires a public RAVI_RUNTIME_ID binding.");
-        }
-        if (!upstreamProvider) {
-          throw new Error(`The intelligence proxy does not support runtime provider ${runtimeProviderId}.`);
-        }
-        return requestRuntimeIntelligenceGrant({
-          selection: intelligenceSelection,
-          runtimeProvider: runtimeProviderId,
-          upstreamProvider,
-          model,
-          runtimeId,
-          agentId: agent.id,
-          sessionKey: dbSessionKey,
-          ...(taskProfile ? { taskProfile } : {}),
-        });
-      })()
-    : undefined;
-  if (intelligenceResolution) {
-    lifecycle.pendingIntelligence = {
-      attemptId: intelligenceResolution.grant.attemptId,
-      grantId: intelligenceResolution.grant.grantId,
-      runtimeId: intelligenceResolution.grant.runtimeId,
-      connectionId: intelligenceResolution.grant.connectionId,
+  const modelBrokerLease =
+    options.modelBrokerPlanClaim?.plan.lease ??
+    (modelBrokerSelection
+      ? await (async () => {
+          assertRuntimeModelBrokerCapability(runtimeCapabilities, runtimeProviderId);
+          const runtimeId = process.env.RAVI_RUNTIME_ID?.trim();
+          if (!runtimeId) {
+            throw new Error("The model broker requires a public RAVI_RUNTIME_ID binding.");
+          }
+          return createModelBroker(modelBrokerSelection.brokerId).resolveRoute({
+            profileRef: modelBrokerSelection.profileRef,
+            runtimeId,
+            agentId: agent.id,
+            sessionKey: dbSessionKey,
+            turnId: initialModelBrokerTurnId!,
+          });
+        })()
+      : undefined);
+  if (modelBrokerLease) {
+    lifecycle.pendingModelBroker = {
+      brokerId: modelBrokerLease.brokerId,
+      attemptId: modelBrokerLease.attemptId,
+      turnId: modelBrokerLease.turnId,
+      leaseId: modelBrokerLease.leaseId,
+      runtimeId: modelBrokerLease.runtimeId,
       sessionKey: dbSessionKey,
     };
   }
-  const intelligence = intelligenceSelection
-    ? buildRuntimeIntelligenceProxyBinding({
-        selection: intelligenceSelection,
-        grant: intelligenceResolution!.grant,
-        forwarder: intelligenceResolution!.forwarder,
+  const modelBroker = modelBrokerSelection
+    ? buildRuntimeModelBrokerBinding({
+        selection: modelBrokerSelection,
+        lease: modelBrokerLease!,
         runtimeCapabilities,
-        runtimeProvider: runtimeProviderId,
-        model,
+        expectedRuntimeProvider: runtimeProviderId,
       })
     : undefined;
-  const credentialResolution = intelligence
+  const effectiveModel = modelBroker?.model ?? model;
+  const credentialResolution = modelBroker
     ? {
-        attemptBinding: buildRuntimeIntelligenceAttemptBinding(intelligence, dbSessionKey),
+        attemptBinding: buildRuntimeModelBrokerAttemptBinding(modelBroker, dbSessionKey),
         selected: null,
         candidates: [],
         rejected: [],
@@ -426,7 +432,6 @@ async function buildRuntimeStartRequestInternal(
         upstreamProvider,
         model,
         agentId: agent.id,
-        taskProfile,
         sessionKey: dbSessionKey,
         sessionName,
         runId,
@@ -439,9 +444,9 @@ async function buildRuntimeStartRequestInternal(
       credentialResolution.attemptBinding,
     );
   }
-  if (intelligence) {
-    assertHubProxyAttemptBinding(credentialResolution.attemptBinding);
-    (toolContext as Record<string, unknown>).intelligence = serializeRuntimeIntelligenceProxyBinding(intelligence);
+  if (modelBroker) {
+    assertModelBrokerAttemptBinding(credentialResolution.attemptBinding);
+    (toolContext as Record<string, unknown>).modelBroker = serializeRuntimeModelBrokerBinding(modelBroker);
   }
 
   const preparedBootstrap = await prepareRuntimeProviderBootstrap({
@@ -455,7 +460,7 @@ async function buildRuntimeStartRequestInternal(
     toolContext,
     context: runtimeContext,
     session,
-    ...(intelligence ? { intelligence } : {}),
+    ...(modelBroker ? { modelBroker } : {}),
   });
   const { hostServices, providerBootstrap, runtimePlugins } = preparedBootstrap;
   installCrashRecoveryApprovalFences({ hostServices, streamingSession, crashRecovery });
@@ -468,7 +473,7 @@ async function buildRuntimeStartRequestInternal(
     raviEnv,
     ...(providerEnv ? { providerEnv } : {}),
     runtimeCapabilities,
-    forceSanitizeSecrets: Boolean(intelligence),
+    forceSanitizeSecrets: Boolean(modelBroker),
   });
   const canUseTool = async (toolName: string, input: Record<string, unknown>) => {
     const result = await hostServices.authorizeToolUse({ toolName, input });
@@ -523,44 +528,49 @@ async function buildRuntimeStartRequestInternal(
       ? resolvedAllowedSkills.allowlist
       : undefined;
   const toolAccessMode = getRuntimeToolAccessMode(runtimeCapabilities, agent.id, runtimeContext);
-  let initialIntelligenceAttemptAvailable = Boolean(intelligence);
-  const reserveIntelligenceAttemptForTurn = async (): Promise<void> => {
-    if (!intelligence || !intelligenceSelection) return;
-    if (initialIntelligenceAttemptAvailable && intelligence.grantExpiresAt - Date.now() >= 30_000) {
-      initialIntelligenceAttemptAvailable = false;
+  let initialModelBrokerAttemptAvailable = Boolean(modelBroker);
+  let pendingModelBrokerTurnId = initialModelBrokerTurnId;
+  const reserveModelBrokerAttemptForTurn = async (
+    turnId: string,
+    planned?: ClaimedRuntimeModelBrokerPlan,
+  ): Promise<void> => {
+    if (!modelBroker || !modelBrokerSelection) return;
+    if (
+      initialModelBrokerAttemptAvailable &&
+      pendingModelBrokerTurnId === turnId &&
+      modelBroker.expiresAt - Date.now() >= MODEL_BROKER_MIN_LEASE_REMAINING_MS
+    ) {
+      initialModelBrokerAttemptAvailable = false;
+      pendingModelBrokerTurnId = undefined;
       return;
     }
 
-    const resolution = await requestRuntimeIntelligenceGrant({
-      selection: intelligenceSelection,
-      runtimeProvider: runtimeProviderId,
-      upstreamProvider: intelligence.upstreamProvider,
-      model,
-      runtimeId: intelligence.runtimeId,
-      agentId: agent.id,
-      sessionKey: dbSessionKey,
-      ...(taskProfile ? { taskProfile } : {}),
-    });
-    const candidate = buildRuntimeIntelligenceProxyBinding({
-      selection: intelligenceSelection,
-      grant: resolution.grant,
-      forwarder: resolution.forwarder,
+    const lease =
+      planned?.plan.lease ??
+      (await createModelBroker(modelBrokerSelection.brokerId).resolveRoute({
+        profileRef: modelBrokerSelection.profileRef,
+        runtimeId: modelBroker.runtimeId,
+        agentId: agent.id,
+        sessionKey: dbSessionKey,
+        turnId,
+      }));
+    const candidate = buildRuntimeModelBrokerBinding({
+      selection: modelBrokerSelection,
+      lease,
       runtimeCapabilities,
-      runtimeProvider: runtimeProviderId,
-      model,
-      proxyRequired: true,
+      expectedRuntimeProvider: runtimeProviderId,
     });
-    if (!isRuntimeIntelligencePhysicalBindingCompatible(intelligence, candidate)) {
-      await reportAbandonedIntelligenceBinding(candidate, dbSessionKey);
-      throw new Error("The Hub intelligence connection changed and requires a fresh physical runtime session.");
+    if (!isRuntimeModelBrokerPhysicalBindingCompatible(modelBroker, candidate)) {
+      await reportAbandonedModelBrokerBinding(candidate, dbSessionKey);
+      throw new Error("The model-broker route changed and requires a fresh physical runtime session.");
     }
 
-    if (initialIntelligenceAttemptAvailable) {
-      await reportRuntimeIntelligenceAttemptFeedback({
-        attemptId: intelligence.attemptId,
-        grantId: intelligence.grantId,
-        runtimeId: intelligence.runtimeId,
-        connectionId: intelligence.connectionId,
+    if (initialModelBrokerAttemptAvailable) {
+      await reportRuntimeModelBrokerAttempt(createModelBroker(modelBroker.brokerId), {
+        attemptId: modelBroker.attemptId,
+        turnId: modelBroker.turnId,
+        leaseId: modelBroker.leaseId,
+        runtimeId: modelBroker.runtimeId,
         sessionKey: dbSessionKey,
         outcome: "abandoned",
         effectState: "none",
@@ -568,25 +578,45 @@ async function buildRuntimeStartRequestInternal(
     }
     const activeCredential = credentialResolution.attemptBinding;
     if (!activeCredential) {
-      await reportAbandonedIntelligenceBinding(candidate, dbSessionKey);
-      throw new Error("The Hub intelligence turn has no reserved attempt binding.");
+      await reportAbandonedModelBrokerBinding(candidate, dbSessionKey);
+      throw new Error("The model-broker turn has no reserved attempt binding.");
     }
-    Object.assign(intelligence, candidate);
-    Object.assign(activeCredential, buildRuntimeIntelligenceAttemptBinding(candidate, dbSessionKey), {
-      intelligenceAttemptTerminal: false,
+    Object.assign(modelBroker, candidate);
+    Object.assign(activeCredential, buildRuntimeModelBrokerAttemptBinding(candidate, dbSessionKey), {
+      modelBrokerAttemptTerminal: false,
     });
     (toolContext as Record<string, unknown>).runtimeCredential =
       serializeRuntimeCredentialAttemptBinding(activeCredential);
-    (toolContext as Record<string, unknown>).intelligence = serializeRuntimeIntelligenceProxyBinding(intelligence);
-    initialIntelligenceAttemptAvailable = false;
+    (toolContext as Record<string, unknown>).modelBroker = serializeRuntimeModelBrokerBinding(modelBroker);
+    initialModelBrokerAttemptAvailable = false;
+    pendingModelBrokerTurnId = undefined;
   };
   const traceTurnStart = async (input: { combinedPrompt: string; deliverableMessages: RuntimeUserMessage[] }) => {
-    await reserveIntelligenceAttemptForTurn();
+    const turnPrompt = findRuntimeTurnPrompt(input.deliverableMessages);
+    let planned: ClaimedRuntimeModelBrokerPlan | undefined;
+    if (turnPrompt?._modelBrokerTurnId && modelBrokerSelection) {
+      const runtimeId = process.env.RAVI_RUNTIME_ID?.trim();
+      if (!runtimeId) throw new Error("The model broker requires a public RAVI_RUNTIME_ID binding.");
+      planned = claimRuntimeModelBrokerPlan(
+        buildRuntimeModelBrokerPlanIdentity({
+          selection: modelBrokerSelection,
+          runtimeId,
+          agentId: agent.id,
+          sessionKey: dbSessionKey,
+          turnId: turnPrompt._modelBrokerTurnId,
+        }),
+      );
+    }
+    const turnId =
+      pendingModelBrokerTurnId ??
+      planned?.plan.lease.turnId ??
+      turnPrompt?._modelBrokerTurnId ??
+      createSessionTraceTurnId();
+    await reserveModelBrokerAttemptForTurn(turnId, planned);
     const firstMessage = input.deliverableMessages[0];
-    const turnId = createSessionTraceTurnId();
-    const currentModel = streamingSession.currentModel;
+    const currentModel = modelBroker?.model ?? streamingSession.currentModel;
     const runtimeCredential = credentialResolution.attemptBinding;
-    if (runtimeCredential && runtimeCredential.authMethod !== "hub-proxy" && !runtimeCredential.attemptId) {
+    if (runtimeCredential && runtimeCredential.authMethod !== "model-broker" && !runtimeCredential.attemptId) {
       runtimeCredential.attemptId = reserveRuntimeCredentialAttempt({
         credentialId: runtimeCredential.credentialId,
         sessionKey: dbSessionKey,
@@ -595,7 +625,7 @@ async function buildRuntimeStartRequestInternal(
         turnId,
         runtimeProvider: runtimeCredential.runtimeProvider,
         upstreamProvider: runtimeCredential.upstreamProvider,
-        model: currentModel,
+        model: modelBroker?.model ?? currentModel,
         metadata: { reason: "turn" },
       });
     }
@@ -745,7 +775,7 @@ async function buildRuntimeStartRequestInternal(
         agent,
         prompt: turnPrompt,
         runtimeProviderId,
-        model,
+        model: effectiveModel,
         runtimeResolution,
         resolvedSource: turnSource,
         approvalSource,
@@ -757,7 +787,7 @@ async function buildRuntimeStartRequestInternal(
   const result = {
     runtimeRequest: {
       prompt: messageGenerator,
-      model,
+      model: effectiveModel,
       ...(runtimeResolution.options.effort ? { effort: runtimeResolution.options.effort } : {}),
       ...(runtimeResolution.options.thinking ? { thinking: runtimeResolution.options.thinking } : {}),
       cwd: sessionCwd,
@@ -785,37 +815,38 @@ async function buildRuntimeStartRequestInternal(
       ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
       ...(allowedSkills ? { allowedSkills } : {}),
       ...(remoteSpawn ? { remoteSpawn } : {}),
-      ...(intelligence ? { intelligence } : {}),
+      ...(modelBroker ? { modelBroker } : {}),
     },
     toolContext,
     ...(credentialResolution.attemptBinding ? { runtimeCredentialAttempt: credentialResolution.attemptBinding } : {}),
   };
-  lifecycle.pendingIntelligence = undefined;
+  lifecycle.pendingModelBroker = undefined;
   return result;
 }
 
-async function reportAbandonedIntelligenceBinding(
-  binding: RuntimeIntelligenceProxyBinding | PendingIntelligenceAttempt,
+async function reportAbandonedModelBrokerBinding(
+  binding: RuntimeModelBrokerBinding | PendingModelBrokerAttempt,
   sessionKey?: string,
 ): Promise<void> {
   const resolvedSessionKey = sessionKey ?? ("sessionKey" in binding ? binding.sessionKey : undefined);
   if (!resolvedSessionKey) return;
-  await reportRuntimeIntelligenceAttemptFeedback({
+  await reportRuntimeModelBrokerAttempt(createModelBroker(binding.brokerId), {
     attemptId: binding.attemptId,
-    grantId: binding.grantId,
+    turnId: binding.turnId,
+    leaseId: binding.leaseId,
     runtimeId: binding.runtimeId,
-    connectionId: binding.connectionId,
     sessionKey: resolvedSessionKey,
     outcome: "abandoned",
     effectState: "none",
   }).catch(() => undefined);
 }
 
-interface PendingIntelligenceAttempt {
+interface PendingModelBrokerAttempt {
+  brokerId: string;
   attemptId: string;
-  grantId: string;
+  turnId: string;
+  leaseId: string;
   runtimeId: string;
-  connectionId: string;
   sessionKey: string;
 }
 
@@ -879,26 +910,18 @@ function buildRuntimeCredentialProfileEnv(
   return undefined;
 }
 
-function assertHubProxyAttemptBinding(binding: RuntimeCredentialAttemptBinding | null): void {
+function assertModelBrokerAttemptBinding(binding: RuntimeCredentialAttemptBinding | null): void {
   if (
     !binding ||
-    binding.authMethod !== "hub-proxy" ||
+    binding.authMethod !== "model-broker" ||
     binding.authProfileRef !== undefined ||
     Object.keys(binding.resolvedEnv).length > 0 ||
     binding.bindings.length > 0 ||
     binding.sensitiveEnvKeys.length > 0 ||
     binding.remoteForwardEnvKeys.length > 0
   ) {
-    throw new Error("Refusing an intelligence proxy attempt that contains local credential material.");
+    throw new Error("Refusing a model-broker attempt that contains local credential material.");
   }
-}
-
-function resolveRuntimeCredentialTaskProfile(
-  sessionName: string,
-  prompt: Pick<RuntimeLaunchPrompt, "taskBarrierTaskId">,
-): string | undefined {
-  const binding = dbResolveActiveTaskBindingForSession(sessionName, prompt.taskBarrierTaskId);
-  return binding?.task.profileId ?? binding?.task.profileSnapshot?.id;
 }
 
 function expandHomePath(value: string): string {
