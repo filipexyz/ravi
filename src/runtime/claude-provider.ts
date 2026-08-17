@@ -130,7 +130,7 @@ export function createClaudeRuntimeProvider(): ClaudeRuntimeProvider {
         },
         modelBroker: {
           protocols: ["anthropic-messages"],
-          principalIsolation: "none",
+          principalIsolation: "one-shot-capability",
         },
         supportsSessionResume: true,
         supportsSessionFork: true,

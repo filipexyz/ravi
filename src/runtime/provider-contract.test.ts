@@ -115,7 +115,9 @@ describe("runtime provider contract", () => {
       expect(typeof capabilities.skillVisibility.loadedState).toBe("string");
       expect(Array.isArray(capabilities.modelBroker?.protocols)).toBe(true);
       expect(capabilities.modelBroker?.protocols.length).toBeGreaterThan(0);
-      expect(capabilities.modelBroker?.principalIsolation).toBe("none");
+      expect(capabilities.modelBroker?.principalIsolation).toBe(
+        providerId === "claude" ? "one-shot-capability" : "none",
+      );
     }
   });
 

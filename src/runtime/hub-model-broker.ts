@@ -1,3 +1,4 @@
+import { closeSync, readFileSync } from "node:fs";
 import { lstat } from "node:fs/promises";
 import { request } from "node:http";
 import { dirname, isAbsolute } from "node:path";
@@ -9,10 +10,14 @@ import type {
   RuntimeModelBrokerProtocol,
   RuntimeModelBrokerRouteLease,
 } from "./model-broker.js";
-import { readModelBrokerPublicId, validateRuntimeModelBrokerRouteLease } from "./model-broker.js";
+import {
+  CANONICAL_MODEL_BROKER_PROFILE_REF,
+  readModelBrokerPublicId,
+  validateRuntimeModelBrokerRouteLease,
+} from "./model-broker.js";
 import type { RuntimeProviderId } from "./types.js";
 
-const DEFAULT_IDENTITY_SOCKET = "/run/ravi/identityd.sock";
+const DEFAULT_IDENTITY_SOCKET = "/run/ravi/identityd-runtime.sock";
 const DEFAULT_TIMEOUT_MS = 3_000;
 const MAX_RESPONSE_BYTES = 16 * 1024;
 
@@ -55,6 +60,8 @@ interface HubForwarderWire {
 
 interface HubModelBrokerOptions {
   socketPath?: string;
+  capabilityFd?: number;
+  capabilityToken?: string;
   timeoutMs?: number;
   skipSocketSecurityCheck?: boolean;
   expectedStatus?: number;
@@ -66,7 +73,10 @@ export class HubModelBroker implements ModelBroker {
   constructor(private readonly options: HubModelBrokerOptions = {}) {}
 
   async resolveRoute(input: ModelBrokerResolveRequest): Promise<RuntimeModelBrokerRouteLease> {
-    const profileRef = requireHubUuid(input.profileRef, "profileRef");
+    const profileRef =
+      input.profileRef === CANONICAL_MODEL_BROKER_PROFILE_REF
+        ? CANONICAL_MODEL_BROKER_PROFILE_REF
+        : requireHubUuid(input.profileRef, "profileRef");
     const runtimeId = requireHubUuid(input.runtimeId, "runtimeId");
     const agentId = requireWireText(input.agentId, "agentId");
     const sessionKey = requireWireText(input.sessionKey, "sessionKey");
@@ -76,7 +86,7 @@ export class HubModelBroker implements ModelBroker {
       {
         version: 1,
         purpose: "model_broker_route_lease",
-        profileRef,
+        ...(profileRef === CANONICAL_MODEL_BROKER_PROFILE_REF ? {} : { profileRef }),
         runtimeId,
         agentId,
         sessionKey,
@@ -99,7 +109,7 @@ export class HubModelBroker implements ModelBroker {
       authority.runtimeId !== grant.runtimeId ||
       authority.profileRef !== grant.profileRef ||
       grant.runtimeId !== runtimeId ||
-      grant.profileRef !== profileRef ||
+      (profileRef !== CANONICAL_MODEL_BROKER_PROFILE_REF && grant.profileRef !== profileRef) ||
       grant.turnId !== turnId
     ) {
       throw new Error("identityd returned an invalid Hub model-broker lease response.");
@@ -187,17 +197,25 @@ async function requestIdentityJson(
   input: Record<string, unknown>,
   options: HubModelBrokerOptions,
 ): Promise<unknown> {
-  const socketPath = options.socketPath ?? process.env.RAVI_IDENTITYD_SOCKET?.trim() ?? DEFAULT_IDENTITY_SOCKET;
-  if (!isAbsolute(socketPath)) throw new Error("RAVI_IDENTITYD_SOCKET must be an absolute Unix socket path.");
+  const capabilityToken = readCapabilityToken(options);
+  const socketPath = options.socketPath ?? process.env.RAVI_IDENTITYD_RUNTIME_SOCKET?.trim() ?? DEFAULT_IDENTITY_SOCKET;
+  if (!isAbsolute(socketPath)) {
+    throw new Error("RAVI_IDENTITYD_RUNTIME_SOCKET must be an absolute Unix socket path.");
+  }
   if (!options.skipSocketSecurityCheck) await assertSecureIdentitySocket(socketPath);
   const body = JSON.stringify(input);
   const payload = await new Promise<string>((resolve, reject) => {
     const req = request(
       {
         socketPath,
+        host: "identityd.local",
         path,
         method: "POST",
-        headers: { "content-type": "application/json", "content-length": Buffer.byteLength(body) },
+        headers: {
+          "content-type": "application/json",
+          "content-length": Buffer.byteLength(body),
+          ...(capabilityToken ? { authorization: `Bearer ${capabilityToken}` } : {}),
+        },
       },
       (response) => {
         let size = 0;
@@ -231,6 +249,51 @@ async function requestIdentityJson(
   } catch {
     throw new Error("identityd returned invalid JSON.");
   }
+}
+
+let inheritedCapabilityToken: string | undefined;
+
+export function resetHubModelBrokerCapabilityForTests(): void {
+  inheritedCapabilityToken = undefined;
+}
+
+function readCapabilityToken(options: HubModelBrokerOptions): string | undefined {
+  if (options.capabilityToken !== undefined) return validateCapabilityToken(options.capabilityToken);
+  if (inheritedCapabilityToken) return inheritedCapabilityToken;
+  const rawFd =
+    options.capabilityFd ??
+    (process.env.RAVI_IDENTITYD_CAPABILITY_FD ? Number(process.env.RAVI_IDENTITYD_CAPABILITY_FD) : undefined);
+  if (rawFd === undefined) {
+    if (process.env.RAVI_INTELLIGENCE_REQUIRE_CAPABILITY_FD === "true") {
+      throw new Error("The supervised identityd capability is required but unavailable.");
+    }
+    return undefined;
+  }
+  if (!Number.isSafeInteger(rawFd) || rawFd < 3 || rawFd > 1_024) {
+    throw new Error("RAVI_IDENTITYD_CAPABILITY_FD must identify an inherited descriptor.");
+  }
+  let rawToken: string;
+  try {
+    rawToken = readFileSync(rawFd, "utf8");
+  } catch {
+    throw new Error("Could not read the inherited identityd capability.");
+  } finally {
+    try {
+      closeSync(rawFd);
+    } catch {
+      // A failed read can already close or invalidate the inherited descriptor.
+    }
+  }
+  inheritedCapabilityToken = validateCapabilityToken(rawToken);
+  return inheritedCapabilityToken;
+}
+
+function validateCapabilityToken(value: string): string {
+  const normalized = value.trim();
+  if (!/^[A-Za-z0-9_-]{43}$/.test(normalized)) {
+    throw new Error("The inherited identityd capability is invalid.");
+  }
+  return normalized;
 }
 
 function readHubGrant(value: unknown): HubGrantWire | null {
@@ -320,9 +383,12 @@ async function assertSecureIdentitySocket(socketPath: string): Promise<void> {
     throw new Error("Local identityd socket is unavailable.");
   }
   if (!stats.isSocket() || stats.isSymbolicLink())
-    throw new Error("RAVI_IDENTITYD_SOCKET must point to a Unix socket.");
+    throw new Error("RAVI_IDENTITYD_RUNTIME_SOCKET must point to a Unix socket.");
   if (stats.uid !== 0) throw new Error("Local identityd socket must be owned by root.");
-  if ((stats.mode & 0o022) !== 0) throw new Error("Local identityd socket must not be group/world writable.");
+  if ((stats.mode & 0o007) !== 0) throw new Error("Local identityd socket must not be world-accessible.");
+  if ((stats.mode & 0o060) !== 0o060 || stats.gid !== process.getgid?.()) {
+    throw new Error("Local identityd socket must be restricted to the runtime group.");
+  }
   let current = dirname(socketPath);
   while (current !== dirname(current)) {
     const parent = await lstat(current);

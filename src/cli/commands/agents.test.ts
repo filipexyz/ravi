@@ -990,16 +990,48 @@ describe("AgentsCommands model-broker", () => {
     expect(updateAgentCalls).toHaveLength(0);
   });
 
-  it("fails typed preflight without persisting an active proxy on an unisolated adapter", () => {
+  it("reports the verified isolated provider during required-broker dry-run", () => {
     const commands = new AgentsCommands();
+    let thrown: unknown;
     try {
-      commands.modelBroker("dev", "hub", "profile_main", "true", undefined, true, true);
-      throw new Error("expected typed proxy preflight failure");
+      commands.modelBroker("dev", "hub", "profile_main", "true", undefined, true);
     } catch (error) {
-      expect(error).toBeInstanceOf(ContractError);
-      expect((error as InstanceType<typeof ContractError>).code).toBe("MODEL_BROKER_UNAVAILABLE");
+      thrown = error;
     }
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    expect(thrown).toMatchObject({
+      code: "WRITE_REQUIRES_EXECUTE",
+      exitCode: 3,
+      op: "agents model-broker",
+    });
+    expect((thrown as InstanceType<typeof ContractError>).envelope().error.plan).toMatchObject({
+      agentId: "dev",
+      brokerId: "hub",
+      brokerRequired: true,
+      capableProviders: ["claude"],
+    });
     expect(updateAgentCalls).toHaveLength(0);
+  });
+
+  it("persists a required broker after isolated-provider preflight", () => {
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+    try {
+      const changed = commands.modelBroker("dev", "hub", "profile_main", "true", undefined, true, true);
+      expect(changed).toMatchObject({
+        changed: true,
+        modelBroker: {
+          brokerId: "hub",
+          profileRef: "profile_main",
+          required: true,
+        },
+      });
+    } finally {
+      console.log = originalLog;
+    }
+    expect(updateAgentCalls).toHaveLength(1);
   });
 });
 

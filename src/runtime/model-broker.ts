@@ -4,7 +4,10 @@ import type { RuntimeCredentialAttemptBinding } from "./credential-types.js";
 import type { RuntimeCapabilities, RuntimeProviderId } from "./types.js";
 
 export const MODEL_BROKER_REQUIRED_SETTING = "runtime.model_broker.required";
+export const MODEL_BROKER_REQUIRED_ENV = "RAVI_MODEL_BROKER_REQUIRED";
 export const MODEL_BROKER_MIN_LEASE_REMAINING_MS = 30_000;
+export const DEFAULT_MODEL_BROKER_ID = "hub";
+export const CANONICAL_MODEL_BROKER_PROFILE_REF = "canonical";
 
 export type RuntimeModelBrokerProtocol = "anthropic-messages" | "openai-completions" | "openai-responses";
 export type RuntimeModelBrokerPrincipalIsolation = "none" | "uid" | "cgroup" | "one-shot-capability";
@@ -107,11 +110,17 @@ export function readRuntimeModelBrokerSelection(
 ): RuntimeModelBrokerSelection | undefined {
   const raw = readModelBrokerDefaults(agent);
   if (!raw) return undefined;
-  const brokerId = readPublicId(raw.brokerId, "modelBroker.brokerId");
-  const profileRef = readPublicId(raw.profileRef, "modelBroker.profileRef");
   if (raw.required !== undefined && typeof raw.required !== "boolean") {
     throw new Error("Invalid model broker selection: required must be a boolean.");
   }
+  const hasBroker = raw.brokerId !== undefined;
+  const hasProfile = raw.profileRef !== undefined;
+  if (!hasBroker && !hasProfile) return undefined;
+  if (hasBroker !== hasProfile) {
+    throw new Error("Invalid model broker selection: brokerId and profileRef must be configured together.");
+  }
+  const brokerId = readPublicId(raw.brokerId, "modelBroker.brokerId");
+  const profileRef = readPublicId(raw.profileRef, "modelBroker.profileRef");
   return {
     brokerId,
     profileRef,
@@ -122,21 +131,32 @@ export function readRuntimeModelBrokerSelection(
 export function isRuntimeModelBrokerRequired(
   agent: Pick<AgentConfig, "defaults">,
   globalSetting: string | undefined,
+  environmentSetting = process.env[MODEL_BROKER_REQUIRED_ENV],
 ): boolean {
-  const selection = readRuntimeModelBrokerSelection(agent);
-  return parseRequiredSetting(globalSetting) || selection?.required === true;
+  const raw = readModelBrokerDefaults(agent);
+  if (raw?.required !== undefined && typeof raw.required !== "boolean") {
+    throw new Error("Invalid model broker selection: required must be a boolean.");
+  }
+  const environmentRequired = parseRequiredSetting(environmentSetting, MODEL_BROKER_REQUIRED_ENV);
+  const globallyRequired = parseRequiredSetting(globalSetting, MODEL_BROKER_REQUIRED_SETTING);
+  return environmentRequired || globallyRequired || raw?.required === true;
 }
 
 export function resolveRequiredRuntimeModelBrokerSelection(
   agent: Pick<AgentConfig, "defaults">,
   globalSetting: string | undefined,
+  environmentSetting = process.env[MODEL_BROKER_REQUIRED_ENV],
 ): RuntimeModelBrokerSelection | undefined {
   const selection = readRuntimeModelBrokerSelection(agent);
-  const required = isRuntimeModelBrokerRequired(agent, globalSetting);
-  if (required && !selection) {
-    throw new Error("A model broker is required, but this agent has no broker profile selected.");
-  }
-  return required ? selection : undefined;
+  const required = isRuntimeModelBrokerRequired(agent, globalSetting, environmentSetting);
+  if (!required) return undefined;
+  return (
+    selection ?? {
+      brokerId: DEFAULT_MODEL_BROKER_ID,
+      profileRef: CANONICAL_MODEL_BROKER_PROFILE_REF,
+      required: true,
+    }
+  );
 }
 
 export function buildRuntimeModelBrokerSelectionCompatibilityKey(selection: RuntimeModelBrokerSelection): string {
@@ -225,7 +245,7 @@ export function buildRuntimeModelBrokerAttemptBinding(
   };
 }
 
-/** Public identity of the complete physical route, available before provider preparation. */
+/** Public identity of the stable physical route, excluding per-attempt binding headers. */
 export function buildRuntimeModelBrokerPhysicalFingerprint(
   selection: RuntimeModelBrokerSelection,
   lease: RuntimeModelBrokerRouteLease,
@@ -241,7 +261,12 @@ export function buildRuntimeModelBrokerPhysicalFingerprint(
         selectionCompatibilityKey: buildRuntimeModelBrokerSelectionCompatibilityKey(selection),
         runtimeProvider: lease.runtimeProvider,
         model: lease.model,
-        transport: lease.transport,
+        transport: {
+          scheme: lease.transport.scheme,
+          protocol: lease.transport.protocol,
+          origin: lease.transport.origin,
+          path: lease.transport.path,
+        },
       }),
     )
     .digest("hex")
@@ -267,7 +292,10 @@ export function isRuntimeModelBrokerPhysicalBindingCompatible(
     current.compatibilityRevision === next.compatibilityRevision &&
     current.selectionCompatibilityKey === next.selectionCompatibilityKey &&
     current.principalIsolation === next.principalIsolation &&
-    JSON.stringify(current.transport) === JSON.stringify(next.transport)
+    current.transport.scheme === next.transport.scheme &&
+    current.transport.protocol === next.transport.protocol &&
+    current.transport.origin === next.transport.origin &&
+    current.transport.path === next.transport.path
   );
 }
 
@@ -379,10 +407,10 @@ function validateEndpointPath(value: string): void {
   }
 }
 
-function parseRequiredSetting(value: string | undefined): boolean {
+function parseRequiredSetting(value: string | undefined, source: string): boolean {
   if (value === undefined || value.trim() === "" || value.trim() === "false") return false;
   if (value.trim() === "true") return true;
-  throw new Error(`${MODEL_BROKER_REQUIRED_SETTING} must be true or false.`);
+  throw new Error(`${source} must be true or false.`);
 }
 
 export function readModelBrokerPublicId(value: unknown, label: string): string {

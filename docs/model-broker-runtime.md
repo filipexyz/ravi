@@ -1,8 +1,11 @@
 # Model-broker runtime contract
 
-The OSS runtime persists only a public broker selection on each agent:
-`{ brokerId, profileRef, required? }`. A registered `ModelBroker` resolves that
-selection for every turn into a short-lived, secretless route lease. The lease,
+The OSS runtime may persist a public broker selection on an agent:
+`{ brokerId, profileRef, required? }`. When the global requirement is enabled
+without a selection, Ravi follows the authenticated Hub default through the
+virtual `{ brokerId: "hub", profileRef: "canonical" }` selection. A registered
+`ModelBroker` resolves that selection for every turn into a short-lived,
+secretless route lease. The lease,
 not the agent's provider or model defaults, is authoritative for the executable
 runtime provider and model.
 
@@ -25,27 +28,29 @@ Abandoned attempts are reported with `effectState: none` before a provider start
 Contradictory broker feedback fails closed.
 
 The built-in `hub` adapter is the only OSS module that knows the Hub `identityd`
-wire. It uses a root-controlled Unix socket, validates the Hub authority response,
-and converts the private grant and signing-forwarder handle into the generic lease.
-Hub connection identifiers and upstream providers never enter the generic core.
-
-The Hub adapter is intentionally unavailable to the production daemon in this
-phase. The daemon and its tools share the unprivileged `ravi` UID, while
-`/run/ravi/identityd.sock` remains `root:root` mode `0600`; there is no supported
-pathname, environment token, group-readable socket, or loopback admin endpoint.
-Changing those permissions would let same-UID tools mint route authority. A future
-activation requires a root supervisor to deliver an anonymous, capability-bearing
-Unix channel only to the core process, with close-on-exec/non-inheritance and a
-non-dumpable process boundary. Until that lifecycle exists and is tested end to
-end, Hub route resolution fails closed.
+wire. The root supervisor gives the core process one PID-bound capability on an
+inherited descriptor and exposes `/run/ravi/identityd-runtime.sock` only to the
+runtime group. The core reads and closes the descriptor before provider startup;
+identityd independently verifies the bearer, peer UID, and exact supervised PID.
+The root-only admin socket remains separate. The adapter validates the Hub
+authority response and converts the private grant and signing-forwarder handle
+into the generic lease. Hub connection identifiers and upstream providers never
+enter the generic core or provider environment.
 
 Provider clients receive materialized, private configuration containing only the
-loopback route and public headers. Provider API keys, bearer tokens, cookies, and
-daemon credentials are stripped. Built-in Codex, Claude, and Pi currently declare
-`principalIsolation: none`, so a required broker selection cannot activate until
-the adapter has verified principal isolation.
+loopback route and public headers. Provider API keys, bearer tokens, cookies,
+daemon credentials, and identityd capability metadata are stripped. Claude
+declares `one-shot-capability`: each query snapshots the per-turn binding and its
+mandatory Linux sandbox denies tools access to Unix sockets and loopback. Codex
+and Pi remain `principalIsolation: none`, so broker-required traffic selecting
+either adapter fails closed until an equivalent OS boundary is attested.
 
-`runtime.model_broker.required=true` enables the global fail-closed requirement.
-Per-agent `defaults.modelBroker.required=true` enables it for one agent. A selection
-with `required:false` remains a draft and does not change runtime traffic. Use
-`ravi agents model-broker` to inspect or edit the public broker selection.
+`runtime.model_broker.required=true` enables the persisted global fail-closed
+requirement. A supervised deployment may enforce the same requirement with
+`RAVI_MODEL_BROKER_REQUIRED=true`; the host policy is additive and cannot be
+disabled by an agent or database value. Invalid policy values fail closed. The
+policy variable and identityd capability metadata are removed from provider and
+tool environments. Per-agent `defaults.modelBroker.required=true` enables the
+broker for one agent. A selection with `required:false` remains a draft and does
+not change runtime traffic. Use `ravi agents model-broker` to inspect or edit the
+public broker selection.

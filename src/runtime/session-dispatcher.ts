@@ -58,8 +58,7 @@ import {
   MODEL_BROKER_REQUIRED_SETTING,
   buildRuntimeModelBrokerPhysicalFingerprint,
   buildRuntimeModelBrokerSelectionCompatibilityKey,
-  isRuntimeModelBrokerRequired,
-  readRuntimeModelBrokerSelection,
+  resolveRequiredRuntimeModelBrokerSelection,
 } from "./model-broker.js";
 import { planRuntimeModelBrokerRoute, type RuntimeModelBrokerPlan } from "./model-broker-planning.js";
 import type { RuntimeProviderId } from "./types.js";
@@ -2016,14 +2015,13 @@ export class RuntimeSessionDispatcher {
 
 export function runtimeModelBrokerConfigurationRequiresRestart(
   existing: Pick<RuntimeHostStreamingSession, "currentRuntimeCredential">,
-  agent: Parameters<typeof readRuntimeModelBrokerSelection>[0],
+  agent: Parameters<typeof resolveRequiredRuntimeModelBrokerSelection>[0],
+  globalSetting = dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined,
+  environmentSetting?: string,
 ): boolean {
-  const globalSetting = dbGetSetting(MODEL_BROKER_REQUIRED_SETTING) ?? undefined;
-  const required = isRuntimeModelBrokerRequired(agent, globalSetting);
-  const selection = readRuntimeModelBrokerSelection(agent);
+  const selection = resolveRequiredRuntimeModelBrokerSelection(agent, globalSetting, environmentSetting);
   const current = existing.currentRuntimeCredential;
-  if (!required) return current?.authMethod === "model-broker";
-  if (!selection) return true;
+  if (!selection) return current?.authMethod === "model-broker";
   if (current?.authMethod !== "model-broker") return true;
   return (
     current.modelBrokerSelectionCompatibilityKey !== buildRuntimeModelBrokerSelectionCompatibilityKey(selection) ||

@@ -6,6 +6,7 @@ import {
   buildStashedRestartPrompt,
   canUseNativeRuntimeSteer,
   fenceRuntimeNativeSteerInput,
+  runtimeModelBrokerConfigurationRequiresRestart,
   runtimeModelBrokerRouteRequiresRestart,
   stashPromptForStartingSession,
 } from "./session-dispatcher.js";
@@ -31,11 +32,28 @@ import { dbCompleteTask, dbCreateTask, dbDispatchTask } from "../tasks/task-db.j
 import { buildSessionRelayTurnOrigin } from "./turn-origin.js";
 import type { RuntimeCrashRecoveryCoordinator } from "./crash-recovery.js";
 import { buildDaemonRestartResumePrompt, resolveCrashRecoveryRestartResumeMode } from "./daemon-restart-resume.js";
-import { buildRuntimeModelBrokerPhysicalFingerprint } from "./model-broker.js";
+import {
+  buildRuntimeModelBrokerPhysicalFingerprint,
+  buildRuntimeModelBrokerSelectionCompatibilityKey,
+} from "./model-broker.js";
 
 const crashRecoveryStub = { acceptingDeliveries: true } as unknown as RuntimeCrashRecoveryCoordinator;
 
 describe("RuntimeSessionDispatcher model-broker preflight", () => {
+  it("keeps a canonical supervised session when no explicit profile is persisted", () => {
+    const canonicalSelection = { brokerId: "hub", profileRef: "canonical", required: true } as const;
+    const existing = {
+      currentRuntimeCredential: {
+        authMethod: "model-broker",
+        modelBrokerId: "hub",
+        modelBrokerProfileRef: "canonical",
+        modelBrokerSelectionCompatibilityKey: buildRuntimeModelBrokerSelectionCompatibilityKey(canonicalSelection),
+      },
+    } as unknown as Parameters<typeof runtimeModelBrokerConfigurationRequiresRestart>[0];
+
+    expect(runtimeModelBrokerConfigurationRequiresRestart(existing, { defaults: null }, "false", "true")).toBe(false);
+  });
+
   it("restarts a live Codex session when the authoritative lease selects Pi", () => {
     const existing = {
       currentModel: "gpt-5.5",
@@ -80,7 +98,7 @@ describe("RuntimeSessionDispatcher model-broker preflight", () => {
     expect(runtimeModelBrokerRouteRequiresRestart(existing, plan)).toBe(true);
   });
 
-  it("restarts the second turn when a same-route lease changes its public binding transport", () => {
+  it("keeps the physical session when only the per-turn public binding handle rotates", () => {
     const first = modelBrokerPlan("turn_first", "binding_first");
     const second = modelBrokerPlan("turn_second", "binding_second");
     const existing = {
@@ -97,7 +115,7 @@ describe("RuntimeSessionDispatcher model-broker preflight", () => {
     } as unknown as Parameters<typeof runtimeModelBrokerRouteRequiresRestart>[0];
 
     expect(runtimeModelBrokerRouteRequiresRestart(existing, first)).toBe(false);
-    expect(runtimeModelBrokerRouteRequiresRestart(existing, second)).toBe(true);
+    expect(runtimeModelBrokerRouteRequiresRestart(existing, second)).toBe(false);
   });
 });
 

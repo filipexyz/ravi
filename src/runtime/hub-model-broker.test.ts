@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type RequestListener, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createHubModelBroker } from "./hub-model-broker.js";
+import { createHubModelBroker, resetHubModelBrokerCapabilityForTests } from "./hub-model-broker.js";
 
 let server: Server | undefined;
 let root: string | undefined;
@@ -12,28 +12,32 @@ const RUNTIME_ID = "11111111-1111-4111-8111-111111111111";
 const GRANT_ID = "22222222-2222-4222-8222-222222222222";
 const ATTEMPT_ID = "33333333-3333-4333-8333-333333333333";
 const CONNECTION_ID = "44444444-4444-4444-8444-444444444444";
+const CAPABILITY = "A".repeat(43);
 
 afterEach(async () => {
   if (server) await new Promise<void>((resolve) => server!.close(() => resolve()));
   if (root) rmSync(root, { recursive: true, force: true });
   server = undefined;
   root = undefined;
+  resetHubModelBrokerCapabilityForTests();
 });
 
 describe("HubModelBroker adapter", () => {
   test("maps strict identityd wire to a generic lease without leaking connection authority", async () => {
-    const received: { path?: string; body?: Record<string, unknown> } = {};
+    const received: { path?: string; authorization?: string; body?: Record<string, unknown> } = {};
     const socketPath = await listen((request, response) => {
       received.path = request.url;
+      received.authorization = request.headers.authorization;
       readJson(request, (body) => {
         received.body = body;
         response.statusCode = 201;
         response.end(JSON.stringify(validLeaseResponse()));
       });
     });
-    const broker = createHubModelBroker({ socketPath, skipSocketSecurityCheck: true });
+    const broker = createHubModelBroker({ socketPath, capabilityToken: CAPABILITY, skipSocketSecurityCheck: true });
     const route = await broker.resolveRoute(resolveInput());
     expect(received.path).toBe("/v1/model-broker/leases");
+    expect(received.authorization).toBe(`Bearer ${CAPABILITY}`);
     expect(received.body).toEqual({
       version: 1,
       purpose: "model_broker_route_lease",
@@ -56,6 +60,28 @@ describe("HubModelBroker adapter", () => {
     });
     expect(JSON.stringify(route)).not.toContain(CONNECTION_ID);
     expect(JSON.stringify(route)).not.toContain("model-gateway.internal.ravi");
+  });
+
+  test("lets identityd resolve the canonical profile without caller-selected authority", async () => {
+    let body: Record<string, unknown> | undefined;
+    const socketPath = await listen((request, response) => {
+      readJson(request, (value) => {
+        body = value;
+        response.statusCode = 201;
+        response.end(JSON.stringify(validLeaseResponse()));
+      });
+    });
+    const broker = createHubModelBroker({ socketPath, capabilityToken: CAPABILITY, skipSocketSecurityCheck: true });
+    await broker.resolveRoute(resolveInput("canonical"));
+
+    expect(body).toEqual({
+      version: 1,
+      purpose: "model_broker_route_lease",
+      runtimeId: RUNTIME_ID,
+      agentId: "main",
+      sessionKey: "agent:main:main",
+      turnId: "turn_a",
+    });
   });
 
   test("maps only retry_ready to advance and rejects post-effect advancement", async () => {
@@ -109,11 +135,65 @@ describe("HubModelBroker adapter", () => {
       expect(String(error)).not.toContain("upstream-secret");
     }
   });
+
+  test("fails closed when supervision requires an inherited capability", async () => {
+    const previousRequired = process.env.RAVI_INTELLIGENCE_REQUIRE_CAPABILITY_FD;
+    const previousFd = process.env.RAVI_IDENTITYD_CAPABILITY_FD;
+    process.env.RAVI_INTELLIGENCE_REQUIRE_CAPABILITY_FD = "true";
+    delete process.env.RAVI_IDENTITYD_CAPABILITY_FD;
+    try {
+      await expect(
+        createHubModelBroker({ socketPath: "/tmp/must-not-be-used.sock", skipSocketSecurityCheck: true }).resolveRoute(
+          resolveInput(),
+        ),
+      ).rejects.toThrow("capability is required");
+    } finally {
+      if (previousRequired === undefined) delete process.env.RAVI_INTELLIGENCE_REQUIRE_CAPABILITY_FD;
+      else process.env.RAVI_INTELLIGENCE_REQUIRE_CAPABILITY_FD = previousRequired;
+      if (previousFd === undefined) delete process.env.RAVI_IDENTITYD_CAPABILITY_FD;
+      else process.env.RAVI_IDENTITYD_CAPABILITY_FD = previousFd;
+    }
+  });
+
+  test("reads the capability once from an inherited descriptor and reuses it for feedback", async () => {
+    const authorizations: string[] = [];
+    const socketPath = await listen((request, response) => {
+      authorizations.push(request.headers.authorization ?? "");
+      if (request.url === "/v1/model-broker/leases") {
+        readJson(request, () => {
+          response.statusCode = 201;
+          response.end(JSON.stringify(validLeaseResponse()));
+        });
+        return;
+      }
+      readJson(request, () => {
+        response.end(
+          JSON.stringify({
+            version: 1,
+            attemptId: ATTEMPT_ID,
+            turnId: "turn_a",
+            status: "blocked",
+            retryable: false,
+            replayed: false,
+          }),
+        );
+      });
+    });
+    const capabilityPath = join(root!, "capability");
+    writeFileSync(capabilityPath, `${CAPABILITY}\n`, { mode: 0o600 });
+    const capabilityFd = openSync(capabilityPath, "r");
+    const broker = createHubModelBroker({ capabilityFd, socketPath, skipSocketSecurityCheck: true });
+
+    await broker.resolveRoute(resolveInput());
+    await broker.reportAttempt({ ...feedbackInput("none"), outcome: "abandoned" });
+
+    expect(authorizations).toEqual([`Bearer ${CAPABILITY}`, `Bearer ${CAPABILITY}`]);
+  });
 });
 
-function resolveInput() {
+function resolveInput(profileRef = PROFILE_ID) {
   return {
-    profileRef: PROFILE_ID,
+    profileRef,
     runtimeId: RUNTIME_ID,
     agentId: "main",
     sessionKey: "agent:main:main",

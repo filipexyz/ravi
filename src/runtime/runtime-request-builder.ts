@@ -469,12 +469,18 @@ async function buildRuntimeStartRequestInternal(
     buildRuntimeCredentialProfileEnv(runtimeProviderId, credentialResolution.attemptBinding ?? undefined),
     credentialResolution.attemptBinding?.resolvedEnv,
   );
+  const baselineRuntimeEnv = buildRuntimeRequestEnv({
+    raviEnv,
+    runtimeCapabilities,
+    forceSanitizeSecrets: Boolean(modelBroker),
+  });
   const runtimeEnv = buildRuntimeRequestEnv({
     raviEnv,
     ...(providerEnv ? { providerEnv } : {}),
     runtimeCapabilities,
     forceSanitizeSecrets: Boolean(modelBroker),
   });
+  let activeProviderEnvKeys = resolveRuntimeProviderEnvKeys(providerEnv, raviEnv, runtimeEnv);
   const canUseTool = async (toolName: string, input: Record<string, unknown>) => {
     const result = await hostServices.authorizeToolUse({ toolName, input });
     if (!result.approved) {
@@ -581,8 +587,45 @@ async function buildRuntimeStartRequestInternal(
       await reportAbandonedModelBrokerBinding(candidate, dbSessionKey);
       throw new Error("The model-broker turn has no reserved attempt binding.");
     }
+    const candidateCredential = buildRuntimeModelBrokerAttemptBinding(candidate, dbSessionKey);
+    let rotatedBootstrap;
+    try {
+      rotatedBootstrap = await runtimeProvider.prepareSession?.({
+        agentId: agent.id,
+        cwd: sessionCwd,
+        ...(runtimePlugins.length > 0 ? { plugins: runtimePlugins } : {}),
+        hostServices,
+        modelBroker: candidate,
+      });
+    } catch (error) {
+      if (planned) {
+        await abandonClaimedRuntimeModelBrokerPlan(planned, "provider_reconfiguration_failed").catch(() => undefined);
+      } else {
+        await reportAbandonedModelBrokerBinding(candidate, dbSessionKey);
+      }
+      throw error;
+    }
+    const nextProviderEnv = mergeProviderCredentialEnv(
+      rotatedBootstrap?.env,
+      buildRuntimeCredentialProfileEnv(runtimeProviderId, candidateCredential),
+      candidateCredential.resolvedEnv,
+    );
+    const nextResolvedRuntimeEnv = buildRuntimeRequestEnv({
+      raviEnv,
+      ...(nextProviderEnv ? { providerEnv: nextProviderEnv } : {}),
+      runtimeCapabilities,
+      forceSanitizeSecrets: true,
+    });
+    activeProviderEnvKeys = rotateRuntimeProviderEnvironment({
+      runtimeEnv,
+      baselineRuntimeEnv,
+      raviEnv,
+      activeProviderEnvKeys,
+      nextProviderEnv,
+      nextResolvedRuntimeEnv,
+    });
     Object.assign(modelBroker, candidate);
-    Object.assign(activeCredential, buildRuntimeModelBrokerAttemptBinding(candidate, dbSessionKey), {
+    Object.assign(activeCredential, candidateCredential, {
       modelBrokerAttemptTerminal: false,
     });
     (toolContext as Record<string, unknown>).runtimeCredential =
@@ -866,6 +909,43 @@ function mergeProviderCredentialEnv(
   return {
     ...Object.assign({}, ...present),
   };
+}
+
+export function rotateRuntimeProviderEnvironment(options: {
+  runtimeEnv: Record<string, string>;
+  baselineRuntimeEnv: Record<string, string>;
+  raviEnv: Record<string, string>;
+  activeProviderEnvKeys: ReadonlySet<string>;
+  nextProviderEnv: Record<string, string> | undefined;
+  nextResolvedRuntimeEnv: Record<string, string>;
+}): Set<string> {
+  const nextProviderEnvKeys = resolveRuntimeProviderEnvKeys(
+    options.nextProviderEnv,
+    options.raviEnv,
+    options.nextResolvedRuntimeEnv,
+  );
+  for (const key of options.activeProviderEnvKeys) {
+    if (nextProviderEnvKeys.has(key)) continue;
+    const baselineValue = options.baselineRuntimeEnv[key];
+    if (baselineValue === undefined) delete options.runtimeEnv[key];
+    else options.runtimeEnv[key] = baselineValue;
+  }
+  for (const key of nextProviderEnvKeys) {
+    options.runtimeEnv[key] = options.nextResolvedRuntimeEnv[key]!;
+  }
+  return nextProviderEnvKeys;
+}
+
+function resolveRuntimeProviderEnvKeys(
+  providerEnv: Record<string, string> | undefined,
+  raviEnv: Record<string, string>,
+  resolvedRuntimeEnv: Record<string, string>,
+): Set<string> {
+  return new Set(
+    Object.keys(providerEnv ?? {}).filter(
+      (key) => key !== "RAVI_BIN" && !(key in raviEnv) && resolvedRuntimeEnv[key] !== undefined,
+    ),
+  );
 }
 
 export function resolveRuntimeCredentialUpstreamProvider(

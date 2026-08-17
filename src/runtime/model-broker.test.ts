@@ -18,10 +18,31 @@ describe("generic model-broker contract", () => {
     expect(readRuntimeModelBrokerSelection({ defaults })).toEqual(defaults.modelBroker);
     expect(JSON.stringify(defaults)).not.toContain("connectionIds");
     expect(() => readRuntimeModelBrokerSelection({ defaults: { modelBroker: { brokerId: "hub" } } })).toThrow(
-      "profileRef",
+      "configured together",
     );
     expect(resolveRequiredRuntimeModelBrokerSelection({ defaults }, "false")).toEqual(defaults.modelBroker);
-    expect(() => resolveRequiredRuntimeModelBrokerSelection({ defaults: null }, "true")).toThrow("no broker profile");
+    expect(resolveRequiredRuntimeModelBrokerSelection({ defaults: null }, "true")).toEqual({
+      brokerId: "hub",
+      profileRef: "canonical",
+      required: true,
+    });
+    expect(
+      resolveRequiredRuntimeModelBrokerSelection({ defaults: { modelBroker: { required: true } } }, "false"),
+    ).toEqual({ brokerId: "hub", profileRef: "canonical", required: true });
+  });
+
+  test("lets the supervised host require the canonical broker and rejects an invalid policy", () => {
+    expect(resolveRequiredRuntimeModelBrokerSelection({ defaults: null }, "false", "true")).toEqual({
+      brokerId: "hub",
+      profileRef: "canonical",
+      required: true,
+    });
+    expect(() => resolveRequiredRuntimeModelBrokerSelection({ defaults: null }, undefined, "enabled")).toThrow(
+      "RAVI_MODEL_BROKER_REQUIRED must be true or false",
+    );
+    expect(() => resolveRequiredRuntimeModelBrokerSelection({ defaults: null }, "enabled", "true")).toThrow(
+      "runtime.model_broker.required must be true or false",
+    );
   });
 
   test("accepts an authoritative secretless route and builds generic attempt metadata", () => {
@@ -101,6 +122,17 @@ describe("generic model-broker contract", () => {
     expect(isRuntimeModelBrokerPhysicalBindingCompatible(brokerBinding(), brokerBinding({ leaseId: "grant_b" }))).toBe(
       true,
     );
+    expect(
+      isRuntimeModelBrokerPhysicalBindingCompatible(
+        brokerBinding(),
+        brokerBinding({
+          leaseId: "grant_c",
+          attemptId: "attempt_c",
+          turnId: "turn_c",
+          transport: { ...lease().transport, publicHeaders: { "x-public-route": "binding_c" } },
+        }),
+      ),
+    ).toBe(true);
   });
 
   test("rejects broker-directed advancement outside the pre-effect credential boundary", async () => {
