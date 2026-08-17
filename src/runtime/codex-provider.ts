@@ -629,7 +629,7 @@ async function* normalizeCodexEvents(
             threadId: turnSessionId,
             turnId: activeTurnId,
           });
-          if (event.type !== "agent_message.delta") {
+          if (event.type !== "agent_message.delta" && event.type !== "tool.progress") {
             yield { type: "provider.raw", rawEvent, metadata };
           }
 
@@ -644,6 +644,18 @@ async function* normalizeCodexEvents(
               yield {
                 type: "text.delta",
                 text: delta,
+                metadata,
+              };
+            }
+            continue;
+          }
+
+          if (event.type === "tool.progress") {
+            const toolUseId = firstString(event.tool_use_id, event.toolUseId, event.item_id, event.itemId);
+            if (toolUseId) {
+              yield {
+                type: "tool.progress",
+                toolUseId,
                 metadata,
               };
             }
@@ -1637,6 +1649,27 @@ function createCodexAppServerTransport(options: { command?: string } = {}): Code
         }
         break;
       }
+      case "item/commandExecution/outputDelta":
+      case "item/commandExecution/terminalInteraction":
+      case "item/mcpToolCall/progress": {
+        if (turn && notificationMatchesActiveTurn(turn, params)) {
+          const toolUseId = firstString(params.itemId);
+          if (toolUseId) {
+            // Output and progress content can be large or sensitive. The host
+            // only needs an identity-scoped liveness signal.
+            turn.queue.push({
+              type: "tool.progress",
+              native_event: method,
+              source: "codex.app-server",
+              thread_id: firstString(notificationThreadId(params), turn.threadId, currentThreadId),
+              turn_id: firstString(notificationTurnId(params), turn.turnId),
+              item_id: toolUseId,
+              tool_use_id: toolUseId,
+            });
+          }
+        }
+        break;
+      }
       case "thread/tokenUsage/updated": {
         if (turn && notificationMatchesActiveTurn(turn, params)) {
           turn.lastUsage = extractAppServerUsage(params.tokenUsage);
@@ -2542,7 +2575,7 @@ function buildCodexEventMetadata(
   return {
     provider: "codex",
     source: firstString(event.source) ?? "codex",
-    nativeEvent: typeof event.type === "string" ? event.type : undefined,
+    nativeEvent: firstString(event.native_event, event.nativeEvent, event.type),
     ...(thread ? { thread } : {}),
     ...(turn ? { turn } : {}),
     ...(item ? { item } : {}),
@@ -3578,7 +3611,6 @@ const CODEX_APP_SERVER_OPTOUT_METHODS = [
   "codex/event/task_started",
   "codex/event/token_count",
   "codex/event/user_message",
-  "item/commandExecution/outputDelta",
   "item/plan/delta",
   "item/reasoning/summaryTextDelta",
   "item/reasoning/textDelta",

@@ -1909,6 +1909,11 @@ const send = (message) => {
 rl.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.id && message.method === "initialize") {
+    const optOut = message.params?.capabilities?.optOutNotificationMethods ?? [];
+    if (optOut.includes("item/commandExecution/outputDelta")) {
+      send({ id: message.id, error: { code: -32602, message: "command progress was disabled" } });
+      return;
+    }
     send({ id: message.id, result: {} });
     return;
   }
@@ -1974,6 +1979,16 @@ rl.on("line", (line) => {
     });
     send({
       jsonrpc: "2.0",
+      method: "item/commandExecution/outputDelta",
+      params: {
+        threadId: "thread_app",
+        turnId: "turn_app",
+        itemId: "cmd_app",
+        delta: "private command output",
+      },
+    });
+    send({
+      jsonrpc: "2.0",
       method: "item/completed",
       params: {
         item: {
@@ -2032,6 +2047,7 @@ rl.on("line", (line) => {
     const itemStarted = findEventsByType(events, "item.started");
     const commandStarted = itemStarted.find((event) => event.item?.type === "command_execution");
     const toolStarted = findEventsByType(events, "tool.started");
+    const toolProgress = findEventsByType(events, "tool.progress");
     const assistantMessages = findEventsByType(events, "assistant.message");
     const completions = findEventsByType(events, "turn.complete");
     const statuses = findEventsByType(events, "status").map((event) => event.status);
@@ -2051,6 +2067,16 @@ rl.on("line", (line) => {
       name: "shell",
       input: { command: "pwd" },
     });
+    expect(toolProgress).toHaveLength(1);
+    expect(toolProgress[0]).toMatchObject({
+      type: "tool.progress",
+      toolUseId: "cmd_app",
+      metadata: {
+        nativeEvent: "item/commandExecution/outputDelta",
+        item: { id: "cmd_app" },
+      },
+    });
+    expect(JSON.stringify(events)).not.toContain("private command output");
     expect(assistantMessages[0]?.text).toBe("done");
     expect(assistantMessages[0]?.metadata?.item?.phase).toBe("commentary");
     expect(completions[0]?.usage).toEqual({

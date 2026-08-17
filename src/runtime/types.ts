@@ -498,6 +498,10 @@ export type RuntimeEvent =
       rawEvent?: Record<string, unknown>;
     } & RuntimeEventBase)
   | ({
+      type: "tool.progress";
+      toolUseId: string;
+    } & RuntimeEventBase)
+  | ({
       type: "tool.completed";
       toolUseId?: string;
       toolName?: string;

@@ -871,6 +871,8 @@ describe("channel runtime event projection", () => {
     const agent = dbGetAgent(metadata.binding.agentId);
     if (!session || !agent) throw new Error("accepted fixture did not create local runtime identities");
     const streaming = streamingSession(metadata, runtimeSession);
+    streaming.currentTraceTurnId = "trace-unterminated-channel-turn";
+    streaming.currentTraceTurnStartedAt = Date.now();
 
     await runRuntimeEventLoop({
       runId: "channel-runtime-run-unterminated",

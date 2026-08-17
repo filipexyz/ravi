@@ -1084,6 +1084,7 @@ describe("runtime session trace instrumentation", () => {
     const streaming = makeStreamingSession();
     seedAdapterTrace(streaming);
     const crashRecoveryAttemptId = streaming.currentCrashRecoveryAttemptId!;
+    const emitted: Array<{ topic: string; data: Record<string, unknown> }> = [];
 
     await runTraceLoop(
       streaming,
@@ -1091,6 +1092,10 @@ describe("runtime session trace instrumentation", () => {
         {
           type: "tool.started",
           toolUse: { id: "tool-1", name: "Bash", input: { cmd: "rg trace" } },
+        },
+        {
+          type: "tool.progress",
+          toolUseId: "tool-1",
         },
         {
           type: "tool.completed",
@@ -1111,6 +1116,11 @@ describe("runtime session trace instrumentation", () => {
           usage: { inputTokens: 10, outputTokens: 4, cacheReadTokens: 2, cacheCreationTokens: 1 },
         },
       ]),
+      {
+        safeEmit: async (topic, data) => {
+          emitted.push({ topic, data });
+        },
+      },
     );
 
     const events = listSessionEvents(SESSION_KEY);
@@ -1120,6 +1130,7 @@ describe("runtime session trace instrumentation", () => {
       "tool.end",
       "turn.complete",
     ]);
+    expect(emitted.some(({ data }) => data.type === "tool.progress")).toBe(false);
     expect(events.map((event) => event.seq)).toEqual([1, 2, 3, 4]);
     expect(events.map((event) => event.runId)).toEqual(["run-1", "run-1", "run-1", "run-1"]);
     expect(events.map((event) => event.turnId)).toEqual(["turn-1", "turn-1", "turn-1", "turn-1"]);
