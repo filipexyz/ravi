@@ -9,6 +9,7 @@ export * from "./model-broker.js";
 export * from "./model-broker-registry.js";
 export * from "./claude-provider.js";
 export * from "./codex-provider.js";
+export * from "./grok-provider.js";
 export * from "./pi-provider.js";
 export * from "./context-registry.js";
 export * from "./model-validation.js";

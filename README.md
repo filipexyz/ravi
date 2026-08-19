@@ -44,7 +44,7 @@ The goal is simple: an agent should be able to keep working across days, chats, 
 - Contacts, chats, platform identities, agents, messages, and sessions have separate meanings, so raw channel ids do not become the product model.
 - Generated outputs become artifacts with lineage, versions, assets, events, and restore/publish paths.
 - Specs under `.ravi/specs` give agents durable rules before they touch governed areas of the codebase.
-- Runtime providers such as Claude Code, Codex, and Pi are adapters. Ravi keeps ownership of queueing, permissions, traces, tasks, responses, and continuity.
+- Runtime providers such as Claude Code, Codex, Pi, and Grok Build are adapters. Ravi keeps ownership of queueing, permissions, traces, tasks, responses, and continuity.
 
 ## Quick Start
 
