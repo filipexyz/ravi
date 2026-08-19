@@ -1,0 +1,11 @@
+{
+  "name": "Ravi Bot",
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh",
+  "terminals": [
+    {
+      "name": "ravi-daemon",
+      "command": "export PATH=\"/usr/local/bin:$HOME/.bun/bin:$PATH\"; ./bin/ravi daemon run"
+    }
+  ]
+}
