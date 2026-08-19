@@ -222,7 +222,7 @@ export function createGrokAcpSubprocessTransport(
     pending.clear();
   };
 
-  const writeMessage = (message: Record<string, unknown>): Promise<void> => {
+  const writeMessage = (message: object): Promise<void> => {
     if (!child || closed) {
       return Promise.reject(closeFailure ?? new Error("Grok ACP transport is not connected"));
     }
@@ -432,7 +432,9 @@ export function createGrokAcpSubprocessTransport(
   };
 }
 
-export function buildGrokAcpProcessArgs(input: Pick<GrokAcpStartInput, "model" | "effort" | "systemPromptAppend">): string[] {
+export function buildGrokAcpProcessArgs(
+  input: Pick<GrokAcpStartInput, "model" | "effort" | "systemPromptAppend">,
+): string[] {
   const args = ["--no-auto-update", "--no-alt-screen", "--always-approve"];
   const model = input.model?.trim();
   if (model && model !== "default") {
@@ -483,7 +485,9 @@ export function selectGrokAuthMethod(authMethods: unknown[], env: NodeJS.Process
   return ids[0];
 }
 
-export function selectGrokPermissionOutcome(options: unknown): { outcome: "selected"; optionId: string } | { outcome: "cancelled" } {
+export function selectGrokPermissionOutcome(
+  options: unknown,
+): { outcome: "selected"; optionId: string } | { outcome: "cancelled" } {
   const list = Array.isArray(options) ? options : [];
   const allow = list.find((option) => {
     if (!isRecord(option)) {
@@ -834,10 +838,10 @@ function extractGrokContentText(content: unknown): string {
   if (typeof content === "string") {
     return content;
   }
-  if (!isRecord(content)) {
-    return "";
+  if (isRecord(content) && typeof content.text === "string") {
+    return content.text;
   }
-  return firstString(content.text) ?? "";
+  return "";
 }
 
 function buildGrokRuntimeSessionState(sessionId: string | undefined, context: GrokEventContext): RuntimeSessionState {
@@ -930,38 +934,34 @@ async function safeGrokNotify(
   }
 }
 
-async function* consumeUntilSettled<T, R>(
-  iterator: AsyncIterator<T>,
-  settled: Promise<R>,
-): AsyncGenerator<T> {
-  let pendingNext: Promise<IteratorResult<T>> | undefined;
-  let done = false;
+async function* consumeUntilSettled<T, R>(iterator: AsyncIterator<T>, settled: Promise<R>): AsyncGenerator<T> {
+  let pendingNext = iterator.next();
+  let settledValue: { current: R } | undefined;
   const settledBox = settled.then((value) => {
-    done = true;
+    settledValue = { current: value };
     return value;
   });
 
-  while (!done) {
-    pendingNext ??= iterator.next();
+  while (!settledValue) {
     const winner = await Promise.race([
       pendingNext.then((result) => ({ tag: "item" as const, result })),
-      settledBox.then((value) => ({ tag: "settled" as const, value })),
+      settledBox.then(() => ({ tag: "settled" as const })),
     ]);
     if (winner.tag === "settled") {
       break;
     }
-    pendingNext = undefined;
     if (winner.result.done) {
-      break;
+      await settledBox;
+      return;
     }
     yield winner.result.value;
+    pendingNext = iterator.next();
   }
 
-  while (pendingNext) {
+  while (true) {
     const leftover = await peekIfResolved(pendingNext);
-    pendingNext = undefined;
     if (!leftover || leftover.done) {
-      break;
+      return;
     }
     yield leftover.value;
     pendingNext = iterator.next();

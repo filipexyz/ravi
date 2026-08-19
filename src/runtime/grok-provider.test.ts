@@ -23,10 +23,7 @@ class FakeGrokAcpTransport implements GrokAcpTransport {
   readonly starts: GrokAcpStartInput[] = [];
   readonly requests: Array<{ method: string; params?: Record<string, unknown> }> = [];
   readonly notifications: Array<{ method: string; params?: Record<string, unknown> }> = [];
-  responseFor?: (
-    method: string,
-    params?: Record<string, unknown>,
-  ) => unknown | Promise<unknown>;
+  responseFor?: (method: string, params?: Record<string, unknown>) => unknown | Promise<unknown>;
   closed = false;
   closeCalls = 0;
 
@@ -158,9 +155,9 @@ describe("Grok Build runtime provider", () => {
   });
 
   it("prefers xai.api_key when the env key is present", () => {
-    expect(
-      selectGrokAuthMethod([{ id: "cached_token" }, { id: "xai.api_key" }], { XAI_API_KEY: "xai-test" }),
-    ).toBe("xai.api_key");
+    expect(selectGrokAuthMethod([{ id: "cached_token" }, { id: "xai.api_key" }], { XAI_API_KEY: "xai-test" })).toBe(
+      "xai.api_key",
+    );
     expect(selectGrokAuthMethod([{ id: "cached_token" }, { id: "xai.api_key" }], {})).toBe("cached_token");
   });
 
