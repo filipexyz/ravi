@@ -5,7 +5,7 @@
   "terminals": [
     {
       "name": "ravi-daemon",
-      "command": "export PATH=\"/usr/local/bin:$HOME/.bun/bin:$PATH\"; ./bin/ravi daemon run"
+      "command": "export PATH=\"/usr/local/bin:$HOME/.local/bin:$HOME/.bun/bin:$PATH\"; ./bin/ravi daemon run"
     }
   ]
 }

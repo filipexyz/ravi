@@ -4,7 +4,7 @@
 set -euo pipefail
 
 export BUN_INSTALL="${BUN_INSTALL:-$HOME/.bun}"
-export PATH="/usr/local/bin:$BUN_INSTALL/bin:$PATH"
+export PATH="/usr/local/bin:$HOME/.local/bin:$BUN_INSTALL/bin:$PATH"
 
 NATS_PORT="${NATS_PORT:-4222}"
 
