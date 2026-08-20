@@ -76,6 +76,8 @@ import { canAccessContact, getScopeContext, isScopeEnforced } from "../../permis
 import {
   buildCrmFacadePlan,
   persistCrmFacadePlan,
+  loadCrmFacadePlan,
+  markCrmFacadePlan,
   CRM_FACADE_OPERATIONS,
   CrmFacadeResolutionError,
   type CrmFacadeOperation,
@@ -1274,6 +1276,40 @@ export class CrmFacadeCommands {
       }
       throw error;
     }
+  }
+
+  @Command({ name: "verify", description: "Read the current state of a CRM facade plan" })
+  @CommandAccess({ mode: "read" })
+  verify(@Arg("planId", { description: "Plan identifier" }) planId: string, @Option({ flags: "--json" }) asJson?: boolean) {
+    const plan = loadCrmFacadePlan(planId);
+    if (!plan) contractFail("crm facade verify", "NOT_FOUND", `CRM facade plan not found: ${planId}`, { asJson, exitCode: 1 });
+    const expired = Date.parse(plan.expiresAt) <= Date.now();
+    const payload = { planId, planHash: plan.planHash, state: plan.state, expired, observedAt: new Date().toISOString() };
+    if (asJson) printJson(payload); else console.log(JSON.stringify(payload, null, 2));
+    return payload;
+  }
+
+  @Command({ name: "recover", description: "Inspect a CRM facade plan without replaying it" })
+  @CommandAccess({ mode: "read" })
+  recover(@Arg("planId", { description: "Plan identifier" }) planId: string, @Option({ flags: "--json" }) asJson?: boolean) {
+    const plan = loadCrmFacadePlan(planId);
+    if (!plan) contractFail("crm facade recover", "NOT_FOUND", `CRM facade plan not found: ${planId}`, { asJson, exitCode: 1 });
+    const payload = { planId, planHash: plan.planHash, state: plan.state, action: "manual_review_required", replay: false };
+    if (asJson) printJson(payload); else console.log(JSON.stringify(payload, null, 2));
+    return payload;
+  }
+
+  @Command({ name: "apply", description: "Apply an approved CRM facade plan" })
+  @CommandAccess({ mode: "mutate" })
+  apply(@Arg("planId", { description: "Plan identifier" }) planId: string, @Option({ flags: "--approval-hash <hash>", description: "Approval must bind to this plan hash" }) approvalHash?: string, @Option({ flags: "--json" }) asJson?: boolean) {
+    const plan = loadCrmFacadePlan(planId);
+    if (!plan) contractFail("crm facade apply", "NOT_FOUND", `CRM facade plan not found: ${planId}`, { asJson, exitCode: 1 });
+    if (!approvalHash || approvalHash !== plan.planHash) contractFail("crm facade apply", "APPROVAL_REQUIRED", "A plan-bound approval hash is required", { asJson, exitCode: 1 });
+    if (Date.parse(plan.expiresAt) <= Date.now()) contractFail("crm facade apply", "PLAN_EXPIRED", "CRM facade plan has expired", { asJson, exitCode: 1 });
+    markCrmFacadePlan(planId, "unknown");
+    const payload = { planId, planHash: plan.planHash, state: "unknown", action: "manual_execution_required", reason: "Effect execution adapter is not enabled yet" };
+    if (asJson) printJson(payload); else console.log(JSON.stringify(payload, null, 2));
+    return payload;
   }
 }
 
