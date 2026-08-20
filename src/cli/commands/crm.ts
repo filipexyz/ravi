@@ -47,6 +47,7 @@ import {
   createCrmPipelineStageTopic,
   createCrmTask,
   getCrmAccount,
+  getCrmAccountSummary,
   getAllContactAccessRecords,
   getContactDetails,
   getCrmFact,
@@ -63,6 +64,8 @@ import {
   listCrmOpportunityBoard,
   listCrmOpportunityBoardStages,
   listCrmOpportunityContacts,
+  listCrmAccountContactIds,
+  listCrmOpportunityContactIds,
   listCrmPipelineStageTopics,
   listCrmPipelineStages,
   listCrmPipelines,
@@ -92,6 +95,7 @@ import {
   CrmFacadeResolutionError,
   type CrmFacadeOperation,
   type CrmFacadePlan,
+  type CrmFacadePlanInput,
 } from "../../crm/facade.js";
 import { requestCascadingApproval } from "../../approval/service.js";
 
@@ -536,17 +540,36 @@ function parseOwnerFilter(
 
 function assertCrmTaskMutationTarget(op: string, taskId: string, asJson?: boolean): void {
   const task = getCrmTask(taskId);
-  if (!task || (task.contactId && !canReadCrmContact(task.contactId))) {
+  if (
+    !task ||
+    (task.contactId && !canReadCrmContact(task.contactId)) ||
+    (task.accountId && !canReadCrmAccountTarget(task.accountId)) ||
+    (task.opportunityId && !canReadCrmOpportunityTarget(task.opportunityId))
+  ) {
     failCrmTaskNotFound(op, taskId, asJson);
   }
 }
 
-function assertCrmOpportunityMutationTarget(op: string, opportunityId: string, asJson?: boolean): void {
+function canReadCrmAccountTarget(accountId: string): boolean {
+  if (!getCrmAccountSummary(accountId)) return false;
+  return listCrmAccountContactIds(accountId).every((contactId) => canReadCrmContact(contactId));
+}
+
+function assertCrmAccountMutationTarget(op: string, accountId: string, asJson?: boolean): void {
+  if (!canReadCrmAccountTarget(accountId)) failCrmAccountNotFound(op, accountId, asJson);
+}
+
+function canReadCrmOpportunityTarget(opportunityId: string): boolean {
   const opportunity = getCrmOpportunity(opportunityId);
-  if (!opportunity) failOpportunityNotFound(op, opportunityId, asJson, false);
-  if (opportunity.primaryContactId && !canReadCrmContact(opportunity.primaryContactId)) {
-    failOpportunityNotFound(op, opportunityId, asJson, false);
-  }
+  if (!opportunity) return false;
+  const contactIds = new Set(listCrmOpportunityContactIds(opportunityId));
+  if (opportunity.primaryContactId) contactIds.add(opportunity.primaryContactId);
+  if ([...contactIds].some((contactId) => !canReadCrmContact(contactId))) return false;
+  return !opportunity.accountId || canReadCrmAccountTarget(opportunity.accountId);
+}
+
+function assertCrmOpportunityMutationTarget(op: string, opportunityId: string, asJson?: boolean): void {
+  if (!canReadCrmOpportunityTarget(opportunityId)) failOpportunityNotFound(op, opportunityId, asJson, false);
 }
 
 function assertCrmFactMutationTarget(op: string, factId: string, asJson?: boolean): void {
@@ -559,7 +582,11 @@ function assertCrmFactMutationTarget(op: string, factId: string, asJson?: boolea
       },
     });
   }
-  if (fact.contactId && !canReadCrmContact(fact.contactId)) {
+  if (
+    (fact.contactId && !canReadCrmContact(fact.contactId)) ||
+    (fact.accountId && !canReadCrmAccountTarget(fact.accountId)) ||
+    (fact.opportunityId && !canReadCrmOpportunityTarget(fact.opportunityId))
+  ) {
     contractFail(op, "CRM_FACT_NOT_FOUND", `CRM fact not found: ${factId}`, {
       asJson,
       details: {
@@ -583,9 +610,29 @@ function assertCrmFacadePlanVisible(plan: CrmFacadePlan, op: string, asJson?: bo
     case "contact":
       assertCanReadCrmContact(op, plan.target.id, asJson);
       break;
+    case "account":
+      assertCrmAccountMutationTarget(op, plan.target.id, asJson);
+      break;
   }
   const contact = plan.arguments.contact;
   if (typeof contact === "string") assertCanReadCrmContact(op, contact, asJson);
+  const account = plan.arguments.account;
+  if (typeof account === "string") assertCrmAccountMutationTarget(op, account, asJson);
+}
+
+function assertCrmFacadeIntentVisible(input: CrmFacadePlanInput, op: string, asJson?: boolean): void {
+  if (input.operation.startsWith("task.")) assertCrmTaskMutationTarget(op, input.target, asJson);
+  else if (input.operation.startsWith("opportunity.")) assertCrmOpportunityMutationTarget(op, input.target, asJson);
+  else if (input.operation.startsWith("fact.")) assertCrmFactMutationTarget(op, input.target, asJson);
+  else if (input.operation === "contact.set") assertCanReadCrmContact(op, input.target, asJson);
+  else if (input.operation === "account.link-contact") assertCrmAccountMutationTarget(op, input.target, asJson);
+
+  if (input.contact) assertCanReadCrmContact(op, input.contact, asJson);
+  if (input.account) assertCrmAccountMutationTarget(op, input.account, asJson);
+  if (input.operation === "contact.set" && input.value && input.value !== "-" && input.value !== "null") {
+    if (input.field === "primary-account") assertCrmAccountMutationTarget(op, input.value, asJson);
+    if (input.field === "primary-opportunity") assertCrmOpportunityMutationTarget(op, input.value, asJson);
+  }
 }
 
 export function formatCrmFacadeApprovalText(plan: CrmFacadePlan): string {
@@ -732,7 +779,7 @@ function canReadCrmContact(contactRef: string): boolean {
 }
 
 function assertCanReadCrmContact(op: string, contactRef: string, asJson?: boolean): void {
-  if (canReadCrmContact(contactRef)) return;
+  if (getCrmContactProfile(contactRef) && canReadCrmContact(contactRef)) return;
   failCrmContactNotFound(op, contactRef, asJson);
 }
 
@@ -1061,6 +1108,7 @@ function formatMoney(cents: number, currency: string): string {
 }
 
 function showCrmAccount(accountRef: string, asJson?: boolean) {
+  assertCrmAccountMutationTarget("crm account show", accountRef, asJson);
   const account = getCrmAccount(accountRef);
   if (!account) fail(`CRM account not found: ${accountRef}`);
   const visibleContacts = filterCrmRecordsByContact(account.contacts ?? []);
@@ -1078,8 +1126,10 @@ function showCrmAccount(accountRef: string, asJson?: boolean) {
 }
 
 function showCrmOpportunity(opportunityId: string, asJson?: boolean) {
-  const opportunity = getCrmOpportunity(opportunityId);
-  if (!opportunity) failOpportunityNotFound("crm opportunity show", opportunityId, asJson);
+  if (!canReadCrmOpportunityTarget(opportunityId)) {
+    failOpportunityNotFound("crm opportunity show", opportunityId, asJson, false);
+  }
+  const opportunity = getCrmOpportunity(opportunityId)!;
   const payload = { target: opportunityId, opportunity };
   if (asJson) {
     printJson(payload);
@@ -1111,7 +1161,11 @@ export class ACrmCommands {
         { name: "contacts", intent: "list CRM contacts", mutates: false },
         { name: "board", intent: "list paginated opportunities", mutates: false },
         { name: "lifecycle show", intent: "discover published states", mutates: false },
-        { name: "facade plan", intent: "resolve an effect without changing data", mutates: false },
+        {
+          name: "facade plan",
+          intent: "persist a durable effect plan without changing CRM business data",
+          mutates: true,
+        },
         { name: "facade approve", intent: "obtain external approval for a plan", mutates: true },
         { name: "facade apply", intent: "apply one approved plan", mutates: true },
         { name: "facade verify", intent: "read a plan state", mutates: false },
@@ -1416,9 +1470,9 @@ export class CrmLifecycleCommands {
   description: "CRM agent-first planning and controlled effects",
 })
 export class CrmFacadeCommands {
-  @Scope("open")
-  @Command({ name: "plan", aliases: ["intent"], description: "Resolve a CRM intent and create a read-only plan" })
-  @CommandAccess({ kind: "read", resource: "crm.facade", action: "plan", risk: "low" })
+  @Scope("writeContacts")
+  @Command({ name: "plan", aliases: ["intent"], description: "Resolve a CRM intent and persist a durable plan" })
+  @CommandAccess({ kind: "mutate", resource: "crm.facade", action: "plan", risk: "medium" })
   @Returns(crmFacadePlanReturnSchema)
   plan(
     @Arg("operation", {
@@ -1453,7 +1507,7 @@ export class CrmFacadeCommands {
       });
     }
     try {
-      const plan = buildCrmFacadePlan({
+      const input: CrmFacadePlanInput = {
         operation: operation as CrmFacadeOperation,
         target,
         stage,
@@ -1465,7 +1519,9 @@ export class CrmFacadeCommands {
         role,
         account,
         primary: primary === true ? true : undefined,
-      });
+      };
+      assertCrmFacadeIntentVisible(input, op, asJson);
+      const plan = buildCrmFacadePlan(input);
       assertCrmFacadePlanVisible(plan, op, asJson);
       persistCrmFacadePlan(plan);
       if (asJson) {
@@ -1494,8 +1550,14 @@ export class CrmFacadeCommands {
     @Option({ flags: "--json" }) asJson?: boolean,
   ) {
     try {
+      const plan = loadCrmFacadePlan(planId);
+      if (!plan)
+        contractFail("crm facade verify", "PLAN_NOT_FOUND", `CRM facade plan not found: ${planId}`, {
+          asJson,
+          exitCode: 1,
+        });
+      assertCrmFacadePlanVisible(plan, "crm facade verify", asJson);
       const payload = verifyCrmFacadePlan(planId);
-      assertCrmFacadePlanVisible(loadCrmFacadePlan(planId)!, "crm facade verify", asJson);
       if (asJson) printJson(payload);
       else console.log(JSON.stringify(payload, null, 2));
       return payload;
@@ -1514,8 +1576,14 @@ export class CrmFacadeCommands {
     @Option({ flags: "--json" }) asJson?: boolean,
   ) {
     try {
+      const plan = loadCrmFacadePlan(planId);
+      if (!plan)
+        contractFail("crm facade recover", "PLAN_NOT_FOUND", `CRM facade plan not found: ${planId}`, {
+          asJson,
+          exitCode: 1,
+        });
+      assertCrmFacadePlanVisible(plan, "crm facade recover", asJson);
       const verification = verifyCrmFacadePlan(planId);
-      assertCrmFacadePlanVisible(loadCrmFacadePlan(planId)!, "crm facade recover", asJson);
       const payload = { ...verification, action: "manual_review_required" as const, replay: false as const };
       if (asJson) printJson(payload);
       else console.log(JSON.stringify(payload, null, 2));
@@ -1612,7 +1680,14 @@ export class CrmFacadeCommands {
           exitCode: 1,
         });
       assertCrmFacadePlanVisible(plan, "crm facade apply", asJson);
-      const payload = applyCrmFacadePlan(planId);
+      const actorId = getScopeContext().agentId?.trim() || process.env.RAVI_AGENT_ID?.trim();
+      if (!actorId)
+        contractFail("crm facade apply", "ACTOR_CONTEXT_REQUIRED", "CRM facade apply requires an agent identity", {
+          asJson,
+          exitCode: 3,
+          details: { requiredContext: ["RAVI_AGENT_ID"] },
+        });
+      const payload = applyCrmFacadePlan(planId, { actorId });
       if (asJson) printJson(payload);
       else console.log(`✓ CRM facade plan ${payload.state}: ${planId}`);
       return payload;
@@ -2735,13 +2810,7 @@ export class CrmAccountCommands {
     @Option({ flags: "--primary", description: "Mark as primary account contact" }) primary?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const account = getCrmAccount(accountId);
-    if (!account) {
-      contractFail("crm account link-contact", "CRM_ACCOUNT_NOT_FOUND", `CRM account not found: ${accountId}`, {
-        asJson,
-        details: { suggestedAction: "Check the CRM account id with: ravi crm account --json" },
-      });
-    }
+    assertCrmAccountMutationTarget("crm account link-contact", accountId, asJson);
     assertCanReadCrmContact("crm account link-contact", contactRef, asJson);
     const membership = linkCrmAccountContact({
       accountId,
@@ -2904,9 +2973,7 @@ export class CrmOpportunityCommands {
   ) {
     assertCrmOpportunityMutationTarget("crm opportunity link-contact", opportunityId, asJson);
     assertCanReadCrmContact("crm opportunity link-contact", contactRef, asJson);
-    if (accountId && !getCrmAccount(accountId)) {
-      failCrmAccountNotFound("crm opportunity link-contact", accountId, asJson);
-    }
+    if (accountId) assertCrmAccountMutationTarget("crm opportunity link-contact", accountId, asJson);
     const contact = linkCrmOpportunityContact({
       opportunityId,
       contactRef,

@@ -2081,7 +2081,7 @@ export class RaviClient {
           body: { planId },
         });
       },
-      /** Resolve a CRM intent and create a read-only plan */
+      /** Resolve a CRM intent and persist a durable plan */
       plan: async (operation: "task.done" | "task.cancel" | "task.snooze" | "opportunity.move" | "fact.confirm" | "fact.reject" | "contact.set" | "account.link-contact" | "opportunity.link-contact", target: string, options?: {
         account?: string;
         contact?: string;

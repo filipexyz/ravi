@@ -25,7 +25,12 @@ ravi crm facade plan opportunity.link-contact <opportunity-id> --contact <contac
 ```
 
 Review `planId`, `planHash`, the resolved target, normalized arguments, and
-`expiresAt`. Planning changes no CRM business data.
+`expiresAt`. Planning changes no CRM business data, but persists control-plane
+state and requires `writeContacts` authority.
+
+For link operations, omit `primary` to preserve the current relationship. SDK
+consumers may send an explicit boolean when they intend to promote or demote a
+primary link; the CLI `--primary` flag expresses only explicit promotion.
 
 From the Ravi conversation that requested the change, approve and apply once:
 
@@ -82,7 +87,9 @@ for the same business intent.
    approve, apply, and verify.
 5. Migrate selected consumers to the facade operation by operation. Keep legacy
    commands available until each consumer has its own rollback evidence.
-6. Treat any `partial` or `unknown` result as a rollout stop for that operation
+6. Ensure SDK and gateway callers grant `writeContacts` to `facade.plan`; no
+   actor or approval identity is accepted from request input.
+7. Treat any `partial` or `unknown` result as a rollout stop for that operation
    until manually reconciled.
 
 ## Rollback

@@ -27,12 +27,18 @@ The focused automated tests MUST verify:
   complete canonical arguments together with the plan id, hash, and expiry;
 - single-use application and stale task/fact transition rejection before the
   tested effect runs;
-- `applied`, `partial`, and `unknown` task paths without replay;
+- `not_applied`, `applied`, `partial`, and `unknown` paths without replay for
+  every supported operation;
+- exact-target precondition recheck, runtime actor propagation and journal
+  idempotency for every supported operation;
+- omitted `primary` preservation and explicit `false` compatibility;
+- account and opportunity visibility across all linked contacts, plus minimal
+  readback with no unrelated relationship data;
 - canonical contact values and resolved account references;
 - facade discovery, hidden-target behavior, and generated approval inputs that
   omit caller-provided source and agent identity.
 
-Before production adoption of each operation, a focused scenario MUST validate
+The automated operation matrix MUST validate
 its normalized arguments, precondition recheck, effect dispatch, success
 predicate, divergent readback, secondary effects, and all four observation
 outcomes. A controlled failure scenario MUST also validate the

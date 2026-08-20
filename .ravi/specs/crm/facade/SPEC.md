@@ -99,6 +99,11 @@ currently visible; it does not prove that this plan caused it.
 
 - Planning MUST resolve the exact primary target and every supplied CRM
   reference before persistence. Planning MUST NOT change CRM business data.
+- Planning persists control-plane state and therefore MUST be authorized as a
+  `writeContacts` mutation even though it does not change CRM business data.
+- Target and secondary-reference visibility MUST be checked before plan
+  resolution. Account and opportunity authority is conjunctive across all
+  linked contacts; one unreadable linked contact MUST fail closed as not found.
 - A plan MUST contain one primary effect, `retry: never`, a canonical SHA-256
   hash, creation time, and an expiry exactly 15 minutes after creation.
 - The persisted plan payload MUST be checked against its stored hash whenever it
@@ -131,6 +136,15 @@ currently visible; it does not prove that this plan caused it.
 - The facade MUST propagate the effect id as the mutation idempotency key, but
   replay prevention MUST rely on the atomic plan claim. The facade MUST NOT
   automatically retry or replay a claimed effect.
+- Every CRM event emitted by a facade effect MUST record the runtime-derived
+  agent id and an idempotency key. Secondary events MAY derive a unique suffix
+  from the primary effect id.
+- Omitted optional mutation arguments MUST remain absent in the canonical plan.
+  In particular, omitted `primary` MUST preserve the existing relationship;
+  explicit `true` or `false` MUST remain distinguishable for SDK consumers.
+- Independent readback MUST use operation-specific sensors and return only the
+  fields required by the success predicate. It MUST NOT return full account,
+  contact, opportunity, task, or relationship aggregates.
 - An independent readback that satisfies the operation-specific success
   predicate MUST persist `applied`. A readable but divergent result without an
   execution error MUST persist `partial`.
@@ -142,11 +156,14 @@ currently visible; it does not prove that this plan caused it.
 
 ## Authority and Timing
 
-- `plan`, `verify`, and `recover` are read operations.
-- `approve` and `apply` require the `writeContacts` scope.
+- `verify` and `recover` are read operations.
+- `plan`, `approve`, and `apply` require the `writeContacts` scope.
 - A plan expires after 15 minutes. The approval service waits up to five minutes
   for a matching response unless its internal caller supplies another timeout;
   the public CRM command exposes no timeout option.
+- Expired plans that were never approved and have no effect journal are pruned
+  opportunistically by exact id before a new plan is persisted. Plans with an
+  approval receipt or effect journal are retained as audit evidence.
 
 ## Scope Boundary
 

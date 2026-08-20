@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "680f2ff67f0bbfed"
+    "version": "4d6e56ce5ef143a6"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -34867,12 +34867,22 @@
           "400": {
             "description": "Bad request — body failed schema validation."
           },
+          "401": {
+            "description": "Unauthorized — bearer token missing or invalid."
+          },
+          "403": {
+            "description": "Forbidden — caller lacks the required scope."
+          },
           "500": {
             "description": "Internal error."
           }
         },
-        "security": [],
-        "summary": "Resolve a CRM intent and create a read-only plan",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "summary": "Resolve a CRM intent and persist a durable plan",
         "tags": [
           "crm"
         ]

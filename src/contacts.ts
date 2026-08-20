@@ -4560,6 +4560,7 @@ export function updateCrmContactProfile(input: UpdateCrmContactProfileInput): Cr
         entityId: contactId,
         contactId,
         source: crmMutationSource(input),
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: input.confidence,
@@ -5078,6 +5079,37 @@ export function getCrmAccount(accountRef: string): CrmAccountDetail | null {
   };
 }
 
+export function getCrmAccountSummary(accountRef: string): CrmAccount | null {
+  const row = getCrmAccountRow(ensureDb(), accountRef);
+  return row ? rowToCrmAccount(row) : null;
+}
+
+export function listCrmAccountContactIds(accountRef: string): string[] {
+  const database = ensureDb();
+  const account = getCrmAccountRow(database, accountRef);
+  if (!account) return [];
+  const rows = database
+    .prepare("SELECT DISTINCT contact_id FROM crm_account_contacts WHERE account_id = ? ORDER BY contact_id")
+    .all(account.id) as Array<{ contact_id: string }>;
+  return rows.map((row) => row.contact_id);
+}
+
+export function getCrmAccountContact(
+  accountRef: string,
+  contactRef: string,
+  role = "member",
+): CrmAccountContact | null {
+  const database = ensureDb();
+  const account = getCrmAccountRow(database, accountRef);
+  const contactId = resolveCanonicalContactId(database, contactRef);
+  if (!account || !contactId) return null;
+  const id = stableId("crm_ac", [account.id, contactId, normalizeOptionalText(role) ?? "member"]);
+  const row = database.prepare("SELECT * FROM crm_account_contacts WHERE id = ?").get(id) as
+    | CrmAccountContactRow
+    | undefined;
+  return row ? rowToCrmAccountContact(row) : null;
+}
+
 export function linkCrmAccountContact(input: LinkCrmAccountContactInput): CrmAccountContact {
   const database = ensureDb();
   const account = requireCrmAccount(database, input.accountId);
@@ -5164,6 +5196,7 @@ export function linkCrmAccountContact(input: LinkCrmAccountContactInput): CrmAcc
         contactId,
         accountId: account.id,
         source: linkedMembership.source,
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: linkedMembership.confidence,
@@ -6044,6 +6077,7 @@ export function linkCrmOpportunityContact(input: LinkCrmOpportunityContactInput)
         accountId,
         opportunityId: opportunity.id,
         source: link.source,
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: link.confidence,
@@ -6069,6 +6103,28 @@ export function listCrmOpportunityContacts(opportunityId: string): CrmOpportunit
     )
     .all(opportunityId) as CrmOpportunityContactRow[];
   return rows.map(rowToCrmOpportunityContact);
+}
+
+export function listCrmOpportunityContactIds(opportunityId: string): string[] {
+  const rows = ensureDb()
+    .prepare("SELECT DISTINCT contact_id FROM crm_opportunity_contacts WHERE opportunity_id = ? ORDER BY contact_id")
+    .all(opportunityId) as Array<{ contact_id: string }>;
+  return rows.map((row) => row.contact_id);
+}
+
+export function getCrmOpportunityContact(
+  opportunityId: string,
+  contactRef: string,
+  role = "stakeholder",
+): CrmOpportunityContact | null {
+  const database = ensureDb();
+  const contactId = resolveCanonicalContactId(database, contactRef);
+  if (!contactId || !getCrmOpportunityRow(database, opportunityId)) return null;
+  const id = stableId("crm_oc", [opportunityId, contactId, normalizeOptionalText(role) ?? "stakeholder"]);
+  const row = database.prepare("SELECT * FROM crm_opportunity_contacts WHERE id = ?").get(id) as
+    | CrmOpportunityContactRow
+    | undefined;
+  return row ? rowToCrmOpportunityContact(row) : null;
 }
 
 export function moveCrmOpportunityStage(input: MoveCrmOpportunityStageInput): CrmOpportunity {
@@ -6106,6 +6162,7 @@ export function moveCrmOpportunityStage(input: MoveCrmOpportunityStageInput): Cr
         accountId: previous.account_id,
         opportunityId: previous.id,
         source: crmMutationSource(input),
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: input.confidence,
@@ -6124,6 +6181,7 @@ export function moveCrmOpportunityStage(input: MoveCrmOpportunityStageInput): Cr
           accountId: previous.account_id,
           opportunityId: previous.id,
           source: crmMutationSource(input),
+          idempotencyKey: input.idempotencyKey ? `${input.idempotencyKey}:status` : null,
           actorType: input.actorType,
           actorId: input.actorId,
           confidence: input.confidence,
@@ -6343,6 +6401,7 @@ export function cancelCrmTask(input: CancelCrmTaskInput): CrmTask {
         opportunityId: previous.opportunity_id,
         taskId: previous.id,
         source: crmMutationSource(input),
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: input.confidence,
@@ -6409,6 +6468,7 @@ export function snoozeCrmTask(input: SnoozeCrmTaskInput): CrmTask {
         opportunityId: previous.opportunity_id,
         taskId: previous.id,
         source: crmMutationSource(input),
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: input.confidence,
@@ -6524,6 +6584,7 @@ export function completeCrmTask(input: CompleteCrmTaskInput): CrmTask {
         opportunityId: previous.opportunity_id,
         taskId: previous.id,
         source: crmMutationSource(input),
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: input.confidence,
@@ -6633,6 +6694,41 @@ export type CrmFacadePlanRecord = {
   approvalJson: string | null;
   appliedAt: string | null;
 };
+
+export function pruneExpiredUnapprovedCrmFacadePlans(cutoff: string, limit = 100): string[] {
+  const database = ensureDb();
+  const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 500));
+  const candidates = database
+    .query(
+      `SELECT p.plan_id
+       FROM crm_facade_plans p
+       LEFT JOIN crm_facade_effects e ON e.plan_id = p.plan_id
+       WHERE p.state = 'planned'
+         AND p.approval_json IS NULL
+         AND p.expires_at <= ?
+         AND e.effect_id IS NULL
+       ORDER BY p.expires_at ASC, p.plan_id ASC
+       LIMIT ?`,
+    )
+    .all(cutoff, safeLimit) as Array<{ plan_id: string }>;
+  const deleted: string[] = [];
+  executeWrite(
+    database,
+    () => {
+      const remove = database.query(
+        `DELETE FROM crm_facade_plans
+         WHERE plan_id = ? AND state = 'planned' AND approval_json IS NULL AND expires_at <= ?
+           AND NOT EXISTS (SELECT 1 FROM crm_facade_effects WHERE plan_id = ?)`,
+      );
+      for (const candidate of candidates) {
+        const result = remove.run(candidate.plan_id, cutoff, candidate.plan_id) as { changes?: number };
+        if (result.changes === 1) deleted.push(candidate.plan_id);
+      }
+    },
+    { label: "contacts:pruneExpiredUnapprovedCrmFacadePlans" },
+  );
+  return deleted;
+}
 
 export function saveCrmFacadePlan(record: CrmFacadePlanRecord): void {
   const database = ensureDb();
@@ -6757,11 +6853,6 @@ function requireCrmFact(database: Database, factId: string): CrmFactRow {
   const fact = getCrmFactRow(database, factId);
   if (!fact) throw new Error(`CRM fact not found: ${factId}`);
   return fact;
-}
-
-export function getCrmFact(factId: string): CrmFact | null {
-  const row = getCrmFactRow(ensureDb(), factId);
-  return row ? rowToCrmFact(row) : null;
 }
 
 function resolveCrmFactTarget(
@@ -6948,6 +7039,7 @@ function updateCrmFactStatus(input: UpdateCrmFactStatusInput, status: Exclude<Cr
         accountId: previous.account_id,
         opportunityId: previous.opportunity_id,
         source: crmMutationSource(input),
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: input.confidence ?? previous.confidence,

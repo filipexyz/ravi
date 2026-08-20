@@ -19,6 +19,7 @@ let pipelineRecords: Array<Record<string, unknown>> = [];
 let pipelineStageRecords: Array<Record<string, unknown>> = [];
 let pipelineTopicRecords: Array<Record<string, unknown>> = [];
 let factRecords: Array<Record<string, unknown>> = [];
+let accountContactIds: string[] = [];
 let scopeEnforced = false;
 let readableContactIds = new Set<string>();
 let lastAccountCreateInput: Record<string, unknown> | null = null;
@@ -249,6 +250,8 @@ mock.module("../../contacts.js", () => ({
           tasks: [],
         }
       : null,
+  getCrmAccountSummary: (accountRef: string) => (crmAccount ? { id: accountRef, name: "Acme", ...crmAccount } : null),
+  listCrmAccountContactIds: () => accountContactIds,
   createCrmAccount: (input: Record<string, unknown>) => {
     lastAccountCreateInput = input;
     return { id: "crm_acc_1", name: input.name, domain: input.domain ?? null };
@@ -275,6 +278,10 @@ mock.module("../../contacts.js", () => ({
           ...crmOpportunity,
         }
       : null,
+  listCrmOpportunityContactIds: () =>
+    opportunityContactRecords
+      .map((record) => record.contactId)
+      .filter((contactId): contactId is string => typeof contactId === "string"),
   createCrmOpportunity: (input: Record<string, unknown>) => {
     lastOpportunityCreateInput = input;
     return { id: "crm_opp_1", title: input.title, accountId: input.accountId ?? null };
@@ -466,6 +473,7 @@ describe("CRM commands", () => {
   beforeEach(() => {
     scopeEnforced = false;
     readableContactIds = new Set<string>();
+    accountContactIds = [];
     crmContactProfile = {
       contactId: "contact-1",
       lifecycle: "lead",
@@ -1081,7 +1089,7 @@ describe("CRM commands", () => {
     }
   });
 
-  it("emits OPPORTUNITY_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+  it("emits OPPORTUNITY_NOT_FOUND without broad suggestions on --json (exit 1)", () => {
     process.env.RAVI_AGENT_ID = "crm-contract-test";
     crmOpportunity = null;
     try {
@@ -1095,7 +1103,7 @@ describe("CRM commands", () => {
       const errorPayload = payload.error as Record<string, unknown>;
       expect(payload.success).toBe(false);
       expect(errorPayload.code).toBe("OPPORTUNITY_NOT_FOUND");
-      expect(errorPayload.suggestions).toContain("crm_opp_1");
+      expect(errorPayload).not.toHaveProperty("suggestions");
     } finally {
       delete process.env.RAVI_AGENT_ID;
     }
@@ -1469,7 +1477,10 @@ describe("CRM commands", () => {
     });
     expect(error).toBeInstanceOf(CrmContractError);
     expect((error as InstanceType<typeof CrmContractError>).code).toBe("OPPORTUNITY_NOT_FOUND");
-    expect((payload.error as Record<string, unknown>).suggestions).toContain("crm_opp_1");
+    expect(payload.error).not.toHaveProperty("suggestions");
+    expect((payload.error as Record<string, unknown>).suggestedAction).toBe(
+      "Check visible opportunities with: ravi crm board --json",
+    );
   });
 
   it("paginates the opportunity board while preserving its legacy opportunities alias", () => {
@@ -1510,7 +1521,7 @@ describe("CRM commands", () => {
     expect(payload.kind).toBe("quick-start");
     expect(payload.scope).toBe("curated-entry-points");
     expect(payload.commands as Array<Record<string, unknown>>).toEqual(
-      expect.arrayContaining([expect.objectContaining({ name: "facade plan", mutates: false })]),
+      expect.arrayContaining([expect.objectContaining({ name: "facade plan", mutates: true })]),
     );
   });
 
@@ -1536,6 +1547,63 @@ describe("CRM commands", () => {
     expect(error).toBeInstanceOf(CrmContractError);
     expect((error as InstanceType<typeof CrmContractError>).code).toBe("CRM_TASK_NOT_FOUND");
     expect(JSON.stringify(payload)).not.toContain("Follow up");
+  });
+
+  it("hides accounts linked to any unreadable contact before facade resolution", () => {
+    scopeEnforced = true;
+    accountContactIds = ["contact-visible", "contact-hidden"];
+    readableContactIds = new Set(["contact-visible"]);
+
+    const { payload, error } = captureJsonError(() => {
+      new CrmFacadeCommands().plan(
+        "account.link-contact",
+        "crm_acc_1",
+        undefined,
+        "contact-visible",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+    expect(JSON.stringify(payload)).not.toContain("contact-hidden");
+  });
+
+  it("hides opportunities when a secondary linked contact is unreadable", () => {
+    scopeEnforced = true;
+    readableContactIds = new Set(["contact-visible"]);
+    opportunityContactRecords = [
+      { opportunityId: "crm_opp_1", contactId: "contact-visible", role: "stakeholder" },
+      { opportunityId: "crm_opp_1", contactId: "contact-hidden", role: "observer" },
+    ];
+
+    const { payload, error } = captureJsonError(() => {
+      new CrmFacadeCommands().plan(
+        "opportunity.move",
+        "crm_opp_1",
+        "qualified",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("OPPORTUNITY_NOT_FOUND");
+    expect(JSON.stringify(payload)).not.toContain("contact-hidden");
   });
 
   it("shows the complete canonical change in every facade approval prompt", () => {
