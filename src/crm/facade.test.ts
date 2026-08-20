@@ -57,8 +57,14 @@ mock.module("../contacts.js", () => ({
   },
 }));
 
-const { applyCrmFacadePlan, approveCrmFacadePlan, buildCrmFacadePlan, loadCrmFacadePlan, persistCrmFacadePlan } =
-  await import("./facade.js");
+const {
+  applyCrmFacadePlan,
+  approveCrmFacadePlan,
+  buildCrmFacadePlan,
+  loadCrmFacadePlan,
+  persistCrmFacadePlan,
+  verifyCrmFacadePlan,
+} = await import("./facade.js");
 
 describe("CRM facade", () => {
   beforeEach(() => {
@@ -78,6 +84,7 @@ describe("CRM facade", () => {
   it("requires approval and consumes an approved plan only once", () => {
     const plan = buildCrmFacadePlan({ operation: "task.done", target: "task-1" });
     persistCrmFacadePlan(plan);
+    expect(verifyCrmFacadePlan(plan.planId).outcome).toBe("not_applied");
     expect(() => applyCrmFacadePlan(plan.planId)).toThrow(/approval/i);
 
     approveCrmFacadePlan(plan.planId, { channel: "telegram", accountId: "acct", chatId: "chat" });
@@ -85,6 +92,15 @@ describe("CRM facade", () => {
     expect(result.state).toBe("applied");
     expect(completedTaskIds).toEqual(["task-1"]);
     expect(loadCrmFacadePlan(plan.planId)?.state).toBe("applied");
+    expect(verifyCrmFacadePlan(plan.planId).outcome).toBe("applied");
     expect(() => applyCrmFacadePlan(plan.planId)).toThrow(/applied|cannot be applied/i);
+  });
+
+  it("rejects a persisted plan whose payload no longer matches its hash", () => {
+    const plan = buildCrmFacadePlan({ operation: "task.done", target: "task-1" });
+    persistCrmFacadePlan(plan);
+    const stored = plans.get(plan.planId)!;
+    plans.set(plan.planId, { ...stored, planJson: stored.planJson.replace("task.done", "task.cancel") });
+    expect(() => loadCrmFacadePlan(plan.planId)).toThrow(/integrity/i);
   });
 });

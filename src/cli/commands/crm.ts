@@ -85,9 +85,11 @@ import {
   loadCrmFacadePlan,
   approveCrmFacadePlan,
   applyCrmFacadePlan,
+  verifyCrmFacadePlan,
   CRM_FACADE_OPERATIONS,
   CrmFacadeResolutionError,
   type CrmFacadeOperation,
+  type CrmFacadePlan,
 } from "../../crm/facade.js";
 import { requestCascadingApproval } from "../../approval/service.js";
 
@@ -521,6 +523,25 @@ function assertCrmFactMutationTarget(op: string, factId: string, asJson?: boolea
   }
 }
 
+function assertCrmFacadePlanVisible(plan: CrmFacadePlan, op: string, asJson?: boolean): void {
+  switch (plan.target.type) {
+    case "task":
+      assertCrmTaskMutationTarget(op, plan.target.id, asJson);
+      break;
+    case "opportunity":
+      assertCrmOpportunityMutationTarget(op, plan.target.id, asJson);
+      break;
+    case "fact":
+      assertCrmFactMutationTarget(op, plan.target.id, asJson);
+      break;
+    case "contact":
+      assertCanReadCrmContact(op, plan.target.id, asJson);
+      break;
+  }
+  const contact = plan.arguments.contact;
+  if (typeof contact === "string") assertCanReadCrmContact(op, contact, asJson);
+}
+
 function validateNonNegativeInteger(
   op: string,
   flag: string,
@@ -547,12 +568,7 @@ function redactPipelineValidationIssues(issues: PipelineValidationIssue[]): Pipe
   }));
 }
 
-function validateTimestamp(
-  op: string,
-  flag: string,
-  value: string | undefined,
-  asJson?: boolean,
-): string | undefined {
+function validateTimestamp(op: string, flag: string, value: string | undefined, asJson?: boolean): string | undefined {
   if (value === undefined || !Number.isNaN(Date.parse(value))) return value;
   contractFail(op, "USAGE_ERROR", `${flag} must be a valid date/time`, {
     asJson,
@@ -1214,19 +1230,25 @@ export class ACrmCommands {
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each opportunity" })
     fields?: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
-    @Option({ flags: "--offset <n>", description: "Number of matching opportunities to skip (default: 0)" }) offset?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching opportunities to skip (default: 0)" })
+    offset?: string,
   ) {
     const op = "crm board";
     validateNonNegativeInteger(op, "--limit", limit, asJson);
     validateNonNegativeInteger(op, "--offset", offset, asJson);
-    const page = paginateCliItems(filterCrmRecordsByContact(listCrmOpportunityBoard({ pipelineRef: pipeline })), { limit, offset });
+    const page = paginateCliItems(filterCrmRecordsByContact(listCrmOpportunityBoard({ pipelineRef: pipeline })), {
+      limit,
+      offset,
+    });
     const board = pickFields(page.items, fields);
     const pageOpportunityIds = new Set(page.items.map((opportunity) => opportunity.opportunityId));
     const stages = includeEmptyStages
       ? listCrmOpportunityBoardStages(pipeline).map((stage) => ({
           ...stage,
           opportunities: pickFields(
-            filterCrmRecordsByContact(stage.opportunities).filter((opportunity) => pageOpportunityIds.has(opportunity.opportunityId)),
+            filterCrmRecordsByContact(stage.opportunities).filter((opportunity) =>
+              pageOpportunityIds.has(opportunity.opportunityId),
+            ),
             fields,
           ),
         }))
@@ -1280,10 +1302,32 @@ export class CrmLifecycleCommands {
   @Returns(crmLifecycleReturnSchema)
   show(@Option({ flags: "--json", description: "Print lifecycle contract as JSON" }) asJson?: boolean) {
     const payload = {
-      contact: { states: [...CRM_CONTACT_LIFECYCLE_VALUES], transitionPolicy: "profile updates are explicit; no automatic lifecycle transition" },
-      opportunity: { states: ["open", "won", "lost", "paused", "archived"], transitionPolicy: "stage moves determine status according to pipeline stage configuration" },
-      task: { states: [...CRM_TASK_STATUS_VALUES], operations: { done: "open|scheduled|waiting|snoozed -> done", cancel: "non-terminal -> canceled", snooze: "non-terminal -> snoozed" }, terminal: ["done", "canceled"] },
-      fact: { states: [...CRM_FACT_STATUS_VALUES], operations: { confirm: "proposed -> confirmed", reject: "proposed -> rejected", supersede: "confirmed -> superseded" }, terminal: ["rejected", "superseded"] },
+      contact: {
+        states: [...CRM_CONTACT_LIFECYCLE_VALUES],
+        transitionPolicy: "profile updates are explicit; no automatic lifecycle transition",
+      },
+      opportunity: {
+        states: ["open", "won", "lost", "paused", "archived"],
+        transitionPolicy: "stage moves determine status according to pipeline stage configuration",
+      },
+      task: {
+        states: [...CRM_TASK_STATUS_VALUES],
+        operations: {
+          done: "open|scheduled|waiting|snoozed -> done",
+          cancel: "non-terminal -> canceled",
+          snooze: "non-terminal -> snoozed",
+        },
+        terminal: ["done", "canceled"],
+      },
+      fact: {
+        states: [...CRM_FACT_STATUS_VALUES],
+        operations: {
+          confirm: "proposed -> confirmed",
+          reject: "proposed -> rejected",
+          supersede: "confirmed -> superseded",
+        },
+        terminal: ["rejected", "superseded"],
+      },
     };
     if (asJson) printJson(payload);
     else console.log(JSON.stringify(payload, null, 2));
@@ -1310,7 +1354,8 @@ export class CrmFacadeCommands {
     @Option({ flags: "--until <timestamp>", description: "Snooze deadline for task.snooze" }) until?: string,
     @Option({ flags: "--reason <text>", description: "Reason recorded with the operation" }) reason?: string,
     @Option({ flags: "--role <role>", description: "Relationship role for a link-contact operation" }) role?: string,
-    @Option({ flags: "--account <account>", description: "Account context for opportunity.link-contact" }) account?: string,
+    @Option({ flags: "--account <account>", description: "Account context for opportunity.link-contact" })
+    account?: string,
     @Option({ flags: "--primary", description: "Mark the linked contact as primary" }) primary?: boolean,
     @Option({ flags: "--json", description: "Print the immutable plan as JSON" }) asJson?: boolean,
   ) {
@@ -1341,6 +1386,7 @@ export class CrmFacadeCommands {
         account,
         primary: primary === true ? true : undefined,
       });
+      assertCrmFacadePlanVisible(plan, op, asJson);
       persistCrmFacadePlan(plan);
       if (asJson) {
         printJson(plan);
@@ -1363,24 +1409,42 @@ export class CrmFacadeCommands {
   @Command({ name: "verify", description: "Read the current state of a CRM facade plan" })
   @CommandAccess({ kind: "read", resource: "crm.facade", action: "verify", risk: "low" })
   @Returns(crmFacadeVerificationReturnSchema)
-  verify(@Arg("planId", { description: "Plan identifier" }) planId: string, @Option({ flags: "--json" }) asJson?: boolean) {
-    const plan = loadCrmFacadePlan(planId);
-    if (!plan) contractFail("crm facade verify", "NOT_FOUND", `CRM facade plan not found: ${planId}`, { asJson, exitCode: 1 });
-    const expired = Date.parse(plan.expiresAt) <= Date.now();
-    const payload = { planId, planHash: plan.planHash, state: plan.state, expired, observedAt: new Date().toISOString() };
-    if (asJson) printJson(payload); else console.log(JSON.stringify(payload, null, 2));
-    return payload;
+  verify(
+    @Arg("planId", { description: "Plan identifier" }) planId: string,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    try {
+      const payload = verifyCrmFacadePlan(planId);
+      assertCrmFacadePlanVisible(loadCrmFacadePlan(planId)!, "crm facade verify", asJson);
+      if (asJson) printJson(payload);
+      else console.log(JSON.stringify(payload, null, 2));
+      return payload;
+    } catch (error) {
+      if (error instanceof CrmFacadeResolutionError)
+        contractFail("crm facade verify", error.code, error.message, { asJson, exitCode: 1 });
+      throw error;
+    }
   }
 
   @Command({ name: "recover", description: "Inspect a CRM facade plan without replaying it" })
   @CommandAccess({ kind: "read", resource: "crm.facade", action: "recover", risk: "low" })
   @Returns(crmFacadeRecoveryReturnSchema)
-  recover(@Arg("planId", { description: "Plan identifier" }) planId: string, @Option({ flags: "--json" }) asJson?: boolean) {
-    const plan = loadCrmFacadePlan(planId);
-    if (!plan) contractFail("crm facade recover", "NOT_FOUND", `CRM facade plan not found: ${planId}`, { asJson, exitCode: 1 });
-    const payload = { planId, planHash: plan.planHash, state: plan.state, action: "manual_review_required", replay: false };
-    if (asJson) printJson(payload); else console.log(JSON.stringify(payload, null, 2));
-    return payload;
+  recover(
+    @Arg("planId", { description: "Plan identifier" }) planId: string,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    try {
+      const verification = verifyCrmFacadePlan(planId);
+      assertCrmFacadePlanVisible(loadCrmFacadePlan(planId)!, "crm facade recover", asJson);
+      const payload = { ...verification, action: "manual_review_required" as const, replay: false as const };
+      if (asJson) printJson(payload);
+      else console.log(JSON.stringify(payload, null, 2));
+      return payload;
+    } catch (error) {
+      if (error instanceof CrmFacadeResolutionError)
+        contractFail("crm facade recover", error.code, error.message, { asJson, exitCode: 1 });
+      throw error;
+    }
   }
 
   @Scope("writeContacts")
@@ -1389,14 +1453,20 @@ export class CrmFacadeCommands {
   @Returns(crmFacadePlanReturnSchema)
   async approve(
     @Arg("planId", { description: "Plan identifier" }) planId: string,
-    @Option({ flags: "--source <channel:account:chat>", description: "External approval destination" }) sourceText?: string,
+    @Option({ flags: "--source <channel:account:chat>", description: "External approval destination" })
+    sourceText?: string,
     @Option({ flags: "--agent <id>", description: "Requesting agent id" }) agentId?: string,
     @Option({ flags: "--json" }) asJson?: boolean,
   ) {
     const plan = loadCrmFacadePlan(planId);
-    if (!plan) contractFail("crm facade approve", "NOT_FOUND", `CRM facade plan not found: ${planId}`, { asJson, exitCode: 1 });
+    if (!plan)
+      contractFail("crm facade approve", "NOT_FOUND", `CRM facade plan not found: ${planId}`, { asJson, exitCode: 1 });
     const parts = sourceText?.split(":", 3);
-    if (!parts || parts.length !== 3 || parts.some((part) => !part.trim())) contractFail("crm facade approve", "USAGE_ERROR", "--source channel:account:chat is required", { asJson, exitCode: 2 });
+    if (!parts || parts.length !== 3 || parts.some((part) => !part.trim()))
+      contractFail("crm facade approve", "USAGE_ERROR", "--source channel:account:chat is required", {
+        asJson,
+        exitCode: 2,
+      });
     const source = { channel: parts[0], accountId: parts[1], chatId: parts[2] };
     const approval = await requestCascadingApproval({
       type: "plan",
@@ -1407,9 +1477,15 @@ export class CrmFacadeCommands {
       text: `Approve CRM plan ${planId} with hash ${plan.planHash}: ${plan.operation} on ${plan.target.label}?`,
       eventData: { planId, planHash: plan.planHash, operation: plan.operation, target: plan.target },
     });
-    if (!approval.approved) contractFail("crm facade approve", "APPROVAL_DENIED", approval.reason || "External approval was not granted", { asJson, exitCode: 1 });
+    if (!approval.approved)
+      contractFail("crm facade approve", "APPROVAL_DENIED", approval.reason || "External approval was not granted", {
+        asJson,
+        exitCode: 1,
+      });
+    assertCrmFacadePlanVisible(plan, "crm facade approve", asJson);
     const approvedPlan = approveCrmFacadePlan(planId, source);
-    if (asJson) printJson(approvedPlan); else console.log(`✓ CRM facade plan approved: ${planId}`);
+    if (asJson) printJson(approvedPlan);
+    else console.log(`✓ CRM facade plan approved: ${planId}`);
     return approvedPlan;
   }
 
@@ -1417,13 +1493,25 @@ export class CrmFacadeCommands {
   @Command({ name: "apply", description: "Apply one externally approved CRM facade plan" })
   @CommandAccess({ kind: "mutate", resource: "crm.facade", action: "apply", risk: "high" })
   @Returns(crmFacadeApplyReturnSchema)
-  apply(@Arg("planId", { description: "Plan identifier" }) planId: string, @Option({ flags: "--json" }) asJson?: boolean) {
+  apply(
+    @Arg("planId", { description: "Plan identifier" }) planId: string,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
     try {
+      const plan = loadCrmFacadePlan(planId);
+      if (!plan)
+        contractFail("crm facade apply", "PLAN_NOT_FOUND", `CRM facade plan not found: ${planId}`, {
+          asJson,
+          exitCode: 1,
+        });
+      assertCrmFacadePlanVisible(plan, "crm facade apply", asJson);
       const payload = applyCrmFacadePlan(planId);
-      if (asJson) printJson(payload); else console.log(`✓ CRM facade plan ${payload.state}: ${planId}`);
+      if (asJson) printJson(payload);
+      else console.log(`✓ CRM facade plan ${payload.state}: ${planId}`);
       return payload;
     } catch (error) {
-      if (error instanceof CrmFacadeResolutionError) contractFail("crm facade apply", error.code, error.message, { asJson, exitCode: 1, details: error.details });
+      if (error instanceof CrmFacadeResolutionError)
+        contractFail("crm facade apply", error.code, error.message, { asJson, exitCode: 1, details: error.details });
       throw error;
     }
   }

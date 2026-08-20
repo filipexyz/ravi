@@ -1304,9 +1304,9 @@ describe("CRM commands", () => {
     });
     expect(payload.total).toBe(2);
     expect((payload.pagination as Record<string, unknown>).returned).toBe(1);
-    expect((payload.items as Array<Record<string, unknown>>)).toHaveLength(1);
+    expect(payload.items as Array<Record<string, unknown>>).toHaveLength(1);
     expect(payload.opportunities).toEqual(payload.items);
-    expect(((payload.stages as Array<Record<string, unknown>>)[0]?.opportunities as unknown[])).toHaveLength(1);
+    expect((payload.stages as Array<Record<string, unknown>>)[0]?.opportunities as unknown[]).toHaveLength(1);
   });
 
   it("returns a usage envelope when pipeline validation has no target", () => {
@@ -1327,8 +1327,32 @@ describe("CRM commands", () => {
   it("offers a machine-readable CRM discovery overview", () => {
     const payload = captureJson(() => new ACrmCommands().help(true));
     expect(payload.domain).toBe("crm");
-    expect((payload.commands as Array<Record<string, unknown>>)).toEqual(
+    expect(payload.commands as Array<Record<string, unknown>>).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "facade plan", mutates: false })]),
     );
+  });
+
+  it("does not reveal a hidden CRM target through facade planning", () => {
+    scopeEnforced = true;
+    crmTask = { contactId: "contact-hidden" };
+    const { payload, error } = captureJsonError(() => {
+      new CrmFacadeCommands().plan(
+        "task.done",
+        "crm_task_hidden",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("CRM_TASK_NOT_FOUND");
+    expect(JSON.stringify(payload)).not.toContain("Follow up");
   });
 });

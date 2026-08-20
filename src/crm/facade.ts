@@ -3,6 +3,7 @@ import {
   getCrmAccount,
   getCrmFact,
   getCrmOpportunity,
+  getCrmPipelineStage,
   getCrmTask,
   getContactDetails,
   getCrmContactProfile,
@@ -22,6 +23,7 @@ import {
   updateCrmContactProfile,
   linkCrmAccountContact,
   linkCrmOpportunityContact,
+  listCrmOpportunityContacts,
   type CrmFact,
   type CrmOpportunity,
   type CrmTask,
@@ -92,6 +94,16 @@ export type CrmFacadeApplyResult = {
   effectId: string;
   readback?: unknown;
   reason?: string;
+};
+
+export type CrmFacadeVerification = {
+  planId: string;
+  planHash: string;
+  state: CrmFacadePlanState;
+  outcome: "applied" | "not_applied" | "partial" | "not_determined";
+  expired: boolean;
+  observedAt: string;
+  readback: unknown;
 };
 
 export class CrmFacadeResolutionError extends Error {
@@ -172,24 +184,74 @@ function resolveTarget(input: CrmFacadePlanInput): { type: string; id: string; l
 
 function normalizeArguments(input: CrmFacadePlanInput): Record<string, unknown> {
   const args: Record<string, unknown> = { target: input.target };
-  if (input.stage !== undefined) args.stage = input.stage;
-  if (input.contact !== undefined) args.contact = input.contact;
+  if (input.stage !== undefined) {
+    const opportunity = getCrmOpportunity(input.target);
+    const stage = opportunity?.pipelineId ? getCrmPipelineStage(opportunity.pipelineId, input.stage) : null;
+    if (!stage)
+      throw new CrmFacadeResolutionError(
+        "CRM_PIPELINE_STAGE_NOT_FOUND",
+        `CRM pipeline stage not found: ${input.stage}`,
+      );
+    args.stage = stage.stage.id;
+  }
+  if (input.contact !== undefined) {
+    const contact = getContactDetails(input.contact);
+    if (!contact) throw new CrmFacadeResolutionError("CONTACT_NOT_FOUND", `Contact not found: ${input.contact}`);
+    args.contact = contact.contact.id;
+  }
   if (input.field !== undefined) args.field = input.field;
   if (input.value !== undefined) args.value = input.value;
   if (input.until !== undefined) args.until = input.until;
   if (input.reason !== undefined) args.reason = input.reason;
   if (input.role !== undefined) args.role = input.role;
-  if (input.account !== undefined) args.account = input.account;
+  if (input.account !== undefined) {
+    const account = getCrmAccount(input.account);
+    if (!account)
+      throw new CrmFacadeResolutionError("CRM_ACCOUNT_NOT_FOUND", `CRM account not found: ${input.account}`);
+    args.account = account.account.id;
+  }
   if (input.primary !== undefined) args.primary = input.primary;
   return args;
 }
 
 function validateOperationInputs(input: CrmFacadePlanInput): void {
-  if (input.operation === "task.snooze") required(input.until, "until");
+  if (input.operation === "task.snooze") {
+    const until = required(input.until, "until");
+    if (!Number.isFinite(Date.parse(until)))
+      throw new CrmFacadeResolutionError("INVALID_TIMESTAMP", "until must be an ISO timestamp");
+  }
   if (input.operation === "opportunity.move") required(input.stage, "stage");
   if (input.operation === "contact.set") {
-    required(input.field, "field");
-    required(input.value, "value");
+    const field = required(input.field, "field");
+    const value = required(input.value, "value");
+    const allowed = [
+      "lifecycle",
+      "relationship-health",
+      "health",
+      "priority",
+      "score",
+      "health-score",
+      "primary-account",
+      "primary-opportunity",
+      "lead-source",
+      "persona",
+      "buying-role",
+      "next-action-at",
+      "next-action",
+    ];
+    if (!allowed.includes(field))
+      throw new CrmFacadeResolutionError("UNSUPPORTED_CONTACT_FIELD", `Unsupported CRM contact field: ${field}`, {
+        acceptedValues: allowed,
+      });
+    if (
+      ["score", "health-score"].includes(field) &&
+      value !== "-" &&
+      value !== "null" &&
+      !Number.isFinite(Number(value))
+    )
+      throw new CrmFacadeResolutionError("INVALID_NUMBER", `${field} must be a number`);
+    if (field === "next-action-at" && value !== "-" && value !== "null" && !Number.isFinite(Date.parse(value)))
+      throw new CrmFacadeResolutionError("INVALID_TIMESTAMP", "next-action-at must be an ISO timestamp");
   }
   if (input.operation.endsWith("link-contact")) required(input.contact, "contact");
 }
@@ -233,6 +295,10 @@ export function loadCrmFacadePlan(planId: string): CrmFacadePlan | null {
   const record = getCrmFacadePlan(planId);
   if (!record) return null;
   const plan = JSON.parse(record.planJson) as CrmFacadePlan;
+  const { planHash, ...unsigned } = plan;
+  if (planHash !== record.planHash || hashPlan(unsigned) !== record.planHash) {
+    throw new CrmFacadeResolutionError("PLAN_INTEGRITY_ERROR", `CRM facade plan integrity check failed: ${planId}`);
+  }
   return {
     ...plan,
     state: record.state as CrmFacadePlanState,
@@ -262,6 +328,9 @@ export function approveCrmFacadePlan(planId: string, source: CrmFacadeApproval["
 }
 
 function effectReadback(plan: CrmFacadePlan): unknown {
+  if (plan.operation === "opportunity.link-contact") {
+    return { opportunity: getCrmOpportunity(plan.target.id), contacts: listCrmOpportunityContacts(plan.target.id) };
+  }
   switch (plan.target.type) {
     case "task":
       return getCrmTask(plan.target.id);
@@ -276,6 +345,79 @@ function effectReadback(plan: CrmFacadePlan): unknown {
     default:
       return null;
   }
+}
+
+function contactProfileValue(readback: unknown, field: string): unknown {
+  const profile = (readback as { profile?: Record<string, unknown> } | null)?.profile;
+  if (!profile) return undefined;
+  const keys: Record<string, string> = {
+    "relationship-health": "relationshipHealth",
+    health: "relationshipHealth",
+    "health-score": "healthScore",
+    "primary-account": "primaryAccountId",
+    "primary-opportunity": "primaryOpportunityId",
+    "lead-source": "leadSource",
+    "buying-role": "buyingRole",
+    "next-action-at": "nextActionAt",
+    "next-action": "nextActionSummary",
+  };
+  return profile[keys[field] ?? field];
+}
+
+function effectMatches(plan: CrmFacadePlan, readback: unknown): boolean {
+  const record = readback as Record<string, unknown> | null;
+  switch (plan.operation) {
+    case "task.done":
+      return record?.status === "done";
+    case "task.cancel":
+      return record?.status === "canceled";
+    case "task.snooze":
+      return (
+        record?.status === "snoozed" &&
+        (record.snoozedUntil === plan.arguments.until || record.dueAt === plan.arguments.until)
+      );
+    case "opportunity.move":
+      return record?.stageId === plan.arguments.stage;
+    case "fact.confirm":
+      return record?.status === "confirmed";
+    case "fact.reject":
+      return record?.status === "rejected";
+    case "contact.set": {
+      const expected = plan.arguments.value === "-" || plan.arguments.value === "null" ? null : plan.arguments.value;
+      return String(contactProfileValue(readback, String(plan.arguments.field)) ?? "") === String(expected ?? "");
+    }
+    case "account.link-contact": {
+      const contacts = (record?.contacts ?? []) as Array<Record<string, unknown>>;
+      return contacts.some((item) => item.contactId === plan.arguments.contact);
+    }
+    case "opportunity.link-contact": {
+      const contacts = (record?.contacts ?? []) as Array<Record<string, unknown>>;
+      return contacts.some((item) => item.contactId === plan.arguments.contact);
+    }
+  }
+}
+
+export function verifyCrmFacadePlan(planId: string): CrmFacadeVerification {
+  const plan = loadCrmFacadePlan(planId);
+  if (!plan) throw new CrmFacadeResolutionError("PLAN_NOT_FOUND", `CRM facade plan not found: ${planId}`);
+  const readback = effectReadback(plan);
+  const matches = effectMatches(plan, readback);
+  const outcome = matches
+    ? "applied"
+    : plan.state === "planned" || plan.state === "approved"
+      ? "not_applied"
+      : plan.state === "applied"
+        ? "partial"
+        : "not_determined";
+  return {
+    planId,
+    planHash: plan.planHash,
+    state: plan.state,
+    outcome,
+    expired: Date.parse(plan.expiresAt) <= Date.now(),
+    observedAt: new Date().toISOString(),
+    readback,
+  };
 }
 
 function applyContactField(plan: CrmFacadePlan, idempotencyKey: string): void {
@@ -418,6 +560,11 @@ export function applyCrmFacadePlan(planId: string): CrmFacadeApplyResult {
     markCrmFacadePlan(planId, "applied");
     return { planId, planHash: plan.planHash, state: "applied", effectId: effect.effectId, readback };
   } catch (error) {
+    updateCrmFacadeEffect(effect.effectId, {
+      state: "unknown",
+      observedAt: new Date().toISOString(),
+      readbackJson: JSON.stringify(effectReadback(plan)),
+    });
     markCrmFacadePlan(planId, "unknown");
     return {
       planId,

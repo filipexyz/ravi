@@ -498,11 +498,60 @@ export const crmFacadePlanReturnSchema = z
     planId: z.string(),
     planHash: z.string(),
     state: z.enum(["planned", "approved", "applying", "applied", "unknown", "partial"]),
-    operation: z.string(),
-    target: looseObjectSchema,
-    arguments: looseObjectSchema,
-    effects: z.array(looseObjectSchema),
-    approval: jsonValueSchema.nullable(),
+    operation: z.enum([
+      "task.done",
+      "task.cancel",
+      "task.snooze",
+      "opportunity.move",
+      "fact.confirm",
+      "fact.reject",
+      "contact.set",
+      "account.link-contact",
+      "opportunity.link-contact",
+    ]),
+    target: z.object({ type: z.string(), id: z.string(), label: z.string() }).strict(),
+    arguments: z
+      .object({
+        target: z.string(),
+        stage: z.string().optional(),
+        contact: z.string().optional(),
+        field: z.string().optional(),
+        value: z.string().optional(),
+        until: z.string().optional(),
+        reason: z.string().optional(),
+        role: z.string().optional(),
+        account: z.string().optional(),
+        primary: z.boolean().optional(),
+      })
+      .strict(),
+    effects: z.array(
+      z
+        .object({
+          effectId: z.string(),
+          operation: z.enum([
+            "task.done",
+            "task.cancel",
+            "task.snooze",
+            "opportunity.move",
+            "fact.confirm",
+            "fact.reject",
+            "contact.set",
+            "account.link-contact",
+            "opportunity.link-contact",
+          ]),
+          primary: z.literal(true),
+          retry: z.literal("never"),
+        })
+        .strict(),
+    ),
+    approval: z
+      .object({
+        planHash: z.string(),
+        approvedAt: z.string(),
+        source: z.object({ channel: z.string(), accountId: z.string(), chatId: z.string() }).strict(),
+      })
+      .strict()
+      .nullable(),
     createdAt: z.string(),
     expiresAt: z.string(),
   })
@@ -513,8 +562,10 @@ export const crmFacadeVerificationReturnSchema = z
     planId: z.string(),
     planHash: z.string(),
     state: z.enum(["planned", "approved", "applying", "applied", "unknown", "partial"]),
+    outcome: z.enum(["applied", "not_applied", "partial", "not_determined"]),
     expired: z.boolean(),
     observedAt: z.string(),
+    readback: jsonValueSchema,
   })
   .strict();
 
@@ -523,6 +574,10 @@ export const crmFacadeRecoveryReturnSchema = z
     planId: z.string(),
     planHash: z.string(),
     state: z.enum(["planned", "approved", "applying", "applied", "unknown", "partial"]),
+    outcome: z.enum(["applied", "not_applied", "partial", "not_determined"]),
+    expired: z.boolean(),
+    observedAt: z.string(),
+    readback: jsonValueSchema,
     action: z.literal("manual_review_required"),
     replay: z.literal(false),
   })
@@ -541,10 +596,22 @@ export const crmFacadeApplyReturnSchema = z
 
 export const crmLifecycleReturnSchema = z
   .object({
-    contact: looseObjectSchema,
-    opportunity: looseObjectSchema,
-    task: looseObjectSchema,
-    fact: looseObjectSchema,
+    contact: z.object({ states: z.array(z.string()), transitionPolicy: z.string() }).strict(),
+    opportunity: z.object({ states: z.array(z.string()), transitionPolicy: z.string() }).strict(),
+    task: z
+      .object({
+        states: z.array(z.string()),
+        operations: z.object({ done: z.string(), cancel: z.string(), snooze: z.string() }).strict(),
+        terminal: z.array(z.string()),
+      })
+      .strict(),
+    fact: z
+      .object({
+        states: z.array(z.string()),
+        operations: z.object({ confirm: z.string(), reject: z.string(), supersede: z.string() }).strict(),
+        terminal: z.array(z.string()),
+      })
+      .strict(),
   })
   .strict();
 
