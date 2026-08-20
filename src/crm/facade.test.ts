@@ -21,7 +21,11 @@ let completedTaskIds: string[] = [];
 
 mock.module("../contacts.js", () => ({
   ...actualContacts,
-  getCrmTask: (taskId: string) => ({ id: taskId, title: "Follow up", status: completedTaskIds.includes(taskId) ? "done" : "open" }),
+  getCrmTask: (taskId: string) => ({
+    id: taskId,
+    title: "Follow up",
+    status: completedTaskIds.includes(taskId) ? "done" : "open",
+  }),
   getCrmOpportunity: () => null,
   getCrmFact: () => null,
   getCrmAccount: () => null,
@@ -53,7 +57,8 @@ mock.module("../contacts.js", () => ({
   },
 }));
 
-const { applyCrmFacadePlan, approveCrmFacadePlan, buildCrmFacadePlan, loadCrmFacadePlan, persistCrmFacadePlan } = await import("./facade.js");
+const { applyCrmFacadePlan, approveCrmFacadePlan, buildCrmFacadePlan, loadCrmFacadePlan, persistCrmFacadePlan } =
+  await import("./facade.js");
 
 describe("CRM facade", () => {
   beforeEach(() => {
@@ -80,6 +85,6 @@ describe("CRM facade", () => {
     expect(result.state).toBe("applied");
     expect(completedTaskIds).toEqual(["task-1"]);
     expect(loadCrmFacadePlan(plan.planId)?.state).toBe("applied");
-    expect(() => applyCrmFacadePlan(plan.planId)).toThrow(/consumed|approved/i);
+    expect(() => applyCrmFacadePlan(plan.planId)).toThrow(/applied|cannot be applied/i);
   });
 });
