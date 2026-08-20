@@ -252,6 +252,19 @@ describe("openapi emit (live registry)", () => {
       "opportunity.link-contact",
     ]);
   });
+
+  it("derives CRM facade approval context instead of accepting caller-supplied identity", () => {
+    const spec = emit(getRegistry());
+    const requestBody = spec.paths["/api/v1/crm/facade/approve"]!.post.requestBody!;
+    const body = requestBody.content["application/json"].schema as Record<string, unknown>;
+    const properties = body.properties as Record<string, unknown>;
+
+    expect(requestBody.required).toBe(true);
+    expect(Object.keys(properties)).toEqual(["planId"]);
+    expect(body.required).toEqual(["planId"]);
+    expect(properties).not.toHaveProperty("source");
+    expect(properties).not.toHaveProperty("agent");
+  });
 });
 
 describe("sortKeysDeep", () => {
