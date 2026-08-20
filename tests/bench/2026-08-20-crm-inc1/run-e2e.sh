@@ -28,6 +28,10 @@ assert_not_found() {
     .error.retryable == false and
     (.error.suggestedAction | type == "string" and length > 0)
   ' <<<"$output" >/dev/null
+
+  if [ "$expected_code" = "OPPORTUNITY_NOT_FOUND" ]; then
+    jq -e '.error | has("suggestions") | not' <<<"$output" >/dev/null
+  fi
 }
 
 assert_not_found "CRM_FACT_NOT_FOUND" crm fact confirm crm_fact_inc1_missing

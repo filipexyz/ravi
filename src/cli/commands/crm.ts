@@ -117,16 +117,25 @@ function failPipelineNotFound(op: string, pipelineRef: string, asJson?: boolean)
   });
 }
 
-function failOpportunityNotFound(op: string, opportunityId: string, asJson?: boolean): never {
-  const candidates = listCrmOpportunityBoard({}).flatMap((opportunity) => [
-    String(opportunity.opportunityId ?? ""),
-    String(opportunity.title ?? ""),
-  ]);
+function failOpportunityNotFound(
+  op: string,
+  opportunityId: string,
+  asJson?: boolean,
+  includeSuggestions = true,
+): never {
+  const candidates = includeSuggestions
+    ? listCrmOpportunityBoard({}).flatMap((opportunity) => [
+        String(opportunity.opportunityId ?? ""),
+        String(opportunity.title ?? ""),
+      ])
+    : [];
   contractFail(op, "OPPORTUNITY_NOT_FOUND", `CRM opportunity not found: ${opportunityId}`, {
     asJson,
     details: {
-      suggestedAction: "Check the opportunity id (crm_opp_*) or title (see suggestions)",
-      suggestions: suggestSimilar(opportunityId, candidates),
+      suggestedAction: includeSuggestions
+        ? "Check the opportunity id (crm_opp_*) or title (see suggestions)"
+        : "Check visible opportunities with: ravi crm board --json",
+      ...(includeSuggestions ? { suggestions: suggestSimilar(opportunityId, candidates) } : {}),
     },
   });
 }
@@ -534,9 +543,9 @@ function assertCrmTaskMutationTarget(op: string, taskId: string, asJson?: boolea
 
 function assertCrmOpportunityMutationTarget(op: string, opportunityId: string, asJson?: boolean): void {
   const opportunity = getCrmOpportunity(opportunityId);
-  if (!opportunity) failOpportunityNotFound(op, opportunityId, asJson);
+  if (!opportunity) failOpportunityNotFound(op, opportunityId, asJson, false);
   if (opportunity.primaryContactId && !canReadCrmContact(opportunity.primaryContactId)) {
-    failOpportunityNotFound(op, opportunityId, asJson);
+    failOpportunityNotFound(op, opportunityId, asJson, false);
   }
 }
 

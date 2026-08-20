@@ -440,7 +440,7 @@ function captureJsonError(run: () => unknown): { payload: Record<string, unknown
   return { payload: JSON.parse(lines.join("\n")) as Record<string, unknown>, error };
 }
 
-function expectTypedNotFound(run: () => unknown, op: string, code: string): void {
+function expectTypedNotFound(run: () => unknown, op: string, code: string): Record<string, unknown> {
   const { payload, error } = captureJsonError(run);
   expect(error).toBeInstanceOf(CrmContractError);
   const contractError = error as InstanceType<typeof CrmContractError>;
@@ -449,6 +449,7 @@ function expectTypedNotFound(run: () => unknown, op: string, code: string): void
   expect(payload).toMatchObject({ success: false, op });
   expect(payload.error).toMatchObject({ code, retryable: false });
   expect((payload.error as Record<string, unknown>).suggestedAction).toBeTruthy();
+  return payload;
 }
 
 function silenceLogs(run: () => unknown): void {
@@ -1155,11 +1156,12 @@ describe("CRM commands", () => {
   it("fails opportunity move with OPPORTUNITY_NOT_FOUND before calling the mutator", () => {
     crmOpportunity = null;
 
-    expectTypedNotFound(
+    const payload = expectTypedNotFound(
       () => new CrmOpportunityCommands().move("crm_opp_missing", "qualified", undefined, true),
       "crm opportunity move",
       "OPPORTUNITY_NOT_FOUND",
     );
+    expect(payload.error).not.toHaveProperty("suggestions");
     expect(lastOpportunityMoveInput).toBeNull();
   });
 
