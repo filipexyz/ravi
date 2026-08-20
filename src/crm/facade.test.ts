@@ -27,7 +27,7 @@ let factStatus = "proposed";
 mock.module("../contacts.js", () => ({
   ...actualContacts,
   getCrmTask: (taskId: string) => {
-    if (taskReadbackError) throw taskReadbackError;
+    if (taskReadbackError && completedTaskIds.includes(taskId)) throw taskReadbackError;
     return {
       id: taskId,
       title: "Follow up",

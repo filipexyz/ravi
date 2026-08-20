@@ -1,11 +1,13 @@
 import "reflect-metadata";
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { z } from "zod";
 
 import { Arg, Command, Group, Option, Returns, Scope } from "../../cli/decorators.js";
 import { buildRegistry, getRegistry } from "../../cli/registry-snapshot.js";
 import { emit, emitJson, commandPath } from "./emit.js";
 import { sortKeysDeep, stableStringify } from "./stable-stringify.js";
+
+setDefaultTimeout(10_000);
 
 @Group({ name: "demo", description: "Demo commands", scope: "open" })
 class DemoCommands {

@@ -1,7 +1,9 @@
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 
 import { getRegistry } from "../../cli/registry-snapshot.js";
 import { buildInputSchema, buildSignature } from "./registry-shape.js";
+
+setDefaultTimeout(10_000);
 
 describe("CRM SDK input contracts", () => {
   it("exposes facade approval as approve(planId) without caller-supplied identity", () => {

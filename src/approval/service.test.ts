@@ -230,7 +230,9 @@ describe("approval service", () => {
       timeoutMs: 20,
       expectedApproverId: "human-1",
       beforeExternalApproval: () => externalOrder.push("before-external-approval"),
-      onRequestDelivered: ({ externalMessageId }) => externalOrder.push(`receipt:${externalMessageId}`),
+      onRequestDelivered: ({ externalMessageId }) => {
+        externalOrder.push(`receipt:${externalMessageId}`);
+      },
     });
 
     expect(result).toMatchObject({
