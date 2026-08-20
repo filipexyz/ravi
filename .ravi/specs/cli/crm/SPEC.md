@@ -54,6 +54,7 @@ migrated `cli/<domain>` spec.
 7. Positional args MUST be semantic (`<pipeline>`, `<opportunity>`, never `argN`).
 8. Per-op help (`ravi crm <group> <op> --help`) MUST stay compact — a screenful
    with semantic arguments and option defaults, never the whole-domain dump.
+   `ravi crm help --json` MUST provide a machine-readable domain overview.
 9. Without `--json`, error output and exit 1 behavior MUST stay byte-compatible
    with the legacy text path (`fail()`), except usage errors which exit 2 and
    teach the correct syntax inline.

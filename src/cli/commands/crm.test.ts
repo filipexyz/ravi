@@ -1323,4 +1323,12 @@ describe("CRM commands", () => {
     expect((payload.task as Record<string, unknown>).states).toContain("done");
     expect((payload.fact as Record<string, unknown>).operations).toMatchObject({ confirm: expect.any(String) });
   });
+
+  it("offers a machine-readable CRM discovery overview", () => {
+    const payload = captureJson(() => new ACrmCommands().help(true));
+    expect(payload.domain).toBe("crm");
+    expect((payload.commands as Array<Record<string, unknown>>)).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "facade plan", mutates: false })]),
+    );
+  });
 });

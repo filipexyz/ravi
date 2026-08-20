@@ -548,6 +548,14 @@ export const crmLifecycleReturnSchema = z
   })
   .strict();
 
+export const crmHelpReturnSchema = z
+  .object({
+    domain: z.literal("crm"),
+    commands: z.array(z.object({ name: z.string(), intent: z.string(), mutates: z.boolean() }).strict()),
+    next: z.array(z.string()),
+  })
+  .strict();
+
 export const inboxItemEnvelopeReturnSchema = z
   .object({
     item: looseObjectSchema,

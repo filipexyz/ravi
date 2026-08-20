@@ -20,6 +20,7 @@ import {
   crmFacadeRecoveryReturnSchema,
   crmFacadeVerificationReturnSchema,
   crmLifecycleReturnSchema,
+  crmHelpReturnSchema,
   crmTaskReturnSchema,
   pagedItemsReturnSchema,
 } from "./operational-return-schemas.js";
@@ -1008,6 +1009,31 @@ function showCrmOpportunity(opportunityId: string, asJson?: boolean) {
   description: "CRM relationship surface",
 })
 export class ACrmCommands {
+  @Scope("open")
+  @Command({ name: "help", description: "Show a machine-readable CRM command overview" })
+  @CommandAccess({ kind: "read", resource: "crm", action: "help", risk: "low" })
+  @Returns(crmHelpReturnSchema)
+  help(@Option({ flags: "--json", description: "Print the command overview as JSON" }) asJson?: boolean) {
+    const payload = {
+      domain: "crm" as const,
+      commands: [
+        { name: "next", intent: "list prioritized next actions", mutates: false },
+        { name: "contacts", intent: "list CRM contacts", mutates: false },
+        { name: "board", intent: "list paginated opportunities", mutates: false },
+        { name: "lifecycle show", intent: "discover published states", mutates: false },
+        { name: "facade plan", intent: "resolve an effect without changing data", mutates: false },
+        { name: "facade approve", intent: "obtain external approval for a plan", mutates: true },
+        { name: "facade apply", intent: "apply one approved plan", mutates: true },
+        { name: "facade verify", intent: "read a plan state", mutates: false },
+        { name: "facade recover", intent: "inspect uncertainty without replay", mutates: false },
+      ],
+      next: ["ravi crm lifecycle show --json", "ravi crm facade plan <operation> <target> --json"],
+    };
+    if (asJson) printJson(payload);
+    else console.log("Use `ravi crm help --json` for a machine-readable CRM overview.");
+    return payload;
+  }
+
   @Scope("open")
   @Command({ name: "next", description: "List open CRM next actions" })
   @CommandAccess({ kind: "read", resource: "crm", action: "next", risk: "low" })
