@@ -1,20 +1,30 @@
-# CRM Domain / RUNBOOK
+# CRM / RUNBOOK
 
 ## Debug Flow
 
-1. Read `ravi specs get crm --mode rules --json` before changing CRM behavior.
-2. For a facade change, create a plan first. Confirm its resolved target and
-   expiry before requesting approval.
-3. Use `crm facade approve` with the real external destination. Do not treat a
-   plan hash printed by the CLI as an approval by itself.
-4. Run `crm facade apply` once. If its state is `unknown`, use
-   `crm facade recover` and inspect the real CRM record; do not replay it.
-5. If the change touches pipeline metadata, also read `crm/pipeline`. If it
-   exposes relationship data, read `contacts/authorization` and
-   `contacts/crm/authorization`.
+1. Read `ravi specs get crm --mode rules --json`.
+2. Select the narrowest owner:
+   - data model, projections, events, or mutation audit: `contacts/crm`;
+   - pipeline/stage topology, movement, or configuration audit:
+     `contacts/crm/pipelines`;
+   - pipeline metadata or engine consumers: `crm/pipeline`;
+   - controlled effects: `crm/facade`;
+   - command interface, discovery, or errors: `cli/crm`;
+   - contact-linked data: `contacts/authorization` and
+     `contacts/crm/authorization`.
+3. Resolve each referenced entity and confirm its kind before inspecting
+   persistence.
+4. Reproduce contact-linked behavior under the same principal and scope; local
+   operator visibility is not proof of agent authorization.
+5. Validate every applicable spec, including cross-domain owners, then the
+   shared CRM surface.
 
 ## Validation
+
+Choose focused checks from the owning child spec. For a cross-layer CRM change:
 
 ```bash
 bun test src/cli/commands/crm.test.ts src/crm/facade.test.ts src/crm/pipeline-metadata.test.ts src/crm/pipeline-engines.test.ts
 ```
+
+When the public interface changes, also run the checks required by `cli`.

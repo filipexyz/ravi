@@ -1,24 +1,24 @@
-# CRM agent-first CLI contract / CHECKS
+# CRM CLI interface / CHECKS
 
 ## Checks
 
-- Every `--json` failure on a contract op MUST return the envelope
-  `{success:false, op, error:{code, message, retryable, suggestedAction}}`;
-  plain text and stack traces MUST NOT reach the caller.
-- A not-found entity MUST exit 1 and MUST carry up to three `suggestions` of
-  similar real entities.
-- A pipeline review with high-severity gaps and invalid pipeline metadata MUST
-  fail canonically in text and JSON with exit 1; review details MUST contain
-  only field names, classifications, suggestions, and aggregate counts.
-- An invalid flag or argument value MUST exit 2 with `acceptedFlags` listing the
-  flags the op accepts.
-- `pipeline create`, `opportunity create`, and `opportunity move` MUST execute
-  immediately without `--execute`, return exit 0, and remain `kind: "mutate"`.
-- Invalid CRM input MUST still fail before any local persistence.
-- Migrated listings MUST accept `--fields a,b,c` and MUST return
-  `pagination.nextCommand` as a literal command or `null`.
-- Per-op help MUST stay a compact screenful so discovery does not flood an
-  agent context.
-- The shipped `crm` skill MUST teach these local writes without `--execute`.
+- Expected CRM JSON failures MUST use the global `cli` envelope with the real
+  operation path and a stable CRM code.
+- Not-found errors MUST use entity-specific codes and MUST NOT expose
+  suggestions outside the caller's visible scope.
+- Invalid flags, arguments, enum values, and filters MUST be usage errors with
+  accepted interface fields.
+- Pipeline review and validation failures MUST retain stable codes and bounded
+  details.
+- Migrated lists MUST support `--fields` and a literal pagination next command
+  or `null`.
+- Positional names and focused help MUST remain semantic, compact, and aligned
+  with `ravi crm help --json`.
+- The shipped CRM skill MUST match live paths, arguments, and confirmation
+  flags.
+- Compatibility tests MUST preserve existing aliases and response fields until
+  their consumers have a documented migration path.
+- Effect-state, approval, execution, verification, and recovery assertions
+  MUST live under `crm/facade`.
 - `bun test src/cli/commands/crm.test.ts src/apps/router.test.ts` SHOULD pass
-  after any change to the CRM contract or the per-op help router.
+  after an interface or help-router change.
