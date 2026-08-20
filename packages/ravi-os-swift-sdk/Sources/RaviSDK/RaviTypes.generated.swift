@@ -7343,18 +7343,18 @@ public struct CrmFacadeApproveOptions: Codable, Sendable {
 
 public struct CrmFacadeApproveReturn: Codable, Sendable {
   public var approval: RaviJSON
-  public var arguments: [String: RaviJSON]
+  public var arguments: RaviJSON
   public var createdAt: String
-  public var effects: [[String: RaviJSON]]
+  public var effects: [RaviJSON]
   public var expiresAt: String
   public var operation: String
   public var planHash: String
   public var planId: String
   public var schemaVersion: String
   public var state: String
-  public var target: [String: RaviJSON]
+  public var target: RaviJSON
 
-  public init(approval: RaviJSON, arguments: [String: RaviJSON], createdAt: String, effects: [[String: RaviJSON]], expiresAt: String, operation: String, planHash: String, planId: String, schemaVersion: String, state: String, target: [String: RaviJSON]) {
+  public init(approval: RaviJSON, arguments: RaviJSON, createdAt: String, effects: [RaviJSON], expiresAt: String, operation: String, planHash: String, planId: String, schemaVersion: String, state: String, target: RaviJSON) {
     self.approval = approval
     self.arguments = arguments
     self.createdAt = createdAt
@@ -7451,18 +7451,18 @@ public struct CrmFacadePlanOptions: Codable, Sendable {
 
 public struct CrmFacadePlanReturn: Codable, Sendable {
   public var approval: RaviJSON
-  public var arguments: [String: RaviJSON]
+  public var arguments: RaviJSON
   public var createdAt: String
-  public var effects: [[String: RaviJSON]]
+  public var effects: [RaviJSON]
   public var expiresAt: String
   public var operation: String
   public var planHash: String
   public var planId: String
   public var schemaVersion: String
   public var state: String
-  public var target: [String: RaviJSON]
+  public var target: RaviJSON
 
-  public init(approval: RaviJSON, arguments: [String: RaviJSON], createdAt: String, effects: [[String: RaviJSON]], expiresAt: String, operation: String, planHash: String, planId: String, schemaVersion: String, state: String, target: [String: RaviJSON]) {
+  public init(approval: RaviJSON, arguments: RaviJSON, createdAt: String, effects: [RaviJSON], expiresAt: String, operation: String, planHash: String, planId: String, schemaVersion: String, state: String, target: RaviJSON) {
     self.approval = approval
     self.arguments = arguments
     self.createdAt = createdAt
@@ -7493,23 +7493,35 @@ public struct CrmFacadePlanReturn: Codable, Sendable {
 
 public struct CrmFacadeRecoverReturn: Codable, Sendable {
   public var action: String
+  public var expired: Bool
+  public var observedAt: String
+  public var outcome: String
   public var planHash: String
   public var planId: String
+  public var readback: RaviJSON
   public var replay: Bool
   public var state: String
 
-  public init(action: String, planHash: String, planId: String, replay: Bool, state: String) {
+  public init(action: String, expired: Bool, observedAt: String, outcome: String, planHash: String, planId: String, readback: RaviJSON, replay: Bool, state: String) {
     self.action = action
+    self.expired = expired
+    self.observedAt = observedAt
+    self.outcome = outcome
     self.planHash = planHash
     self.planId = planId
+    self.readback = readback
     self.replay = replay
     self.state = state
   }
 
   enum CodingKeys: String, CodingKey {
     case action = "action"
+    case expired = "expired"
+    case observedAt = "observedAt"
+    case outcome = "outcome"
     case planHash = "planHash"
     case planId = "planId"
+    case readback = "readback"
     case replay = "replay"
     case state = "state"
   }
@@ -7518,23 +7530,29 @@ public struct CrmFacadeRecoverReturn: Codable, Sendable {
 public struct CrmFacadeVerifyReturn: Codable, Sendable {
   public var expired: Bool
   public var observedAt: String
+  public var outcome: String
   public var planHash: String
   public var planId: String
+  public var readback: RaviJSON
   public var state: String
 
-  public init(expired: Bool, observedAt: String, planHash: String, planId: String, state: String) {
+  public init(expired: Bool, observedAt: String, outcome: String, planHash: String, planId: String, readback: RaviJSON, state: String) {
     self.expired = expired
     self.observedAt = observedAt
+    self.outcome = outcome
     self.planHash = planHash
     self.planId = planId
+    self.readback = readback
     self.state = state
   }
 
   enum CodingKeys: String, CodingKey {
     case expired = "expired"
     case observedAt = "observedAt"
+    case outcome = "outcome"
     case planHash = "planHash"
     case planId = "planId"
+    case readback = "readback"
     case state = "state"
   }
 }
@@ -7735,12 +7753,12 @@ public struct CrmHelpReturn: Codable, Sendable {
 }
 
 public struct CrmLifecycleShowReturn: Codable, Sendable {
-  public var contact: [String: RaviJSON]
-  public var fact: [String: RaviJSON]
-  public var opportunity: [String: RaviJSON]
-  public var task: [String: RaviJSON]
+  public var contact: RaviJSON
+  public var fact: RaviJSON
+  public var opportunity: RaviJSON
+  public var task: RaviJSON
 
-  public init(contact: [String: RaviJSON], fact: [String: RaviJSON], opportunity: [String: RaviJSON], task: [String: RaviJSON]) {
+  public init(contact: RaviJSON, fact: RaviJSON, opportunity: RaviJSON, task: RaviJSON) {
     self.contact = contact
     self.fact = fact
     self.opportunity = opportunity

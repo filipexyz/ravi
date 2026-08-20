@@ -29296,49 +29296,46 @@ public enum RaviSchemas {
 
   public static let CrmFacadeApproveReturnSchema = #"""
   {
-    "$defs": {
-      "__schema0": {
-        "anyOf": [
-          {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          {
-            "items": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "type": "array"
-          },
-          {
-            "additionalProperties": {
-              "$ref": "#/$defs/__schema0"
-            },
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          }
-        ]
-      }
-    },
     "additionalProperties": false,
     "properties": {
       "approval": {
         "anyOf": [
           {
-            "$ref": "#/$defs/__schema0"
+            "additionalProperties": false,
+            "properties": {
+              "approvedAt": {
+                "type": "string"
+              },
+              "planHash": {
+                "type": "string"
+              },
+              "source": {
+                "additionalProperties": false,
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "channel": {
+                    "type": "string"
+                  },
+                  "chatId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "channel",
+                  "accountId",
+                  "chatId"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "planHash",
+              "approvedAt",
+              "source"
+            ],
+            "type": "object"
           },
           {
             "type": "null"
@@ -29346,8 +29343,42 @@ public enum RaviSchemas {
         ]
       },
       "arguments": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "primary": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "until": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
         "type": "object"
       },
       "createdAt": {
@@ -29355,8 +29386,40 @@ public enum RaviSchemas {
       },
       "effects": {
         "items": {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": false,
+          "properties": {
+            "effectId": {
+              "type": "string"
+            },
+            "operation": {
+              "enum": [
+                "task.done",
+                "task.cancel",
+                "task.snooze",
+                "opportunity.move",
+                "fact.confirm",
+                "fact.reject",
+                "contact.set",
+                "account.link-contact",
+                "opportunity.link-contact"
+              ],
+              "type": "string"
+            },
+            "primary": {
+              "const": true,
+              "type": "boolean"
+            },
+            "retry": {
+              "const": "never",
+              "type": "string"
+            }
+          },
+          "required": [
+            "effectId",
+            "operation",
+            "primary",
+            "retry"
+          ],
           "type": "object"
         },
         "type": "array"
@@ -29365,6 +29428,17 @@ public enum RaviSchemas {
         "type": "string"
       },
       "operation": {
+        "enum": [
+          "task.done",
+          "task.cancel",
+          "task.snooze",
+          "opportunity.move",
+          "fact.confirm",
+          "fact.reject",
+          "contact.set",
+          "account.link-contact",
+          "opportunity.link-contact"
+        ],
         "type": "string"
       },
       "planHash": {
@@ -29389,8 +29463,23 @@ public enum RaviSchemas {
         "type": "string"
       },
       "target": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "label"
+        ],
         "type": "object"
       }
     },
@@ -29470,6 +29559,228 @@ public enum RaviSchemas {
 
   public static let CrmFacadePlanReturnSchema = #"""
   {
+    "additionalProperties": false,
+    "properties": {
+      "approval": {
+        "anyOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "approvedAt": {
+                "type": "string"
+              },
+              "planHash": {
+                "type": "string"
+              },
+              "source": {
+                "additionalProperties": false,
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "channel": {
+                    "type": "string"
+                  },
+                  "chatId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "channel",
+                  "accountId",
+                  "chatId"
+                ],
+                "type": "object"
+              }
+            },
+            "required": [
+              "planHash",
+              "approvedAt",
+              "source"
+            ],
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "arguments": {
+        "additionalProperties": false,
+        "properties": {
+          "account": {
+            "type": "string"
+          },
+          "contact": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "primary": {
+            "type": "boolean"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "stage": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "until": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "type": "object"
+      },
+      "createdAt": {
+        "type": "string"
+      },
+      "effects": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "effectId": {
+              "type": "string"
+            },
+            "operation": {
+              "enum": [
+                "task.done",
+                "task.cancel",
+                "task.snooze",
+                "opportunity.move",
+                "fact.confirm",
+                "fact.reject",
+                "contact.set",
+                "account.link-contact",
+                "opportunity.link-contact"
+              ],
+              "type": "string"
+            },
+            "primary": {
+              "const": true,
+              "type": "boolean"
+            },
+            "retry": {
+              "const": "never",
+              "type": "string"
+            }
+          },
+          "required": [
+            "effectId",
+            "operation",
+            "primary",
+            "retry"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "expiresAt": {
+        "type": "string"
+      },
+      "operation": {
+        "enum": [
+          "task.done",
+          "task.cancel",
+          "task.snooze",
+          "opportunity.move",
+          "fact.confirm",
+          "fact.reject",
+          "contact.set",
+          "account.link-contact",
+          "opportunity.link-contact"
+        ],
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "planId": {
+        "type": "string"
+      },
+      "schemaVersion": {
+        "const": "crm.agent-first/v1",
+        "type": "string"
+      },
+      "state": {
+        "enum": [
+          "planned",
+          "approved",
+          "applying",
+          "applied",
+          "unknown",
+          "partial"
+        ],
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "id",
+          "label"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "schemaVersion",
+      "planId",
+      "planHash",
+      "state",
+      "operation",
+      "target",
+      "arguments",
+      "effects",
+      "approval",
+      "createdAt",
+      "expiresAt"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFacadeRecoverInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "planId": {
+        "description": "Plan identifier",
+        "type": "string"
+      }
+    },
+    "required": [
+      "planId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFacadeRecoverReturnSchema = #"""
+  {
     "$defs": {
       "__schema0": {
         "anyOf": [
@@ -29509,111 +29820,33 @@ public enum RaviSchemas {
     },
     "additionalProperties": false,
     "properties": {
-      "approval": {
-        "anyOf": [
-          {
-            "$ref": "#/$defs/__schema0"
-          },
-          {
-            "type": "null"
-          }
-        ]
-      },
-      "arguments": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      },
-      "createdAt": {
-        "type": "string"
-      },
-      "effects": {
-        "items": {
-          "additionalProperties": {},
-          "properties": {},
-          "type": "object"
-        },
-        "type": "array"
-      },
-      "expiresAt": {
-        "type": "string"
-      },
-      "operation": {
-        "type": "string"
-      },
-      "planHash": {
-        "type": "string"
-      },
-      "planId": {
-        "type": "string"
-      },
-      "schemaVersion": {
-        "const": "crm.agent-first/v1",
-        "type": "string"
-      },
-      "state": {
-        "enum": [
-          "planned",
-          "approved",
-          "applying",
-          "applied",
-          "unknown",
-          "partial"
-        ],
-        "type": "string"
-      },
-      "target": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
-      }
-    },
-    "required": [
-      "schemaVersion",
-      "planId",
-      "planHash",
-      "state",
-      "operation",
-      "target",
-      "arguments",
-      "effects",
-      "approval",
-      "createdAt",
-      "expiresAt"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let CrmFacadeRecoverInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "planId": {
-        "description": "Plan identifier",
-        "type": "string"
-      }
-    },
-    "required": [
-      "planId"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let CrmFacadeRecoverReturnSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
       "action": {
         "const": "manual_review_required",
         "type": "string"
       },
+      "expired": {
+        "type": "boolean"
+      },
+      "observedAt": {
+        "type": "string"
+      },
+      "outcome": {
+        "enum": [
+          "applied",
+          "not_applied",
+          "partial",
+          "not_determined"
+        ],
+        "type": "string"
+      },
       "planHash": {
         "type": "string"
       },
       "planId": {
         "type": "string"
+      },
+      "readback": {
+        "$ref": "#/$defs/__schema0"
       },
       "replay": {
         "const": false,
@@ -29635,6 +29868,10 @@ public enum RaviSchemas {
       "planId",
       "planHash",
       "state",
+      "outcome",
+      "expired",
+      "observedAt",
+      "readback",
       "action",
       "replay"
     ],
@@ -29660,6 +29897,43 @@ public enum RaviSchemas {
 
   public static let CrmFacadeVerifyReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "expired": {
@@ -29668,11 +29942,23 @@ public enum RaviSchemas {
       "observedAt": {
         "type": "string"
       },
+      "outcome": {
+        "enum": [
+          "applied",
+          "not_applied",
+          "partial",
+          "not_determined"
+        ],
+        "type": "string"
+      },
       "planHash": {
         "type": "string"
       },
       "planId": {
         "type": "string"
+      },
+      "readback": {
+        "$ref": "#/$defs/__schema0"
       },
       "state": {
         "enum": [
@@ -29690,8 +29976,10 @@ public enum RaviSchemas {
       "planId",
       "planHash",
       "state",
+      "outcome",
       "expired",
-      "observedAt"
+      "observedAt",
+      "readback"
     ],
     "type": "object"
   }
@@ -30029,23 +30317,127 @@ public enum RaviSchemas {
     "additionalProperties": false,
     "properties": {
       "contact": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "states": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "transitionPolicy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "states",
+          "transitionPolicy"
+        ],
         "type": "object"
       },
       "fact": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "operations": {
+            "additionalProperties": false,
+            "properties": {
+              "confirm": {
+                "type": "string"
+              },
+              "reject": {
+                "type": "string"
+              },
+              "supersede": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "confirm",
+              "reject",
+              "supersede"
+            ],
+            "type": "object"
+          },
+          "states": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "terminal": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "states",
+          "operations",
+          "terminal"
+        ],
         "type": "object"
       },
       "opportunity": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "states": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "transitionPolicy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "states",
+          "transitionPolicy"
+        ],
         "type": "object"
       },
       "task": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "operations": {
+            "additionalProperties": false,
+            "properties": {
+              "cancel": {
+                "type": "string"
+              },
+              "done": {
+                "type": "string"
+              },
+              "snooze": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "done",
+              "cancel",
+              "snooze"
+            ],
+            "type": "object"
+          },
+          "states": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "terminal": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "states",
+          "operations",
+          "terminal"
+        ],
         "type": "object"
       }
     },
