@@ -8,6 +8,10 @@ target:
   package: ravi.bot
   production_version: 3.260817.2
   production_commit: b6046936fce0b08add2253ca52974d4cde5f3e9f
+  patch_commits:
+    - 1aa6f5d
+    - d102494
+  active_bundle_sha256: 6e2aad5a4af7ca321a510042ac116fd2def3f96a3838421b0c911426389ba4c5
   evidence_state: validated
 operations:
   resolver:

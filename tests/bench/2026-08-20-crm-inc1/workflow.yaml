@@ -55,5 +55,11 @@ budget:
   max_total_reads: 12
   reconciliation_deadline_seconds: 300
 closability: CLOSABILITY_READY
-implementation: NOT_BUILT
+implementation: BUILD_CANDIDATE
 operation: LIVE_AUTHORIZED
+deployment:
+  status: VERIFIED_PRODUCTION
+  artifact_sha256: 0d1f640d400253d3cbb9584c54af09a6d52cbf5b2234c2c0eb277e749d430fc2
+  active_bundle_sha256: 6e2aad5a4af7ca321a510042ac116fd2def3f96a3838421b0c911426389ba4c5
+  rollback_backup: /home/ravi/.ravi/backups/ravi.bot-3.260817.2-b6046936-pre-inc1.tgz
+  rollback_backup_sha256: f540ea6c3418c661a133904de67fb6837a031494c862b912fd8de8090711c1fe
