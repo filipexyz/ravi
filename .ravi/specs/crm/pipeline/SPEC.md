@@ -42,12 +42,19 @@ This spec defines:
 - **I6 Stage key consistency:** validator MUST warn (not error) when `stages[X].key` does not match a runtime stage; warnings DO NOT block the metadata write.
 - **I7 Schema additions are non-breaking:** new optional fields can be added in a minor version. Removing or renaming fields requires a major version + migration plan.
 - **I8 Engine consumers MUST tolerate absence:** every engine that reads metadata MUST gracefully handle the missing-field case (no exceptions).
+- **I9 Single normative source:** the exported JSON Schema is the complete
+  normative contract. `pipeline review` is a 12-checkpoint operational coverage
+  report derived from it; it does not claim to enumerate every schema field.
+- **I10 Active-pipeline compliance:** validation errors are actionable and
+  reported, but do not automatically disable or mutate existing active
+  pipelines. Enforcement requires a separately versioned migration decision.
 
 ## Validation
 
 - `bun test src/crm/pipeline-metadata.test.ts` — 14+ tests covering empty/partial/full/invalid metadata, passthrough, stage key drift, warnings.
 - `ravi crm pipeline validate <id>` — runtime validation against any pipeline (FAIL exit 1 if schema errors).
-- `ravi crm pipeline review <id>` — structured 12-field report (✓/✗/⚠ + suggestions).
+- `ravi crm pipeline review <id>` — structured 12-checkpoint coverage report
+  (✓/✗/⚠ + suggestions); high-severity gaps exit 1.
 - `ravi crm pipeline show <id> --explain` — render metadata with field-by-field impact narrative.
 
 ## Known Failure Modes

@@ -19,6 +19,7 @@ import {
   crmFacadeApplyReturnSchema,
   crmFacadeRecoveryReturnSchema,
   crmFacadeVerificationReturnSchema,
+  crmLifecycleReturnSchema,
   crmTaskReturnSchema,
   pagedItemsReturnSchema,
 } from "./operational-return-schemas.js";
@@ -1238,6 +1239,28 @@ export class ACrmCommands {
     for (const opportunity of board) {
       console.log(`- ${opportunity.stageKey ?? "-"} ${opportunity.opportunityId}: ${opportunity.title}`);
     }
+    return payload;
+  }
+}
+
+@Group({
+  name: "crm.lifecycle",
+  description: "Published CRM lifecycle states and allowed operations",
+})
+export class CrmLifecycleCommands {
+  @Scope("open")
+  @Command({ name: "show", description: "Show CRM lifecycle states and transitions" })
+  @CommandAccess({ kind: "read", resource: "crm.lifecycle", action: "show", risk: "low" })
+  @Returns(crmLifecycleReturnSchema)
+  show(@Option({ flags: "--json", description: "Print lifecycle contract as JSON" }) asJson?: boolean) {
+    const payload = {
+      contact: { states: [...CRM_CONTACT_LIFECYCLE_VALUES], transitionPolicy: "profile updates are explicit; no automatic lifecycle transition" },
+      opportunity: { states: ["open", "won", "lost", "paused", "archived"], transitionPolicy: "stage moves determine status according to pipeline stage configuration" },
+      task: { states: [...CRM_TASK_STATUS_VALUES], operations: { done: "open|scheduled|waiting|snoozed -> done", cancel: "non-terminal -> canceled", snooze: "non-terminal -> snoozed" }, terminal: ["done", "canceled"] },
+      fact: { states: [...CRM_FACT_STATUS_VALUES], operations: { confirm: "proposed -> confirmed", reject: "proposed -> rejected", supersede: "confirmed -> superseded" }, terminal: ["rejected", "superseded"] },
+    };
+    if (asJson) printJson(payload);
+    else console.log(JSON.stringify(payload, null, 2));
     return payload;
   }
 }

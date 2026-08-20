@@ -354,7 +354,9 @@ const {
   ACrmCommands,
   CrmAccountCommands,
   CrmContactCommands,
+  CrmFacadeCommands,
   CrmFactCommands,
+  CrmLifecycleCommands,
   CrmOpportunityCommands,
   CrmPipelineCommands,
   CrmPipelinePolicyCommands,
@@ -380,7 +382,9 @@ function buildCrmProgram() {
     ACrmCommands,
     CrmAccountCommands,
     CrmContactCommands,
+    CrmFacadeCommands,
     CrmFactCommands,
+    CrmLifecycleCommands,
     CrmOpportunityCommands,
     CrmPipelineCommands,
     CrmPipelinePolicyCommands,
@@ -1312,5 +1316,11 @@ describe("CRM commands", () => {
     expect(error).toBeInstanceOf(CrmContractError);
     expect((error as InstanceType<typeof CrmContractError>).code).toBe("USAGE_ERROR");
     expect((payload.error as Record<string, unknown>).acceptedPositionals).toEqual(["<pipeline>"]);
+  });
+
+  it("publishes CRM lifecycle states for agent discovery", () => {
+    const payload = captureJson(() => new CrmLifecycleCommands().show(true));
+    expect((payload.task as Record<string, unknown>).states).toContain("done");
+    expect((payload.fact as Record<string, unknown>).operations).toMatchObject({ confirm: expect.any(String) });
   });
 });

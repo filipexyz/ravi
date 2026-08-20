@@ -539,6 +539,15 @@ export const crmFacadeApplyReturnSchema = z
   })
   .strict();
 
+export const crmLifecycleReturnSchema = z
+  .object({
+    contact: looseObjectSchema,
+    opportunity: looseObjectSchema,
+    task: looseObjectSchema,
+    fact: looseObjectSchema,
+  })
+  .strict();
+
 export const inboxItemEnvelopeReturnSchema = z
   .object({
     item: looseObjectSchema,
