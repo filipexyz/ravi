@@ -5423,12 +5423,16 @@ export type CrmAccountShowReturn = {
 export type CrmBoardInput = {
   fields?: string;
   includeEmptyStages?: boolean;
+  limit?: string;
+  offset?: string;
   pipeline?: string;
 };
 
 /** Return shape for `crm.board`. */
 export type CrmBoardReturn = {
+  items: Array<Record<string, unknown>>;
   opportunities: Array<Record<string, unknown>>;
+  pagination: Record<string, unknown>;
   stages?: Array<Record<string, unknown>>;
   total: number;
   [k: string]: unknown;
@@ -5497,6 +5501,101 @@ export type CrmContactsReturn = {
   };
   total: number;
   [k: string]: unknown;
+};
+
+/** Input shape for `crm.facade.apply`. */
+export type CrmFacadeApplyInput = {
+  planId: string;
+};
+
+/** Return shape for `crm.facade.apply`. */
+export type CrmFacadeApplyReturn = {
+  effectId: string;
+  planHash: string;
+  planId: string;
+  readback?: unknown;
+  reason?: string;
+  state: "applied" | "unknown";
+};
+
+/** Input shape for `crm.facade.approve`. */
+export type CrmFacadeApproveInput = {
+  agent?: string;
+  planId: string;
+  source?: string;
+};
+
+/** Return shape for `crm.facade.approve`. */
+export type CrmFacadeApproveReturn = {
+  approval: unknown | null;
+  arguments: Record<string, unknown>;
+  createdAt: string;
+  effects: Array<Record<string, unknown>>;
+  expiresAt: string;
+  operation: string;
+  planHash: string;
+  planId: string;
+  schemaVersion: "crm.agent-first/v1";
+  state: "planned" | "approved" | "applying" | "applied" | "unknown" | "partial";
+  target: Record<string, unknown>;
+};
+
+/** Input shape for `crm.facade.plan`. */
+export type CrmFacadePlanInput = {
+  account?: string;
+  contact?: string;
+  field?: string;
+  operation: string;
+  primary?: boolean;
+  reason?: string;
+  role?: string;
+  stage?: string;
+  target: string;
+  until?: string;
+  value?: string;
+};
+
+/** Return shape for `crm.facade.plan`. */
+export type CrmFacadePlanReturn = {
+  approval: unknown | null;
+  arguments: Record<string, unknown>;
+  createdAt: string;
+  effects: Array<Record<string, unknown>>;
+  expiresAt: string;
+  operation: string;
+  planHash: string;
+  planId: string;
+  schemaVersion: "crm.agent-first/v1";
+  state: "planned" | "approved" | "applying" | "applied" | "unknown" | "partial";
+  target: Record<string, unknown>;
+};
+
+/** Input shape for `crm.facade.recover`. */
+export type CrmFacadeRecoverInput = {
+  planId: string;
+};
+
+/** Return shape for `crm.facade.recover`. */
+export type CrmFacadeRecoverReturn = {
+  action: "manual_review_required";
+  planHash: string;
+  planId: string;
+  replay: false;
+  state: "planned" | "approved" | "applying" | "applied" | "unknown" | "partial";
+};
+
+/** Input shape for `crm.facade.verify`. */
+export type CrmFacadeVerifyInput = {
+  planId: string;
+};
+
+/** Return shape for `crm.facade.verify`. */
+export type CrmFacadeVerifyReturn = {
+  expired: boolean;
+  observedAt: string;
+  planHash: string;
+  planId: string;
+  state: "planned" | "approved" | "applying" | "applied" | "unknown" | "partial";
 };
 
 /** Input shape for `crm.fact.confirm`. */
@@ -5572,6 +5671,31 @@ export type CrmFactRejectReturn = {
   changedCount: number;
   status: string;
   [k: string]: unknown;
+};
+
+/** Input shape for `crm.help`. */
+export type CrmHelpInput = Record<string, never>;
+
+/** Return shape for `crm.help`. */
+export type CrmHelpReturn = {
+  commands: Array<{
+    intent: string;
+    mutates: boolean;
+    name: string;
+  }>;
+  domain: "crm";
+  next: string[];
+};
+
+/** Input shape for `crm.lifecycle.show`. */
+export type CrmLifecycleShowInput = Record<string, never>;
+
+/** Return shape for `crm.lifecycle.show`. */
+export type CrmLifecycleShowReturn = {
+  contact: Record<string, unknown>;
+  fact: Record<string, unknown>;
+  opportunity: Record<string, unknown>;
+  task: Record<string, unknown>;
 };
 
 /** Input shape for `crm.next`. */

@@ -28889,6 +28889,14 @@ public enum RaviSchemas {
         "description": "Include configured stages with no opportunities",
         "type": "boolean"
       },
+      "limit": {
+        "description": "Page size (default: 50, max: 500)",
+        "type": "string"
+      },
+      "offset": {
+        "description": "Number of matching opportunities to skip (default: 0)",
+        "type": "string"
+      },
       "pipeline": {
         "description": "Filter by CRM pipeline ID or name",
         "type": "string"
@@ -28902,6 +28910,14 @@ public enum RaviSchemas {
   {
     "additionalProperties": {},
     "properties": {
+      "items": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
       "opportunities": {
         "items": {
           "additionalProperties": {},
@@ -28909,6 +28925,11 @@ public enum RaviSchemas {
           "type": "object"
         },
         "type": "array"
+      },
+      "pagination": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
       },
       "stages": {
         "items": {
@@ -28924,6 +28945,8 @@ public enum RaviSchemas {
     },
     "required": [
       "total",
+      "pagination",
+      "items",
       "opportunities"
     ],
     "type": "object"
@@ -29152,6 +29175,523 @@ public enum RaviSchemas {
       "total",
       "pagination",
       "items"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFacadeApplyInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "planId": {
+        "description": "Plan identifier",
+        "type": "string"
+      }
+    },
+    "required": [
+      "planId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFacadeApplyReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "effectId": {
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "planId": {
+        "type": "string"
+      },
+      "readback": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "reason": {
+        "type": "string"
+      },
+      "state": {
+        "enum": [
+          "applied",
+          "unknown"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "planId",
+      "planHash",
+      "state",
+      "effectId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFacadeApproveInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "agent": {
+        "description": "Requesting agent id",
+        "type": "string"
+      },
+      "planId": {
+        "description": "Plan identifier",
+        "type": "string"
+      },
+      "source": {
+        "description": "External approval destination",
+        "type": "string"
+      }
+    },
+    "required": [
+      "planId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFacadeApproveReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "approval": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/__schema0"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "arguments": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "createdAt": {
+        "type": "string"
+      },
+      "effects": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "expiresAt": {
+        "type": "string"
+      },
+      "operation": {
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "planId": {
+        "type": "string"
+      },
+      "schemaVersion": {
+        "const": "crm.agent-first/v1",
+        "type": "string"
+      },
+      "state": {
+        "enum": [
+          "planned",
+          "approved",
+          "applying",
+          "applied",
+          "unknown",
+          "partial"
+        ],
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "schemaVersion",
+      "planId",
+      "planHash",
+      "state",
+      "operation",
+      "target",
+      "arguments",
+      "effects",
+      "approval",
+      "createdAt",
+      "expiresAt"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFacadePlanInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "account": {
+        "description": "Account context for opportunity.link-contact",
+        "type": "string"
+      },
+      "contact": {
+        "description": "Contact for a link-contact operation",
+        "type": "string"
+      },
+      "field": {
+        "description": "CRM contact field for contact.set",
+        "type": "string"
+      },
+      "operation": {
+        "description": "CRM operation, e.g. task.done or opportunity.move",
+        "type": "string"
+      },
+      "primary": {
+        "description": "Mark the linked contact as primary",
+        "type": "boolean"
+      },
+      "reason": {
+        "description": "Reason recorded with the operation",
+        "type": "string"
+      },
+      "role": {
+        "description": "Relationship role for a link-contact operation",
+        "type": "string"
+      },
+      "stage": {
+        "description": "Target stage for opportunity.move",
+        "type": "string"
+      },
+      "target": {
+        "description": "Exact CRM target id or contact identity",
+        "type": "string"
+      },
+      "until": {
+        "description": "Snooze deadline for task.snooze",
+        "type": "string"
+      },
+      "value": {
+        "description": "CRM contact field value for contact.set",
+        "type": "string"
+      }
+    },
+    "required": [
+      "operation",
+      "target"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFacadePlanReturnSchema = #"""
+  {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "approval": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/__schema0"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "arguments": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "createdAt": {
+        "type": "string"
+      },
+      "effects": {
+        "items": {
+          "additionalProperties": {},
+          "properties": {},
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "expiresAt": {
+        "type": "string"
+      },
+      "operation": {
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "planId": {
+        "type": "string"
+      },
+      "schemaVersion": {
+        "const": "crm.agent-first/v1",
+        "type": "string"
+      },
+      "state": {
+        "enum": [
+          "planned",
+          "approved",
+          "applying",
+          "applied",
+          "unknown",
+          "partial"
+        ],
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "schemaVersion",
+      "planId",
+      "planHash",
+      "state",
+      "operation",
+      "target",
+      "arguments",
+      "effects",
+      "approval",
+      "createdAt",
+      "expiresAt"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFacadeRecoverInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "planId": {
+        "description": "Plan identifier",
+        "type": "string"
+      }
+    },
+    "required": [
+      "planId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFacadeRecoverReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "const": "manual_review_required",
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "planId": {
+        "type": "string"
+      },
+      "replay": {
+        "const": false,
+        "type": "boolean"
+      },
+      "state": {
+        "enum": [
+          "planned",
+          "approved",
+          "applying",
+          "applied",
+          "unknown",
+          "partial"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "planId",
+      "planHash",
+      "state",
+      "action",
+      "replay"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFacadeVerifyInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "planId": {
+        "description": "Plan identifier",
+        "type": "string"
+      }
+    },
+    "required": [
+      "planId"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmFacadeVerifyReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "expired": {
+        "type": "boolean"
+      },
+      "observedAt": {
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "planId": {
+        "type": "string"
+      },
+      "state": {
+        "enum": [
+          "planned",
+          "approved",
+          "applying",
+          "applied",
+          "unknown",
+          "partial"
+        ],
+        "type": "string"
+      }
+    },
+    "required": [
+      "planId",
+      "planHash",
+      "state",
+      "expired",
+      "observedAt"
     ],
     "type": "object"
   }
@@ -29416,6 +29956,104 @@ public enum RaviSchemas {
     "required": [
       "status",
       "changedCount"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmHelpInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let CrmHelpReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "commands": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "intent": {
+              "type": "string"
+            },
+            "mutates": {
+              "type": "boolean"
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "intent",
+            "mutates"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "domain": {
+        "const": "crm",
+        "type": "string"
+      },
+      "next": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "domain",
+      "commands",
+      "next"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let CrmLifecycleShowInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let CrmLifecycleShowReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "contact": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "fact": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "opportunity": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "task": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      }
+    },
+    "required": [
+      "contact",
+      "opportunity",
+      "task",
+      "fact"
     ],
     "type": "object"
   }
