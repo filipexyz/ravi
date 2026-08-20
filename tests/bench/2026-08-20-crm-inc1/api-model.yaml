@@ -1,0 +1,34 @@
+schema: ravi.fact-model/v1
+status: FACT_MODEL_PASS
+handoff: HANDOFF_READY
+target:
+  host: srv597300.hstgr.cloud
+  runtime_user: ravi
+  executable: /home/ravi/.nvm/versions/node/v22.22.2/bin/ravi
+  package: ravi.bot
+  production_version: 3.260817.2
+  production_commit: b6046936fce0b08add2253ca52974d4cde5f3e9f
+  evidence_state: validated
+operations:
+  resolver:
+    - getCrmTask
+    - getCrmOpportunity
+    - getCrmFact
+    - getCrmContactProfile
+    - getCrmAccount
+  sensor:
+    - ravi --version
+    - ravi crm task show
+    - ravi crm help
+  effector:
+    - npm_install_local_package
+  control:
+    - npm_install_ravi_bot_3_260817_2
+    - production_smoke_tests
+semantics:
+  deployment: replace_package
+  crm_mutations: update_existing_target
+  idempotency:
+    deployment: exact_package_artifact
+    missing_target_tests: read_only_fail_closed
+unknowns: []

@@ -1,0 +1,59 @@
+schema: ravi.workflow/v1
+objective: Promote INC-1 over the exact production baseline without downgrade.
+proof:
+  - focused_tests_green
+  - typecheck_green
+  - bundle_build_green
+  - production_version_readback
+  - production_st12_st14_green
+forbidden_effects:
+  - mutate_real_crm_records_during_validation
+  - deploy_a_commit_older_than_b6046936
+  - expose_hidden_contact_or_target_data
+bindings:
+  target:
+    state: bound
+    value: srv597300.hstgr.cloud/ravi.bot
+  credential:
+    state: bound
+    value: hostinger_vps_key_dec10
+  permission:
+    state: bound
+    value: root_ssh_and_ravi_runtime
+  approver_authority:
+    state: bound
+    value: explicit_user_authorization_2026_08_20
+context_bound: true
+states:
+  - DISCOVERED
+  - CONTRACTED
+  - BUILT
+  - VERIFIED_LOCAL
+  - DEPLOYING
+  - VERIFIED_PRODUCTION
+  - ROLLED_BACK
+  - BLOCKED
+effect_boundaries:
+  - phase: package_install
+    primary_effect_possible: true
+    auxiliary_effects:
+      - global_cli_replacement
+    boundary_evidence: validated_runtime_guard
+    premises:
+      - exact_package_artifact_hash
+      - previous_version_recorded
+    derivation: Installation changes the global ravi executable atomically through npm.
+    contradictions: none_found
+    recovery_action: reinstall_previous_published_version
+    recovery_guard: post_deploy_smoke_failed
+    budget_counter: primary_submissions
+    reconciliation: version_readback_and_st12_st14
+budget:
+  max_total_primary_submissions: 1
+  max_total_auxiliary_setups: 1
+  max_total_transport_attempts: 2
+  max_total_reads: 12
+  reconciliation_deadline_seconds: 300
+closability: CLOSABILITY_READY
+implementation: NOT_BUILT
+operation: LIVE_AUTHORIZED
