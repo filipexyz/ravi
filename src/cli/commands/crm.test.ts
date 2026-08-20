@@ -1289,4 +1289,28 @@ describe("CRM commands", () => {
     expect((error as InstanceType<typeof CrmContractError>).code).toBe("OPPORTUNITY_NOT_FOUND");
     expect((payload.error as Record<string, unknown>).suggestions).toContain("crm_opp_1");
   });
+
+  it("paginates the opportunity board while preserving its legacy opportunities alias", () => {
+    opportunityBoardRecords = [
+      { opportunityId: "crm_opp_1", title: "First", pipelineId: "crm_pipeline_default", stageKey: "qualified" },
+      { opportunityId: "crm_opp_2", title: "Second", pipelineId: "crm_pipeline_default", stageKey: "qualified" },
+    ];
+    const payload = captureJson(() => {
+      new ACrmCommands().board(true, "crm_pipeline_default", true, undefined, "1", "0");
+    });
+    expect(payload.total).toBe(2);
+    expect((payload.pagination as Record<string, unknown>).returned).toBe(1);
+    expect((payload.items as Array<Record<string, unknown>>)).toHaveLength(1);
+    expect(payload.opportunities).toEqual(payload.items);
+    expect(((payload.stages as Array<Record<string, unknown>>)[0]?.opportunities as unknown[])).toHaveLength(1);
+  });
+
+  it("returns a usage envelope when pipeline validation has no target", () => {
+    const { payload, error } = captureJsonError(() => {
+      new CrmPipelineCommands().validate(undefined, true, false);
+    });
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("USAGE_ERROR");
+    expect((payload.error as Record<string, unknown>).acceptedPositionals).toEqual(["<pipeline>"]);
+  });
 });

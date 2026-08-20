@@ -26,6 +26,7 @@ import {
   getPipelineMetadataJsonSchema,
   type PipelineMetadata,
   type PipelineReviewFieldStatus,
+  type PipelineValidationIssue,
   reviewPipelineMetadata,
   validatePipelineMetadata,
 } from "../../crm/pipeline-metadata.js";
@@ -534,6 +535,14 @@ function validateNonNegativeInteger(
       suggestedAction: `Use a non-negative integer for ${flag}`,
     },
   });
+}
+
+function redactPipelineValidationIssues(issues: PipelineValidationIssue[]): PipelineValidationIssue[] {
+  return issues.map((issue) => ({
+    ...issue,
+    // Preserve the actionable schema path while removing quoted user data.
+    message: issue.message.replace(/"[^\"]*"|'[^']*'/g, '"[redacted]"'),
+  }));
 }
 
 function validateTimestamp(
@@ -1177,17 +1186,36 @@ export class ACrmCommands {
     includeEmptyStages?: boolean,
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each opportunity" })
     fields?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of matching opportunities to skip (default: 0)" }) offset?: string,
   ) {
-    const board = pickFields(filterCrmRecordsByContact(listCrmOpportunityBoard({ pipelineRef: pipeline })), fields);
+    const op = "crm board";
+    validateNonNegativeInteger(op, "--limit", limit, asJson);
+    validateNonNegativeInteger(op, "--offset", offset, asJson);
+    const page = paginateCliItems(filterCrmRecordsByContact(listCrmOpportunityBoard({ pipelineRef: pipeline })), { limit, offset });
+    const board = pickFields(page.items, fields);
+    const pageOpportunityIds = new Set(page.items.map((opportunity) => opportunity.opportunityId));
     const stages = includeEmptyStages
       ? listCrmOpportunityBoardStages(pipeline).map((stage) => ({
           ...stage,
-          opportunities: pickFields(filterCrmRecordsByContact(stage.opportunities), fields),
+          opportunities: pickFields(
+            filterCrmRecordsByContact(stage.opportunities).filter((opportunity) => pageOpportunityIds.has(opportunity.opportunityId)),
+            fields,
+          ),
         }))
       : undefined;
+    const pagination = buildCliOffsetPagination({
+      baseCommand: ["ravi", "crm", "board"],
+      limit: page.limit,
+      offset: page.offset,
+      returned: page.items.length,
+      total: page.total,
+      fields,
+      options: ["--pipeline", pipeline, ...(includeEmptyStages ? ["--include-empty-stages"] : [])],
+    });
     const payload = stages
-      ? { total: board.length, stages, opportunities: board }
-      : { total: board.length, opportunities: board };
+      ? { total: page.total, pagination, items: board, stages, opportunities: board }
+      : { total: page.total, pagination, items: board, opportunities: board };
     if (asJson) {
       printJson(payload);
       return payload;
@@ -1461,7 +1489,7 @@ export class CrmPipelineCommands {
   @Scope("open")
   @Command({
     name: "review",
-    description: "Review pipeline metadata against canonical schema (12 fields, ✓/⚠/✗ + suggestions)",
+    description: "Review pipeline metadata; exits 1 when high-severity gaps are found",
   })
   @CommandAccess({ kind: "read", resource: "crm.pipeline", action: "review", risk: "low" })
   @Returns(crmPipelineReviewReturnSchema)
@@ -1550,29 +1578,37 @@ export class CrmPipelineCommands {
         schema,
       };
     }
-    if (!pipelineRef) fail("pipeline argument required (or pass --schema-json)");
+    if (!pipelineRef) {
+      contractFail("crm pipeline validate", "USAGE_ERROR", "pipeline argument required (or pass --schema-json)", {
+        asJson,
+        exitCode: 2,
+        details: { acceptedPositionals: ["<pipeline>"], acceptedFlags: ["--schema-json", "--json"] },
+      });
+    }
     const pipeline = getCrmPipeline(pipelineRef);
     if (!pipeline) failPipelineNotFound("crm pipeline validate", pipelineRef, asJson);
     const result = validatePipelineMetadata(pipeline.pipeline.metadata ?? {}, {
       runtimeStageKeys: pipeline.stages.map((s) => s.key),
     });
+    const errors = redactPipelineValidationIssues(result.errors);
+    const warnings = redactPipelineValidationIssues(result.warnings);
     const payload = {
       pipelineId: pipeline.pipeline.id,
       ok: result.ok,
-      errors: result.errors,
-      warnings: result.warnings,
+      errors,
+      warnings,
     };
     if (!result.ok) {
       contractFail(
         "crm pipeline validate",
         "PIPELINE_VALIDATION_FAILED",
-        `Pipeline metadata validation failed with ${result.errors.length} error(s).`,
+        `Pipeline metadata validation failed with ${errors.length} error(s).`,
         {
           asJson,
           details: {
             pipelineId: pipeline.pipeline.id,
-            errors: result.errors,
-            warnings: result.warnings,
+            errors,
+            warnings,
             suggestedAction: `Correct the reported metadata fields, then run: ravi crm pipeline validate ${pipeline.pipeline.id} --json`,
           },
         },
@@ -1584,19 +1620,19 @@ export class CrmPipelineCommands {
     }
     console.log(`\nValidate: ${pipeline.pipeline.name} (${pipeline.pipeline.id})`);
     console.log(`Result: ${result.ok ? "PASS" : "FAIL"}`);
-    if (result.errors.length > 0) {
-      console.log(`\nErrors (${result.errors.length}):`);
-      for (const e of result.errors) {
+    if (errors.length > 0) {
+      console.log(`\nErrors (${errors.length}):`);
+      for (const e of errors) {
         console.log(`  ✗ ${e.path}: ${e.message}`);
       }
     }
-    if (result.warnings.length > 0) {
-      console.log(`\nWarnings (${result.warnings.length}):`);
-      for (const w of result.warnings) {
+    if (warnings.length > 0) {
+      console.log(`\nWarnings (${warnings.length}):`);
+      for (const w of warnings) {
         console.log(`  ⚠ ${w.path}: ${w.message}`);
       }
     }
-    if (result.ok && result.warnings.length === 0) {
+    if (result.ok && warnings.length === 0) {
       console.log("\nNo issues found.");
     }
     return payload;

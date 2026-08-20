@@ -395,6 +395,8 @@ export const crmOpportunityReturnSchema = z
 export const crmBoardReturnSchema = z
   .object({
     total: z.number(),
+    pagination: looseObjectSchema,
+    items: z.array(looseObjectSchema),
     opportunities: z.array(looseObjectSchema),
     stages: z.array(looseObjectSchema).optional(),
   })
