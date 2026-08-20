@@ -1,4 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import type { CrmFacadePlan } from "../../crm/facade.js";
 
 afterAll(() => mock.restore());
 
@@ -355,6 +356,7 @@ const {
   CrmAccountCommands,
   CrmContactCommands,
   CrmFacadeCommands,
+  formatCrmFacadeApprovalText,
   CrmFactCommands,
   CrmLifecycleCommands,
   CrmOpportunityCommands,
@@ -1379,5 +1381,67 @@ describe("CRM commands", () => {
     expect(error).toBeInstanceOf(CrmContractError);
     expect((error as InstanceType<typeof CrmContractError>).code).toBe("CRM_TASK_NOT_FOUND");
     expect(JSON.stringify(payload)).not.toContain("Follow up");
+  });
+
+  it("shows the complete canonical change in every facade approval prompt", () => {
+    const cases: Array<{
+      operation: CrmFacadePlan["operation"];
+      arguments: Record<string, unknown>;
+    }> = [
+      { operation: "task.done", arguments: { target: "crm_task_1" } },
+      { operation: "task.cancel", arguments: { target: "crm_task_1", reason: "duplicate" } },
+      {
+        operation: "task.snooze",
+        arguments: { target: "crm_task_1", until: "2026-08-21T12:00:00.000Z" },
+      },
+      { operation: "opportunity.move", arguments: { target: "crm_opp_1", stage: "crm_stage_won" } },
+      { operation: "fact.confirm", arguments: { target: "crm_fact_1" } },
+      { operation: "fact.reject", arguments: { target: "crm_fact_1", reason: "unsupported" } },
+      {
+        operation: "contact.set",
+        arguments: { target: "contact-1", field: "priority", value: "high" },
+      },
+      {
+        operation: "account.link-contact",
+        arguments: { target: "crm_acc_1", contact: "contact-1", role: "buyer", primary: true },
+      },
+      {
+        operation: "opportunity.link-contact",
+        arguments: {
+          target: "crm_opp_1",
+          contact: "contact-1",
+          account: "crm_acc_1",
+          role: "decision-maker",
+          primary: false,
+        },
+      },
+    ];
+
+    for (const entry of cases) {
+      const plan: CrmFacadePlan = {
+        schemaVersion: "crm.agent-first/v1",
+        planId: `plan-${entry.operation}`,
+        planHash: `hash-${entry.operation}`,
+        state: "planned",
+        operation: entry.operation,
+        target: { type: "record", id: "target-1", label: "Visible target" },
+        arguments: entry.arguments,
+        effects: [{ effectId: "effect-1", operation: entry.operation, primary: true, retry: "never" }],
+        approval: null,
+        createdAt: "2026-08-20T12:00:00.000Z",
+        expiresAt: "2026-08-20T12:15:00.000Z",
+      };
+
+      const text = formatCrmFacadeApprovalText(plan);
+      const argumentsLine = text.split("\n").find((line) => line.startsWith("Arguments: "));
+      const targetLine = text.split("\n").find((line) => line.startsWith("Target: "));
+
+      expect(text).toContain(`Plan ID: ${plan.planId}`);
+      expect(text).toContain(`Plan hash: ${plan.planHash}`);
+      expect(text).toContain(`Operation: ${plan.operation}`);
+      expect(text).toContain(`Expires at: ${plan.expiresAt}`);
+      expect(JSON.parse(argumentsLine!.slice("Arguments: ".length))).toEqual(entry.arguments);
+      expect(JSON.parse(targetLine!.slice("Target: ".length))).toEqual(plan.target);
+    }
   });
 });

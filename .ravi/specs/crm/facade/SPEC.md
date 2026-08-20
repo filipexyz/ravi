@@ -111,6 +111,9 @@ currently visible; it does not prove that this plan caused it.
   context. The caller MUST NOT supply approval source or agent identity flags.
 - Missing runtime channel, account, chat, or sender identity MUST fail closed
   before an approval request is accepted.
+- The external approval message MUST show the plan id, plan hash, operation,
+  resolved target, complete canonical arguments, and expiry. Approval MUST NOT
+  be requested from a summary that omits any effect argument.
 - The durable approval receipt MUST bind the plan hash, external message id,
   configured destination snapshot, authorized sender, actual sender, and
   timestamps. Authorization MUST require the matching external message id and

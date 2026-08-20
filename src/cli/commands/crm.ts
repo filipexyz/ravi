@@ -570,6 +570,18 @@ function assertCrmFacadePlanVisible(plan: CrmFacadePlan, op: string, asJson?: bo
   if (typeof contact === "string") assertCanReadCrmContact(op, contact, asJson);
 }
 
+export function formatCrmFacadeApprovalText(plan: CrmFacadePlan): string {
+  return [
+    "Approve this CRM change only if every field matches your intent.",
+    `Plan ID: ${plan.planId}`,
+    `Plan hash: ${plan.planHash}`,
+    `Operation: ${plan.operation}`,
+    `Target: ${JSON.stringify(plan.target)}`,
+    `Arguments: ${JSON.stringify(plan.arguments)}`,
+    `Expires at: ${plan.expiresAt}`,
+  ].join("\n");
+}
+
 function validateIntegerRange(
   op: string,
   flag: string,
@@ -1541,7 +1553,7 @@ export class CrmFacadeCommands {
       resolvedSource: source,
       autoApproveWithoutSource: false,
       expectedApproverId: authorizedApproverId,
-      text: `Approve CRM plan ${planId} with hash ${plan.planHash}: ${plan.operation} on ${plan.target.label}?`,
+      text: formatCrmFacadeApprovalText(plan),
       eventData: { planId, planHash: plan.planHash, operation: plan.operation, target: plan.target },
       onRequestDelivered: ({ externalMessageId }) => {
         recordCrmFacadeApprovalRequest(planId, { source, externalMessageId, authorizedApproverId });

@@ -23,6 +23,8 @@ The focused automated tests MUST verify:
 
 - a read-only, hashed 15-minute plan and rejection of tampered payloads;
 - durable approval binding to plan hash, message id, and authorized sender;
+- approval prompts for all nine operations expose the exact resolved target and
+  complete canonical arguments together with the plan id, hash, and expiry;
 - single-use application and stale task/fact transition rejection before the
   tested effect runs;
 - `applied`, `partial`, and `unknown` task paths without replay;
