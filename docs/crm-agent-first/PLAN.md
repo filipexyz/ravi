@@ -59,7 +59,9 @@ Registrar decisões, limitações, comandos de CI esperados e instruções de im
 
 ## Critério de término
 
-O PR só estará pronto quando cada requisito tiver implementação, teste escrito, consumidor identificado e resultado do CI. Como não haverá bancada local, nenhum teste será marcado como executado antes do CI.
+O PR só estará pronto para merge quando cada requisito tiver implementação,
+teste, consumidor identificado e resultado do CI. Testes locais só começam
+depois do freeze da implementação e não substituem o CI.
 
 ## Gate de implantação
 

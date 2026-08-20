@@ -12,12 +12,13 @@
 
 ## Estado atual
 
-- INC-1 e INC-2: `implemented`; os testes de validação foram escritos e aguardam
-  a rodada única de validação.
-- Fachada CRM: `implemented`; o teste de plano, aprovação vinculada e consumo
-  único foi escrito e aguarda execução.
-- INC-3 a INC-5 e contratos SDK: permanecem no escopo da PR e só serão marcados
-  como concluídos após a revisão dos contratos gerados.
+- INC-1 a INC-5: `verified` na suíte CRM local.
+- Fachada CRM: `verified` para plano sem efeito, aprovação vinculada, consumo
+  único, integridade persistida, visibilidade e readback.
+- SDK TypeScript, OpenAPI e Swift: `verified` pelos checks de drift e pela suíte
+  SDK local.
+- Matriz completa de comandos: `ci-pending`, porque o runner do pacote usa um
+  loop POSIX não portátil para PowerShell.
 
 ## Consumidores
 

@@ -14,7 +14,9 @@ Este pacote transforma a análise publicada em mudanças no próprio domínio CR
 
 ## Regra de execução
 
-Os testes serão escritos neste branch, mas não serão executados localmente. Build, typecheck, testes, geração e drift checks serão validados pelo CI do PR.
+Durante a implementação, os testes foram apenas escritos. Depois do freeze do
+código, a suíte CRM, typecheck, build, SDK, OpenAPI e Swift foram executados em
+uma rodada de validação. O CI do PR repete esses gates no ambiente oficial.
 
 Nenhum teste de escrita será feito na VPS durante o desenvolvimento. A implantação só poderá usar o commit mesclado e aprovado.
 
