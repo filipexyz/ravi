@@ -903,6 +903,68 @@ describe("contacts identity graph schema", () => {
     expect(primaryRows.map((row) => row.contact_id)).toEqual([second!.id]);
   });
 
+  it("preserves existing primary links when facade primary is omitted", () => {
+    upsertContact("5511999910313", "CRM Omitted Primary", "allowed", "manual");
+    const contact = getContact("5511999910313");
+    expect(contact).not.toBeNull();
+
+    const account = createCrmAccount({ name: "Omitted Primary Account", source: "test" });
+    const opportunity = createCrmOpportunity({
+      title: "Omitted Primary Opportunity",
+      accountId: account.id,
+      contactRef: contact!.id,
+      source: "test",
+    });
+    linkCrmAccountContact({
+      accountId: account.id,
+      contactRef: contact!.id,
+      role: "member",
+      isPrimary: true,
+      source: "test",
+    });
+    linkCrmOpportunityContact({
+      opportunityId: opportunity.id,
+      contactRef: contact!.id,
+      role: "stakeholder",
+      isPrimary: true,
+      source: "test",
+    });
+
+    const inputs: CrmFacadePlanInput[] = [
+      { operation: "account.link-contact", target: account.id, contact: contact!.id },
+      { operation: "opportunity.link-contact", target: opportunity.id, contact: contact!.id },
+    ];
+    for (const [index, input] of inputs.entries()) {
+      const plan = buildCrmFacadePlan(input);
+      expect(plan.arguments).not.toHaveProperty("primary");
+      persistCrmFacadePlan(plan);
+      recordCrmFacadeApprovalRequest(plan.planId, {
+        source: { channel: "test", accountId: "test", chatId: "test" },
+        externalMessageId: `omitted-primary-${index}`,
+        authorizedApproverId: "human-1",
+      });
+      approveCrmFacadePlan(plan.planId, {
+        externalMessageId: `omitted-primary-${index}`,
+        approverId: "human-1",
+      });
+      expect(applyCrmFacadePlan(plan.planId, { actorId: "agent-primary-regression" }).state).toBe("applied");
+    }
+
+    const database = new Database(join(stateDir!, "chat.db"));
+    const accountPrimary = database
+      .query("SELECT is_primary FROM crm_account_contacts WHERE account_id = ? AND contact_id = ? AND role = 'member'")
+      .get(account.id, contact!.id) as { is_primary: number };
+    const opportunityPrimary = database
+      .query(
+        "SELECT is_primary FROM crm_opportunity_contacts WHERE opportunity_id = ? AND contact_id = ? AND role = 'stakeholder'",
+      )
+      .get(opportunity.id, contact!.id) as { is_primary: number };
+    database.close();
+
+    expect(accountPrimary.is_primary).toBe(1);
+    expect(opportunityPrimary.is_primary).toBe(1);
+  });
+
   it("includes CRM opportunities where the contact is linked as a stakeholder", () => {
     upsertContact("5511999910321", "CRM Opportunity Primary", "allowed", "manual");
     upsertContact("5511999910322", "CRM Opportunity Stakeholder", "allowed", "manual");

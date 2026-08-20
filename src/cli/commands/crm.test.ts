@@ -1,5 +1,5 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
-import type { CrmFacadePlan } from "../../crm/facade.js";
+import type { CrmFacadePlan, CrmFacadePlanInput } from "../../crm/facade.js";
 
 afterAll(() => mock.restore());
 
@@ -467,6 +467,23 @@ function silenceLogs(run: () => unknown): void {
   } finally {
     console.log = original;
   }
+}
+
+function planFacade(input: CrmFacadePlanInput): unknown {
+  return new CrmFacadeCommands().plan(
+    input.operation,
+    input.target,
+    input.stage,
+    input.contact,
+    input.field,
+    input.value,
+    input.until,
+    input.reason,
+    input.role,
+    input.account,
+    input.primary,
+    true,
+  );
 }
 
 describe("CRM commands", () => {
@@ -1548,6 +1565,86 @@ describe("CRM commands", () => {
     expect((error as InstanceType<typeof CrmContractError>).code).toBe("CRM_TASK_NOT_FOUND");
     expect(JSON.stringify(payload)).not.toContain("Follow up");
   });
+
+  const hiddenFacadeCases: Array<{
+    input: CrmFacadePlanInput;
+    code: string;
+    prepare: () => void;
+  }> = [
+    ...(["task.done", "task.cancel", "task.snooze"] as const).map((operation) => ({
+      input: {
+        operation,
+        target: "crm_task_hidden",
+        ...(operation === "task.snooze" ? { until: "2030-01-01T10:00:00Z" } : {}),
+      } as CrmFacadePlanInput,
+      code: "CRM_TASK_NOT_FOUND",
+      prepare: () => {
+        crmTask = { contactId: "contact-hidden" };
+      },
+    })),
+    ...(["opportunity.move", "opportunity.link-contact"] as const).map((operation) => ({
+      input: {
+        operation,
+        target: "crm_opp_hidden",
+        ...(operation === "opportunity.move" ? { stage: "qualified" } : { contact: "contact-visible" }),
+      } as CrmFacadePlanInput,
+      code: "OPPORTUNITY_NOT_FOUND",
+      prepare: () => {
+        opportunityContactRecords = [{ opportunityId: "crm_opp_hidden", contactId: "contact-hidden" }];
+      },
+    })),
+    ...(["fact.confirm", "fact.reject"] as const).map((operation) => ({
+      input: { operation, target: "crm_fact_hidden" },
+      code: "CRM_FACT_NOT_FOUND",
+      prepare: () => {
+        factRecords = [
+          {
+            id: "crm_fact_hidden",
+            entityType: "contact",
+            entityId: "contact-hidden",
+            key: "budget",
+            status: "proposed",
+          },
+        ];
+      },
+    })),
+    {
+      input: { operation: "contact.set", target: "contact-hidden", field: "priority", value: "high" },
+      code: "CONTACT_NOT_FOUND",
+      prepare: () => {},
+    },
+    {
+      input: {
+        operation: "account.link-contact",
+        target: "crm_acc_hidden",
+        contact: "contact-visible",
+      },
+      code: "CRM_ACCOUNT_NOT_FOUND",
+      prepare: () => {
+        accountContactIds = ["contact-hidden"];
+      },
+    },
+  ];
+
+  for (const scenario of hiddenFacadeCases) {
+    it(`${scenario.input.operation} fails closed for a hidden target`, () => {
+      scopeEnforced = true;
+      readableContactIds = new Set(["contact-visible"]);
+      scenario.prepare();
+
+      const { payload, error } = captureJsonError(() => planFacade(scenario.input));
+
+      expect(error).toBeInstanceOf(CrmContractError);
+      expect((error as InstanceType<typeof CrmContractError>).code).toBe(scenario.code);
+      const serialized = JSON.stringify(payload);
+      if (scenario.input.operation === "contact.set") {
+        expect(serialized).not.toContain("Alice");
+        expect(serialized).not.toContain("relationshipHealth");
+      } else {
+        expect(serialized).not.toContain("contact-hidden");
+      }
+    });
+  }
 
   it("hides accounts linked to any unreadable contact before facade resolution", () => {
     scopeEnforced = true;

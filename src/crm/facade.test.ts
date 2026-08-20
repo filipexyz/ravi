@@ -30,6 +30,7 @@ let contactProfile: Record<string, unknown> = { priority: "normal" };
 let accountLink: Record<string, unknown> | null = null;
 let opportunityLink: Record<string, unknown> | null = null;
 let effectCalls: Array<{ operation: string; input: Record<string, unknown> }> = [];
+let journalError: Error | null = null;
 let taskAvailable = true;
 let opportunityAvailable = true;
 let factAvailable = true;
@@ -183,7 +184,10 @@ mock.module("../contacts.js", () => ({
     plans.set(planId, { ...plan, state: "applying", updatedAt: new Date().toISOString() });
     return true;
   },
-  saveCrmFacadeEffect: (effect: Record<string, unknown>) => effects.push(effect),
+  saveCrmFacadeEffect: (effect: Record<string, unknown>) => {
+    if (journalError) throw journalError;
+    effects.push(effect);
+  },
   updateCrmFacadeEffect: (effectId: string, update: Record<string, unknown>) => {
     const effect = effects.find((candidate) => candidate.effectId === effectId);
     if (effect) Object.assign(effect, update);
@@ -284,6 +288,7 @@ describe("CRM facade", () => {
     accountLink = null;
     opportunityLink = null;
     effectCalls = [];
+    journalError = null;
     taskAvailable = true;
     opportunityAvailable = true;
     factAvailable = true;
@@ -409,6 +414,24 @@ describe("CRM facade", () => {
     expect(loadCrmFacadePlan(plan.planId)?.state).toBe("approved");
   });
 
+  it("fails closed when the effect journal cannot be persisted after claim", () => {
+    const plan = buildCrmFacadePlan({ operation: "task.done", target: "task-1" });
+    persistCrmFacadePlan(plan);
+    externallyApprove(plan.planId);
+    journalError = new Error("journal unavailable");
+
+    const result = applyCrmFacadePlan(plan.planId, { actorId: "agent-1" });
+
+    expect(result).toMatchObject({
+      state: "unknown",
+      reason: expect.stringContaining("journal unavailable"),
+    });
+    expect(loadCrmFacadePlan(plan.planId)?.state).toBe("unknown");
+    expect(effectCalls).toEqual([]);
+    expect(effects).toEqual([]);
+    expect(completedTaskIds).toEqual([]);
+  });
+
   it("accepts only canonical contact enums and resolves relationship references", () => {
     const lifecycle = buildCrmFacadePlan({
       operation: "contact.set",
@@ -458,6 +481,57 @@ describe("CRM facade", () => {
     factStatus = "confirmed";
     expect(() => buildCrmFacadePlan({ operation: "fact.reject", target: "fact-1" })).toThrow(/cannot transition/i);
   });
+
+  for (const scenario of operationCases) {
+    it(`${scenario.name} rejects an unavailable target during planning`, () => {
+      if (scenario.targetType === "task") taskAvailable = false;
+      if (scenario.targetType === "opportunity") opportunityAvailable = false;
+      if (scenario.targetType === "fact") factAvailable = false;
+      if (scenario.targetType === "contact") contactAvailable = false;
+      if (scenario.targetType === "account") accountAvailable = false;
+
+      expect(() => buildCrmFacadePlan(scenario.input)).toThrow(/not found/i);
+      expect(effectCalls).toEqual([]);
+      expect(effects).toEqual([]);
+    });
+  }
+
+  const invalidArgumentCases: Array<{ name: string; input: CrmFacadePlanInput; message: RegExp }> = [
+    {
+      name: "task.snooze",
+      input: { operation: "task.snooze", target: "task-1", until: "not-a-date" },
+      message: /ISO timestamp/i,
+    },
+    {
+      name: "opportunity.move",
+      input: { operation: "opportunity.move", target: "opp-1" },
+      message: /stage is required/i,
+    },
+    {
+      name: "contact.set",
+      input: { operation: "contact.set", target: "contact-1", field: "unsupported", value: "x" },
+      message: /unsupported CRM contact field/i,
+    },
+    {
+      name: "account.link-contact",
+      input: { operation: "account.link-contact", target: "acct-1", contact: " " },
+      message: /contact is required/i,
+    },
+    {
+      name: "opportunity.link-contact",
+      input: { operation: "opportunity.link-contact", target: "opp-1", contact: " " },
+      message: /contact is required/i,
+    },
+  ];
+
+  for (const scenario of invalidArgumentCases) {
+    it(`${scenario.name} rejects malformed material arguments before persistence`, () => {
+      expect(() => buildCrmFacadePlan(scenario.input)).toThrow(scenario.message);
+      expect(plans).toHaveLength(0);
+      expect(effectCalls).toEqual([]);
+      expect(effects).toEqual([]);
+    });
+  }
 
   for (const scenario of operationCases) {
     it(`${scenario.name} closes normalize, dispatch, readback, audit and retry boundaries`, () => {
