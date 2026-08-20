@@ -6636,34 +6636,121 @@ export type CrmFacadePlanRecord = {
 
 export function saveCrmFacadePlan(record: CrmFacadePlanRecord): void {
   const database = ensureDb();
-  database.query(`INSERT INTO crm_facade_plans (plan_id, plan_hash, plan_json, state, created_at, expires_at, updated_at, approval_json, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(record.planId, record.planHash, record.planJson, record.state, record.createdAt, record.expiresAt, record.updatedAt, record.approvalJson, record.appliedAt);
+  database
+    .query(
+      `INSERT INTO crm_facade_plans (plan_id, plan_hash, plan_json, state, created_at, expires_at, updated_at, approval_json, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      record.planId,
+      record.planHash,
+      record.planJson,
+      record.state,
+      record.createdAt,
+      record.expiresAt,
+      record.updatedAt,
+      record.approvalJson,
+      record.appliedAt,
+    );
 }
 
 export function getCrmFacadePlan(planId: string): CrmFacadePlanRecord | null {
-  const row = ensureDb().query(`SELECT * FROM crm_facade_plans WHERE plan_id = ?`).get(planId) as Record<string, unknown> | null;
+  const row = ensureDb().query(`SELECT * FROM crm_facade_plans WHERE plan_id = ?`).get(planId) as Record<
+    string,
+    unknown
+  > | null;
   if (!row) return null;
-  return { planId: String(row.plan_id), planHash: String(row.plan_hash), planJson: String(row.plan_json), state: String(row.state), createdAt: String(row.created_at), expiresAt: String(row.expires_at), updatedAt: String(row.updated_at), approvalJson: row.approval_json ? String(row.approval_json) : null, appliedAt: row.applied_at ? String(row.applied_at) : null };
+  return {
+    planId: String(row.plan_id),
+    planHash: String(row.plan_hash),
+    planJson: String(row.plan_json),
+    state: String(row.state),
+    createdAt: String(row.created_at),
+    expiresAt: String(row.expires_at),
+    updatedAt: String(row.updated_at),
+    approvalJson: row.approval_json ? String(row.approval_json) : null,
+    appliedAt: row.applied_at ? String(row.applied_at) : null,
+  };
 }
 
 export function updateCrmFacadePlanState(planId: string, state: string, updatedAt: string, appliedAt?: string): void {
-  ensureDb().query(`UPDATE crm_facade_plans SET state = ?, updated_at = ?, applied_at = COALESCE(?, applied_at) WHERE plan_id = ?`).run(state, updatedAt, appliedAt ?? null, planId);
+  ensureDb()
+    .query(
+      `UPDATE crm_facade_plans SET state = ?, updated_at = ?, applied_at = COALESCE(?, applied_at) WHERE plan_id = ?`,
+    )
+    .run(state, updatedAt, appliedAt ?? null, planId);
 }
 
-export function recordCrmFacadeApproval(planId: string, approvalJson: string, updatedAt: string): void {
-  ensureDb().query(`UPDATE crm_facade_plans SET state = 'approved', approval_json = ?, updated_at = ? WHERE plan_id = ? AND state = 'planned'`).run(approvalJson, updatedAt, planId);
-}
-
-export function claimCrmFacadePlanApply(planId: string, now: string): boolean {
-  const result = ensureDb().query(`UPDATE crm_facade_plans SET state = 'applying', updated_at = ? WHERE plan_id = ? AND state = 'approved' AND expires_at > ?`).run(now, planId, now) as { changes?: number };
+export function recordCrmFacadeApprovalRequest(planId: string, approvalJson: string, updatedAt: string): boolean {
+  const result = ensureDb()
+    .query(
+      `UPDATE crm_facade_plans
+       SET approval_json = ?, updated_at = ?
+       WHERE plan_id = ? AND state = 'planned' AND approval_json IS NULL AND expires_at > ?`,
+    )
+    .run(approvalJson, updatedAt, planId, updatedAt) as { changes?: number };
   return result.changes === 1;
 }
 
-export function saveCrmFacadeEffect(input: { effectId: string; planId: string; operation: string; state: string; idempotencyKey: string; dispatchedAt?: string | null; observedAt?: string | null; readbackJson?: string | null }): void {
-  ensureDb().query(`INSERT INTO crm_facade_effects (effect_id, plan_id, operation, state, idempotency_key, dispatched_at, observed_at, readback_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(input.effectId, input.planId, input.operation, input.state, input.idempotencyKey, input.dispatchedAt ?? null, input.observedAt ?? null, input.readbackJson ?? null);
+export function recordCrmFacadeApproval(
+  planId: string,
+  expectedApprovalJson: string,
+  approvalJson: string,
+  updatedAt: string,
+): boolean {
+  const result = ensureDb()
+    .query(
+      `UPDATE crm_facade_plans
+       SET state = 'approved', approval_json = ?, updated_at = ?
+       WHERE plan_id = ? AND state = 'planned' AND approval_json = ? AND expires_at > ?`,
+    )
+    .run(approvalJson, updatedAt, planId, expectedApprovalJson, updatedAt) as { changes?: number };
+  return result.changes === 1;
 }
 
-export function updateCrmFacadeEffect(effectId: string, input: { state: string; observedAt?: string | null; readbackJson?: string | null }): void {
-  ensureDb().query(`UPDATE crm_facade_effects SET state = ?, observed_at = COALESCE(?, observed_at), readback_json = COALESCE(?, readback_json) WHERE effect_id = ?`).run(input.state, input.observedAt ?? null, input.readbackJson ?? null, effectId);
+export function claimCrmFacadePlanApply(planId: string, now: string): boolean {
+  const result = ensureDb()
+    .query(
+      `UPDATE crm_facade_plans SET state = 'applying', updated_at = ? WHERE plan_id = ? AND state = 'approved' AND expires_at > ?`,
+    )
+    .run(now, planId, now) as { changes?: number };
+  return result.changes === 1;
+}
+
+export function saveCrmFacadeEffect(input: {
+  effectId: string;
+  planId: string;
+  operation: string;
+  state: string;
+  idempotencyKey: string;
+  dispatchedAt?: string | null;
+  observedAt?: string | null;
+  readbackJson?: string | null;
+}): void {
+  ensureDb()
+    .query(
+      `INSERT INTO crm_facade_effects (effect_id, plan_id, operation, state, idempotency_key, dispatched_at, observed_at, readback_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      input.effectId,
+      input.planId,
+      input.operation,
+      input.state,
+      input.idempotencyKey,
+      input.dispatchedAt ?? null,
+      input.observedAt ?? null,
+      input.readbackJson ?? null,
+    );
+}
+
+export function updateCrmFacadeEffect(
+  effectId: string,
+  input: { state: string; observedAt?: string | null; readbackJson?: string | null },
+): void {
+  ensureDb()
+    .query(
+      `UPDATE crm_facade_effects SET state = ?, observed_at = COALESCE(?, observed_at), readback_json = COALESCE(?, readback_json) WHERE effect_id = ?`,
+    )
+    .run(input.state, input.observedAt ?? null, input.readbackJson ?? null, effectId);
 }
 
 function requireCrmFact(database: Database, factId: string): CrmFactRow {

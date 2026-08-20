@@ -516,11 +516,11 @@ export const crmFacadePlanReturnSchema = z
         stage: z.string().optional(),
         contact: z.string().optional(),
         field: z.string().optional(),
-        value: z.string().optional(),
+        value: jsonValueSchema.optional(),
         until: z.string().optional(),
         reason: z.string().optional(),
         role: z.string().optional(),
-        account: z.string().optional(),
+        account: z.string().nullable().optional(),
         primary: z.boolean().optional(),
       })
       .strict(),
@@ -547,8 +547,20 @@ export const crmFacadePlanReturnSchema = z
     approval: z
       .object({
         planHash: z.string(),
-        approvedAt: z.string(),
-        source: z.object({ channel: z.string(), accountId: z.string(), chatId: z.string() }).strict(),
+        state: z.enum(["requested", "approved"]),
+        requestedAt: z.string(),
+        approvedAt: z.string().nullable(),
+        source: z
+          .object({
+            channel: z.string(),
+            accountId: z.string(),
+            chatId: z.string(),
+            threadId: z.string().optional(),
+          })
+          .strict(),
+        externalMessageId: z.string(),
+        authorizedApproverId: z.string(),
+        approverId: z.string().nullable(),
       })
       .strict()
       .nullable(),
@@ -587,7 +599,7 @@ export const crmFacadeApplyReturnSchema = z
   .object({
     planId: z.string(),
     planHash: z.string(),
-    state: z.enum(["applied", "unknown"]),
+    state: z.enum(["applied", "partial", "unknown"]),
     effectId: z.string(),
     readback: jsonValueSchema.optional(),
     reason: z.string().optional(),

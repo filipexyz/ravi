@@ -47,6 +47,19 @@ export interface CascadingApprovalOptions {
   autoApproveWithoutSource?: boolean;
   eventData?: Record<string, unknown>;
   beforeExternalApproval?: () => void;
+  expectedApproverId?: string;
+  onRequestDelivered?: (receipt: ApprovalRequestReceipt) => void | Promise<void>;
+}
+
+export interface ApprovalRequestReceipt {
+  externalMessageId: string;
+}
+
+export interface ApprovalResult {
+  approved: boolean;
+  reason?: string;
+  externalMessageId?: string;
+  approverId?: string;
 }
 
 export interface ContextAuthorizationOptions {
@@ -70,8 +83,12 @@ export interface ContextAuthorizationResult {
 export async function requestApproval(
   source: ApprovalTarget,
   text: string,
-  options?: { timeoutMs?: number },
-): Promise<{ approved: boolean; reason?: string }> {
+  options?: {
+    timeoutMs?: number;
+    expectedApproverId?: string;
+    onRequestDelivered?: (receipt: ApprovalRequestReceipt) => void | Promise<void>;
+  },
+): Promise<ApprovalResult> {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
 
   let sendResult: { messageId?: string };
@@ -96,8 +113,21 @@ export async function requestApproval(
     return { approved: false, reason: "Falha ao enviar mensagem de aprovação." };
   }
 
-  log.info("Waiting for approval response", { messageId: sendResult.messageId });
-  return waitForApprovalResponse(sendResult.messageId, timeoutMs);
+  const externalMessageId = sendResult.messageId;
+  try {
+    await options?.onRequestDelivered?.({ externalMessageId });
+  } catch (error) {
+    log.warn("Failed to persist approval request receipt", { externalMessageId, error });
+    return {
+      approved: false,
+      externalMessageId,
+      reason: `Failed to persist approval request receipt: ${error instanceof Error ? error.message : String(error)}`,
+    };
+  }
+
+  log.info("Waiting for approval response", { messageId: externalMessageId });
+  const result = await waitForApprovalResponse(externalMessageId, timeoutMs, options?.expectedApproverId);
+  return { ...result, externalMessageId };
 }
 
 export async function requestPollAnswer(
@@ -140,7 +170,7 @@ export async function requestPollAnswer(
 
 export async function requestCascadingApproval(
   opts: CascadingApprovalOptions,
-): Promise<{ approved: boolean; reason?: string; isDelegated: boolean }> {
+): Promise<ApprovalResult & { isDelegated: boolean }> {
   const targetSource = opts.resolvedSource ?? opts.approvalSource;
   if (!targetSource) {
     if (opts.autoApproveWithoutSource !== false) {
@@ -168,7 +198,11 @@ export async function requestCascadingApproval(
     .catch(() => {});
 
   const approvalText = buildApprovalText(opts.type, opts.text, opts.agentId, isDelegated);
-  const result = await requestApproval(targetSource, approvalText, { timeoutMs: opts.timeoutMs });
+  const result = await requestApproval(targetSource, approvalText, {
+    timeoutMs: opts.timeoutMs,
+    expectedApproverId: opts.expectedApproverId,
+    onRequestDelivered: opts.onRequestDelivered,
+  });
 
   approvalServiceDependencies.nats
     .emit("ravi.approval.response", {
@@ -177,6 +211,8 @@ export async function requestCascadingApproval(
       agentId: opts.agentId,
       approved: result.approved,
       reason: result.reason,
+      externalMessageId: result.externalMessageId,
+      approverId: result.approverId,
       timestamp: Date.now(),
       ...(opts.eventData ?? {}),
     })
@@ -312,7 +348,8 @@ function buildPermissionRequestText(
 async function waitForApprovalResponse(
   messageId: string,
   timeoutMs: number,
-): Promise<{ approved: boolean; reason?: string }> {
+  expectedApproverId?: string,
+): Promise<ApprovalResult> {
   const stream = approvalServiceDependencies.nats.subscribe("ravi.inbound.reaction", "ravi.inbound.reply");
 
   return new Promise((resolve) => {
@@ -333,20 +370,22 @@ async function waitForApprovalResponse(
       try {
         for await (const event of stream) {
           if (event.topic === "ravi.inbound.reaction") {
-            const data = event.data as { targetMessageId?: string; emoji?: string };
+            const data = event.data as { targetMessageId?: string; emoji?: string; senderId?: string };
             if (data.targetMessageId !== messageId) continue;
+            if (expectedApproverId && data.senderId !== expectedApproverId) continue;
             clearTimeout(timer);
             cleanup();
             const approved = data.emoji === "👍" || data.emoji === "❤️" || data.emoji === "❤";
-            resolve({ approved });
+            resolve({ approved, ...(data.senderId ? { approverId: data.senderId } : {}) });
             return;
           }
 
-          const data = event.data as { targetMessageId?: string; text?: string };
+          const data = event.data as { targetMessageId?: string; text?: string; senderId?: string };
           if (data.targetMessageId !== messageId) continue;
+          if (expectedApproverId && data.senderId !== expectedApproverId) continue;
           clearTimeout(timer);
           cleanup();
-          resolve({ approved: false, reason: data.text });
+          resolve({ approved: false, reason: data.text, ...(data.senderId ? { approverId: data.senderId } : {}) });
           return;
         }
       } catch (err) {

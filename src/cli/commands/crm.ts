@@ -84,6 +84,7 @@ import {
   buildCrmFacadePlan,
   persistCrmFacadePlan,
   loadCrmFacadePlan,
+  recordCrmFacadeApprovalRequest,
   approveCrmFacadePlan,
   applyCrmFacadePlan,
   verifyCrmFacadePlan,
@@ -1465,37 +1466,64 @@ export class CrmFacadeCommands {
   @Returns(crmFacadePlanReturnSchema)
   async approve(
     @Arg("planId", { description: "Plan identifier" }) planId: string,
-    @Option({ flags: "--source <channel:account:chat>", description: "External approval destination" })
-    sourceText?: string,
-    @Option({ flags: "--agent <id>", description: "Requesting agent id" }) agentId?: string,
     @Option({ flags: "--json" }) asJson?: boolean,
   ) {
     const plan = loadCrmFacadePlan(planId);
     if (!plan)
       contractFail("crm facade approve", "NOT_FOUND", `CRM facade plan not found: ${planId}`, { asJson, exitCode: 1 });
-    const parts = sourceText?.split(":", 3);
-    if (!parts || parts.length !== 3 || parts.some((part) => !part.trim()))
-      contractFail("crm facade approve", "USAGE_ERROR", "--source channel:account:chat is required", {
-        asJson,
-        exitCode: 2,
-      });
-    const source = { channel: parts[0], accountId: parts[1], chatId: parts[2] };
+    assertCrmFacadePlanVisible(plan, "crm facade approve", asJson);
+    const channel = process.env.RAVI_CHANNEL?.trim();
+    const accountId = process.env.RAVI_ACCOUNT_ID?.trim();
+    const chatId = process.env.RAVI_CHAT_ID?.trim();
+    const authorizedApproverId = process.env.RAVI_SENDER_ID?.trim();
+    const threadId = process.env.RAVI_THREAD_ID?.trim();
+    if (!channel || !accountId || !chatId || !authorizedApproverId)
+      contractFail(
+        "crm facade approve",
+        "APPROVAL_CONTEXT_REQUIRED",
+        "CRM facade approval requires the current Ravi channel and sender context",
+        {
+          asJson,
+          exitCode: 3,
+          details: {
+            requiredContext: ["RAVI_CHANNEL", "RAVI_ACCOUNT_ID", "RAVI_CHAT_ID", "RAVI_SENDER_ID"],
+            suggestedAction: "Run approval from the Ravi conversation that requested the change",
+          },
+        },
+      );
+    const source = {
+      channel,
+      accountId,
+      chatId,
+      ...(threadId ? { threadId } : {}),
+    };
     const approval = await requestCascadingApproval({
       type: "plan",
       sessionName: `crm-facade-${planId}`,
-      agentId: agentId?.trim() || "crm-facade",
+      agentId: process.env.RAVI_AGENT_ID?.trim() || "crm-facade",
       resolvedSource: source,
       autoApproveWithoutSource: false,
+      expectedApproverId: authorizedApproverId,
       text: `Approve CRM plan ${planId} with hash ${plan.planHash}: ${plan.operation} on ${plan.target.label}?`,
       eventData: { planId, planHash: plan.planHash, operation: plan.operation, target: plan.target },
+      onRequestDelivered: ({ externalMessageId }) => {
+        recordCrmFacadeApprovalRequest(planId, { source, externalMessageId, authorizedApproverId });
+      },
     });
     if (!approval.approved)
       contractFail("crm facade approve", "APPROVAL_DENIED", approval.reason || "External approval was not granted", {
         asJson,
         exitCode: 1,
       });
-    assertCrmFacadePlanVisible(plan, "crm facade approve", asJson);
-    const approvedPlan = approveCrmFacadePlan(planId, source);
+    if (!approval.externalMessageId || !approval.approverId)
+      contractFail("crm facade approve", "APPROVAL_RECEIPT_INVALID", "External approval receipt is incomplete", {
+        asJson,
+        exitCode: 1,
+      });
+    const approvedPlan = approveCrmFacadePlan(planId, {
+      externalMessageId: approval.externalMessageId,
+      approverId: approval.approverId,
+    });
     if (asJson) printJson(approvedPlan);
     else console.log(`✓ CRM facade plan approved: ${planId}`);
     return approvedPlan;

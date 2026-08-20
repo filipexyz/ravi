@@ -10,6 +10,7 @@ import {
   getCrmFacadePlan,
   saveCrmFacadePlan,
   updateCrmFacadePlanState,
+  recordCrmFacadeApprovalRequest as persistCrmFacadeApprovalRequest,
   recordCrmFacadeApproval,
   claimCrmFacadePlanApply,
   saveCrmFacadeEffect,
@@ -83,14 +84,19 @@ export interface CrmFacadePlan {
 
 export interface CrmFacadeApproval {
   planHash: string;
-  approvedAt: string;
-  source: { channel: string; accountId: string; chatId: string };
+  state: "requested" | "approved";
+  requestedAt: string;
+  approvedAt: string | null;
+  source: { channel: string; accountId: string; chatId: string; threadId?: string };
+  externalMessageId: string;
+  authorizedApproverId: string;
+  approverId: string | null;
 }
 
 export type CrmFacadeApplyResult = {
   planId: string;
   planHash: string;
-  state: "applied" | "unknown";
+  state: "applied" | "partial" | "unknown";
   effectId: string;
   readback?: unknown;
   reason?: string;
@@ -140,7 +146,119 @@ function required(value: string | undefined, field: string): string {
   return normalized;
 }
 
-function resolveTarget(input: CrmFacadePlanInput): { type: string; id: string; label: string; subject: unknown } {
+const CONTACT_LIFECYCLE_VALUES = [
+  "unknown",
+  "lead",
+  "qualified",
+  "active",
+  "onboarding",
+  "waiting",
+  "at_risk",
+  "dormant",
+  "churned",
+  "partner",
+  "vendor",
+  "internal",
+] as const;
+const CONTACT_HEALTH_VALUES = ["unknown", "good", "neutral", "needs_attention", "at_risk"] as const;
+const CONTACT_PRIORITY_VALUES = ["low", "normal", "high", "urgent"] as const;
+const CONTACT_FIELDS = [
+  "lifecycle",
+  "relationship-health",
+  "health",
+  "priority",
+  "score",
+  "health-score",
+  "primary-account",
+  "primary-opportunity",
+  "lead-source",
+  "persona",
+  "buying-role",
+  "next-action-at",
+  "next-action",
+] as const;
+
+type ResolvedTarget = { type: string; id: string; label: string; subject: unknown };
+
+function normalizedEnum(value: string, field: string, acceptedValues: readonly string[]): string {
+  const normalized = value.trim().toLowerCase();
+  if (!acceptedValues.includes(normalized)) {
+    throw new CrmFacadeResolutionError("INVALID_CONTACT_FIELD_VALUE", `Invalid ${field}: ${value}`, {
+      field,
+      acceptedValues,
+    });
+  }
+  return normalized;
+}
+
+function isContactClearValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "-" || normalized === "null";
+}
+
+function normalizeContactFieldValue(field: string, rawValue: string): unknown {
+  if (isContactClearValue(rawValue)) return null;
+  switch (field) {
+    case "lifecycle":
+      return normalizedEnum(rawValue, field, CONTACT_LIFECYCLE_VALUES);
+    case "relationship-health":
+      return normalizedEnum(rawValue, field, CONTACT_HEALTH_VALUES);
+    case "priority":
+      return normalizedEnum(rawValue, field, CONTACT_PRIORITY_VALUES);
+    case "score":
+    case "health-score": {
+      const value = Number(rawValue);
+      if (!Number.isFinite(value))
+        throw new CrmFacadeResolutionError("INVALID_NUMBER", `${field} must be a finite number`, { field });
+      return value;
+    }
+    case "primary-account": {
+      const account = getCrmAccount(rawValue);
+      if (!account) throw new CrmFacadeResolutionError("CRM_ACCOUNT_NOT_FOUND", `CRM account not found: ${rawValue}`);
+      return account.account.id;
+    }
+    case "primary-opportunity": {
+      const opportunity = getCrmOpportunity(rawValue);
+      if (!opportunity)
+        throw new CrmFacadeResolutionError("OPPORTUNITY_NOT_FOUND", `CRM opportunity not found: ${rawValue}`);
+      return opportunity.id;
+    }
+    case "next-action-at": {
+      const timestamp = Date.parse(rawValue);
+      if (!Number.isFinite(timestamp))
+        throw new CrmFacadeResolutionError("INVALID_TIMESTAMP", "next-action-at must be an ISO timestamp");
+      return new Date(timestamp).toISOString();
+    }
+    default:
+      return rawValue.trim();
+  }
+}
+
+function validateOperationTransition(input: CrmFacadePlanInput, target: ResolvedTarget): void {
+  if (input.operation.startsWith("task.")) {
+    const status = (target.subject as CrmTask).status;
+    const allowed = ["open", "scheduled", "waiting", "snoozed"];
+    if (!allowed.includes(status)) {
+      throw new CrmFacadeResolutionError(
+        "ILLEGAL_CRM_TRANSITION",
+        `CRM task cannot transition from '${status}' through ${input.operation}`,
+        { currentState: status, operation: input.operation, acceptedStates: allowed },
+      );
+    }
+  }
+  if (input.operation === "fact.confirm" || input.operation === "fact.reject") {
+    const status = (target.subject as CrmFact).status;
+    if (status !== "proposed") {
+      throw new CrmFacadeResolutionError(
+        "ILLEGAL_CRM_TRANSITION",
+        `CRM fact cannot transition from '${status}' through ${input.operation}`,
+        { currentState: status, operation: input.operation, acceptedStates: ["proposed"] },
+      );
+    }
+  }
+}
+
+function resolveTarget(input: CrmFacadePlanInput): ResolvedTarget {
   switch (input.operation) {
     case "task.done":
     case "task.cancel":
@@ -182,7 +300,7 @@ function resolveTarget(input: CrmFacadePlanInput): { type: string; id: string; l
   }
 }
 
-function normalizeArguments(input: CrmFacadePlanInput): Record<string, unknown> {
+function normalizeArguments(input: CrmFacadePlanInput, target: ResolvedTarget): Record<string, unknown> {
   const args: Record<string, unknown> = { target: input.target };
   if (input.stage !== undefined) {
     const opportunity = getCrmOpportunity(input.target);
@@ -199,18 +317,31 @@ function normalizeArguments(input: CrmFacadePlanInput): Record<string, unknown> 
     if (!contact) throw new CrmFacadeResolutionError("CONTACT_NOT_FOUND", `Contact not found: ${input.contact}`);
     args.contact = contact.contact.id;
   }
-  if (input.field !== undefined) args.field = input.field;
-  if (input.value !== undefined) args.value = input.value;
-  if (input.until !== undefined) args.until = input.until;
+  if (input.operation === "contact.set") {
+    const field = required(input.field, "field").toLowerCase();
+    const canonicalField = field === "health" ? "relationship-health" : field;
+    args.field = canonicalField;
+    args.value = normalizeContactFieldValue(canonicalField, required(input.value, "value"));
+  }
+  if (input.until !== undefined) args.until = new Date(Date.parse(input.until)).toISOString();
   if (input.reason !== undefined) args.reason = input.reason;
-  if (input.role !== undefined) args.role = input.role;
+  if (input.role !== undefined) args.role = required(input.role, "role");
   if (input.account !== undefined) {
     const account = getCrmAccount(input.account);
     if (!account)
       throw new CrmFacadeResolutionError("CRM_ACCOUNT_NOT_FOUND", `CRM account not found: ${input.account}`);
     args.account = account.account.id;
   }
-  if (input.primary !== undefined) args.primary = input.primary;
+  if (input.operation === "account.link-contact") {
+    args.role = input.role?.trim() || "member";
+    args.primary = input.primary ?? false;
+  }
+  if (input.operation === "opportunity.link-contact") {
+    const opportunity = target.subject as CrmOpportunity;
+    args.account = args.account ?? opportunity.accountId ?? null;
+    args.role = input.role?.trim() || "stakeholder";
+    args.primary = input.primary ?? false;
+  }
   return args;
 }
 
@@ -222,36 +353,12 @@ function validateOperationInputs(input: CrmFacadePlanInput): void {
   }
   if (input.operation === "opportunity.move") required(input.stage, "stage");
   if (input.operation === "contact.set") {
-    const field = required(input.field, "field");
-    const value = required(input.value, "value");
-    const allowed = [
-      "lifecycle",
-      "relationship-health",
-      "health",
-      "priority",
-      "score",
-      "health-score",
-      "primary-account",
-      "primary-opportunity",
-      "lead-source",
-      "persona",
-      "buying-role",
-      "next-action-at",
-      "next-action",
-    ];
-    if (!allowed.includes(field))
+    const field = required(input.field, "field").toLowerCase();
+    required(input.value, "value");
+    if (!(CONTACT_FIELDS as readonly string[]).includes(field))
       throw new CrmFacadeResolutionError("UNSUPPORTED_CONTACT_FIELD", `Unsupported CRM contact field: ${field}`, {
-        acceptedValues: allowed,
+        acceptedValues: CONTACT_FIELDS,
       });
-    if (
-      ["score", "health-score"].includes(field) &&
-      value !== "-" &&
-      value !== "null" &&
-      !Number.isFinite(Number(value))
-    )
-      throw new CrmFacadeResolutionError("INVALID_NUMBER", `${field} must be a number`);
-    if (field === "next-action-at" && value !== "-" && value !== "null" && !Number.isFinite(Date.parse(value)))
-      throw new CrmFacadeResolutionError("INVALID_TIMESTAMP", "next-action-at must be an ISO timestamp");
   }
   if (input.operation.endsWith("link-contact")) required(input.contact, "contact");
 }
@@ -259,6 +366,7 @@ function validateOperationInputs(input: CrmFacadePlanInput): void {
 export function buildCrmFacadePlan(input: CrmFacadePlanInput, now = new Date()): CrmFacadePlan {
   validateOperationInputs(input);
   const target = resolveTarget(input);
+  validateOperationTransition(input, target);
   const createdAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
   const effectId = randomUUID();
@@ -268,7 +376,7 @@ export function buildCrmFacadePlan(input: CrmFacadePlanInput, now = new Date()):
     state: "planned" as const,
     operation: input.operation,
     target: { type: target.type, id: target.id, label: target.label },
-    arguments: normalizeArguments(input),
+    arguments: normalizeArguments(input, target),
     effects: [{ effectId, operation: input.operation, primary: true as const, retry: "never" as const }],
     approval: null,
     createdAt,
@@ -315,16 +423,75 @@ export function markCrmFacadePlan(planId: string, state: CrmFacadePlanState): vo
   );
 }
 
-export function approveCrmFacadePlan(planId: string, source: CrmFacadeApproval["source"]): CrmFacadePlan {
+export function recordCrmFacadeApprovalRequest(
+  planId: string,
+  input: Pick<CrmFacadeApproval, "source" | "externalMessageId" | "authorizedApproverId">,
+  now = new Date(),
+): CrmFacadePlan {
   const plan = loadCrmFacadePlan(planId);
   if (!plan) throw new CrmFacadeResolutionError("PLAN_NOT_FOUND", `CRM facade plan not found: ${planId}`);
   if (plan.state !== "planned")
     throw new CrmFacadeResolutionError("PLAN_NOT_APPROVABLE", `CRM facade plan is ${plan.state}`);
-  if (Date.parse(plan.expiresAt) <= Date.now())
+  const requestedAt = now.toISOString();
+  if (Date.parse(plan.expiresAt) <= now.getTime())
     throw new CrmFacadeResolutionError("PLAN_EXPIRED", "CRM facade plan has expired");
-  const approval: CrmFacadeApproval = { planHash: plan.planHash, approvedAt: new Date().toISOString(), source };
-  recordCrmFacadeApproval(planId, JSON.stringify(approval), approval.approvedAt);
-  return loadCrmFacadePlan(planId) ?? plan;
+  if (plan.approval)
+    throw new CrmFacadeResolutionError("APPROVAL_ALREADY_REQUESTED", "CRM facade approval is already bound");
+  const externalMessageId = required(input.externalMessageId, "externalMessageId");
+  const authorizedApproverId = required(input.authorizedApproverId, "authorizedApproverId");
+  const approval: CrmFacadeApproval = {
+    planHash: plan.planHash,
+    state: "requested",
+    requestedAt,
+    approvedAt: null,
+    source: input.source,
+    externalMessageId,
+    authorizedApproverId,
+    approverId: null,
+  };
+  if (!persistCrmFacadeApprovalRequest(planId, JSON.stringify(approval), requestedAt)) {
+    throw new CrmFacadeResolutionError(
+      "APPROVAL_BINDING_FAILED",
+      "CRM facade approval request could not be durably bound",
+    );
+  }
+  return loadCrmFacadePlan(planId) ?? { ...plan, approval };
+}
+
+export function approveCrmFacadePlan(
+  planId: string,
+  confirmation: { externalMessageId: string; approverId: string },
+  now = new Date(),
+): CrmFacadePlan {
+  const plan = loadCrmFacadePlan(planId);
+  if (!plan) throw new CrmFacadeResolutionError("PLAN_NOT_FOUND", `CRM facade plan not found: ${planId}`);
+  if (plan.state !== "planned")
+    throw new CrmFacadeResolutionError("PLAN_NOT_APPROVABLE", `CRM facade plan is ${plan.state}`);
+  const approvedAt = now.toISOString();
+  if (Date.parse(plan.expiresAt) <= now.getTime())
+    throw new CrmFacadeResolutionError("PLAN_EXPIRED", "CRM facade plan has expired");
+  const pending = plan.approval;
+  if (!pending || pending.state !== "requested" || pending.planHash !== plan.planHash) {
+    throw new CrmFacadeResolutionError("APPROVAL_REQUIRED", "A durable matching approval request is required");
+  }
+  const externalMessageId = required(confirmation.externalMessageId, "externalMessageId");
+  const approverId = required(confirmation.approverId, "approverId");
+  if (externalMessageId !== pending.externalMessageId) {
+    throw new CrmFacadeResolutionError("APPROVAL_BINDING_MISMATCH", "Approval message does not match this plan");
+  }
+  if (approverId !== pending.authorizedApproverId) {
+    throw new CrmFacadeResolutionError("APPROVER_NOT_AUTHORIZED", "Approval came from an unauthorized identity");
+  }
+  const approval: CrmFacadeApproval = {
+    ...pending,
+    state: "approved",
+    approvedAt,
+    approverId,
+  };
+  if (!recordCrmFacadeApproval(planId, JSON.stringify(pending), JSON.stringify(approval), approvedAt)) {
+    throw new CrmFacadeResolutionError("APPROVAL_BINDING_FAILED", "CRM facade approval could not be finalized");
+  }
+  return loadCrmFacadePlan(planId) ?? { ...plan, state: "approved", approval };
 }
 
 function effectReadback(plan: CrmFacadePlan): unknown {
@@ -364,6 +531,28 @@ function contactProfileValue(readback: unknown, field: string): unknown {
   return profile[keys[field] ?? field];
 }
 
+function expectedContactProfileValue(plan: CrmFacadePlan): unknown {
+  const field = String(plan.arguments.field);
+  const value = plan.arguments.value;
+  if (value !== null) return value;
+  if (field === "lifecycle" || field === "relationship-health") return "unknown";
+  if (field === "priority") return "normal";
+  return null;
+}
+
+function matchesLink(
+  item: Record<string, unknown>,
+  expected: { targetKey: "accountId" | "opportunityId"; targetId: string; arguments: Record<string, unknown> },
+): boolean {
+  return (
+    item[expected.targetKey] === expected.targetId &&
+    item.contactId === expected.arguments.contact &&
+    item.role === expected.arguments.role &&
+    Boolean(item.isPrimary) === expected.arguments.primary &&
+    (expected.targetKey !== "opportunityId" || (item.accountId ?? null) === (expected.arguments.account ?? null))
+  );
+}
+
 function effectMatches(plan: CrmFacadePlan, readback: unknown): boolean {
   const record = readback as Record<string, unknown> | null;
   switch (plan.operation) {
@@ -383,16 +572,20 @@ function effectMatches(plan: CrmFacadePlan, readback: unknown): boolean {
     case "fact.reject":
       return record?.status === "rejected";
     case "contact.set": {
-      const expected = plan.arguments.value === "-" || plan.arguments.value === "null" ? null : plan.arguments.value;
-      return String(contactProfileValue(readback, String(plan.arguments.field)) ?? "") === String(expected ?? "");
+      const observed = contactProfileValue(readback, String(plan.arguments.field));
+      return observed !== undefined && Object.is(observed, expectedContactProfileValue(plan));
     }
     case "account.link-contact": {
       const contacts = (record?.contacts ?? []) as Array<Record<string, unknown>>;
-      return contacts.some((item) => item.contactId === plan.arguments.contact);
+      return contacts.some((item) =>
+        matchesLink(item, { targetKey: "accountId", targetId: plan.target.id, arguments: plan.arguments }),
+      );
     }
     case "opportunity.link-contact": {
       const contacts = (record?.contacts ?? []) as Array<Record<string, unknown>>;
-      return contacts.some((item) => item.contactId === plan.arguments.contact);
+      return contacts.some((item) =>
+        matchesLink(item, { targetKey: "opportunityId", targetId: plan.target.id, arguments: plan.arguments }),
+      );
     }
   }
 }
@@ -406,7 +599,7 @@ export function verifyCrmFacadePlan(planId: string): CrmFacadeVerification {
     ? "applied"
     : plan.state === "planned" || plan.state === "approved"
       ? "not_applied"
-      : plan.state === "applied"
+      : plan.state === "applied" || plan.state === "partial"
         ? "partial"
         : "not_determined";
   return {
@@ -422,46 +615,44 @@ export function verifyCrmFacadePlan(planId: string): CrmFacadeVerification {
 
 function applyContactField(plan: CrmFacadePlan, idempotencyKey: string): void {
   const field = String(plan.arguments.field ?? "");
-  const value = String(plan.arguments.value ?? "");
+  const value = plan.arguments.value;
   const base = { contactRef: plan.target.id, source: "crm.facade", actorType: "agent", idempotencyKey };
-  const nullable = value === "-" || value === "null" ? null : value;
   switch (field) {
     case "lifecycle":
-      updateCrmContactProfile({ ...base, lifecycle: nullable });
+      updateCrmContactProfile({ ...base, lifecycle: value as string | null });
       return;
     case "relationship-health":
-    case "health":
-      updateCrmContactProfile({ ...base, relationshipHealth: nullable });
+      updateCrmContactProfile({ ...base, relationshipHealth: value as string | null });
       return;
     case "priority":
-      updateCrmContactProfile({ ...base, priority: nullable });
+      updateCrmContactProfile({ ...base, priority: value as string | null });
       return;
     case "score":
-      updateCrmContactProfile({ ...base, score: nullable === null ? null : Number(nullable) });
+      updateCrmContactProfile({ ...base, score: value as number | null });
       return;
     case "health-score":
-      updateCrmContactProfile({ ...base, healthScore: nullable === null ? null : Number(nullable) });
+      updateCrmContactProfile({ ...base, healthScore: value as number | null });
       return;
     case "primary-account":
-      updateCrmContactProfile({ ...base, primaryAccountId: nullable });
+      updateCrmContactProfile({ ...base, primaryAccountId: value as string | null });
       return;
     case "primary-opportunity":
-      updateCrmContactProfile({ ...base, primaryOpportunityId: nullable });
+      updateCrmContactProfile({ ...base, primaryOpportunityId: value as string | null });
       return;
     case "lead-source":
-      updateCrmContactProfile({ ...base, leadSource: nullable });
+      updateCrmContactProfile({ ...base, leadSource: value as string | null });
       return;
     case "persona":
-      updateCrmContactProfile({ ...base, persona: nullable });
+      updateCrmContactProfile({ ...base, persona: value as string | null });
       return;
     case "buying-role":
-      updateCrmContactProfile({ ...base, buyingRole: nullable });
+      updateCrmContactProfile({ ...base, buyingRole: value as string | null });
       return;
     case "next-action-at":
-      updateCrmContactProfile({ ...base, nextActionAt: nullable });
+      updateCrmContactProfile({ ...base, nextActionAt: value as string | null });
       return;
     case "next-action":
-      updateCrmContactProfile({ ...base, nextActionSummary: nullable });
+      updateCrmContactProfile({ ...base, nextActionSummary: value as string | null });
       return;
     default:
       throw new CrmFacadeResolutionError("UNSUPPORTED_CONTACT_FIELD", `Unsupported CRM contact field: ${field}`);
@@ -511,6 +702,7 @@ function executeEffect(plan: CrmFacadePlan, idempotencyKey: string): void {
         accountId: plan.target.id,
         contactRef: String(args.contact),
         role: args.role as string | undefined,
+        isPrimary: args.primary as boolean,
         source,
         actorType,
         idempotencyKey,
@@ -531,6 +723,104 @@ function executeEffect(plan: CrmFacadePlan, idempotencyKey: string): void {
   }
 }
 
+function assertCurrentPlanPreconditions(plan: CrmFacadePlan): void {
+  let currentTarget: ResolvedTarget;
+  switch (plan.target.type) {
+    case "task": {
+      const task = getCrmTask(plan.target.id);
+      if (!task) throw new CrmFacadeResolutionError("CRM_TASK_NOT_FOUND", `CRM task not found: ${plan.target.id}`);
+      currentTarget = { ...plan.target, subject: task };
+      break;
+    }
+    case "fact": {
+      const fact = getCrmFact(plan.target.id);
+      if (!fact) throw new CrmFacadeResolutionError("CRM_FACT_NOT_FOUND", `CRM fact not found: ${plan.target.id}`);
+      currentTarget = { ...plan.target, subject: fact };
+      break;
+    }
+    case "opportunity": {
+      const opportunity = getCrmOpportunity(plan.target.id);
+      if (!opportunity)
+        throw new CrmFacadeResolutionError("OPPORTUNITY_NOT_FOUND", `CRM opportunity not found: ${plan.target.id}`);
+      currentTarget = { ...plan.target, subject: opportunity };
+      if (plan.operation === "opportunity.move") {
+        const stage = opportunity.pipelineId
+          ? getCrmPipelineStage(opportunity.pipelineId, String(plan.arguments.stage))
+          : null;
+        if (!stage || stage.stage.status !== "active") {
+          throw new CrmFacadeResolutionError(
+            "PLAN_PRECONDITION_CHANGED",
+            "The planned CRM pipeline stage is no longer active for this opportunity",
+          );
+        }
+      }
+      break;
+    }
+    case "contact": {
+      const details = getContactDetails(plan.target.id);
+      if (!details) throw new CrmFacadeResolutionError("CONTACT_NOT_FOUND", `Contact not found: ${plan.target.id}`);
+      currentTarget = { ...plan.target, subject: details };
+      break;
+    }
+    case "account": {
+      const account = getCrmAccount(plan.target.id);
+      if (!account)
+        throw new CrmFacadeResolutionError("CRM_ACCOUNT_NOT_FOUND", `CRM account not found: ${plan.target.id}`);
+      currentTarget = { ...plan.target, subject: account.account };
+      break;
+    }
+    default:
+      throw new CrmFacadeResolutionError("PLAN_PRECONDITION_CHANGED", "The planned CRM target type is unsupported");
+  }
+
+  validateOperationTransition({ operation: plan.operation, target: plan.target.id }, currentTarget);
+
+  if (typeof plan.arguments.contact === "string" && !getContactDetails(plan.arguments.contact)) {
+    throw new CrmFacadeResolutionError("CONTACT_NOT_FOUND", `Contact not found: ${plan.arguments.contact}`);
+  }
+  if (typeof plan.arguments.account === "string" && !getCrmAccount(plan.arguments.account)) {
+    throw new CrmFacadeResolutionError("CRM_ACCOUNT_NOT_FOUND", `CRM account not found: ${plan.arguments.account}`);
+  }
+  if (plan.operation === "contact.set" && plan.arguments.value !== null) {
+    if (plan.arguments.field === "primary-account" && !getCrmAccount(String(plan.arguments.value))) {
+      throw new CrmFacadeResolutionError("CRM_ACCOUNT_NOT_FOUND", `CRM account not found: ${plan.arguments.value}`);
+    }
+    if (plan.arguments.field === "primary-opportunity" && !getCrmOpportunity(String(plan.arguments.value))) {
+      throw new CrmFacadeResolutionError("OPPORTUNITY_NOT_FOUND", `CRM opportunity not found: ${plan.arguments.value}`);
+    }
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function evidenceJson(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? "null";
+  } catch (error) {
+    return JSON.stringify({ serializationError: errorMessage(error) }) ?? "null";
+  }
+}
+
+function finishCrmFacadeApply(
+  planId: string,
+  effectId: string,
+  state: "applied" | "partial" | "unknown",
+  readback: unknown,
+): void {
+  const effectState = state === "applied" ? "observed" : state === "partial" ? "mismatched" : "unknown";
+  try {
+    updateCrmFacadeEffect(effectId, {
+      state: effectState,
+      observedAt: new Date().toISOString(),
+      readbackJson: evidenceJson(readback),
+    });
+  } finally {
+    markCrmFacadePlan(planId, state);
+  }
+}
+
 export function applyCrmFacadePlan(planId: string): CrmFacadeApplyResult {
   const plan = loadCrmFacadePlan(planId);
   if (!plan) throw new CrmFacadeResolutionError("PLAN_NOT_FOUND", `CRM facade plan not found: ${planId}`);
@@ -538,40 +828,73 @@ export function applyCrmFacadePlan(planId: string): CrmFacadeApplyResult {
     throw new CrmFacadeResolutionError("APPROVAL_REQUIRED", "A matching external approval is required");
   if (plan.state !== "approved")
     throw new CrmFacadeResolutionError("PLAN_NOT_APPLICABLE", `CRM facade plan is ${plan.state} and cannot be applied`);
-  if (!plan.approval || plan.approval.planHash !== plan.planHash)
+  if (
+    !plan.approval ||
+    plan.approval.state !== "approved" ||
+    plan.approval.planHash !== plan.planHash ||
+    !plan.approval.approverId ||
+    plan.approval.approverId !== plan.approval.authorizedApproverId ||
+    !plan.approval.externalMessageId
+  )
     throw new CrmFacadeResolutionError("APPROVAL_REQUIRED", "A matching external approval is required");
+  assertCurrentPlanPreconditions(plan);
   const now = new Date().toISOString();
   if (!claimCrmFacadePlanApply(planId, now))
     throw new CrmFacadeResolutionError("PLAN_NOT_APPLICABLE", "Plan was consumed, expired, or is not approved");
   const effect = plan.effects[0];
-  saveCrmFacadeEffect({
-    effectId: effect.effectId,
-    planId,
-    operation: effect.operation,
-    state: "dispatched",
-    idempotencyKey: effect.effectId,
-    dispatchedAt: now,
-  });
   try {
-    executeEffect(plan, effect.effectId);
-    const readback = effectReadback(plan);
-    const observedAt = new Date().toISOString();
-    updateCrmFacadeEffect(effect.effectId, { state: "observed", observedAt, readbackJson: JSON.stringify(readback) });
-    markCrmFacadePlan(planId, "applied");
-    return { planId, planHash: plan.planHash, state: "applied", effectId: effect.effectId, readback };
-  } catch (error) {
-    updateCrmFacadeEffect(effect.effectId, {
-      state: "unknown",
-      observedAt: new Date().toISOString(),
-      readbackJson: JSON.stringify(effectReadback(plan)),
+    saveCrmFacadeEffect({
+      effectId: effect.effectId,
+      planId,
+      operation: effect.operation,
+      state: "dispatched",
+      idempotencyKey: effect.effectId,
+      dispatchedAt: now,
     });
+  } catch (error) {
     markCrmFacadePlan(planId, "unknown");
     return {
       planId,
       planHash: plan.planHash,
       state: "unknown",
       effectId: effect.effectId,
-      reason: error instanceof Error ? error.message : String(error),
+      reason: `Effect journal failed after claim: ${errorMessage(error)}`,
     };
   }
+
+  let executionError: unknown;
+  try {
+    executeEffect(plan, effect.effectId);
+  } catch (error) {
+    executionError = error;
+  }
+
+  let readback: unknown;
+  try {
+    readback = effectReadback(plan);
+    if (effectMatches(plan, readback)) {
+      finishCrmFacadeApply(planId, effect.effectId, "applied", readback);
+      return { planId, planHash: plan.planHash, state: "applied", effectId: effect.effectId, readback };
+    }
+  } catch (error) {
+    const reason = `Independent readback failed: ${errorMessage(error)}`;
+    finishCrmFacadeApply(planId, effect.effectId, "unknown", { error: reason });
+    return {
+      planId,
+      planHash: plan.planHash,
+      state: "unknown",
+      effectId: effect.effectId,
+      reason: executionError ? `${errorMessage(executionError)}; ${reason}` : reason,
+    };
+  }
+
+  if (executionError) {
+    const reason = `Effect result is ambiguous after execution error: ${errorMessage(executionError)}`;
+    finishCrmFacadeApply(planId, effect.effectId, "unknown", readback);
+    return { planId, planHash: plan.planHash, state: "unknown", effectId: effect.effectId, readback, reason };
+  }
+
+  const reason = "Independent readback does not satisfy the planned effect";
+  finishCrmFacadeApply(planId, effect.effectId, "partial", readback);
+  return { planId, planHash: plan.planHash, state: "partial", effectId: effect.effectId, readback, reason };
 }
