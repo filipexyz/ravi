@@ -53,18 +53,21 @@ Executado após o freeze da implementação:
 ```text
 bun run typecheck                                               PASS
 bun run build                                                   PASS
-bun test crm/facade/pipeline                                    79 pass
-bun run test:sdk                                                73 pass
-bun run sdk:check                                               PASS
+bun test crm/facade/pipeline                                    87 pass
+bun test src/approval/service.test.ts                             6 pass
+bun run test:sdk                                                74 pass
+bun test src/sdk/openapi/emit.test.ts                            23 pass
 sdk openapi check (docs/openapi.json e openapi.json)             PASS
 sdk swift check                                                 PASS
 git diff --check                                                PASS
 ```
 
-`bun run test:cli-commands` usa um `for` POSIX e não é executável diretamente
-no PowerShell. A execução equivalente encontrou um teste preexistente de
-autodescrição dependente do ambiente. O CI Linux permanece como gate da matriz
-completa de comandos, além de repetir build, typecheck, SDK e drift checks.
+A suíte agregada local alcançou testes fora do CRM, mas não pode ser usada como
+gate terminal no Windows: testes preexistentes de Slack e artifacts assumem
+separadores de caminho Unix, e a criação de symlink de artifacts exige uma
+permissão não disponível neste host. A compilação do SDK Swift também depende do
+executável `swift`, ausente localmente; o drift do artefato Swift foi verificado.
+O CI Linux permanece como gate da matriz completa.
 
 ## Risks
 
@@ -76,8 +79,9 @@ completa de comandos, além de repetir build, typecheck, SDK e drift checks.
 - Antes do efeito, a fachada relê alvo, transição e referências resolvidas. Essa
   checagem não é um snapshot transacional de todo o contexto de negócio; mudanças
   entre a releitura e a escrita continuam como risco residual do piloto.
-- `applied` registra que a chamada e o readback terminaram; uma divergência
-  posterior é exposta por `verify` como `partial`, sem replay automático.
+- `applied` só é registrado quando o readback confirma o efeito esperado; uma
+  divergência posterior é exposta por `verify` como `partial`, sem replay
+  automático.
 - As regras de lifecycle publicadas são política-alvo. As diferenças do
   comportamento legado estão caracterizadas no plano de implementação e não
   devem ser interpretadas como enforcement global.

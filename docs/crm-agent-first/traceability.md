@@ -47,11 +47,14 @@ legados continuam disponíveis e não passam pela fachada automaticamente.
 
 ## Evidência disponível
 
-- suíte CRM local: 79 testes aprovados;
-- suíte SDK local: 73 testes aprovados;
+- suíte CRM local: 87 testes aprovados;
+- serviço de aprovação: 6 testes aprovados;
+- suíte SDK local: 74 testes aprovados;
+- emissão OpenAPI: 23 testes aprovados;
 - build, typecheck, checks de OpenAPI, Swift, SDK e whitespace: aprovados
   localmente;
-- matriz completa de comandos: `ci-pending`;
+- matriz completa: `ci-pending`; o host Windows encontra limitações
+  preexistentes de separador de caminho, symlink e ausência do compilador Swift;
 - comportamento do transporte e das mutações reais em ambiente controlado:
   ainda não promovido a evidência de produção.
 
