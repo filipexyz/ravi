@@ -29255,6 +29255,7 @@ public enum RaviSchemas {
       "state": {
         "enum": [
           "applied",
+          "partial",
           "unknown"
         ],
         "type": "string"
@@ -29274,16 +29275,8 @@ public enum RaviSchemas {
   {
     "additionalProperties": false,
     "properties": {
-      "agent": {
-        "description": "Requesting agent id",
-        "type": "string"
-      },
       "planId": {
         "description": "Plan identifier",
-        "type": "string"
-      },
-      "source": {
-        "description": "External approval destination",
         "type": "string"
       }
     },
@@ -29296,6 +29289,43 @@ public enum RaviSchemas {
 
   public static let CrmFacadeApproveReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "approval": {
@@ -29304,9 +29334,35 @@ public enum RaviSchemas {
             "additionalProperties": false,
             "properties": {
               "approvedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "approverId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "authorizedApproverId": {
+                "type": "string"
+              },
+              "externalMessageId": {
                 "type": "string"
               },
               "planHash": {
+                "type": "string"
+              },
+              "requestedAt": {
                 "type": "string"
               },
               "source": {
@@ -29320,6 +29376,9 @@ public enum RaviSchemas {
                   },
                   "chatId": {
                     "type": "string"
+                  },
+                  "threadId": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -29328,12 +29387,24 @@ public enum RaviSchemas {
                   "chatId"
                 ],
                 "type": "object"
+              },
+              "state": {
+                "enum": [
+                  "requested",
+                  "approved"
+                ],
+                "type": "string"
               }
             },
             "required": [
               "planHash",
+              "state",
+              "requestedAt",
               "approvedAt",
-              "source"
+              "source",
+              "externalMessageId",
+              "authorizedApproverId",
+              "approverId"
             ],
             "type": "object"
           },
@@ -29346,7 +29417,14 @@ public enum RaviSchemas {
         "additionalProperties": false,
         "properties": {
           "account": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "contact": {
             "type": "string"
@@ -29373,7 +29451,7 @@ public enum RaviSchemas {
             "type": "string"
           },
           "value": {
-            "type": "string"
+            "$ref": "#/$defs/__schema0"
           }
         },
         "required": [
@@ -29518,6 +29596,17 @@ public enum RaviSchemas {
       },
       "operation": {
         "description": "CRM operation, e.g. task.done or opportunity.move",
+        "enum": [
+          "task.done",
+          "task.cancel",
+          "task.snooze",
+          "opportunity.move",
+          "fact.confirm",
+          "fact.reject",
+          "contact.set",
+          "account.link-contact",
+          "opportunity.link-contact"
+        ],
         "type": "string"
       },
       "primary": {
@@ -29559,6 +29648,43 @@ public enum RaviSchemas {
 
   public static let CrmFacadePlanReturnSchema = #"""
   {
+    "$defs": {
+      "__schema0": {
+        "anyOf": [
+          {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          {
+            "items": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "type": "array"
+          },
+          {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          }
+        ]
+      }
+    },
     "additionalProperties": false,
     "properties": {
       "approval": {
@@ -29567,9 +29693,35 @@ public enum RaviSchemas {
             "additionalProperties": false,
             "properties": {
               "approvedAt": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "approverId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "authorizedApproverId": {
+                "type": "string"
+              },
+              "externalMessageId": {
                 "type": "string"
               },
               "planHash": {
+                "type": "string"
+              },
+              "requestedAt": {
                 "type": "string"
               },
               "source": {
@@ -29583,6 +29735,9 @@ public enum RaviSchemas {
                   },
                   "chatId": {
                     "type": "string"
+                  },
+                  "threadId": {
+                    "type": "string"
                   }
                 },
                 "required": [
@@ -29591,12 +29746,24 @@ public enum RaviSchemas {
                   "chatId"
                 ],
                 "type": "object"
+              },
+              "state": {
+                "enum": [
+                  "requested",
+                  "approved"
+                ],
+                "type": "string"
               }
             },
             "required": [
               "planHash",
+              "state",
+              "requestedAt",
               "approvedAt",
-              "source"
+              "source",
+              "externalMessageId",
+              "authorizedApproverId",
+              "approverId"
             ],
             "type": "object"
           },
@@ -29609,7 +29776,14 @@ public enum RaviSchemas {
         "additionalProperties": false,
         "properties": {
           "account": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "contact": {
             "type": "string"
@@ -29636,7 +29810,7 @@ public enum RaviSchemas {
             "type": "string"
           },
           "value": {
-            "type": "string"
+            "$ref": "#/$defs/__schema0"
           }
         },
         "required": [
@@ -30288,15 +30462,25 @@ public enum RaviSchemas {
         "const": "crm",
         "type": "string"
       },
+      "kind": {
+        "const": "quick-start",
+        "type": "string"
+      },
       "next": {
         "items": {
           "type": "string"
         },
         "type": "array"
+      },
+      "scope": {
+        "const": "curated-entry-points",
+        "type": "string"
       }
     },
     "required": [
       "domain",
+      "kind",
+      "scope",
       "commands",
       "next"
     ],
@@ -30334,6 +30518,10 @@ public enum RaviSchemas {
           "transitionPolicy"
         ],
         "type": "object"
+      },
+      "enforcement": {
+        "const": "facade-only",
+        "type": "string"
       },
       "fact": {
         "additionalProperties": false,
@@ -30377,6 +30565,10 @@ public enum RaviSchemas {
           "terminal"
         ],
         "type": "object"
+      },
+      "legacyCommandsMayDiffer": {
+        "const": true,
+        "type": "boolean"
       },
       "opportunity": {
         "additionalProperties": false,
@@ -30442,6 +30634,8 @@ public enum RaviSchemas {
       }
     },
     "required": [
+      "enforcement",
+      "legacyCommandsMayDiffer",
       "contact",
       "opportunity",
       "task",
@@ -32496,7 +32690,7 @@ public enum RaviSchemas {
         "type": "string"
       },
       "status": {
-        "description": "Filter by status (open, scheduled, done, canceled, snoozed)",
+        "description": "Filter by status (open, scheduled, waiting, done, canceled, snoozed)",
         "type": "string"
       },
       "taskType": {

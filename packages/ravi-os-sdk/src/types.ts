@@ -5515,29 +5515,33 @@ export type CrmFacadeApplyReturn = {
   planId: string;
   readback?: unknown;
   reason?: string;
-  state: "applied" | "unknown";
+  state: "applied" | "partial" | "unknown";
 };
 
 /** Input shape for `crm.facade.approve`. */
 export type CrmFacadeApproveInput = {
-  agent?: string;
   planId: string;
-  source?: string;
 };
 
 /** Return shape for `crm.facade.approve`. */
 export type CrmFacadeApproveReturn = {
   approval: ({
-    approvedAt: string;
+    approvedAt: string | null;
+    approverId: string | null;
+    authorizedApproverId: string;
+    externalMessageId: string;
     planHash: string;
+    requestedAt: string;
     source: {
       accountId: string;
       channel: string;
       chatId: string;
+      threadId?: string;
     };
+    state: "requested" | "approved";
   }) | null;
   arguments: {
-    account?: string;
+    account?: string | null;
     contact?: string;
     field?: string;
     primary?: boolean;
@@ -5546,7 +5550,7 @@ export type CrmFacadeApproveReturn = {
     stage?: string;
     target: string;
     until?: string;
-    value?: string;
+    value?: unknown;
   };
   createdAt: string;
   effects: Array<{
@@ -5573,7 +5577,7 @@ export type CrmFacadePlanInput = {
   account?: string;
   contact?: string;
   field?: string;
-  operation: string;
+  operation: "task.done" | "task.cancel" | "task.snooze" | "opportunity.move" | "fact.confirm" | "fact.reject" | "contact.set" | "account.link-contact" | "opportunity.link-contact";
   primary?: boolean;
   reason?: string;
   role?: string;
@@ -5586,16 +5590,22 @@ export type CrmFacadePlanInput = {
 /** Return shape for `crm.facade.plan`. */
 export type CrmFacadePlanReturn = {
   approval: ({
-    approvedAt: string;
+    approvedAt: string | null;
+    approverId: string | null;
+    authorizedApproverId: string;
+    externalMessageId: string;
     planHash: string;
+    requestedAt: string;
     source: {
       accountId: string;
       channel: string;
       chatId: string;
+      threadId?: string;
     };
+    state: "requested" | "approved";
   }) | null;
   arguments: {
-    account?: string;
+    account?: string | null;
     contact?: string;
     field?: string;
     primary?: boolean;
@@ -5604,7 +5614,7 @@ export type CrmFacadePlanReturn = {
     stage?: string;
     target: string;
     until?: string;
-    value?: string;
+    value?: unknown;
   };
   createdAt: string;
   effects: Array<{
@@ -5746,7 +5756,9 @@ export type CrmHelpReturn = {
     name: string;
   }>;
   domain: "crm";
+  kind: "quick-start";
   next: string[];
+  scope: "curated-entry-points";
 };
 
 /** Input shape for `crm.lifecycle.show`. */
@@ -5758,6 +5770,7 @@ export type CrmLifecycleShowReturn = {
     states: string[];
     transitionPolicy: string;
   };
+  enforcement: "facade-only";
   fact: {
     operations: {
       confirm: string;
@@ -5767,6 +5780,7 @@ export type CrmLifecycleShowReturn = {
     states: string[];
     terminal: string[];
   };
+  legacyCommandsMayDiffer: true;
   opportunity: {
     states: string[];
     transitionPolicy: string;

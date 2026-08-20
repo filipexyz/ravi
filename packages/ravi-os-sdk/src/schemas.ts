@@ -28933,6 +28933,7 @@ export const CrmFacadeApplyReturnSchema = {
     "state": {
       "enum": [
         "applied",
+        "partial",
         "unknown"
       ],
       "type": "string"
@@ -28951,16 +28952,8 @@ export const CrmFacadeApplyReturnSchema = {
 export const CrmFacadeApproveInputSchema = {
   "additionalProperties": false,
   "properties": {
-    "agent": {
-      "description": "Requesting agent id",
-      "type": "string"
-    },
     "planId": {
       "description": "Plan identifier",
-      "type": "string"
-    },
-    "source": {
-      "description": "External approval destination",
       "type": "string"
     }
   },
@@ -28972,6 +28965,43 @@ export const CrmFacadeApproveInputSchema = {
 
 /** JSON Schema for the return shape of `crm.facade.approve`. */
 export const CrmFacadeApproveReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "approval": {
@@ -28980,9 +29010,35 @@ export const CrmFacadeApproveReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "approvedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approverId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "authorizedApproverId": {
+              "type": "string"
+            },
+            "externalMessageId": {
               "type": "string"
             },
             "planHash": {
+              "type": "string"
+            },
+            "requestedAt": {
               "type": "string"
             },
             "source": {
@@ -28996,6 +29052,9 @@ export const CrmFacadeApproveReturnSchema = {
                 },
                 "chatId": {
                   "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -29004,12 +29063,24 @@ export const CrmFacadeApproveReturnSchema = {
                 "chatId"
               ],
               "type": "object"
+            },
+            "state": {
+              "enum": [
+                "requested",
+                "approved"
+              ],
+              "type": "string"
             }
           },
           "required": [
             "planHash",
+            "state",
+            "requestedAt",
             "approvedAt",
-            "source"
+            "source",
+            "externalMessageId",
+            "authorizedApproverId",
+            "approverId"
           ],
           "type": "object"
         },
@@ -29022,7 +29093,14 @@ export const CrmFacadeApproveReturnSchema = {
       "additionalProperties": false,
       "properties": {
         "account": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "contact": {
           "type": "string"
@@ -29049,7 +29127,7 @@ export const CrmFacadeApproveReturnSchema = {
           "type": "string"
         },
         "value": {
-          "type": "string"
+          "$ref": "#/$defs/__schema0"
         }
       },
       "required": [
@@ -29193,6 +29271,17 @@ export const CrmFacadePlanInputSchema = {
     },
     "operation": {
       "description": "CRM operation, e.g. task.done or opportunity.move",
+      "enum": [
+        "task.done",
+        "task.cancel",
+        "task.snooze",
+        "opportunity.move",
+        "fact.confirm",
+        "fact.reject",
+        "contact.set",
+        "account.link-contact",
+        "opportunity.link-contact"
+      ],
       "type": "string"
     },
     "primary": {
@@ -29233,6 +29322,43 @@ export const CrmFacadePlanInputSchema = {
 
 /** JSON Schema for the return shape of `crm.facade.plan`. */
 export const CrmFacadePlanReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": false,
   "properties": {
     "approval": {
@@ -29241,9 +29367,35 @@ export const CrmFacadePlanReturnSchema = {
           "additionalProperties": false,
           "properties": {
             "approvedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approverId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "authorizedApproverId": {
+              "type": "string"
+            },
+            "externalMessageId": {
               "type": "string"
             },
             "planHash": {
+              "type": "string"
+            },
+            "requestedAt": {
               "type": "string"
             },
             "source": {
@@ -29257,6 +29409,9 @@ export const CrmFacadePlanReturnSchema = {
                 },
                 "chatId": {
                   "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
                 }
               },
               "required": [
@@ -29265,12 +29420,24 @@ export const CrmFacadePlanReturnSchema = {
                 "chatId"
               ],
               "type": "object"
+            },
+            "state": {
+              "enum": [
+                "requested",
+                "approved"
+              ],
+              "type": "string"
             }
           },
           "required": [
             "planHash",
+            "state",
+            "requestedAt",
             "approvedAt",
-            "source"
+            "source",
+            "externalMessageId",
+            "authorizedApproverId",
+            "approverId"
           ],
           "type": "object"
         },
@@ -29283,7 +29450,14 @@ export const CrmFacadePlanReturnSchema = {
       "additionalProperties": false,
       "properties": {
         "account": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "contact": {
           "type": "string"
@@ -29310,7 +29484,7 @@ export const CrmFacadePlanReturnSchema = {
           "type": "string"
         },
         "value": {
-          "type": "string"
+          "$ref": "#/$defs/__schema0"
         }
       },
       "required": [
@@ -29948,15 +30122,25 @@ export const CrmHelpReturnSchema = {
       "const": "crm",
       "type": "string"
     },
+    "kind": {
+      "const": "quick-start",
+      "type": "string"
+    },
     "next": {
       "items": {
         "type": "string"
       },
       "type": "array"
+    },
+    "scope": {
+      "const": "curated-entry-points",
+      "type": "string"
     }
   },
   "required": [
     "domain",
+    "kind",
+    "scope",
     "commands",
     "next"
   ],
@@ -29992,6 +30176,10 @@ export const CrmLifecycleShowReturnSchema = {
         "transitionPolicy"
       ],
       "type": "object"
+    },
+    "enforcement": {
+      "const": "facade-only",
+      "type": "string"
     },
     "fact": {
       "additionalProperties": false,
@@ -30035,6 +30223,10 @@ export const CrmLifecycleShowReturnSchema = {
         "terminal"
       ],
       "type": "object"
+    },
+    "legacyCommandsMayDiffer": {
+      "const": true,
+      "type": "boolean"
     },
     "opportunity": {
       "additionalProperties": false,
@@ -30100,6 +30292,8 @@ export const CrmLifecycleShowReturnSchema = {
     }
   },
   "required": [
+    "enforcement",
+    "legacyCommandsMayDiffer",
     "contact",
     "opportunity",
     "task",
@@ -32099,7 +32293,7 @@ export const CrmTaskListInputSchema = {
       "type": "string"
     },
     "status": {
-      "description": "Filter by status (open, scheduled, done, canceled, snoozed)",
+      "description": "Filter by status (open, scheduled, waiting, done, canceled, snoozed)",
       "type": "string"
     },
     "taskType": {

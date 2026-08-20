@@ -1746,10 +1746,9 @@ public struct CrmFacadeNamespace: Sendable {
     return try await transport.call(groupSegments: ["crm","facade"], command: "apply", body: requestBody, as: CrmFacadeApplyReturn.self)
   }
 
-  public func approve(_ planId: String, _ options: CrmFacadeApproveOptions = .init()) async throws -> CrmFacadeApproveReturn {
+  public func approve(_ planId: String) async throws -> CrmFacadeApproveReturn {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["planId"] = try RaviJSON.fromEncodable(planId)
-    try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["crm","facade"], command: "approve", body: requestBody, as: CrmFacadeApproveReturn.self)
   }
 

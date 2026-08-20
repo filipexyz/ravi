@@ -7317,30 +7317,6 @@ public struct CrmFacadeApplyReturn: Codable, Sendable {
   }
 }
 
-public struct CrmFacadeApproveOptions: Codable, Sendable {
-  public var agent: String?
-  public var source: String?
-
-  public init(agent: String? = nil, source: String? = nil) {
-    self.agent = agent
-    self.source = source
-  }
-
-  enum CodingKeys: String, CodingKey {
-    case agent = "agent"
-    case source = "source"
-  }
-
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.agent {
-      body["agent"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.source {
-      body["source"] = try RaviJSON.fromEncodable(value)
-    }
-  }
-}
-
 public struct CrmFacadeApproveReturn: Codable, Sendable {
   public var approval: RaviJSON
   public var arguments: RaviJSON
@@ -7737,37 +7713,49 @@ public struct CrmFactRejectReturn: Codable, Sendable {
 public struct CrmHelpReturn: Codable, Sendable {
   public var commands: [RaviJSON]
   public var domain: String
+  public var kind: String
   public var next: [String]
+  public var scope: String
 
-  public init(commands: [RaviJSON], domain: String, next: [String]) {
+  public init(commands: [RaviJSON], domain: String, kind: String, next: [String], scope: String) {
     self.commands = commands
     self.domain = domain
+    self.kind = kind
     self.next = next
+    self.scope = scope
   }
 
   enum CodingKeys: String, CodingKey {
     case commands = "commands"
     case domain = "domain"
+    case kind = "kind"
     case next = "next"
+    case scope = "scope"
   }
 }
 
 public struct CrmLifecycleShowReturn: Codable, Sendable {
   public var contact: RaviJSON
+  public var enforcement: String
   public var fact: RaviJSON
+  public var legacyCommandsMayDiffer: Bool
   public var opportunity: RaviJSON
   public var task: RaviJSON
 
-  public init(contact: RaviJSON, fact: RaviJSON, opportunity: RaviJSON, task: RaviJSON) {
+  public init(contact: RaviJSON, enforcement: String, fact: RaviJSON, legacyCommandsMayDiffer: Bool, opportunity: RaviJSON, task: RaviJSON) {
     self.contact = contact
+    self.enforcement = enforcement
     self.fact = fact
+    self.legacyCommandsMayDiffer = legacyCommandsMayDiffer
     self.opportunity = opportunity
     self.task = task
   }
 
   enum CodingKeys: String, CodingKey {
     case contact = "contact"
+    case enforcement = "enforcement"
     case fact = "fact"
+    case legacyCommandsMayDiffer = "legacyCommandsMayDiffer"
     case opportunity = "opportunity"
     case task = "task"
   }

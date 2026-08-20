@@ -2074,18 +2074,15 @@ export class RaviClient {
         });
       },
       /** Request external approval for an immutable CRM facade plan */
-      approve: async (planId: string, options?: {
-        agent?: string;
-        source?: string;
-      }): Promise<CrmFacadeApproveReturn> => {
+      approve: async (planId: string): Promise<CrmFacadeApproveReturn> => {
         return this.transport.call({
           groupSegments: ["crm","facade"],
           command: "approve",
-          body: { planId, ...(options ?? {}) },
+          body: { planId },
         });
       },
       /** Resolve a CRM intent and create a read-only plan */
-      plan: async (operation: string, target: string, options?: {
+      plan: async (operation: "task.done" | "task.cancel" | "task.snooze" | "opportunity.move" | "fact.confirm" | "fact.reject" | "contact.set" | "account.link-contact" | "opportunity.link-contact", target: string, options?: {
         account?: string;
         contact?: string;
         field?: string;
