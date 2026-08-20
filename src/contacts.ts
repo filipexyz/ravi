@@ -6759,6 +6759,11 @@ function requireCrmFact(database: Database, factId: string): CrmFactRow {
   return fact;
 }
 
+export function getCrmFact(factId: string): CrmFact | null {
+  const row = getCrmFactRow(ensureDb(), factId);
+  return row ? rowToCrmFact(row) : null;
+}
+
 function resolveCrmFactTarget(
   database: Database,
   input: Pick<ProposeCrmFactInput, "entityType" | "entityId" | "contactRef" | "accountId" | "opportunityId">,

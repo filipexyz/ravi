@@ -22,12 +22,15 @@ let factRecords: Array<Record<string, unknown>> = [];
 let scopeEnforced = false;
 let readableContactIds = new Set<string>();
 let lastAccountCreateInput: Record<string, unknown> | null = null;
+let lastAccountContactInput: Record<string, unknown> | null = null;
 let lastOpportunityCreateInput: Record<string, unknown> | null = null;
 let lastOpportunityMoveInput: Record<string, unknown> | null = null;
 let lastTaskCreateInput: Record<string, unknown> | null = null;
+let lastTaskMutationInput: Record<string, unknown> | null = null;
 let lastProfileUpdateInput: Record<string, unknown> | null = null;
 let lastOpportunityContactInput: Record<string, unknown> | null = null;
 let lastFactInput: Record<string, unknown> | null = null;
+let lastFactMutationInput: Record<string, unknown> | null = null;
 let lastPipelineCreateInput: Record<string, unknown> | null = null;
 let lastPipelineUpdateInput: Record<string, unknown> | null = null;
 let lastPipelineStageCreateInput: Record<string, unknown> | null = null;
@@ -250,13 +253,16 @@ mock.module("../../contacts.js", () => ({
     lastAccountCreateInput = input;
     return { id: "crm_acc_1", name: input.name, domain: input.domain ?? null };
   },
-  linkCrmAccountContact: (input: Record<string, unknown>) => ({
-    id: "crm_ac_1",
-    accountId: input.accountId,
-    contactId: input.contactRef,
-    role: input.role ?? "member",
-    isPrimary: input.isPrimary === true,
-  }),
+  linkCrmAccountContact: (input: Record<string, unknown>) => {
+    lastAccountContactInput = input;
+    return {
+      id: "crm_ac_1",
+      accountId: input.accountId,
+      contactId: input.contactRef,
+      role: input.role ?? "member",
+      isPrimary: input.isPrimary === true,
+    };
+  },
   getCrmOpportunity: (opportunityId: string) =>
     crmOpportunity
       ? {
@@ -309,16 +315,14 @@ mock.module("../../contacts.js", () => ({
       status: input.status ?? "proposed",
     };
   },
-  confirmCrmFact: (input: Record<string, unknown>) => ({
-    id: input.factId,
-    key: "profile.role",
-    status: "confirmed",
-  }),
-  rejectCrmFact: (input: Record<string, unknown>) => ({
-    id: input.factId,
-    key: "profile.role",
-    status: "rejected",
-  }),
+  confirmCrmFact: (input: Record<string, unknown>) => {
+    lastFactMutationInput = input;
+    return { id: input.factId, key: "profile.role", status: "confirmed" };
+  },
+  rejectCrmFact: (input: Record<string, unknown>) => {
+    lastFactMutationInput = input;
+    return { id: input.factId, key: "profile.role", status: "rejected" };
+  },
   getCrmTask: (taskId: string) =>
     crmTask
       ? {
@@ -335,11 +339,18 @@ mock.module("../../contacts.js", () => ({
     lastTaskCreateInput = input;
     return { id: "crm_task_1", title: input.title, contactId: input.contactRef ?? null };
   },
-  completeCrmTask: (input: Record<string, unknown>) => ({
-    id: input.taskId,
-    title: "Follow up",
-    status: "done",
-  }),
+  completeCrmTask: (input: Record<string, unknown>) => {
+    lastTaskMutationInput = input;
+    return { id: input.taskId, title: "Follow up", status: "done" };
+  },
+  cancelCrmTask: (input: Record<string, unknown>) => {
+    lastTaskMutationInput = input;
+    return { id: input.taskId, title: "Follow up", status: "canceled" };
+  },
+  snoozeCrmTask: (input: Record<string, unknown>) => {
+    lastTaskMutationInput = input;
+    return { id: input.taskId, title: "Follow up", status: "snoozed" };
+  },
   updateCrmContactProfile: (input: Record<string, unknown>) => {
     lastProfileUpdateInput = input;
     return {
@@ -427,6 +438,17 @@ function captureJsonError(run: () => unknown): { payload: Record<string, unknown
     console.log = original;
   }
   return { payload: JSON.parse(lines.join("\n")) as Record<string, unknown>, error };
+}
+
+function expectTypedNotFound(run: () => unknown, op: string, code: string): void {
+  const { payload, error } = captureJsonError(run);
+  expect(error).toBeInstanceOf(CrmContractError);
+  const contractError = error as InstanceType<typeof CrmContractError>;
+  expect(contractError.exitCode).toBe(1);
+  expect(contractError.code).toBe(code);
+  expect(payload).toMatchObject({ success: false, op });
+  expect(payload.error).toMatchObject({ code, retryable: false });
+  expect((payload.error as Record<string, unknown>).suggestedAction).toBeTruthy();
 }
 
 function silenceLogs(run: () => unknown): void {
@@ -546,12 +568,15 @@ describe("CRM commands", () => {
       },
     ];
     lastAccountCreateInput = null;
+    lastAccountContactInput = null;
     lastOpportunityCreateInput = null;
     lastOpportunityMoveInput = null;
     lastTaskCreateInput = null;
+    lastTaskMutationInput = null;
     lastProfileUpdateInput = null;
     lastOpportunityContactInput = null;
     lastFactInput = null;
+    lastFactMutationInput = null;
     lastPipelineCreateInput = null;
     lastPipelineUpdateInput = null;
     lastPipelineStageCreateInput = null;
@@ -1073,6 +1098,134 @@ describe("CRM commands", () => {
     } finally {
       delete process.env.RAVI_AGENT_ID;
     }
+  });
+
+  it("fails task mutations with CRM_TASK_NOT_FOUND before calling a mutator", () => {
+    crmTask = null;
+
+    expectTypedNotFound(
+      () => new CrmTaskCommands().done("crm_task_missing", true),
+      "crm task done",
+      "CRM_TASK_NOT_FOUND",
+    );
+    expect(lastTaskMutationInput).toBeNull();
+
+    expectTypedNotFound(
+      () => new CrmTaskCommands().cancel("crm_task_missing", "duplicate", true),
+      "crm task cancel",
+      "CRM_TASK_NOT_FOUND",
+    );
+    expect(lastTaskMutationInput).toBeNull();
+
+    expectTypedNotFound(
+      () => new CrmTaskCommands().snooze("crm_task_missing", "2026-08-21T12:00:00Z", "later", true),
+      "crm task snooze",
+      "CRM_TASK_NOT_FOUND",
+    );
+    expect(lastTaskMutationInput).toBeNull();
+  });
+
+  it("does not reveal a task linked to a hidden contact during mutation preflight", () => {
+    crmTask = { contactId: "contact-1" };
+    scopeEnforced = true;
+    readableContactIds = new Set<string>();
+
+    expectTypedNotFound(() => new CrmTaskCommands().done("crm_task_1", true), "crm task done", "CRM_TASK_NOT_FOUND");
+    expect(lastTaskMutationInput).toBeNull();
+  });
+
+  it("fails fact mutations with CRM_FACT_NOT_FOUND before calling a mutator", () => {
+    factRecords = [];
+
+    expectTypedNotFound(
+      () => new CrmFactCommands().confirm("crm_fact_missing", true),
+      "crm fact confirm",
+      "CRM_FACT_NOT_FOUND",
+    );
+    expect(lastFactMutationInput).toBeNull();
+
+    expectTypedNotFound(
+      () => new CrmFactCommands().reject("crm_fact_missing", true),
+      "crm fact reject",
+      "CRM_FACT_NOT_FOUND",
+    );
+    expect(lastFactMutationInput).toBeNull();
+  });
+
+  it("fails opportunity move with OPPORTUNITY_NOT_FOUND before calling the mutator", () => {
+    crmOpportunity = null;
+
+    expectTypedNotFound(
+      () => new CrmOpportunityCommands().move("crm_opp_missing", "qualified", undefined, true),
+      "crm opportunity move",
+      "OPPORTUNITY_NOT_FOUND",
+    );
+    expect(lastOpportunityMoveInput).toBeNull();
+  });
+
+  it("preflights every target of contact set and link-contact mutations", () => {
+    crmContactProfile = null;
+    expectTypedNotFound(
+      () => new CrmContactCommands().set("contact-missing", "priority", "high", undefined, true),
+      "crm contact set",
+      "CONTACT_NOT_FOUND",
+    );
+    expect(lastProfileUpdateInput).toBeNull();
+
+    crmContactProfile = { contactId: "contact-1" };
+    crmAccount = null;
+    expectTypedNotFound(
+      () => new CrmAccountCommands().linkContact("crm_acc_missing", "contact-1", undefined, undefined, true),
+      "crm account link-contact",
+      "CRM_ACCOUNT_NOT_FOUND",
+    );
+    expect(lastAccountContactInput).toBeNull();
+
+    crmAccount = { lifecycle: "lead" };
+    crmContactProfile = null;
+    expectTypedNotFound(
+      () => new CrmAccountCommands().linkContact("crm_acc_1", "contact-missing", undefined, undefined, true),
+      "crm account link-contact",
+      "CONTACT_NOT_FOUND",
+    );
+    expect(lastAccountContactInput).toBeNull();
+
+    crmContactProfile = { contactId: "contact-1" };
+    crmOpportunity = null;
+    expectTypedNotFound(
+      () =>
+        new CrmOpportunityCommands().linkContact("crm_opp_missing", "contact-1", undefined, undefined, undefined, true),
+      "crm opportunity link-contact",
+      "OPPORTUNITY_NOT_FOUND",
+    );
+    expect(lastOpportunityContactInput).toBeNull();
+
+    crmOpportunity = { valueCents: 500_000 };
+    crmContactProfile = null;
+    expectTypedNotFound(
+      () =>
+        new CrmOpportunityCommands().linkContact("crm_opp_1", "contact-missing", undefined, undefined, undefined, true),
+      "crm opportunity link-contact",
+      "CONTACT_NOT_FOUND",
+    );
+    expect(lastOpportunityContactInput).toBeNull();
+
+    crmContactProfile = { contactId: "contact-1" };
+    crmAccount = null;
+    expectTypedNotFound(
+      () =>
+        new CrmOpportunityCommands().linkContact(
+          "crm_opp_1",
+          "contact-1",
+          undefined,
+          "crm_acc_missing",
+          undefined,
+          true,
+        ),
+      "crm opportunity link-contact",
+      "CRM_ACCOUNT_NOT_FOUND",
+    );
+    expect(lastOpportunityContactInput).toBeNull();
   });
 
   it("creates an opportunity immediately without --execute", () => {

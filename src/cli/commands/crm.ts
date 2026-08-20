@@ -149,6 +149,15 @@ function failCrmTaskNotFound(op: string, taskId: string, asJson?: boolean): neve
   });
 }
 
+function failCrmAccountNotFound(op: string, accountId: string, asJson?: boolean): never {
+  contractFail(op, "CRM_ACCOUNT_NOT_FOUND", `CRM account not found: ${accountId}`, {
+    asJson,
+    details: {
+      suggestedAction: "Check CRM account references with: ravi crm contacts --json",
+    },
+  });
+}
+
 // ============================================================
 // Structured-flag helpers for `crm pipeline create / set` (V2+ hybrid).
 // Maps user-facing flags onto pipeline.metadata canonical schema fields.
@@ -2886,6 +2895,9 @@ export class CrmOpportunityCommands {
   ) {
     assertCrmOpportunityMutationTarget("crm opportunity link-contact", opportunityId, asJson);
     assertCanReadCrmContact("crm opportunity link-contact", contactRef, asJson);
+    if (accountId && !getCrmAccount(accountId)) {
+      failCrmAccountNotFound("crm opportunity link-contact", accountId, asJson);
+    }
     const contact = linkCrmOpportunityContact({
       opportunityId,
       contactRef,
