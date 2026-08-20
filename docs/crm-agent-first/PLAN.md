@@ -134,14 +134,16 @@ descartável ou rollout pós-merge autorizado.
 | `done` depois de `canceled`, `cancel` depois de `done` e `snooze` terminal | caracterizar o legado descrito acima; não afirmar enforcement da política-alvo | `test-required` de regressão |
 | transição de fact fora da política publicada | caracterizar o legado e impedir que a documentação prometa bloqueio | `test-required` de regressão |
 | consumidor chama escrita crua | comando permanece compatível e é identificado como bypass da fachada | inspeção de superfície + rollout |
-| resposta de aprovação no transporte real | hash e destino recebidos correspondem ao plano; identidade do aprovador continua limite declarado | `controlled`, após merge |
+| resposta de aprovação no transporte real | mensagem e remetente correspondem ao recibo durável e ao aprovador autorizado | `controlled`, após merge |
+| alvo ou referência muda entre plano e aplicação | releitura bloqueia o efeito antes da reivindicação | `test-required` com mutação concorrente |
 
 Os testes com transporte simulado demonstram integração e decisões positiva ou
-negativa, mas não provam autenticação ponta a ponta. O transporte atual devolve a
-decisão; a fachada CRM registra `channel`, `accountId`, `chatId`, hash e instante,
-sem persistir recibo assinado ou identidade autenticada independente do
-aprovador. Até essa capacidade existir, operações de maior impacto devem
-permanecer sob rollout restrito e revisão humana no canal controlado.
+negativa, mas não provam autenticação criptográfica ponta a ponta. O transporte
+atual devolve a mensagem e o remetente; a fachada CRM persiste esse recibo e só
+aceita o remetente autorizado para o plano. Como essa identidade ainda depende
+do transporte e o recibo não tem assinatura independente, operações de maior
+impacto devem permanecer sob rollout restrito e revisão humana no canal
+controlado.
 
 ## Gate de implantação
 

@@ -71,8 +71,11 @@ completa de comandos, além de repetir build, typecheck, SDK e drift checks.
 - Consumidores ainda podem contornar a fachada pelos comandos de escrita
   legados; a cobertura agent-first é opt-in durante o piloto.
 - A aprovação usa a resposta do transporte existente. A fachada CRM persiste
-  hash, destino e instante, mas não uma identidade autenticada ou assinatura
-  independente do aprovador; este limite precisa ser considerado no rollout.
+  o recibo da mensagem e exige o remetente autorizado, mas essa identidade ainda
+  depende do transporte e não possui assinatura criptográfica independente.
+- Antes do efeito, a fachada relê alvo, transição e referências resolvidas. Essa
+  checagem não é um snapshot transacional de todo o contexto de negócio; mudanças
+  entre a releitura e a escrita continuam como risco residual do piloto.
 - `applied` registra que a chamada e o readback terminaram; uma divergência
   posterior é exposta por `verify` como `partial`, sem replay automático.
 - As regras de lifecycle publicadas são política-alvo. As diferenças do

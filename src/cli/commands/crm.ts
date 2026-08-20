@@ -457,6 +457,7 @@ const CRM_CONTACT_LIFECYCLE_VALUES = [
 ] as const;
 const CRM_TASK_STATUS_VALUES = ["open", "scheduled", "waiting", "done", "canceled", "snoozed"] as const;
 const CRM_FACT_STATUS_VALUES = ["proposed", "confirmed", "rejected", "superseded"] as const;
+const CRM_OWNER_TYPE_VALUES = ["user", "agent", "team", "system"] as const;
 const CRM_ENTITY_TYPE_VALUES = [
   "contact",
   "account",
@@ -488,6 +489,31 @@ function validateEnumOption(
       suggestedAction: `Use one of the accepted values for ${flag}`,
     },
   });
+}
+
+function parseOwnerFilter(
+  op: string,
+  owner: string | undefined,
+  asJson?: boolean,
+): { ownerType?: CrmOwnerType; ownerId?: string } {
+  const raw = owner?.trim();
+  if (!raw) return {};
+  const separator = raw.indexOf(":");
+  if (separator <= 0 || separator === raw.length - 1) {
+    contractFail(op, "USAGE_ERROR", "--owner must use <type:id>, e.g. agent:main or team:sales", {
+      asJson,
+      exitCode: 2,
+      details: {
+        parameter: "--owner",
+        received: owner,
+        acceptedValues: [...CRM_OWNER_TYPE_VALUES],
+        suggestedAction: "Use --owner <type:id> with a supported owner type",
+      },
+    });
+  }
+  const ownerType = raw.slice(0, separator);
+  validateEnumOption(op, "--owner", ownerType, CRM_OWNER_TYPE_VALUES, asJson);
+  return parseOwner(raw);
 }
 
 function assertCrmTaskMutationTarget(op: string, taskId: string, asJson?: boolean): void {
@@ -544,20 +570,27 @@ function assertCrmFacadePlanVisible(plan: CrmFacadePlan, op: string, asJson?: bo
   if (typeof contact === "string") assertCanReadCrmContact(op, contact, asJson);
 }
 
-function validateNonNegativeInteger(
+function validateIntegerRange(
   op: string,
   flag: string,
   value: string | undefined,
+  bounds: { min: number; max?: number },
   asJson?: boolean,
 ): string | undefined {
-  if (value === undefined || /^\d+$/.test(value)) return value;
-  contractFail(op, "USAGE_ERROR", `${flag} must be a non-negative integer`, {
+  if (value === undefined) return value;
+  const parsed = Number(value);
+  if (/^\d+$/.test(value) && Number.isSafeInteger(parsed) && parsed >= bounds.min && parsed <= (bounds.max ?? parsed)) {
+    return value;
+  }
+  const acceptedRange = bounds.max === undefined ? `>= ${bounds.min}` : `${bounds.min}..${bounds.max}`;
+  contractFail(op, "USAGE_ERROR", `${flag} must be an integer in range ${acceptedRange}`, {
     asJson,
     exitCode: 2,
     details: {
       parameter: flag,
       received: value,
-      suggestedAction: `Use a non-negative integer for ${flag}`,
+      acceptedRange: { min: bounds.min, ...(bounds.max === undefined ? {} : { max: bounds.max }) },
+      suggestedAction: `Use an integer in range ${acceptedRange} for ${flag}`,
     },
   });
 }
@@ -1041,6 +1074,8 @@ export class ACrmCommands {
   help(@Option({ flags: "--json", description: "Print the command overview as JSON" }) asJson?: boolean) {
     const payload = {
       domain: "crm" as const,
+      kind: "quick-start" as const,
+      scope: "curated-entry-points" as const,
       commands: [
         { name: "next", intent: "list prioritized next actions", mutates: false },
         { name: "contacts", intent: "list CRM contacts", mutates: false },
@@ -1082,9 +1117,9 @@ export class ACrmCommands {
     const op = "crm next";
     validateTimestamp(op, "--due-before", dueBefore, asJson);
     validateTimestamp(op, "--due-after", dueAfter, asJson);
-    validateNonNegativeInteger(op, "--limit", limit, asJson);
-    validateNonNegativeInteger(op, "--offset", offset, asJson);
-    const ownerFilter = parseOwner(owner);
+    validateIntegerRange(op, "--limit", limit, { min: 1, max: 500 }, asJson);
+    validateIntegerRange(op, "--offset", offset, { min: 0 }, asJson);
+    const ownerFilter = parseOwnerFilter(op, owner, asJson);
     if (contact) assertCanReadCrmContact("crm next", contact, asJson);
     const page = listCrmNextActions({
       ...ownerFilter,
@@ -1188,9 +1223,9 @@ export class ACrmCommands {
   ) {
     const op = "crm contacts";
     validateEnumOption(op, "--status", lifecycle, CRM_CONTACT_LIFECYCLE_VALUES, asJson);
-    validateNonNegativeInteger(op, "--limit", limit, asJson);
-    validateNonNegativeInteger(op, "--offset", offset, asJson);
-    const ownerFilter = parseOwner(owner);
+    validateIntegerRange(op, "--limit", limit, { min: 1, max: 500 }, asJson);
+    validateIntegerRange(op, "--offset", offset, { min: 0 }, asJson);
+    const ownerFilter = parseOwnerFilter(op, owner, asJson);
     const page = listCrmContactCards({
       ...ownerFilter,
       lifecycle,
@@ -1243,8 +1278,8 @@ export class ACrmCommands {
     offset?: string,
   ) {
     const op = "crm board";
-    validateNonNegativeInteger(op, "--limit", limit, asJson);
-    validateNonNegativeInteger(op, "--offset", offset, asJson);
+    validateIntegerRange(op, "--limit", limit, { min: 1, max: 500 }, asJson);
+    validateIntegerRange(op, "--offset", offset, { min: 0 }, asJson);
     const page = paginateCliItems(filterCrmRecordsByContact(listCrmOpportunityBoard({ pipelineRef: pipeline })), {
       limit,
       offset,
@@ -1311,6 +1346,8 @@ export class CrmLifecycleCommands {
   @Returns(crmLifecycleReturnSchema)
   show(@Option({ flags: "--json", description: "Print lifecycle contract as JSON" }) asJson?: boolean) {
     const payload = {
+      enforcement: "facade-only" as const,
+      legacyCommandsMayDiffer: true as const,
       contact: {
         states: [...CRM_CONTACT_LIFECYCLE_VALUES],
         transitionPolicy: "profile updates are explicit; no automatic lifecycle transition",
@@ -1577,8 +1614,9 @@ export class CrmPipelineCommands {
     fields?: string,
   ) {
     const op = "crm pipeline list";
-    validateNonNegativeInteger(op, "--limit", limit, asJson);
-    validateNonNegativeInteger(op, "--offset", offset, asJson);
+    validateEnumOption(op, "--entity-type", entityType, CRM_ENTITY_TYPE_VALUES, asJson);
+    validateIntegerRange(op, "--limit", limit, { min: 1, max: 500 }, asJson);
+    validateIntegerRange(op, "--offset", offset, { min: 0 }, asJson);
     const pipelines = listCrmPipelines({ entityType, includeArchived: Boolean(includeArchived) });
     const page = paginateCliItems(pipelines, { limit, offset });
     const pagination = buildCliOffsetPagination({
@@ -2193,6 +2231,9 @@ export class CrmPipelineStageCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching stages to skip (default: 0)" }) offset?: string,
   ) {
+    const op = "crm pipeline stage list";
+    validateIntegerRange(op, "--limit", limit, { min: 1, max: 500 }, asJson);
+    validateIntegerRange(op, "--offset", offset, { min: 0 }, asJson);
     const stages = listCrmPipelineStages(pipelineRef, { includeArchived: Boolean(includeArchived) });
     const page = paginateCliItems(stages, { limit, offset });
     const pagination = buildCliOffsetPagination({
@@ -2354,6 +2395,9 @@ export class CrmPipelineStageCommands {
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching topics to skip (default: 0)" }) offset?: string,
   ) {
+    const op = "crm pipeline stage topics";
+    validateIntegerRange(op, "--limit", limit, { min: 1, max: 500 }, asJson);
+    validateIntegerRange(op, "--offset", offset, { min: 0 }, asJson);
     const topics = listCrmPipelineStageTopics(pipelineRef, stageRef, { includeArchived: Boolean(includeArchived) });
     const page = paginateCliItems(topics, { limit, offset });
     const pagination = buildCliOffsetPagination({
@@ -2873,8 +2917,8 @@ export class CrmFactCommands {
     const op = "crm fact list";
     validateEnumOption(op, "--entity-type", entityType, CRM_ENTITY_TYPE_VALUES, asJson);
     validateEnumOption(op, "--status", status, CRM_FACT_STATUS_VALUES, asJson);
-    validateNonNegativeInteger(op, "--limit", limit, asJson);
-    validateNonNegativeInteger(op, "--offset", offset, asJson);
+    validateIntegerRange(op, "--limit", limit, { min: 1, max: 500 }, asJson);
+    validateIntegerRange(op, "--offset", offset, { min: 0 }, asJson);
     if (contactRef) assertCanReadCrmContact("crm fact list", contactRef, asJson);
     const page = listCrmFacts({
       entityType,
@@ -3169,7 +3213,10 @@ export class CrmTaskCommands {
     @Option({ flags: "--account <account>", description: "Filter by account" }) account?: string,
     @Option({ flags: "--opportunity <opportunity>", description: "Filter by opportunity" }) opportunity?: string,
     @Option({ flags: "--task-type <type>", description: "Filter by task_type" }) taskType?: string,
-    @Option({ flags: "--status <status>", description: "Filter by status (open, scheduled, done, canceled, snoozed)" })
+    @Option({
+      flags: "--status <status>",
+      description: "Filter by status (open, scheduled, waiting, done, canceled, snoozed)",
+    })
     status?: string,
     @Option({ flags: "--due-today", description: "Only tasks whose due_at is today" }) dueToday?: boolean,
     @Option({ flags: "--due-before <ts>", description: "Only tasks with due_at < <ts>" }) dueBefore?: string,
@@ -3182,9 +3229,9 @@ export class CrmTaskCommands {
     validateEnumOption(op, "--status", status, CRM_TASK_STATUS_VALUES, asJson);
     validateTimestamp(op, "--due-before", dueBefore, asJson);
     validateTimestamp(op, "--due-after", dueAfter, asJson);
-    validateNonNegativeInteger(op, "--limit", limit, asJson);
-    validateNonNegativeInteger(op, "--offset", offset, asJson);
-    const ownerFilter = parseOwner(owner);
+    validateIntegerRange(op, "--limit", limit, { min: 1, max: 500 }, asJson);
+    validateIntegerRange(op, "--offset", offset, { min: 0 }, asJson);
+    const ownerFilter = parseOwnerFilter(op, owner, asJson);
     if (contact) assertCanReadCrmContact("crm task list", contact, asJson);
     const page = listCrmTasks({
       ...ownerFilter,

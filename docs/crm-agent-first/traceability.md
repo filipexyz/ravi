@@ -19,7 +19,7 @@ legados continuam disponíveis e não passam pela fachada automaticamente.
 | RT-F1, INC-1 | `implemented` | alvo inexistente em mutações mapeado para erro específico | CI pendente; não elimina bypass legado fora dos caminhos alterados |
 | RT-F2/RT-F3, INC-2 | `implemented` | enum, data e intervalo inválidos são rejeitados nas superfícies tratadas | não cria um interpretador de filtros em linguagem natural |
 | RT-F4/RT-F10, INC-3 | `implemented` | mensagens, paths de metadata e ajuda acionáveis | recuperação de pipeline continua fora das nove operações |
-| RT-F5–RT-F8, INC-4 | `implemented` | paginação, descoberta JSON e aliases de compatibilidade | aliases e payloads legados permanecem durante a migração |
+| RT-F5–RT-F8, INC-4 | `partial` | paginação e descoberta JSON; aliases preservam compatibilidade | payload único depende da migração dos consumidores dos aliases legados |
 | RT-F9/G-12, INC-5 | `partial` | schema normativo, relatório derivado e lifecycle publicados | a política de lifecycle não é enforcement global das mutações legadas |
 | RT-F11/CL-7 | `partial` | journal, uso único, resultado incerto e readback na fachada | sem bancada viva; cobertura restrita às nove operações e ao transporte atual |
 
@@ -34,15 +34,15 @@ legados continuam disponíveis e não passam pela fachada automaticamente.
 | U-05 | `projected` | — | defaults materiais da intenção ainda não são resolvidos pela fachada |
 | U-06 | `projected` | — | expansão de autoridade ainda não tem classificador próprio |
 | U-07 | `implemented` | plano persistido com hash, expiração e efeito declarado | somente para as nove operações |
-| U-08 | `partial` | hash, expiração, aprovação vinculada e consumo único são verificados | o registro CRM não inclui recibo assinado nem identidade autenticada do aprovador |
+| U-08 | `partial` | hash, expiração, recibo durável da mensagem e resposta do remetente autorizado são vinculados antes do consumo único | a identidade vem do transporte existente; não há recibo com assinatura criptográfica independente |
 | U-09 | `partial` | as nove operações usam `planned → approved → applying` | demais mutações e comandos crus continuam fora da fachada |
 | U-10 | `implemented` | alvo e referências de stage, contato e conta são resolvidos antes do plano | somente as referências usadas pelas nove operações |
 | U-11 | `partial` | erros da fachada usam códigos e envelopes JSON/texto | ação corretiva e causa não estão completas para toda falha e todo comando legado |
 | U-12 | `partial` | filtros alterados validam enum, data e intervalo antes da consulta | a fachada não traduz intenções de listagem nem cobre toda futura opção de filtro |
 | U-13 | `partial` | falha durante aplicação vira `unknown` e bloqueia reaplicação | timeout e falha pós-commit ainda precisam de exercício adverso em ambiente controlado |
 | U-14 | `implemented` | as nove operações têm leitura pós-efeito comparada ao plano | o CI e o rollout controlado ainda precisam validar integrações reais |
-| U-15 | `projected` | — | não há snapshot de pré-condições revalidado imediatamente antes do efeito |
-| U-16 | `partial` | descoberta JSON, paginação, schemas e lifecycle são publicados | a FSM publicada ainda diverge de transições aceitas pelo legado |
+| U-15 | `partial` | alvo, transição e referências resolvidas são relidos imediatamente antes de reivindicar o efeito | não existe snapshot geral de todo contexto de negócio nem bloqueio transacional entre a releitura e a escrita |
+| U-16 | `partial` | descoberta JSON, paginação, schemas e lifecycle são publicados com escopo `facade-only` | a FSM publicada ainda diverge de transições aceitas pelo legado |
 | U-17 | `projected` | — | ambiguidades materiais devem ser resolvidas pelo chamador antes de `plan` |
 
 ## Evidência disponível

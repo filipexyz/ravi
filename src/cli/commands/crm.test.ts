@@ -1288,6 +1288,23 @@ describe("CRM commands", () => {
     expect((payload.error as Record<string, unknown>).parameter).toBe("--due-after");
   });
 
+  it("rejects invalid list ranges and enum filters with usage errors", () => {
+    const cases = [
+      () => new ACrmCommands().contacts(undefined, undefined, "0", undefined, true),
+      () => new ACrmCommands().board(true, undefined, undefined, undefined, "501", "0"),
+      () => new CrmPipelineCommands().list("bogus", undefined, true),
+      () => new CrmPipelineStageCommands().list("crm_pipeline_default", undefined, true, "abc", "0"),
+      () => new CrmPipelineStageCommands().topics("crm_pipeline_default", "qualified", undefined, true, "1", "-1"),
+      () => new ACrmCommands().contacts(undefined, "bot:sales", undefined, undefined, true),
+    ];
+    for (const run of cases) {
+      const { error } = captureJsonError(run);
+      expect(error).toBeInstanceOf(CrmContractError);
+      expect((error as InstanceType<typeof CrmContractError>).code).toBe("USAGE_ERROR");
+      expect((error as InstanceType<typeof CrmContractError>).exitCode).toBe(2);
+    }
+  });
+
   it("returns a typed error before a mutation targets a missing opportunity", () => {
     crmOpportunity = null;
     const { payload, error } = captureJsonError(() => {
@@ -1324,6 +1341,8 @@ describe("CRM commands", () => {
 
   it("publishes CRM lifecycle states for agent discovery", () => {
     const payload = captureJson(() => new CrmLifecycleCommands().show(true));
+    expect(payload.enforcement).toBe("facade-only");
+    expect(payload.legacyCommandsMayDiffer).toBe(true);
     expect((payload.task as Record<string, unknown>).states).toContain("done");
     expect((payload.fact as Record<string, unknown>).operations).toMatchObject({ confirm: expect.any(String) });
   });
@@ -1331,6 +1350,8 @@ describe("CRM commands", () => {
   it("offers a machine-readable CRM discovery overview", () => {
     const payload = captureJson(() => new ACrmCommands().help(true));
     expect(payload.domain).toBe("crm");
+    expect(payload.kind).toBe("quick-start");
+    expect(payload.scope).toBe("curated-entry-points");
     expect(payload.commands as Array<Record<string, unknown>>).toEqual(
       expect.arrayContaining([expect.objectContaining({ name: "facade plan", mutates: false })]),
     );

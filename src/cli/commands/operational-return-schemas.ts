@@ -608,6 +608,8 @@ export const crmFacadeApplyReturnSchema = z
 
 export const crmLifecycleReturnSchema = z
   .object({
+    enforcement: z.literal("facade-only"),
+    legacyCommandsMayDiffer: z.literal(true),
     contact: z.object({ states: z.array(z.string()), transitionPolicy: z.string() }).strict(),
     opportunity: z.object({ states: z.array(z.string()), transitionPolicy: z.string() }).strict(),
     task: z
@@ -630,6 +632,8 @@ export const crmLifecycleReturnSchema = z
 export const crmHelpReturnSchema = z
   .object({
     domain: z.literal("crm"),
+    kind: z.literal("quick-start"),
+    scope: z.literal("curated-entry-points"),
     commands: z.array(z.object({ name: z.string(), intent: z.string(), mutates: z.boolean() }).strict()),
     next: z.array(z.string()),
   })
