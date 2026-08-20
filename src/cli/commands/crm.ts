@@ -77,11 +77,13 @@ import {
   buildCrmFacadePlan,
   persistCrmFacadePlan,
   loadCrmFacadePlan,
-  markCrmFacadePlan,
+  approveCrmFacadePlan,
+  applyCrmFacadePlan,
   CRM_FACADE_OPERATIONS,
   CrmFacadeResolutionError,
   type CrmFacadeOperation,
 } from "../../crm/facade.js";
+import { requestCascadingApproval } from "../../approval/service.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -1299,17 +1301,47 @@ export class CrmFacadeCommands {
     return payload;
   }
 
-  @Command({ name: "apply", description: "Apply an approved CRM facade plan" })
-  @CommandAccess({ mode: "mutate" })
-  apply(@Arg("planId", { description: "Plan identifier" }) planId: string, @Option({ flags: "--approval-hash <hash>", description: "Approval must bind to this plan hash" }) approvalHash?: string, @Option({ flags: "--json" }) asJson?: boolean) {
+  @Scope("writeContacts")
+  @Command({ name: "approve", description: "Request external approval for an immutable CRM facade plan" })
+  @CommandAccess({ kind: "mutate", resource: "crm.facade", action: "approve", risk: "high" })
+  async approve(
+    @Arg("planId", { description: "Plan identifier" }) planId: string,
+    @Option({ flags: "--source <channel:account:chat>", description: "External approval destination" }) sourceText?: string,
+    @Option({ flags: "--agent <id>", description: "Requesting agent id" }) agentId?: string,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
     const plan = loadCrmFacadePlan(planId);
-    if (!plan) contractFail("crm facade apply", "NOT_FOUND", `CRM facade plan not found: ${planId}`, { asJson, exitCode: 1 });
-    if (!approvalHash || approvalHash !== plan.planHash) contractFail("crm facade apply", "APPROVAL_REQUIRED", "A plan-bound approval hash is required", { asJson, exitCode: 1 });
-    if (Date.parse(plan.expiresAt) <= Date.now()) contractFail("crm facade apply", "PLAN_EXPIRED", "CRM facade plan has expired", { asJson, exitCode: 1 });
-    markCrmFacadePlan(planId, "unknown");
-    const payload = { planId, planHash: plan.planHash, state: "unknown", action: "manual_execution_required", reason: "Effect execution adapter is not enabled yet" };
-    if (asJson) printJson(payload); else console.log(JSON.stringify(payload, null, 2));
-    return payload;
+    if (!plan) contractFail("crm facade approve", "NOT_FOUND", `CRM facade plan not found: ${planId}`, { asJson, exitCode: 1 });
+    const parts = sourceText?.split(":", 3);
+    if (!parts || parts.length !== 3 || parts.some((part) => !part.trim())) contractFail("crm facade approve", "USAGE_ERROR", "--source channel:account:chat is required", { asJson, exitCode: 2 });
+    const source = { channel: parts[0], accountId: parts[1], chatId: parts[2] };
+    const approval = await requestCascadingApproval({
+      type: "plan",
+      sessionName: `crm-facade-${planId}`,
+      agentId: agentId?.trim() || "crm-facade",
+      resolvedSource: source,
+      autoApproveWithoutSource: false,
+      text: `Approve CRM plan ${planId} with hash ${plan.planHash}: ${plan.operation} on ${plan.target.label}?`,
+      eventData: { planId, planHash: plan.planHash, operation: plan.operation, target: plan.target },
+    });
+    if (!approval.approved) contractFail("crm facade approve", "APPROVAL_DENIED", approval.reason || "External approval was not granted", { asJson, exitCode: 1 });
+    const approvedPlan = approveCrmFacadePlan(planId, source);
+    if (asJson) printJson(approvedPlan); else console.log(`✓ CRM facade plan approved: ${planId}`);
+    return approvedPlan;
+  }
+
+  @Scope("writeContacts")
+  @Command({ name: "apply", description: "Apply one externally approved CRM facade plan" })
+  @CommandAccess({ kind: "mutate", resource: "crm.facade", action: "apply", risk: "high" })
+  apply(@Arg("planId", { description: "Plan identifier" }) planId: string, @Option({ flags: "--json" }) asJson?: boolean) {
+    try {
+      const payload = applyCrmFacadePlan(planId);
+      if (asJson) printJson(payload); else console.log(`✓ CRM facade plan ${payload.state}: ${planId}`);
+      return payload;
+    } catch (error) {
+      if (error instanceof CrmFacadeResolutionError) contractFail("crm facade apply", error.code, error.message, { asJson, exitCode: 1, details: error.details });
+      throw error;
+    }
   }
 }
 

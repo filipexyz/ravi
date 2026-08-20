@@ -6649,6 +6649,23 @@ export function updateCrmFacadePlanState(planId: string, state: string, updatedA
   ensureDb().query(`UPDATE crm_facade_plans SET state = ?, updated_at = ?, applied_at = COALESCE(?, applied_at) WHERE plan_id = ?`).run(state, updatedAt, appliedAt ?? null, planId);
 }
 
+export function recordCrmFacadeApproval(planId: string, approvalJson: string, updatedAt: string): void {
+  ensureDb().query(`UPDATE crm_facade_plans SET state = 'approved', approval_json = ?, updated_at = ? WHERE plan_id = ? AND state = 'planned'`).run(approvalJson, updatedAt, planId);
+}
+
+export function claimCrmFacadePlanApply(planId: string, now: string): boolean {
+  const result = ensureDb().query(`UPDATE crm_facade_plans SET state = 'applying', updated_at = ? WHERE plan_id = ? AND state = 'approved' AND expires_at > ?`).run(now, planId, now) as { changes?: number };
+  return result.changes === 1;
+}
+
+export function saveCrmFacadeEffect(input: { effectId: string; planId: string; operation: string; state: string; idempotencyKey: string; dispatchedAt?: string | null; observedAt?: string | null; readbackJson?: string | null }): void {
+  ensureDb().query(`INSERT INTO crm_facade_effects (effect_id, plan_id, operation, state, idempotency_key, dispatched_at, observed_at, readback_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(input.effectId, input.planId, input.operation, input.state, input.idempotencyKey, input.dispatchedAt ?? null, input.observedAt ?? null, input.readbackJson ?? null);
+}
+
+export function updateCrmFacadeEffect(effectId: string, input: { state: string; observedAt?: string | null; readbackJson?: string | null }): void {
+  ensureDb().query(`UPDATE crm_facade_effects SET state = ?, observed_at = COALESCE(?, observed_at), readback_json = COALESCE(?, readback_json) WHERE effect_id = ?`).run(input.state, input.observedAt ?? null, input.readbackJson ?? null, effectId);
+}
+
 function requireCrmFact(database: Database, factId: string): CrmFactRow {
   const fact = getCrmFactRow(database, factId);
   if (!fact) throw new Error(`CRM fact not found: ${factId}`);
