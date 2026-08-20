@@ -490,6 +490,22 @@ export const crmTaskReturnSchema = z
   })
   .passthrough();
 
+export const crmFacadePlanReturnSchema = z
+  .object({
+    schemaVersion: z.literal("crm.agent-first/v1"),
+    planId: z.string(),
+    planHash: z.string(),
+    state: z.enum(["planned", "approved", "applying", "applied", "unknown", "partial"]),
+    operation: z.string(),
+    target: looseObjectSchema,
+    arguments: looseObjectSchema,
+    effects: z.array(looseObjectSchema),
+    approval: jsonValueSchema.nullable(),
+    createdAt: z.string(),
+    expiresAt: z.string(),
+  })
+  .strict();
+
 export const inboxItemEnvelopeReturnSchema = z
   .object({
     item: looseObjectSchema,

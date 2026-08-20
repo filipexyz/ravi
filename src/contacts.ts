@@ -389,6 +389,31 @@ function initializeIdentitySchema(database: Database): void {
 
 function initializeCrmSchema(database: Database): void {
   database.exec(`
+    CREATE TABLE IF NOT EXISTS crm_facade_plans (
+      plan_id TEXT PRIMARY KEY,
+      plan_hash TEXT NOT NULL UNIQUE,
+      plan_json TEXT NOT NULL,
+      state TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      approval_json TEXT,
+      applied_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS crm_facade_effects (
+      effect_id TEXT PRIMARY KEY,
+      plan_id TEXT NOT NULL,
+      operation TEXT NOT NULL,
+      state TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      dispatched_at TEXT,
+      observed_at TEXT,
+      readback_json TEXT,
+      FOREIGN KEY (plan_id) REFERENCES crm_facade_plans(plan_id)
+    );
+  `);
+
+  database.exec(`
     CREATE TABLE IF NOT EXISTS crm_events (
       id TEXT PRIMARY KEY,
       event_type TEXT NOT NULL,
@@ -6595,6 +6620,33 @@ export function getCrmFact(factId: string): CrmFact | null {
   const database = ensureDb();
   const fact = getCrmFactRow(database, factId);
   return fact ? rowToCrmFact(fact) : null;
+}
+
+export type CrmFacadePlanRecord = {
+  planId: string;
+  planHash: string;
+  planJson: string;
+  state: string;
+  createdAt: string;
+  expiresAt: string;
+  updatedAt: string;
+  approvalJson: string | null;
+  appliedAt: string | null;
+};
+
+export function saveCrmFacadePlan(record: CrmFacadePlanRecord): void {
+  const database = ensureDb();
+  database.query(`INSERT INTO crm_facade_plans (plan_id, plan_hash, plan_json, state, created_at, expires_at, updated_at, approval_json, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(record.planId, record.planHash, record.planJson, record.state, record.createdAt, record.expiresAt, record.updatedAt, record.approvalJson, record.appliedAt);
+}
+
+export function getCrmFacadePlan(planId: string): CrmFacadePlanRecord | null {
+  const row = ensureDb().query(`SELECT * FROM crm_facade_plans WHERE plan_id = ?`).get(planId) as Record<string, unknown> | null;
+  if (!row) return null;
+  return { planId: String(row.plan_id), planHash: String(row.plan_hash), planJson: String(row.plan_json), state: String(row.state), createdAt: String(row.created_at), expiresAt: String(row.expires_at), updatedAt: String(row.updated_at), approvalJson: row.approval_json ? String(row.approval_json) : null, appliedAt: row.applied_at ? String(row.applied_at) : null };
+}
+
+export function updateCrmFacadePlanState(planId: string, state: string, updatedAt: string, appliedAt?: string): void {
+  ensureDb().query(`UPDATE crm_facade_plans SET state = ?, updated_at = ?, applied_at = COALESCE(?, applied_at) WHERE plan_id = ?`).run(state, updatedAt, appliedAt ?? null, planId);
 }
 
 function requireCrmFact(database: Database, factId: string): CrmFactRow {

@@ -15,6 +15,7 @@ import {
   crmPipelineStageDetailsReturnSchema,
   crmPipelineValidationReturnSchema,
   crmProfileReturnSchema,
+  crmFacadePlanReturnSchema,
   crmTaskReturnSchema,
   pagedItemsReturnSchema,
 } from "./operational-return-schemas.js";
@@ -72,6 +73,13 @@ import {
 } from "../../contacts.js";
 import { dbListRoutes } from "../../router/router-db.js";
 import { canAccessContact, getScopeContext, isScopeEnforced } from "../../permissions/scope.js";
+import {
+  buildCrmFacadePlan,
+  persistCrmFacadePlan,
+  CRM_FACADE_OPERATIONS,
+  CrmFacadeResolutionError,
+  type CrmFacadeOperation,
+} from "../../crm/facade.js";
 
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
@@ -1196,6 +1204,76 @@ export class ACrmCommands {
       console.log(`- ${opportunity.stageKey ?? "-"} ${opportunity.opportunityId}: ${opportunity.title}`);
     }
     return payload;
+  }
+}
+
+@Group({
+  name: "crm.facade",
+  description: "CRM agent-first planning and controlled effects",
+})
+export class CrmFacadeCommands {
+  @Scope("open")
+  @Command({ name: "plan", aliases: ["intent"], description: "Resolve a CRM intent and create a read-only plan" })
+  @CommandAccess({ kind: "read", resource: "crm.facade", action: "plan", risk: "low" })
+  @Returns(crmFacadePlanReturnSchema)
+  plan(
+    @Arg("operation", { description: "CRM operation, e.g. task.done or opportunity.move" }) operation: string,
+    @Arg("target", { description: "Exact CRM target id or contact identity" }) target: string,
+    @Option({ flags: "--stage <stage>", description: "Target stage for opportunity.move" }) stage?: string,
+    @Option({ flags: "--contact <contact>", description: "Contact for a link-contact operation" }) contact?: string,
+    @Option({ flags: "--field <field>", description: "CRM contact field for contact.set" }) field?: string,
+    @Option({ flags: "--value <value>", description: "CRM contact field value for contact.set" }) value?: string,
+    @Option({ flags: "--until <timestamp>", description: "Snooze deadline for task.snooze" }) until?: string,
+    @Option({ flags: "--reason <text>", description: "Reason recorded with the operation" }) reason?: string,
+    @Option({ flags: "--role <role>", description: "Relationship role for a link-contact operation" }) role?: string,
+    @Option({ flags: "--account <account>", description: "Account context for opportunity.link-contact" }) account?: string,
+    @Option({ flags: "--primary", description: "Mark the linked contact as primary" }) primary?: boolean,
+    @Option({ flags: "--json", description: "Print the immutable plan as JSON" }) asJson?: boolean,
+  ) {
+    const op = "crm facade plan";
+    if (!CRM_FACADE_OPERATIONS.includes(operation as CrmFacadeOperation)) {
+      contractFail(op, "USAGE_ERROR", `Unsupported CRM facade operation: ${operation}`, {
+        asJson,
+        exitCode: 2,
+        details: {
+          parameter: "operation",
+          received: operation,
+          acceptedValues: [...CRM_FACADE_OPERATIONS],
+          suggestedAction: "Choose one of the listed CRM facade operations",
+        },
+      });
+    }
+    try {
+      const plan = buildCrmFacadePlan({
+        operation: operation as CrmFacadeOperation,
+        target,
+        stage,
+        contact,
+        field,
+        value,
+        until,
+        reason,
+        role,
+        account,
+        primary: primary === true ? true : undefined,
+      });
+      persistCrmFacadePlan(plan);
+      if (asJson) {
+        printJson(plan);
+      } else {
+        console.log(`CRM plan ${plan.planId}`);
+        console.log(`  operation: ${plan.operation}`);
+        console.log(`  target: ${plan.target.label} (${plan.target.id})`);
+        console.log(`  plan hash: ${plan.planHash}`);
+        console.log("  no CRM data was changed");
+      }
+      return plan;
+    } catch (error) {
+      if (error instanceof CrmFacadeResolutionError) {
+        contractFail(op, error.code, error.message, { asJson, details: error.details });
+      }
+      throw error;
+    }
   }
 }
 
