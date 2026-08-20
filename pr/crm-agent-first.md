@@ -1,19 +1,54 @@
 # PR — CRM agent-first
 
-## Objetivo
+## Objective
 
-Implementar o comportamento agent-first do CRM no próprio domínio CRM, preservando os comandos atuais durante a migração.
+Entregar um piloto agent-first dentro do domínio CRM, preservando a
+compatibilidade dos comandos existentes enquanto nove mutações passam a ter
+planejamento, aprovação externa, aplicação de uso único e leitura de
+confirmação.
 
-## Entrega
+## Problem
 
-- erros tipados e validação uniforme nas superfícies CRM;
-- board paginado, descoberta JSON e lifecycle publicado;
-- schema de pipeline normativo com review derivado;
-- fachada `plan → approve → apply → verify/recover` persistente, de uso único,
-  com verificação de integridade, journal antes do efeito e readback;
-- contratos TypeScript, OpenAPI e Swift regenerados.
+A superfície CRM tinha filtros inválidos tratados como listas vazias, erros de
+alvo pouco acionáveis, respostas grandes ou inconsistentes e nenhuma rota
+uniforme para um agente planejar e confirmar efeitos. A análise também mostrou
+que os freios das mutações legadas e algumas transições de lifecycle ainda não
+formam uma política única e executável.
 
-## Validação executada
+## Solution
+
+- uniformiza validação e erros nas superfícies CRM estudadas;
+- publica board paginado, descoberta JSON, lifecycle e schema normativo de
+  pipeline;
+- adiciona planos persistidos, íntegros e válidos por 15 minutos;
+- exige a resposta do transporte de aprovação já existente antes da aplicação;
+- aplica uma única vez e registra o journal antes do efeito;
+- compara leitura pós-efeito para `task.done`, `task.cancel`, `task.snooze`,
+  `opportunity.move`, `fact.confirm`, `fact.reject`, `contact.set`,
+  `account.link-contact` e `opportunity.link-contact`;
+- publica os contratos derivados em TypeScript, OpenAPI e Swift.
+
+## Practical impact
+
+Agentes que optarem pela fachada podem descobrir o contrato, resolver os alvos
+das nove operações, obter um plano revisável e distinguir efeito aplicado, não
+aplicado, parcial ou indeterminado. Isso cria uma rota incremental de migração;
+não transforma ainda toda mutação CRM em agent-first.
+
+## What does NOT change
+
+- Os comandos CRM legados e suas escritas diretas continuam disponíveis.
+- A política de lifecycle publicada não passa a bloquear automaticamente todas
+  as transições aceitas pelo armazenamento legado.
+- Não há deploy direto na VPS nem alteração de dados de produção nesta PR.
+- Os containers `crm-assistant` e `aprovacao-oportunidade-router` não são
+  alterados.
+- Não é criado outro domínio, outro banco CRM ou um segundo serviço de
+  aprovação.
+
+## Validation
+
+Executado após o freeze da implementação:
 
 ```text
 bun run typecheck                                               PASS
@@ -27,32 +62,28 @@ git diff --check                                                PASS
 ```
 
 `bun run test:cli-commands` usa um `for` POSIX e não é executável diretamente
-no PowerShell. A execução equivalente avançou até um teste preexistente de
-autodescrição de apps dependente do ambiente. O CI Linux continua sendo o gate
-da matriz completa de comandos.
+no PowerShell. A execução equivalente encontrou um teste preexistente de
+autodescrição dependente do ambiente. O CI Linux permanece como gate da matriz
+completa de comandos, além de repetir build, typecheck, SDK e drift checks.
 
-## Validação esperada no CI
+## Risks
 
-```text
-bun run build
-bun run typecheck
-bun run test:cli-commands
-bun run test:sdk
-bun run sdk:check
-git diff --check
-```
+- Consumidores ainda podem contornar a fachada pelos comandos de escrita
+  legados; a cobertura agent-first é opt-in durante o piloto.
+- A aprovação usa a resposta do transporte existente. A fachada CRM persiste
+  hash, destino e instante, mas não uma identidade autenticada ou assinatura
+  independente do aprovador; este limite precisa ser considerado no rollout.
+- `applied` registra que a chamada e o readback terminaram; uma divergência
+  posterior é exposta por `verify` como `partial`, sem replay automático.
+- As regras de lifecycle publicadas são política-alvo. As diferenças do
+  comportamento legado estão caracterizadas no plano de implementação e não
+  devem ser interpretadas como enforcement global.
 
-## Limites da migração
+## Rollback
 
-- Os comandos CRM legados continuam disponíveis para compatibilidade. Esta PR
-  protege a rota da fachada; a retirada de escrita bruta exige migração e
-  telemetria dos consumidores.
-- A aprovação usa o transporte externo já existente no Ravi. O domínio CRM
-  persiste o hash, destino e instante recebidos, mas não inventa um segundo
-  serviço de aprovação.
-
-## Não incluído
-
-- deploy direto na VPS;
-- alteração de dados de produção;
-- alteração dos containers `crm-assistant` e `aprovacao-oportunidade-router`.
+Reverter os commits desta PR remove comandos, contratos e projeções da fachada
+sem retirar os comandos CRM anteriores. As tabelas persistidas pela candidata
+podem permanecer inertes para preservar evidência; sua exclusão não é necessária
+para restaurar o comportamento anterior. Se o problema aparecer após o merge,
+os consumidores devem voltar primeiro às rotas legadas e o deploy deve retornar
+ao último commit aprovado da branch `dev`.

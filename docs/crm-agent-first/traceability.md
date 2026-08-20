@@ -1,38 +1,72 @@
 # Rastreabilidade — CRM agent-first
 
-| Fonte da análise | Implementação | Teste/critério |
-|---|---|---|
-| RT-F1, INC-1 | mapeamento de alvo inexistente em mutações | código específico e ação sugerida |
-| RT-F2/RT-F3, INC-2 | validação central de enum, data e intervalo | erro de uso uniforme, nunca lista vazia silenciosa |
-| RT-F4/RT-F10, INC-3 | mensagens, caminhos de metadata e ajuda | erro acionável em texto e JSON |
-| RT-F5–RT-F8, INC-4 | paginação, resposta única e compatibilidade | contrato estável e consumidor preservado |
-| RT-F9/G-12, INC-5 | schema normativo e estados publicados | schema e relatório com papéis distintos |
-| RT-F11/CL-7 | journal, confirmação e leitura pós-efeito | resultado aplicado, não aplicado, parcial ou indeterminado |
-| U-01–U-17 | fachada CRM | intenção, plano, confirmação, verificação e recuperação |
+Este documento separa código entregue de comportamento ainda projetado. A
+candidata é um piloto incremental com nove operações; comandos de escrita
+legados continuam disponíveis e não passam pela fachada automaticamente.
 
-## Estado atual
+## Vocabulário de estado
 
-- INC-1 a INC-5: `verified` na suíte CRM local.
-- Fachada CRM: `verified` para plano sem efeito, aprovação vinculada, consumo
-  único, integridade persistida, visibilidade e readback.
-- SDK TypeScript, OpenAPI e Swift: `verified` pelos checks de drift e pela suíte
-  SDK local.
-- Matriz completa de comandos: `ci-pending`, porque o runner do pacote usa um
-  loop POSIX não portátil para PowerShell.
+- `implemented`: o comportamento descrito tem código na candidata; seu nível de
+  teste é registrado separadamente e não implica aprovação do CI ou produção;
+- `partial`: somente a parte descrita do requisito foi implementada;
+- `projected`: permanece como política-alvo para uma próxima etapa;
+- `ci-pending`: a evidência local existe, mas o gate oficial ainda é o PR.
 
-## Consumidores
+## Incrementos originados no diagnóstico
 
-- comandos CLI existentes;
-- registro de comandos e gateway;
-- SDK TypeScript, OpenAPI e SDK Swift gerados;
-- `contacts profile --include-crm`;
-- agentes e skills que usam operações CRM;
-- scripts e consumidores legados de aliases.
+| Fonte da análise | Estado | Entrega na candidata | Limite da evidência |
+|---|---|---|---|
+| RT-F1, INC-1 | `implemented` | alvo inexistente em mutações mapeado para erro específico | CI pendente; não elimina bypass legado fora dos caminhos alterados |
+| RT-F2/RT-F3, INC-2 | `implemented` | enum, data e intervalo inválidos são rejeitados nas superfícies tratadas | não cria um interpretador de filtros em linguagem natural |
+| RT-F4/RT-F10, INC-3 | `implemented` | mensagens, paths de metadata e ajuda acionáveis | recuperação de pipeline continua fora das nove operações |
+| RT-F5–RT-F8, INC-4 | `implemented` | paginação, descoberta JSON e aliases de compatibilidade | aliases e payloads legados permanecem durante a migração |
+| RT-F9/G-12, INC-5 | `partial` | schema normativo, relatório derivado e lifecycle publicados | a política de lifecycle não é enforcement global das mutações legadas |
+| RT-F11/CL-7 | `partial` | journal, uso único, resultado incerto e readback na fachada | sem bancada viva; cobertura restrita às nove operações e ao transporte atual |
 
-## Estados de evidência
+## Requisitos U-01 a U-17
 
-- `planned`: requisito mapeado, ainda sem código;
-- `implemented`: código criado;
-- `test-written`: teste criado, não executado localmente;
-- `ci-pending`: aguardando execução no PR;
-- `verified`: aprovado pelo CI e revisão do PR.
+| Requisito | Estado | Cobertura real nesta candidata | Limite ou próxima etapa |
+|---|---|---|---|
+| U-01 | `implemented` | resolve alvo primário antes de planejar as nove operações | não cobre entidades e mutações fora do piloto |
+| U-02 | `partial` | alvo inexistente bloqueia o plano com código específico | sugestões e causa acionável não são uniformes em toda escrita legada |
+| U-03 | `projected` | — | não há fluxo de candidatos nem pergunta de desambiguação |
+| U-04 | `projected` | — | a CLI recebe flags explícitas; não consolida escolhas em uma pergunta |
+| U-05 | `projected` | — | defaults materiais da intenção ainda não são resolvidos pela fachada |
+| U-06 | `projected` | — | expansão de autoridade ainda não tem classificador próprio |
+| U-07 | `implemented` | plano persistido com hash, expiração e efeito declarado | somente para as nove operações |
+| U-08 | `partial` | hash, expiração, aprovação vinculada e consumo único são verificados | o registro CRM não inclui recibo assinado nem identidade autenticada do aprovador |
+| U-09 | `partial` | as nove operações usam `planned → approved → applying` | demais mutações e comandos crus continuam fora da fachada |
+| U-10 | `implemented` | alvo e referências de stage, contato e conta são resolvidos antes do plano | somente as referências usadas pelas nove operações |
+| U-11 | `partial` | erros da fachada usam códigos e envelopes JSON/texto | ação corretiva e causa não estão completas para toda falha e todo comando legado |
+| U-12 | `partial` | filtros alterados validam enum, data e intervalo antes da consulta | a fachada não traduz intenções de listagem nem cobre toda futura opção de filtro |
+| U-13 | `partial` | falha durante aplicação vira `unknown` e bloqueia reaplicação | timeout e falha pós-commit ainda precisam de exercício adverso em ambiente controlado |
+| U-14 | `implemented` | as nove operações têm leitura pós-efeito comparada ao plano | o CI e o rollout controlado ainda precisam validar integrações reais |
+| U-15 | `projected` | — | não há snapshot de pré-condições revalidado imediatamente antes do efeito |
+| U-16 | `partial` | descoberta JSON, paginação, schemas e lifecycle são publicados | a FSM publicada ainda diverge de transições aceitas pelo legado |
+| U-17 | `projected` | — | ambiguidades materiais devem ser resolvidas pelo chamador antes de `plan` |
+
+## Evidência disponível
+
+- suíte CRM local: 79 testes aprovados;
+- suíte SDK local: 73 testes aprovados;
+- build, typecheck, checks de OpenAPI, Swift, SDK e whitespace: aprovados
+  localmente;
+- matriz completa de comandos: `ci-pending`;
+- comportamento do transporte e das mutações reais em ambiente controlado:
+  ainda não promovido a evidência de produção.
+
+## Rollout e consumidores
+
+1. O PR valida a candidata sem alterar a VPS.
+2. Depois do merge, consumidores selecionados passam a chamar a fachada apenas
+   para as nove operações.
+3. Leituras e contratos são observados antes de habilitar essas mutações no Ravi
+   do projeto.
+4. Escritas cruas permanecem compatíveis e são medidas como bypass; sua retirada
+   exige migração própria.
+5. Os requisitos `partial` e `projected` orientam extensões futuras, não são
+   condição implicitamente satisfeita por esta PR.
+
+Consumidores afetados incluem o registro de comandos e gateway, SDK TypeScript,
+OpenAPI, SDK Swift, `contacts profile --include-crm`, agentes que optarem pela
+fachada e scripts que dependem dos aliases preservados.
