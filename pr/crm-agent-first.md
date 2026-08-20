@@ -77,7 +77,7 @@ O CI Linux permanece como gate da matriz completa.
   o recibo da mensagem e exige o remetente autorizado, mas essa identidade ainda
   depende do transporte e não possui assinatura criptográfica independente.
 - Antes do efeito, a fachada relê alvo, transição e referências resolvidas. Essa
-  checagem não é um snapshot transacional de todo o contexto de negócio; mudanças
+  checagem não é um snapshot transacional completo do contexto de negócio; mudanças
   entre a releitura e a escrita continuam como risco residual do piloto.
 - `applied` só é registrado quando o readback confirma o efeito esperado; uma
   divergência posterior é exposta por `verify` como `partial`, sem replay
