@@ -2,18 +2,19 @@
 
 ## Debug Flow
 
-1. Read the umbrella:
-   `ravi specs get crm --mode rules --json`.
-2. If the change touches pipeline metadata, read `crm/pipeline`.
-3. If the change exposes contacts or relationship data, read
-   `contacts/authorization` and `contacts/crm/authorization`.
-4. Do not use the current domain-level placeholder as enough approval for a
-   runtime/API behavior change.
-5. Before relying on this domain as normative, replace placeholder intent,
-   invariants, validation, and failure modes with concrete CRM rules.
+1. Read `ravi specs get crm --mode rules --json` before changing CRM behavior.
+2. For a facade change, create a plan first. Confirm its resolved target and
+   expiry before requesting approval.
+3. Use `crm facade approve` with the real external destination. Do not treat a
+   plan hash printed by the CLI as an approval by itself.
+4. Run `crm facade apply` once. If its state is `unknown`, use
+   `crm facade recover` and inspect the real CRM record; do not replay it.
+5. If the change touches pipeline metadata, also read `crm/pipeline`. If it
+   exposes relationship data, read `contacts/authorization` and
+   `contacts/crm/authorization`.
 
 ## Validation
 
 ```bash
-bun test src/cli/commands/crm.test.ts src/crm/pipeline-metadata.test.ts src/crm/pipeline-engines.test.ts
+bun test src/cli/commands/crm.test.ts src/crm/facade.test.ts src/crm/pipeline-metadata.test.ts src/crm/pipeline-engines.test.ts
 ```

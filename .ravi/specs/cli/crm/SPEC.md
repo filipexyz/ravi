@@ -57,6 +57,10 @@ migrated `cli/<domain>` spec.
 9. Without `--json`, error output and exit 1 behavior MUST stay byte-compatible
    with the legacy text path (`fail()`), except usage errors which exit 2 and
    teach the correct syntax inline.
+10. `crm facade plan` and `crm facade verify` MUST be read-only. `approve` MUST
+    use an external approval destination, and `apply` MUST consume one approved,
+    unexpired plan exactly once.
+11. `crm facade recover` MUST report uncertainty without replaying an effect.
 
 ## Write classification (brake decision per op)
 
@@ -89,6 +93,9 @@ builtin.
 
 Other expected CRM handler failures are normalized by the shared CLI boundary;
 domain-specific failures listed above retain their stable codes and details.
+
+`crm facade` is additive during migration: it is the agent-first path for
+controlled effects, while established local CRM commands remain compatible.
 
 ## Internal consumers
 

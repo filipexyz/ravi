@@ -10,6 +10,15 @@
 | RT-F11/CL-7 | journal, confirmação e leitura pós-efeito | resultado aplicado, não aplicado, parcial ou indeterminado |
 | U-01–U-17 | fachada CRM | intenção, plano, confirmação, verificação e recuperação |
 
+## Estado atual
+
+- INC-1 e INC-2: `implemented`; os testes de validação foram escritos e aguardam
+  a rodada única de validação.
+- Fachada CRM: `implemented`; o teste de plano, aprovação vinculada e consumo
+  único foi escrito e aguarda execução.
+- INC-3 a INC-5 e contratos SDK: permanecem no escopo da PR e só serão marcados
+  como concluídos após a revisão dos contratos gerados.
+
 ## Consumidores
 
 - comandos CLI existentes;
