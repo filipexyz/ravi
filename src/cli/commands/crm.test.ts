@@ -293,6 +293,10 @@ mock.module("../../contacts.js", () => ({
   },
   listCrmFacts: (options: { limit?: string; offset?: string; readableContactIds?: readonly string[] }) =>
     pageRecords(filterReadableRecords(factRecords, options), options),
+  getCrmFact: (factId: string) => {
+    const fact = factRecords.find((record) => record.id === factId);
+    return fact ? { ...fact, contactId: fact.entityType === "contact" ? fact.entityId : null } : null;
+  },
   proposeCrmFact: (input: Record<string, unknown>) => {
     lastFactInput = input;
     return {
@@ -1224,5 +1228,65 @@ describe("CRM commands", () => {
     });
     const boardOpportunity = (boardPayload.opportunities as Array<Record<string, unknown>>)[0];
     expect(Object.keys(boardOpportunity).sort()).toEqual(["opportunityId", "title"]);
+  });
+
+  it("rejects an invalid task status before querying the store", () => {
+    const { payload, error } = captureJsonError(() => {
+      new CrmTaskCommands().list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "bogus",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("USAGE_ERROR");
+    expect((payload.error as Record<string, unknown>).acceptedValues).toEqual([
+      "open",
+      "scheduled",
+      "waiting",
+      "done",
+      "canceled",
+      "snoozed",
+    ]);
+  });
+
+  it("rejects an invalid date filter before querying next actions", () => {
+    const { payload, error } = captureJsonError(() => {
+      new ACrmCommands().next(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "not-a-date",
+        undefined,
+        undefined,
+        true,
+      );
+    });
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("USAGE_ERROR");
+    expect((payload.error as Record<string, unknown>).parameter).toBe("--due-after");
+  });
+
+  it("returns a typed error before a mutation targets a missing opportunity", () => {
+    crmOpportunity = null;
+    const { payload, error } = captureJsonError(() => {
+      new CrmOpportunityCommands().move("crm_opp_missing", "won", undefined, true);
+    });
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("OPPORTUNITY_NOT_FOUND");
+    expect((payload.error as Record<string, unknown>).suggestions).toContain("crm_opp_1");
   });
 });

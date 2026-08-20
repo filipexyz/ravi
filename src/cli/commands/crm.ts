@@ -41,6 +41,7 @@ import {
   getCrmAccount,
   getAllContactAccessRecords,
   getContactDetails,
+  getCrmFact,
   getCrmContactProfile,
   getCrmOpportunity,
   getCrmPipeline,
@@ -416,6 +417,126 @@ function parseRequiredNumber(value: string, label: string): number {
   const parsed = Number(value);
   if (!Number.isFinite(parsed)) fail(`${label} must be a number`);
   return parsed;
+}
+
+const CRM_CONTACT_LIFECYCLE_VALUES = [
+  "unknown",
+  "lead",
+  "qualified",
+  "active",
+  "onboarding",
+  "waiting",
+  "at_risk",
+  "dormant",
+  "churned",
+  "partner",
+  "vendor",
+  "internal",
+] as const;
+const CRM_TASK_STATUS_VALUES = ["open", "scheduled", "waiting", "done", "canceled", "snoozed"] as const;
+const CRM_FACT_STATUS_VALUES = ["proposed", "confirmed", "rejected", "superseded"] as const;
+const CRM_ENTITY_TYPE_VALUES = [
+  "contact",
+  "account",
+  "opportunity",
+  "task",
+  "activity",
+  "segment",
+  "playbook",
+  "pipeline",
+  "pipeline_stage",
+  "pipeline_stage_topic",
+] as const;
+
+function validateEnumOption(
+  op: string,
+  flag: string,
+  value: string | undefined,
+  accepted: readonly string[],
+  asJson?: boolean,
+): string | undefined {
+  if (value === undefined || accepted.includes(value)) return value;
+  contractFail(op, "USAGE_ERROR", `${flag} has an invalid value: ${value}`, {
+    asJson,
+    exitCode: 2,
+    details: {
+      parameter: flag,
+      received: value,
+      acceptedValues: [...accepted],
+      suggestedAction: `Use one of the accepted values for ${flag}`,
+    },
+  });
+}
+
+function assertCrmTaskMutationTarget(op: string, taskId: string, asJson?: boolean): void {
+  const task = getCrmTask(taskId);
+  if (!task || (task.contactId && !canReadCrmContact(task.contactId))) {
+    failCrmTaskNotFound(op, taskId, asJson);
+  }
+}
+
+function assertCrmOpportunityMutationTarget(op: string, opportunityId: string, asJson?: boolean): void {
+  const opportunity = getCrmOpportunity(opportunityId);
+  if (!opportunity) failOpportunityNotFound(op, opportunityId, asJson);
+  if (opportunity.primaryContactId && !canReadCrmContact(opportunity.primaryContactId)) {
+    failOpportunityNotFound(op, opportunityId, asJson);
+  }
+}
+
+function assertCrmFactMutationTarget(op: string, factId: string, asJson?: boolean): void {
+  const fact = getCrmFact(factId);
+  if (!fact) {
+    contractFail(op, "CRM_FACT_NOT_FOUND", `CRM fact not found: ${factId}`, {
+      asJson,
+      details: {
+        suggestedAction: "Check the CRM fact id with: ravi crm fact list --json",
+      },
+    });
+  }
+  if (fact.contactId && !canReadCrmContact(fact.contactId)) {
+    contractFail(op, "CRM_FACT_NOT_FOUND", `CRM fact not found: ${factId}`, {
+      asJson,
+      details: {
+        suggestedAction: "Check the CRM fact id with: ravi crm fact list --json",
+      },
+    });
+  }
+}
+
+function validateNonNegativeInteger(
+  op: string,
+  flag: string,
+  value: string | undefined,
+  asJson?: boolean,
+): string | undefined {
+  if (value === undefined || /^\d+$/.test(value)) return value;
+  contractFail(op, "USAGE_ERROR", `${flag} must be a non-negative integer`, {
+    asJson,
+    exitCode: 2,
+    details: {
+      parameter: flag,
+      received: value,
+      suggestedAction: `Use a non-negative integer for ${flag}`,
+    },
+  });
+}
+
+function validateTimestamp(
+  op: string,
+  flag: string,
+  value: string | undefined,
+  asJson?: boolean,
+): string | undefined {
+  if (value === undefined || !Number.isNaN(Date.parse(value))) return value;
+  contractFail(op, "USAGE_ERROR", `${flag} must be a valid date/time`, {
+    asJson,
+    exitCode: 2,
+    details: {
+      parameter: flag,
+      received: value,
+      suggestedAction: `Use an ISO date/time for ${flag}`,
+    },
+  });
 }
 
 function parseBooleanValue(value: string, label: string): boolean {
@@ -882,6 +1003,11 @@ export class ACrmCommands {
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
     fields?: string,
   ) {
+    const op = "crm next";
+    validateTimestamp(op, "--due-before", dueBefore, asJson);
+    validateTimestamp(op, "--due-after", dueAfter, asJson);
+    validateNonNegativeInteger(op, "--limit", limit, asJson);
+    validateNonNegativeInteger(op, "--offset", offset, asJson);
     const ownerFilter = parseOwner(owner);
     if (contact) assertCanReadCrmContact("crm next", contact, asJson);
     const page = listCrmNextActions({
@@ -984,6 +1110,10 @@ export class ACrmCommands {
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
     fields?: string,
   ) {
+    const op = "crm contacts";
+    validateEnumOption(op, "--status", lifecycle, CRM_CONTACT_LIFECYCLE_VALUES, asJson);
+    validateNonNegativeInteger(op, "--limit", limit, asJson);
+    validateNonNegativeInteger(op, "--offset", offset, asJson);
     const ownerFilter = parseOwner(owner);
     const page = listCrmContactCards({
       ...ownerFilter,
@@ -1088,6 +1218,9 @@ export class CrmPipelineCommands {
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
     fields?: string,
   ) {
+    const op = "crm pipeline list";
+    validateNonNegativeInteger(op, "--limit", limit, asJson);
+    validateNonNegativeInteger(op, "--offset", offset, asJson);
     const pipelines = listCrmPipelines({ entityType, includeArchived: Boolean(includeArchived) });
     const page = paginateCliItems(pipelines, { limit, offset });
     const pagination = buildCliOffsetPagination({
@@ -2026,6 +2159,7 @@ export class CrmContactCommands {
     @Option({ flags: "--source <source>", description: "Mutation source (default: cli)" }) source?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertCanReadCrmContact("crm contact set", contactRef, asJson);
     const input: Parameters<typeof updateCrmContactProfile>[0] = {
       contactRef,
       source: source?.trim() || "cli",
@@ -2161,6 +2295,14 @@ export class CrmAccountCommands {
     @Option({ flags: "--primary", description: "Mark as primary account contact" }) primary?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const account = getCrmAccount(accountId);
+    if (!account) {
+      contractFail("crm account link-contact", "CRM_ACCOUNT_NOT_FOUND", `CRM account not found: ${accountId}`, {
+        asJson,
+        details: { suggestedAction: "Check the CRM account id with: ravi crm account --json" },
+      });
+    }
+    assertCanReadCrmContact("crm account link-contact", contactRef, asJson);
     const membership = linkCrmAccountContact({
       accountId,
       contactRef,
@@ -2267,6 +2409,7 @@ export class CrmOpportunityCommands {
     @Option({ flags: "--lost-reason <text>", description: "Lost reason when moving to lost" }) lostReason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertCrmOpportunityMutationTarget("crm opportunity move", opportunityId, asJson);
     const opportunity = moveCrmOpportunityStage({
       opportunityId,
       stageRef,
@@ -2319,6 +2462,8 @@ export class CrmOpportunityCommands {
     @Option({ flags: "--primary", description: "Mark as primary opportunity contact" }) primary?: boolean,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertCrmOpportunityMutationTarget("crm opportunity link-contact", opportunityId, asJson);
+    assertCanReadCrmContact("crm opportunity link-contact", contactRef, asJson);
     const contact = linkCrmOpportunityContact({
       opportunityId,
       contactRef,
@@ -2359,6 +2504,11 @@ export class CrmFactCommands {
     @Option({ flags: "--offset <n>", description: "Number of matching facts to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const op = "crm fact list";
+    validateEnumOption(op, "--entity-type", entityType, CRM_ENTITY_TYPE_VALUES, asJson);
+    validateEnumOption(op, "--status", status, CRM_FACT_STATUS_VALUES, asJson);
+    validateNonNegativeInteger(op, "--limit", limit, asJson);
+    validateNonNegativeInteger(op, "--offset", offset, asJson);
     if (contactRef) assertCanReadCrmContact("crm fact list", contactRef, asJson);
     const page = listCrmFacts({
       entityType,
@@ -2460,6 +2610,7 @@ export class CrmFactCommands {
     @Arg("fact", { description: "CRM fact ID" }) factId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertCrmFactMutationTarget("crm fact confirm", factId, asJson);
     const fact = confirmCrmFact({ factId, source: "cli", actorType: "user" });
     const payload = { status: "confirmed" as const, fact, changedCount: 1 };
     if (asJson) {
@@ -2478,6 +2629,7 @@ export class CrmFactCommands {
     @Arg("fact", { description: "CRM fact ID" }) factId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertCrmFactMutationTarget("crm fact reject", factId, asJson);
     const fact = rejectCrmFact({ factId, source: "cli", actorType: "user" });
     const payload = { status: "rejected" as const, fact, changedCount: 1 };
     if (asJson) {
@@ -2580,6 +2732,7 @@ export class CrmTaskCommands {
     @Arg("task", { description: "CRM task ID" }) taskId: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertCrmTaskMutationTarget("crm task done", taskId, asJson);
     const task = completeCrmTask({ taskId, source: "cli", actorType: "user" });
     const payload = { status: "done" as const, task: formatCrmTaskForJson(task), changedCount: 1 };
     if (asJson) {
@@ -2600,6 +2753,7 @@ export class CrmTaskCommands {
     reason?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    assertCrmTaskMutationTarget("crm task cancel", taskId, asJson);
     const task = cancelCrmTask({ taskId, reason, source: "cli", actorType: "user" });
     const payload = { status: "canceled" as const, task: formatCrmTaskForJson(task), changedCount: 1 };
     if (asJson) {
@@ -2621,6 +2775,8 @@ export class CrmTaskCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     if (!until) fail("--until <ts> is required");
+    assertCrmTaskMutationTarget("crm task snooze", taskId, asJson);
+    validateTimestamp("crm task snooze", "--until", until, asJson);
     const task = snoozeCrmTask({
       taskId,
       snoozedUntil: until,
@@ -2656,6 +2812,12 @@ export class CrmTaskCommands {
     @Option({ flags: "--offset <n>", description: "Number of matching tasks to skip (default: 0)" }) offset?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
+    const op = "crm task list";
+    validateEnumOption(op, "--status", status, CRM_TASK_STATUS_VALUES, asJson);
+    validateTimestamp(op, "--due-before", dueBefore, asJson);
+    validateTimestamp(op, "--due-after", dueAfter, asJson);
+    validateNonNegativeInteger(op, "--limit", limit, asJson);
+    validateNonNegativeInteger(op, "--offset", offset, asJson);
     const ownerFilter = parseOwner(owner);
     if (contact) assertCanReadCrmContact("crm task list", contact, asJson);
     const page = listCrmTasks({

@@ -6591,6 +6591,12 @@ function getCrmFactRow(database: Database, factId: string): CrmFactRow | null {
   return row ?? null;
 }
 
+export function getCrmFact(factId: string): CrmFact | null {
+  const database = ensureDb();
+  const fact = getCrmFactRow(database, factId);
+  return fact ? rowToCrmFact(fact) : null;
+}
+
 function requireCrmFact(database: Database, factId: string): CrmFactRow {
   const fact = getCrmFactRow(database, factId);
   if (!fact) throw new Error(`CRM fact not found: ${factId}`);
