@@ -506,6 +506,37 @@ export const crmFacadePlanReturnSchema = z
   })
   .strict();
 
+export const crmFacadeVerificationReturnSchema = z
+  .object({
+    planId: z.string(),
+    planHash: z.string(),
+    state: z.enum(["planned", "approved", "applying", "applied", "unknown", "partial"]),
+    expired: z.boolean(),
+    observedAt: z.string(),
+  })
+  .strict();
+
+export const crmFacadeRecoveryReturnSchema = z
+  .object({
+    planId: z.string(),
+    planHash: z.string(),
+    state: z.enum(["planned", "approved", "applying", "applied", "unknown", "partial"]),
+    action: z.literal("manual_review_required"),
+    replay: z.literal(false),
+  })
+  .strict();
+
+export const crmFacadeApplyReturnSchema = z
+  .object({
+    planId: z.string(),
+    planHash: z.string(),
+    state: z.enum(["applied", "unknown"]),
+    effectId: z.string(),
+    readback: jsonValueSchema.optional(),
+    reason: z.string().optional(),
+  })
+  .strict();
+
 export const inboxItemEnvelopeReturnSchema = z
   .object({
     item: looseObjectSchema,

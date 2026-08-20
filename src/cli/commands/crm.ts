@@ -16,6 +16,9 @@ import {
   crmPipelineValidationReturnSchema,
   crmProfileReturnSchema,
   crmFacadePlanReturnSchema,
+  crmFacadeApplyReturnSchema,
+  crmFacadeRecoveryReturnSchema,
+  crmFacadeVerificationReturnSchema,
   crmTaskReturnSchema,
   pagedItemsReturnSchema,
 } from "./operational-return-schemas.js";
@@ -1281,7 +1284,8 @@ export class CrmFacadeCommands {
   }
 
   @Command({ name: "verify", description: "Read the current state of a CRM facade plan" })
-  @CommandAccess({ mode: "read" })
+  @CommandAccess({ kind: "read", resource: "crm.facade", action: "verify", risk: "low" })
+  @Returns(crmFacadeVerificationReturnSchema)
   verify(@Arg("planId", { description: "Plan identifier" }) planId: string, @Option({ flags: "--json" }) asJson?: boolean) {
     const plan = loadCrmFacadePlan(planId);
     if (!plan) contractFail("crm facade verify", "NOT_FOUND", `CRM facade plan not found: ${planId}`, { asJson, exitCode: 1 });
@@ -1292,7 +1296,8 @@ export class CrmFacadeCommands {
   }
 
   @Command({ name: "recover", description: "Inspect a CRM facade plan without replaying it" })
-  @CommandAccess({ mode: "read" })
+  @CommandAccess({ kind: "read", resource: "crm.facade", action: "recover", risk: "low" })
+  @Returns(crmFacadeRecoveryReturnSchema)
   recover(@Arg("planId", { description: "Plan identifier" }) planId: string, @Option({ flags: "--json" }) asJson?: boolean) {
     const plan = loadCrmFacadePlan(planId);
     if (!plan) contractFail("crm facade recover", "NOT_FOUND", `CRM facade plan not found: ${planId}`, { asJson, exitCode: 1 });
@@ -1304,6 +1309,7 @@ export class CrmFacadeCommands {
   @Scope("writeContacts")
   @Command({ name: "approve", description: "Request external approval for an immutable CRM facade plan" })
   @CommandAccess({ kind: "mutate", resource: "crm.facade", action: "approve", risk: "high" })
+  @Returns(crmFacadePlanReturnSchema)
   async approve(
     @Arg("planId", { description: "Plan identifier" }) planId: string,
     @Option({ flags: "--source <channel:account:chat>", description: "External approval destination" }) sourceText?: string,
@@ -1333,6 +1339,7 @@ export class CrmFacadeCommands {
   @Scope("writeContacts")
   @Command({ name: "apply", description: "Apply one externally approved CRM facade plan" })
   @CommandAccess({ kind: "mutate", resource: "crm.facade", action: "apply", risk: "high" })
+  @Returns(crmFacadeApplyReturnSchema)
   apply(@Arg("planId", { description: "Plan identifier" }) planId: string, @Option({ flags: "--json" }) asJson?: boolean) {
     try {
       const payload = applyCrmFacadePlan(planId);
