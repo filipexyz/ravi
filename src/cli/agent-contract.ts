@@ -20,7 +20,7 @@
 import type { Command as CommanderCommand, CommanderError } from "commander";
 import { getContext } from "./context.js";
 import { CliExpectedError } from "./expected-error.js";
-import { sanitizePublicValue } from "./redaction.js";
+import { markPublicStructuralPath, sanitizePublicValue, type PublicStructuralPath } from "./redaction.js";
 
 export const CONTRACT_EXIT_ERROR = 1;
 export const CONTRACT_EXIT_USAGE = 2;
@@ -41,6 +41,14 @@ export interface ContractErrorEnvelope {
   success: false;
   op: string;
   error: { code: string; message: string; retryable: boolean } & ContractErrorDetails;
+}
+
+/**
+ * Explicitly expose a schema/field path in contract details without opening a
+ * general exception for filesystem paths or user-controlled values.
+ */
+export function publicContractPath(path: string): PublicStructuralPath {
+  return markPublicStructuralPath(path || "<root>");
 }
 
 export class ContractError extends Error {

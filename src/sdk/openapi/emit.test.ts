@@ -231,6 +231,27 @@ describe("openapi emit (live registry)", () => {
     const ids = Object.values(spec.paths).map((p) => p.post.operationId);
     expect(new Set(ids).size).toBe(ids.length);
   });
+
+  it("publishes the CRM facade plan operation as a closed enum", () => {
+    const spec = emit(getRegistry());
+    const body = spec.paths["/api/v1/crm/facade/plan"]!.post.requestBody!.content["application/json"].schema as Record<
+      string,
+      unknown
+    >;
+    const properties = body.properties as Record<string, Record<string, unknown>>;
+
+    expect(properties.operation?.enum).toEqual([
+      "task.done",
+      "task.cancel",
+      "task.snooze",
+      "opportunity.move",
+      "fact.confirm",
+      "fact.reject",
+      "contact.set",
+      "account.link-contact",
+      "opportunity.link-contact",
+    ]);
+  });
 });
 
 describe("sortKeysDeep", () => {

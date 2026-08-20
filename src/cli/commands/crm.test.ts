@@ -1029,7 +1029,8 @@ describe("CRM commands", () => {
 
   it("emits PIPELINE_VALIDATION_FAILED when pipeline metadata is invalid", () => {
     process.env.RAVI_AGENT_ID = "crm-contract-test";
-    pipelineRecords[0] = { ...pipelineRecords[0], metadata: { priority_global: 99 } };
+    const secretValue = "SENTINEL_SECRET_7M4Q";
+    pipelineRecords[0] = { ...pipelineRecords[0], metadata: { priority_global: secretValue } };
     try {
       const { payload, error } = captureJsonError(() => {
         new CrmPipelineCommands().validate("crm_pipeline_default", true);
@@ -1043,7 +1044,10 @@ describe("CRM commands", () => {
       const errorPayload = payload.error as Record<string, unknown>;
       expect(errorPayload.code).toBe("PIPELINE_VALIDATION_FAILED");
       expect(errorPayload.pipelineId).toBe("crm_pipeline_default");
-      expect((errorPayload.errors as unknown[]).length).toBeGreaterThan(0);
+      const errors = errorPayload.errors as Array<Record<string, unknown>>;
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.path).toBe("priority_global");
+      expect(JSON.stringify(payload)).not.toContain(secretValue);
     } finally {
       delete process.env.RAVI_AGENT_ID;
     }

@@ -1,7 +1,8 @@
 import "reflect-metadata";
+import { z } from "zod";
 import { Arg, Command, CommandAccess, Group, Option, Returns, Scope } from "../decorators.js";
 import { fail } from "../context.js";
-import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { contractFail, pickFields, publicContractPath, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   changedEntityReturnSchema,
@@ -564,7 +565,14 @@ function redactPipelineValidationIssues(issues: PipelineValidationIssue[]): Pipe
   return issues.map((issue) => ({
     ...issue,
     // Preserve the actionable schema path while removing quoted user data.
-    message: issue.message.replace(/"[^\"]*"|'[^']*'/g, '"[redacted]"'),
+    message: issue.message.replace(/"[^"]*"|'[^']*'/g, '"[redacted]"'),
+  }));
+}
+
+function contractPipelineValidationIssues(issues: PipelineValidationIssue[]) {
+  return issues.map((issue) => ({
+    ...issue,
+    path: publicContractPath(issue.path),
   }));
 }
 
@@ -1345,7 +1353,11 @@ export class CrmFacadeCommands {
   @CommandAccess({ kind: "read", resource: "crm.facade", action: "plan", risk: "low" })
   @Returns(crmFacadePlanReturnSchema)
   plan(
-    @Arg("operation", { description: "CRM operation, e.g. task.done or opportunity.move" }) operation: string,
+    @Arg("operation", {
+      description: "CRM operation, e.g. task.done or opportunity.move",
+      schema: z.enum(CRM_FACADE_OPERATIONS),
+    })
+    operation: string,
     @Arg("target", { description: "Exact CRM target id or contact identity" }) target: string,
     @Option({ flags: "--stage <stage>", description: "Target stage for opportunity.move" }) stage?: string,
     @Option({ flags: "--contact <contact>", description: "Contact for a link-contact operation" }) contact?: string,
@@ -1744,8 +1756,8 @@ export class CrmPipelineCommands {
           asJson,
           details: {
             pipelineId: pipeline.pipeline.id,
-            errors,
-            warnings,
+            errors: contractPipelineValidationIssues(errors),
+            warnings: contractPipelineValidationIssues(warnings),
             suggestedAction: `Correct the reported metadata fields, then run: ravi crm pipeline validate ${pipeline.pipeline.id} --json`,
           },
         },

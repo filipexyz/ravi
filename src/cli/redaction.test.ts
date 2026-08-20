@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { ContractError } from "./agent-contract.js";
+import { ContractError, publicContractPath } from "./agent-contract.js";
 import { sanitizePublicValue } from "./redaction.js";
 
 describe("public contract redaction", () => {
@@ -51,6 +51,24 @@ describe("public contract redaction", () => {
     });
     expect(sanitizePublicValue({ payload: { path: [], code: "custom", message: "PRIVATE_MESSAGE_8K2R" } })).toEqual({
       payload: { path: [], code: "custom", message: "[REDACTED:content length=20]" },
+    });
+  });
+
+  it("publishes only explicitly marked canonical field paths", () => {
+    expect(
+      sanitizePublicValue({
+        fieldPath: publicContractPath("stages[0].key"),
+        rootPath: publicContractPath(""),
+        diskPath: publicContractPath("C:/private/customer.json"),
+        tokenPath: publicContractPath("stages.rctx_SECRET_7M4Q.key"),
+        ordinaryPath: "stages[0].key",
+      }),
+    ).toEqual({
+      fieldPath: "stages[0].key",
+      rootPath: "<root>",
+      diskPath: "[REDACTED:path]",
+      tokenPath: "stages.[REDACTED:rctx].key",
+      ordinaryPath: "[REDACTED:path]",
     });
   });
 
