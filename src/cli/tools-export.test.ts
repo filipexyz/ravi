@@ -1,11 +1,24 @@
 import "reflect-metadata";
-import { describe, expect, it } from "bun:test";
+import { afterAll, beforeAll, describe, expect, it } from "bun:test";
 import { AppsCommands } from "./commands/apps.js";
 import type { ContextRecord } from "../router/router-db.js";
 import { ContractError, contractDryRun, contractFail } from "./agent-contract.js";
 import { fail, runWithContext } from "./context.js";
 import { CliOnly, Command, CommandAccess, Group, Option, Returns } from "./decorators.js";
-import { extractTools } from "./tools-export.js";
+import { createSdkTools } from "./tool-definitions.js";
+import { extractTools, generateManifest, manifestToJSON } from "./tools-export.js";
+import { nats } from "../nats.js";
+
+const previousSuppressAuditEvents = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+
+beforeAll(() => {
+  process.env.RAVI_SUPPRESS_AUDIT_EVENTS = "1";
+});
+
+afterAll(() => {
+  if (previousSuppressAuditEvents === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+  else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousSuppressAuditEvents;
+});
 
 @Group({ name: "negated", description: "Negated option fixture", scope: "open" })
 class NegatedToolCommands {
@@ -16,6 +29,15 @@ class NegatedToolCommands {
   }
 }
 
+@Group({ name: "quiet", description: "Effect-free inspection fixture", scope: "open" })
+class QuietToolCommands {
+  @Command({ name: "inspect", description: "Inspect without contacting audit transport" })
+  @CommandAccess({ kind: "read", resource: "quiet", action: "inspect", risk: "low", audit: "none" })
+  inspect() {
+    console.log(JSON.stringify({ ok: true }));
+  }
+}
+
 const context: ContextRecord = {
   contextId: "ctx_negated_test",
   contextKey: "rctx_negated_test",
@@ -23,6 +45,22 @@ const context: ContextRecord = {
   agentId: "negated-test",
   capabilities: [{ permission: "read", objectType: "negated", objectId: "run", source: "test" }],
   createdAt: Date.now(),
+};
+
+const quietContext: ContextRecord = {
+  contextId: "ctx_quiet_test",
+  contextKey: "rctx_quiet_test",
+  kind: "test-runtime",
+  agentId: "quiet-test",
+  capabilities: [{ permission: "read", objectType: "quiet", objectId: "inspect", source: "test" }],
+  createdAt: Date.now(),
+};
+
+const quietDeniedContext: ContextRecord = {
+  ...quietContext,
+  contextId: "ctx_quiet_denied_test",
+  contextKey: "rctx_quiet_denied_test",
+  capabilities: [],
 };
 
 @Group({ name: "media", description: "Media authorization fixture", scope: "open" })
@@ -112,6 +150,28 @@ class CliOnlyToolCommands {
   }
 }
 
+let confirmedEffectCount = 0;
+
+@Group({ name: "effect-metadata", description: "Effect metadata fixture", scope: "open" })
+class EffectMetadataCommands {
+  @Command({ name: "apply", description: "Apply one externally visible effect" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "effect-metadata",
+    action: "apply",
+    risk: "high",
+    effectClass: "external",
+    requiresConfirmation: true,
+  })
+  apply(@Option({ flags: "--execute", description: "Apply the external effect" }) execute = false) {
+    if (!execute) {
+      contractDryRun("effect-metadata apply", { effect: "external" }, { asJson: true });
+    }
+    confirmedEffectCount += 1;
+    console.log(JSON.stringify({ applied: true }));
+  }
+}
+
 const mediaContext: ContextRecord = {
   contextId: "ctx_media_authorization_test",
   contextKey: "rctx_media_authorization_test",
@@ -150,6 +210,15 @@ const appsContext: ContextRecord = {
   createdAt: Date.now(),
 };
 
+const effectMetadataContext: ContextRecord = {
+  contextId: "ctx_effect_metadata_test",
+  contextKey: "rctx_effect_metadata_test",
+  kind: "test-runtime",
+  agentId: "effect-metadata-test",
+  capabilities: [{ permission: "mutate", objectType: "effect-metadata", objectId: "apply", source: "test" }],
+  createdAt: Date.now(),
+};
+
 describe("tools export negated options", () => {
   it("uses one semantic grant and the same no-prefixed logical contract as CLI and gateway calls", async () => {
     const tool = extractTools([NegatedToolCommands]).find((candidate) => candidate.name === "negated_run");
@@ -166,6 +235,118 @@ describe("tools export negated options", () => {
 describe("tools export surface", () => {
   it("never exports commands marked @CliOnly", () => {
     expect(extractTools([CliOnlyToolCommands]).map((tool) => tool.name)).toEqual(["terminal_status"]);
+  });
+
+  it("exports operation, effect, risk, and confirmation metadata to every agent manifest", () => {
+    const tool = extractTools([EffectMetadataCommands])[0];
+    expect(tool?.metadata.safety).toEqual({
+      operationKind: "mutate",
+      effectClass: "external",
+      risk: "high",
+      requiresConfirmation: true,
+      classificationSource: "declared",
+    });
+
+    const expected = {
+      operationKind: "mutate",
+      effectClass: "external",
+      risk: "high",
+      requiresConfirmation: true,
+      classificationSource: "declared",
+    };
+    expect(generateManifest([tool!])[0]).toMatchObject(expected);
+    expect(JSON.parse(manifestToJSON([tool!]))[0]).toMatchObject(expected);
+    expect(createSdkTools([EffectMetadataCommands])[0]).toMatchObject(expected);
+  });
+
+  it("rejects ambient authority when no context is bound to the tool invocation", async () => {
+    const previousContextKey = process.env.RAVI_CONTEXT_KEY;
+    process.env.RAVI_CONTEXT_KEY = "rctx_ambient_must_not_be_inherited";
+    try {
+      const tool = extractTools([NegatedToolCommands])[0];
+      const result = await tool!.handler({});
+      expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
+      expect(JSON.parse(result.content[0]?.text ?? "{}")).toMatchObject({
+        success: false,
+        error: { code: "TOOL_CONTEXT_REQUIRED", retryable: false },
+      });
+    } finally {
+      if (previousContextKey === undefined) delete process.env.RAVI_CONTEXT_KEY;
+      else process.env.RAVI_CONTEXT_KEY = previousContextKey;
+    }
+  });
+
+  it("does not contact the global audit transport for allowed or denied calls when suppressed", async () => {
+    const originalEmit = nats.emit;
+    let emits = 0;
+    nats.emit = async () => {
+      emits += 1;
+    };
+    try {
+      const tool = extractTools([NegatedToolCommands])[0];
+      await runWithContext({ agentId: context.agentId, context }, () => tool!.handler({}));
+
+      const deniedTool = extractTools([MediaAuthorizationCommands]).find(
+        (candidate) => candidate.name === "media_remove",
+      );
+      const denied = await runWithContext({ agentId: mediaContext.agentId, context: mediaContext }, () =>
+        deniedTool!.handler({}),
+      );
+      expect(denied).toMatchObject({ outcome: "denied", exitCode: 1 });
+      expect(emits).toBe(0);
+    } finally {
+      nats.emit = originalEmit;
+    }
+  });
+
+  it("does not contact the global audit transport for audit:none, without global suppression", async () => {
+    const originalEmit = nats.emit;
+    const suppressed = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    let emits = 0;
+    nats.emit = async () => {
+      emits += 1;
+    };
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    try {
+      const tool = extractTools([QuietToolCommands])[0];
+      const allowed = await runWithContext({ agentId: quietContext.agentId, context: quietContext }, () =>
+        tool!.handler({}),
+      );
+      const denied = await runWithContext({ agentId: quietDeniedContext.agentId, context: quietDeniedContext }, () =>
+        tool!.handler({}),
+      );
+
+      expect(allowed).toMatchObject({ isError: false, outcome: "succeeded" });
+      expect(denied).toMatchObject({ isError: true, outcome: "denied", exitCode: 1 });
+      expect(emits).toBe(0);
+    } finally {
+      if (suppressed === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = suppressed;
+      nats.emit = originalEmit;
+    }
+  });
+
+  it("blocks a declared confirmation path before its first effect", async () => {
+    confirmedEffectCount = 0;
+    const tool = extractTools([EffectMetadataCommands])[0];
+
+    const blocked = await runWithContext(
+      { agentId: effectMetadataContext.agentId, context: effectMetadataContext },
+      () => tool!.handler({}),
+    );
+    expect(blocked).toMatchObject({ isError: false, outcome: "blocked", exitCode: 3 });
+    expect(JSON.parse(blocked.content[0]?.text ?? "{}")).toMatchObject({
+      success: false,
+      error: { code: "WRITE_REQUIRES_EXECUTE", dryRun: true },
+    });
+    expect(confirmedEffectCount).toBe(0);
+
+    const applied = await runWithContext(
+      { agentId: effectMetadataContext.agentId, context: effectMetadataContext },
+      () => tool!.handler({ execute: true }),
+    );
+    expect(applied).toMatchObject({ isError: false, outcome: "succeeded" });
+    expect(confirmedEffectCount).toBe(1);
   });
 });
 

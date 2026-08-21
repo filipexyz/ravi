@@ -4,25 +4,23 @@
 
 import "reflect-metadata";
 import { Command, CommandAccess, Group, Option } from "../decorators.js";
-import { fail, getContext } from "../context.js";
+import { getContext } from "../context.js";
+import { CliExpectedError } from "../expected-error.js";
 import { pickFields } from "../agent-contract.js";
 import {
   declareCommandReturns,
+  selfChatReturnSchema,
   selfContextReturnSchema,
   selfExplainReturnSchema,
-  selfSectionOnlyReturnSchema,
+  selfKnowledgeReturnSchema,
+  selfPermissionsReturnSchema,
+  selfRecentReturnSchema,
+  selfRouteReturnSchema,
   selfWhoamiReturnSchema,
 } from "./operational-return-schemas.js";
 import { RAVI_CONTEXT_KEY_ENV, resolveRuntimeContextOrThrow } from "../../runtime/context-registry.js";
-import { resolveSession } from "../../router/sessions.js";
 import type { RouteConfig, SessionEntry } from "../../router/types.js";
 import {
-  dbGetChat,
-  dbGetRouteById,
-  dbGetSessionChatBinding,
-  dbListChatParticipants,
-  dbListMessageMetaByChatId,
-  dbListRoutesBySessionName,
   type ChatParticipantRecord,
   type ChatRecord,
   type ContextCapability,
@@ -30,6 +28,7 @@ import {
   type MessageMetadata,
   type SessionChatBindingRecord,
 } from "../../router/router-db.js";
+import { readSelfSnapshot } from "./self-read-snapshot.js";
 
 type SectionStatus = "ok" | "partial" | "missing" | "unavailable";
 type SelfDepth = "summary" | "normal" | "full";
@@ -41,6 +40,7 @@ interface SelfSection<T> {
 }
 
 interface SelfContextSummary {
+  sourceOfTruth: "context_registry";
   contextId: string;
   kind: string;
   agentId: string | null;
@@ -68,6 +68,7 @@ interface SelfActorSummary {
   sourceMessageId: string | null;
   identityConfidence: number | null;
   source: "context_metadata" | "environment" | "recent_message";
+  trust: "authoritative" | "unverified" | "inferred";
 }
 
 interface SelfSessionSummary {
@@ -199,6 +200,7 @@ interface SelfContextPacket {
   depth: SelfDepth;
   limit: number;
   identity: SelfContextSummary;
+  environment: SelfEnvironmentContract;
   actor: SelfSection<SelfActorSummary>;
   session: SelfSection<SelfSessionSummary>;
   chat: SelfSection<SelfChatSummary>;
@@ -210,19 +212,86 @@ interface SelfContextPacket {
   nextReads: string[];
 }
 
+const SELF_ACTOR_ENV_VARS = [
+  "RAVI_ACTOR_TYPE",
+  "RAVI_CONTACT_ID",
+  "RAVI_ACTOR_AGENT_ID",
+  "RAVI_PLATFORM_IDENTITY_ID",
+  "RAVI_CANONICAL_CHAT_ID",
+  "RAVI_RAW_SENDER_ID",
+  "RAVI_NORMALIZED_SENDER_ID",
+  "RAVI_SENDER_ID",
+  "RAVI_SENDER_PHONE",
+] as const;
+
+const SELF_NON_IDENTITY_ENV_VARS = ["RAVI_AGENT_ID", "RAVI_CHANNEL", "RAVI_ACCOUNT_ID", "RAVI_CHAT_ID"] as const;
+
+export const SELF_ENVIRONMENT_CONTRACT = {
+  valuesIncludedInContract: false,
+  actorValuesMayAppearInOutput: true,
+  contextResolution: {
+    reads: [RAVI_CONTEXT_KEY_ENV] as const,
+    precedence: ["resolved_cli_context", "runtime_context_key"] as const,
+    resolvedCliContextSources: ["runtime_context_key", "default_credential", "tool_or_gateway_context"] as const,
+    trust: "authoritative" as const,
+  },
+  actorResolution: {
+    reads: SELF_ACTOR_ENV_VARS,
+    precedence: ["context_metadata", "environment", "recent_message"] as const,
+    environmentTrust: "unverified" as const,
+  },
+  notIdentityFallbacks: SELF_NON_IDENTITY_ENV_VARS,
+} as const;
+
+type SelfEnvironmentContract = typeof SELF_ENVIRONMENT_CONTRACT;
+
+export const SELF_CONTEXT_FIELDS = [
+  "generatedAt",
+  "depth",
+  "limit",
+  "identity",
+  "environment",
+  "actor",
+  "session",
+  "chat",
+  "route",
+  "recent",
+  "permissions",
+  "knowledge",
+  "explain",
+  "nextReads",
+] as const;
+
+const SELF_HELP_AFTER = `
+\nOperational contract:
+  - Read-only: all eight commands have effectClass=none and never accept --execute.
+  - Exit 0: complete or typed degraded data (partial, missing, unavailable).
+  - Exit 1: runtime/context resolution failure or ARG_INVALID, with a public cause.
+  - Exit 2: USAGE_ERROR for parser failures or unknown --fields values, with acceptedFields when applicable.
+  - --fields switches self context to projected JSON, even without --json.
+  - Context identity comes from the context registry. Actor precedence is context metadata, then environment, then recent message metadata.
+  - Actor env contract (names only): ${SELF_ACTOR_ENV_VARS.join(", ")}.
+  - Resolved actor identifiers may appear in actor data; env-sourced values are marked unverified.
+  - RAVI_AGENT_ID, RAVI_CHANNEL, RAVI_ACCOUNT_ID and RAVI_CHAT_ID are not self identity fallbacks.
+  - Return schemas: ravi sdk returns show self.<command> --json
+  - Adjacent registry views: ravi context whoami --json; ravi context capabilities --json
+`;
+
 @Group({
   name: "self",
   description: "Read the current Ravi agent/session/chat context",
   scope: "open",
+  helpAfter: SELF_HELP_AFTER,
 })
 export class SelfCommands {
   @Command({ name: "whoami", description: "Show the current agent/session identity" })
-  @CommandAccess({ kind: "read", resource: "self", action: "whoami", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "self", action: "whoami", risk: "low", effectClass: "none", audit: "none" })
   whoami(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "summary", limit: 5 });
     const payload = {
       generatedAt: packet.generatedAt,
       identity: packet.identity,
+      environment: packet.environment,
       actor: packet.actor,
       session: packet.session,
       chat: packet.chat,
@@ -234,7 +303,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "context", description: "Show the full current self-context packet" })
-  @CommandAccess({ kind: "read", resource: "self", action: "context", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "self", action: "context", risk: "low", effectClass: "none", audit: "none" })
   context(
     @Option({ flags: "--depth <depth>", description: "Depth: summary, normal, or full" }) depth?: string,
     @Option({ flags: "--limit <limit>", description: "Maximum recent messages to inspect" }) limit?: string,
@@ -248,13 +317,15 @@ export class SelfCommands {
     const packet = this.buildPacket({ depth: parseDepth(depth), limit: parseLimit(limit, 10) });
     // Compact mode (Manual v2 7.9): the self packet is the largest read payload
     // of this domain, so --fields projects its top-level sections.
-    const payload = fields?.trim() ? (pickFields([packet], fields)[0] ?? {}) : packet;
+    const payload = fields?.trim()
+      ? (pickFields([packet], fields, { acceptedFields: SELF_CONTEXT_FIELDS })[0] ?? packet)
+      : packet;
     this.printPayload(payload, asJson || Boolean(fields?.trim()), () => this.printContext(packet));
     return payload;
   }
 
   @Command({ name: "chat", description: "Show the current chat binding and participants" })
-  @CommandAccess({ kind: "read", resource: "self", action: "chat", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "self", action: "chat", risk: "low", effectClass: "none", audit: "none" })
   chat(
     @Option({ flags: "--depth <depth>", description: "Depth: summary, normal, or full" }) depth?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -266,7 +337,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "route", description: "Show route information that led to the current session" })
-  @CommandAccess({ kind: "read", resource: "self", action: "route", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "self", action: "route", risk: "low", effectClass: "none", audit: "none" })
   route(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "normal", limit: 5 });
     const payload = packet.route;
@@ -275,7 +346,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "recent", description: "Show bounded recent message metadata for the current chat" })
-  @CommandAccess({ kind: "read", resource: "self", action: "recent", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "self", action: "recent", risk: "low", effectClass: "none", audit: "none" })
   recent(
     @Option({ flags: "--limit <limit>", description: "Maximum recent messages to inspect" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -287,7 +358,14 @@ export class SelfCommands {
   }
 
   @Command({ name: "permissions", description: "Show capabilities inherited by the current context" })
-  @CommandAccess({ kind: "read", resource: "self", action: "permissions", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "self",
+    action: "permissions",
+    risk: "low",
+    effectClass: "none",
+    audit: "none",
+  })
   permissions(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "summary", limit: 5 });
     const payload = packet.permissions;
@@ -296,7 +374,14 @@ export class SelfCommands {
   }
 
   @Command({ name: "knowledge", description: "Show current knowledge integration status for this context" })
-  @CommandAccess({ kind: "read", resource: "self", action: "knowledge", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "self",
+    action: "knowledge",
+    risk: "low",
+    effectClass: "none",
+    audit: "none",
+  })
   knowledge(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "summary", limit: 5 });
     const payload = packet.knowledge;
@@ -305,7 +390,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "explain", description: "Explain how Ravi resolved the current self-context" })
-  @CommandAccess({ kind: "read", resource: "self", action: "explain", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "self", action: "explain", risk: "low", effectClass: "none", audit: "none" })
   explain(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "full", limit: 5 });
     const payload = {
@@ -324,12 +409,20 @@ export class SelfCommands {
 
   private buildPacket(options: { depth: SelfDepth; limit: number }): SelfContextPacket {
     const context = this.requireResolvedContext();
-    const session = this.resolveCurrentSession(context);
-    const binding = session.data ? dbGetSessionChatBinding(session.data.sessionKey) : null;
-    const chatRecord = binding ? dbGetChat(binding.chatId) : null;
-    const route = this.buildRouteSection(session.data, binding);
-    const chat = this.buildChatSection(context, binding, chatRecord, options.depth);
-    const recent = this.buildRecentSection(context, binding, chatRecord, options.limit);
+    const sessionCandidates = [context.sessionKey, context.sessionName].filter((value): value is string =>
+      Boolean(value),
+    );
+    const snapshot = readSelfSnapshot({
+      sessionCandidates,
+      sourceChatId: context.source?.chatId,
+      includeParticipants: options.depth === "full",
+      messageLimit: options.limit,
+    });
+    this.assertConjunctiveAuthority(context, snapshot);
+    const session = this.resolveCurrentSession(sessionCandidates, snapshot.session);
+    const route = this.buildRouteSection(session.data, snapshot.binding, snapshot.boundRoute, snapshot.sessionRoutes);
+    const chat = this.buildChatSection(context, snapshot.binding, snapshot.chat, options.depth, snapshot.participants);
+    const recent = this.buildRecentSection(context, snapshot.binding, snapshot.chat, options.limit, snapshot.messages);
     const actor = this.buildActorSection(context, recent);
     const permissions = this.buildPermissionsSection(context);
     const knowledge = this.buildKnowledgeSection();
@@ -343,6 +436,7 @@ export class SelfCommands {
       depth: options.depth,
       limit: options.limit,
       identity: serializeContext(context),
+      environment: SELF_ENVIRONMENT_CONTRACT,
       actor,
       session: sessionSection,
       chat,
@@ -355,6 +449,7 @@ export class SelfCommands {
         "ravi self context --json",
         "ravi self recent --limit 20 --json",
         "ravi context capabilities --json",
+        "ravi sdk returns show self.context --json",
         "ravi sessions info <session>",
       ],
     };
@@ -364,28 +459,90 @@ export class SelfCommands {
   }
 
   private requireResolvedContext(): ContextRecord {
-    const inlineContext = getContext()?.context;
-    if (inlineContext) return inlineContext;
-
-    const contextKey = process.env[RAVI_CONTEXT_KEY_ENV];
+    const inlineContext = getContext({ localOnly: true })?.context;
+    const contextKey = inlineContext?.contextKey ?? process.env[RAVI_CONTEXT_KEY_ENV];
     if (!contextKey) {
-      fail(`Missing ${RAVI_CONTEXT_KEY_ENV}`);
+      throwSelfError(
+        "SELF_CONTEXT_REQUIRED",
+        `Missing ${RAVI_CONTEXT_KEY_ENV} or a registered inline Ravi runtime context. Ravi self cannot trust identity by itself.`,
+        "Run 'ravi context whoami --json' to inspect the active credential, then retry inside that context",
+      );
     }
 
     try {
-      return resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
+      const trusted = resolveRuntimeContextOrThrow(contextKey, { touch: false, readOnly: true });
+      if (inlineContext && !sameMaterialContext(inlineContext, trusted)) {
+        throwSelfError(
+          "SELF_CONTEXT_DIVERGENT",
+          "The inline runtime context differs from the registered context.",
+          "Discard the inline context and authenticate again with the active registered context",
+          { relation: "inline_context_to_registry" },
+        );
+      }
+      return trusted;
     } catch (error) {
-      fail(`Failed to resolve context: ${error instanceof Error ? error.message : String(error)}`);
+      if (error instanceof CliExpectedError) throw error;
+      const reason = contextResolutionFailure(error);
+      throwSelfError(reason.code, reason.message, "Refresh or select a valid Ravi context credential, then retry", {
+        relation: "context_to_registry",
+      });
     }
   }
 
-  private resolveCurrentSession(context: ContextRecord): SelfSection<SessionEntry> {
-    const candidates = [context.sessionKey, context.sessionName].filter((value): value is string => Boolean(value));
-    for (const candidate of candidates) {
-      const session = resolveSession(candidate);
-      if (session) return { status: "ok", data: session };
+  private assertConjunctiveAuthority(context: ContextRecord, snapshot: ReturnType<typeof readSelfSnapshot>): void {
+    const agentId = context.agentId;
+    if (!agentId) {
+      throwSelfAuthorityError("context_agent", "The registered context has no agent identity.");
     }
 
+    const session = snapshot.session;
+    if (session) {
+      assertSelfAuthority(session.agentId === agentId, "session_agent");
+      if (context.sessionKey) assertSelfAuthority(session.sessionKey === context.sessionKey, "session_key");
+      if (context.sessionName && session.name) {
+        assertSelfAuthority(session.name === context.sessionName, "session_name");
+      }
+
+      const contextRuntime = stringField(context.metadata ?? {}, "runtimeProvider");
+      if (contextRuntime && session.runtimeProvider) {
+        assertSelfAuthority(session.runtimeProvider === contextRuntime, "runtime_provider");
+      }
+      if (context.source?.channel && session.channel) {
+        assertSelfAuthority(session.channel === context.source.channel, "session_channel");
+      }
+      if (context.source?.accountId && session.accountId) {
+        assertSelfAuthority(session.accountId === context.source.accountId, "session_account");
+      }
+    }
+
+    const binding = snapshot.binding;
+    if (binding) {
+      assertSelfAuthority(Boolean(session) && binding.sessionKey === session?.sessionKey, "binding_session");
+      if (binding.agentId) assertSelfAuthority(binding.agentId === agentId, "binding_agent");
+    }
+
+    const chat = snapshot.chat;
+    if (chat) {
+      if (chat.agentId) assertSelfAuthority(chat.agentId === agentId, "chat_agent");
+      if (binding) assertSelfAuthority(chat.id === binding.chatId, "chat_binding");
+      if (context.source?.channel) assertSelfAuthority(chat.channel === context.source.channel, "chat_channel");
+    }
+
+    const routes = [snapshot.boundRoute, ...snapshot.sessionRoutes].filter(
+      (route): route is RouteConfig & { id: number } => Boolean(route),
+    );
+    for (const route of routes) {
+      assertSelfAuthority(route.agent === agentId, "route_agent");
+      if (route.session && session?.name) assertSelfAuthority(route.session === session.name, "route_session");
+      if (context.source?.accountId) assertSelfAuthority(route.accountId === context.source.accountId, "route_account");
+      if (route.channel && context.source?.channel) {
+        assertSelfAuthority(route.channel === context.source.channel, "route_channel");
+      }
+    }
+  }
+
+  private resolveCurrentSession(candidates: string[], session: SessionEntry | null): SelfSection<SessionEntry> {
+    if (session) return { status: "ok", data: session };
     if (candidates.length === 0) {
       return { status: "missing", reason: "current context has no session key/name" };
     }
@@ -397,6 +554,7 @@ export class SelfCommands {
     binding: SessionChatBindingRecord | null,
     chat: ChatRecord | null,
     depth: SelfDepth,
+    participants: ChatParticipantRecord[],
   ): SelfSection<SelfChatSummary> {
     if (!binding && !context.source) {
       return { status: "missing", reason: "no canonical chat binding or source context found" };
@@ -417,7 +575,7 @@ export class SelfCommands {
     };
 
     if (depth === "full" && binding) {
-      data.participants = dbListChatParticipants(binding.chatId).map(serializeChatParticipant);
+      data.participants = participants.map(serializeChatParticipant);
     }
 
     if (binding && !chat) {
@@ -434,7 +592,13 @@ export class SelfCommands {
     if (fromMetadata) return { status: actorStatus(fromMetadata), data: fromMetadata };
 
     const fromEnv = actorFromEnv();
-    if (fromEnv) return { status: actorStatus(fromEnv), data: fromEnv };
+    if (fromEnv) {
+      return {
+        status: "partial",
+        reason: "actor values came from process environment and are unverified",
+        data: fromEnv,
+      };
+    }
 
     const fromRecent = actorFromRecent(recent.data?.messages);
     if (fromRecent) {
@@ -451,13 +615,13 @@ export class SelfCommands {
   private buildRouteSection(
     session: SessionEntry | undefined,
     binding: SessionChatBindingRecord | null,
+    boundRoute: (RouteConfig & { id: number }) | null,
+    sessionRoutes: Array<RouteConfig & { id: number }>,
   ): SelfSection<SelfRouteSummary> {
     if (!session && !binding?.routeId) {
       return { status: "missing", reason: "no session or route binding available" };
     }
 
-    const boundRoute = binding?.routeId ? dbGetRouteById(binding.routeId) : null;
-    const sessionRoutes = session?.name ? dbListRoutesBySessionName(session.name) : [];
     return {
       status: boundRoute || sessionRoutes.length > 0 ? "ok" : "missing",
       reason: boundRoute || sessionRoutes.length > 0 ? undefined : "no route is explicitly bound to this session",
@@ -473,13 +637,14 @@ export class SelfCommands {
     binding: SessionChatBindingRecord | null,
     chat: ChatRecord | null,
     limit: number,
+    messageMetadata: MessageMetadata[],
   ): SelfSection<SelfRecentSummary> {
     const chatId = binding?.chatId ?? chat?.id ?? context.source?.chatId ?? null;
     if (!chatId) {
       return { status: "missing", reason: "no chat id available for recent message lookup" };
     }
 
-    const messages = dbListMessageMetaByChatId(chatId, limit).map(serializeMessageMetadata);
+    const messages = messageMetadata.map(serializeMessageMetadata);
     return {
       status: messages.length > 0 ? "ok" : "partial",
       reason: messages.length > 0 ? undefined : "no recent message metadata found for this chat id",
@@ -525,10 +690,7 @@ export class SelfCommands {
 
   private printWhoami(packet: SelfContextPacket): void {
     console.log("\nRavi Self\n");
-    console.log(`Agent: ${packet.identity.agentId ?? "-"}`);
-    console.log(`Session: ${packet.identity.sessionName ?? packet.identity.sessionKey ?? "-"}`);
-    console.log(`Context: ${packet.identity.contextId} (${packet.identity.kind})`);
-    console.log(`Source: ${formatSource(packet.identity.source)}`);
+    this.printIdentity(packet);
     console.log(`Actor: ${formatActor(packet.actor)}`);
     console.log(
       `Chat: ${formatSectionRef(packet.chat, (data) => data.chat?.title ?? data.chat?.id ?? data.binding?.chatId ?? "-")}`,
@@ -538,8 +700,17 @@ export class SelfCommands {
     );
   }
 
+  private printIdentity(packet: SelfContextPacket): void {
+    console.log(`Agent: ${packet.identity.agentId ?? "-"}`);
+    console.log(`Session: ${packet.identity.sessionName ?? packet.identity.sessionKey ?? "-"}`);
+    console.log(`Context: ${packet.identity.contextId} (${packet.identity.kind})`);
+    console.log(`Identity source: ${packet.identity.sourceOfTruth}`);
+    console.log(`Source: ${formatSource(packet.identity.source)}`);
+  }
+
   private printContext(packet: SelfContextPacket): void {
-    this.printWhoami(packet);
+    console.log("\nRavi Self Context\n");
+    this.printIdentity(packet);
     this.printSection("Actor", packet.actor);
     this.printSection("Session", packet.session);
     this.printSection("Chat", packet.chat);
@@ -561,33 +732,121 @@ export class SelfCommands {
 }
 
 declareCommandReturns(SelfCommands, {
-  chat: selfSectionOnlyReturnSchema,
+  chat: selfChatReturnSchema,
   context: selfContextReturnSchema,
   explain: selfExplainReturnSchema,
-  knowledge: selfSectionOnlyReturnSchema,
-  permissions: selfSectionOnlyReturnSchema,
-  recent: selfSectionOnlyReturnSchema,
-  route: selfSectionOnlyReturnSchema,
+  knowledge: selfKnowledgeReturnSchema,
+  permissions: selfPermissionsReturnSchema,
+  recent: selfRecentReturnSchema,
+  route: selfRouteReturnSchema,
   whoami: selfWhoamiReturnSchema,
 });
 
 function parseDepth(value: string | undefined): SelfDepth {
   if (!value) return "normal";
   if (value === "summary" || value === "normal" || value === "full") return value;
-  fail(`Invalid --depth: ${value}. Expected summary, normal, or full.`);
+  throwSelfError(
+    "ARG_INVALID",
+    `Invalid --depth: ${value}. Expected summary, normal, or full.`,
+    "Retry with --depth summary, normal, or full",
+    { argument: "depth", acceptedValues: ["summary", "normal", "full"] },
+  );
 }
 
 function parseLimit(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > 100) {
-    fail(`Invalid --limit: ${value}. Expected integer between 1 and 100.`);
+    throwSelfError(
+      "ARG_INVALID",
+      `Invalid --limit: ${value}. Expected integer between 1 and 100.`,
+      "Retry with an integer from 1 through 100",
+      { argument: "limit", minimum: 1, maximum: 100 },
+    );
   }
   return parsed;
 }
 
+function throwSelfError(
+  code: string,
+  message: string,
+  suggestedAction: string,
+  details: Record<string, unknown> = {},
+): never {
+  throw new CliExpectedError(message, code, 1, {
+    publicMessage: true,
+    retryable: false,
+    suggestedAction,
+    details,
+  });
+}
+
+function contextResolutionFailure(error: unknown): { code: string; message: string } {
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  if (message.includes("revoked")) {
+    return { code: "SELF_CONTEXT_REVOKED", message: "The registered Ravi context is revoked." };
+  }
+  if (message.includes("expired")) {
+    return { code: "SELF_CONTEXT_EXPIRED", message: "The registered Ravi context is expired." };
+  }
+  if (message.includes("not found")) {
+    return { code: "SELF_CONTEXT_NOT_FOUND", message: "The Ravi context does not exist in the trusted registry." };
+  }
+  return { code: "SELF_CONTEXT_UNAVAILABLE", message: "The trusted Ravi context could not be resolved." };
+}
+
+function sameMaterialContext(candidate: ContextRecord, trusted: ContextRecord): boolean {
+  return stableJson(materialContext(candidate)) === stableJson(materialContext(trusted));
+}
+
+function materialContext(context: ContextRecord): Record<string, unknown> {
+  return {
+    contextId: context.contextId,
+    contextKey: context.contextKey,
+    kind: context.kind,
+    agentId: context.agentId ?? null,
+    sessionKey: context.sessionKey ?? null,
+    sessionName: context.sessionName ?? null,
+    source: context.source ?? null,
+    capabilities: context.capabilities,
+    metadata: context.metadata ?? null,
+    createdAt: context.createdAt,
+    expiresAt: context.expiresAt ?? null,
+    revokedAt: context.revokedAt ?? null,
+  };
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(sortJsonValue(value));
+}
+
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortJsonValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => [key, sortJsonValue(entry)]),
+  );
+}
+
+function assertSelfAuthority(condition: boolean, relation: string): asserts condition {
+  if (condition) return;
+  throwSelfAuthorityError(relation, "The registered context and operational records do not agree.");
+}
+
+function throwSelfAuthorityError(relation: string, message: string): never {
+  throwSelfError(
+    "SELF_AUTHORITY_DIVERGENT",
+    message,
+    "Refresh the runtime context and retry only after the session ownership is consistent",
+    { relation },
+  );
+}
+
 function serializeContext(context: ContextRecord): SelfContextSummary {
   return {
+    sourceOfTruth: "context_registry",
     contextId: context.contextId,
     kind: context.kind,
     agentId: context.agentId ?? null,
@@ -795,6 +1054,7 @@ function actorFromRecord(record: Record<string, unknown>, source: SelfActorSumma
     sourceMessageId: sourceMessageId ?? null,
     identityConfidence,
     source,
+    trust: source === "context_metadata" ? "authoritative" : source === "environment" ? "unverified" : "inferred",
   };
 }
 
@@ -843,6 +1103,7 @@ function redactSensitiveMetadata(metadata: Record<string, unknown>): Record<stri
 }
 
 function redactSensitiveValue(value: unknown): unknown {
+  if (typeof value === "string" && isSensitiveStringValue(value)) return "[redacted]";
   if (!value || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map(redactSensitiveValue);
   const input = value as Record<string, unknown>;
@@ -854,7 +1115,15 @@ function redactSensitiveValue(value: unknown): unknown {
 }
 
 function isSensitiveKey(key: string): boolean {
-  return /key|token|secret|password|credential/i.test(key);
+  return /key|token|secret|password|credential|authorization|cookie|headers?/i.test(key);
+}
+
+function isSensitiveStringValue(value: string): boolean {
+  return (
+    /^rctx_[A-Za-z0-9_-]+$/i.test(value.trim()) ||
+    /\bbearer\s+[A-Za-z0-9._~+/-]+=*/i.test(value) ||
+    /(?:api[_-]?key|access[_-]?token|secret|password|credential|authorization|cookie)\s*[:=]\s*\S+/i.test(value)
+  );
 }
 
 function buildExplainSteps(input: {
@@ -871,6 +1140,13 @@ function buildExplainSteps(input: {
       step: "context",
       status: "ok",
       detail: `resolved context ${input.context.contextId} without exposing its context key`,
+    },
+    {
+      step: "environment_contract",
+      status: "ok",
+      detail: `actor precedence is context_metadata > environment > recent_message; declared env names: ${SELF_ACTOR_ENV_VARS.join(
+        ", ",
+      )}; the contract lists names only and marks resolved env-sourced actor values unverified`,
     },
     {
       step: "actor",

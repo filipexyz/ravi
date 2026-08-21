@@ -84,6 +84,12 @@ describe("Ravi Commands", () => {
       rawArguments: '123 "very high"',
       originalText: '#review 123 "very high"',
     });
+    const repeated = renderRaviCommand(command, {
+      id: "review",
+      token: "#review",
+      rawArguments: '123 "very high"',
+      originalText: '#review 123 "very high"',
+    });
 
     expect(rendered.prompt).toContain("Review 123 as very high.");
     expect(rendered.prompt).toContain('Raw=123 "very high"');
@@ -91,6 +97,7 @@ describe("Ravi Commands", () => {
     expect(rendered.prompt).toContain("shorthand=very high");
     expect(rendered.metadata.id).toBe("review");
     expect(rendered.metadata.renderedPromptSha256).toHaveLength(64);
+    expect(repeated).toEqual(rendered);
   });
 
   it("expands command prompts and leaves normal prompts unchanged", () => {

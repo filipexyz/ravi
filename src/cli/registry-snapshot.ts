@@ -22,7 +22,9 @@ import {
   getReturnsBinaryMetadata,
   getReturnsMetadata,
   getScopeMetadata,
+  resolveCommandSafetyMetadata,
   type CommandAccessOptions,
+  type CommandSafetyMetadata,
   type ScopeType,
 } from "./decorators.js";
 import { inferArgSchema, inferOptionSchema, type ParsedOptionFlags } from "./schema-inference.js";
@@ -117,6 +119,8 @@ export interface CommandRegistryEntry {
   skillGate?: SkillGateMetadata;
   /** Semantic operation contract used by the Permission Provider Runtime. */
   access?: CommandAccessOptions;
+  /** Stable operation/effect/risk/confirmation projection for agent consumers. */
+  safety: CommandSafetyMetadata;
 }
 
 export interface RegistrySnapshot {
@@ -199,6 +203,8 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
 
       const effectiveScope: ScopeType = scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
       const fullName = `${groupMeta.name}.${cmdMeta.name}`;
+      const access = commandAccessMap.get(cmdMeta.method);
+      const safety = resolveCommandSafetyMetadata(access, fullName);
       const skillGate = resolveCommandSkillGate({
         groupPath: groupMeta.name,
         command: cmdMeta.name,
@@ -221,7 +227,8 @@ export function buildRegistry(classes: CommandClass[]): RegistrySnapshot {
         ...(binaryReturnsSet.has(cmdMeta.method) ? { binary: true } : {}),
         ...(cliOnlySet.has(cmdMeta.method) ? { cliOnly: true } : {}),
         ...(skillGate ? { skillGate } : {}),
-        ...(commandAccessMap.get(cmdMeta.method) ? { access: commandAccessMap.get(cmdMeta.method)! } : {}),
+        ...(access ? { access } : {}),
+        safety,
       };
 
       const existing = commandsByFullName.get(fullName);

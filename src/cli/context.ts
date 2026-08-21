@@ -11,6 +11,7 @@ import { getRuntimeContextFromEnv, resolveRuntimeContext, RAVI_CONTEXT_KEY_ENV }
 import type { ContextRecord } from "../router/router-db.js";
 import { readCredentialsFile, selectDefaultCredentialsKey } from "../runtime/credentials-store.js";
 import { CliExpectedError } from "./expected-error.js";
+import { requestCliTermination } from "./process-output.js";
 
 /**
  * Context available to CLI tools during execution
@@ -76,7 +77,13 @@ export function runWithContext<T>(context: ToolContext, fn: () => T): T {
  * const ctx = getContext();
  * const sessionKey = ctx?.sessionKey ?? "unknown";
  */
-export function getContext(options: { localOnly?: boolean } = {}): ToolContext | undefined {
+export interface GetContextOptions {
+  localOnly?: boolean;
+  touch?: boolean;
+  readOnly?: boolean;
+}
+
+export function getContext(options: GetContextOptions = {}): ToolContext | undefined {
   const store = contextStorage.getStore();
   if (store) return store;
   if (options.localOnly === true) return undefined;
@@ -87,7 +94,14 @@ export function getContext(options: { localOnly?: boolean } = {}): ToolContext |
   //  1. RAVI_CONTEXT_KEY env var (already handled by getRuntimeContextFromEnv)
   //  2. ~/.ravi/credentials.json `default` entry
   //  3. Legacy RAVI_AGENT_ID / RAVI_SESSION_* fallback (TODO: remove once sdk/auth fully lands)
-  const resolvedContext = getRuntimeContextFromEnv(env) ?? resolveDefaultCredential();
+  const resolutionOptions = { touch: options.touch, readOnly: options.readOnly };
+  const explicitContextKeyPresent = env[RAVI_CONTEXT_KEY_ENV] !== undefined;
+  const environmentContext = getRuntimeContextFromEnv(env, resolutionOptions);
+  // An explicitly presented credential is an authority claim. If it is
+  // unknown, expired, or revoked, never replace it with a different default or
+  // legacy identity.
+  if (explicitContextKeyPresent && !environmentContext) return undefined;
+  const resolvedContext = environmentContext ?? resolveDefaultCredential(resolutionOptions);
   if (resolvedContext) {
     const ctx: ToolContext = {
       contextId: resolvedContext.contextId,
@@ -184,7 +198,7 @@ function hasRuntimeContextEnv(): boolean {
   );
 }
 
-function resolveDefaultCredential(): ContextRecord | undefined {
+function resolveDefaultCredential(options: { touch?: boolean; readOnly?: boolean } = {}): ContextRecord | undefined {
   let key: string | null;
   try {
     key = selectDefaultCredentialsKey(readCredentialsFile());
@@ -192,7 +206,10 @@ function resolveDefaultCredential(): ContextRecord | undefined {
     return undefined;
   }
   if (!key) return undefined;
-  const record = resolveRuntimeContext(key, { touch: false });
+  const record = resolveRuntimeContext(key, {
+    touch: options.touch ?? false,
+    readOnly: options.readOnly,
+  });
   return record ?? undefined;
 }
 
@@ -218,5 +235,5 @@ export function fail(message: string): never {
     throw new CliExpectedError(message);
   }
   console.error(message);
-  process.exit(1);
+  requestCliTermination(1);
 }

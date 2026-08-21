@@ -18,11 +18,20 @@ let resolvedContext:
       createdAt: number;
     }
   | undefined;
+let runtimeResolutionOptions: unknown;
+let defaultResolutionCalls = 0;
 
 mock.module("../runtime/context-registry.js", () => ({
   ...actualRuntimeContextRegistryModule,
   RAVI_CONTEXT_KEY_ENV: "RAVI_CONTEXT_KEY",
-  getRuntimeContextFromEnv: () => resolvedContext,
+  getRuntimeContextFromEnv: (_env?: NodeJS.ProcessEnv, options?: unknown) => {
+    runtimeResolutionOptions = options;
+    return resolvedContext;
+  },
+  resolveRuntimeContext: () => {
+    defaultResolutionCalls += 1;
+    return resolvedContext;
+  },
 }));
 
 const { getContext, hasContext, hasRuntimeInvocationContext, runWithContext } = await import("./context.js");
@@ -43,6 +52,8 @@ describe("cli context resolution", () => {
 
   beforeEach(() => {
     resolvedContext = undefined;
+    runtimeResolutionOptions = undefined;
+    defaultResolutionCalls = 0;
     delete process.env.RAVI_CONTEXT_KEY;
     delete process.env.RAVI_SESSION_KEY;
     delete process.env.RAVI_SESSION_NAME;
@@ -91,6 +102,19 @@ describe("cli context resolution", () => {
     });
   });
 
+  it("propagates read-only no-touch resolution through CLI bootstrap", () => {
+    process.env.RAVI_CONTEXT_KEY = "rctx_read_only";
+    resolvedContext = {
+      contextId: "ctx_read_only",
+      kind: "agent-runtime",
+      capabilities: [],
+      createdAt: 1000,
+    };
+
+    expect(getContext({ touch: false, readOnly: true })?.contextId).toBe("ctx_read_only");
+    expect(runtimeResolutionOptions).toEqual({ touch: false, readOnly: true });
+  });
+
   it("falls back to legacy RAVI_* env vars when no runtime context is available", () => {
     process.env.RAVI_SESSION_KEY = "agent:main:main";
     process.env.RAVI_SESSION_NAME = "main";
@@ -114,6 +138,18 @@ describe("cli context resolution", () => {
         canonicalChatId: "chat-main",
       },
     });
+  });
+
+  it("never replaces an invalid or empty explicit context key with default or legacy authority", () => {
+    for (const explicitKey of ["rctx_invalid_explicit", "", "   "]) {
+      process.env.RAVI_CONTEXT_KEY = explicitKey;
+      process.env.RAVI_SESSION_KEY = "agent:fallback:main";
+      process.env.RAVI_SESSION_NAME = "fallback-main";
+      process.env.RAVI_AGENT_ID = "fallback";
+
+      expect(getContext()).toBeUndefined();
+      expect(defaultResolutionCalls).toBe(0);
+    }
   });
 
   it("does not mistake the generic CLI handler boundary for a runtime invocation", () => {

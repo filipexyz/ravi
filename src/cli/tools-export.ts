@@ -10,8 +10,11 @@ import {
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
+  resolveCommandSafetyMetadata,
+  shouldEmitCommandAudit,
   type ArgMetadata,
   type CommandAccessOptions,
+  type CommandSafetyMetadata,
   type OptionMetadata,
   type ScopeType,
 } from "./decorators.js";
@@ -52,6 +55,7 @@ export interface ExportedTool {
     scope?: ScopeType;
     skillGate?: SkillGateMetadata;
     access?: CommandAccessOptions;
+    safety: CommandSafetyMetadata;
   };
 }
 
@@ -68,6 +72,11 @@ export interface ToolResult {
 export interface ToolManifestEntry {
   name: string;
   description: string;
+  operationKind: CommandSafetyMetadata["operationKind"];
+  effectClass: CommandSafetyMetadata["effectClass"];
+  risk: CommandSafetyMetadata["risk"];
+  requiresConfirmation: boolean;
+  classificationSource: CommandSafetyMetadata["classificationSource"];
   parameters: Array<{
     name: string;
     type: string;
@@ -116,6 +125,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
         method: cmdMeta.method,
       });
       const access = commandAccessMap.get(cmdMeta.method);
+      const safety = resolveCommandSafetyMetadata(access, `${groupMeta.name}.${cmdMeta.name}`);
 
       tools.push({
         name: `${normalizedGroup}_${cmdMeta.name}`,
@@ -140,6 +150,7 @@ export function extractTools(classes: CommandClass[]): ExportedTool[] {
           scope: effectiveScope,
           ...(skillGate ? { skillGate } : {}),
           ...(access ? { access } : {}),
+          safety,
         },
       });
     }
@@ -155,6 +166,11 @@ export function generateManifest(tools: ExportedTool[]): ToolManifestEntry[] {
   return tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
+    operationKind: tool.metadata.safety.operationKind,
+    effectClass: tool.metadata.safety.effectClass,
+    risk: tool.metadata.safety.risk,
+    requiresConfirmation: tool.metadata.safety.requiresConfirmation,
+    classificationSource: tool.metadata.safety.classificationSource,
     parameters: [
       ...tool.metadata.args.map((arg) => ({
         name: arg.name,
@@ -188,6 +204,22 @@ export function manifestToJSON(tools: ExportedTool[]): string {
 
 const MAX_INPUT_LENGTH = 500;
 
+function toolContextRequiredResult(group: string, command: string): ToolResult {
+  const error = new ContractError(
+    commandOperation(group, command),
+    "TOOL_CONTEXT_REQUIRED",
+    "Tool execution requires a context bound to this invocation.",
+    1,
+    { suggestedAction: "Retry through an authenticated Ravi runtime or gateway tool call" },
+  );
+  return {
+    content: [{ type: "text", text: JSON.stringify(error.envelope()) }],
+    isError: true,
+    outcome: "failed",
+    exitCode: error.exitCode,
+  };
+}
+
 function truncateForEvent(value: unknown): unknown {
   if (typeof value === "string") {
     return value.length > MAX_INPUT_LENGTH ? value.slice(0, MAX_INPUT_LENGTH) + "…" : value;
@@ -217,40 +249,49 @@ function buildHandler(
   access: CommandAccessOptions | undefined,
 ): (args: Record<string, unknown>) => Promise<ToolResult> {
   return async (toolArgs: Record<string, unknown>): Promise<ToolResult> => {
-    const ctx = getContext();
+    const ctx =
+      access?.kind === "read"
+        ? getContext({ localOnly: true, touch: false, readOnly: true })
+        : getContext({ localOnly: true });
+    if (!ctx?.context) return toolContextRequiredResult(group, command);
     const sessionKey = ctx?.sessionKey ?? "_cli";
     const agentId = ctx?.agentId;
     const startTime = Date.now();
     const auditInput = redactCommandAccessInput(access, toolArgs);
-    const accessResult = enforceCliCommandAuthorization({
-      group,
-      command,
-      access,
-      input: toolArgs,
-      source: "tool",
-      scope,
-    });
+    const auditEnabled = shouldEmitCommandAudit(access, toolName);
+    const accessResult = runWithContext(ctx ?? {}, () =>
+      enforceCliCommandAuthorization({
+        group,
+        command,
+        access,
+        input: toolArgs,
+        source: "tool",
+        scope,
+      }),
+    );
     if (!accessResult.allowed) {
       const contractError = permissionDeniedToContractError(
         commandOperation(group, command),
         accessResult.errorMessage,
       );
       const envelope = JSON.stringify(contractError.envelope());
-      nats
-        .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
-          tool: toolName,
-          input: truncateForEvent(sanitizeCliAuditValue(auditInput)),
-          output: sanitizeCliAuditValue(accessResult.errorMessage, "output"),
-          isError: true,
-          outcome: "denied",
-          exitCode: 1,
-          errorCode: "PERMISSION_DENIED",
-          durationMs: Date.now() - startTime,
-          timestamp: new Date().toISOString(),
-          sessionKey,
-          agentId,
-        })
-        .catch(() => {});
+      if (auditEnabled && process.env.RAVI_SUPPRESS_AUDIT_EVENTS !== "1") {
+        nats
+          .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
+            tool: toolName,
+            input: truncateForEvent(sanitizeCliAuditValue(auditInput)),
+            output: sanitizeCliAuditValue(accessResult.errorMessage, "output"),
+            isError: true,
+            outcome: "denied",
+            exitCode: 1,
+            errorCode: "PERMISSION_DENIED",
+            durationMs: Date.now() - startTime,
+            timestamp: new Date().toISOString(),
+            sessionKey,
+            agentId,
+          })
+          .catch(() => {});
+      }
       return {
         content: [{ type: "text", text: envelope }],
         isError: true,
@@ -343,23 +384,25 @@ function buildHandler(
 
     const text = output.join("\n").trim() || "(no output)";
 
-    nats
-      .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
-        tool: toolName,
-        input: truncateForEvent(sanitizeCliAuditValue(auditInput)),
-        // Tool output may contain message bodies or provider payloads. Audit
-        // the semantic outcome, never the full returned content.
-        output: truncateForEvent(sanitizeCliAuditValue(text, "output")),
-        isError,
-        outcome,
-        ...(contractExitCode !== undefined ? { exitCode: contractExitCode } : {}),
-        ...(contractErrorCode !== undefined ? { errorCode: contractErrorCode } : {}),
-        durationMs: Date.now() - startTime,
-        timestamp: new Date().toISOString(),
-        sessionKey,
-        agentId,
-      })
-      .catch(() => {});
+    if (auditEnabled && process.env.RAVI_SUPPRESS_AUDIT_EVENTS !== "1") {
+      nats
+        .emit(`ravi.${sessionKey}.cli.${group}.${command}`, {
+          tool: toolName,
+          input: truncateForEvent(sanitizeCliAuditValue(auditInput)),
+          // Tool output may contain message bodies or provider payloads. Audit
+          // the semantic outcome, never the full returned content.
+          output: truncateForEvent(sanitizeCliAuditValue(text, "output")),
+          isError,
+          outcome,
+          ...(contractExitCode !== undefined ? { exitCode: contractExitCode } : {}),
+          ...(contractErrorCode !== undefined ? { errorCode: contractErrorCode } : {}),
+          durationMs: Date.now() - startTime,
+          timestamp: new Date().toISOString(),
+          sessionKey,
+          agentId,
+        })
+        .catch(() => {});
+    }
 
     return {
       content: [{ type: "text", text }],

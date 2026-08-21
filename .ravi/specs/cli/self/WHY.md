@@ -1,30 +1,26 @@
 # Self agent-first CLI contract / WHY
 
-`ravi self` exists so an agent can orient itself cheaply: identity, actor,
-session, chat binding, route, recent metadata, capabilities. Two design
-decisions define the contract:
+`ravi self` is the orientation facade for agents and operators. It answers
+which registered context is active, which actor/session/chat/route facts are
+available, which capabilities are inherited, and which read should come next.
+The answer must be useful without requiring callers to reconcile root help,
+`self`, and `context` by hand.
 
-1. **No brakes, ever.** The whole value of an orientation surface is that it
-   is always safe to call. Every op is a read; `resolveRuntimeContextOrThrow`
-   even runs with `touch: false` so a `self` call does not update
-   `lastUsedAt`. Adding `--execute` anywhere here would teach agents that
-   reads can be dangerous, which is the opposite of the domain's purpose.
-   This is declared in the spec so future ops do not drift into writes.
+Three decisions define the contract:
 
-2. **No `*_NOT_FOUND` envelope.** The domain has no user-supplied entity ids
-   to look up — the "entity" is the caller's own context, resolved from the
-   environment. When that context is missing the correct answer is the
-   existing loud failure (`Missing RAVI_CONTEXT_KEY`), not a suggestions
-   envelope: there is nothing similar to suggest.
+1. **Every operation is a pure read.** Context resolution uses `touch: false`
+   and `readOnly: true`; no command accepts `--execute` or owns a write path.
+2. **Uncertainty stays visible.** Absent sources remain
+   `partial|missing|unavailable` with a reason. Environment-derived actor facts
+   are marked `unverified`; they never silently become registry identity.
+3. **Discovery is part of the facade.** Group help, JSON output, `explain`,
+   return schemas and root operational help declare the same identity,
+   environment, degradation and exit contracts.
 
-The contract work therefore concentrated on compact mode. `self context` is
-the largest read payload of the CLI (identity + actor + session + chat +
-route + recent + permissions + knowledge + explain), and agents were pulling
-all of it just to read one section. `--fields` projects top-level sections via
-the shared `pickFields`, and with `--fields` set the human printer is bypassed
-in favor of the projected JSON — a partial packet rendered through the full
-text printer would be misleading (sections silently absent).
+`self context --fields` remains the compact entry point. It uses the shared
+strict field selector, so unknown fields are `USAGE_ERROR` exit 2 with the
+stable accepted field set rather than an empty success.
 
-Skill gap: `self` ships no SKILL.md today. The payloads self-document via
-`nextReads`, but the gap is registered in the spec's consumers section so the
-skills backlog picks it up.
+The domain intentionally has no skill. Its operational contract belongs in
+the CLI surface itself; moving identity or environment rules into a separate
+prompt asset would recreate the discovery drift this facade prevents.

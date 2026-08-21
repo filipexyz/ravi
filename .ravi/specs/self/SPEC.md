@@ -27,8 +27,6 @@ status: draft
 normative: true
 ---
 
-# Ravi Self
-
 ## Intent
 
 Ravi Self is the agent-facing self-orientation layer.
@@ -77,17 +75,23 @@ Ravi Self MUST NOT reconstruct these concepts from raw provider ids or display n
 
 ## Current Context Resolution
 
-The default command behavior MUST resolve the current runtime context from `RAVI_CONTEXT_KEY` or the equivalent live Ravi context resolver.
+The default command behavior MUST first use the resolved CLI context. That may
+come from a runtime context key, the default credential, or tool/gateway
+binding. A direct `RAVI_CONTEXT_KEY` lookup is the final fallback.
 
-If no current context exists, `ravi self` MUST fail clearly with a setup/context error and suggest an explicit diagnostic command.
+If no current context exists, `ravi self` MUST fail with the public typed
+`SELF_CONTEXT_REQUIRED` error and suggest `ravi context whoami --json`.
 
-Privileged operators MAY query another session or agent using explicit flags such as `--session` or `--agent`, but that path MUST be permission-checked and audited.
+Cross-session or cross-agent lookup is not part of this read-only slice. If a
+future version adds explicit `--session` or `--agent` selectors, that path MUST
+be permission-checked and audited before it can ship.
 
 ## Self Context Packet
 
 The default output of `ravi self context` SHOULD be a compact context packet containing:
 
 - `identity`: current agent, session key, runtime context id.
+- `environment`: env names, precedence and trust semantics; never env values.
 - `runtime`: provider, model, effort/thinking, active turn state, delivery source.
 - `conversation`: chat, channel, instance, thread/topic, route binding.
 - `actors`: requester, recent speakers, resolved contacts/agents, unresolved identities.
@@ -141,20 +145,36 @@ It SHOULD NOT dump raw JSON, full transcripts, or large metadata blocks by defau
 ## JSON Contract
 
 Machine output MUST expose typed semantic fields, not only formatted strings.
+Every public operation MUST have a concrete return schema discoverable through
+`ravi sdk returns show self.<command> --json`.
 
 Raw Omni/channel ids MAY appear under `provenance` or `debug` fields only.
 
-JSON MUST include enough absence/authorization metadata for an agent to recover:
+JSON MUST include enough typed section status and recovery guidance for an
+agent to recover. The current packet shape is:
 
 ```json
 {
-  "context": {},
-  "sections": {},
-  "missing": [],
-  "unauthorized": [],
+  "generatedAt": 0,
+  "depth": "normal",
+  "limit": 10,
+  "identity": {},
+  "environment": {},
+  "actor": { "status": "missing", "reason": "..." },
+  "session": { "status": "missing", "reason": "..." },
+  "chat": { "status": "missing", "reason": "..." },
+  "route": { "status": "missing", "reason": "..." },
+  "recent": { "status": "missing", "reason": "..." },
+  "permissions": { "status": "ok", "data": {} },
+  "knowledge": { "status": "unavailable", "reason": "..." },
+  "explain": [],
   "nextReads": []
 }
 ```
+
+Authorization failures belong to the public error envelope. Optional data
+absence belongs to the affected section's `status` and `reason`; callers MUST
+NOT infer either condition from an omitted key.
 
 ## Relationship to Omni
 
@@ -190,9 +210,31 @@ It MUST NOT reveal:
 ## Acceptance Criteria
 
 - A running agent can call `ravi self whoami` and identify its agent id, session key, and context id.
+- Root help, `self whoami/permissions` and `context whoami/capabilities` agree
+  on facts read from the same registered context.
 - A WhatsApp-originated session can call `ravi self chat` and see canonical chat/actor data without raw JID as the primary model.
 - A CLI/task-only session can call `ravi self context` and degrade gracefully without chat.
-- An unauthorized attempt to inspect another session fails clearly.
+- No current command accepts a cross-session or cross-agent selector.
 - `ravi self recent` is bounded by default.
 - `ravi self knowledge` can show linked threads without raw transcript dumping.
 - All outputs include next useful read commands.
+- Unknown `self context --fields` values fail with `USAGE_ERROR` and
+  `acceptedFields`; invalid depth/limit preserve their public cause.
+- Environment-derived actors are `partial` and `unverified`.
+- All eight operations remain read-only and context resolution never touches
+  `lastUsedAt`.
+
+## Security addendum: no trust by transport
+
+An inline context supplied by a local tool or gateway is never authoritative
+by itself. SELF MUST confirm the context key against the trusted registry by a
+read-only, no-touch lookup and MUST reject unknown, expired, revoked or
+materially different records before returning identity, capabilities or
+operational data.
+
+For every related record that exists, the context agent, session owner, chat
+binding owner, chat owner, route owner and runtime provider MUST agree. A
+cross-agent session or any other contradiction is a typed failure, not a
+degraded success, and its response MUST NOT reveal the foreign working
+directory or record contents. This rule applies to CLI, local tool and gateway
+execution paths.

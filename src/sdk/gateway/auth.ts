@@ -35,6 +35,10 @@ export interface ResolvedAuth {
   reason: AuthFailureReason;
 }
 
+export interface ResolveAuthOptions {
+  readOnly?: boolean;
+}
+
 export type AuthFailureReason = "missing" | "malformed" | "unknown" | "revoked" | "expired" | null;
 
 const RCTX_PREFIX = "rctx_";
@@ -47,7 +51,11 @@ export function parseBearer(headerValue: string | null): string | null {
   return token.length > 0 ? token : null;
 }
 
-export function resolveAuth(request: Request, config: GatewayAuthConfig = {}): ResolvedAuth {
+export function resolveAuth(
+  request: Request,
+  config: GatewayAuthConfig = {},
+  options: ResolveAuthOptions = {},
+): ResolvedAuth {
   const headerValue = request.headers.get("authorization");
   if (!headerValue) {
     return unauthenticated("missing");
@@ -62,7 +70,7 @@ export function resolveAuth(request: Request, config: GatewayAuthConfig = {}): R
     return unauthenticated("malformed");
   }
 
-  const resolver = config.resolveContext ?? defaultResolver;
+  const resolver = config.resolveContext ?? ((value: string) => defaultResolver(value, options));
   const record = resolver(token);
   if (!record) {
     return unauthenticated("unknown");
@@ -84,8 +92,8 @@ export function resolveAuth(request: Request, config: GatewayAuthConfig = {}): R
   };
 }
 
-function defaultResolver(token: string): ContextRecord | null {
-  return resolveRuntimeContext(token, { touch: true });
+function defaultResolver(token: string, options: ResolveAuthOptions): ContextRecord | null {
+  return resolveRuntimeContext(token, options.readOnly ? { touch: false, readOnly: true } : { touch: true });
 }
 
 function unauthenticated(reason: Exclude<AuthFailureReason, null>): ResolvedAuth {

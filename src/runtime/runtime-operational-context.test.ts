@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { buildRuntimeOperationalContextContent } from "./runtime-operational-context.js";
+import { buildRootOperationalHelp, buildRuntimeOperationalContextContent } from "./runtime-operational-context.js";
 
 describe("buildRuntimeOperationalContextContent", () => {
   it("keeps the operational context markdown compact and secret-safe", () => {
@@ -22,12 +22,62 @@ describe("buildRuntimeOperationalContextContent", () => {
     });
 
     expect(text).toContain("agent: `dev`");
+    expect(text).toContain("agent source: context-registry");
     expect(text).toContain("session: `task-work`");
+    expect(text).toContain("session source: context-registry");
     expect(text).toContain("context: `ctx_public` (agent-runtime)");
     expect(text).toContain("tool capabilities: 1");
     expect(text).toContain("command-group capabilities: 1");
     expect(text).toContain("ravi self permissions --json");
     expect(text).not.toContain("rctx_");
     expect(text).not.toContain("contextKey");
+  });
+
+  it("keeps registry identity authoritative and never prints ambient env values", () => {
+    const text = buildRootOperationalHelp(
+      {
+        RAVI_AGENT_ID: "ambient-agent",
+        RAVI_SESSION_NAME: "ambient-session",
+        RAVI_CHANNEL: "ambient-channel",
+        RAVI_CHAT_ID: "ambient-chat",
+        PWD: "/repo",
+      },
+      {
+        contextId: "ctx_registry",
+        kind: "admin-bootstrap",
+        agentId: "registry-agent",
+        sessionKey: "agent:registry-agent:main",
+        sessionName: "registry-session",
+        source: { channel: "slack", accountId: "main", chatId: "chat_registry" },
+        capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+      },
+    );
+
+    expect(text).toContain("agent: `registry-agent`");
+    expect(text).toContain("agent source: context-registry");
+    expect(text).toContain("session: `registry-session`");
+    expect(text).toContain("capabilities: 1");
+    expect(text).toContain("context source: `slack | account=main | chat=chat_registry`");
+    expect(text).toContain("invocation source: -");
+    expect(text).not.toContain("agent: `ambient-agent`");
+    expect(text).not.toContain("ambient-session");
+    expect(text).not.toContain("ambient-channel");
+    expect(text).not.toContain("ambient-chat");
+  });
+
+  it("does not print legacy env values and does not invent capabilities", () => {
+    const text = buildRootOperationalHelp(
+      { RAVI_AGENT_ID: "ambient-agent", RAVI_SESSION_NAME: "ambient-session", PWD: "/repo" },
+      null,
+    );
+
+    expect(text).toContain("agent: `-`");
+    expect(text).toContain("agent source: unavailable");
+    expect(text).toContain("session source: unavailable");
+    expect(text).toContain("capabilities: unavailable because no runtime context was resolved");
+    expect(text).not.toContain("capabilities: none materialized");
+    expect(text).not.toContain("ambient-agent");
+    expect(text).not.toContain("ambient-session");
+    expect(text).not.toContain("/repo");
   });
 });

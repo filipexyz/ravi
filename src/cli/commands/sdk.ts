@@ -7,6 +7,7 @@ import { Command, CommandAccess, Group, Option, Returns } from "../decorators.js
 import { fail } from "../context.js";
 import { getRegistry } from "../registry-snapshot.js";
 import { ContractError, contractFail } from "../agent-contract.js";
+import { rethrowCliTermination } from "../process-output.js";
 import { emitJson } from "../../sdk/openapi/index.js";
 import { emitAll, computeRegistryHash, compareSdkSource, type EmittedSdk } from "../../sdk/client-codegen/index.js";
 import {
@@ -28,6 +29,7 @@ function writeFileSafe(target: string, body: string): string {
 }
 
 function failSdkCommand(error: unknown): never {
+  rethrowCliTermination(error);
   if (error instanceof ContractError) throw error;
   fail(error instanceof Error ? error.message : String(error));
 }
@@ -187,7 +189,7 @@ export class SdkOpenApiCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSdkCommand(error);
     }
   }
 
@@ -285,7 +287,7 @@ export class SdkClientCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSdkCommand(error);
     }
   }
 
@@ -404,7 +406,7 @@ export class SdkSwiftCommands {
       }
       return payload;
     } catch (error) {
-      fail(error instanceof Error ? error.message : String(error));
+      failSdkCommand(error);
     }
   }
 

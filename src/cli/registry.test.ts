@@ -5,6 +5,7 @@ import { runWithContext } from "./context.js";
 import { Arg, Command, CommandAccess, Group, Option } from "./decorators.js";
 import { registerCommands } from "./registry.js";
 import type { ContextRecord } from "../router/router-db.js";
+import { nats } from "../nats.js";
 
 @Group({ name: "demo.child", description: "Nested child", scope: "open" })
 class NestedChildCommands {
@@ -34,6 +35,33 @@ class HiddenGroupCommands {
   debug() {}
 }
 
+@Group({
+  name: "helpful",
+  description: "Helpful commands",
+  scope: "open",
+  aliases: ["help-alias"],
+  showHelpOnBare: true,
+})
+class HelpfulListCommands {
+  @Command({ name: "list", description: "List helpful records" })
+  @CommandAccess({ kind: "read", resource: "helpful", action: "list", risk: "low", audit: "none" })
+  list() {}
+}
+
+@Group({ name: "helpful", description: "Helpful commands", scope: "open", showHelpOnBare: true })
+class HelpfulShowCommands {
+  @Command({ name: "show", description: "Show one helpful record" })
+  @CommandAccess({ kind: "read", resource: "helpful", action: "show", risk: "low", audit: "none" })
+  show() {}
+}
+
+@Group({ name: "shadow.item", description: "Nested help collision", scope: "open", showHelpOnBare: true })
+class ShadowHelpNestedCommands {
+  @Command({ name: "inspect", description: "Inspect nested item" })
+  @CommandAccess({ kind: "read", resource: "shadow.item", action: "inspect", risk: "low", audit: "none" })
+  inspect() {}
+}
+
 interface CapturedCall {
   id: string;
   json: boolean | undefined;
@@ -56,7 +84,7 @@ const semanticOnlyContext: ContextRecord = {
 @Group({ name: "shadow", description: "Direct command + nested group with --json", scope: "open" })
 class ShadowDirectCommands {
   @Command({ name: "item", description: "Show item directly" })
-  @CommandAccess({ kind: "read", resource: "shadow", action: "item", risk: "low", input: ["id"] })
+  @CommandAccess({ kind: "read", resource: "shadow", action: "item", risk: "low", input: ["id"], audit: "none" })
   item(@Arg("id") id: string, @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     capturedDirect.push({ id, json: asJson });
   }
@@ -65,7 +93,7 @@ class ShadowDirectCommands {
 @Group({ name: "shadow.item", description: "Nested item operations", scope: "open" })
 class ShadowNestedCommands {
   @Command({ name: "show", description: "Show nested item" })
-  @CommandAccess({ kind: "read", resource: "shadow.item", action: "show", risk: "low", input: ["id"] })
+  @CommandAccess({ kind: "read", resource: "shadow.item", action: "show", risk: "low", input: ["id"], audit: "none" })
   show(@Arg("id") id: string, @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     capturedNested.push({ id, json: asJson });
   }
@@ -78,6 +106,20 @@ class NegatedOptionCommands {
   run(@Option({ flags: "--no-cascade", description: "Preserve descendants" }) noCascade = false) {
     capturedNegated.push(noCascade);
   }
+}
+
+@Group({ name: "quiet", description: "Effect-free read", scope: "open" })
+class QuietRegistryCommands {
+  @Command({ name: "inspect", description: "Inspect without audit transport" })
+  @CommandAccess({
+    kind: "read",
+    resource: "quiet",
+    action: "inspect",
+    risk: "low",
+    effectClass: "none",
+    audit: "none",
+  })
+  inspect() {}
 }
 
 @Group({ name: "paired", description: "Positive and negated options", scope: "open" })
@@ -104,6 +146,27 @@ async function parseAsLocalOperator(program: CommanderCommand, argv: string[]): 
 }
 
 describe("registerCommands", () => {
+  it("does not emit NATS for audit:none CLI reads", async () => {
+    const program = new CommanderCommand();
+    program.exitOverride();
+    registerCommands(program, [QuietRegistryCommands]);
+    const originalEmit = nats.emit;
+    const previousSuppression = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    let emits = 0;
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    nats.emit = async () => {
+      emits += 1;
+    };
+    try {
+      await parseAsLocalOperator(program, ["node", "test", "quiet", "inspect"]);
+      expect(emits).toBe(0);
+    } finally {
+      nats.emit = originalEmit;
+      if (previousSuppression === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousSuppression;
+    }
+  });
+
   it("binds negated Commander options as no-prefixed flag presence", async () => {
     capturedNegated.length = 0;
     const program = new CommanderCommand();
@@ -302,6 +365,39 @@ describe("registerCommands", () => {
     registerCommands(program, [HiddenGroupCommands]);
 
     expect(program.commands.some((command) => command.name() === "internal")).toBe(false);
+  });
+
+  it("shows bare help once for a group assembled from multiple classes and through its alias", async () => {
+    for (const groupName of ["helpful", "help-alias"]) {
+      const output: string[] = [];
+      const program = new CommanderCommand();
+      program.exitOverride();
+      program.configureOutput({ writeOut: (value) => output.push(value), writeErr: (value) => output.push(value) });
+      registerCommands(program, [HelpfulListCommands, HelpfulShowCommands]);
+
+      await parseAsLocalOperator(program, ["node", "test", groupName]);
+
+      const rendered = output.join("");
+      expect(rendered).toContain("Usage: test helpful");
+      expect(rendered).toContain("list");
+      expect(rendered).toContain("show");
+    }
+  });
+
+  it("preserves a direct handler that shares a node with a showHelpOnBare nested group in either class order", async () => {
+    for (const classes of [
+      [ShadowDirectCommands, ShadowHelpNestedCommands],
+      [ShadowHelpNestedCommands, ShadowDirectCommands],
+    ]) {
+      capturedDirect.length = 0;
+      const program = new CommanderCommand();
+      program.exitOverride();
+      registerCommands(program, classes);
+
+      await parseAsLocalOperator(program, ["node", "test", "shadow", "item", "direct-id"]);
+
+      expect(capturedDirect).toEqual([{ id: "direct-id", json: undefined }]);
+    }
   });
 
   describe("dotted groups colliding with same-named direct command", () => {

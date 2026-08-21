@@ -57,6 +57,7 @@ export * from "./runtime-credentials.js";
 export * from "./runtime-presets.js";
 export * from "./sdk-returns.js";
 export * from "./sdk.js";
+export * from "./self-read-snapshot.js";
 export * from "./self.js";
 export * from "./service.js";
 export * from "./session-followups.js";

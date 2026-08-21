@@ -7,6 +7,7 @@ import { join } from "node:path";
 import { emitJson } from "../../sdk/openapi/index.js";
 import { ContractError } from "../agent-contract.js";
 import { runWithContext } from "../context.js";
+import { CliTerminationRequest } from "../process-output.js";
 import { getRegistry } from "../registry-snapshot.js";
 import { SdkClientCommands, SdkOpenApiCommands, SdkSwiftCommands } from "./sdk.js";
 
@@ -105,18 +106,18 @@ describe("SdkOpenApiCommands.emit", () => {
 
   it("rejects --out and --stdout together", () => {
     const capture = captureConsole();
-    const original = process.exit;
-    process.exit = (() => {
-      throw new Error("__exit_called__");
-    }) as typeof process.exit;
+    let failure: unknown;
     try {
-      expect(() => new SdkOpenApiCommands().emit("foo.json", true)).toThrow(
-        /Pick exactly one destination|__exit_called__/,
-      );
+      new SdkOpenApiCommands().emit("foo.json", true);
+    } catch (error) {
+      failure = error;
     } finally {
-      process.exit = original;
       capture.restore();
     }
+    expect(failure).toBeInstanceOf(CliTerminationRequest);
+    expect(failure).toMatchObject({ exitCode: 1 });
+    expect(capture.errors).toEqual(["Pick exactly one destination: --out <path> or --stdout."]);
+    expect(capture.errors.join("\n")).not.toContain("CLI termination requested.");
   });
 });
 
@@ -163,16 +164,18 @@ describe("SdkOpenApiCommands.check", () => {
 
   it("requires --against", () => {
     const capture = captureConsole();
-    const original = process.exit;
-    process.exit = (() => {
-      throw new Error("__exit_called__");
-    }) as typeof process.exit;
+    let failure: unknown;
     try {
-      expect(() => new SdkOpenApiCommands().check()).toThrow(/--against|__exit_called__/);
+      new SdkOpenApiCommands().check();
+    } catch (error) {
+      failure = error;
     } finally {
-      process.exit = original;
       capture.restore();
     }
+    expect(failure).toBeInstanceOf(CliTerminationRequest);
+    expect(failure).toMatchObject({ exitCode: 1 });
+    expect(capture.errors).toEqual(["--against <path> is required."]);
+    expect(capture.errors.join("\n")).not.toContain("CLI termination requested.");
   });
 });
 

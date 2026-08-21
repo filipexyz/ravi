@@ -21123,7 +21123,7 @@ export const CommandsListInputSchema = {
       "type": "string"
     },
     "fields": {
-      "description": "Compact mode: keep only these fields of each item",
+      "description": "Compact fields: id,token,title,description,argumentHint,arguments,disabled,scope,path,relativePath,shadowedBy,shadows,issues",
       "type": "string"
     },
     "limit": {
@@ -21144,164 +21144,438 @@ export const CommandsListInputSchema = {
 
 /** JSON Schema for the return shape of `commands.list`. */
 export const CommandsListReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "cwd"
+      ],
+      "title": "CommandsListAgent",
       "type": "object"
     },
     "commands": {
       "items": {
-        "additionalProperties": {},
-        "properties": {
-          "argumentHint": {
-            "anyOf": [
-              {
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "argumentHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arguments": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "disabled": {
+                "type": "boolean"
+              },
+              "id": {
                 "type": "string"
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "arguments": {
-            "items": {},
-            "type": "array"
-          },
-          "description": {
-            "anyOf": [
-              {
+              "issues": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "level": {
+                      "enum": [
+                        "error",
+                        "warning"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "code",
+                    "message",
+                    "id",
+                    "scope",
+                    "path"
+                  ],
+                  "title": "CommandsListIssue",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "path": {
                 "type": "string"
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "disabled": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          },
-          "issues": {
-            "items": {
-              "additionalProperties": {},
-              "properties": {
-                "code": {
-                  "type": "string"
-                },
-                "id": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "level": {
-                  "type": "string"
-                },
-                "message": {
-                  "type": "string"
-                },
-                "path": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "scope": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
+              "relativePath": {
+                "type": "string"
               },
-              "required": [
-                "level",
-                "code",
-                "message",
-                "id",
-                "scope",
-                "path"
-              ],
-              "type": "object"
+              "scope": {
+                "type": "string"
+              },
+              "shadowedBy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shadows": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "token": {
+                "type": "string"
+              }
             },
-            "type": "array"
+            "type": "object"
           },
-          "path": {
-            "type": "string"
-          },
-          "relativePath": {
-            "type": "string"
-          },
-          "scope": {
-            "type": "string"
-          },
-          "shadowedBy": {
+          {
             "anyOf": [
               {
-                "type": "string"
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
               },
               {
-                "type": "null"
-              }
-            ]
-          },
-          "shadows": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
+                "additionalProperties": {},
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "type": "object"
               },
               {
-                "type": "null"
+                "additionalProperties": {},
+                "properties": {
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "description"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "argumentHint": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "argumentHint"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "arguments": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "disabled"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "relativePath": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "relativePath"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadowedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "shadowedBy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadows": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "shadows"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "issues": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "level": {
+                          "enum": [
+                            "error",
+                            "warning"
+                          ],
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "scope": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "code",
+                        "message",
+                        "id",
+                        "scope",
+                        "path"
+                      ],
+                      "title": "CommandsListIssue",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "issues"
+                ],
+                "type": "object"
               }
             ]
-          },
-          "token": {
-            "type": "string"
           }
-        },
-        "required": [
-          "id",
-          "token",
-          "title",
-          "description",
-          "argumentHint",
-          "arguments",
-          "disabled",
-          "scope",
-          "path",
-          "relativePath",
-          "shadowedBy",
-          "shadows",
-          "issues"
         ],
-        "type": "object"
+        "title": "CommandsListItem"
       },
       "type": "array"
     },
+    "filters": {
+      "additionalProperties": false,
+      "properties": {
+        "tag": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tag"
+      ],
+      "title": "CommandsListFilters",
+      "type": "object"
+    },
     "issues": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "code": {
             "type": "string"
@@ -21317,6 +21591,10 @@ export const CommandsListReturnSchema = {
             ]
           },
           "level": {
+            "enum": [
+              "error",
+              "warning"
+            ],
             "type": "string"
           },
           "message": {
@@ -21351,25 +21629,434 @@ export const CommandsListReturnSchema = {
           "scope",
           "path"
         ],
+        "title": "CommandsListIssue",
         "type": "object"
       },
       "type": "array"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "argumentHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arguments": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "disabled": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "string"
+              },
+              "issues": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "level": {
+                      "enum": [
+                        "error",
+                        "warning"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "code",
+                    "message",
+                    "id",
+                    "scope",
+                    "path"
+                  ],
+                  "title": "CommandsListIssue",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "path": {
+                "type": "string"
+              },
+              "relativePath": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "shadowedBy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shadows": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "token": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "description"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "argumentHint": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "argumentHint"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "arguments": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "disabled"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "relativePath": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "relativePath"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadowedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "shadowedBy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadows": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "shadows"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "issues": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "level": {
+                          "enum": [
+                            "error",
+                            "warning"
+                          ],
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "scope": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "code",
+                        "message",
+                        "id",
+                        "scope",
+                        "path"
+                      ],
+                      "title": "CommandsListIssue",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "issues"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ],
+        "title": "CommandsListItem"
       },
       "type": "array"
     },
     "locations": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "global": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "global"
+      ],
+      "title": "CommandsListLocations",
       "type": "object"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -21411,11 +22098,9 @@ export const CommandsListReturnSchema = {
         "limit",
         "offset",
         "returned",
-        "total",
-        "hasMore",
-        "nextOffset",
-        "nextCommand"
+        "total"
       ],
+      "title": "CommandsListPagination",
       "type": "object"
     },
     "total": {
@@ -21425,9 +22110,9 @@ export const CommandsListReturnSchema = {
   "required": [
     "total",
     "pagination",
-    "items",
     "agent",
     "locations",
+    "items",
     "commands",
     "issues"
   ],
@@ -55411,9 +56096,239 @@ export const SelfChatInputSchema = {
 
 /** JSON Schema for the return shape of `self.chat`. */
 export const SelfChatReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "binding": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "bindingReason": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "chatId": {
+                  "type": "string"
+                },
+                "routeId": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "sessionKey": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "sessionKey",
+                "chatId",
+                "routeId",
+                "bindingReason",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "chat": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "channel": {
+                  "type": "string"
+                },
+                "chatType": {
+                  "type": "string"
+                },
+                "firstSeenAt": {
+                  "type": "number"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "instanceId": {
+                  "type": "string"
+                },
+                "lastSeenAt": {
+                  "type": "number"
+                },
+                "normalizedChatId": {
+                  "type": "string"
+                },
+                "platformChatId": {
+                  "type": "string"
+                },
+                "title": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "updatedAt": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "id",
+                "channel",
+                "instanceId",
+                "platformChatId",
+                "normalizedChatId",
+                "chatType",
+                "title",
+                "firstSeenAt",
+                "lastSeenAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "participants": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "contactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "string"
+              },
+              "lastSeenAt": {
+                "type": "number"
+              },
+              "participantType": {
+                "type": "string"
+              },
+              "platformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rawPlatformUserId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "participantType",
+              "contactId",
+              "agentId",
+              "platformIdentityId",
+              "rawPlatformUserId",
+              "role",
+              "status",
+              "source",
+              "lastSeenAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "sourceFallback": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "channel": {
+                  "type": "string"
+                },
+                "chatId": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "channel",
+                "accountId",
+                "chatId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "binding",
+        "chat",
+        "sourceFallback"
+      ],
+      "type": "object"
+    },
     "reason": {
       "type": "string"
     },
@@ -55455,12 +56370,196 @@ export const SelfContextInputSchema = {
 
 /** JSON Schema for the return shape of `self.context`. */
 export const SelfContextReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "minProperties": 1,
   "properties": {
     "actor": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "additionalProperties": false,
+          "properties": {
+            "actorType": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "canonicalChatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "contactId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "identityConfidence": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "normalizedSenderId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "platformIdentityId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rawSenderId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "senderId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "senderPhone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "context_metadata",
+                "environment",
+                "recent_message"
+              ],
+              "type": "string"
+            },
+            "sourceMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "trust": {
+              "enum": [
+                "authoritative",
+                "unverified",
+                "inferred"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "actorType",
+            "contactId",
+            "agentId",
+            "platformIdentityId",
+            "canonicalChatId",
+            "rawSenderId",
+            "normalizedSenderId",
+            "senderId",
+            "senderPhone",
+            "sourceMessageId",
+            "identityConfidence",
+            "source",
+            "trust"
+          ],
+          "type": "object"
+        },
         "reason": {
           "type": "string"
         },
@@ -55480,9 +56579,239 @@ export const SelfContextReturnSchema = {
       "type": "object"
     },
     "chat": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "additionalProperties": false,
+          "properties": {
+            "binding": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bindingReason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "chatId": {
+                      "type": "string"
+                    },
+                    "routeId": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sessionKey": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "sessionKey",
+                    "chatId",
+                    "routeId",
+                    "bindingReason",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "chat": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "channel": {
+                      "type": "string"
+                    },
+                    "chatType": {
+                      "type": "string"
+                    },
+                    "firstSeenAt": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "instanceId": {
+                      "type": "string"
+                    },
+                    "lastSeenAt": {
+                      "type": "number"
+                    },
+                    "normalizedChatId": {
+                      "type": "string"
+                    },
+                    "platformChatId": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "channel",
+                    "instanceId",
+                    "platformChatId",
+                    "normalizedChatId",
+                    "chatType",
+                    "title",
+                    "firstSeenAt",
+                    "lastSeenAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "participants": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "agentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "lastSeenAt": {
+                    "type": "number"
+                  },
+                  "participantType": {
+                    "type": "string"
+                  },
+                  "platformIdentityId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "rawPlatformUserId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "participantType",
+                  "contactId",
+                  "agentId",
+                  "platformIdentityId",
+                  "rawPlatformUserId",
+                  "role",
+                  "status",
+                  "source",
+                  "lastSeenAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "sourceFallback": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "channel": {
+                      "type": "string"
+                    },
+                    "chatId": {
+                      "type": "string"
+                    },
+                    "threadId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "channel",
+                    "accountId",
+                    "chatId"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "binding",
+            "chat",
+            "sourceFallback"
+          ],
+          "type": "object"
+        },
         "reason": {
           "type": "string"
         },
@@ -55502,12 +56831,141 @@ export const SelfContextReturnSchema = {
       "type": "object"
     },
     "depth": {
+      "enum": [
+        "summary",
+        "normal",
+        "full"
+      ],
       "type": "string"
+    },
+    "environment": {
+      "additionalProperties": false,
+      "properties": {
+        "actorResolution": {
+          "additionalProperties": false,
+          "properties": {
+            "environmentTrust": {
+              "const": "unverified",
+              "type": "string"
+            },
+            "precedence": {
+              "items": {
+                "enum": [
+                  "context_metadata",
+                  "environment",
+                  "recent_message"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "reads": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "reads",
+            "precedence",
+            "environmentTrust"
+          ],
+          "type": "object"
+        },
+        "actorValuesMayAppearInOutput": {
+          "const": true,
+          "type": "boolean"
+        },
+        "contextResolution": {
+          "additionalProperties": false,
+          "properties": {
+            "precedence": {
+              "items": {
+                "enum": [
+                  "resolved_cli_context",
+                  "runtime_context_key"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "reads": {
+              "items": {
+                "const": "RAVI_CONTEXT_KEY",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "resolvedCliContextSources": {
+              "items": {
+                "enum": [
+                  "runtime_context_key",
+                  "default_credential",
+                  "tool_or_gateway_context"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "trust": {
+              "const": "authoritative",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reads",
+            "precedence",
+            "resolvedCliContextSources",
+            "trust"
+          ],
+          "type": "object"
+        },
+        "notIdentityFallbacks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "valuesIncludedInContract": {
+          "const": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "valuesIncludedInContract",
+        "actorValuesMayAppearInOutput",
+        "contextResolution",
+        "actorResolution",
+        "notIdentityFallbacks"
+      ],
+      "type": "object"
     },
     "explain": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "step": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step",
+          "status",
+          "detail"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -55516,14 +56974,175 @@ export const SelfContextReturnSchema = {
       "type": "number"
     },
     "identity": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capabilitiesCount": {
+          "type": "number"
+        },
+        "contextId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastUsedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "channel": {
+                  "type": "string"
+                },
+                "chatId": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "channel",
+                "accountId",
+                "chatId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceOfTruth": {
+          "const": "context_registry",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceOfTruth",
+        "contextId",
+        "kind",
+        "agentId",
+        "sessionKey",
+        "sessionName",
+        "source",
+        "metadata",
+        "capabilitiesCount",
+        "createdAt",
+        "expiresAt",
+        "lastUsedAt",
+        "revokedAt"
+      ],
       "type": "object"
     },
     "knowledge": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "additionalProperties": false,
+          "properties": {
+            "expectedCommandFamily": {
+              "type": "string"
+            },
+            "specIds": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "status": {
+              "const": "not_implemented",
+              "type": "string"
+            }
+          },
+          "required": [
+            "status",
+            "specIds",
+            "expectedCommandFamily"
+          ],
+          "type": "object"
+        },
         "reason": {
           "type": "string"
         },
@@ -55552,9 +57171,67 @@ export const SelfContextReturnSchema = {
       "type": "array"
     },
     "permissions": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "additionalProperties": false,
+          "properties": {
+            "byObjectType": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "byPermission": {
+              "additionalProperties": {
+                "type": "number"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "capabilities": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "objectId": {
+                    "type": "string"
+                  },
+                  "objectType": {
+                    "type": "string"
+                  },
+                  "permission": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "permission",
+                  "objectType",
+                  "objectId"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "count": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "capabilities",
+            "count",
+            "byPermission",
+            "byObjectType"
+          ],
+          "type": "object"
+        },
         "reason": {
           "type": "string"
         },
@@ -55574,9 +57251,147 @@ export const SelfContextReturnSchema = {
       "type": "object"
     },
     "recent": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "additionalProperties": false,
+          "properties": {
+            "limit": {
+              "type": "number"
+            },
+            "messages": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "actorType": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "agentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "canonicalChatId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "chatId": {
+                    "type": "string"
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "hasTranscription": {
+                    "type": "boolean"
+                  },
+                  "mediaType": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "messageId": {
+                    "type": "string"
+                  },
+                  "normalizedSenderId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "platformIdentityId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "rawSenderId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "messageId",
+                  "chatId",
+                  "canonicalChatId",
+                  "actorType",
+                  "contactId",
+                  "agentId",
+                  "platformIdentityId",
+                  "rawSenderId",
+                  "normalizedSenderId",
+                  "mediaType",
+                  "hasTranscription",
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "sourceChatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "limit",
+            "sourceChatId",
+            "messages"
+          ],
+          "type": "object"
+        },
         "reason": {
           "type": "string"
         },
@@ -55596,9 +57411,172 @@ export const SelfContextReturnSchema = {
       "type": "object"
     },
     "route": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "additionalProperties": false,
+          "properties": {
+            "boundRoute": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "agent": {
+                      "type": "string"
+                    },
+                    "channel": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "dmScope": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "number"
+                    },
+                    "pattern": {
+                      "type": "string"
+                    },
+                    "policy": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "priority": {
+                      "type": "number"
+                    },
+                    "session": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "pattern",
+                    "accountId",
+                    "agent",
+                    "dmScope",
+                    "session",
+                    "priority",
+                    "policy",
+                    "channel"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sessionRoutes": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "channel": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "dmScope": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "number"
+                  },
+                  "pattern": {
+                    "type": "string"
+                  },
+                  "policy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "priority": {
+                    "type": "number"
+                  },
+                  "session": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "pattern",
+                  "accountId",
+                  "agent",
+                  "dmScope",
+                  "session",
+                  "priority",
+                  "policy",
+                  "channel"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "boundRoute",
+            "sessionRoutes"
+          ],
+          "type": "object"
+        },
         "reason": {
           "type": "string"
         },
@@ -55618,9 +57596,289 @@ export const SelfContextReturnSchema = {
       "type": "object"
     },
     "session": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "agentCwd": {
+              "type": "string"
+            },
+            "agentId": {
+              "type": "string"
+            },
+            "channel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "chatType": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "displayName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "effortOverride": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ephemeral": {
+              "type": "boolean"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lastTarget": {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "channel": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "chatId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "threadId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "channel",
+                "accountId",
+                "chatId",
+                "threadId"
+              ],
+              "type": "object"
+            },
+            "modelOverride": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtimeProvider": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtimeSessionDisplayId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sessionKey": {
+              "type": "string"
+            },
+            "subject": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "thinkingLevel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "usage": {
+              "additionalProperties": false,
+              "properties": {
+                "compactionCount": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contextTokens": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "inputTokens": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "outputTokens": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "totalTokens": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "inputTokens",
+                "outputTokens",
+                "totalTokens",
+                "contextTokens",
+                "compactionCount"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "name",
+            "agentId",
+            "agentCwd",
+            "runtimeProvider",
+            "runtimeSessionDisplayId",
+            "modelOverride",
+            "effortOverride",
+            "thinkingLevel",
+            "channel",
+            "accountId",
+            "chatType",
+            "displayName",
+            "subject",
+            "lastTarget",
+            "usage",
+            "updatedAt",
+            "createdAt",
+            "ephemeral",
+            "expiresAt"
+          ],
+          "type": "object"
+        },
         "reason": {
           "type": "string"
         },
@@ -55640,21 +57898,6 @@ export const SelfContextReturnSchema = {
       "type": "object"
     }
   },
-  "required": [
-    "generatedAt",
-    "depth",
-    "limit",
-    "identity",
-    "actor",
-    "session",
-    "chat",
-    "route",
-    "recent",
-    "permissions",
-    "knowledge",
-    "explain",
-    "nextReads"
-  ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -55667,12 +57910,33 @@ export const SelfExplainInputSchema = {
 
 /** JSON Schema for the return shape of `self.explain`. */
 export const SelfExplainReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "explain": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "ok",
+              "partial",
+              "missing",
+              "unavailable"
+            ],
+            "type": "string"
+          },
+          "step": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "step",
+          "status",
+          "detail"
+        ],
         "type": "object"
       },
       "type": "array"
@@ -55704,9 +57968,32 @@ export const SelfKnowledgeInputSchema = {
 
 /** JSON Schema for the return shape of `self.knowledge`. */
 export const SelfKnowledgeReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedCommandFamily": {
+          "type": "string"
+        },
+        "specIds": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "status": {
+          "const": "not_implemented",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "specIds",
+        "expectedCommandFamily"
+      ],
+      "type": "object"
+    },
     "reason": {
       "type": "string"
     },
@@ -55735,9 +58022,67 @@ export const SelfPermissionsInputSchema = {
 
 /** JSON Schema for the return shape of `self.permissions`. */
 export const SelfPermissionsReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "byObjectType": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "byPermission": {
+          "additionalProperties": {
+            "type": "number"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "capabilities": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "objectId": {
+                "type": "string"
+              },
+              "objectType": {
+                "type": "string"
+              },
+              "permission": {
+                "type": "string"
+              },
+              "source": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "permission",
+              "objectType",
+              "objectId"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "count": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "capabilities",
+        "count",
+        "byPermission",
+        "byObjectType"
+      ],
+      "type": "object"
+    },
     "reason": {
       "type": "string"
     },
@@ -55771,9 +58116,147 @@ export const SelfRecentInputSchema = {
 
 /** JSON Schema for the return shape of `self.recent`. */
 export const SelfRecentReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "limit": {
+          "type": "number"
+        },
+        "messages": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "actorType": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "agentId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "canonicalChatId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "chatId": {
+                "type": "string"
+              },
+              "contactId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "hasTranscription": {
+                "type": "boolean"
+              },
+              "mediaType": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "messageId": {
+                "type": "string"
+              },
+              "normalizedSenderId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "platformIdentityId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "rawSenderId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "messageId",
+              "chatId",
+              "canonicalChatId",
+              "actorType",
+              "contactId",
+              "agentId",
+              "platformIdentityId",
+              "rawSenderId",
+              "normalizedSenderId",
+              "mediaType",
+              "hasTranscription",
+              "createdAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "sourceChatId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "limit",
+        "sourceChatId",
+        "messages"
+      ],
+      "type": "object"
+    },
     "reason": {
       "type": "string"
     },
@@ -55802,9 +58285,172 @@ export const SelfRouteInputSchema = {
 
 /** JSON Schema for the return shape of `self.route`. */
 export const SelfRouteReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
-    "data": {},
+    "data": {
+      "additionalProperties": false,
+      "properties": {
+        "boundRoute": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "agent": {
+                  "type": "string"
+                },
+                "channel": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "dmScope": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "id": {
+                  "type": "number"
+                },
+                "pattern": {
+                  "type": "string"
+                },
+                "policy": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "priority": {
+                  "type": "number"
+                },
+                "session": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "id",
+                "pattern",
+                "accountId",
+                "agent",
+                "dmScope",
+                "session",
+                "priority",
+                "policy",
+                "channel"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionRoutes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string"
+              },
+              "channel": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "dmScope": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "id": {
+                "type": "number"
+              },
+              "pattern": {
+                "type": "string"
+              },
+              "policy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "priority": {
+                "type": "number"
+              },
+              "session": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "id",
+              "pattern",
+              "accountId",
+              "agent",
+              "dmScope",
+              "session",
+              "priority",
+              "policy",
+              "channel"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "boundRoute",
+        "sessionRoutes"
+      ],
+      "type": "object"
+    },
     "reason": {
       "type": "string"
     },
@@ -55833,12 +58479,195 @@ export const SelfWhoamiInputSchema = {
 
 /** JSON Schema for the return shape of `self.whoami`. */
 export const SelfWhoamiReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "actor": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "additionalProperties": false,
+          "properties": {
+            "actorType": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "agentId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "canonicalChatId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "contactId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "identityConfidence": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "normalizedSenderId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "platformIdentityId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "rawSenderId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "senderId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "senderPhone": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "source": {
+              "enum": [
+                "context_metadata",
+                "environment",
+                "recent_message"
+              ],
+              "type": "string"
+            },
+            "sourceMessageId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "trust": {
+              "enum": [
+                "authoritative",
+                "unverified",
+                "inferred"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "actorType",
+            "contactId",
+            "agentId",
+            "platformIdentityId",
+            "canonicalChatId",
+            "rawSenderId",
+            "normalizedSenderId",
+            "senderId",
+            "senderPhone",
+            "sourceMessageId",
+            "identityConfidence",
+            "source",
+            "trust"
+          ],
+          "type": "object"
+        },
         "reason": {
           "type": "string"
         },
@@ -55858,9 +58687,239 @@ export const SelfWhoamiReturnSchema = {
       "type": "object"
     },
     "chat": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "additionalProperties": false,
+          "properties": {
+            "binding": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "bindingReason": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "chatId": {
+                      "type": "string"
+                    },
+                    "routeId": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "sessionKey": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "sessionKey",
+                    "chatId",
+                    "routeId",
+                    "bindingReason",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "chat": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "channel": {
+                      "type": "string"
+                    },
+                    "chatType": {
+                      "type": "string"
+                    },
+                    "firstSeenAt": {
+                      "type": "number"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "instanceId": {
+                      "type": "string"
+                    },
+                    "lastSeenAt": {
+                      "type": "number"
+                    },
+                    "normalizedChatId": {
+                      "type": "string"
+                    },
+                    "platformChatId": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "channel",
+                    "instanceId",
+                    "platformChatId",
+                    "normalizedChatId",
+                    "chatType",
+                    "title",
+                    "firstSeenAt",
+                    "lastSeenAt",
+                    "updatedAt"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "participants": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "agentId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "contactId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "lastSeenAt": {
+                    "type": "number"
+                  },
+                  "participantType": {
+                    "type": "string"
+                  },
+                  "platformIdentityId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "rawPlatformUserId": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "role": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "participantType",
+                  "contactId",
+                  "agentId",
+                  "platformIdentityId",
+                  "rawPlatformUserId",
+                  "role",
+                  "status",
+                  "source",
+                  "lastSeenAt"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "sourceFallback": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "channel": {
+                      "type": "string"
+                    },
+                    "chatId": {
+                      "type": "string"
+                    },
+                    "threadId": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "channel",
+                    "accountId",
+                    "chatId"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "binding",
+            "chat",
+            "sourceFallback"
+          ],
+          "type": "object"
+        },
         "reason": {
           "type": "string"
         },
@@ -55879,12 +58938,253 @@ export const SelfWhoamiReturnSchema = {
       ],
       "type": "object"
     },
+    "environment": {
+      "additionalProperties": false,
+      "properties": {
+        "actorResolution": {
+          "additionalProperties": false,
+          "properties": {
+            "environmentTrust": {
+              "const": "unverified",
+              "type": "string"
+            },
+            "precedence": {
+              "items": {
+                "enum": [
+                  "context_metadata",
+                  "environment",
+                  "recent_message"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "reads": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "reads",
+            "precedence",
+            "environmentTrust"
+          ],
+          "type": "object"
+        },
+        "actorValuesMayAppearInOutput": {
+          "const": true,
+          "type": "boolean"
+        },
+        "contextResolution": {
+          "additionalProperties": false,
+          "properties": {
+            "precedence": {
+              "items": {
+                "enum": [
+                  "resolved_cli_context",
+                  "runtime_context_key"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "reads": {
+              "items": {
+                "const": "RAVI_CONTEXT_KEY",
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "resolvedCliContextSources": {
+              "items": {
+                "enum": [
+                  "runtime_context_key",
+                  "default_credential",
+                  "tool_or_gateway_context"
+                ],
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "trust": {
+              "const": "authoritative",
+              "type": "string"
+            }
+          },
+          "required": [
+            "reads",
+            "precedence",
+            "resolvedCliContextSources",
+            "trust"
+          ],
+          "type": "object"
+        },
+        "notIdentityFallbacks": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "valuesIncludedInContract": {
+          "const": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "valuesIncludedInContract",
+        "actorValuesMayAppearInOutput",
+        "contextResolution",
+        "actorResolution",
+        "notIdentityFallbacks"
+      ],
+      "type": "object"
+    },
     "generatedAt": {
       "type": "number"
     },
     "identity": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "agentId": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capabilitiesCount": {
+          "type": "number"
+        },
+        "contextId": {
+          "type": "string"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string"
+        },
+        "lastUsedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/__schema0"
+              },
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "revokedAt": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionKey": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sessionName": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "channel": {
+                  "type": "string"
+                },
+                "chatId": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "channel",
+                "accountId",
+                "chatId"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceOfTruth": {
+          "const": "context_registry",
+          "type": "string"
+        }
+      },
+      "required": [
+        "sourceOfTruth",
+        "contextId",
+        "kind",
+        "agentId",
+        "sessionKey",
+        "sessionName",
+        "source",
+        "metadata",
+        "capabilitiesCount",
+        "createdAt",
+        "expiresAt",
+        "lastUsedAt",
+        "revokedAt"
+      ],
       "type": "object"
     },
     "nextReads": {
@@ -55894,9 +59194,172 @@ export const SelfWhoamiReturnSchema = {
       "type": "array"
     },
     "route": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "additionalProperties": false,
+          "properties": {
+            "boundRoute": {
+              "anyOf": [
+                {
+                  "additionalProperties": false,
+                  "properties": {
+                    "accountId": {
+                      "type": "string"
+                    },
+                    "agent": {
+                      "type": "string"
+                    },
+                    "channel": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "dmScope": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "id": {
+                      "type": "number"
+                    },
+                    "pattern": {
+                      "type": "string"
+                    },
+                    "policy": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "priority": {
+                      "type": "number"
+                    },
+                    "session": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "pattern",
+                    "accountId",
+                    "agent",
+                    "dmScope",
+                    "session",
+                    "priority",
+                    "policy",
+                    "channel"
+                  ],
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sessionRoutes": {
+              "items": {
+                "additionalProperties": false,
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "channel": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "dmScope": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "id": {
+                    "type": "number"
+                  },
+                  "pattern": {
+                    "type": "string"
+                  },
+                  "policy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "priority": {
+                    "type": "number"
+                  },
+                  "session": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "id",
+                  "pattern",
+                  "accountId",
+                  "agent",
+                  "dmScope",
+                  "session",
+                  "priority",
+                  "policy",
+                  "channel"
+                ],
+                "type": "object"
+              },
+              "type": "array"
+            }
+          },
+          "required": [
+            "boundRoute",
+            "sessionRoutes"
+          ],
+          "type": "object"
+        },
         "reason": {
           "type": "string"
         },
@@ -55916,9 +59379,289 @@ export const SelfWhoamiReturnSchema = {
       "type": "object"
     },
     "session": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
-        "data": {},
+        "data": {
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "agentCwd": {
+              "type": "string"
+            },
+            "agentId": {
+              "type": "string"
+            },
+            "channel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "chatType": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "displayName": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "effortOverride": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ephemeral": {
+              "type": "boolean"
+            },
+            "expiresAt": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "lastTarget": {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "channel": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "chatId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "threadId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "channel",
+                "accountId",
+                "chatId",
+                "threadId"
+              ],
+              "type": "object"
+            },
+            "modelOverride": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "name": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtimeProvider": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtimeSessionDisplayId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "sessionKey": {
+              "type": "string"
+            },
+            "subject": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "thinkingLevel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "updatedAt": {
+              "type": "number"
+            },
+            "usage": {
+              "additionalProperties": false,
+              "properties": {
+                "compactionCount": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "contextTokens": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "inputTokens": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "outputTokens": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "totalTokens": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "inputTokens",
+                "outputTokens",
+                "totalTokens",
+                "contextTokens",
+                "compactionCount"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "sessionKey",
+            "name",
+            "agentId",
+            "agentCwd",
+            "runtimeProvider",
+            "runtimeSessionDisplayId",
+            "modelOverride",
+            "effortOverride",
+            "thinkingLevel",
+            "channel",
+            "accountId",
+            "chatType",
+            "displayName",
+            "subject",
+            "lastTarget",
+            "usage",
+            "updatedAt",
+            "createdAt",
+            "ephemeral",
+            "expiresAt"
+          ],
+          "type": "object"
+        },
         "reason": {
           "type": "string"
         },
@@ -55941,6 +59684,7 @@ export const SelfWhoamiReturnSchema = {
   "required": [
     "generatedAt",
     "identity",
+    "environment",
     "actor",
     "session",
     "chat",

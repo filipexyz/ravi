@@ -7,8 +7,6 @@ status: draft
 normative: false
 ---
 
-# Why Ravi Self Exists
-
 ## Problem
 
 Ravi has many context surfaces, but an agent often needs to know its current situation quickly:
@@ -30,6 +28,11 @@ That makes agents over-read, under-read, or depend on raw channel details.
 Create `ravi self` as the canonical agent-friendly self-context command surface.
 
 `self` is not a new store. It is a read-only composition layer.
+
+Root operational help and `context whoami/capabilities` remain adjacent views,
+but they must derive repeated identity and capability facts from the same
+resolved context-registry record. Ambient env is a labeled fallback, never a
+silent competing authority.
 
 ## Why Not Just `sessions read`
 

@@ -6,6 +6,7 @@ import {
   ADMIN_BOOTSTRAP_KIND,
   createRuntimeContext,
   getOrCreateAgentRuntimeContext,
+  getRuntimeContextFromEnv,
   issueRuntimeContext,
   listLiveAdminContexts,
   resolveRuntimeContext,
@@ -70,6 +71,23 @@ describe("runtime context registry", () => {
       accountId: "main",
       chatId: "5511999999999",
     });
+  });
+
+  it("resolves environment context read-only without changing lastUsedAt", () => {
+    const context = createRuntimeContext({
+      kind: "test-runtime",
+      agentId: TEST_AGENT_ID,
+      capabilities: [],
+    });
+    const before = dbGetContext(context.contextId)?.lastUsedAt;
+
+    const resolved = getRuntimeContextFromEnv(
+      { RAVI_CONTEXT_KEY: context.contextKey },
+      { touch: false, readOnly: true },
+    );
+
+    expect(resolved?.contextId).toBe(context.contextId);
+    expect(dbGetContext(context.contextId)?.lastUsedAt).toBe(before);
   });
 
   it("reuses one live agent-runtime context per agent/session and keeps the original capability snapshot", () => {

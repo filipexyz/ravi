@@ -7,13 +7,12 @@ status: draft
 normative: false
 ---
 
-# Ravi Self Runbook
-
 ## Inspect Current Context
 
 ```bash
 ravi self whoami
 ravi self context
+ravi self context --fields identity,session --json
 ```
 
 Use this when an agent is confused about where a prompt came from.
@@ -102,12 +101,17 @@ Expected output:
 
 If self output is empty or weak:
 
-1. Check `ravi context whoami`.
-2. Check whether the session has a chat binding.
-3. Check route resolution.
-4. Check message actor metadata.
-5. Check whether Knowledge has ingested the thread.
-6. Check permissions.
+1. Check `ravi self --help` for the environment, degradation and exit contract.
+2. Check `ravi context whoami --json` and `ravi context capabilities --json`.
+3. Check whether the session has a chat binding.
+4. Check route resolution.
+5. Check message actor metadata and its `source`/`trust`.
+6. Check whether Knowledge has ingested the thread.
+7. Check permissions.
+
+An env-sourced actor is useful orientation data but not authorization proof.
+Keep it `partial` and follow a registered context/capability read before any
+other domain performs an effect.
 
 ## Diagnose Raw Omni Leakage
 
