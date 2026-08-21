@@ -42,26 +42,30 @@ function runNativeProcess(args: string[], timeoutMs: number): Promise<CliProcess
     const stderr: Buffer[] = [];
     let settled = false;
     let timeoutError: Error | null = null;
+    let forceKillTimeout: ReturnType<typeof setTimeout> | undefined;
     const timeout = setTimeout(() => {
       timeoutError = new Error(`Native process did not exit within ${timeoutMs}ms: ${args.join(" ")}`);
-      if (!child.kill()) {
-        settled = true;
-        reject(timeoutError);
-      }
+      child.kill();
+      forceKillTimeout = setTimeout(() => {
+        if (!settled) child.kill("SIGKILL");
+      }, 250);
     }, timeoutMs);
 
     child.stdout.on("data", (chunk: Buffer) => stdout.push(chunk));
     child.stderr.on("data", (chunk: Buffer) => stderr.push(chunk));
     child.once("error", (error) => {
       if (settled) return;
+      if (timeoutError && child.pid !== undefined) return;
       settled = true;
       clearTimeout(timeout);
+      if (forceKillTimeout) clearTimeout(forceKillTimeout);
       reject(error);
     });
     child.once("close", (status) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeout);
+      if (forceKillTimeout) clearTimeout(forceKillTimeout);
       if (timeoutError) {
         reject(timeoutError);
         return;

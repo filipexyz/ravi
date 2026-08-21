@@ -145,3 +145,18 @@ teste nativo agora prova o limite com um stream permanentemente preso e mata,
 observa e rejeita um processo-filho que ultrapassa seu próprio prazo. Assim, o
 caminho normal continua comprovando saída integral, enquanto uma anomalia do
 stream não cria laço de CPU nem processo órfão.
+
+## Nota de revisão — 2026-08-21 (observação do processo-filho)
+
+A revisão independente da correção manteve **NO-GO** porque o helper nativo
+rejeitava imediatamente quando o primeiro `child.kill()` retornava falso, sem
+aguardar o evento `close`. Isso contrariava a exigência recém-documentada de
+matar e observar o filho antes de concluir. O ledger também permanecia na prova
+anterior de 22 testes e 91 asserções, embora o HEAD já contivesse 23 testes e 93
+asserções.
+
+O helper agora solicita encerramento no prazo principal, escala para `SIGKILL`
+depois de 250 ms e só resolve ou rejeita o timeout quando observa `close`.
+Erros de sinalização após o timeout também aguardam esse fechamento. O ledger
+foi alinhado à evidência final; nova execução e nova revisão do SHA exato
+continuam obrigatórias.

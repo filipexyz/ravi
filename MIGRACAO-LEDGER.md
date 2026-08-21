@@ -1450,7 +1450,7 @@ global.
 
 O teste nativo agora cobre stream permanentemente preso e processo-filho que
 excede seu prazo, alem dos caminhos reais de JSON maior que 64 KiB, falha e
-versao. O recorte focado passou com 22 testes e 91 assercoes; metadados,
+versao. O recorte focado passou com 23 testes e 93 assercoes; metadados,
 paginacao e runtime passaram com 27 testes e 107 assercoes; `test:sdk` passou
 com 75 testes e 297 assercoes, seguido de `sdk:check`. Typecheck, build, quality
 gate dos 34 caminhos e lint documental tambem passaram.
