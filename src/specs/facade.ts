@@ -67,6 +67,8 @@ export interface SpecsFacadeVerification {
 export interface ApplySpecsFacadePlanOptions {
   /** Verification seam used to prove that writes consume the captured snapshot. */
   afterValidation?: () => void;
+  /** Promotion seam used to prove that ancestor loss cannot publish a target. */
+  beforePromote?: (stagingPath: string) => void;
 }
 
 interface SpecsFacadePlanState {
@@ -128,6 +130,25 @@ function canonicalDatabasePath(): string {
   return path;
 }
 
+function canonicalSpecsRoot(cwd: string): string {
+  const path = resolve(getSpecsRoot(cwd));
+  const root = parse(path).root;
+  let current = root;
+  for (const segment of path
+    .slice(root.length)
+    .split(/[\\/]+/)
+    .filter(Boolean)) {
+    current = join(current, segment);
+    if (!existsSync(current)) continue;
+    if (lstatSync(current).isSymbolicLink()) {
+      throw new SpecsFacadeError("UNSAFE_SPECS_ROOT", `Unsafe symbolic link in specs root: ${current}`, {
+        path: current,
+      });
+    }
+  }
+  return path;
+}
+
 function planHash(
   plan: Omit<SpecsFacadePlan, "planHash" | "executable" | "blockers" | "observation">,
   blockers: SpecsFacadePlan["blockers"],
@@ -159,9 +180,19 @@ function bindingForCwd(cwd?: string): SpecsFacadePlan["binding"] {
   const canonical = canonicalCwd(cwd);
   return {
     cwd: canonical,
-    specsRoot: getSpecsRoot(canonical),
+    specsRoot: canonicalSpecsRoot(canonical),
     dbPath: canonicalDatabasePath(),
   };
+}
+
+function assertCurrentSpecsBinding(expectedPath: string, cwd: string): void {
+  const currentPath = canonicalSpecsRoot(cwd);
+  if (currentPath !== expectedPath) {
+    throw new SpecsFacadeError("PLAN_STALE", "Specs root binding changed after planning", {
+      expectedSpecsRoot: expectedPath,
+      currentSpecsRoot: currentPath,
+    });
+  }
 }
 
 function assertCurrentDatabaseBinding(expectedPath: string): void {
@@ -186,7 +217,7 @@ function newPlanState(intent: Extract<SpecsFacadeIntent, { operation: "new" }>):
   const binding = bindingForCwd(prepared.cwd);
   const inspection = inspectPreparedSpecCreation(prepared);
   const blockers: SpecsFacadePlan["blockers"] = [];
-  if (prepared.missingAncestors.length > 0 && !inspection.exactMatch) {
+  if (prepared.missingAncestors.length > 0) {
     blockers.push({
       code: "SPEC_ANCESTORS_MISSING",
       message: `Missing ancestor specs for ${prepared.id}`,
@@ -348,6 +379,7 @@ function fileReadback(path: string, expectedSha256?: string): Record<string, unk
 export function readbackSpecsFacade(intent: SpecsFacadeIntent, expectedPlanHash: string): SpecsFacadeReadback {
   const state = assertExpectedObservationPlan(intent, expectedPlanHash);
   const plan = state.plan;
+  assertCurrentSpecsBinding(plan.binding.specsRoot, plan.binding.cwd);
   assertCurrentDatabaseBinding(plan.binding.dbPath);
   if (intent.operation === "new") {
     const prepared = state.prepared!;
@@ -398,7 +430,9 @@ function classifySpecsFacadeReadback(
     outcome =
       existing.length === 0
         ? "absent"
-        : readback.unexpectedFiles.length === 0 && readback.files.every((file) => file.matches === true)
+        : readback.ancestors.every((ancestor) => ancestor.exists) &&
+            readback.unexpectedFiles.length === 0 &&
+            readback.files.every((file) => file.matches === true)
           ? "confirmed"
           : "divergent";
   } else {
@@ -426,13 +460,16 @@ export function applySpecsFacadePlan(
     const blocker = plan.blockers[0]!;
     throw new SpecsFacadeError(blocker.code, blocker.message, blocker.details);
   }
+  assertCurrentSpecsBinding(plan.binding.specsRoot, plan.binding.cwd);
   assertCurrentDatabaseBinding(plan.binding.dbPath);
   options.afterValidation?.();
+  assertCurrentSpecsBinding(plan.binding.specsRoot, plan.binding.cwd);
 
   if (intent.operation === "new") {
     const result = applyPreparedSpecCreation(state.prepared!, {
       requireAncestors: true,
       existing: "noop",
+      beforePromote: options.beforePromote,
     });
     const verification = verifySpecsFacade(intent, plan.planHash);
     if (verification.outcome !== "confirmed") {
@@ -443,6 +480,7 @@ export function applySpecsFacadePlan(
     return { operation: intent.operation, state: result.status, changed: result.changed, verification };
   }
 
+  assertCurrentSpecsBinding(plan.binding.specsRoot, plan.binding.cwd);
   assertCurrentDatabaseBinding(plan.binding.dbPath);
   const result = syncSpecsSnapshot(state.specs, { cwd: plan.binding.cwd });
   const verification = classifySpecsFacadeReadback("sync", plan.planHash, readbackCapturedSync(state, plan.planHash));

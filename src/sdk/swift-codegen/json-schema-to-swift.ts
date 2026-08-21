@@ -28,7 +28,15 @@ export function jsonSchemaToSwift(schema: JsonSchema | undefined | null): string
     return "RaviJSON";
   }
 
-  if (Array.isArray((schema as { anyOf?: unknown[] }).anyOf)) return "RaviJSON";
+  const anyOf = (schema as { anyOf?: unknown[] }).anyOf;
+  if (Array.isArray(anyOf)) {
+    const nonNull = anyOf.filter((branch) => !isNullSchema(branch));
+    if (nonNull.length === 1 && nonNull.length !== anyOf.length) {
+      const swiftType = jsonSchemaToSwift(nonNull[0] as JsonSchema);
+      return swiftType === "RaviJSON" ? swiftType : `${swiftType}?`;
+    }
+    return "RaviJSON";
+  }
   if (Array.isArray((schema as { oneOf?: unknown[] }).oneOf)) return "RaviJSON";
   if (Array.isArray((schema as { allOf?: unknown[] }).allOf)) return "RaviJSON";
 
@@ -68,6 +76,12 @@ export function jsonSchemaToSwift(schema: JsonSchema | undefined | null): string
     default:
       return "RaviJSON";
   }
+}
+
+function isNullSchema(schema: unknown): boolean {
+  if (!schema || typeof schema !== "object") return false;
+  const candidate = schema as { type?: unknown; const?: unknown };
+  return candidate.type === "null" || candidate.const === null;
 }
 
 function literalType(value: unknown): string {

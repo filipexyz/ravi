@@ -1323,16 +1323,13 @@ const specsFacadeBlockerReturnSchema = z
     code: z.string(),
     message: z.string(),
     details: z
-      .union([
-        z.object({ ancestors: z.array(z.string()) }).strict(),
-        z
-          .object({
-            divergentFiles: z.array(z.string()),
-            missingFiles: z.array(z.string()),
-            unexpectedFiles: z.array(z.string()),
-          })
-          .strict(),
-      ])
+      .object({
+        ancestors: z.array(z.string()).optional(),
+        divergentFiles: z.array(z.string()).optional(),
+        missingFiles: z.array(z.string()).optional(),
+        unexpectedFiles: z.array(z.string()).optional(),
+      })
+      .strict()
       .optional(),
   })
   .strict();
@@ -1390,7 +1387,7 @@ const specsFacadePlanCommonReturnSchema = z
   })
   .strict();
 
-const specsFacadeNewPlanReturnSchema = specsFacadePlanCommonReturnSchema
+export const specsFacadeNewPlanReturnSchema = specsFacadePlanCommonReturnSchema
   .extend({
     operation: z.literal("new"),
     input: specsFacadeNewInputReturnSchema,
@@ -1398,9 +1395,10 @@ const specsFacadeNewPlanReturnSchema = specsFacadePlanCommonReturnSchema
     effects: z.array(specsFacadeCreateEffectReturnSchema),
     observation: specsFacadeNewObservationReturnSchema,
   })
-  .strict();
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
 
-const specsFacadeSyncPlanReturnSchema = specsFacadePlanCommonReturnSchema
+export const specsFacadeSyncPlanReturnSchema = specsFacadePlanCommonReturnSchema
   .extend({
     operation: z.literal("sync"),
     input: z.object({ source: z.literal("workspace") }).strict(),
@@ -1408,34 +1406,24 @@ const specsFacadeSyncPlanReturnSchema = specsFacadePlanCommonReturnSchema
     effects: z.array(specsFacadeSyncEffectReturnSchema).length(1),
     observation: specsFacadeSyncObservationReturnSchema,
   })
-  .strict();
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
 
 export const specsFacadePlanReturnSchema = z.discriminatedUnion("operation", [
   specsFacadeNewPlanReturnSchema,
   specsFacadeSyncPlanReturnSchema,
 ]);
 
-const specsFacadeFileReturnSchema = z.union([
-  z.object({ path: z.string(), exists: z.literal(false), expectedSha256: z.string().nullable() }).strict(),
-  z
-    .object({
-      path: z.string(),
-      exists: z.literal(true),
-      regularFile: z.literal(false),
-      expectedSha256: z.string().nullable(),
-    })
-    .strict(),
-  z
-    .object({
-      path: z.string(),
-      exists: z.literal(true),
-      regularFile: z.literal(true),
-      actualSha256: z.string(),
-      expectedSha256: z.string().nullable(),
-      matches: z.boolean(),
-    })
-    .strict(),
-]);
+const specsFacadeFileReturnSchema = z
+  .object({
+    path: z.string(),
+    exists: z.boolean(),
+    regularFile: z.boolean().optional(),
+    actualSha256: z.string().optional(),
+    expectedSha256: z.string().nullable(),
+    matches: z.boolean().optional(),
+  })
+  .strict();
 
 const specsFacadeReadbackCommonReturnSchema = z
   .object({
@@ -1449,86 +1437,94 @@ const specsFacadeReadbackCommonReturnSchema = z
   })
   .strict();
 
-const specsFacadeNewReadbackReturnSchema = specsFacadeReadbackCommonReturnSchema
+export const specsFacadeNewReadbackReturnSchema = specsFacadeReadbackCommonReturnSchema
   .extend({
     operation: z.literal("new"),
     target: specsFacadeNewTargetReturnSchema,
     ancestors: z.array(specsFacadeAncestorReturnSchema),
   })
-  .strict();
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
 
-const specsFacadeSyncReadbackReturnSchema = specsFacadeReadbackCommonReturnSchema
+export const specsFacadeSyncReadbackReturnSchema = specsFacadeReadbackCommonReturnSchema
   .extend({
     operation: z.literal("sync"),
     target: specsFacadeSyncTargetReturnSchema,
     ancestors: z.array(specsFacadeAncestorReturnSchema).max(0),
   })
-  .strict();
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
 
 export const specsFacadeReadbackReturnSchema = z.discriminatedUnion("operation", [
   specsFacadeNewReadbackReturnSchema,
   specsFacadeSyncReadbackReturnSchema,
 ]);
 
-const specsFacadeNewVerificationReturnSchema = z
+export const specsFacadeNewVerificationReturnSchema = z
   .object({
     operation: z.literal("new"),
     planHash: z.string(),
     outcome: z.enum(["confirmed", "absent", "divergent"]),
     readback: specsFacadeNewReadbackReturnSchema,
   })
-  .strict();
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
 
-const specsFacadeSyncVerificationReturnSchema = z
+export const specsFacadeSyncVerificationReturnSchema = z
   .object({
     operation: z.literal("sync"),
     planHash: z.string(),
     outcome: z.enum(["confirmed", "absent", "divergent"]),
     readback: specsFacadeSyncReadbackReturnSchema,
   })
-  .strict();
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
 
 export const specsFacadeVerificationReturnSchema = z.discriminatedUnion("operation", [
   specsFacadeNewVerificationReturnSchema,
   specsFacadeSyncVerificationReturnSchema,
 ]);
 
-const specsFacadeNewApplyReturnSchema = z
+export const specsFacadeNewApplyReturnSchema = z
   .object({
     operation: z.literal("new"),
     state: z.enum(["created", "noop"]),
     changed: z.boolean(),
     verification: specsFacadeNewVerificationReturnSchema,
   })
-  .strict();
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
 
-const specsFacadeSyncApplyReturnSchema = z
+export const specsFacadeSyncApplyReturnSchema = z
   .object({
     operation: z.literal("sync"),
     state: z.enum(["applied", "noop"]),
     changed: z.boolean(),
     verification: specsFacadeSyncVerificationReturnSchema,
   })
-  .strict();
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
 
 export const specsFacadeApplyReturnSchema = z.discriminatedUnion("operation", [
   specsFacadeNewApplyReturnSchema,
   specsFacadeSyncApplyReturnSchema,
 ]);
 
-const specsFacadeNewRecoveryReturnSchema = specsFacadeNewVerificationReturnSchema
+export const specsFacadeNewRecoveryReturnSchema = specsFacadeNewVerificationReturnSchema
   .extend({
     action: z.enum(["none", "replan_and_apply", "manual_review"]),
     replay: z.literal(false),
   })
-  .strict();
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
 
-const specsFacadeSyncRecoveryReturnSchema = specsFacadeSyncVerificationReturnSchema
+export const specsFacadeSyncRecoveryReturnSchema = specsFacadeSyncVerificationReturnSchema
   .extend({
     action: z.enum(["none", "replan_and_apply", "manual_review"]),
     replay: z.literal(false),
   })
-  .strict();
+  .strict()
+  .meta({ "x-ravi-swift-nested": true });
 
 export const specsFacadeRecoveryReturnSchema = z.discriminatedUnion("operation", [
   specsFacadeNewRecoveryReturnSchema,

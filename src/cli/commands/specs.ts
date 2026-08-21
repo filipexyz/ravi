@@ -1,5 +1,5 @@
 import "reflect-metadata";
-import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
+import { Arg, CliOnly, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
 import { CONTRACT_EXIT_USAGE, ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
@@ -26,9 +26,19 @@ import {
   specContextReturnSchema,
   specCreateReturnSchema,
   specsFacadeApplyReturnSchema,
+  specsFacadeNewApplyReturnSchema,
+  specsFacadeNewPlanReturnSchema,
+  specsFacadeNewReadbackReturnSchema,
+  specsFacadeNewRecoveryReturnSchema,
+  specsFacadeNewVerificationReturnSchema,
   specsFacadePlanReturnSchema,
   specsFacadeReadbackReturnSchema,
   specsFacadeRecoveryReturnSchema,
+  specsFacadeSyncApplyReturnSchema,
+  specsFacadeSyncPlanReturnSchema,
+  specsFacadeSyncReadbackReturnSchema,
+  specsFacadeSyncRecoveryReturnSchema,
+  specsFacadeSyncVerificationReturnSchema,
   specsFacadeVerificationReturnSchema,
   specsListReturnSchema,
   specsSyncReturnSchema,
@@ -338,6 +348,7 @@ export class SpecsCommands {
 })
 export class SpecsFacadeCommands {
   @Command({ name: "plan", description: "Build a bound specs plan without writing state" })
+  @CliOnly()
   @CommandAccess({ kind: "read", resource: "specs.facade", action: "plan", risk: "low", effectClass: "none" })
   @Returns(specsFacadePlanReturnSchema)
   plan(
@@ -360,6 +371,7 @@ export class SpecsFacadeCommands {
   }
 
   @Command({ name: "apply", description: "Apply one bound specs plan and confirm it by readback" })
+  @CliOnly()
   @CommandAccess({
     kind: "mutate",
     resource: "specs.facade",
@@ -389,6 +401,7 @@ export class SpecsFacadeCommands {
   }
 
   @Command({ name: "readback", description: "Read files, ancestors, and index for a bound specs plan" })
+  @CliOnly()
   @CommandAccess({
     kind: "read",
     resource: "specs.facade",
@@ -418,6 +431,7 @@ export class SpecsFacadeCommands {
   }
 
   @Command({ name: "verify", description: "Classify current state against a bound specs plan" })
+  @CliOnly()
   @CommandAccess({ kind: "read", resource: "specs.facade", action: "verify", risk: "low", effectClass: "none" })
   @Returns(specsFacadeVerificationReturnSchema)
   verify(
@@ -441,6 +455,7 @@ export class SpecsFacadeCommands {
   }
 
   @Command({ name: "recover", description: "Inspect recovery without replaying a specs effect" })
+  @CliOnly()
   @CommandAccess({ kind: "read", resource: "specs.facade", action: "recover", risk: "low", effectClass: "none" })
   @Returns(specsFacadeRecoveryReturnSchema)
   recover(
@@ -461,5 +476,151 @@ export class SpecsFacadeCommands {
     } catch (error) {
       failFacade(op, error, asJson);
     }
+  }
+}
+
+@Group({
+  name: "specs.facade.new",
+  description: "Typed agent-first facade for creating one spec",
+  scope: "open",
+})
+export class SpecsFacadeNewCommands {
+  private readonly facade = new SpecsFacadeCommands();
+
+  @Command({ name: "plan", description: "Plan one bound spec creation without writing" })
+  @CommandAccess({ kind: "read", resource: "specs.facade", action: "plan", risk: "low", effectClass: "none" })
+  @Returns(specsFacadeNewPlanReturnSchema)
+  plan(
+    @Arg("id", { description: "Spec id" }) id: string,
+    @Arg("title", { description: "Spec title" }) title: string,
+    @Arg("kind", { description: "domain|capability|feature" }) kind: string,
+    @Option({ flags: "--full", description: "Include WHY.md, RUNBOOK.md, and CHECKS.md" }) full?: boolean,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    return this.facade.plan("new", id, title, kind, full, asJson);
+  }
+
+  @Command({ name: "apply", description: "Apply one bound spec creation and confirm it" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "specs.facade",
+    action: "apply",
+    risk: "medium",
+    effectClass: "local-reversible",
+  })
+  @Returns(specsFacadeNewApplyReturnSchema)
+  apply(
+    @Arg("planHash", { description: "Exact hash returned by plan" }) planHash: string,
+    @Arg("id", { description: "Spec id" }) id: string,
+    @Arg("title", { description: "Spec title" }) title: string,
+    @Arg("kind", { description: "domain|capability|feature" }) kind: string,
+    @Option({ flags: "--full", description: "Include WHY.md, RUNBOOK.md, and CHECKS.md" }) full?: boolean,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    return this.facade.apply("new", planHash, id, title, kind, full, asJson);
+  }
+
+  @Command({ name: "readback", description: "Read one bound spec creation target" })
+  @CommandAccess({ kind: "read", resource: "specs.facade", action: "readback", risk: "low", effectClass: "none" })
+  @Returns(specsFacadeNewReadbackReturnSchema)
+  readback(
+    @Arg("planHash", { description: "Exact hash returned by plan" }) planHash: string,
+    @Arg("id", { description: "Spec id" }) id: string,
+    @Arg("title", { description: "Spec title" }) title: string,
+    @Arg("kind", { description: "domain|capability|feature" }) kind: string,
+    @Option({ flags: "--full", description: "Include WHY.md, RUNBOOK.md, and CHECKS.md" }) full?: boolean,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    return this.facade.readback("new", planHash, id, title, kind, full, asJson);
+  }
+
+  @Command({ name: "verify", description: "Classify one bound spec creation target" })
+  @CommandAccess({ kind: "read", resource: "specs.facade", action: "verify", risk: "low", effectClass: "none" })
+  @Returns(specsFacadeNewVerificationReturnSchema)
+  verify(
+    @Arg("planHash", { description: "Exact hash returned by plan" }) planHash: string,
+    @Arg("id", { description: "Spec id" }) id: string,
+    @Arg("title", { description: "Spec title" }) title: string,
+    @Arg("kind", { description: "domain|capability|feature" }) kind: string,
+    @Option({ flags: "--full", description: "Include WHY.md, RUNBOOK.md, and CHECKS.md" }) full?: boolean,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    return this.facade.verify("new", planHash, id, title, kind, full, asJson);
+  }
+
+  @Command({ name: "recover", description: "Inspect recovery for one bound spec creation" })
+  @CommandAccess({ kind: "read", resource: "specs.facade", action: "recover", risk: "low", effectClass: "none" })
+  @Returns(specsFacadeNewRecoveryReturnSchema)
+  recover(
+    @Arg("planHash", { description: "Exact hash returned by plan" }) planHash: string,
+    @Arg("id", { description: "Spec id" }) id: string,
+    @Arg("title", { description: "Spec title" }) title: string,
+    @Arg("kind", { description: "domain|capability|feature" }) kind: string,
+    @Option({ flags: "--full", description: "Include WHY.md, RUNBOOK.md, and CHECKS.md" }) full?: boolean,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    return this.facade.recover("new", planHash, id, title, kind, full, asJson);
+  }
+}
+
+@Group({
+  name: "specs.facade.sync",
+  description: "Typed agent-first facade for rebuilding the specs index",
+  scope: "open",
+})
+export class SpecsFacadeSyncCommands {
+  private readonly facade = new SpecsFacadeCommands();
+
+  @Command({ name: "plan", description: "Plan one bound specs-index synchronization without writing" })
+  @CommandAccess({ kind: "read", resource: "specs.facade", action: "plan", risk: "low", effectClass: "none" })
+  @Returns(specsFacadeSyncPlanReturnSchema)
+  plan(@Option({ flags: "--json" }) asJson?: boolean) {
+    return this.facade.plan("sync", undefined, undefined, undefined, false, asJson);
+  }
+
+  @Command({ name: "apply", description: "Apply one bound specs-index synchronization and confirm it" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "specs.facade",
+    action: "apply",
+    risk: "medium",
+    effectClass: "local-reversible",
+  })
+  @Returns(specsFacadeSyncApplyReturnSchema)
+  apply(
+    @Arg("planHash", { description: "Exact hash returned by plan" }) planHash: string,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    return this.facade.apply("sync", planHash, undefined, undefined, undefined, false, asJson);
+  }
+
+  @Command({ name: "readback", description: "Read one bound specs-index target" })
+  @CommandAccess({ kind: "read", resource: "specs.facade", action: "readback", risk: "low", effectClass: "none" })
+  @Returns(specsFacadeSyncReadbackReturnSchema)
+  readback(
+    @Arg("planHash", { description: "Exact hash returned by plan" }) planHash: string,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    return this.facade.readback("sync", planHash, undefined, undefined, undefined, false, asJson);
+  }
+
+  @Command({ name: "verify", description: "Classify one bound specs-index target" })
+  @CommandAccess({ kind: "read", resource: "specs.facade", action: "verify", risk: "low", effectClass: "none" })
+  @Returns(specsFacadeSyncVerificationReturnSchema)
+  verify(
+    @Arg("planHash", { description: "Exact hash returned by plan" }) planHash: string,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    return this.facade.verify("sync", planHash, undefined, undefined, undefined, false, asJson);
+  }
+
+  @Command({ name: "recover", description: "Inspect recovery for one bound specs-index target" })
+  @CommandAccess({ kind: "read", resource: "specs.facade", action: "recover", risk: "low", effectClass: "none" })
+  @Returns(specsFacadeSyncRecoveryReturnSchema)
+  recover(
+    @Arg("planHash", { description: "Exact hash returned by plan" }) planHash: string,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    return this.facade.recover("sync", planHash, undefined, undefined, undefined, false, asJson);
   }
 }

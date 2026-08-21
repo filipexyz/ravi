@@ -134,6 +134,64 @@ describe("specs facade", () => {
     expect(verifySpecsFacade(intent, plan.planHash).outcome).toBe("confirmed");
   });
 
+  it("does not promote a nested spec when an ancestor disappears before rename", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    createSpec({ cwd, id: "channels/presence", title: "Presence", kind: "capability" });
+    const ancestorSpec = join(cwd, ".ravi", "specs", "channels", "presence", "SPEC.md");
+    const targetDir = join(cwd, ".ravi", "specs", "channels", "presence", "lifecycle");
+    const intent = {
+      operation: "new" as const,
+      cwd,
+      id: "channels/presence/lifecycle",
+      title: "Presence Lifecycle",
+      kind: "feature" as const,
+      full: true,
+    };
+    const plan = buildSpecsFacadePlan(intent);
+
+    expect(() =>
+      applySpecsFacadePlan(intent, plan.planHash, {
+        beforePromote: () => rmSync(ancestorSpec),
+      }),
+    ).toThrow("Missing ancestor specs");
+    expect(existsSync(targetDir)).toBe(false);
+    expect(
+      readdirSync(join(cwd, ".ravi", "specs", "channels", "presence")).some((name) =>
+        name.includes(".lifecycle.ravi-stage-"),
+      ),
+    ).toBe(false);
+  });
+
+  it("classifies ancestor loss after apply as divergence and blocks replay", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    createSpec({ cwd, id: "channels/presence", title: "Presence", kind: "capability" });
+    const intent = {
+      operation: "new" as const,
+      cwd,
+      id: "channels/presence/lifecycle",
+      title: "Presence Lifecycle",
+      kind: "feature" as const,
+      full: true,
+    };
+    const plan = buildSpecsFacadePlan(intent);
+    applySpecsFacadePlan(intent, plan.planHash);
+
+    rmSync(join(cwd, ".ravi", "specs", "channels", "presence", "SPEC.md"));
+
+    expect(verifySpecsFacade(intent, plan.planHash).outcome).toBe("divergent");
+    expect(recoverSpecsFacade(intent, plan.planHash)).toMatchObject({
+      outcome: "divergent",
+      action: "manual_review",
+    });
+    expect(buildSpecsFacadePlan(intent)).toMatchObject({
+      executable: false,
+      blockers: [{ code: "SPEC_ANCESTORS_MISSING" }],
+    });
+    expect(() => applySpecsFacadePlan(intent, plan.planHash)).toThrow("plan hash does not match");
+  });
+
   it("reports post-apply file changes as divergent and requires manual review", () => {
     const cwd = makeWorkspace();
     const intent = {
@@ -284,6 +342,28 @@ describe("specs facade", () => {
       buildSpecsFacadePlan({ operation: "new", cwd, id: "channels", title: "Channels", kind: "domain" }),
     ).toThrow("symbolic link");
     expect(existsSync(join(outside, "channels", "SPEC.md"))).toBe(false);
+  });
+
+  it("rejects a linked specs root before sync can scan external Markdown", () => {
+    const cwd = makeWorkspace();
+    const outside = makeWorkspace();
+    createSpec({ cwd: outside, id: "external", title: "External", kind: "domain" });
+    mkdirSync(join(cwd, ".ravi"));
+    try {
+      symlinkSync(join(outside, ".ravi", "specs"), join(cwd, ".ravi", "specs"), "junction");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return;
+      throw error;
+    }
+
+    try {
+      buildSpecsFacadePlan({ operation: "sync", cwd });
+      throw new Error("Expected unsafe specs root to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SpecsFacadeError);
+      expect((error as SpecsFacadeError).code).toBe("UNSAFE_SPECS_ROOT");
+    }
+    expect(isolatedStateDir ? existsSync(join(isolatedStateDir, "ravi.db")) : false).toBe(false);
   });
 
   it("syncs once, then returns noop while readback remains confirmed", () => {

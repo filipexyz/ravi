@@ -277,6 +277,30 @@ Expected behavior:
 - `new --full` creates `SPEC.md`, `WHY.md`, `RUNBOOK.md`, and `CHECKS.md`.
 - `sync` rebuilds the SQLite index from files.
 
+### Agent-First Facade
+
+Agents use a closed sequence for creation and index synchronization:
+
+1. `plan` returns the normalized intent, bound paths, blockers, expected
+   effects, and `planHash` without writing state.
+2. `apply` requires that exact hash and revalidates the bound workspace, specs
+   root, database path, ancestors, and source snapshot before mutation.
+3. `readback` observes files and index state independently of the write result.
+4. `verify` classifies the result as `confirmed`, `divergent`, or `blocked`.
+5. `recover` recommends no action, a fresh plan, or manual review; it never
+   silently repeats an effect.
+
+The compatibility CLI remains available under `ravi specs facade`, with `new`
+or `sync` as the operation argument. Generated clients expose separate
+`specs.facade.new.*` and `specs.facade.sync.*` contracts, preventing fields that
+only apply to creation from being sent to synchronization.
+
+Plans do not accept an arbitrary root. They are bound to the current workspace,
+its `.ravi/specs` directory, and the resolved Ravi database. Existing symbolic
+links or junctions in those bindings are rejected. Creation also requires every
+ancestor `SPEC.md` and revalidates that hierarchy immediately before publishing
+the staged directory.
+
 ### Project Integration
 
 Projects already support polymorphic links through `project_links`.
@@ -361,6 +385,12 @@ Audit commands are explicitly out of the MVP. Future audit findings can later be
 - `ravi projects link spec <project> <spec-id>` works and stores metadata in `project_links`.
 - Specs remain readable without SQLite.
 - `ravi specs sync` can rebuild the index from Markdown.
+- Facade plans are read-only and reject linked workspace bindings.
+- Facade apply rejects stale hashes and hierarchy changes before publication.
+- Exact creation replay is a no-op; changed or unexpected files require manual
+  review and are never overwritten by recovery.
+- Generated clients expose separate typed `new` and `sync` requests and
+  concrete facade return structures.
 
 ## MVP Implementation Scope
 

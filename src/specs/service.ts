@@ -609,11 +609,23 @@ export function inspectPreparedSpecCreation(prepared: PreparedSpecCreation): Spe
   };
 }
 
+function assertCurrentPreparedAncestors(prepared: PreparedSpecCreation): void {
+  const missing = prepared.ancestors
+    .map((entry) => chainEntryForId(prepared.rootPath, entry.id))
+    .filter((entry) => !entry.exists);
+  if (missing.length > 0) {
+    throw new Error(`Missing ancestor specs for ${prepared.id}: ${missing.map((entry) => entry.id).join(", ")}`);
+  }
+}
+
 export function applyPreparedSpecCreation(
   prepared: PreparedSpecCreation,
   options: ApplyPreparedSpecCreationOptions,
 ): AppliedSpecCreation {
   const inspection = inspectPreparedSpecCreation(prepared);
+  if (options.requireAncestors) {
+    assertCurrentPreparedAncestors(prepared);
+  }
   if (inspection.targetSpecExists) {
     if (options.existing === "noop" && inspection.exactMatch) {
       return {
@@ -625,11 +637,6 @@ export function applyPreparedSpecCreation(
       };
     }
     throw new Error(`Spec already exists: ${prepared.id}`);
-  }
-  if (options.requireAncestors && prepared.missingAncestors.length > 0) {
-    throw new Error(
-      `Missing ancestor specs for ${prepared.id}: ${prepared.missingAncestors.map((entry) => entry.id).join(", ")}`,
-    );
   }
   if (inspection.targetDirectoryExists) {
     if (options.existingDirectory !== "populate") {
@@ -666,6 +673,9 @@ export function applyPreparedSpecCreation(
       writeFileSync(join(stagingPath, file.fileName), file.content, { encoding: "utf8", flag: "wx" });
     }
     options.beforePromote?.(stagingPath);
+    if (options.requireAncestors) {
+      assertCurrentPreparedAncestors(prepared);
+    }
     assertNoSymlinkOnExistingPath(prepared.cwd, parent);
     renameSync(stagingPath, prepared.directoryPath);
     renamed = true;

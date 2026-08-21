@@ -17,8 +17,9 @@ therefore cannot persist hidden state.
 
 ## Decision
 
-Add `ravi specs facade plan|apply|readback|verify|recover` for the `new` and
-`sync` intentions.
+Add `ravi specs facade plan|apply|readback|verify|recover` as the compatible
+human-facing surface and publish separate `specs.facade.new.*` and
+`specs.facade.sync.*` machine contracts.
 
 - A plan is stateless and does not create directories, files, or database
   state. The caller supplies the same normalized intention and `planHash` to
@@ -29,6 +30,9 @@ Add `ravi specs facade plan|apply|readback|verify|recover` for the `new` and
   makes the old plan stale. No CLI option accepts an arbitrary filesystem root.
 - The database binding is absolute and rejects any observed symbolic-link
   component before planning or applying database work.
+- The `.ravi/specs` binding rejects a symbolic link or junction in every
+  existing path component before scanning, reading, or applying. The binding is
+  checked again before an effect or observation is accepted.
 - Facade `new` blocks when required ancestor `SPEC.md` files are absent. The
   legacy `new` command preserves its explicit compatibility behavior and still
   reports missing ancestors after creation.
@@ -36,7 +40,8 @@ Add `ravi specs facade plan|apply|readback|verify|recover` for the `new` and
   `noop`. Legacy `new` continues to fail with `Spec already exists`.
 - New files are written into a private sibling staging directory and promoted
   by one directory rename. Existing orphan directories and symbolic links in
-  the path are rejected without overwrite.
+  the path are rejected without overwrite. Required ancestors are revalidated
+  after staging and immediately before the rename.
 - Legacy `new` and facade `new` delegate to the same atomic writer. Legacy
   `sync` and facade `sync` delegate to the same compare-before-replace index
   service.
@@ -47,9 +52,12 @@ Add `ravi specs facade plan|apply|readback|verify|recover` for the `new` and
   index state. Observation recognizes the identity of an originally executable
   `new` plan so later changes are reported as divergence, while apply retains
   strict current-plan freshness. Recovery never replays an effect.
-- Public return contracts are discriminated by operation so generated clients
-  cannot combine `new` inputs, targets, effects, states, or readbacks with
-  `sync` payloads.
+- The generic compatibility commands are CLI-only. Generated TypeScript,
+  OpenAPI, and Swift clients expose operation-specific inputs so callers cannot
+  combine `new` fields with `sync` requests.
+- Public return contracts are discriminated by operation. The Swift generator
+  emits concrete nested facade structures, including typed nullable values,
+  instead of generic JSON fields.
 
 ## Alternatives considered
 
@@ -76,6 +84,8 @@ Add `ravi specs facade plan|apply|readback|verify|recover` for the `new` and
 - Local creation no longer exposes a partially written target directory under
   ordinary filesystem rename guarantees.
 - A stale or differently bound hash is rejected before mutation.
+- A linked specs root or a hierarchy that changes before promotion is rejected
+  without publishing the target directory.
 - A post-apply edit remains observable as `divergent`/`manual_review` without
   granting authority to overwrite it with the old hash.
 - Sync cannot silently index a Markdown version that appeared after the copied

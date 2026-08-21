@@ -13748,18 +13748,17 @@ export type SlackWorkObjectsValidateReturn = {
   provider: "slack";
 };
 
-/** Input shape for `specs.facade.apply`. */
-export type SpecsFacadeApplyInput = {
+/** Input shape for `specs.facade.new.apply`. */
+export type SpecsFacadeNewApplyInput = {
   full?: boolean;
-  id?: string;
-  kind?: string;
-  operation: string;
+  id: string;
+  kind: string;
   planHash: string;
-  title?: string;
+  title: string;
 };
 
-/** Return shape for `specs.facade.apply`. */
-export type SpecsFacadeApplyReturn = ({
+/** Return shape for `specs.facade.new.apply`. */
+export type SpecsFacadeNewApplyReturn = {
   changed: boolean;
   operation: "new";
   state: "created" | "noop";
@@ -13778,23 +13777,14 @@ export type SpecsFacadeApplyReturn = ({
         dbPath: string;
         specsRoot: string;
       };
-      files: Array<({
-        exists: false;
+      files: Array<{
+        actualSha256?: string;
+        exists: boolean;
         expectedSha256: string | null;
+        matches?: boolean;
         path: string;
-      }) | ({
-        exists: true;
-        expectedSha256: string | null;
-        path: string;
-        regularFile: false;
-      }) | ({
-        actualSha256: string;
-        exists: true;
-        expectedSha256: string | null;
-        matches: boolean;
-        path: string;
-        regularFile: true;
-      })>;
+        regularFile?: boolean;
+      }>;
       index: {
         dbPath: string;
         indexedIds: string[];
@@ -13815,75 +13805,18 @@ export type SpecsFacadeApplyReturn = ({
       unexpectedFiles: string[];
     };
   };
-}) | ({
-  changed: boolean;
-  operation: "sync";
-  state: "applied" | "noop";
-  verification: {
-    operation: "sync";
-    outcome: "confirmed" | "absent" | "divergent";
-    planHash: string;
-    readback: {
-      ancestors: Array<{
-        exists: boolean;
-        id: string;
-        path: string;
-      }>;
-      binding: {
-        cwd: string;
-        dbPath: string;
-        specsRoot: string;
-      };
-      files: Array<({
-        exists: false;
-        expectedSha256: string | null;
-        path: string;
-      }) | ({
-        exists: true;
-        expectedSha256: string | null;
-        path: string;
-        regularFile: false;
-      }) | ({
-        actualSha256: string;
-        exists: true;
-        expectedSha256: string | null;
-        matches: boolean;
-        path: string;
-        regularFile: true;
-      })>;
-      index: {
-        dbPath: string;
-        indexedIds: string[];
-        indexedTotal: number;
-        matches: boolean;
-        schemaExists: boolean;
-        sourceIds: string[];
-        sourceTotal: number;
-      };
-      observedAt: string;
-      operation: "sync";
-      planHash: string;
-      schemaVersion: "specs.agent-first/v1";
-      target: {
-        dbPath: string;
-        rootPath: string;
-      };
-      unexpectedFiles: string[];
-    };
-  };
-});
-
-/** Input shape for `specs.facade.plan`. */
-export type SpecsFacadePlanInput = {
-  full?: boolean;
-  id?: string;
-  kind?: string;
-  operation: string;
-  title?: string;
 };
 
-/** Return shape for `specs.facade.plan`. */
-export type SpecsFacadePlanReturn = ({
+/** Input shape for `specs.facade.new.plan`. */
+export type SpecsFacadeNewPlanInput = {
+  full?: boolean;
+  id: string;
+  kind: string;
+  title: string;
+};
+
+/** Return shape for `specs.facade.new.plan`. */
+export type SpecsFacadeNewPlanReturn = {
   binding: {
     cwd: string;
     dbPath: string;
@@ -13891,13 +13824,12 @@ export type SpecsFacadePlanReturn = ({
   };
   blockers: Array<{
     code: string;
-    details?: ({
-      ancestors: string[];
-    }) | ({
-      divergentFiles: string[];
-      missingFiles: string[];
-      unexpectedFiles: string[];
-    });
+    details?: {
+      ancestors?: string[];
+      divergentFiles?: string[];
+      missingFiles?: string[];
+      unexpectedFiles?: string[];
+    };
     message: string;
   }>;
   effects: Array<{
@@ -13937,7 +13869,227 @@ export type SpecsFacadePlanReturn = ({
     directoryPath: string;
     id: string;
   };
-}) | ({
+};
+
+/** Input shape for `specs.facade.new.readback`. */
+export type SpecsFacadeNewReadbackInput = {
+  full?: boolean;
+  id: string;
+  kind: string;
+  planHash: string;
+  title: string;
+};
+
+/** Return shape for `specs.facade.new.readback`. */
+export type SpecsFacadeNewReadbackReturn = {
+  ancestors: Array<{
+    exists: boolean;
+    id: string;
+    path: string;
+  }>;
+  binding: {
+    cwd: string;
+    dbPath: string;
+    specsRoot: string;
+  };
+  files: Array<{
+    actualSha256?: string;
+    exists: boolean;
+    expectedSha256: string | null;
+    matches?: boolean;
+    path: string;
+    regularFile?: boolean;
+  }>;
+  index: {
+    dbPath: string;
+    indexedIds: string[];
+    indexedTotal: number;
+    matches: boolean;
+    schemaExists: boolean;
+    sourceIds: string[];
+    sourceTotal: number;
+  };
+  observedAt: string;
+  operation: "new";
+  planHash: string;
+  schemaVersion: "specs.agent-first/v1";
+  target: {
+    directoryPath: string;
+    id: string;
+  };
+  unexpectedFiles: string[];
+};
+
+/** Input shape for `specs.facade.new.recover`. */
+export type SpecsFacadeNewRecoverInput = {
+  full?: boolean;
+  id: string;
+  kind: string;
+  planHash: string;
+  title: string;
+};
+
+/** Return shape for `specs.facade.new.recover`. */
+export type SpecsFacadeNewRecoverReturn = {
+  action: "none" | "replan_and_apply" | "manual_review";
+  operation: "new";
+  outcome: "confirmed" | "absent" | "divergent";
+  planHash: string;
+  readback: {
+    ancestors: Array<{
+      exists: boolean;
+      id: string;
+      path: string;
+    }>;
+    binding: {
+      cwd: string;
+      dbPath: string;
+      specsRoot: string;
+    };
+    files: Array<{
+      actualSha256?: string;
+      exists: boolean;
+      expectedSha256: string | null;
+      matches?: boolean;
+      path: string;
+      regularFile?: boolean;
+    }>;
+    index: {
+      dbPath: string;
+      indexedIds: string[];
+      indexedTotal: number;
+      matches: boolean;
+      schemaExists: boolean;
+      sourceIds: string[];
+      sourceTotal: number;
+    };
+    observedAt: string;
+    operation: "new";
+    planHash: string;
+    schemaVersion: "specs.agent-first/v1";
+    target: {
+      directoryPath: string;
+      id: string;
+    };
+    unexpectedFiles: string[];
+  };
+  replay: false;
+};
+
+/** Input shape for `specs.facade.new.verify`. */
+export type SpecsFacadeNewVerifyInput = {
+  full?: boolean;
+  id: string;
+  kind: string;
+  planHash: string;
+  title: string;
+};
+
+/** Return shape for `specs.facade.new.verify`. */
+export type SpecsFacadeNewVerifyReturn = {
+  operation: "new";
+  outcome: "confirmed" | "absent" | "divergent";
+  planHash: string;
+  readback: {
+    ancestors: Array<{
+      exists: boolean;
+      id: string;
+      path: string;
+    }>;
+    binding: {
+      cwd: string;
+      dbPath: string;
+      specsRoot: string;
+    };
+    files: Array<{
+      actualSha256?: string;
+      exists: boolean;
+      expectedSha256: string | null;
+      matches?: boolean;
+      path: string;
+      regularFile?: boolean;
+    }>;
+    index: {
+      dbPath: string;
+      indexedIds: string[];
+      indexedTotal: number;
+      matches: boolean;
+      schemaExists: boolean;
+      sourceIds: string[];
+      sourceTotal: number;
+    };
+    observedAt: string;
+    operation: "new";
+    planHash: string;
+    schemaVersion: "specs.agent-first/v1";
+    target: {
+      directoryPath: string;
+      id: string;
+    };
+    unexpectedFiles: string[];
+  };
+};
+
+/** Input shape for `specs.facade.sync.apply`. */
+export type SpecsFacadeSyncApplyInput = {
+  planHash: string;
+};
+
+/** Return shape for `specs.facade.sync.apply`. */
+export type SpecsFacadeSyncApplyReturn = {
+  changed: boolean;
+  operation: "sync";
+  state: "applied" | "noop";
+  verification: {
+    operation: "sync";
+    outcome: "confirmed" | "absent" | "divergent";
+    planHash: string;
+    readback: {
+      ancestors: Array<{
+        exists: boolean;
+        id: string;
+        path: string;
+      }>;
+      binding: {
+        cwd: string;
+        dbPath: string;
+        specsRoot: string;
+      };
+      files: Array<{
+        actualSha256?: string;
+        exists: boolean;
+        expectedSha256: string | null;
+        matches?: boolean;
+        path: string;
+        regularFile?: boolean;
+      }>;
+      index: {
+        dbPath: string;
+        indexedIds: string[];
+        indexedTotal: number;
+        matches: boolean;
+        schemaExists: boolean;
+        sourceIds: string[];
+        sourceTotal: number;
+      };
+      observedAt: string;
+      operation: "sync";
+      planHash: string;
+      schemaVersion: "specs.agent-first/v1";
+      target: {
+        dbPath: string;
+        rootPath: string;
+      };
+      unexpectedFiles: string[];
+    };
+  };
+};
+
+/** Input shape for `specs.facade.sync.plan`. */
+export type SpecsFacadeSyncPlanInput = Record<string, never>;
+
+/** Return shape for `specs.facade.sync.plan`. */
+export type SpecsFacadeSyncPlanReturn = {
   binding: {
     cwd: string;
     dbPath: string;
@@ -13945,13 +14097,12 @@ export type SpecsFacadePlanReturn = ({
   };
   blockers: Array<{
     code: string;
-    details?: ({
-      ancestors: string[];
-    }) | ({
-      divergentFiles: string[];
-      missingFiles: string[];
-      unexpectedFiles: string[];
-    });
+    details?: {
+      ancestors?: string[];
+      divergentFiles?: string[];
+      missingFiles?: string[];
+      unexpectedFiles?: string[];
+    };
     message: string;
   }>;
   effects: Array<{
@@ -13988,66 +14139,15 @@ export type SpecsFacadePlanReturn = ({
     dbPath: string;
     rootPath: string;
   };
-});
-
-/** Input shape for `specs.facade.readback`. */
-export type SpecsFacadeReadbackInput = {
-  full?: boolean;
-  id?: string;
-  kind?: string;
-  operation: string;
-  planHash: string;
-  title?: string;
 };
 
-/** Return shape for `specs.facade.readback`. */
-export type SpecsFacadeReadbackReturn = ({
-  ancestors: Array<{
-    exists: boolean;
-    id: string;
-    path: string;
-  }>;
-  binding: {
-    cwd: string;
-    dbPath: string;
-    specsRoot: string;
-  };
-  files: Array<({
-    exists: false;
-    expectedSha256: string | null;
-    path: string;
-  }) | ({
-    exists: true;
-    expectedSha256: string | null;
-    path: string;
-    regularFile: false;
-  }) | ({
-    actualSha256: string;
-    exists: true;
-    expectedSha256: string | null;
-    matches: boolean;
-    path: string;
-    regularFile: true;
-  })>;
-  index: {
-    dbPath: string;
-    indexedIds: string[];
-    indexedTotal: number;
-    matches: boolean;
-    schemaExists: boolean;
-    sourceIds: string[];
-    sourceTotal: number;
-  };
-  observedAt: string;
-  operation: "new";
+/** Input shape for `specs.facade.sync.readback`. */
+export type SpecsFacadeSyncReadbackInput = {
   planHash: string;
-  schemaVersion: "specs.agent-first/v1";
-  target: {
-    directoryPath: string;
-    id: string;
-  };
-  unexpectedFiles: string[];
-}) | ({
+};
+
+/** Return shape for `specs.facade.sync.readback`. */
+export type SpecsFacadeSyncReadbackReturn = {
   ancestors: Array<{
     exists: boolean;
     id: string;
@@ -14058,23 +14158,14 @@ export type SpecsFacadeReadbackReturn = ({
     dbPath: string;
     specsRoot: string;
   };
-  files: Array<({
-    exists: false;
+  files: Array<{
+    actualSha256?: string;
+    exists: boolean;
     expectedSha256: string | null;
+    matches?: boolean;
     path: string;
-  }) | ({
-    exists: true;
-    expectedSha256: string | null;
-    path: string;
-    regularFile: false;
-  }) | ({
-    actualSha256: string;
-    exists: true;
-    expectedSha256: string | null;
-    matches: boolean;
-    path: string;
-    regularFile: true;
-  })>;
+    regularFile?: boolean;
+  }>;
   index: {
     dbPath: string;
     indexedIds: string[];
@@ -14093,73 +14184,15 @@ export type SpecsFacadeReadbackReturn = ({
     rootPath: string;
   };
   unexpectedFiles: string[];
-});
-
-/** Input shape for `specs.facade.recover`. */
-export type SpecsFacadeRecoverInput = {
-  full?: boolean;
-  id?: string;
-  kind?: string;
-  operation: string;
-  planHash: string;
-  title?: string;
 };
 
-/** Return shape for `specs.facade.recover`. */
-export type SpecsFacadeRecoverReturn = ({
-  action: "none" | "replan_and_apply" | "manual_review";
-  operation: "new";
-  outcome: "confirmed" | "absent" | "divergent";
+/** Input shape for `specs.facade.sync.recover`. */
+export type SpecsFacadeSyncRecoverInput = {
   planHash: string;
-  readback: {
-    ancestors: Array<{
-      exists: boolean;
-      id: string;
-      path: string;
-    }>;
-    binding: {
-      cwd: string;
-      dbPath: string;
-      specsRoot: string;
-    };
-    files: Array<({
-      exists: false;
-      expectedSha256: string | null;
-      path: string;
-    }) | ({
-      exists: true;
-      expectedSha256: string | null;
-      path: string;
-      regularFile: false;
-    }) | ({
-      actualSha256: string;
-      exists: true;
-      expectedSha256: string | null;
-      matches: boolean;
-      path: string;
-      regularFile: true;
-    })>;
-    index: {
-      dbPath: string;
-      indexedIds: string[];
-      indexedTotal: number;
-      matches: boolean;
-      schemaExists: boolean;
-      sourceIds: string[];
-      sourceTotal: number;
-    };
-    observedAt: string;
-    operation: "new";
-    planHash: string;
-    schemaVersion: "specs.agent-first/v1";
-    target: {
-      directoryPath: string;
-      id: string;
-    };
-    unexpectedFiles: string[];
-  };
-  replay: false;
-}) | ({
+};
+
+/** Return shape for `specs.facade.sync.recover`. */
+export type SpecsFacadeSyncRecoverReturn = {
   action: "none" | "replan_and_apply" | "manual_review";
   operation: "sync";
   outcome: "confirmed" | "absent" | "divergent";
@@ -14175,23 +14208,14 @@ export type SpecsFacadeRecoverReturn = ({
       dbPath: string;
       specsRoot: string;
     };
-    files: Array<({
-      exists: false;
+    files: Array<{
+      actualSha256?: string;
+      exists: boolean;
       expectedSha256: string | null;
+      matches?: boolean;
       path: string;
-    }) | ({
-      exists: true;
-      expectedSha256: string | null;
-      path: string;
-      regularFile: false;
-    }) | ({
-      actualSha256: string;
-      exists: true;
-      expectedSha256: string | null;
-      matches: boolean;
-      path: string;
-      regularFile: true;
-    })>;
+      regularFile?: boolean;
+    }>;
     index: {
       dbPath: string;
       indexedIds: string[];
@@ -14212,71 +14236,15 @@ export type SpecsFacadeRecoverReturn = ({
     unexpectedFiles: string[];
   };
   replay: false;
-});
-
-/** Input shape for `specs.facade.verify`. */
-export type SpecsFacadeVerifyInput = {
-  full?: boolean;
-  id?: string;
-  kind?: string;
-  operation: string;
-  planHash: string;
-  title?: string;
 };
 
-/** Return shape for `specs.facade.verify`. */
-export type SpecsFacadeVerifyReturn = ({
-  operation: "new";
-  outcome: "confirmed" | "absent" | "divergent";
+/** Input shape for `specs.facade.sync.verify`. */
+export type SpecsFacadeSyncVerifyInput = {
   planHash: string;
-  readback: {
-    ancestors: Array<{
-      exists: boolean;
-      id: string;
-      path: string;
-    }>;
-    binding: {
-      cwd: string;
-      dbPath: string;
-      specsRoot: string;
-    };
-    files: Array<({
-      exists: false;
-      expectedSha256: string | null;
-      path: string;
-    }) | ({
-      exists: true;
-      expectedSha256: string | null;
-      path: string;
-      regularFile: false;
-    }) | ({
-      actualSha256: string;
-      exists: true;
-      expectedSha256: string | null;
-      matches: boolean;
-      path: string;
-      regularFile: true;
-    })>;
-    index: {
-      dbPath: string;
-      indexedIds: string[];
-      indexedTotal: number;
-      matches: boolean;
-      schemaExists: boolean;
-      sourceIds: string[];
-      sourceTotal: number;
-    };
-    observedAt: string;
-    operation: "new";
-    planHash: string;
-    schemaVersion: "specs.agent-first/v1";
-    target: {
-      directoryPath: string;
-      id: string;
-    };
-    unexpectedFiles: string[];
-  };
-}) | ({
+};
+
+/** Return shape for `specs.facade.sync.verify`. */
+export type SpecsFacadeSyncVerifyReturn = {
   operation: "sync";
   outcome: "confirmed" | "absent" | "divergent";
   planHash: string;
@@ -14291,23 +14259,14 @@ export type SpecsFacadeVerifyReturn = ({
       dbPath: string;
       specsRoot: string;
     };
-    files: Array<({
-      exists: false;
+    files: Array<{
+      actualSha256?: string;
+      exists: boolean;
       expectedSha256: string | null;
+      matches?: boolean;
       path: string;
-    }) | ({
-      exists: true;
-      expectedSha256: string | null;
-      path: string;
-      regularFile: false;
-    }) | ({
-      actualSha256: string;
-      exists: true;
-      expectedSha256: string | null;
-      matches: boolean;
-      path: string;
-      regularFile: true;
-    })>;
+      regularFile?: boolean;
+    }>;
     index: {
       dbPath: string;
       indexedIds: string[];
@@ -14327,7 +14286,7 @@ export type SpecsFacadeVerifyReturn = ({
     };
     unexpectedFiles: string[];
   };
-});
+};
 
 /** Input shape for `specs.get`. */
 export type SpecsGetInput = {

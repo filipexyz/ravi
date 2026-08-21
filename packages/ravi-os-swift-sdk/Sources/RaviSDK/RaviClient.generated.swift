@@ -5050,58 +5050,106 @@ public struct SpecsFacadeNamespace: Sendable {
     self.transport = transport
   }
 
-  public func apply(_ operation: String, _ planHash: String, _ id: String? = nil, _ options: SpecsFacadeApplyOptions = .init()) async throws -> SpecsFacadeApplyReturn {
-    var requestBody: [String: RaviJSON] = [:]
-    requestBody["operation"] = try RaviJSON.fromEncodable(operation)
-    requestBody["planHash"] = try RaviJSON.fromEncodable(planHash)
-    if let id {
-      requestBody["id"] = try RaviJSON.fromEncodable(id)
-    }
-    try options.encodeBody(into: &requestBody)
-    return try await transport.call(groupSegments: ["specs","facade"], command: "apply", body: requestBody, as: SpecsFacadeApplyReturn.self)
+  public var new: SpecsFacadeNewNamespace {
+    SpecsFacadeNewNamespace(transport: transport)
   }
 
-  public func plan(_ operation: String, _ id: String? = nil, _ options: SpecsFacadePlanOptions = .init()) async throws -> SpecsFacadePlanReturn {
-    var requestBody: [String: RaviJSON] = [:]
-    requestBody["operation"] = try RaviJSON.fromEncodable(operation)
-    if let id {
-      requestBody["id"] = try RaviJSON.fromEncodable(id)
-    }
-    try options.encodeBody(into: &requestBody)
-    return try await transport.call(groupSegments: ["specs","facade"], command: "plan", body: requestBody, as: SpecsFacadePlanReturn.self)
+  public var sync: SpecsFacadeSyncNamespace {
+    SpecsFacadeSyncNamespace(transport: transport)
+  }
+}
+
+public struct SpecsFacadeNewNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
   }
 
-  public func readback(_ operation: String, _ planHash: String, _ id: String? = nil, _ options: SpecsFacadeReadbackOptions = .init()) async throws -> SpecsFacadeReadbackReturn {
+  public func apply(_ planHash: String, _ id: String, _ title: String, _ kind: String, _ options: SpecsFacadeNewApplyOptions = .init()) async throws -> SpecsFacadeNewApplyReturn {
     var requestBody: [String: RaviJSON] = [:]
-    requestBody["operation"] = try RaviJSON.fromEncodable(operation)
     requestBody["planHash"] = try RaviJSON.fromEncodable(planHash)
-    if let id {
-      requestBody["id"] = try RaviJSON.fromEncodable(id)
-    }
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    requestBody["title"] = try RaviJSON.fromEncodable(title)
+    requestBody["kind"] = try RaviJSON.fromEncodable(kind)
     try options.encodeBody(into: &requestBody)
-    return try await transport.call(groupSegments: ["specs","facade"], command: "readback", body: requestBody, as: SpecsFacadeReadbackReturn.self)
+    return try await transport.call(groupSegments: ["specs","facade","new"], command: "apply", body: requestBody, as: SpecsFacadeNewApplyReturn.self)
   }
 
-  public func recover(_ operation: String, _ planHash: String, _ id: String? = nil, _ options: SpecsFacadeRecoverOptions = .init()) async throws -> SpecsFacadeRecoverReturn {
+  public func plan(_ id: String, _ title: String, _ kind: String, _ options: SpecsFacadeNewPlanOptions = .init()) async throws -> SpecsFacadeNewPlanReturn {
     var requestBody: [String: RaviJSON] = [:]
-    requestBody["operation"] = try RaviJSON.fromEncodable(operation)
-    requestBody["planHash"] = try RaviJSON.fromEncodable(planHash)
-    if let id {
-      requestBody["id"] = try RaviJSON.fromEncodable(id)
-    }
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    requestBody["title"] = try RaviJSON.fromEncodable(title)
+    requestBody["kind"] = try RaviJSON.fromEncodable(kind)
     try options.encodeBody(into: &requestBody)
-    return try await transport.call(groupSegments: ["specs","facade"], command: "recover", body: requestBody, as: SpecsFacadeRecoverReturn.self)
+    return try await transport.call(groupSegments: ["specs","facade","new"], command: "plan", body: requestBody, as: SpecsFacadeNewPlanReturn.self)
   }
 
-  public func verify(_ operation: String, _ planHash: String, _ id: String? = nil, _ options: SpecsFacadeVerifyOptions = .init()) async throws -> SpecsFacadeVerifyReturn {
+  public func readback(_ planHash: String, _ id: String, _ title: String, _ kind: String, _ options: SpecsFacadeNewReadbackOptions = .init()) async throws -> SpecsFacadeNewReadbackReturn {
     var requestBody: [String: RaviJSON] = [:]
-    requestBody["operation"] = try RaviJSON.fromEncodable(operation)
     requestBody["planHash"] = try RaviJSON.fromEncodable(planHash)
-    if let id {
-      requestBody["id"] = try RaviJSON.fromEncodable(id)
-    }
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    requestBody["title"] = try RaviJSON.fromEncodable(title)
+    requestBody["kind"] = try RaviJSON.fromEncodable(kind)
     try options.encodeBody(into: &requestBody)
-    return try await transport.call(groupSegments: ["specs","facade"], command: "verify", body: requestBody, as: SpecsFacadeVerifyReturn.self)
+    return try await transport.call(groupSegments: ["specs","facade","new"], command: "readback", body: requestBody, as: SpecsFacadeNewReadbackReturn.self)
+  }
+
+  public func recover(_ planHash: String, _ id: String, _ title: String, _ kind: String, _ options: SpecsFacadeNewRecoverOptions = .init()) async throws -> SpecsFacadeNewRecoverReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["planHash"] = try RaviJSON.fromEncodable(planHash)
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    requestBody["title"] = try RaviJSON.fromEncodable(title)
+    requestBody["kind"] = try RaviJSON.fromEncodable(kind)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["specs","facade","new"], command: "recover", body: requestBody, as: SpecsFacadeNewRecoverReturn.self)
+  }
+
+  public func verify(_ planHash: String, _ id: String, _ title: String, _ kind: String, _ options: SpecsFacadeNewVerifyOptions = .init()) async throws -> SpecsFacadeNewVerifyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["planHash"] = try RaviJSON.fromEncodable(planHash)
+    requestBody["id"] = try RaviJSON.fromEncodable(id)
+    requestBody["title"] = try RaviJSON.fromEncodable(title)
+    requestBody["kind"] = try RaviJSON.fromEncodable(kind)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["specs","facade","new"], command: "verify", body: requestBody, as: SpecsFacadeNewVerifyReturn.self)
+  }
+}
+
+public struct SpecsFacadeSyncNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func apply(_ planHash: String) async throws -> SpecsFacadeSyncApplyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["planHash"] = try RaviJSON.fromEncodable(planHash)
+    return try await transport.call(groupSegments: ["specs","facade","sync"], command: "apply", body: requestBody, as: SpecsFacadeSyncApplyReturn.self)
+  }
+
+  public func plan() async throws -> SpecsFacadeSyncPlanReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["specs","facade","sync"], command: "plan", body: requestBody, as: SpecsFacadeSyncPlanReturn.self)
+  }
+
+  public func readback(_ planHash: String) async throws -> SpecsFacadeSyncReadbackReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["planHash"] = try RaviJSON.fromEncodable(planHash)
+    return try await transport.call(groupSegments: ["specs","facade","sync"], command: "readback", body: requestBody, as: SpecsFacadeSyncReadbackReturn.self)
+  }
+
+  public func recover(_ planHash: String) async throws -> SpecsFacadeSyncRecoverReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["planHash"] = try RaviJSON.fromEncodable(planHash)
+    return try await transport.call(groupSegments: ["specs","facade","sync"], command: "recover", body: requestBody, as: SpecsFacadeSyncRecoverReturn.self)
+  }
+
+  public func verify(_ planHash: String) async throws -> SpecsFacadeSyncVerifyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["planHash"] = try RaviJSON.fromEncodable(planHash)
+    return try await transport.call(groupSegments: ["specs","facade","sync"], command: "verify", body: requestBody, as: SpecsFacadeSyncVerifyReturn.self)
   }
 }
 

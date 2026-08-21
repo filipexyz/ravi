@@ -15,6 +15,7 @@ import {
   methodName,
   namespaceName,
   optionsTypeName,
+  pascalCase,
   propertyName,
   returnSchemaName,
   returnTypeName,
@@ -326,19 +327,60 @@ function renderReturnDeclaration(cmd: CommandRegistryEntry): string {
   }
 
   if (isObjectWithProperties(schema)) {
+    if ((schema as { "x-ravi-swift-nested"?: unknown })["x-ravi-swift-nested"] === true) {
+      return renderDeepReturnStructs(name, schema);
+    }
     return renderReturnStruct(name, schema);
   }
   return `public typealias ${name} = ${jsonSchemaToSwift(schema)}`;
 }
 
 function renderReturnStruct(name: string, schema: JsonSchema): string {
+  return renderSwiftStruct(name, schema, (_rawName, propertySchema) => jsonSchemaToSwift(propertySchema));
+}
+
+function renderDeepReturnStructs(name: string, schema: JsonSchema): string {
+  const declarations: string[] = [];
+  const emitted = new Set<string>();
+
+  const visit = (structName: string, structSchema: JsonSchema): void => {
+    if (emitted.has(structName)) return;
+    emitted.add(structName);
+    const declaration = renderSwiftStruct(structName, structSchema, (rawName, propertySchema) => {
+      if (isObjectWithProperties(propertySchema)) {
+        const childName = `${structName}${pascalCase(rawName)}`;
+        visit(childName, propertySchema);
+        return childName;
+      }
+      if ((propertySchema as { type?: unknown }).type === "array") {
+        const items = (propertySchema as { items?: JsonSchema | JsonSchema[] }).items;
+        if (items && !Array.isArray(items) && isObjectWithProperties(items)) {
+          const childName = `${structName}${pascalCase(rawName)}Item`;
+          visit(childName, items);
+          return `[${childName}]`;
+        }
+      }
+      return jsonSchemaToSwift(propertySchema);
+    });
+    declarations.push(declaration);
+  };
+
+  visit(name, schema);
+  return declarations.join("\n\n");
+}
+
+function renderSwiftStruct(
+  name: string,
+  schema: JsonSchema,
+  resolveType: (rawName: string, schema: JsonSchema) => string,
+): string {
   const props = (schema as { properties?: Record<string, JsonSchema> }).properties ?? {};
   const required = new Set((schema as { required?: string[] }).required ?? []);
   const rawNames = Object.keys(props).sort();
   const swiftNames = uniquePropertyNames(rawNames);
   const fields = rawNames.map((rawName) => {
     const swiftName = swiftNames.get(rawName)!;
-    const swiftType = jsonSchemaToSwift(props[rawName]);
+    const swiftType = resolveType(rawName, props[rawName]!);
     const isRequired = required.has(rawName);
     return { rawName, swiftName, swiftType, isRequired };
   });

@@ -1968,3 +1968,60 @@ build completo, Biome focado, quality gate limpo sobre 70 caminhos rastreados
 com 274 specs indexadas e lint dos 9 documentos aplicaveis. Teste local do
 pacote Swift, pacote exato, nova auditoria independente e CI Linux ainda sao
 obrigatorios. O candidato continua em NO-GO para push ou PR neste ponto.
+
+### Segundo NO-GO independente de SPECS
+
+A revisao independente rejeitou o commit
+`6b0010a1afd0114765635468b0573ebd3c4b4aa6` e o pacote de 4.964.621 bytes com
+SHA-256
+`01D62B2D3ADBC3C68E44843D28D613139C518CA07388A7A49016B07770854E0B`.
+Nenhum dos dois foi enviado ou usado para abrir PR.
+
+O `sync` ainda podia seguir uma raiz `.ravi/specs` ligada para fora enquanto o
+hash mantinha o caminho lexical interno. A perda de um ancestral entre
+validacao e promocao tambem podia criar uma hierarquia quebrada classificada
+como confirmada. Por fim, requests gerados ainda expunham uma operacao generica
+com campos opcionais de `new`, e os retornos Swift do facade permaneciam JSON
+generico apesar dos retornos runtime correlacionados.
+
+As evidencias positivas do candidato rejeitado continuam uteis para diagnostico,
+mas nao autorizam promocao. Novo candidato deve recusar links em todos os
+componentes existentes da raiz de specs, revalidar ancestrais antes da promocao
+e na classificacao, publicar requests por operacao, gerar retornos Swift
+concretos e repetir geracao, pacote e auditoria independente. CI Linux e teste
+do pacote Swift continuam obrigatorios depois de push autorizado.
+
+### Terceiro candidato de SPECS em validacao
+
+A correcao posterior ao segundo NO-GO agora recusa links simbolicos e junctions
+em cada componente existente da raiz `.ravi/specs`, revalida esse vinculo nas
+fases seguintes e confere os ancestrais depois do staging, imediatamente antes
+da promocao e durante a classificacao. Os testes nativos confirmam que a perda
+de um ancestral nao publica o alvo nem pode terminar como confirmada.
+
+O facade generico ficou restrito a compatibilidade da CLI. TypeScript, OpenAPI e
+Swift publicam requests separados em `specs.facade.new.*` e
+`specs.facade.sync.*`. Os retornos Swift do facade agora sao estruturas
+concretas aninhadas; valores primitivos anulaveis, como o hash esperado, sao
+tipados e nao usam JSON generico.
+
+Neste checkpoint, os quatro arquivos de teste focados passaram 59 testes com
+243 assercoes, e o SDK passou 75 testes com 297 assercoes. Typecheck e os checks
+de artefatos TypeScript, OpenAPI e Swift passaram. A inspecao encontrou 76
+estruturas de retorno do facade sem `RaviJSON`, ausencia dos paths genericos e
+presenca dos paths separados. Gate local completo, novo commit e pacote,
+auditoria independente e CI Linux no SHA exato ainda faltam; permanece NO-GO.
+
+### Recaptura final dos gates locais do terceiro candidato
+
+Passaram o build completo, Biome focado, lint Markdown, diff check, os 40 testes
+nativos do quality gate e o runner do gate sobre o diff acumulado achatado. O
+runner indexou 274 specs e executou a regra aplicavel de cobertura runtime. Um
+teste de comando do SDK ultrapassou cinco segundos durante carga paralela; a
+repeticao isolada passou os 13 testes.
+
+O wrapper amplo de contratos chegou ao teste inalterado de artifacts, com 13
+passes e duas limitacoes do Windows: expectativa de separador POSIX e falta de
+permissao para criar link simbolico. Fonte e teste de artifacts nao diferem de
+`origin/dev`. Isso nao conta como passe completo; CI Linux no commit exato,
+pacote e revisao independente continuam obrigatorios. Permanece NO-GO.

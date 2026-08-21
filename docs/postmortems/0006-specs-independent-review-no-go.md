@@ -158,3 +158,70 @@ over 70 tracked paths with 274 specs indexed, and Markdown lint over 9 applicabl
 documents also passed. The unavailable local Swift package test, exact package,
 fresh independent review, and Linux CI are still pending. The candidate remains
 NO-GO for push or PR at this checkpoint.
+
+## Revision note: 2026-08-21, second independent review NO-GO
+
+Independent review rejected commit
+`6b0010a1afd0114765635468b0573ebd3c4b4aa6` and its 4,964,621-byte package
+with SHA-256
+`01D62B2D3ADBC3C68E44843D28D613139C518CA07388A7A49016B07770854E0B`.
+Neither candidate was pushed or opened as a PR.
+
+The review found that `sync` could follow a linked `.ravi/specs` root while the
+plan hash retained the lexical workspace path. It also found that losing an
+ancestor between validation and promotion could leave a hierarchy-breaking
+target classified as confirmed. Finally, generated requests still exposed one
+generic operation plus optional new-only fields, and the Swift facade returns
+remained generic JSON despite the correlated runtime return schemas.
+
+Positive evidence from the rejected candidate remains useful for diagnosis but
+does not authorize promotion: captured-snapshot sync, post-apply divergence,
+unexpected-file handling, atomic staging cleanup, competing creators, legacy
+orphan-directory compatibility, and database-path link rejection passed their
+native checks.
+
+A new candidate must reject links in every existing specs-root component,
+revalidate ancestors immediately before promotion and during classification,
+publish operation-specific request contracts, produce concrete Swift returns,
+regenerate all public artifacts, and repeat package and independent review.
+Linux CI and the Swift package test remain mandatory after push is authorized.
+
+## Revision note: 2026-08-21, third candidate correction
+
+The correction after the second NO-GO rejects symbolic links and Windows
+junctions in every existing component of the bound `.ravi/specs` root. The
+binding is revalidated for later phases. Creation now checks required ancestors
+after staging, immediately before directory promotion, and again during
+readback classification. Native tests prove that losing an ancestor cannot
+publish a target or remain confirmed.
+
+The generic facade surface remains available only to the CLI for compatibility.
+Generated TypeScript, OpenAPI, and Swift contracts now expose separate
+`specs.facade.new.*` and `specs.facade.sync.*` requests. Swift return generation
+was extended by explicit schema metadata to emit nested structures, and its
+nullable primitive handling now represents the expected file hash as `String?`
+instead of generic JSON.
+
+At this checkpoint, the four focused native files passed 59 tests with 243
+assertions. The SDK suite passed 75 tests with 297 assertions; TypeScript,
+OpenAPI, and Swift generated-file checks and typecheck also passed. Inspection
+found 76 facade return structures and none containing `RaviJSON`; generic
+request paths were absent while both operation-specific paths were present.
+The complete local gate, replacement commit and package, fresh independent
+review, and exact-SHA Linux CI are still pending. The candidate remains NO-GO.
+
+## Revision note: 2026-08-21, final local gate recapture
+
+The complete build, focused Biome check, Markdown lint, diff check, 40 native
+quality-gate tests, and the quality-gate runner over the flattened accumulated
+diff passed. The runner indexed 274 specs and exercised the applicable runtime
+coverage rule. A parallel SDK command test exceeded its fixed five-second
+limit; isolated recapture passed all 13 tests.
+
+The broader agent-contract wrapper reached the unchanged artifact-store suite,
+where 13 tests passed and two Windows-only assumptions failed: one assertion
+expected POSIX path separators and one test lacked permission to create a
+symbolic link. Neither artifact source nor test differs from `origin/dev`.
+These results are recorded as local platform boundaries, not as passes. Linux
+CI on the exact committed candidate remains mandatory, and the candidate stays
+NO-GO until package review and CI complete.

@@ -15,6 +15,20 @@ class ArtifactsCommands {
     return { id: "x", kind: "report", links: [] };
   }
 
+  @Command({ name: "inspect-deep", description: "Inspect a deeply typed artifact" })
+  @Returns(
+    z
+      .object({
+        binding: z.object({ cwd: z.string() }).strict(),
+        files: z.array(z.object({ path: z.string(), exists: z.boolean() }).strict()),
+      })
+      .strict()
+      .meta({ "x-ravi-swift-nested": true }),
+  )
+  inspectDeep() {
+    return { binding: { cwd: "/tmp" }, files: [] };
+  }
+
   @Command({ name: "blob", description: "Stream artifact bytes" })
   @Returns.binary()
   blob(@Arg("id") _id: string) {
@@ -196,6 +210,20 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.types).toContain("public var links: [RaviJSON]");
   });
 
+  it("emits opt-in nested Swift return structs without RaviJSON fields", () => {
+    const { output } = emitMockSwiftSdk();
+    const start = output.types.indexOf("public struct ArtifactsInspectDeepReturnBinding");
+    const end = output.types.indexOf("public struct ArtifactsShowReturn");
+    const declarations = output.types.slice(start, end);
+
+    expect(declarations).toContain("public struct ArtifactsInspectDeepReturnBinding: Codable, Sendable");
+    expect(declarations).toContain("public struct ArtifactsInspectDeepReturnFilesItem: Codable, Sendable");
+    expect(declarations).toContain("public struct ArtifactsInspectDeepReturn: Codable, Sendable");
+    expect(declarations).toContain("public var binding: ArtifactsInspectDeepReturnBinding");
+    expect(declarations).toContain("public var files: [ArtifactsInspectDeepReturnFilesItem]");
+    expect(declarations).not.toContain("RaviJSON");
+  });
+
   it("disambiguates property names that normalize to the same Swift identifier", () => {
     const registry = buildRegistry([ImageCommands]);
     const output = emitAllSwift(registry, { version: FIXED_VERSION });
@@ -276,6 +304,11 @@ describe("swift-codegen :: jsonSchemaToSwift", () => {
     expect(jsonSchemaToSwift({ enum: [1, 2] })).toBe("Int");
     expect(jsonSchemaToSwift({ enum: [1, 2.5] })).toBe("Double");
     expect(jsonSchemaToSwift({ enum: ["active", 1] })).toBe("RaviJSON");
+  });
+
+  it("emits a typed Swift optional for a nullable primitive", () => {
+    expect(jsonSchemaToSwift({ anyOf: [{ type: "string" }, { type: "null" }] })).toBe("String?");
+    expect(jsonSchemaToSwift({ anyOf: [{ type: "string" }, { type: "number" }] })).toBe("RaviJSON");
   });
 });
 

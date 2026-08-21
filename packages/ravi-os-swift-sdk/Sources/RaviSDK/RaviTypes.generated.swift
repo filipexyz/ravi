@@ -338,16 +338,16 @@ public struct AdaptersShowReturn: Codable, Sendable {
   public var bind: RaviJSON
   public var diagnosticState: String
   public var health: [String: RaviJSON]
-  public var lastCommand: RaviJSON
-  public var lastEvent: RaviJSON
-  public var lastProtocolError: RaviJSON
+  public var lastCommand: [String: RaviJSON]?
+  public var lastEvent: [String: RaviJSON]?
+  public var lastProtocolError: [String: RaviJSON]?
   public var sessionKey: String
-  public var sessionName: RaviJSON
+  public var sessionName: String?
   public var status: String
   public var transport: String
   public var updatedAt: Double
 
-  public init(adapterId: String, adapterName: String, bind: RaviJSON, diagnosticState: String, health: [String: RaviJSON], lastCommand: RaviJSON, lastEvent: RaviJSON, lastProtocolError: RaviJSON, sessionKey: String, sessionName: RaviJSON, status: String, transport: String, updatedAt: Double) {
+  public init(adapterId: String, adapterName: String, bind: RaviJSON, diagnosticState: String, health: [String: RaviJSON], lastCommand: [String: RaviJSON]?, lastEvent: [String: RaviJSON]?, lastProtocolError: [String: RaviJSON]?, sessionKey: String, sessionName: String?, status: String, transport: String, updatedAt: Double) {
     self.adapterId = adapterId
     self.adapterName = adapterName
     self.bind = bind
@@ -444,10 +444,10 @@ public struct AgentsDebounceReturn: Codable, Sendable {
   public var action: String?
   public var agentId: String
   public var changed: Bool?
-  public var debounceMs: RaviJSON
+  public var debounceMs: Double?
   public var enabled: Bool
 
-  public init(action: String? = nil, agentId: String, changed: Bool? = nil, debounceMs: RaviJSON, enabled: Bool) {
+  public init(action: String? = nil, agentId: String, changed: Bool? = nil, debounceMs: Double?, enabled: Bool) {
     self.action = action
     self.agentId = agentId
     self.changed = changed
@@ -633,10 +633,10 @@ public struct AgentsModelBrokerReturn: Codable, Sendable {
   public var agent: RaviJSON?
   public var agentId: String
   public var changed: Bool
-  public var defaults: RaviJSON?
+  public var defaults: [String: RaviJSON]??
   public var modelBroker: RaviJSON
 
-  public init(action: String, agent: RaviJSON? = nil, agentId: String, changed: Bool, defaults: RaviJSON? = nil, modelBroker: RaviJSON) {
+  public init(action: String, agent: RaviJSON? = nil, agentId: String, changed: Bool, defaults: [String: RaviJSON]?? = nil, modelBroker: RaviJSON) {
     self.action = action
     self.agent = agent
     self.agentId = agentId
@@ -693,11 +693,11 @@ public struct AgentsPermissionsReturn: Codable, Sendable {
   public var before: RaviJSON?
   public var changed: Bool
   public var command: String?
-  public var defaults: RaviJSON?
+  public var defaults: [String: RaviJSON]??
   public var profile: String?
   public var runtimePermissions: RaviJSON?
 
-  public init(action: String, after: RaviJSON? = nil, agent: RaviJSON? = nil, agentId: String, before: RaviJSON? = nil, changed: Bool, command: String? = nil, defaults: RaviJSON? = nil, profile: String? = nil, runtimePermissions: RaviJSON? = nil) {
+  public init(action: String, after: RaviJSON? = nil, agent: RaviJSON? = nil, agentId: String, before: RaviJSON? = nil, changed: Bool, command: String? = nil, defaults: [String: RaviJSON]?? = nil, profile: String? = nil, runtimePermissions: RaviJSON? = nil) {
     self.action = action
     self.after = after
     self.agent = agent
@@ -981,14 +981,14 @@ public struct AppsDeleteReturn: Codable, Sendable {
 
 public struct AppsGuideReturn: Codable, Sendable {
   public var app: RaviJSON
-  public var appId: RaviJSON
+  public var appId: String?
   public var builder: RaviJSON
   public var nextCommands: [String]
   public var prompts: [RaviJSON]
   public var skill: String
   public var skillGate: RaviJSON
 
-  public init(app: RaviJSON, appId: RaviJSON, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
+  public init(app: RaviJSON, appId: String?, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
     self.app = app
     self.appId = appId
     self.builder = builder
@@ -1077,7 +1077,7 @@ public struct AppsImportCliOptions: Codable, Sendable {
 
 public struct AppsImportCliReturn: Codable, Sendable {
   public var builder: RaviJSON
-  public var cliPath: RaviJSON
+  public var cliPath: String?
   public var command: String
   public var confidence: String
   public var debugCandidates: [RaviJSON]
@@ -1092,14 +1092,14 @@ public struct AppsImportCliReturn: Codable, Sendable {
   public var nextCommands: [String]
   public var operationCandidates: [RaviJSON]
   public var reviewRequired: [String]
-  public var skill: RaviJSON
-  public var skillPath: RaviJSON
+  public var skill: String?
+  public var skillPath: String?
   public var source: String
   public var sourceCommand: String
-  public var specPath: RaviJSON
+  public var specPath: String?
   public var warnings: [String]
 
-  public init(builder: RaviJSON, cliPath: RaviJSON, command: String, confidence: String, debugCandidates: [RaviJSON], description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], operationCandidates: [RaviJSON], reviewRequired: [String], skill: RaviJSON, skillPath: RaviJSON, source: String, sourceCommand: String, specPath: RaviJSON, warnings: [String]) {
+  public init(builder: RaviJSON, cliPath: String?, command: String, confidence: String, debugCandidates: [RaviJSON], description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], operationCandidates: [RaviJSON], reviewRequired: [String], skill: String?, skillPath: String?, source: String, sourceCommand: String, specPath: String?, warnings: [String]) {
     self.builder = builder
     self.cliPath = cliPath
     self.command = command
@@ -1203,14 +1203,14 @@ public struct AppsListReturn: Codable, Sendable {
 
 public struct AppsPromptsReturn: Codable, Sendable {
   public var app: RaviJSON
-  public var appId: RaviJSON
+  public var appId: String?
   public var builder: RaviJSON
   public var nextCommands: [String]
   public var prompts: [RaviJSON]
   public var skill: String
   public var skillGate: RaviJSON
 
-  public init(app: RaviJSON, appId: RaviJSON, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
+  public init(app: RaviJSON, appId: String?, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
     self.app = app
     self.appId = appId
     self.builder = builder
@@ -1250,7 +1250,7 @@ public struct AppsRunOptions: Codable, Sendable {
 }
 
 public struct AppsRunReturn: Codable, Sendable {
-  public var appId: RaviJSON
+  public var appId: String?
   public var callerContextId: String?
   public var channel: String?
   public var childContextId: String?
@@ -1259,13 +1259,13 @@ public struct AppsRunReturn: Codable, Sendable {
   public var durationMs: Double
   public var error: String?
   public var errorCode: String?
-  public var exitCode: RaviJSON?
+  public var exitCode: Double??
   public var handler: String?
-  public var interface: RaviJSON
+  public var interface: String?
   public var mutating: Bool
   public var ok: Bool
-  public var operation: RaviJSON
-  public var operationId: RaviJSON
+  public var operation: String?
+  public var operationId: String?
   public var permissionProvider: RaviJSON?
   public var plan: RaviJSON?
   public var result: RaviJSON?
@@ -1273,7 +1273,7 @@ public struct AppsRunReturn: Codable, Sendable {
   public var stderr: String?
   public var stdout: String?
 
-  public init(appId: RaviJSON, callerContextId: String? = nil, channel: String? = nil, childContextId: String? = nil, command: String? = nil, dryRun: Bool? = nil, durationMs: Double, error: String? = nil, errorCode: String? = nil, exitCode: RaviJSON? = nil, handler: String? = nil, interface: RaviJSON, mutating: Bool, ok: Bool, operation: RaviJSON, operationId: RaviJSON, permissionProvider: RaviJSON? = nil, plan: RaviJSON? = nil, result: RaviJSON? = nil, status: String, stderr: String? = nil, stdout: String? = nil) {
+  public init(appId: String?, callerContextId: String? = nil, channel: String? = nil, childContextId: String? = nil, command: String? = nil, dryRun: Bool? = nil, durationMs: Double, error: String? = nil, errorCode: String? = nil, exitCode: Double?? = nil, handler: String? = nil, interface: String?, mutating: Bool, ok: Bool, operation: String?, operationId: String?, permissionProvider: RaviJSON? = nil, plan: RaviJSON? = nil, result: RaviJSON? = nil, status: String, stderr: String? = nil, stdout: String? = nil) {
     self.appId = appId
     self.callerContextId = callerContextId
     self.channel = channel
@@ -1386,7 +1386,7 @@ public struct AppsScaffoldOptions: Codable, Sendable {
 
 public struct AppsScaffoldReturn: Codable, Sendable {
   public var builder: RaviJSON
-  public var cliPath: RaviJSON
+  public var cliPath: String?
   public var command: String
   public var description: String
   public var dryRun: Bool
@@ -1397,11 +1397,11 @@ public struct AppsScaffoldReturn: Codable, Sendable {
   public var manifestPath: String
   public var name: String
   public var nextCommands: [String]
-  public var skill: RaviJSON
-  public var skillPath: RaviJSON
-  public var specPath: RaviJSON
+  public var skill: String?
+  public var skillPath: String?
+  public var specPath: String?
 
-  public init(builder: RaviJSON, cliPath: RaviJSON, command: String, description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], skill: RaviJSON, skillPath: RaviJSON, specPath: RaviJSON) {
+  public init(builder: RaviJSON, cliPath: String?, command: String, description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], skill: String?, skillPath: String?, specPath: String?) {
     self.builder = builder
     self.cliPath = cliPath
     self.command = command
@@ -1985,10 +1985,10 @@ public struct ArtifactsPublishReturn: Codable, Sendable {
   public var site: RaviJSON
   public var success: Bool
   public var upload: RaviJSON
-  public var uploadSession: RaviJSON
-  public var url: RaviJSON
+  public var uploadSession: [String: RaviJSON]?
+  public var url: String?
 
-  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: RaviJSON, url: RaviJSON) {
+  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: [String: RaviJSON]?, url: String?) {
     self.artifact = artifact
     self.artifactVersion = artifactVersion
     self.authenticated = authenticated
@@ -2068,9 +2068,9 @@ public struct ArtifactsReleaseActivateReturn: Codable, Sendable {
   public var release: RaviJSON
   public var routes: [RaviJSON]
   public var site: RaviJSON
-  public var url: RaviJSON
+  public var url: String?
 
-  public init(localSync: [String: RaviJSON]? = nil, release: RaviJSON, routes: [RaviJSON], site: RaviJSON, url: RaviJSON) {
+  public init(localSync: [String: RaviJSON]? = nil, release: RaviJSON, routes: [RaviJSON], site: RaviJSON, url: String?) {
     self.localSync = localSync
     self.release = release
     self.routes = routes
@@ -2880,13 +2880,13 @@ public struct BridgesCreateOptions: Codable, Sendable {
 
 public struct BridgesCreateReturn: Codable, Sendable {
   public var bridge: [String: RaviJSON]
-  public var bridgeToken: RaviJSON
-  public var bridgeUrl: RaviJSON
+  public var bridgeToken: String?
+  public var bridgeUrl: String?
   public var consoleUrl: String
   public var projectRef: String
   public var success: Bool
 
-  public init(bridge: [String: RaviJSON], bridgeToken: RaviJSON, bridgeUrl: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+  public init(bridge: [String: RaviJSON], bridgeToken: String?, bridgeUrl: String?, consoleUrl: String, projectRef: String, success: Bool) {
     self.bridge = bridge
     self.bridgeToken = bridgeToken
     self.bridgeUrl = bridgeUrl
@@ -3873,9 +3873,9 @@ public struct ChannelsProbeReturn: Codable, Sendable {
   public var outbound: [String: RaviJSON]
   public var pid: Double
   public var running: Bool
-  public var startedAt: RaviJSON
+  public var startedAt: Double?
 
-  public init(adapters: [[String: RaviJSON]], outbound: [String: RaviJSON], pid: Double, running: Bool, startedAt: RaviJSON) {
+  public init(adapters: [[String: RaviJSON]], outbound: [String: RaviJSON], pid: Double, running: Bool, startedAt: Double?) {
     self.adapters = adapters
     self.outbound = outbound
     self.pid = pid
@@ -3913,13 +3913,13 @@ public struct ChannelsRestartOptions: Codable, Sendable {
 public struct ChannelsRestartReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
-  public var pm2Status: RaviJSON?
+  public var pm2Status: Double??
   public var reason: String?
   public var runnerEnv: RaviJSON?
   public var status: RaviJSON?
   public var target: RaviJSON?
 
-  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
+  public init(action: String, changed: Bool, pm2Status: Double?? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
     self.action = action
     self.changed = changed
     self.pm2Status = pm2Status
@@ -4012,13 +4012,13 @@ public struct ChannelsStartOptions: Codable, Sendable {
 public struct ChannelsStartReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
-  public var pm2Status: RaviJSON?
+  public var pm2Status: Double??
   public var reason: String?
   public var runnerEnv: RaviJSON?
   public var status: RaviJSON?
   public var target: RaviJSON?
 
-  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
+  public init(action: String, changed: Bool, pm2Status: Double?? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
     self.action = action
     self.changed = changed
     self.pm2Status = pm2Status
@@ -4069,13 +4069,13 @@ public struct ChannelsStatusReturn: Codable, Sendable {
 public struct ChannelsStopReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
-  public var pm2Status: RaviJSON?
+  public var pm2Status: Double??
   public var reason: String?
   public var runnerEnv: RaviJSON?
   public var status: RaviJSON?
   public var target: RaviJSON?
 
-  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
+  public init(action: String, changed: Bool, pm2Status: Double?? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
     self.action = action
     self.changed = changed
     self.pm2Status = pm2Status
@@ -4814,10 +4814,10 @@ public struct CloudProjectsCreateOptions: Codable, Sendable {
 public struct CloudProjectsCreateReturn: Codable, Sendable {
   public var consoleUrl: String
   public var project: [String: RaviJSON]
-  public var redirectTo: RaviJSON
+  public var redirectTo: String?
   public var success: Bool
 
-  public init(consoleUrl: String, project: [String: RaviJSON], redirectTo: RaviJSON, success: Bool) {
+  public init(consoleUrl: String, project: [String: RaviJSON], redirectTo: String?, success: Bool) {
     self.consoleUrl = consoleUrl
     self.project = project
     self.redirectTo = redirectTo
@@ -4985,12 +4985,12 @@ public struct CloudScopeExplainOptions: Codable, Sendable {
 public struct CloudScopeExplainReturn: Codable, Sendable {
   public var candidates: [RaviJSON]
   public var consoleUrl: String
-  public var missingProjectCommand: RaviJSON?
+  public var missingProjectCommand: String??
   public var organization: RaviJSON?
   public var resolved: RaviJSON
   public var success: Bool
 
-  public init(candidates: [RaviJSON], consoleUrl: String, missingProjectCommand: RaviJSON? = nil, organization: RaviJSON? = nil, resolved: RaviJSON, success: Bool) {
+  public init(candidates: [RaviJSON], consoleUrl: String, missingProjectCommand: String?? = nil, organization: RaviJSON? = nil, resolved: RaviJSON, success: Bool) {
     self.candidates = candidates
     self.consoleUrl = consoleUrl
     self.missingProjectCommand = missingProjectCommand
@@ -5993,7 +5993,7 @@ public typealias ContactsUnlinkReturn = [String: RaviJSON]
 public typealias ContactsUntagReturn = [String: RaviJSON]
 
 public struct ContextAuthorizeReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var allowed: Bool
   public var approved: Bool
   public var capabilitiesCount: Double
@@ -6002,9 +6002,9 @@ public struct ContextAuthorizeReturn: Codable, Sendable {
   public var objectId: String
   public var objectType: String
   public var permission: String
-  public var reason: RaviJSON
+  public var reason: String?
 
-  public init(agentId: RaviJSON, allowed: Bool, approved: Bool, capabilitiesCount: Double, contextId: String, inherited: Bool, objectId: String, objectType: String, permission: String, reason: RaviJSON) {
+  public init(agentId: String?, allowed: Bool, approved: Bool, capabilitiesCount: Double, contextId: String, inherited: Bool, objectId: String, objectType: String, permission: String, reason: String?) {
     self.agentId = agentId
     self.allowed = allowed
     self.approved = approved
@@ -6032,14 +6032,14 @@ public struct ContextAuthorizeReturn: Codable, Sendable {
 }
 
 public struct ContextCapabilitiesReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var capabilities: [RaviJSON]
   public var contextId: String
   public var kind: String
-  public var sessionKey: RaviJSON
-  public var sessionName: RaviJSON
+  public var sessionKey: String?
+  public var sessionName: String?
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], contextId: String, kind: String, sessionKey: RaviJSON, sessionName: RaviJSON) {
+  public init(agentId: String?, capabilities: [RaviJSON], contextId: String, kind: String, sessionKey: String?, sessionName: String?) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.contextId = contextId
@@ -6059,7 +6059,7 @@ public struct ContextCapabilitiesReturn: Codable, Sendable {
 }
 
 public struct ContextCheckReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var allowed: Bool
   public var capabilitiesCount: Double
   public var contextId: String
@@ -6067,7 +6067,7 @@ public struct ContextCheckReturn: Codable, Sendable {
   public var objectType: String
   public var permission: String
 
-  public init(agentId: RaviJSON, allowed: Bool, capabilitiesCount: Double, contextId: String, objectId: String, objectType: String, permission: String) {
+  public init(agentId: String?, allowed: Bool, capabilitiesCount: Double, contextId: String, objectId: String, objectType: String, permission: String) {
     self.agentId = agentId
     self.allowed = allowed
     self.capabilitiesCount = capabilitiesCount
@@ -6137,12 +6137,12 @@ public struct ContextCleanupAgentRuntimeReturn: Codable, Sendable {
   public var dryRun: Bool
   public var olderThan: String
   public var olderThanMs: Double
-  public var reason: RaviJSON
+  public var reason: String?
   public var revoked: [RaviJSON]
   public var revokedCount: Double
   public var scanned: RaviJSON
 
-  public init(candidates: [RaviJSON], candidatesCount: Double, cutoffAt: Double, dryRun: Bool, olderThan: String, olderThanMs: Double, reason: RaviJSON, revoked: [RaviJSON], revokedCount: Double, scanned: RaviJSON) {
+  public init(candidates: [RaviJSON], candidatesCount: Double, cutoffAt: Double, dryRun: Bool, olderThan: String, olderThanMs: Double, reason: String?, revoked: [RaviJSON], revokedCount: Double, scanned: RaviJSON) {
     self.candidates = candidates
     self.candidatesCount = candidatesCount
     self.cutoffAt = cutoffAt
@@ -6207,10 +6207,10 @@ public struct ContextCredentialsAddOptions: Codable, Sendable {
 
 public struct ContextCredentialsAddReturn: Codable, Sendable {
   public var added: String
-  public var default_: RaviJSON
+  public var default_: String?
   public var path: String
 
-  public init(added: String, default_: RaviJSON, path: String) {
+  public init(added: String, default_: String?, path: String) {
     self.added = added
     self.default_ = default_
     self.path = path
@@ -6254,7 +6254,7 @@ public struct ContextCredentialsListOptions: Codable, Sendable {
 }
 
 public struct ContextCredentialsListReturn: Codable, Sendable {
-  public var default_: RaviJSON
+  public var default_: String?
   public var entries: [RaviJSON]
   public var exists: Bool
   public var items: [RaviJSON]
@@ -6262,7 +6262,7 @@ public struct ContextCredentialsListReturn: Codable, Sendable {
   public var path: String
   public var total: Double
 
-  public init(default_: RaviJSON, entries: [RaviJSON], exists: Bool, items: [RaviJSON], pagination: RaviJSON, path: String, total: Double) {
+  public init(default_: String?, entries: [RaviJSON], exists: Bool, items: [RaviJSON], pagination: RaviJSON, path: String, total: Double) {
     self.default_ = default_
     self.entries = entries
     self.exists = exists
@@ -6302,11 +6302,11 @@ public struct ContextCredentialsRemoveOptions: Codable, Sendable {
 }
 
 public struct ContextCredentialsRemoveReturn: Codable, Sendable {
-  public var default_: RaviJSON
+  public var default_: String?
   public var path: String
   public var removed: String
 
-  public init(default_: RaviJSON, path: String, removed: String) {
+  public init(default_: String?, path: String, removed: String) {
     self.default_ = default_
     self.path = path
     self.removed = removed
@@ -6320,10 +6320,10 @@ public struct ContextCredentialsRemoveReturn: Codable, Sendable {
 }
 
 public struct ContextCredentialsSetDefaultReturn: Codable, Sendable {
-  public var default_: RaviJSON
+  public var default_: String?
   public var path: String
 
-  public init(default_: RaviJSON, path: String) {
+  public init(default_: String?, path: String) {
     self.default_ = default_
     self.path = path
   }
@@ -6335,26 +6335,26 @@ public struct ContextCredentialsSetDefaultReturn: Codable, Sendable {
 }
 
 public struct ContextInfoReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var capabilities: [RaviJSON]
   public var capabilitiesCount: Double
   public var contextId: String
   public var createdAt: Double
-  public var expiresAt: RaviJSON
-  public var issuanceMode: RaviJSON
-  public var issuedFor: RaviJSON
+  public var expiresAt: Double?
+  public var issuanceMode: String?
+  public var issuedFor: String?
   public var kind: String
-  public var lastUsedAt: RaviJSON
+  public var lastUsedAt: Double?
   public var lineage: RaviJSON
-  public var metadata: RaviJSON
-  public var parentContextId: RaviJSON
-  public var revokedAt: RaviJSON
-  public var sessionKey: RaviJSON
-  public var sessionName: RaviJSON
+  public var metadata: [String: RaviJSON]?
+  public var parentContextId: String?
+  public var revokedAt: Double?
+  public var sessionKey: String?
+  public var sessionName: String?
   public var source: RaviJSON
   public var status: String
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], capabilitiesCount: Double, contextId: String, createdAt: Double, expiresAt: RaviJSON, issuanceMode: RaviJSON, issuedFor: RaviJSON, kind: String, lastUsedAt: RaviJSON, lineage: RaviJSON, metadata: RaviJSON, parentContextId: RaviJSON, revokedAt: RaviJSON, sessionKey: RaviJSON, sessionName: RaviJSON, source: RaviJSON, status: String) {
+  public init(agentId: String?, capabilities: [RaviJSON], capabilitiesCount: Double, contextId: String, createdAt: Double, expiresAt: Double?, issuanceMode: String?, issuedFor: String?, kind: String, lastUsedAt: Double?, lineage: RaviJSON, metadata: [String: RaviJSON]?, parentContextId: String?, revokedAt: Double?, sessionKey: String?, sessionName: String?, source: RaviJSON, status: String) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.capabilitiesCount = capabilitiesCount
@@ -6428,7 +6428,7 @@ public struct ContextIssueOptions: Codable, Sendable {
 }
 
 public struct ContextIssueReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var capabilities: [RaviJSON]
   public var capabilitiesCount: Double
   public var cliName: String
@@ -6436,15 +6436,15 @@ public struct ContextIssueReturn: Codable, Sendable {
   public var contextKey: String
   public var createdAt: Double
   public var env: [String: String]
-  public var expiresAt: RaviJSON
+  public var expiresAt: Double?
   public var kind: String
-  public var metadata: RaviJSON
+  public var metadata: [String: RaviJSON]?
   public var parentContextId: String
-  public var sessionKey: RaviJSON
-  public var sessionName: RaviJSON
+  public var sessionKey: String?
+  public var sessionName: String?
   public var source: RaviJSON
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], capabilitiesCount: Double, cliName: String, contextId: String, contextKey: String, createdAt: Double, env: [String: String], expiresAt: RaviJSON, kind: String, metadata: RaviJSON, parentContextId: String, sessionKey: RaviJSON, sessionName: RaviJSON, source: RaviJSON) {
+  public init(agentId: String?, capabilities: [RaviJSON], capabilitiesCount: Double, cliName: String, contextId: String, contextKey: String, createdAt: Double, env: [String: String], expiresAt: Double?, kind: String, metadata: [String: RaviJSON]?, parentContextId: String, sessionKey: String?, sessionName: String?, source: RaviJSON) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.capabilitiesCount = capabilitiesCount
@@ -6678,12 +6678,12 @@ public struct ContextVisibilityReturn: Codable, Sendable {
   public var compact: RaviJSON
   public var lastUpdatedAt: Double
   public var loadedSkills: [String]
-  public var provider: RaviJSON
+  public var provider: String?
   public var sessionKey: String
   public var skills: [RaviJSON]
   public var tokens: RaviJSON
 
-  public init(agentId: String, compact: RaviJSON, lastUpdatedAt: Double, loadedSkills: [String], provider: RaviJSON, sessionKey: String, skills: [RaviJSON], tokens: RaviJSON) {
+  public init(agentId: String, compact: RaviJSON, lastUpdatedAt: Double, loadedSkills: [String], provider: String?, sessionKey: String, skills: [RaviJSON], tokens: RaviJSON) {
     self.agentId = agentId
     self.compact = compact
     self.lastUpdatedAt = lastUpdatedAt
@@ -6707,26 +6707,26 @@ public struct ContextVisibilityReturn: Codable, Sendable {
 }
 
 public struct ContextWhoamiReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var capabilities: [RaviJSON]
   public var capabilitiesCount: Double
   public var contextId: String
   public var createdAt: Double
-  public var expiresAt: RaviJSON
-  public var issuanceMode: RaviJSON
-  public var issuedFor: RaviJSON
+  public var expiresAt: Double?
+  public var issuanceMode: String?
+  public var issuedFor: String?
   public var kind: String
-  public var lastUsedAt: RaviJSON
+  public var lastUsedAt: Double?
   public var lineage: RaviJSON
-  public var metadata: RaviJSON
-  public var parentContextId: RaviJSON
-  public var revokedAt: RaviJSON
-  public var sessionKey: RaviJSON
-  public var sessionName: RaviJSON
+  public var metadata: [String: RaviJSON]?
+  public var parentContextId: String?
+  public var revokedAt: Double?
+  public var sessionKey: String?
+  public var sessionName: String?
   public var source: RaviJSON
   public var status: String
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], capabilitiesCount: Double, contextId: String, createdAt: Double, expiresAt: RaviJSON, issuanceMode: RaviJSON, issuedFor: RaviJSON, kind: String, lastUsedAt: RaviJSON, lineage: RaviJSON, metadata: RaviJSON, parentContextId: RaviJSON, revokedAt: RaviJSON, sessionKey: RaviJSON, sessionName: RaviJSON, source: RaviJSON, status: String) {
+  public init(agentId: String?, capabilities: [RaviJSON], capabilitiesCount: Double, contextId: String, createdAt: Double, expiresAt: Double?, issuanceMode: String?, issuedFor: String?, kind: String, lastUsedAt: Double?, lineage: RaviJSON, metadata: [String: RaviJSON]?, parentContextId: String?, revokedAt: Double?, sessionKey: String?, sessionName: String?, source: RaviJSON, status: String) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.capabilitiesCount = capabilitiesCount
@@ -6923,12 +6923,12 @@ public struct CostsPricingReturn: Codable, Sendable {
 }
 
 public struct CostsSessionReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var sessionKey: String
-  public var sessionName: RaviJSON
+  public var sessionName: String?
   public var summary: RaviJSON
 
-  public init(agentId: RaviJSON, sessionKey: String, sessionName: RaviJSON, summary: RaviJSON) {
+  public init(agentId: String?, sessionKey: String, sessionName: String?, summary: RaviJSON) {
     self.agentId = agentId
     self.sessionKey = sessionKey
     self.sessionName = sessionName
@@ -9253,11 +9253,11 @@ public struct CronAddOptions: Codable, Sendable {
 
 public struct CronAddReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -9274,11 +9274,11 @@ public struct CronAddReturn: Codable, Sendable {
 
 public struct CronDisableReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -9295,11 +9295,11 @@ public struct CronDisableReturn: Codable, Sendable {
 
 public struct CronEnableReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -9403,11 +9403,11 @@ public struct CronRmOptions: Codable, Sendable {
 
 public struct CronRmReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -9442,11 +9442,11 @@ public struct CronRunOptions: Codable, Sendable {
 
 public struct CronRunReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -9463,11 +9463,11 @@ public struct CronRunReturn: Codable, Sendable {
 
 public struct CronSetReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -10020,15 +10020,15 @@ public struct DevinSessionsCreateOptions: Codable, Sendable {
 }
 
 public struct DevinSessionsCreateReturn: Codable, Sendable {
-  public var devinMode: RaviJSON?
-  public var maxAcuLimit: RaviJSON
+  public var devinMode: String??
+  public var maxAcuLimit: Double?
   public var maxAcuLimitSource: String
-  public var platform: RaviJSON?
-  public var resumable: RaviJSON?
+  public var platform: String??
+  public var resumable: Bool??
   public var session: RaviJSON
   public var status: String
 
-  public init(devinMode: RaviJSON? = nil, maxAcuLimit: RaviJSON, maxAcuLimitSource: String, platform: RaviJSON? = nil, resumable: RaviJSON? = nil, session: RaviJSON, status: String) {
+  public init(devinMode: String?? = nil, maxAcuLimit: Double?, maxAcuLimitSource: String, platform: String?? = nil, resumable: Bool?? = nil, session: RaviJSON, status: String) {
     self.devinMode = devinMode
     self.maxAcuLimit = maxAcuLimit
     self.maxAcuLimitSource = maxAcuLimitSource
@@ -10076,9 +10076,9 @@ public struct DevinSessionsInsightsOptions: Codable, Sendable {
 public struct DevinSessionsInsightsReturn: Codable, Sendable {
   public var insights: RaviJSON
   public var session: RaviJSON
-  public var summary: RaviJSON
+  public var summary: [String: RaviJSON]?
 
-  public init(insights: RaviJSON, session: RaviJSON, summary: RaviJSON) {
+  public init(insights: RaviJSON, session: RaviJSON, summary: [String: RaviJSON]?) {
     self.insights = insights
     self.session = session
     self.summary = summary
@@ -10298,11 +10298,11 @@ public struct DevinSessionsSyncOptions: Codable, Sendable {
 public struct DevinSessionsSyncReturn: Codable, Sendable {
   public var artifacts: [String]
   public var attachments: Double
-  public var insights: RaviJSON
+  public var insights: [String: RaviJSON]?
   public var messages: Double
   public var session: RaviJSON
 
-  public init(artifacts: [String], attachments: Double, insights: RaviJSON, messages: Double, session: RaviJSON) {
+  public init(artifacts: [String], attachments: Double, insights: [String: RaviJSON]?, messages: Double, session: RaviJSON) {
     self.artifacts = artifacts
     self.attachments = attachments
     self.insights = insights
@@ -11230,11 +11230,11 @@ public struct ImageAtlasSplitReturn: Codable, Sendable {
   public var crops: [[String: RaviJSON]]
   public var manifestPath: String
   public var outputDir: String
-  public var parentArtifactId: RaviJSON
+  public var parentArtifactId: String?
   public var sent: [[String: RaviJSON]]
   public var success: Bool
 
-  public init(artifactId: String, artifact_id: String, crops: [[String: RaviJSON]], manifestPath: String, outputDir: String, parentArtifactId: RaviJSON, sent: [[String: RaviJSON]], success: Bool) {
+  public init(artifactId: String, artifact_id: String, crops: [[String: RaviJSON]], manifestPath: String, outputDir: String, parentArtifactId: String?, sent: [[String: RaviJSON]], success: Bool) {
     self.artifactId = artifactId
     self.artifact_id = artifact_id
     self.crops = crops
@@ -12649,10 +12649,10 @@ public struct MailMessagesImportOptions: Codable, Sendable {
 
 public struct MailMessagesImportReturn: Codable, Sendable {
   public var inboxCreated: Bool
-  public var inboxItem: RaviJSON
+  public var inboxItem: [String: RaviJSON]?
   public var message: RaviJSON
 
-  public init(inboxCreated: Bool, inboxItem: RaviJSON, message: RaviJSON) {
+  public init(inboxCreated: Bool, inboxItem: [String: RaviJSON]?, message: RaviJSON) {
     self.inboxCreated = inboxCreated
     self.inboxItem = inboxItem
     self.message = message
@@ -14003,10 +14003,10 @@ public struct ObserversRefreshReturn: Codable, Sendable {
   public var mode: String
   public var refreshedProfiles: [[String: RaviJSON]]
   public var skipped: [[String: RaviJSON]]
-  public var source: RaviJSON
+  public var source: [String: RaviJSON]?
   public var total: Double
 
-  public init(bindings: [[String: RaviJSON]], created: [[String: RaviJSON]], disabled: [[String: RaviJSON]], mode: String, refreshedProfiles: [[String: RaviJSON]], skipped: [[String: RaviJSON]], source: RaviJSON, total: Double) {
+  public init(bindings: [[String: RaviJSON]], created: [[String: RaviJSON]], disabled: [[String: RaviJSON]], mode: String, refreshedProfiles: [[String: RaviJSON]], skipped: [[String: RaviJSON]], source: [String: RaviJSON]?, total: Double) {
     self.bindings = bindings
     self.created = created
     self.disabled = disabled
@@ -14397,13 +14397,13 @@ public struct PagesCreateOptions: Codable, Sendable {
 
 public struct PagesCreateReturn: Codable, Sendable {
   public var consoleUrl: String
-  public var contentPublishCommand: RaviJSON
+  public var contentPublishCommand: String?
   public var projectRef: String
   public var site: [String: RaviJSON]
   public var success: Bool
-  public var url: RaviJSON
+  public var url: String?
 
-  public init(consoleUrl: String, contentPublishCommand: RaviJSON, projectRef: String, site: [String: RaviJSON], success: Bool, url: RaviJSON) {
+  public init(consoleUrl: String, contentPublishCommand: String?, projectRef: String, site: [String: RaviJSON], success: Bool, url: String?) {
     self.consoleUrl = consoleUrl
     self.contentPublishCommand = contentPublishCommand
     self.projectRef = projectRef
@@ -14604,7 +14604,7 @@ public struct PagesPasswordRemoveReturn: Codable, Sendable {
   public var configured: Bool
   public var consoleUrl: String
   public var path: String
-  public var policy: RaviJSON
+  public var policy: [String: RaviJSON]?
   public var projectRef: String
   public var release: [String: RaviJSON]
   public var route: [String: RaviJSON]
@@ -14614,7 +14614,7 @@ public struct PagesPasswordRemoveReturn: Codable, Sendable {
   public var success: Bool
   public var url: String
 
-  public init(action: String, configured: Bool, consoleUrl: String, path: String, policy: RaviJSON, projectRef: String, release: [String: RaviJSON], route: [String: RaviJSON], scope: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String) {
+  public init(action: String, configured: Bool, consoleUrl: String, path: String, policy: [String: RaviJSON]?, projectRef: String, release: [String: RaviJSON], route: [String: RaviJSON], scope: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String) {
     self.action = action
     self.configured = configured
     self.consoleUrl = consoleUrl
@@ -14682,7 +14682,7 @@ public struct PagesPasswordStatusReturn: Codable, Sendable {
   public var configured: Bool
   public var consoleUrl: String
   public var path: String
-  public var policy: RaviJSON
+  public var policy: [String: RaviJSON]?
   public var projectRef: String
   public var release: [String: RaviJSON]
   public var route: [String: RaviJSON]
@@ -14692,7 +14692,7 @@ public struct PagesPasswordStatusReturn: Codable, Sendable {
   public var success: Bool
   public var url: String
 
-  public init(action: String, configured: Bool, consoleUrl: String, path: String, policy: RaviJSON, projectRef: String, release: [String: RaviJSON], route: [String: RaviJSON], scope: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String) {
+  public init(action: String, configured: Bool, consoleUrl: String, path: String, policy: [String: RaviJSON]?, projectRef: String, release: [String: RaviJSON], route: [String: RaviJSON], scope: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String) {
     self.action = action
     self.configured = configured
     self.consoleUrl = consoleUrl
@@ -14857,10 +14857,10 @@ public struct PagesPublishReturn: Codable, Sendable {
   public var site: RaviJSON
   public var success: Bool
   public var upload: RaviJSON
-  public var uploadSession: RaviJSON
-  public var url: RaviJSON
+  public var uploadSession: [String: RaviJSON]?
+  public var url: String?
 
-  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: RaviJSON, url: RaviJSON) {
+  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: [String: RaviJSON]?, url: String?) {
     self.artifact = artifact
     self.artifactVersion = artifactVersion
     self.authenticated = authenticated
@@ -15002,9 +15002,9 @@ public struct PagesUpdateReturn: Codable, Sendable {
   public var site: [String: RaviJSON]
   public var siteRef: String
   public var success: Bool
-  public var url: RaviJSON
+  public var url: String?
 
-  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: RaviJSON) {
+  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String?) {
     self.consoleUrl = consoleUrl
     self.edgeManifestRepair = edgeManifestRepair
     self.projectRef = projectRef
@@ -15062,9 +15062,9 @@ public struct PagesVisibilityReturn: Codable, Sendable {
   public var site: [String: RaviJSON]
   public var siteRef: String
   public var success: Bool
-  public var url: RaviJSON
+  public var url: String?
 
-  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: RaviJSON) {
+  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String?) {
     self.consoleUrl = consoleUrl
     self.edgeManifestRepair = edgeManifestRepair
     self.projectRef = projectRef
@@ -16473,13 +16473,13 @@ public struct ProxCallsRequestOptions: Codable, Sendable {
 }
 
 public struct ProxCallsRequestReturn: Codable, Sendable {
-  public var blockReason: RaviJSON?
+  public var blockReason: String??
   public var blocked: Bool
   public var hint: String
   public var providerMode: String
   public var request: [String: RaviJSON]
 
-  public init(blockReason: RaviJSON? = nil, blocked: Bool, hint: String, providerMode: String, request: [String: RaviJSON]) {
+  public init(blockReason: String?? = nil, blocked: Bool, hint: String, providerMode: String, request: [String: RaviJSON]) {
     self.blockReason = blockReason
     self.blocked = blocked
     self.hint = hint
@@ -16518,10 +16518,10 @@ public typealias ProxCallsRulesReturn = RaviJSON
 
 public struct ProxCallsShowReturn: Codable, Sendable {
   public var request: [String: RaviJSON]
-  public var result: RaviJSON
+  public var result: [String: RaviJSON]?
   public var runs: [[String: RaviJSON]]
 
-  public init(request: [String: RaviJSON], result: RaviJSON, runs: [[String: RaviJSON]]) {
+  public init(request: [String: RaviJSON], result: [String: RaviJSON]?, runs: [[String: RaviJSON]]) {
     self.request = request
     self.result = result
     self.runs = runs
@@ -16800,10 +16800,10 @@ public struct ProxCallsTranscriptOptions: Codable, Sendable {
 public struct ProxCallsTranscriptReturn: Codable, Sendable {
   public var outcome: String
   public var requestId: String
-  public var summary: RaviJSON?
+  public var summary: String??
   public var transcript: String
 
-  public init(outcome: String, requestId: String, summary: RaviJSON? = nil, transcript: String) {
+  public init(outcome: String, requestId: String, summary: String?? = nil, transcript: String) {
     self.outcome = outcome
     self.requestId = requestId
     self.summary = summary
@@ -16998,11 +16998,11 @@ public struct ProxCallsVoiceAgentsSyncReturn: Codable, Sendable {
   public var dryRun: Bool
   public var intendedChanges: [String: RaviJSON]
   public var provider: String
-  public var providerAgentId: RaviJSON?
+  public var providerAgentId: String??
   public var providerSync: String
   public var voiceAgentId: String
 
-  public init(dryRun: Bool, intendedChanges: [String: RaviJSON], provider: String, providerAgentId: RaviJSON? = nil, providerSync: String, voiceAgentId: String) {
+  public init(dryRun: Bool, intendedChanges: [String: RaviJSON], provider: String, providerAgentId: String?? = nil, providerSync: String, voiceAgentId: String) {
     self.dryRun = dryRun
     self.intendedChanges = intendedChanges
     self.provider = provider
@@ -17100,14 +17100,14 @@ public struct RoutesExplainOptions: Codable, Sendable {
 }
 
 public struct RoutesExplainReturn: Codable, Sendable {
-  public var channel: RaviJSON
-  public var configuredRoute: RaviJSON
+  public var channel: String?
+  public var configuredRoute: [String: RaviJSON]?
   public var instance: String
-  public var liveEffect: RaviJSON
-  public var pattern: RaviJSON
+  public var liveEffect: [String: RaviJSON]?
+  public var pattern: String?
   public var target: [String: RaviJSON]
 
-  public init(channel: RaviJSON, configuredRoute: RaviJSON, instance: String, liveEffect: RaviJSON, pattern: RaviJSON, target: [String: RaviJSON]) {
+  public init(channel: String?, configuredRoute: [String: RaviJSON]?, instance: String, liveEffect: [String: RaviJSON]?, pattern: String?, target: [String: RaviJSON]) {
     self.channel = channel
     self.configuredRoute = configuredRoute
     self.instance = instance
@@ -17164,13 +17164,13 @@ public struct RoutesListOptions: Codable, Sendable {
 
 public struct RoutesListReturn: Codable, Sendable {
   public var filter: [String: RaviJSON]
-  public var instance: RaviJSON
+  public var instance: String?
   public var items: [[String: RaviJSON]]
   public var pagination: RaviJSON
   public var routes: [[String: RaviJSON]]
   public var total: Double
 
-  public init(filter: [String: RaviJSON], instance: RaviJSON, items: [[String: RaviJSON]], pagination: RaviJSON, routes: [[String: RaviJSON]], total: Double) {
+  public init(filter: [String: RaviJSON], instance: String?, items: [[String: RaviJSON]], pagination: RaviJSON, routes: [[String: RaviJSON]], total: Double) {
     self.filter = filter
     self.instance = instance
     self.items = items
@@ -17734,9 +17734,9 @@ public struct RuntimeCredentialsRefreshReturn: Codable, Sendable {
 
 public struct RuntimeCredentialsResetHealthReturn: Codable, Sendable {
   public var credential: [String: RaviJSON]
-  public var health: RaviJSON
+  public var health: [String: RaviJSON]?
 
-  public init(credential: [String: RaviJSON], health: RaviJSON) {
+  public init(credential: [String: RaviJSON], health: [String: RaviJSON]?) {
     self.credential = credential
     self.health = health
   }
@@ -17792,9 +17792,9 @@ public struct RuntimeCredentialsSelectOptions: Codable, Sendable {
 public struct RuntimeCredentialsSelectReturn: Codable, Sendable {
   public var candidates: [[String: RaviJSON]]
   public var rejected: [[String: RaviJSON]]
-  public var selected: RaviJSON
+  public var selected: [String: RaviJSON]?
 
-  public init(candidates: [[String: RaviJSON]], rejected: [[String: RaviJSON]], selected: RaviJSON) {
+  public init(candidates: [[String: RaviJSON]], rejected: [[String: RaviJSON]], selected: [String: RaviJSON]?) {
     self.candidates = candidates
     self.rejected = rejected
     self.selected = selected
@@ -17809,9 +17809,9 @@ public struct RuntimeCredentialsSelectReturn: Codable, Sendable {
 
 public struct RuntimeCredentialsStatusReturn: Codable, Sendable {
   public var credential: [String: RaviJSON]
-  public var health: RaviJSON
+  public var health: [String: RaviJSON]?
 
-  public init(credential: [String: RaviJSON], health: RaviJSON) {
+  public init(credential: [String: RaviJSON], health: [String: RaviJSON]?) {
     self.credential = credential
     self.health = health
   }
@@ -18022,7 +18022,7 @@ public struct RuntimePresetsImpactOptions: Codable, Sendable {
 
 public struct RuntimePresetsImpactReturn: Codable, Sendable {
   public var agents: [RaviJSON]
-  public var correctionCommand: RaviJSON
+  public var correctionCommand: String?
   public var enabled: Bool
   public var limit: Double
   public var model: String
@@ -18035,7 +18035,7 @@ public struct RuntimePresetsImpactReturn: Codable, Sendable {
   public var shadowingSessionsTotal: Double
   public var version: Double
 
-  public init(agents: [RaviJSON], correctionCommand: RaviJSON, enabled: Bool, limit: Double, model: String, offset: Double, pagination: RaviJSON, presetId: String, provider: String, referenced: Bool, referencingAgentsTotal: Double, shadowingSessionsTotal: Double, version: Double) {
+  public init(agents: [RaviJSON], correctionCommand: String?, enabled: Bool, limit: Double, model: String, offset: Double, pagination: RaviJSON, presetId: String, provider: String, referenced: Bool, referencingAgentsTotal: Double, shadowingSessionsTotal: Double, version: Double) {
     self.agents = agents
     self.correctionCommand = correctionCommand
     self.enabled = enabled
@@ -20137,9 +20137,9 @@ public struct SessionsSendReturn: Codable, Sendable {
   public var published: Bool
   public var response: RaviJSON?
   public var session: RaviJSON
-  public var thread: RaviJSON
+  public var thread: [String: RaviJSON]?
 
-  public init(action: String, createdSession: Bool, delivery: [String: RaviJSON], mode: String, promptLength: Int, published: Bool, response: RaviJSON? = nil, session: RaviJSON, thread: RaviJSON) {
+  public init(action: String, createdSession: Bool, delivery: [String: RaviJSON], mode: String, promptLength: Int, published: Bool, response: RaviJSON? = nil, session: RaviJSON, thread: [String: RaviJSON]?) {
     self.action = action
     self.createdSession = createdSession
     self.delivery = delivery
@@ -20174,11 +20174,11 @@ public struct SessionsSetEffortReturn: Codable, Sendable {
   public var changed: Bool
   public var effectiveEffort: String
   public var effectiveEffortSource: String
-  public var effortOverride: RaviJSON
+  public var effortOverride: String?
   public var sessionKey: String
-  public var sessionName: RaviJSON
+  public var sessionName: String?
 
-  public init(action: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, effectiveEffort: String, effectiveEffortSource: String, effortOverride: RaviJSON, sessionKey: String, sessionName: RaviJSON) {
+  public init(action: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, effectiveEffort: String, effectiveEffortSource: String, effortOverride: String?, sessionKey: String, sessionName: String?) {
     self.action = action
     self.after = after
     self.appliesOn = appliesOn
@@ -20214,11 +20214,11 @@ public struct SessionsSetProviderReturn: Codable, Sendable {
   public var before: RaviJSON
   public var changed: Bool
   public var effectiveProvider: String
-  public var runtimeProviderOverride: RaviJSON
+  public var runtimeProviderOverride: String?
   public var sessionKey: String
-  public var sessionName: RaviJSON
+  public var sessionName: String?
 
-  public init(action: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, effectiveProvider: String, runtimeProviderOverride: RaviJSON, sessionKey: String, sessionName: RaviJSON) {
+  public init(action: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, effectiveProvider: String, runtimeProviderOverride: String?, sessionKey: String, sessionName: String?) {
     self.action = action
     self.after = after
     self.appliesOn = appliesOn
@@ -23520,165 +23520,1880 @@ public struct SlackWorkObjectsValidateReturn: Codable, Sendable {
   }
 }
 
-public struct SpecsFacadeApplyOptions: Codable, Sendable {
+public struct SpecsFacadeNewApplyOptions: Codable, Sendable {
   public var full: Bool?
-  public var kind: String?
-  public var title: String?
 
-  public init(full: Bool? = nil, kind: String? = nil, title: String? = nil) {
+  public init(full: Bool? = nil) {
     self.full = full
-    self.kind = kind
-    self.title = title
   }
 
   enum CodingKeys: String, CodingKey {
     case full = "full"
-    case kind = "kind"
-    case title = "title"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.full {
       body["full"] = try RaviJSON.fromEncodable(value)
     }
-    if let value = self.kind {
-      body["kind"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.title {
-      body["title"] = try RaviJSON.fromEncodable(value)
-    }
   }
 }
 
-public typealias SpecsFacadeApplyReturn = RaviJSON
+public struct SpecsFacadeNewApplyReturnVerificationReadbackAncestorsItem: Codable, Sendable {
+  public var exists: Bool
+  public var id: String
+  public var path: String
 
-public struct SpecsFacadePlanOptions: Codable, Sendable {
+  public init(exists: Bool, id: String, path: String) {
+    self.exists = exists
+    self.id = id
+    self.path = path
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case exists = "exists"
+    case id = "id"
+    case path = "path"
+  }
+}
+
+public struct SpecsFacadeNewApplyReturnVerificationReadbackBinding: Codable, Sendable {
+  public var cwd: String
+  public var dbPath: String
+  public var specsRoot: String
+
+  public init(cwd: String, dbPath: String, specsRoot: String) {
+    self.cwd = cwd
+    self.dbPath = dbPath
+    self.specsRoot = specsRoot
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cwd = "cwd"
+    case dbPath = "dbPath"
+    case specsRoot = "specsRoot"
+  }
+}
+
+public struct SpecsFacadeNewApplyReturnVerificationReadbackFilesItem: Codable, Sendable {
+  public var actualSha256: String?
+  public var exists: Bool
+  public var expectedSha256: String?
+  public var matches: Bool?
+  public var path: String
+  public var regularFile: Bool?
+
+  public init(actualSha256: String? = nil, exists: Bool, expectedSha256: String?, matches: Bool? = nil, path: String, regularFile: Bool? = nil) {
+    self.actualSha256 = actualSha256
+    self.exists = exists
+    self.expectedSha256 = expectedSha256
+    self.matches = matches
+    self.path = path
+    self.regularFile = regularFile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actualSha256 = "actualSha256"
+    case exists = "exists"
+    case expectedSha256 = "expectedSha256"
+    case matches = "matches"
+    case path = "path"
+    case regularFile = "regularFile"
+  }
+}
+
+public struct SpecsFacadeNewApplyReturnVerificationReadbackIndex: Codable, Sendable {
+  public var dbPath: String
+  public var indexedIds: [String]
+  public var indexedTotal: Double
+  public var matches: Bool
+  public var schemaExists: Bool
+  public var sourceIds: [String]
+  public var sourceTotal: Double
+
+  public init(dbPath: String, indexedIds: [String], indexedTotal: Double, matches: Bool, schemaExists: Bool, sourceIds: [String], sourceTotal: Double) {
+    self.dbPath = dbPath
+    self.indexedIds = indexedIds
+    self.indexedTotal = indexedTotal
+    self.matches = matches
+    self.schemaExists = schemaExists
+    self.sourceIds = sourceIds
+    self.sourceTotal = sourceTotal
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case indexedIds = "indexedIds"
+    case indexedTotal = "indexedTotal"
+    case matches = "matches"
+    case schemaExists = "schemaExists"
+    case sourceIds = "sourceIds"
+    case sourceTotal = "sourceTotal"
+  }
+}
+
+public struct SpecsFacadeNewApplyReturnVerificationReadbackTarget: Codable, Sendable {
+  public var directoryPath: String
+  public var id: String
+
+  public init(directoryPath: String, id: String) {
+    self.directoryPath = directoryPath
+    self.id = id
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case directoryPath = "directoryPath"
+    case id = "id"
+  }
+}
+
+public struct SpecsFacadeNewApplyReturnVerificationReadback: Codable, Sendable {
+  public var ancestors: [SpecsFacadeNewApplyReturnVerificationReadbackAncestorsItem]
+  public var binding: SpecsFacadeNewApplyReturnVerificationReadbackBinding
+  public var files: [SpecsFacadeNewApplyReturnVerificationReadbackFilesItem]
+  public var index: SpecsFacadeNewApplyReturnVerificationReadbackIndex
+  public var observedAt: String
+  public var operation: String
+  public var planHash: String
+  public var schemaVersion: String
+  public var target: SpecsFacadeNewApplyReturnVerificationReadbackTarget
+  public var unexpectedFiles: [String]
+
+  public init(ancestors: [SpecsFacadeNewApplyReturnVerificationReadbackAncestorsItem], binding: SpecsFacadeNewApplyReturnVerificationReadbackBinding, files: [SpecsFacadeNewApplyReturnVerificationReadbackFilesItem], index: SpecsFacadeNewApplyReturnVerificationReadbackIndex, observedAt: String, operation: String, planHash: String, schemaVersion: String, target: SpecsFacadeNewApplyReturnVerificationReadbackTarget, unexpectedFiles: [String]) {
+    self.ancestors = ancestors
+    self.binding = binding
+    self.files = files
+    self.index = index
+    self.observedAt = observedAt
+    self.operation = operation
+    self.planHash = planHash
+    self.schemaVersion = schemaVersion
+    self.target = target
+    self.unexpectedFiles = unexpectedFiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ancestors = "ancestors"
+    case binding = "binding"
+    case files = "files"
+    case index = "index"
+    case observedAt = "observedAt"
+    case operation = "operation"
+    case planHash = "planHash"
+    case schemaVersion = "schemaVersion"
+    case target = "target"
+    case unexpectedFiles = "unexpectedFiles"
+  }
+}
+
+public struct SpecsFacadeNewApplyReturnVerification: Codable, Sendable {
+  public var operation: String
+  public var outcome: String
+  public var planHash: String
+  public var readback: SpecsFacadeNewApplyReturnVerificationReadback
+
+  public init(operation: String, outcome: String, planHash: String, readback: SpecsFacadeNewApplyReturnVerificationReadback) {
+    self.operation = operation
+    self.outcome = outcome
+    self.planHash = planHash
+    self.readback = readback
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case operation = "operation"
+    case outcome = "outcome"
+    case planHash = "planHash"
+    case readback = "readback"
+  }
+}
+
+public struct SpecsFacadeNewApplyReturn: Codable, Sendable {
+  public var changed: Bool
+  public var operation: String
+  public var state: String
+  public var verification: SpecsFacadeNewApplyReturnVerification
+
+  public init(changed: Bool, operation: String, state: String, verification: SpecsFacadeNewApplyReturnVerification) {
+    self.changed = changed
+    self.operation = operation
+    self.state = state
+    self.verification = verification
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case changed = "changed"
+    case operation = "operation"
+    case state = "state"
+    case verification = "verification"
+  }
+}
+
+public struct SpecsFacadeNewPlanOptions: Codable, Sendable {
   public var full: Bool?
-  public var kind: String?
-  public var title: String?
 
-  public init(full: Bool? = nil, kind: String? = nil, title: String? = nil) {
+  public init(full: Bool? = nil) {
     self.full = full
-    self.kind = kind
-    self.title = title
   }
 
   enum CodingKeys: String, CodingKey {
     case full = "full"
-    case kind = "kind"
-    case title = "title"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.full {
       body["full"] = try RaviJSON.fromEncodable(value)
     }
-    if let value = self.kind {
-      body["kind"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.title {
-      body["title"] = try RaviJSON.fromEncodable(value)
-    }
   }
 }
 
-public typealias SpecsFacadePlanReturn = RaviJSON
+public struct SpecsFacadeNewPlanReturnBinding: Codable, Sendable {
+  public var cwd: String
+  public var dbPath: String
+  public var specsRoot: String
 
-public struct SpecsFacadeReadbackOptions: Codable, Sendable {
-  public var full: Bool?
-  public var kind: String?
-  public var title: String?
+  public init(cwd: String, dbPath: String, specsRoot: String) {
+    self.cwd = cwd
+    self.dbPath = dbPath
+    self.specsRoot = specsRoot
+  }
 
-  public init(full: Bool? = nil, kind: String? = nil, title: String? = nil) {
+  enum CodingKeys: String, CodingKey {
+    case cwd = "cwd"
+    case dbPath = "dbPath"
+    case specsRoot = "specsRoot"
+  }
+}
+
+public struct SpecsFacadeNewPlanReturnBlockersItemDetails: Codable, Sendable {
+  public var ancestors: [String]?
+  public var divergentFiles: [String]?
+  public var missingFiles: [String]?
+  public var unexpectedFiles: [String]?
+
+  public init(ancestors: [String]? = nil, divergentFiles: [String]? = nil, missingFiles: [String]? = nil, unexpectedFiles: [String]? = nil) {
+    self.ancestors = ancestors
+    self.divergentFiles = divergentFiles
+    self.missingFiles = missingFiles
+    self.unexpectedFiles = unexpectedFiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ancestors = "ancestors"
+    case divergentFiles = "divergentFiles"
+    case missingFiles = "missingFiles"
+    case unexpectedFiles = "unexpectedFiles"
+  }
+}
+
+public struct SpecsFacadeNewPlanReturnBlockersItem: Codable, Sendable {
+  public var code: String
+  public var details: SpecsFacadeNewPlanReturnBlockersItemDetails?
+  public var message: String
+
+  public init(code: String, details: SpecsFacadeNewPlanReturnBlockersItemDetails? = nil, message: String) {
+    self.code = code
+    self.details = details
+    self.message = message
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case code = "code"
+    case details = "details"
+    case message = "message"
+  }
+}
+
+public struct SpecsFacadeNewPlanReturnEffectsItem: Codable, Sendable {
+  public var contentSha256: String
+  public var overwrite: Bool
+  public var path: String
+  public var type: String
+
+  public init(contentSha256: String, overwrite: Bool, path: String, type: String) {
+    self.contentSha256 = contentSha256
+    self.overwrite = overwrite
+    self.path = path
+    self.type = type
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case contentSha256 = "contentSha256"
+    case overwrite = "overwrite"
+    case path = "path"
+    case type = "type"
+  }
+}
+
+public struct SpecsFacadeNewPlanReturnInput: Codable, Sendable {
+  public var full: Bool
+  public var id: String
+  public var kind: String
+  public var title: String
+
+  public init(full: Bool, id: String, kind: String, title: String) {
     self.full = full
+    self.id = id
     self.kind = kind
     self.title = title
   }
 
   enum CodingKeys: String, CodingKey {
     case full = "full"
+    case id = "id"
     case kind = "kind"
     case title = "title"
   }
+}
 
-  func encodeBody(into body: inout [String: RaviJSON]) throws {
-    if let value = self.full {
-      body["full"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.kind {
-      body["kind"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.title {
-      body["title"] = try RaviJSON.fromEncodable(value)
-    }
+public struct SpecsFacadeNewPlanReturnObservationAncestorsItem: Codable, Sendable {
+  public var exists: Bool
+  public var id: String
+  public var path: String
+
+  public init(exists: Bool, id: String, path: String) {
+    self.exists = exists
+    self.id = id
+    self.path = path
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case exists = "exists"
+    case id = "id"
+    case path = "path"
   }
 }
 
-public typealias SpecsFacadeReadbackReturn = RaviJSON
+public struct SpecsFacadeNewPlanReturnObservationTarget: Codable, Sendable {
+  public var divergentFiles: [String]
+  public var exactMatch: Bool
+  public var matchingFiles: [String]
+  public var missingFiles: [String]
+  public var targetDirectoryExists: Bool
+  public var targetSpecExists: Bool
+  public var unexpectedFiles: [String]
 
-public struct SpecsFacadeRecoverOptions: Codable, Sendable {
+  public init(divergentFiles: [String], exactMatch: Bool, matchingFiles: [String], missingFiles: [String], targetDirectoryExists: Bool, targetSpecExists: Bool, unexpectedFiles: [String]) {
+    self.divergentFiles = divergentFiles
+    self.exactMatch = exactMatch
+    self.matchingFiles = matchingFiles
+    self.missingFiles = missingFiles
+    self.targetDirectoryExists = targetDirectoryExists
+    self.targetSpecExists = targetSpecExists
+    self.unexpectedFiles = unexpectedFiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case divergentFiles = "divergentFiles"
+    case exactMatch = "exactMatch"
+    case matchingFiles = "matchingFiles"
+    case missingFiles = "missingFiles"
+    case targetDirectoryExists = "targetDirectoryExists"
+    case targetSpecExists = "targetSpecExists"
+    case unexpectedFiles = "unexpectedFiles"
+  }
+}
+
+public struct SpecsFacadeNewPlanReturnObservation: Codable, Sendable {
+  public var ancestors: [SpecsFacadeNewPlanReturnObservationAncestorsItem]
+  public var replay: String
+  public var target: SpecsFacadeNewPlanReturnObservationTarget
+
+  public init(ancestors: [SpecsFacadeNewPlanReturnObservationAncestorsItem], replay: String, target: SpecsFacadeNewPlanReturnObservationTarget) {
+    self.ancestors = ancestors
+    self.replay = replay
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ancestors = "ancestors"
+    case replay = "replay"
+    case target = "target"
+  }
+}
+
+public struct SpecsFacadeNewPlanReturnTarget: Codable, Sendable {
+  public var directoryPath: String
+  public var id: String
+
+  public init(directoryPath: String, id: String) {
+    self.directoryPath = directoryPath
+    self.id = id
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case directoryPath = "directoryPath"
+    case id = "id"
+  }
+}
+
+public struct SpecsFacadeNewPlanReturn: Codable, Sendable {
+  public var binding: SpecsFacadeNewPlanReturnBinding
+  public var blockers: [SpecsFacadeNewPlanReturnBlockersItem]
+  public var effects: [SpecsFacadeNewPlanReturnEffectsItem]
+  public var executable: Bool
+  public var input: SpecsFacadeNewPlanReturnInput
+  public var observation: SpecsFacadeNewPlanReturnObservation
+  public var operation: String
+  public var planHash: String
+  public var schemaVersion: String
+  public var target: SpecsFacadeNewPlanReturnTarget
+
+  public init(binding: SpecsFacadeNewPlanReturnBinding, blockers: [SpecsFacadeNewPlanReturnBlockersItem], effects: [SpecsFacadeNewPlanReturnEffectsItem], executable: Bool, input: SpecsFacadeNewPlanReturnInput, observation: SpecsFacadeNewPlanReturnObservation, operation: String, planHash: String, schemaVersion: String, target: SpecsFacadeNewPlanReturnTarget) {
+    self.binding = binding
+    self.blockers = blockers
+    self.effects = effects
+    self.executable = executable
+    self.input = input
+    self.observation = observation
+    self.operation = operation
+    self.planHash = planHash
+    self.schemaVersion = schemaVersion
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case binding = "binding"
+    case blockers = "blockers"
+    case effects = "effects"
+    case executable = "executable"
+    case input = "input"
+    case observation = "observation"
+    case operation = "operation"
+    case planHash = "planHash"
+    case schemaVersion = "schemaVersion"
+    case target = "target"
+  }
+}
+
+public struct SpecsFacadeNewReadbackOptions: Codable, Sendable {
   public var full: Bool?
-  public var kind: String?
-  public var title: String?
 
-  public init(full: Bool? = nil, kind: String? = nil, title: String? = nil) {
+  public init(full: Bool? = nil) {
     self.full = full
-    self.kind = kind
-    self.title = title
   }
 
   enum CodingKeys: String, CodingKey {
     case full = "full"
-    case kind = "kind"
-    case title = "title"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.full {
       body["full"] = try RaviJSON.fromEncodable(value)
     }
-    if let value = self.kind {
-      body["kind"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.title {
-      body["title"] = try RaviJSON.fromEncodable(value)
-    }
   }
 }
 
-public typealias SpecsFacadeRecoverReturn = RaviJSON
+public struct SpecsFacadeNewReadbackReturnAncestorsItem: Codable, Sendable {
+  public var exists: Bool
+  public var id: String
+  public var path: String
 
-public struct SpecsFacadeVerifyOptions: Codable, Sendable {
+  public init(exists: Bool, id: String, path: String) {
+    self.exists = exists
+    self.id = id
+    self.path = path
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case exists = "exists"
+    case id = "id"
+    case path = "path"
+  }
+}
+
+public struct SpecsFacadeNewReadbackReturnBinding: Codable, Sendable {
+  public var cwd: String
+  public var dbPath: String
+  public var specsRoot: String
+
+  public init(cwd: String, dbPath: String, specsRoot: String) {
+    self.cwd = cwd
+    self.dbPath = dbPath
+    self.specsRoot = specsRoot
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cwd = "cwd"
+    case dbPath = "dbPath"
+    case specsRoot = "specsRoot"
+  }
+}
+
+public struct SpecsFacadeNewReadbackReturnFilesItem: Codable, Sendable {
+  public var actualSha256: String?
+  public var exists: Bool
+  public var expectedSha256: String?
+  public var matches: Bool?
+  public var path: String
+  public var regularFile: Bool?
+
+  public init(actualSha256: String? = nil, exists: Bool, expectedSha256: String?, matches: Bool? = nil, path: String, regularFile: Bool? = nil) {
+    self.actualSha256 = actualSha256
+    self.exists = exists
+    self.expectedSha256 = expectedSha256
+    self.matches = matches
+    self.path = path
+    self.regularFile = regularFile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actualSha256 = "actualSha256"
+    case exists = "exists"
+    case expectedSha256 = "expectedSha256"
+    case matches = "matches"
+    case path = "path"
+    case regularFile = "regularFile"
+  }
+}
+
+public struct SpecsFacadeNewReadbackReturnIndex: Codable, Sendable {
+  public var dbPath: String
+  public var indexedIds: [String]
+  public var indexedTotal: Double
+  public var matches: Bool
+  public var schemaExists: Bool
+  public var sourceIds: [String]
+  public var sourceTotal: Double
+
+  public init(dbPath: String, indexedIds: [String], indexedTotal: Double, matches: Bool, schemaExists: Bool, sourceIds: [String], sourceTotal: Double) {
+    self.dbPath = dbPath
+    self.indexedIds = indexedIds
+    self.indexedTotal = indexedTotal
+    self.matches = matches
+    self.schemaExists = schemaExists
+    self.sourceIds = sourceIds
+    self.sourceTotal = sourceTotal
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case indexedIds = "indexedIds"
+    case indexedTotal = "indexedTotal"
+    case matches = "matches"
+    case schemaExists = "schemaExists"
+    case sourceIds = "sourceIds"
+    case sourceTotal = "sourceTotal"
+  }
+}
+
+public struct SpecsFacadeNewReadbackReturnTarget: Codable, Sendable {
+  public var directoryPath: String
+  public var id: String
+
+  public init(directoryPath: String, id: String) {
+    self.directoryPath = directoryPath
+    self.id = id
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case directoryPath = "directoryPath"
+    case id = "id"
+  }
+}
+
+public struct SpecsFacadeNewReadbackReturn: Codable, Sendable {
+  public var ancestors: [SpecsFacadeNewReadbackReturnAncestorsItem]
+  public var binding: SpecsFacadeNewReadbackReturnBinding
+  public var files: [SpecsFacadeNewReadbackReturnFilesItem]
+  public var index: SpecsFacadeNewReadbackReturnIndex
+  public var observedAt: String
+  public var operation: String
+  public var planHash: String
+  public var schemaVersion: String
+  public var target: SpecsFacadeNewReadbackReturnTarget
+  public var unexpectedFiles: [String]
+
+  public init(ancestors: [SpecsFacadeNewReadbackReturnAncestorsItem], binding: SpecsFacadeNewReadbackReturnBinding, files: [SpecsFacadeNewReadbackReturnFilesItem], index: SpecsFacadeNewReadbackReturnIndex, observedAt: String, operation: String, planHash: String, schemaVersion: String, target: SpecsFacadeNewReadbackReturnTarget, unexpectedFiles: [String]) {
+    self.ancestors = ancestors
+    self.binding = binding
+    self.files = files
+    self.index = index
+    self.observedAt = observedAt
+    self.operation = operation
+    self.planHash = planHash
+    self.schemaVersion = schemaVersion
+    self.target = target
+    self.unexpectedFiles = unexpectedFiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ancestors = "ancestors"
+    case binding = "binding"
+    case files = "files"
+    case index = "index"
+    case observedAt = "observedAt"
+    case operation = "operation"
+    case planHash = "planHash"
+    case schemaVersion = "schemaVersion"
+    case target = "target"
+    case unexpectedFiles = "unexpectedFiles"
+  }
+}
+
+public struct SpecsFacadeNewRecoverOptions: Codable, Sendable {
   public var full: Bool?
-  public var kind: String?
-  public var title: String?
 
-  public init(full: Bool? = nil, kind: String? = nil, title: String? = nil) {
+  public init(full: Bool? = nil) {
     self.full = full
-    self.kind = kind
-    self.title = title
   }
 
   enum CodingKeys: String, CodingKey {
     case full = "full"
-    case kind = "kind"
-    case title = "title"
   }
 
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.full {
       body["full"] = try RaviJSON.fromEncodable(value)
     }
-    if let value = self.kind {
-      body["kind"] = try RaviJSON.fromEncodable(value)
-    }
-    if let value = self.title {
-      body["title"] = try RaviJSON.fromEncodable(value)
+  }
+}
+
+public struct SpecsFacadeNewRecoverReturnReadbackAncestorsItem: Codable, Sendable {
+  public var exists: Bool
+  public var id: String
+  public var path: String
+
+  public init(exists: Bool, id: String, path: String) {
+    self.exists = exists
+    self.id = id
+    self.path = path
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case exists = "exists"
+    case id = "id"
+    case path = "path"
+  }
+}
+
+public struct SpecsFacadeNewRecoverReturnReadbackBinding: Codable, Sendable {
+  public var cwd: String
+  public var dbPath: String
+  public var specsRoot: String
+
+  public init(cwd: String, dbPath: String, specsRoot: String) {
+    self.cwd = cwd
+    self.dbPath = dbPath
+    self.specsRoot = specsRoot
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cwd = "cwd"
+    case dbPath = "dbPath"
+    case specsRoot = "specsRoot"
+  }
+}
+
+public struct SpecsFacadeNewRecoverReturnReadbackFilesItem: Codable, Sendable {
+  public var actualSha256: String?
+  public var exists: Bool
+  public var expectedSha256: String?
+  public var matches: Bool?
+  public var path: String
+  public var regularFile: Bool?
+
+  public init(actualSha256: String? = nil, exists: Bool, expectedSha256: String?, matches: Bool? = nil, path: String, regularFile: Bool? = nil) {
+    self.actualSha256 = actualSha256
+    self.exists = exists
+    self.expectedSha256 = expectedSha256
+    self.matches = matches
+    self.path = path
+    self.regularFile = regularFile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actualSha256 = "actualSha256"
+    case exists = "exists"
+    case expectedSha256 = "expectedSha256"
+    case matches = "matches"
+    case path = "path"
+    case regularFile = "regularFile"
+  }
+}
+
+public struct SpecsFacadeNewRecoverReturnReadbackIndex: Codable, Sendable {
+  public var dbPath: String
+  public var indexedIds: [String]
+  public var indexedTotal: Double
+  public var matches: Bool
+  public var schemaExists: Bool
+  public var sourceIds: [String]
+  public var sourceTotal: Double
+
+  public init(dbPath: String, indexedIds: [String], indexedTotal: Double, matches: Bool, schemaExists: Bool, sourceIds: [String], sourceTotal: Double) {
+    self.dbPath = dbPath
+    self.indexedIds = indexedIds
+    self.indexedTotal = indexedTotal
+    self.matches = matches
+    self.schemaExists = schemaExists
+    self.sourceIds = sourceIds
+    self.sourceTotal = sourceTotal
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case indexedIds = "indexedIds"
+    case indexedTotal = "indexedTotal"
+    case matches = "matches"
+    case schemaExists = "schemaExists"
+    case sourceIds = "sourceIds"
+    case sourceTotal = "sourceTotal"
+  }
+}
+
+public struct SpecsFacadeNewRecoverReturnReadbackTarget: Codable, Sendable {
+  public var directoryPath: String
+  public var id: String
+
+  public init(directoryPath: String, id: String) {
+    self.directoryPath = directoryPath
+    self.id = id
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case directoryPath = "directoryPath"
+    case id = "id"
+  }
+}
+
+public struct SpecsFacadeNewRecoverReturnReadback: Codable, Sendable {
+  public var ancestors: [SpecsFacadeNewRecoverReturnReadbackAncestorsItem]
+  public var binding: SpecsFacadeNewRecoverReturnReadbackBinding
+  public var files: [SpecsFacadeNewRecoverReturnReadbackFilesItem]
+  public var index: SpecsFacadeNewRecoverReturnReadbackIndex
+  public var observedAt: String
+  public var operation: String
+  public var planHash: String
+  public var schemaVersion: String
+  public var target: SpecsFacadeNewRecoverReturnReadbackTarget
+  public var unexpectedFiles: [String]
+
+  public init(ancestors: [SpecsFacadeNewRecoverReturnReadbackAncestorsItem], binding: SpecsFacadeNewRecoverReturnReadbackBinding, files: [SpecsFacadeNewRecoverReturnReadbackFilesItem], index: SpecsFacadeNewRecoverReturnReadbackIndex, observedAt: String, operation: String, planHash: String, schemaVersion: String, target: SpecsFacadeNewRecoverReturnReadbackTarget, unexpectedFiles: [String]) {
+    self.ancestors = ancestors
+    self.binding = binding
+    self.files = files
+    self.index = index
+    self.observedAt = observedAt
+    self.operation = operation
+    self.planHash = planHash
+    self.schemaVersion = schemaVersion
+    self.target = target
+    self.unexpectedFiles = unexpectedFiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ancestors = "ancestors"
+    case binding = "binding"
+    case files = "files"
+    case index = "index"
+    case observedAt = "observedAt"
+    case operation = "operation"
+    case planHash = "planHash"
+    case schemaVersion = "schemaVersion"
+    case target = "target"
+    case unexpectedFiles = "unexpectedFiles"
+  }
+}
+
+public struct SpecsFacadeNewRecoverReturn: Codable, Sendable {
+  public var action: String
+  public var operation: String
+  public var outcome: String
+  public var planHash: String
+  public var readback: SpecsFacadeNewRecoverReturnReadback
+  public var replay: Bool
+
+  public init(action: String, operation: String, outcome: String, planHash: String, readback: SpecsFacadeNewRecoverReturnReadback, replay: Bool) {
+    self.action = action
+    self.operation = operation
+    self.outcome = outcome
+    self.planHash = planHash
+    self.readback = readback
+    self.replay = replay
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case action = "action"
+    case operation = "operation"
+    case outcome = "outcome"
+    case planHash = "planHash"
+    case readback = "readback"
+    case replay = "replay"
+  }
+}
+
+public struct SpecsFacadeNewVerifyOptions: Codable, Sendable {
+  public var full: Bool?
+
+  public init(full: Bool? = nil) {
+    self.full = full
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case full = "full"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.full {
+      body["full"] = try RaviJSON.fromEncodable(value)
     }
   }
 }
 
-public typealias SpecsFacadeVerifyReturn = RaviJSON
+public struct SpecsFacadeNewVerifyReturnReadbackAncestorsItem: Codable, Sendable {
+  public var exists: Bool
+  public var id: String
+  public var path: String
+
+  public init(exists: Bool, id: String, path: String) {
+    self.exists = exists
+    self.id = id
+    self.path = path
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case exists = "exists"
+    case id = "id"
+    case path = "path"
+  }
+}
+
+public struct SpecsFacadeNewVerifyReturnReadbackBinding: Codable, Sendable {
+  public var cwd: String
+  public var dbPath: String
+  public var specsRoot: String
+
+  public init(cwd: String, dbPath: String, specsRoot: String) {
+    self.cwd = cwd
+    self.dbPath = dbPath
+    self.specsRoot = specsRoot
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cwd = "cwd"
+    case dbPath = "dbPath"
+    case specsRoot = "specsRoot"
+  }
+}
+
+public struct SpecsFacadeNewVerifyReturnReadbackFilesItem: Codable, Sendable {
+  public var actualSha256: String?
+  public var exists: Bool
+  public var expectedSha256: String?
+  public var matches: Bool?
+  public var path: String
+  public var regularFile: Bool?
+
+  public init(actualSha256: String? = nil, exists: Bool, expectedSha256: String?, matches: Bool? = nil, path: String, regularFile: Bool? = nil) {
+    self.actualSha256 = actualSha256
+    self.exists = exists
+    self.expectedSha256 = expectedSha256
+    self.matches = matches
+    self.path = path
+    self.regularFile = regularFile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actualSha256 = "actualSha256"
+    case exists = "exists"
+    case expectedSha256 = "expectedSha256"
+    case matches = "matches"
+    case path = "path"
+    case regularFile = "regularFile"
+  }
+}
+
+public struct SpecsFacadeNewVerifyReturnReadbackIndex: Codable, Sendable {
+  public var dbPath: String
+  public var indexedIds: [String]
+  public var indexedTotal: Double
+  public var matches: Bool
+  public var schemaExists: Bool
+  public var sourceIds: [String]
+  public var sourceTotal: Double
+
+  public init(dbPath: String, indexedIds: [String], indexedTotal: Double, matches: Bool, schemaExists: Bool, sourceIds: [String], sourceTotal: Double) {
+    self.dbPath = dbPath
+    self.indexedIds = indexedIds
+    self.indexedTotal = indexedTotal
+    self.matches = matches
+    self.schemaExists = schemaExists
+    self.sourceIds = sourceIds
+    self.sourceTotal = sourceTotal
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case indexedIds = "indexedIds"
+    case indexedTotal = "indexedTotal"
+    case matches = "matches"
+    case schemaExists = "schemaExists"
+    case sourceIds = "sourceIds"
+    case sourceTotal = "sourceTotal"
+  }
+}
+
+public struct SpecsFacadeNewVerifyReturnReadbackTarget: Codable, Sendable {
+  public var directoryPath: String
+  public var id: String
+
+  public init(directoryPath: String, id: String) {
+    self.directoryPath = directoryPath
+    self.id = id
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case directoryPath = "directoryPath"
+    case id = "id"
+  }
+}
+
+public struct SpecsFacadeNewVerifyReturnReadback: Codable, Sendable {
+  public var ancestors: [SpecsFacadeNewVerifyReturnReadbackAncestorsItem]
+  public var binding: SpecsFacadeNewVerifyReturnReadbackBinding
+  public var files: [SpecsFacadeNewVerifyReturnReadbackFilesItem]
+  public var index: SpecsFacadeNewVerifyReturnReadbackIndex
+  public var observedAt: String
+  public var operation: String
+  public var planHash: String
+  public var schemaVersion: String
+  public var target: SpecsFacadeNewVerifyReturnReadbackTarget
+  public var unexpectedFiles: [String]
+
+  public init(ancestors: [SpecsFacadeNewVerifyReturnReadbackAncestorsItem], binding: SpecsFacadeNewVerifyReturnReadbackBinding, files: [SpecsFacadeNewVerifyReturnReadbackFilesItem], index: SpecsFacadeNewVerifyReturnReadbackIndex, observedAt: String, operation: String, planHash: String, schemaVersion: String, target: SpecsFacadeNewVerifyReturnReadbackTarget, unexpectedFiles: [String]) {
+    self.ancestors = ancestors
+    self.binding = binding
+    self.files = files
+    self.index = index
+    self.observedAt = observedAt
+    self.operation = operation
+    self.planHash = planHash
+    self.schemaVersion = schemaVersion
+    self.target = target
+    self.unexpectedFiles = unexpectedFiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ancestors = "ancestors"
+    case binding = "binding"
+    case files = "files"
+    case index = "index"
+    case observedAt = "observedAt"
+    case operation = "operation"
+    case planHash = "planHash"
+    case schemaVersion = "schemaVersion"
+    case target = "target"
+    case unexpectedFiles = "unexpectedFiles"
+  }
+}
+
+public struct SpecsFacadeNewVerifyReturn: Codable, Sendable {
+  public var operation: String
+  public var outcome: String
+  public var planHash: String
+  public var readback: SpecsFacadeNewVerifyReturnReadback
+
+  public init(operation: String, outcome: String, planHash: String, readback: SpecsFacadeNewVerifyReturnReadback) {
+    self.operation = operation
+    self.outcome = outcome
+    self.planHash = planHash
+    self.readback = readback
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case operation = "operation"
+    case outcome = "outcome"
+    case planHash = "planHash"
+    case readback = "readback"
+  }
+}
+
+public struct SpecsFacadeSyncApplyReturnVerificationReadbackAncestorsItem: Codable, Sendable {
+  public var exists: Bool
+  public var id: String
+  public var path: String
+
+  public init(exists: Bool, id: String, path: String) {
+    self.exists = exists
+    self.id = id
+    self.path = path
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case exists = "exists"
+    case id = "id"
+    case path = "path"
+  }
+}
+
+public struct SpecsFacadeSyncApplyReturnVerificationReadbackBinding: Codable, Sendable {
+  public var cwd: String
+  public var dbPath: String
+  public var specsRoot: String
+
+  public init(cwd: String, dbPath: String, specsRoot: String) {
+    self.cwd = cwd
+    self.dbPath = dbPath
+    self.specsRoot = specsRoot
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cwd = "cwd"
+    case dbPath = "dbPath"
+    case specsRoot = "specsRoot"
+  }
+}
+
+public struct SpecsFacadeSyncApplyReturnVerificationReadbackFilesItem: Codable, Sendable {
+  public var actualSha256: String?
+  public var exists: Bool
+  public var expectedSha256: String?
+  public var matches: Bool?
+  public var path: String
+  public var regularFile: Bool?
+
+  public init(actualSha256: String? = nil, exists: Bool, expectedSha256: String?, matches: Bool? = nil, path: String, regularFile: Bool? = nil) {
+    self.actualSha256 = actualSha256
+    self.exists = exists
+    self.expectedSha256 = expectedSha256
+    self.matches = matches
+    self.path = path
+    self.regularFile = regularFile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actualSha256 = "actualSha256"
+    case exists = "exists"
+    case expectedSha256 = "expectedSha256"
+    case matches = "matches"
+    case path = "path"
+    case regularFile = "regularFile"
+  }
+}
+
+public struct SpecsFacadeSyncApplyReturnVerificationReadbackIndex: Codable, Sendable {
+  public var dbPath: String
+  public var indexedIds: [String]
+  public var indexedTotal: Double
+  public var matches: Bool
+  public var schemaExists: Bool
+  public var sourceIds: [String]
+  public var sourceTotal: Double
+
+  public init(dbPath: String, indexedIds: [String], indexedTotal: Double, matches: Bool, schemaExists: Bool, sourceIds: [String], sourceTotal: Double) {
+    self.dbPath = dbPath
+    self.indexedIds = indexedIds
+    self.indexedTotal = indexedTotal
+    self.matches = matches
+    self.schemaExists = schemaExists
+    self.sourceIds = sourceIds
+    self.sourceTotal = sourceTotal
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case indexedIds = "indexedIds"
+    case indexedTotal = "indexedTotal"
+    case matches = "matches"
+    case schemaExists = "schemaExists"
+    case sourceIds = "sourceIds"
+    case sourceTotal = "sourceTotal"
+  }
+}
+
+public struct SpecsFacadeSyncApplyReturnVerificationReadbackTarget: Codable, Sendable {
+  public var dbPath: String
+  public var rootPath: String
+
+  public init(dbPath: String, rootPath: String) {
+    self.dbPath = dbPath
+    self.rootPath = rootPath
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case rootPath = "rootPath"
+  }
+}
+
+public struct SpecsFacadeSyncApplyReturnVerificationReadback: Codable, Sendable {
+  public var ancestors: [SpecsFacadeSyncApplyReturnVerificationReadbackAncestorsItem]
+  public var binding: SpecsFacadeSyncApplyReturnVerificationReadbackBinding
+  public var files: [SpecsFacadeSyncApplyReturnVerificationReadbackFilesItem]
+  public var index: SpecsFacadeSyncApplyReturnVerificationReadbackIndex
+  public var observedAt: String
+  public var operation: String
+  public var planHash: String
+  public var schemaVersion: String
+  public var target: SpecsFacadeSyncApplyReturnVerificationReadbackTarget
+  public var unexpectedFiles: [String]
+
+  public init(ancestors: [SpecsFacadeSyncApplyReturnVerificationReadbackAncestorsItem], binding: SpecsFacadeSyncApplyReturnVerificationReadbackBinding, files: [SpecsFacadeSyncApplyReturnVerificationReadbackFilesItem], index: SpecsFacadeSyncApplyReturnVerificationReadbackIndex, observedAt: String, operation: String, planHash: String, schemaVersion: String, target: SpecsFacadeSyncApplyReturnVerificationReadbackTarget, unexpectedFiles: [String]) {
+    self.ancestors = ancestors
+    self.binding = binding
+    self.files = files
+    self.index = index
+    self.observedAt = observedAt
+    self.operation = operation
+    self.planHash = planHash
+    self.schemaVersion = schemaVersion
+    self.target = target
+    self.unexpectedFiles = unexpectedFiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ancestors = "ancestors"
+    case binding = "binding"
+    case files = "files"
+    case index = "index"
+    case observedAt = "observedAt"
+    case operation = "operation"
+    case planHash = "planHash"
+    case schemaVersion = "schemaVersion"
+    case target = "target"
+    case unexpectedFiles = "unexpectedFiles"
+  }
+}
+
+public struct SpecsFacadeSyncApplyReturnVerification: Codable, Sendable {
+  public var operation: String
+  public var outcome: String
+  public var planHash: String
+  public var readback: SpecsFacadeSyncApplyReturnVerificationReadback
+
+  public init(operation: String, outcome: String, planHash: String, readback: SpecsFacadeSyncApplyReturnVerificationReadback) {
+    self.operation = operation
+    self.outcome = outcome
+    self.planHash = planHash
+    self.readback = readback
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case operation = "operation"
+    case outcome = "outcome"
+    case planHash = "planHash"
+    case readback = "readback"
+  }
+}
+
+public struct SpecsFacadeSyncApplyReturn: Codable, Sendable {
+  public var changed: Bool
+  public var operation: String
+  public var state: String
+  public var verification: SpecsFacadeSyncApplyReturnVerification
+
+  public init(changed: Bool, operation: String, state: String, verification: SpecsFacadeSyncApplyReturnVerification) {
+    self.changed = changed
+    self.operation = operation
+    self.state = state
+    self.verification = verification
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case changed = "changed"
+    case operation = "operation"
+    case state = "state"
+    case verification = "verification"
+  }
+}
+
+public struct SpecsFacadeSyncPlanReturnBinding: Codable, Sendable {
+  public var cwd: String
+  public var dbPath: String
+  public var specsRoot: String
+
+  public init(cwd: String, dbPath: String, specsRoot: String) {
+    self.cwd = cwd
+    self.dbPath = dbPath
+    self.specsRoot = specsRoot
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cwd = "cwd"
+    case dbPath = "dbPath"
+    case specsRoot = "specsRoot"
+  }
+}
+
+public struct SpecsFacadeSyncPlanReturnBlockersItemDetails: Codable, Sendable {
+  public var ancestors: [String]?
+  public var divergentFiles: [String]?
+  public var missingFiles: [String]?
+  public var unexpectedFiles: [String]?
+
+  public init(ancestors: [String]? = nil, divergentFiles: [String]? = nil, missingFiles: [String]? = nil, unexpectedFiles: [String]? = nil) {
+    self.ancestors = ancestors
+    self.divergentFiles = divergentFiles
+    self.missingFiles = missingFiles
+    self.unexpectedFiles = unexpectedFiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ancestors = "ancestors"
+    case divergentFiles = "divergentFiles"
+    case missingFiles = "missingFiles"
+    case unexpectedFiles = "unexpectedFiles"
+  }
+}
+
+public struct SpecsFacadeSyncPlanReturnBlockersItem: Codable, Sendable {
+  public var code: String
+  public var details: SpecsFacadeSyncPlanReturnBlockersItemDetails?
+  public var message: String
+
+  public init(code: String, details: SpecsFacadeSyncPlanReturnBlockersItemDetails? = nil, message: String) {
+    self.code = code
+    self.details = details
+    self.message = message
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case code = "code"
+    case details = "details"
+    case message = "message"
+  }
+}
+
+public struct SpecsFacadeSyncPlanReturnEffectsItem: Codable, Sendable {
+  public var dbPath: String
+  public var rootPath: String
+  public var sourceDigest: String
+  public var sourceTotal: Double
+  public var type: String
+
+  public init(dbPath: String, rootPath: String, sourceDigest: String, sourceTotal: Double, type: String) {
+    self.dbPath = dbPath
+    self.rootPath = rootPath
+    self.sourceDigest = sourceDigest
+    self.sourceTotal = sourceTotal
+    self.type = type
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case rootPath = "rootPath"
+    case sourceDigest = "sourceDigest"
+    case sourceTotal = "sourceTotal"
+    case type = "type"
+  }
+}
+
+public struct SpecsFacadeSyncPlanReturnInput: Codable, Sendable {
+  public var source: String
+
+  public init(source: String) {
+    self.source = source
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case source = "source"
+  }
+}
+
+public struct SpecsFacadeSyncPlanReturnObservationIndex: Codable, Sendable {
+  public var dbPath: String
+  public var indexedIds: [String]
+  public var indexedTotal: Double
+  public var matches: Bool
+  public var schemaExists: Bool
+  public var sourceIds: [String]
+  public var sourceTotal: Double
+
+  public init(dbPath: String, indexedIds: [String], indexedTotal: Double, matches: Bool, schemaExists: Bool, sourceIds: [String], sourceTotal: Double) {
+    self.dbPath = dbPath
+    self.indexedIds = indexedIds
+    self.indexedTotal = indexedTotal
+    self.matches = matches
+    self.schemaExists = schemaExists
+    self.sourceIds = sourceIds
+    self.sourceTotal = sourceTotal
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case indexedIds = "indexedIds"
+    case indexedTotal = "indexedTotal"
+    case matches = "matches"
+    case schemaExists = "schemaExists"
+    case sourceIds = "sourceIds"
+    case sourceTotal = "sourceTotal"
+  }
+}
+
+public struct SpecsFacadeSyncPlanReturnObservationSourceFilesItem: Codable, Sendable {
+  public var id: String
+  public var path: String
+
+  public init(id: String, path: String) {
+    self.id = id
+    self.path = path
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case id = "id"
+    case path = "path"
+  }
+}
+
+public struct SpecsFacadeSyncPlanReturnObservation: Codable, Sendable {
+  public var index: SpecsFacadeSyncPlanReturnObservationIndex
+  public var replay: String
+  public var sourceFiles: [SpecsFacadeSyncPlanReturnObservationSourceFilesItem]
+
+  public init(index: SpecsFacadeSyncPlanReturnObservationIndex, replay: String, sourceFiles: [SpecsFacadeSyncPlanReturnObservationSourceFilesItem]) {
+    self.index = index
+    self.replay = replay
+    self.sourceFiles = sourceFiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case index = "index"
+    case replay = "replay"
+    case sourceFiles = "sourceFiles"
+  }
+}
+
+public struct SpecsFacadeSyncPlanReturnTarget: Codable, Sendable {
+  public var dbPath: String
+  public var rootPath: String
+
+  public init(dbPath: String, rootPath: String) {
+    self.dbPath = dbPath
+    self.rootPath = rootPath
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case rootPath = "rootPath"
+  }
+}
+
+public struct SpecsFacadeSyncPlanReturn: Codable, Sendable {
+  public var binding: SpecsFacadeSyncPlanReturnBinding
+  public var blockers: [SpecsFacadeSyncPlanReturnBlockersItem]
+  public var effects: [SpecsFacadeSyncPlanReturnEffectsItem]
+  public var executable: Bool
+  public var input: SpecsFacadeSyncPlanReturnInput
+  public var observation: SpecsFacadeSyncPlanReturnObservation
+  public var operation: String
+  public var planHash: String
+  public var schemaVersion: String
+  public var target: SpecsFacadeSyncPlanReturnTarget
+
+  public init(binding: SpecsFacadeSyncPlanReturnBinding, blockers: [SpecsFacadeSyncPlanReturnBlockersItem], effects: [SpecsFacadeSyncPlanReturnEffectsItem], executable: Bool, input: SpecsFacadeSyncPlanReturnInput, observation: SpecsFacadeSyncPlanReturnObservation, operation: String, planHash: String, schemaVersion: String, target: SpecsFacadeSyncPlanReturnTarget) {
+    self.binding = binding
+    self.blockers = blockers
+    self.effects = effects
+    self.executable = executable
+    self.input = input
+    self.observation = observation
+    self.operation = operation
+    self.planHash = planHash
+    self.schemaVersion = schemaVersion
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case binding = "binding"
+    case blockers = "blockers"
+    case effects = "effects"
+    case executable = "executable"
+    case input = "input"
+    case observation = "observation"
+    case operation = "operation"
+    case planHash = "planHash"
+    case schemaVersion = "schemaVersion"
+    case target = "target"
+  }
+}
+
+public struct SpecsFacadeSyncReadbackReturnAncestorsItem: Codable, Sendable {
+  public var exists: Bool
+  public var id: String
+  public var path: String
+
+  public init(exists: Bool, id: String, path: String) {
+    self.exists = exists
+    self.id = id
+    self.path = path
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case exists = "exists"
+    case id = "id"
+    case path = "path"
+  }
+}
+
+public struct SpecsFacadeSyncReadbackReturnBinding: Codable, Sendable {
+  public var cwd: String
+  public var dbPath: String
+  public var specsRoot: String
+
+  public init(cwd: String, dbPath: String, specsRoot: String) {
+    self.cwd = cwd
+    self.dbPath = dbPath
+    self.specsRoot = specsRoot
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cwd = "cwd"
+    case dbPath = "dbPath"
+    case specsRoot = "specsRoot"
+  }
+}
+
+public struct SpecsFacadeSyncReadbackReturnFilesItem: Codable, Sendable {
+  public var actualSha256: String?
+  public var exists: Bool
+  public var expectedSha256: String?
+  public var matches: Bool?
+  public var path: String
+  public var regularFile: Bool?
+
+  public init(actualSha256: String? = nil, exists: Bool, expectedSha256: String?, matches: Bool? = nil, path: String, regularFile: Bool? = nil) {
+    self.actualSha256 = actualSha256
+    self.exists = exists
+    self.expectedSha256 = expectedSha256
+    self.matches = matches
+    self.path = path
+    self.regularFile = regularFile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actualSha256 = "actualSha256"
+    case exists = "exists"
+    case expectedSha256 = "expectedSha256"
+    case matches = "matches"
+    case path = "path"
+    case regularFile = "regularFile"
+  }
+}
+
+public struct SpecsFacadeSyncReadbackReturnIndex: Codable, Sendable {
+  public var dbPath: String
+  public var indexedIds: [String]
+  public var indexedTotal: Double
+  public var matches: Bool
+  public var schemaExists: Bool
+  public var sourceIds: [String]
+  public var sourceTotal: Double
+
+  public init(dbPath: String, indexedIds: [String], indexedTotal: Double, matches: Bool, schemaExists: Bool, sourceIds: [String], sourceTotal: Double) {
+    self.dbPath = dbPath
+    self.indexedIds = indexedIds
+    self.indexedTotal = indexedTotal
+    self.matches = matches
+    self.schemaExists = schemaExists
+    self.sourceIds = sourceIds
+    self.sourceTotal = sourceTotal
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case indexedIds = "indexedIds"
+    case indexedTotal = "indexedTotal"
+    case matches = "matches"
+    case schemaExists = "schemaExists"
+    case sourceIds = "sourceIds"
+    case sourceTotal = "sourceTotal"
+  }
+}
+
+public struct SpecsFacadeSyncReadbackReturnTarget: Codable, Sendable {
+  public var dbPath: String
+  public var rootPath: String
+
+  public init(dbPath: String, rootPath: String) {
+    self.dbPath = dbPath
+    self.rootPath = rootPath
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case rootPath = "rootPath"
+  }
+}
+
+public struct SpecsFacadeSyncReadbackReturn: Codable, Sendable {
+  public var ancestors: [SpecsFacadeSyncReadbackReturnAncestorsItem]
+  public var binding: SpecsFacadeSyncReadbackReturnBinding
+  public var files: [SpecsFacadeSyncReadbackReturnFilesItem]
+  public var index: SpecsFacadeSyncReadbackReturnIndex
+  public var observedAt: String
+  public var operation: String
+  public var planHash: String
+  public var schemaVersion: String
+  public var target: SpecsFacadeSyncReadbackReturnTarget
+  public var unexpectedFiles: [String]
+
+  public init(ancestors: [SpecsFacadeSyncReadbackReturnAncestorsItem], binding: SpecsFacadeSyncReadbackReturnBinding, files: [SpecsFacadeSyncReadbackReturnFilesItem], index: SpecsFacadeSyncReadbackReturnIndex, observedAt: String, operation: String, planHash: String, schemaVersion: String, target: SpecsFacadeSyncReadbackReturnTarget, unexpectedFiles: [String]) {
+    self.ancestors = ancestors
+    self.binding = binding
+    self.files = files
+    self.index = index
+    self.observedAt = observedAt
+    self.operation = operation
+    self.planHash = planHash
+    self.schemaVersion = schemaVersion
+    self.target = target
+    self.unexpectedFiles = unexpectedFiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ancestors = "ancestors"
+    case binding = "binding"
+    case files = "files"
+    case index = "index"
+    case observedAt = "observedAt"
+    case operation = "operation"
+    case planHash = "planHash"
+    case schemaVersion = "schemaVersion"
+    case target = "target"
+    case unexpectedFiles = "unexpectedFiles"
+  }
+}
+
+public struct SpecsFacadeSyncRecoverReturnReadbackAncestorsItem: Codable, Sendable {
+  public var exists: Bool
+  public var id: String
+  public var path: String
+
+  public init(exists: Bool, id: String, path: String) {
+    self.exists = exists
+    self.id = id
+    self.path = path
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case exists = "exists"
+    case id = "id"
+    case path = "path"
+  }
+}
+
+public struct SpecsFacadeSyncRecoverReturnReadbackBinding: Codable, Sendable {
+  public var cwd: String
+  public var dbPath: String
+  public var specsRoot: String
+
+  public init(cwd: String, dbPath: String, specsRoot: String) {
+    self.cwd = cwd
+    self.dbPath = dbPath
+    self.specsRoot = specsRoot
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cwd = "cwd"
+    case dbPath = "dbPath"
+    case specsRoot = "specsRoot"
+  }
+}
+
+public struct SpecsFacadeSyncRecoverReturnReadbackFilesItem: Codable, Sendable {
+  public var actualSha256: String?
+  public var exists: Bool
+  public var expectedSha256: String?
+  public var matches: Bool?
+  public var path: String
+  public var regularFile: Bool?
+
+  public init(actualSha256: String? = nil, exists: Bool, expectedSha256: String?, matches: Bool? = nil, path: String, regularFile: Bool? = nil) {
+    self.actualSha256 = actualSha256
+    self.exists = exists
+    self.expectedSha256 = expectedSha256
+    self.matches = matches
+    self.path = path
+    self.regularFile = regularFile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actualSha256 = "actualSha256"
+    case exists = "exists"
+    case expectedSha256 = "expectedSha256"
+    case matches = "matches"
+    case path = "path"
+    case regularFile = "regularFile"
+  }
+}
+
+public struct SpecsFacadeSyncRecoverReturnReadbackIndex: Codable, Sendable {
+  public var dbPath: String
+  public var indexedIds: [String]
+  public var indexedTotal: Double
+  public var matches: Bool
+  public var schemaExists: Bool
+  public var sourceIds: [String]
+  public var sourceTotal: Double
+
+  public init(dbPath: String, indexedIds: [String], indexedTotal: Double, matches: Bool, schemaExists: Bool, sourceIds: [String], sourceTotal: Double) {
+    self.dbPath = dbPath
+    self.indexedIds = indexedIds
+    self.indexedTotal = indexedTotal
+    self.matches = matches
+    self.schemaExists = schemaExists
+    self.sourceIds = sourceIds
+    self.sourceTotal = sourceTotal
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case indexedIds = "indexedIds"
+    case indexedTotal = "indexedTotal"
+    case matches = "matches"
+    case schemaExists = "schemaExists"
+    case sourceIds = "sourceIds"
+    case sourceTotal = "sourceTotal"
+  }
+}
+
+public struct SpecsFacadeSyncRecoverReturnReadbackTarget: Codable, Sendable {
+  public var dbPath: String
+  public var rootPath: String
+
+  public init(dbPath: String, rootPath: String) {
+    self.dbPath = dbPath
+    self.rootPath = rootPath
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case rootPath = "rootPath"
+  }
+}
+
+public struct SpecsFacadeSyncRecoverReturnReadback: Codable, Sendable {
+  public var ancestors: [SpecsFacadeSyncRecoverReturnReadbackAncestorsItem]
+  public var binding: SpecsFacadeSyncRecoverReturnReadbackBinding
+  public var files: [SpecsFacadeSyncRecoverReturnReadbackFilesItem]
+  public var index: SpecsFacadeSyncRecoverReturnReadbackIndex
+  public var observedAt: String
+  public var operation: String
+  public var planHash: String
+  public var schemaVersion: String
+  public var target: SpecsFacadeSyncRecoverReturnReadbackTarget
+  public var unexpectedFiles: [String]
+
+  public init(ancestors: [SpecsFacadeSyncRecoverReturnReadbackAncestorsItem], binding: SpecsFacadeSyncRecoverReturnReadbackBinding, files: [SpecsFacadeSyncRecoverReturnReadbackFilesItem], index: SpecsFacadeSyncRecoverReturnReadbackIndex, observedAt: String, operation: String, planHash: String, schemaVersion: String, target: SpecsFacadeSyncRecoverReturnReadbackTarget, unexpectedFiles: [String]) {
+    self.ancestors = ancestors
+    self.binding = binding
+    self.files = files
+    self.index = index
+    self.observedAt = observedAt
+    self.operation = operation
+    self.planHash = planHash
+    self.schemaVersion = schemaVersion
+    self.target = target
+    self.unexpectedFiles = unexpectedFiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ancestors = "ancestors"
+    case binding = "binding"
+    case files = "files"
+    case index = "index"
+    case observedAt = "observedAt"
+    case operation = "operation"
+    case planHash = "planHash"
+    case schemaVersion = "schemaVersion"
+    case target = "target"
+    case unexpectedFiles = "unexpectedFiles"
+  }
+}
+
+public struct SpecsFacadeSyncRecoverReturn: Codable, Sendable {
+  public var action: String
+  public var operation: String
+  public var outcome: String
+  public var planHash: String
+  public var readback: SpecsFacadeSyncRecoverReturnReadback
+  public var replay: Bool
+
+  public init(action: String, operation: String, outcome: String, planHash: String, readback: SpecsFacadeSyncRecoverReturnReadback, replay: Bool) {
+    self.action = action
+    self.operation = operation
+    self.outcome = outcome
+    self.planHash = planHash
+    self.readback = readback
+    self.replay = replay
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case action = "action"
+    case operation = "operation"
+    case outcome = "outcome"
+    case planHash = "planHash"
+    case readback = "readback"
+    case replay = "replay"
+  }
+}
+
+public struct SpecsFacadeSyncVerifyReturnReadbackAncestorsItem: Codable, Sendable {
+  public var exists: Bool
+  public var id: String
+  public var path: String
+
+  public init(exists: Bool, id: String, path: String) {
+    self.exists = exists
+    self.id = id
+    self.path = path
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case exists = "exists"
+    case id = "id"
+    case path = "path"
+  }
+}
+
+public struct SpecsFacadeSyncVerifyReturnReadbackBinding: Codable, Sendable {
+  public var cwd: String
+  public var dbPath: String
+  public var specsRoot: String
+
+  public init(cwd: String, dbPath: String, specsRoot: String) {
+    self.cwd = cwd
+    self.dbPath = dbPath
+    self.specsRoot = specsRoot
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case cwd = "cwd"
+    case dbPath = "dbPath"
+    case specsRoot = "specsRoot"
+  }
+}
+
+public struct SpecsFacadeSyncVerifyReturnReadbackFilesItem: Codable, Sendable {
+  public var actualSha256: String?
+  public var exists: Bool
+  public var expectedSha256: String?
+  public var matches: Bool?
+  public var path: String
+  public var regularFile: Bool?
+
+  public init(actualSha256: String? = nil, exists: Bool, expectedSha256: String?, matches: Bool? = nil, path: String, regularFile: Bool? = nil) {
+    self.actualSha256 = actualSha256
+    self.exists = exists
+    self.expectedSha256 = expectedSha256
+    self.matches = matches
+    self.path = path
+    self.regularFile = regularFile
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case actualSha256 = "actualSha256"
+    case exists = "exists"
+    case expectedSha256 = "expectedSha256"
+    case matches = "matches"
+    case path = "path"
+    case regularFile = "regularFile"
+  }
+}
+
+public struct SpecsFacadeSyncVerifyReturnReadbackIndex: Codable, Sendable {
+  public var dbPath: String
+  public var indexedIds: [String]
+  public var indexedTotal: Double
+  public var matches: Bool
+  public var schemaExists: Bool
+  public var sourceIds: [String]
+  public var sourceTotal: Double
+
+  public init(dbPath: String, indexedIds: [String], indexedTotal: Double, matches: Bool, schemaExists: Bool, sourceIds: [String], sourceTotal: Double) {
+    self.dbPath = dbPath
+    self.indexedIds = indexedIds
+    self.indexedTotal = indexedTotal
+    self.matches = matches
+    self.schemaExists = schemaExists
+    self.sourceIds = sourceIds
+    self.sourceTotal = sourceTotal
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case indexedIds = "indexedIds"
+    case indexedTotal = "indexedTotal"
+    case matches = "matches"
+    case schemaExists = "schemaExists"
+    case sourceIds = "sourceIds"
+    case sourceTotal = "sourceTotal"
+  }
+}
+
+public struct SpecsFacadeSyncVerifyReturnReadbackTarget: Codable, Sendable {
+  public var dbPath: String
+  public var rootPath: String
+
+  public init(dbPath: String, rootPath: String) {
+    self.dbPath = dbPath
+    self.rootPath = rootPath
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case dbPath = "dbPath"
+    case rootPath = "rootPath"
+  }
+}
+
+public struct SpecsFacadeSyncVerifyReturnReadback: Codable, Sendable {
+  public var ancestors: [SpecsFacadeSyncVerifyReturnReadbackAncestorsItem]
+  public var binding: SpecsFacadeSyncVerifyReturnReadbackBinding
+  public var files: [SpecsFacadeSyncVerifyReturnReadbackFilesItem]
+  public var index: SpecsFacadeSyncVerifyReturnReadbackIndex
+  public var observedAt: String
+  public var operation: String
+  public var planHash: String
+  public var schemaVersion: String
+  public var target: SpecsFacadeSyncVerifyReturnReadbackTarget
+  public var unexpectedFiles: [String]
+
+  public init(ancestors: [SpecsFacadeSyncVerifyReturnReadbackAncestorsItem], binding: SpecsFacadeSyncVerifyReturnReadbackBinding, files: [SpecsFacadeSyncVerifyReturnReadbackFilesItem], index: SpecsFacadeSyncVerifyReturnReadbackIndex, observedAt: String, operation: String, planHash: String, schemaVersion: String, target: SpecsFacadeSyncVerifyReturnReadbackTarget, unexpectedFiles: [String]) {
+    self.ancestors = ancestors
+    self.binding = binding
+    self.files = files
+    self.index = index
+    self.observedAt = observedAt
+    self.operation = operation
+    self.planHash = planHash
+    self.schemaVersion = schemaVersion
+    self.target = target
+    self.unexpectedFiles = unexpectedFiles
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case ancestors = "ancestors"
+    case binding = "binding"
+    case files = "files"
+    case index = "index"
+    case observedAt = "observedAt"
+    case operation = "operation"
+    case planHash = "planHash"
+    case schemaVersion = "schemaVersion"
+    case target = "target"
+    case unexpectedFiles = "unexpectedFiles"
+  }
+}
+
+public struct SpecsFacadeSyncVerifyReturn: Codable, Sendable {
+  public var operation: String
+  public var outcome: String
+  public var planHash: String
+  public var readback: SpecsFacadeSyncVerifyReturnReadback
+
+  public init(operation: String, outcome: String, planHash: String, readback: SpecsFacadeSyncVerifyReturnReadback) {
+    self.operation = operation
+    self.outcome = outcome
+    self.planHash = planHash
+    self.readback = readback
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case operation = "operation"
+    case outcome = "outcome"
+    case planHash = "planHash"
+    case readback = "readback"
+  }
+}
 
 public struct SpecsGetOptions: Codable, Sendable {
   public var mode: String?
@@ -24140,7 +25855,7 @@ public struct SyncPullOptions: Codable, Sendable {
 
 public struct SyncPullReturn: Codable, Sendable {
   public var applied: Double
-  public var cursor: RaviJSON
+  public var cursor: String?
   public var downloaded: Double
   public var enqueued: Double
   public var errorCode: String?
@@ -24149,7 +25864,7 @@ public struct SyncPullReturn: Codable, Sendable {
   public var skipped: Double
   public var status: String
 
-  public init(applied: Double, cursor: RaviJSON, downloaded: Double, enqueued: Double, errorCode: String? = nil, failed: Double, linked: Bool, skipped: Double, status: String) {
+  public init(applied: Double, cursor: String?, downloaded: Double, enqueued: Double, errorCode: String? = nil, failed: Double, linked: Bool, skipped: Double, status: String) {
     self.applied = applied
     self.cursor = cursor
     self.downloaded = downloaded
@@ -24313,18 +26028,18 @@ public struct SyncRetryReturn: Codable, Sendable {
 }
 
 public struct SyncStatusReturn: Codable, Sendable {
-  public var consoleUrl: RaviJSON
+  public var consoleUrl: String?
   public var cursors: [RaviJSON]
   public var inbox: RaviJSON
-  public var installationId: RaviJSON
-  public var lastDownload: RaviJSON
-  public var lastError: RaviJSON
-  public var lastUpload: RaviJSON
+  public var installationId: String?
+  public var lastDownload: String?
+  public var lastError: String?
+  public var lastUpload: String?
   public var linked: Bool
   public var outbox: RaviJSON
   public var runner: RaviJSON
 
-  public init(consoleUrl: RaviJSON, cursors: [RaviJSON], inbox: RaviJSON, installationId: RaviJSON, lastDownload: RaviJSON, lastError: RaviJSON, lastUpload: RaviJSON, linked: Bool, outbox: RaviJSON, runner: RaviJSON) {
+  public init(consoleUrl: String?, cursors: [RaviJSON], inbox: RaviJSON, installationId: String?, lastDownload: String?, lastError: String?, lastUpload: String?, linked: Bool, outbox: RaviJSON, runner: RaviJSON) {
     self.consoleUrl = consoleUrl
     self.cursors = cursors
     self.inbox = inbox
@@ -25939,14 +27654,14 @@ public struct TasksCreateReturn: Codable, Sendable {
   public var dependencies: [[String: RaviJSON]]
   public var dependents: [[String: RaviJSON]]
   public var event: [String: RaviJSON]
-  public var launchPlan: RaviJSON
-  public var parentTaskId: RaviJSON
+  public var launchPlan: [String: RaviJSON]?
+  public var parentTaskId: String?
   public var readiness: [String: RaviJSON]
   public var relatedEvents: [[String: RaviJSON]]
   public var task: [String: RaviJSON]
   public var taskProfile: [String: RaviJSON]
 
-  public init(dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], event: [String: RaviJSON], launchPlan: RaviJSON, parentTaskId: RaviJSON, readiness: [String: RaviJSON], relatedEvents: [[String: RaviJSON]], task: [String: RaviJSON], taskProfile: [String: RaviJSON]) {
+  public init(dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], event: [String: RaviJSON], launchPlan: [String: RaviJSON]?, parentTaskId: String?, readiness: [String: RaviJSON], relatedEvents: [[String: RaviJSON]], task: [String: RaviJSON], taskProfile: [String: RaviJSON]) {
     self.dependencies = dependencies
     self.dependents = dependents
     self.event = event
@@ -26014,13 +27729,13 @@ public struct TasksDepsLsReturn: Codable, Sendable {
   public var dependencies: [[String: RaviJSON]]
   public var dependents: [[String: RaviJSON]]
   public var items: [[String: RaviJSON]]
-  public var launchPlan: RaviJSON
+  public var launchPlan: [String: RaviJSON]?
   public var pagination: RaviJSON
   public var readiness: [String: RaviJSON]
   public var taskId: String
   public var total: Double
 
-  public init(dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], items: [[String: RaviJSON]], launchPlan: RaviJSON, pagination: RaviJSON, readiness: [String: RaviJSON], taskId: String, total: Double) {
+  public init(dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], items: [[String: RaviJSON]], launchPlan: [String: RaviJSON]?, pagination: RaviJSON, readiness: [String: RaviJSON], taskId: String, total: Double) {
     self.dependencies = dependencies
     self.dependents = dependents
     self.items = items
@@ -26377,12 +28092,12 @@ public struct TasksListReturn: Codable, Sendable {
   public var archiveMode: String
   public var filters: [String: RaviJSON]
   public var items: [[String: RaviJSON]]
-  public var limit: RaviJSON
+  public var limit: Double?
   public var page: [String: RaviJSON]
   public var tasks: [[String: RaviJSON]]
   public var total: Double
 
-  public init(archiveMode: String, filters: [String: RaviJSON], items: [[String: RaviJSON]], limit: RaviJSON, page: [String: RaviJSON], tasks: [[String: RaviJSON]], total: Double) {
+  public init(archiveMode: String, filters: [String: RaviJSON], items: [[String: RaviJSON]], limit: Double?, page: [String: RaviJSON], tasks: [[String: RaviJSON]], total: Double) {
     self.archiveMode = archiveMode
     self.filters = filters
     self.items = items
@@ -26644,12 +28359,12 @@ public struct TasksShowReturn: Codable, Sendable {
   public var dependencies: [[String: RaviJSON]]
   public var dependents: [[String: RaviJSON]]
   public var events: [[String: RaviJSON]]
-  public var historyLimit: RaviJSON
-  public var launchPlan: RaviJSON
+  public var historyLimit: Double?
+  public var launchPlan: [String: RaviJSON]?
   public var readiness: [String: RaviJSON]
   public var task: [String: RaviJSON]
 
-  public init(comments: [[String: RaviJSON]], dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], events: [[String: RaviJSON]], historyLimit: RaviJSON, launchPlan: RaviJSON, readiness: [String: RaviJSON], task: [String: RaviJSON]) {
+  public init(comments: [[String: RaviJSON]], dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], events: [[String: RaviJSON]], historyLimit: Double?, launchPlan: [String: RaviJSON]?, readiness: [String: RaviJSON], task: [String: RaviJSON]) {
     self.comments = comments
     self.dependencies = dependencies
     self.dependents = dependents
@@ -27287,10 +29002,10 @@ public struct ToolsTestReturn: Codable, Sendable {
   public var executed: Bool
   public var invokeCommand: String
   public var mode: String
-  public var schema: RaviJSON
+  public var schema: [String: RaviJSON]?
   public var tool: RaviJSON
 
-  public init(access: RaviJSON, args: [String: RaviJSON], executed: Bool, invokeCommand: String, mode: String, schema: RaviJSON, tool: RaviJSON) {
+  public init(access: RaviJSON, args: [String: RaviJSON], executed: Bool, invokeCommand: String, mode: String, schema: [String: RaviJSON]?, tool: RaviJSON) {
     self.access = access
     self.args = args
     self.executed = executed
@@ -27444,9 +29159,9 @@ public struct TriggersAddReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -27465,9 +29180,9 @@ public struct TriggersDisableReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -27486,9 +29201,9 @@ public struct TriggersEnableReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -27582,9 +29297,9 @@ public struct TriggersRmReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -27603,9 +29318,9 @@ public struct TriggersSetReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -27654,9 +29369,9 @@ public struct TriggersTestReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -28964,9 +30679,9 @@ public struct WorkflowsRunsTaskCreateOptions: Codable, Sendable {
 
 public struct WorkflowsRunsTaskCreateReturn: Codable, Sendable {
   public var task: [String: RaviJSON]
-  public var workflow: RaviJSON
+  public var workflow: [String: RaviJSON]?
 
-  public init(task: [String: RaviJSON], workflow: RaviJSON) {
+  public init(task: [String: RaviJSON], workflow: [String: RaviJSON]?) {
     self.task = task
     self.workflow = workflow
   }

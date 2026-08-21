@@ -68756,7 +68756,7 @@ public enum RaviSchemas {
   }
   """#
 
-  public static let SpecsFacadeApplyInputSchema = #"""
+  public static let SpecsFacadeNewApplyInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {
@@ -68765,831 +68765,69 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "id": {
-        "description": "Spec id for new",
+        "description": "Spec id",
         "type": "string"
       },
       "kind": {
-        "description": "domain|capability|feature for new",
-        "type": "string"
-      },
-      "operation": {
-        "description": "new|sync",
+        "description": "domain|capability|feature",
         "type": "string"
       },
       "planHash": {
-        "description": "Exact hash returned by facade plan",
+        "description": "Exact hash returned by plan",
         "type": "string"
       },
       "title": {
-        "description": "Spec title for new",
+        "description": "Spec title",
         "type": "string"
       }
     },
     "required": [
-      "operation",
-      "planHash"
+      "id",
+      "kind",
+      "planHash",
+      "title"
     ],
     "type": "object"
   }
   """#
 
-  public static let SpecsFacadeApplyReturnSchema = #"""
+  public static let SpecsFacadeNewApplyReturnSchema = #"""
   {
-    "oneOf": [
-      {
+    "additionalProperties": false,
+    "properties": {
+      "changed": {
+        "type": "boolean"
+      },
+      "operation": {
+        "const": "new",
+        "type": "string"
+      },
+      "state": {
+        "enum": [
+          "created",
+          "noop"
+        ],
+        "type": "string"
+      },
+      "verification": {
         "additionalProperties": false,
         "properties": {
-          "changed": {
-            "type": "boolean"
-          },
           "operation": {
             "const": "new",
             "type": "string"
           },
-          "state": {
+          "outcome": {
             "enum": [
-              "created",
-              "noop"
+              "confirmed",
+              "absent",
+              "divergent"
             ],
             "type": "string"
           },
-          "verification": {
-            "additionalProperties": false,
-            "properties": {
-              "operation": {
-                "const": "new",
-                "type": "string"
-              },
-              "outcome": {
-                "enum": [
-                  "confirmed",
-                  "absent",
-                  "divergent"
-                ],
-                "type": "string"
-              },
-              "planHash": {
-                "type": "string"
-              },
-              "readback": {
-                "additionalProperties": false,
-                "properties": {
-                  "ancestors": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "exists": {
-                          "type": "boolean"
-                        },
-                        "id": {
-                          "type": "string"
-                        },
-                        "path": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "id",
-                        "path",
-                        "exists"
-                      ],
-                      "type": "object"
-                    },
-                    "type": "array"
-                  },
-                  "binding": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "cwd": {
-                        "type": "string"
-                      },
-                      "dbPath": {
-                        "type": "string"
-                      },
-                      "specsRoot": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "cwd",
-                      "specsRoot",
-                      "dbPath"
-                    ],
-                    "type": "object"
-                  },
-                  "files": {
-                    "items": {
-                      "anyOf": [
-                        {
-                          "additionalProperties": false,
-                          "properties": {
-                            "exists": {
-                              "const": false,
-                              "type": "boolean"
-                            },
-                            "expectedSha256": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "path": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "path",
-                            "exists",
-                            "expectedSha256"
-                          ],
-                          "type": "object"
-                        },
-                        {
-                          "additionalProperties": false,
-                          "properties": {
-                            "exists": {
-                              "const": true,
-                              "type": "boolean"
-                            },
-                            "expectedSha256": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "path": {
-                              "type": "string"
-                            },
-                            "regularFile": {
-                              "const": false,
-                              "type": "boolean"
-                            }
-                          },
-                          "required": [
-                            "path",
-                            "exists",
-                            "regularFile",
-                            "expectedSha256"
-                          ],
-                          "type": "object"
-                        },
-                        {
-                          "additionalProperties": false,
-                          "properties": {
-                            "actualSha256": {
-                              "type": "string"
-                            },
-                            "exists": {
-                              "const": true,
-                              "type": "boolean"
-                            },
-                            "expectedSha256": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "matches": {
-                              "type": "boolean"
-                            },
-                            "path": {
-                              "type": "string"
-                            },
-                            "regularFile": {
-                              "const": true,
-                              "type": "boolean"
-                            }
-                          },
-                          "required": [
-                            "path",
-                            "exists",
-                            "regularFile",
-                            "actualSha256",
-                            "expectedSha256",
-                            "matches"
-                          ],
-                          "type": "object"
-                        }
-                      ]
-                    },
-                    "type": "array"
-                  },
-                  "index": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "dbPath": {
-                        "type": "string"
-                      },
-                      "indexedIds": {
-                        "items": {
-                          "type": "string"
-                        },
-                        "type": "array"
-                      },
-                      "indexedTotal": {
-                        "type": "number"
-                      },
-                      "matches": {
-                        "type": "boolean"
-                      },
-                      "schemaExists": {
-                        "type": "boolean"
-                      },
-                      "sourceIds": {
-                        "items": {
-                          "type": "string"
-                        },
-                        "type": "array"
-                      },
-                      "sourceTotal": {
-                        "type": "number"
-                      }
-                    },
-                    "required": [
-                      "dbPath",
-                      "schemaExists",
-                      "matches",
-                      "indexedTotal",
-                      "sourceTotal",
-                      "indexedIds",
-                      "sourceIds"
-                    ],
-                    "type": "object"
-                  },
-                  "observedAt": {
-                    "type": "string"
-                  },
-                  "operation": {
-                    "const": "new",
-                    "type": "string"
-                  },
-                  "planHash": {
-                    "type": "string"
-                  },
-                  "schemaVersion": {
-                    "const": "specs.agent-first/v1",
-                    "type": "string"
-                  },
-                  "target": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "directoryPath": {
-                        "type": "string"
-                      },
-                      "id": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "id",
-                      "directoryPath"
-                    ],
-                    "type": "object"
-                  },
-                  "unexpectedFiles": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "schemaVersion",
-                  "planHash",
-                  "binding",
-                  "files",
-                  "unexpectedFiles",
-                  "index",
-                  "observedAt",
-                  "operation",
-                  "target",
-                  "ancestors"
-                ],
-                "type": "object"
-              }
-            },
-            "required": [
-              "operation",
-              "planHash",
-              "outcome",
-              "readback"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "operation",
-          "state",
-          "changed",
-          "verification"
-        ],
-        "type": "object"
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "changed": {
-            "type": "boolean"
-          },
-          "operation": {
-            "const": "sync",
+          "planHash": {
             "type": "string"
           },
-          "state": {
-            "enum": [
-              "applied",
-              "noop"
-            ],
-            "type": "string"
-          },
-          "verification": {
-            "additionalProperties": false,
-            "properties": {
-              "operation": {
-                "const": "sync",
-                "type": "string"
-              },
-              "outcome": {
-                "enum": [
-                  "confirmed",
-                  "absent",
-                  "divergent"
-                ],
-                "type": "string"
-              },
-              "planHash": {
-                "type": "string"
-              },
-              "readback": {
-                "additionalProperties": false,
-                "properties": {
-                  "ancestors": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "exists": {
-                          "type": "boolean"
-                        },
-                        "id": {
-                          "type": "string"
-                        },
-                        "path": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "id",
-                        "path",
-                        "exists"
-                      ],
-                      "type": "object"
-                    },
-                    "maxItems": 0,
-                    "type": "array"
-                  },
-                  "binding": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "cwd": {
-                        "type": "string"
-                      },
-                      "dbPath": {
-                        "type": "string"
-                      },
-                      "specsRoot": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "cwd",
-                      "specsRoot",
-                      "dbPath"
-                    ],
-                    "type": "object"
-                  },
-                  "files": {
-                    "items": {
-                      "anyOf": [
-                        {
-                          "additionalProperties": false,
-                          "properties": {
-                            "exists": {
-                              "const": false,
-                              "type": "boolean"
-                            },
-                            "expectedSha256": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "path": {
-                              "type": "string"
-                            }
-                          },
-                          "required": [
-                            "path",
-                            "exists",
-                            "expectedSha256"
-                          ],
-                          "type": "object"
-                        },
-                        {
-                          "additionalProperties": false,
-                          "properties": {
-                            "exists": {
-                              "const": true,
-                              "type": "boolean"
-                            },
-                            "expectedSha256": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "path": {
-                              "type": "string"
-                            },
-                            "regularFile": {
-                              "const": false,
-                              "type": "boolean"
-                            }
-                          },
-                          "required": [
-                            "path",
-                            "exists",
-                            "regularFile",
-                            "expectedSha256"
-                          ],
-                          "type": "object"
-                        },
-                        {
-                          "additionalProperties": false,
-                          "properties": {
-                            "actualSha256": {
-                              "type": "string"
-                            },
-                            "exists": {
-                              "const": true,
-                              "type": "boolean"
-                            },
-                            "expectedSha256": {
-                              "anyOf": [
-                                {
-                                  "type": "string"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "matches": {
-                              "type": "boolean"
-                            },
-                            "path": {
-                              "type": "string"
-                            },
-                            "regularFile": {
-                              "const": true,
-                              "type": "boolean"
-                            }
-                          },
-                          "required": [
-                            "path",
-                            "exists",
-                            "regularFile",
-                            "actualSha256",
-                            "expectedSha256",
-                            "matches"
-                          ],
-                          "type": "object"
-                        }
-                      ]
-                    },
-                    "type": "array"
-                  },
-                  "index": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "dbPath": {
-                        "type": "string"
-                      },
-                      "indexedIds": {
-                        "items": {
-                          "type": "string"
-                        },
-                        "type": "array"
-                      },
-                      "indexedTotal": {
-                        "type": "number"
-                      },
-                      "matches": {
-                        "type": "boolean"
-                      },
-                      "schemaExists": {
-                        "type": "boolean"
-                      },
-                      "sourceIds": {
-                        "items": {
-                          "type": "string"
-                        },
-                        "type": "array"
-                      },
-                      "sourceTotal": {
-                        "type": "number"
-                      }
-                    },
-                    "required": [
-                      "dbPath",
-                      "schemaExists",
-                      "matches",
-                      "indexedTotal",
-                      "sourceTotal",
-                      "indexedIds",
-                      "sourceIds"
-                    ],
-                    "type": "object"
-                  },
-                  "observedAt": {
-                    "type": "string"
-                  },
-                  "operation": {
-                    "const": "sync",
-                    "type": "string"
-                  },
-                  "planHash": {
-                    "type": "string"
-                  },
-                  "schemaVersion": {
-                    "const": "specs.agent-first/v1",
-                    "type": "string"
-                  },
-                  "target": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "dbPath": {
-                        "type": "string"
-                      },
-                      "rootPath": {
-                        "type": "string"
-                      }
-                    },
-                    "required": [
-                      "dbPath",
-                      "rootPath"
-                    ],
-                    "type": "object"
-                  },
-                  "unexpectedFiles": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  }
-                },
-                "required": [
-                  "schemaVersion",
-                  "planHash",
-                  "binding",
-                  "files",
-                  "unexpectedFiles",
-                  "index",
-                  "observedAt",
-                  "operation",
-                  "target",
-                  "ancestors"
-                ],
-                "type": "object"
-              }
-            },
-            "required": [
-              "operation",
-              "planHash",
-              "outcome",
-              "readback"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "operation",
-          "state",
-          "changed",
-          "verification"
-        ],
-        "type": "object"
-      }
-    ]
-  }
-  """#
-
-  public static let SpecsFacadePlanInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "full": {
-        "description": "Include WHY.md, RUNBOOK.md, and CHECKS.md",
-        "type": "boolean"
-      },
-      "id": {
-        "description": "Spec id for new",
-        "type": "string"
-      },
-      "kind": {
-        "description": "domain|capability|feature for new",
-        "type": "string"
-      },
-      "operation": {
-        "description": "new|sync",
-        "type": "string"
-      },
-      "title": {
-        "description": "Spec title for new",
-        "type": "string"
-      }
-    },
-    "required": [
-      "operation"
-    ],
-    "type": "object"
-  }
-  """#
-
-  public static let SpecsFacadePlanReturnSchema = #"""
-  {
-    "oneOf": [
-      {
-        "additionalProperties": false,
-        "properties": {
-          "binding": {
-            "additionalProperties": false,
-            "properties": {
-              "cwd": {
-                "type": "string"
-              },
-              "dbPath": {
-                "type": "string"
-              },
-              "specsRoot": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "cwd",
-              "specsRoot",
-              "dbPath"
-            ],
-            "type": "object"
-          },
-          "blockers": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "code": {
-                  "type": "string"
-                },
-                "details": {
-                  "anyOf": [
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "ancestors": {
-                          "items": {
-                            "type": "string"
-                          },
-                          "type": "array"
-                        }
-                      },
-                      "required": [
-                        "ancestors"
-                      ],
-                      "type": "object"
-                    },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "divergentFiles": {
-                          "items": {
-                            "type": "string"
-                          },
-                          "type": "array"
-                        },
-                        "missingFiles": {
-                          "items": {
-                            "type": "string"
-                          },
-                          "type": "array"
-                        },
-                        "unexpectedFiles": {
-                          "items": {
-                            "type": "string"
-                          },
-                          "type": "array"
-                        }
-                      },
-                      "required": [
-                        "divergentFiles",
-                        "missingFiles",
-                        "unexpectedFiles"
-                      ],
-                      "type": "object"
-                    }
-                  ]
-                },
-                "message": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "code",
-                "message"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "effects": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "contentSha256": {
-                  "type": "string"
-                },
-                "overwrite": {
-                  "const": false,
-                  "type": "boolean"
-                },
-                "path": {
-                  "type": "string"
-                },
-                "type": {
-                  "const": "create-file",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "type",
-                "path",
-                "contentSha256",
-                "overwrite"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "executable": {
-            "type": "boolean"
-          },
-          "input": {
-            "additionalProperties": false,
-            "properties": {
-              "full": {
-                "type": "boolean"
-              },
-              "id": {
-                "type": "string"
-              },
-              "kind": {
-                "enum": [
-                  "domain",
-                  "capability",
-                  "feature"
-                ],
-                "type": "string"
-              },
-              "title": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "title",
-              "kind",
-              "full"
-            ],
-            "type": "object"
-          },
-          "observation": {
+          "readback": {
             "additionalProperties": false,
             "properties": {
               "ancestors": {
@@ -69615,254 +68853,65 @@ public enum RaviSchemas {
                 },
                 "type": "array"
               },
-              "replay": {
-                "enum": [
-                  "noop",
-                  "create"
-                ],
-                "type": "string"
-              },
-              "target": {
+              "binding": {
                 "additionalProperties": false,
                 "properties": {
-                  "divergentFiles": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
+                  "cwd": {
+                    "type": "string"
                   },
-                  "exactMatch": {
-                    "type": "boolean"
+                  "dbPath": {
+                    "type": "string"
                   },
-                  "matchingFiles": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "missingFiles": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "targetDirectoryExists": {
-                    "type": "boolean"
-                  },
-                  "targetSpecExists": {
-                    "type": "boolean"
-                  },
-                  "unexpectedFiles": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
+                  "specsRoot": {
+                    "type": "string"
                   }
                 },
                 "required": [
-                  "targetDirectoryExists",
-                  "targetSpecExists",
-                  "exactMatch",
-                  "matchingFiles",
-                  "missingFiles",
-                  "divergentFiles",
-                  "unexpectedFiles"
+                  "cwd",
+                  "specsRoot",
+                  "dbPath"
                 ],
                 "type": "object"
-              }
-            },
-            "required": [
-              "ancestors",
-              "target",
-              "replay"
-            ],
-            "type": "object"
-          },
-          "operation": {
-            "const": "new",
-            "type": "string"
-          },
-          "planHash": {
-            "type": "string"
-          },
-          "schemaVersion": {
-            "const": "specs.agent-first/v1",
-            "type": "string"
-          },
-          "target": {
-            "additionalProperties": false,
-            "properties": {
-              "directoryPath": {
-                "type": "string"
               },
-              "id": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "id",
-              "directoryPath"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "schemaVersion",
-          "planHash",
-          "executable",
-          "blockers",
-          "binding",
-          "operation",
-          "input",
-          "target",
-          "effects",
-          "observation"
-        ],
-        "type": "object"
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "binding": {
-            "additionalProperties": false,
-            "properties": {
-              "cwd": {
-                "type": "string"
-              },
-              "dbPath": {
-                "type": "string"
-              },
-              "specsRoot": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "cwd",
-              "specsRoot",
-              "dbPath"
-            ],
-            "type": "object"
-          },
-          "blockers": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "code": {
-                  "type": "string"
-                },
-                "details": {
-                  "anyOf": [
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "ancestors": {
-                          "items": {
-                            "type": "string"
-                          },
-                          "type": "array"
-                        }
-                      },
-                      "required": [
-                        "ancestors"
-                      ],
-                      "type": "object"
+              "files": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "actualSha256": {
+                      "type": "string"
                     },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "divergentFiles": {
-                          "items": {
-                            "type": "string"
-                          },
-                          "type": "array"
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "expectedSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string"
                         },
-                        "missingFiles": {
-                          "items": {
-                            "type": "string"
-                          },
-                          "type": "array"
-                        },
-                        "unexpectedFiles": {
-                          "items": {
-                            "type": "string"
-                          },
-                          "type": "array"
+                        {
+                          "type": "null"
                         }
-                      },
-                      "required": [
-                        "divergentFiles",
-                        "missingFiles",
-                        "unexpectedFiles"
-                      ],
-                      "type": "object"
+                      ]
+                    },
+                    "matches": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "regularFile": {
+                      "type": "boolean"
                     }
-                  ]
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "expectedSha256"
+                  ],
+                  "type": "object"
                 },
-                "message": {
-                  "type": "string"
-                }
+                "type": "array"
               },
-              "required": [
-                "code",
-                "message"
-              ],
-              "type": "object"
-            },
-            "type": "array"
-          },
-          "effects": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "dbPath": {
-                  "type": "string"
-                },
-                "rootPath": {
-                  "type": "string"
-                },
-                "sourceDigest": {
-                  "type": "string"
-                },
-                "sourceTotal": {
-                  "type": "number"
-                },
-                "type": {
-                  "const": "replace-index-if-changed",
-                  "type": "string"
-                }
-              },
-              "required": [
-                "type",
-                "dbPath",
-                "rootPath",
-                "sourceDigest",
-                "sourceTotal"
-              ],
-              "type": "object"
-            },
-            "maxItems": 1,
-            "minItems": 1,
-            "type": "array"
-          },
-          "executable": {
-            "type": "boolean"
-          },
-          "input": {
-            "additionalProperties": false,
-            "properties": {
-              "source": {
-                "const": "workspace",
-                "type": "string"
-              }
-            },
-            "required": [
-              "source"
-            ],
-            "type": "object"
-          },
-          "observation": {
-            "additionalProperties": false,
-            "properties": {
               "index": {
                 "additionalProperties": false,
                 "properties": {
@@ -69905,87 +68954,81 @@ public enum RaviSchemas {
                 ],
                 "type": "object"
               },
-              "replay": {
-                "enum": [
-                  "noop",
-                  "sync"
-                ],
+              "observedAt": {
                 "type": "string"
               },
-              "sourceFiles": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "id": {
-                      "type": "string"
-                    },
-                    "path": {
-                      "type": "string"
-                    }
+              "operation": {
+                "const": "new",
+                "type": "string"
+              },
+              "planHash": {
+                "type": "string"
+              },
+              "schemaVersion": {
+                "const": "specs.agent-first/v1",
+                "type": "string"
+              },
+              "target": {
+                "additionalProperties": false,
+                "properties": {
+                  "directoryPath": {
+                    "type": "string"
                   },
-                  "required": [
-                    "id",
-                    "path"
-                  ],
-                  "type": "object"
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id",
+                  "directoryPath"
+                ],
+                "type": "object"
+              },
+              "unexpectedFiles": {
+                "items": {
+                  "type": "string"
                 },
                 "type": "array"
               }
             },
             "required": [
-              "sourceFiles",
+              "schemaVersion",
+              "planHash",
+              "binding",
+              "files",
+              "unexpectedFiles",
               "index",
-              "replay"
+              "observedAt",
+              "operation",
+              "target",
+              "ancestors"
             ],
-            "type": "object"
-          },
-          "operation": {
-            "const": "sync",
-            "type": "string"
-          },
-          "planHash": {
-            "type": "string"
-          },
-          "schemaVersion": {
-            "const": "specs.agent-first/v1",
-            "type": "string"
-          },
-          "target": {
-            "additionalProperties": false,
-            "properties": {
-              "dbPath": {
-                "type": "string"
-              },
-              "rootPath": {
-                "type": "string"
-              }
-            },
-            "required": [
-              "dbPath",
-              "rootPath"
-            ],
-            "type": "object"
+            "type": "object",
+            "x-ravi-swift-nested": true
           }
         },
         "required": [
-          "schemaVersion",
-          "planHash",
-          "executable",
-          "blockers",
-          "binding",
           "operation",
-          "input",
-          "target",
-          "effects",
-          "observation"
+          "planHash",
+          "outcome",
+          "readback"
         ],
-        "type": "object"
+        "type": "object",
+        "x-ravi-swift-nested": true
       }
-    ]
+    },
+    "required": [
+      "operation",
+      "state",
+      "changed",
+      "verification"
+    ],
+    "type": "object",
+    "x-ravi-swift-nested": true
   }
   """#
 
-  public static let SpecsFacadeReadbackInputSchema = #"""
+  public static let SpecsFacadeNewPlanInputSchema = #"""
   {
     "additionalProperties": false,
     "properties": {
@@ -69994,38 +69037,575 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "id": {
-        "description": "Spec id for new",
+        "description": "Spec id",
         "type": "string"
       },
       "kind": {
-        "description": "domain|capability|feature for new",
-        "type": "string"
-      },
-      "operation": {
-        "description": "new|sync",
-        "type": "string"
-      },
-      "planHash": {
-        "description": "Exact hash returned by facade plan",
+        "description": "domain|capability|feature",
         "type": "string"
       },
       "title": {
-        "description": "Spec title for new",
+        "description": "Spec title",
         "type": "string"
       }
     },
     "required": [
-      "operation",
-      "planHash"
+      "id",
+      "kind",
+      "title"
     ],
     "type": "object"
   }
   """#
 
-  public static let SpecsFacadeReadbackReturnSchema = #"""
+  public static let SpecsFacadeNewPlanReturnSchema = #"""
   {
-    "oneOf": [
-      {
+    "additionalProperties": false,
+    "properties": {
+      "binding": {
+        "additionalProperties": false,
+        "properties": {
+          "cwd": {
+            "type": "string"
+          },
+          "dbPath": {
+            "type": "string"
+          },
+          "specsRoot": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cwd",
+          "specsRoot",
+          "dbPath"
+        ],
+        "type": "object"
+      },
+      "blockers": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "details": {
+              "additionalProperties": false,
+              "properties": {
+                "ancestors": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "divergentFiles": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "missingFiles": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "unexpectedFiles": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "effects": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "contentSha256": {
+              "type": "string"
+            },
+            "overwrite": {
+              "const": false,
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            },
+            "type": {
+              "const": "create-file",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "path",
+            "contentSha256",
+            "overwrite"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "executable": {
+        "type": "boolean"
+      },
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "full": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "enum": [
+              "domain",
+              "capability",
+              "feature"
+            ],
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "full"
+        ],
+        "type": "object"
+      },
+      "observation": {
+        "additionalProperties": false,
+        "properties": {
+          "ancestors": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "exists": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "exists"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "replay": {
+            "enum": [
+              "noop",
+              "create"
+            ],
+            "type": "string"
+          },
+          "target": {
+            "additionalProperties": false,
+            "properties": {
+              "divergentFiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "exactMatch": {
+                "type": "boolean"
+              },
+              "matchingFiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "missingFiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "targetDirectoryExists": {
+                "type": "boolean"
+              },
+              "targetSpecExists": {
+                "type": "boolean"
+              },
+              "unexpectedFiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "targetDirectoryExists",
+              "targetSpecExists",
+              "exactMatch",
+              "matchingFiles",
+              "missingFiles",
+              "divergentFiles",
+              "unexpectedFiles"
+            ],
+            "type": "object"
+          }
+        },
+        "required": [
+          "ancestors",
+          "target",
+          "replay"
+        ],
+        "type": "object"
+      },
+      "operation": {
+        "const": "new",
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "schemaVersion": {
+        "const": "specs.agent-first/v1",
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": false,
+        "properties": {
+          "directoryPath": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "directoryPath"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "schemaVersion",
+      "planHash",
+      "executable",
+      "blockers",
+      "binding",
+      "operation",
+      "input",
+      "target",
+      "effects",
+      "observation"
+    ],
+    "type": "object",
+    "x-ravi-swift-nested": true
+  }
+  """#
+
+  public static let SpecsFacadeNewReadbackInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "full": {
+        "description": "Include WHY.md, RUNBOOK.md, and CHECKS.md",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Spec id",
+        "type": "string"
+      },
+      "kind": {
+        "description": "domain|capability|feature",
+        "type": "string"
+      },
+      "planHash": {
+        "description": "Exact hash returned by plan",
+        "type": "string"
+      },
+      "title": {
+        "description": "Spec title",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "kind",
+      "planHash",
+      "title"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SpecsFacadeNewReadbackReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "ancestors": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "path",
+            "exists"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "binding": {
+        "additionalProperties": false,
+        "properties": {
+          "cwd": {
+            "type": "string"
+          },
+          "dbPath": {
+            "type": "string"
+          },
+          "specsRoot": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cwd",
+          "specsRoot",
+          "dbPath"
+        ],
+        "type": "object"
+      },
+      "files": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "actualSha256": {
+              "type": "string"
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "expectedSha256": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "matches": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            },
+            "regularFile": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "path",
+            "exists",
+            "expectedSha256"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "index": {
+        "additionalProperties": false,
+        "properties": {
+          "dbPath": {
+            "type": "string"
+          },
+          "indexedIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "indexedTotal": {
+            "type": "number"
+          },
+          "matches": {
+            "type": "boolean"
+          },
+          "schemaExists": {
+            "type": "boolean"
+          },
+          "sourceIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sourceTotal": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "dbPath",
+          "schemaExists",
+          "matches",
+          "indexedTotal",
+          "sourceTotal",
+          "indexedIds",
+          "sourceIds"
+        ],
+        "type": "object"
+      },
+      "observedAt": {
+        "type": "string"
+      },
+      "operation": {
+        "const": "new",
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "schemaVersion": {
+        "const": "specs.agent-first/v1",
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": false,
+        "properties": {
+          "directoryPath": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "directoryPath"
+        ],
+        "type": "object"
+      },
+      "unexpectedFiles": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "schemaVersion",
+      "planHash",
+      "binding",
+      "files",
+      "unexpectedFiles",
+      "index",
+      "observedAt",
+      "operation",
+      "target",
+      "ancestors"
+    ],
+    "type": "object",
+    "x-ravi-swift-nested": true
+  }
+  """#
+
+  public static let SpecsFacadeNewRecoverInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "full": {
+        "description": "Include WHY.md, RUNBOOK.md, and CHECKS.md",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Spec id",
+        "type": "string"
+      },
+      "kind": {
+        "description": "domain|capability|feature",
+        "type": "string"
+      },
+      "planHash": {
+        "description": "Exact hash returned by plan",
+        "type": "string"
+      },
+      "title": {
+        "description": "Spec title",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "kind",
+      "planHash",
+      "title"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SpecsFacadeNewRecoverReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "enum": [
+          "none",
+          "replan_and_apply",
+          "manual_review"
+        ],
+        "type": "string"
+      },
+      "operation": {
+        "const": "new",
+        "type": "string"
+      },
+      "outcome": {
+        "enum": [
+          "confirmed",
+          "absent",
+          "divergent"
+        ],
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "readback": {
         "additionalProperties": false,
         "properties": {
           "ancestors": {
@@ -70073,110 +69653,40 @@ public enum RaviSchemas {
           },
           "files": {
             "items": {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "exists": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "expectedSha256": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "path": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "path",
-                    "exists",
-                    "expectedSha256"
-                  ],
-                  "type": "object"
+              "additionalProperties": false,
+              "properties": {
+                "actualSha256": {
+                  "type": "string"
                 },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "exists": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "expectedSha256": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "path": {
-                      "type": "string"
-                    },
-                    "regularFile": {
-                      "const": false,
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "path",
-                    "exists",
-                    "regularFile",
-                    "expectedSha256"
-                  ],
-                  "type": "object"
+                "exists": {
+                  "type": "boolean"
                 },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actualSha256": {
+                "expectedSha256": {
+                  "anyOf": [
+                    {
                       "type": "string"
                     },
-                    "exists": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "expectedSha256": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "matches": {
-                      "type": "boolean"
-                    },
-                    "path": {
-                      "type": "string"
-                    },
-                    "regularFile": {
-                      "const": true,
-                      "type": "boolean"
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "path",
-                    "exists",
-                    "regularFile",
-                    "actualSha256",
-                    "expectedSha256",
-                    "matches"
-                  ],
-                  "type": "object"
+                  ]
+                },
+                "matches": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "regularFile": {
+                  "type": "boolean"
                 }
-              ]
+              },
+              "required": [
+                "path",
+                "exists",
+                "expectedSha256"
+              ],
+              "type": "object"
             },
             "type": "array"
           },
@@ -70271,9 +69781,1024 @@ public enum RaviSchemas {
           "target",
           "ancestors"
         ],
+        "type": "object",
+        "x-ravi-swift-nested": true
+      },
+      "replay": {
+        "const": false,
+        "type": "boolean"
+      }
+    },
+    "required": [
+      "operation",
+      "planHash",
+      "outcome",
+      "readback",
+      "action",
+      "replay"
+    ],
+    "type": "object",
+    "x-ravi-swift-nested": true
+  }
+  """#
+
+  public static let SpecsFacadeNewVerifyInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "full": {
+        "description": "Include WHY.md, RUNBOOK.md, and CHECKS.md",
+        "type": "boolean"
+      },
+      "id": {
+        "description": "Spec id",
+        "type": "string"
+      },
+      "kind": {
+        "description": "domain|capability|feature",
+        "type": "string"
+      },
+      "planHash": {
+        "description": "Exact hash returned by plan",
+        "type": "string"
+      },
+      "title": {
+        "description": "Spec title",
+        "type": "string"
+      }
+    },
+    "required": [
+      "id",
+      "kind",
+      "planHash",
+      "title"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SpecsFacadeNewVerifyReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "operation": {
+        "const": "new",
+        "type": "string"
+      },
+      "outcome": {
+        "enum": [
+          "confirmed",
+          "absent",
+          "divergent"
+        ],
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "readback": {
+        "additionalProperties": false,
+        "properties": {
+          "ancestors": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "exists": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "exists"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "binding": {
+            "additionalProperties": false,
+            "properties": {
+              "cwd": {
+                "type": "string"
+              },
+              "dbPath": {
+                "type": "string"
+              },
+              "specsRoot": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cwd",
+              "specsRoot",
+              "dbPath"
+            ],
+            "type": "object"
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "actualSha256": {
+                  "type": "string"
+                },
+                "exists": {
+                  "type": "boolean"
+                },
+                "expectedSha256": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "matches": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "regularFile": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "path",
+                "exists",
+                "expectedSha256"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "index": {
+            "additionalProperties": false,
+            "properties": {
+              "dbPath": {
+                "type": "string"
+              },
+              "indexedIds": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "indexedTotal": {
+                "type": "number"
+              },
+              "matches": {
+                "type": "boolean"
+              },
+              "schemaExists": {
+                "type": "boolean"
+              },
+              "sourceIds": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "sourceTotal": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "dbPath",
+              "schemaExists",
+              "matches",
+              "indexedTotal",
+              "sourceTotal",
+              "indexedIds",
+              "sourceIds"
+            ],
+            "type": "object"
+          },
+          "observedAt": {
+            "type": "string"
+          },
+          "operation": {
+            "const": "new",
+            "type": "string"
+          },
+          "planHash": {
+            "type": "string"
+          },
+          "schemaVersion": {
+            "const": "specs.agent-first/v1",
+            "type": "string"
+          },
+          "target": {
+            "additionalProperties": false,
+            "properties": {
+              "directoryPath": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "directoryPath"
+            ],
+            "type": "object"
+          },
+          "unexpectedFiles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "schemaVersion",
+          "planHash",
+          "binding",
+          "files",
+          "unexpectedFiles",
+          "index",
+          "observedAt",
+          "operation",
+          "target",
+          "ancestors"
+        ],
+        "type": "object",
+        "x-ravi-swift-nested": true
+      }
+    },
+    "required": [
+      "operation",
+      "planHash",
+      "outcome",
+      "readback"
+    ],
+    "type": "object",
+    "x-ravi-swift-nested": true
+  }
+  """#
+
+  public static let SpecsFacadeSyncApplyInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "planHash": {
+        "description": "Exact hash returned by plan",
+        "type": "string"
+      }
+    },
+    "required": [
+      "planHash"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SpecsFacadeSyncApplyReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "changed": {
+        "type": "boolean"
+      },
+      "operation": {
+        "const": "sync",
+        "type": "string"
+      },
+      "state": {
+        "enum": [
+          "applied",
+          "noop"
+        ],
+        "type": "string"
+      },
+      "verification": {
+        "additionalProperties": false,
+        "properties": {
+          "operation": {
+            "const": "sync",
+            "type": "string"
+          },
+          "outcome": {
+            "enum": [
+              "confirmed",
+              "absent",
+              "divergent"
+            ],
+            "type": "string"
+          },
+          "planHash": {
+            "type": "string"
+          },
+          "readback": {
+            "additionalProperties": false,
+            "properties": {
+              "ancestors": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "path",
+                    "exists"
+                  ],
+                  "type": "object"
+                },
+                "maxItems": 0,
+                "type": "array"
+              },
+              "binding": {
+                "additionalProperties": false,
+                "properties": {
+                  "cwd": {
+                    "type": "string"
+                  },
+                  "dbPath": {
+                    "type": "string"
+                  },
+                  "specsRoot": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "cwd",
+                  "specsRoot",
+                  "dbPath"
+                ],
+                "type": "object"
+              },
+              "files": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "actualSha256": {
+                      "type": "string"
+                    },
+                    "exists": {
+                      "type": "boolean"
+                    },
+                    "expectedSha256": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "matches": {
+                      "type": "boolean"
+                    },
+                    "path": {
+                      "type": "string"
+                    },
+                    "regularFile": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "path",
+                    "exists",
+                    "expectedSha256"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "index": {
+                "additionalProperties": false,
+                "properties": {
+                  "dbPath": {
+                    "type": "string"
+                  },
+                  "indexedIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "indexedTotal": {
+                    "type": "number"
+                  },
+                  "matches": {
+                    "type": "boolean"
+                  },
+                  "schemaExists": {
+                    "type": "boolean"
+                  },
+                  "sourceIds": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  },
+                  "sourceTotal": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "dbPath",
+                  "schemaExists",
+                  "matches",
+                  "indexedTotal",
+                  "sourceTotal",
+                  "indexedIds",
+                  "sourceIds"
+                ],
+                "type": "object"
+              },
+              "observedAt": {
+                "type": "string"
+              },
+              "operation": {
+                "const": "sync",
+                "type": "string"
+              },
+              "planHash": {
+                "type": "string"
+              },
+              "schemaVersion": {
+                "const": "specs.agent-first/v1",
+                "type": "string"
+              },
+              "target": {
+                "additionalProperties": false,
+                "properties": {
+                  "dbPath": {
+                    "type": "string"
+                  },
+                  "rootPath": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "dbPath",
+                  "rootPath"
+                ],
+                "type": "object"
+              },
+              "unexpectedFiles": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "planHash",
+              "binding",
+              "files",
+              "unexpectedFiles",
+              "index",
+              "observedAt",
+              "operation",
+              "target",
+              "ancestors"
+            ],
+            "type": "object",
+            "x-ravi-swift-nested": true
+          }
+        },
+        "required": [
+          "operation",
+          "planHash",
+          "outcome",
+          "readback"
+        ],
+        "type": "object",
+        "x-ravi-swift-nested": true
+      }
+    },
+    "required": [
+      "operation",
+      "state",
+      "changed",
+      "verification"
+    ],
+    "type": "object",
+    "x-ravi-swift-nested": true
+  }
+  """#
+
+  public static let SpecsFacadeSyncPlanInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {},
+    "type": "object"
+  }
+  """#
+
+  public static let SpecsFacadeSyncPlanReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "binding": {
+        "additionalProperties": false,
+        "properties": {
+          "cwd": {
+            "type": "string"
+          },
+          "dbPath": {
+            "type": "string"
+          },
+          "specsRoot": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cwd",
+          "specsRoot",
+          "dbPath"
+        ],
         "type": "object"
       },
-      {
+      "blockers": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "details": {
+              "additionalProperties": false,
+              "properties": {
+                "ancestors": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "divergentFiles": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "missingFiles": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "unexpectedFiles": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "message": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "effects": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "dbPath": {
+              "type": "string"
+            },
+            "rootPath": {
+              "type": "string"
+            },
+            "sourceDigest": {
+              "type": "string"
+            },
+            "sourceTotal": {
+              "type": "number"
+            },
+            "type": {
+              "const": "replace-index-if-changed",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type",
+            "dbPath",
+            "rootPath",
+            "sourceDigest",
+            "sourceTotal"
+          ],
+          "type": "object"
+        },
+        "maxItems": 1,
+        "minItems": 1,
+        "type": "array"
+      },
+      "executable": {
+        "type": "boolean"
+      },
+      "input": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "const": "workspace",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "type": "object"
+      },
+      "observation": {
+        "additionalProperties": false,
+        "properties": {
+          "index": {
+            "additionalProperties": false,
+            "properties": {
+              "dbPath": {
+                "type": "string"
+              },
+              "indexedIds": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "indexedTotal": {
+                "type": "number"
+              },
+              "matches": {
+                "type": "boolean"
+              },
+              "schemaExists": {
+                "type": "boolean"
+              },
+              "sourceIds": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "sourceTotal": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "dbPath",
+              "schemaExists",
+              "matches",
+              "indexedTotal",
+              "sourceTotal",
+              "indexedIds",
+              "sourceIds"
+            ],
+            "type": "object"
+          },
+          "replay": {
+            "enum": [
+              "noop",
+              "sync"
+            ],
+            "type": "string"
+          },
+          "sourceFiles": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "path"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "sourceFiles",
+          "index",
+          "replay"
+        ],
+        "type": "object"
+      },
+      "operation": {
+        "const": "sync",
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "schemaVersion": {
+        "const": "specs.agent-first/v1",
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": false,
+        "properties": {
+          "dbPath": {
+            "type": "string"
+          },
+          "rootPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dbPath",
+          "rootPath"
+        ],
+        "type": "object"
+      }
+    },
+    "required": [
+      "schemaVersion",
+      "planHash",
+      "executable",
+      "blockers",
+      "binding",
+      "operation",
+      "input",
+      "target",
+      "effects",
+      "observation"
+    ],
+    "type": "object",
+    "x-ravi-swift-nested": true
+  }
+  """#
+
+  public static let SpecsFacadeSyncReadbackInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "planHash": {
+        "description": "Exact hash returned by plan",
+        "type": "string"
+      }
+    },
+    "required": [
+      "planHash"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SpecsFacadeSyncReadbackReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "ancestors": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "exists": {
+              "type": "boolean"
+            },
+            "id": {
+              "type": "string"
+            },
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "path",
+            "exists"
+          ],
+          "type": "object"
+        },
+        "maxItems": 0,
+        "type": "array"
+      },
+      "binding": {
+        "additionalProperties": false,
+        "properties": {
+          "cwd": {
+            "type": "string"
+          },
+          "dbPath": {
+            "type": "string"
+          },
+          "specsRoot": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "cwd",
+          "specsRoot",
+          "dbPath"
+        ],
+        "type": "object"
+      },
+      "files": {
+        "items": {
+          "additionalProperties": false,
+          "properties": {
+            "actualSha256": {
+              "type": "string"
+            },
+            "exists": {
+              "type": "boolean"
+            },
+            "expectedSha256": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "matches": {
+              "type": "boolean"
+            },
+            "path": {
+              "type": "string"
+            },
+            "regularFile": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "path",
+            "exists",
+            "expectedSha256"
+          ],
+          "type": "object"
+        },
+        "type": "array"
+      },
+      "index": {
+        "additionalProperties": false,
+        "properties": {
+          "dbPath": {
+            "type": "string"
+          },
+          "indexedIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "indexedTotal": {
+            "type": "number"
+          },
+          "matches": {
+            "type": "boolean"
+          },
+          "schemaExists": {
+            "type": "boolean"
+          },
+          "sourceIds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "sourceTotal": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "dbPath",
+          "schemaExists",
+          "matches",
+          "indexedTotal",
+          "sourceTotal",
+          "indexedIds",
+          "sourceIds"
+        ],
+        "type": "object"
+      },
+      "observedAt": {
+        "type": "string"
+      },
+      "operation": {
+        "const": "sync",
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "schemaVersion": {
+        "const": "specs.agent-first/v1",
+        "type": "string"
+      },
+      "target": {
+        "additionalProperties": false,
+        "properties": {
+          "dbPath": {
+            "type": "string"
+          },
+          "rootPath": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dbPath",
+          "rootPath"
+        ],
+        "type": "object"
+      },
+      "unexpectedFiles": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      }
+    },
+    "required": [
+      "schemaVersion",
+      "planHash",
+      "binding",
+      "files",
+      "unexpectedFiles",
+      "index",
+      "observedAt",
+      "operation",
+      "target",
+      "ancestors"
+    ],
+    "type": "object",
+    "x-ravi-swift-nested": true
+  }
+  """#
+
+  public static let SpecsFacadeSyncRecoverInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "planHash": {
+        "description": "Exact hash returned by plan",
+        "type": "string"
+      }
+    },
+    "required": [
+      "planHash"
+    ],
+    "type": "object"
+  }
+  """#
+
+  public static let SpecsFacadeSyncRecoverReturnSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "action": {
+        "enum": [
+          "none",
+          "replan_and_apply",
+          "manual_review"
+        ],
+        "type": "string"
+      },
+      "operation": {
+        "const": "sync",
+        "type": "string"
+      },
+      "outcome": {
+        "enum": [
+          "confirmed",
+          "absent",
+          "divergent"
+        ],
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "readback": {
         "additionalProperties": false,
         "properties": {
           "ancestors": {
@@ -70322,110 +70847,40 @@ public enum RaviSchemas {
           },
           "files": {
             "items": {
-              "anyOf": [
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "exists": {
-                      "const": false,
-                      "type": "boolean"
-                    },
-                    "expectedSha256": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "path": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "path",
-                    "exists",
-                    "expectedSha256"
-                  ],
-                  "type": "object"
+              "additionalProperties": false,
+              "properties": {
+                "actualSha256": {
+                  "type": "string"
                 },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "exists": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "expectedSha256": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "path": {
-                      "type": "string"
-                    },
-                    "regularFile": {
-                      "const": false,
-                      "type": "boolean"
-                    }
-                  },
-                  "required": [
-                    "path",
-                    "exists",
-                    "regularFile",
-                    "expectedSha256"
-                  ],
-                  "type": "object"
+                "exists": {
+                  "type": "boolean"
                 },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "actualSha256": {
+                "expectedSha256": {
+                  "anyOf": [
+                    {
                       "type": "string"
                     },
-                    "exists": {
-                      "const": true,
-                      "type": "boolean"
-                    },
-                    "expectedSha256": {
-                      "anyOf": [
-                        {
-                          "type": "string"
-                        },
-                        {
-                          "type": "null"
-                        }
-                      ]
-                    },
-                    "matches": {
-                      "type": "boolean"
-                    },
-                    "path": {
-                      "type": "string"
-                    },
-                    "regularFile": {
-                      "const": true,
-                      "type": "boolean"
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": [
-                    "path",
-                    "exists",
-                    "regularFile",
-                    "actualSha256",
-                    "expectedSha256",
-                    "matches"
-                  ],
-                  "type": "object"
+                  ]
+                },
+                "matches": {
+                  "type": "boolean"
+                },
+                "path": {
+                  "type": "string"
+                },
+                "regularFile": {
+                  "type": "boolean"
                 }
-              ]
+              },
+              "required": [
+                "path",
+                "exists",
+                "expectedSha256"
+              ],
+              "type": "object"
             },
             "type": "array"
           },
@@ -70520,1227 +70975,251 @@ public enum RaviSchemas {
           "target",
           "ancestors"
         ],
-        "type": "object"
-      }
-    ]
-  }
-  """#
-
-  public static let SpecsFacadeRecoverInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "full": {
-        "description": "Include WHY.md, RUNBOOK.md, and CHECKS.md",
+        "type": "object",
+        "x-ravi-swift-nested": true
+      },
+      "replay": {
+        "const": false,
         "type": "boolean"
-      },
-      "id": {
-        "description": "Spec id for new",
-        "type": "string"
-      },
-      "kind": {
-        "description": "domain|capability|feature for new",
-        "type": "string"
-      },
-      "operation": {
-        "description": "new|sync",
-        "type": "string"
-      },
-      "planHash": {
-        "description": "Exact hash returned by facade plan",
-        "type": "string"
-      },
-      "title": {
-        "description": "Spec title for new",
-        "type": "string"
       }
     },
     "required": [
       "operation",
+      "planHash",
+      "outcome",
+      "readback",
+      "action",
+      "replay"
+    ],
+    "type": "object",
+    "x-ravi-swift-nested": true
+  }
+  """#
+
+  public static let SpecsFacadeSyncVerifyInputSchema = #"""
+  {
+    "additionalProperties": false,
+    "properties": {
+      "planHash": {
+        "description": "Exact hash returned by plan",
+        "type": "string"
+      }
+    },
+    "required": [
       "planHash"
     ],
     "type": "object"
   }
   """#
 
-  public static let SpecsFacadeRecoverReturnSchema = #"""
+  public static let SpecsFacadeSyncVerifyReturnSchema = #"""
   {
-    "oneOf": [
-      {
+    "additionalProperties": false,
+    "properties": {
+      "operation": {
+        "const": "sync",
+        "type": "string"
+      },
+      "outcome": {
+        "enum": [
+          "confirmed",
+          "absent",
+          "divergent"
+        ],
+        "type": "string"
+      },
+      "planHash": {
+        "type": "string"
+      },
+      "readback": {
         "additionalProperties": false,
         "properties": {
-          "action": {
-            "enum": [
-              "none",
-              "replan_and_apply",
-              "manual_review"
-            ],
-            "type": "string"
+          "ancestors": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "exists": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "path",
+                "exists"
+              ],
+              "type": "object"
+            },
+            "maxItems": 0,
+            "type": "array"
           },
-          "operation": {
-            "const": "new",
-            "type": "string"
-          },
-          "outcome": {
-            "enum": [
-              "confirmed",
-              "absent",
-              "divergent"
-            ],
-            "type": "string"
-          },
-          "planHash": {
-            "type": "string"
-          },
-          "readback": {
+          "binding": {
             "additionalProperties": false,
             "properties": {
-              "ancestors": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "exists": {
-                      "type": "boolean"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "path": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "path",
-                    "exists"
-                  ],
-                  "type": "object"
-                },
-                "type": "array"
+              "cwd": {
+                "type": "string"
               },
-              "binding": {
-                "additionalProperties": false,
-                "properties": {
-                  "cwd": {
-                    "type": "string"
-                  },
-                  "dbPath": {
-                    "type": "string"
-                  },
-                  "specsRoot": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "cwd",
-                  "specsRoot",
-                  "dbPath"
-                ],
-                "type": "object"
+              "dbPath": {
+                "type": "string"
               },
-              "files": {
-                "items": {
+              "specsRoot": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "cwd",
+              "specsRoot",
+              "dbPath"
+            ],
+            "type": "object"
+          },
+          "files": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "actualSha256": {
+                  "type": "string"
+                },
+                "exists": {
+                  "type": "boolean"
+                },
+                "expectedSha256": {
                   "anyOf": [
                     {
-                      "additionalProperties": false,
-                      "properties": {
-                        "exists": {
-                          "const": false,
-                          "type": "boolean"
-                        },
-                        "expectedSha256": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "path": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "exists",
-                        "expectedSha256"
-                      ],
-                      "type": "object"
+                      "type": "string"
                     },
                     {
-                      "additionalProperties": false,
-                      "properties": {
-                        "exists": {
-                          "const": true,
-                          "type": "boolean"
-                        },
-                        "expectedSha256": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "path": {
-                          "type": "string"
-                        },
-                        "regularFile": {
-                          "const": false,
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "exists",
-                        "regularFile",
-                        "expectedSha256"
-                      ],
-                      "type": "object"
-                    },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "actualSha256": {
-                          "type": "string"
-                        },
-                        "exists": {
-                          "const": true,
-                          "type": "boolean"
-                        },
-                        "expectedSha256": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "matches": {
-                          "type": "boolean"
-                        },
-                        "path": {
-                          "type": "string"
-                        },
-                        "regularFile": {
-                          "const": true,
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "exists",
-                        "regularFile",
-                        "actualSha256",
-                        "expectedSha256",
-                        "matches"
-                      ],
-                      "type": "object"
+                      "type": "null"
                     }
                   ]
                 },
-                "type": "array"
-              },
-              "index": {
-                "additionalProperties": false,
-                "properties": {
-                  "dbPath": {
-                    "type": "string"
-                  },
-                  "indexedIds": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "indexedTotal": {
-                    "type": "number"
-                  },
-                  "matches": {
-                    "type": "boolean"
-                  },
-                  "schemaExists": {
-                    "type": "boolean"
-                  },
-                  "sourceIds": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "sourceTotal": {
-                    "type": "number"
-                  }
+                "matches": {
+                  "type": "boolean"
                 },
-                "required": [
-                  "dbPath",
-                  "schemaExists",
-                  "matches",
-                  "indexedTotal",
-                  "sourceTotal",
-                  "indexedIds",
-                  "sourceIds"
-                ],
-                "type": "object"
-              },
-              "observedAt": {
-                "type": "string"
-              },
-              "operation": {
-                "const": "new",
-                "type": "string"
-              },
-              "planHash": {
-                "type": "string"
-              },
-              "schemaVersion": {
-                "const": "specs.agent-first/v1",
-                "type": "string"
-              },
-              "target": {
-                "additionalProperties": false,
-                "properties": {
-                  "directoryPath": {
-                    "type": "string"
-                  },
-                  "id": {
-                    "type": "string"
-                  }
+                "path": {
+                  "type": "string"
                 },
-                "required": [
-                  "id",
-                  "directoryPath"
-                ],
-                "type": "object"
+                "regularFile": {
+                  "type": "boolean"
+                }
               },
-              "unexpectedFiles": {
+              "required": [
+                "path",
+                "exists",
+                "expectedSha256"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "index": {
+            "additionalProperties": false,
+            "properties": {
+              "dbPath": {
+                "type": "string"
+              },
+              "indexedIds": {
                 "items": {
                   "type": "string"
                 },
                 "type": "array"
+              },
+              "indexedTotal": {
+                "type": "number"
+              },
+              "matches": {
+                "type": "boolean"
+              },
+              "schemaExists": {
+                "type": "boolean"
+              },
+              "sourceIds": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "sourceTotal": {
+                "type": "number"
               }
             },
             "required": [
-              "schemaVersion",
-              "planHash",
-              "binding",
-              "files",
-              "unexpectedFiles",
-              "index",
-              "observedAt",
-              "operation",
-              "target",
-              "ancestors"
+              "dbPath",
+              "schemaExists",
+              "matches",
+              "indexedTotal",
+              "sourceTotal",
+              "indexedIds",
+              "sourceIds"
             ],
             "type": "object"
           },
-          "replay": {
-            "const": false,
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "operation",
-          "planHash",
-          "outcome",
-          "readback",
-          "action",
-          "replay"
-        ],
-        "type": "object"
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "action": {
-            "enum": [
-              "none",
-              "replan_and_apply",
-              "manual_review"
-            ],
+          "observedAt": {
             "type": "string"
           },
           "operation": {
             "const": "sync",
             "type": "string"
           },
-          "outcome": {
-            "enum": [
-              "confirmed",
-              "absent",
-              "divergent"
-            ],
-            "type": "string"
-          },
           "planHash": {
             "type": "string"
           },
-          "readback": {
+          "schemaVersion": {
+            "const": "specs.agent-first/v1",
+            "type": "string"
+          },
+          "target": {
             "additionalProperties": false,
             "properties": {
-              "ancestors": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "exists": {
-                      "type": "boolean"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "path": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "path",
-                    "exists"
-                  ],
-                  "type": "object"
-                },
-                "maxItems": 0,
-                "type": "array"
-              },
-              "binding": {
-                "additionalProperties": false,
-                "properties": {
-                  "cwd": {
-                    "type": "string"
-                  },
-                  "dbPath": {
-                    "type": "string"
-                  },
-                  "specsRoot": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "cwd",
-                  "specsRoot",
-                  "dbPath"
-                ],
-                "type": "object"
-              },
-              "files": {
-                "items": {
-                  "anyOf": [
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "exists": {
-                          "const": false,
-                          "type": "boolean"
-                        },
-                        "expectedSha256": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "path": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "exists",
-                        "expectedSha256"
-                      ],
-                      "type": "object"
-                    },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "exists": {
-                          "const": true,
-                          "type": "boolean"
-                        },
-                        "expectedSha256": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "path": {
-                          "type": "string"
-                        },
-                        "regularFile": {
-                          "const": false,
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "exists",
-                        "regularFile",
-                        "expectedSha256"
-                      ],
-                      "type": "object"
-                    },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "actualSha256": {
-                          "type": "string"
-                        },
-                        "exists": {
-                          "const": true,
-                          "type": "boolean"
-                        },
-                        "expectedSha256": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "matches": {
-                          "type": "boolean"
-                        },
-                        "path": {
-                          "type": "string"
-                        },
-                        "regularFile": {
-                          "const": true,
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "exists",
-                        "regularFile",
-                        "actualSha256",
-                        "expectedSha256",
-                        "matches"
-                      ],
-                      "type": "object"
-                    }
-                  ]
-                },
-                "type": "array"
-              },
-              "index": {
-                "additionalProperties": false,
-                "properties": {
-                  "dbPath": {
-                    "type": "string"
-                  },
-                  "indexedIds": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "indexedTotal": {
-                    "type": "number"
-                  },
-                  "matches": {
-                    "type": "boolean"
-                  },
-                  "schemaExists": {
-                    "type": "boolean"
-                  },
-                  "sourceIds": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "sourceTotal": {
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "dbPath",
-                  "schemaExists",
-                  "matches",
-                  "indexedTotal",
-                  "sourceTotal",
-                  "indexedIds",
-                  "sourceIds"
-                ],
-                "type": "object"
-              },
-              "observedAt": {
+              "dbPath": {
                 "type": "string"
               },
-              "operation": {
-                "const": "sync",
+              "rootPath": {
                 "type": "string"
-              },
-              "planHash": {
-                "type": "string"
-              },
-              "schemaVersion": {
-                "const": "specs.agent-first/v1",
-                "type": "string"
-              },
-              "target": {
-                "additionalProperties": false,
-                "properties": {
-                  "dbPath": {
-                    "type": "string"
-                  },
-                  "rootPath": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "dbPath",
-                  "rootPath"
-                ],
-                "type": "object"
-              },
-              "unexpectedFiles": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
               }
             },
             "required": [
-              "schemaVersion",
-              "planHash",
-              "binding",
-              "files",
-              "unexpectedFiles",
-              "index",
-              "observedAt",
-              "operation",
-              "target",
-              "ancestors"
+              "dbPath",
+              "rootPath"
             ],
             "type": "object"
           },
-          "replay": {
-            "const": false,
-            "type": "boolean"
+          "unexpectedFiles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
           }
         },
         "required": [
-          "operation",
+          "schemaVersion",
           "planHash",
-          "outcome",
-          "readback",
-          "action",
-          "replay"
+          "binding",
+          "files",
+          "unexpectedFiles",
+          "index",
+          "observedAt",
+          "operation",
+          "target",
+          "ancestors"
         ],
-        "type": "object"
-      }
-    ]
-  }
-  """#
-
-  public static let SpecsFacadeVerifyInputSchema = #"""
-  {
-    "additionalProperties": false,
-    "properties": {
-      "full": {
-        "description": "Include WHY.md, RUNBOOK.md, and CHECKS.md",
-        "type": "boolean"
-      },
-      "id": {
-        "description": "Spec id for new",
-        "type": "string"
-      },
-      "kind": {
-        "description": "domain|capability|feature for new",
-        "type": "string"
-      },
-      "operation": {
-        "description": "new|sync",
-        "type": "string"
-      },
-      "planHash": {
-        "description": "Exact hash returned by facade plan",
-        "type": "string"
-      },
-      "title": {
-        "description": "Spec title for new",
-        "type": "string"
+        "type": "object",
+        "x-ravi-swift-nested": true
       }
     },
     "required": [
       "operation",
-      "planHash"
+      "planHash",
+      "outcome",
+      "readback"
     ],
-    "type": "object"
-  }
-  """#
-
-  public static let SpecsFacadeVerifyReturnSchema = #"""
-  {
-    "oneOf": [
-      {
-        "additionalProperties": false,
-        "properties": {
-          "operation": {
-            "const": "new",
-            "type": "string"
-          },
-          "outcome": {
-            "enum": [
-              "confirmed",
-              "absent",
-              "divergent"
-            ],
-            "type": "string"
-          },
-          "planHash": {
-            "type": "string"
-          },
-          "readback": {
-            "additionalProperties": false,
-            "properties": {
-              "ancestors": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "exists": {
-                      "type": "boolean"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "path": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "path",
-                    "exists"
-                  ],
-                  "type": "object"
-                },
-                "type": "array"
-              },
-              "binding": {
-                "additionalProperties": false,
-                "properties": {
-                  "cwd": {
-                    "type": "string"
-                  },
-                  "dbPath": {
-                    "type": "string"
-                  },
-                  "specsRoot": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "cwd",
-                  "specsRoot",
-                  "dbPath"
-                ],
-                "type": "object"
-              },
-              "files": {
-                "items": {
-                  "anyOf": [
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "exists": {
-                          "const": false,
-                          "type": "boolean"
-                        },
-                        "expectedSha256": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "path": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "exists",
-                        "expectedSha256"
-                      ],
-                      "type": "object"
-                    },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "exists": {
-                          "const": true,
-                          "type": "boolean"
-                        },
-                        "expectedSha256": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "path": {
-                          "type": "string"
-                        },
-                        "regularFile": {
-                          "const": false,
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "exists",
-                        "regularFile",
-                        "expectedSha256"
-                      ],
-                      "type": "object"
-                    },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "actualSha256": {
-                          "type": "string"
-                        },
-                        "exists": {
-                          "const": true,
-                          "type": "boolean"
-                        },
-                        "expectedSha256": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "matches": {
-                          "type": "boolean"
-                        },
-                        "path": {
-                          "type": "string"
-                        },
-                        "regularFile": {
-                          "const": true,
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "exists",
-                        "regularFile",
-                        "actualSha256",
-                        "expectedSha256",
-                        "matches"
-                      ],
-                      "type": "object"
-                    }
-                  ]
-                },
-                "type": "array"
-              },
-              "index": {
-                "additionalProperties": false,
-                "properties": {
-                  "dbPath": {
-                    "type": "string"
-                  },
-                  "indexedIds": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "indexedTotal": {
-                    "type": "number"
-                  },
-                  "matches": {
-                    "type": "boolean"
-                  },
-                  "schemaExists": {
-                    "type": "boolean"
-                  },
-                  "sourceIds": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "sourceTotal": {
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "dbPath",
-                  "schemaExists",
-                  "matches",
-                  "indexedTotal",
-                  "sourceTotal",
-                  "indexedIds",
-                  "sourceIds"
-                ],
-                "type": "object"
-              },
-              "observedAt": {
-                "type": "string"
-              },
-              "operation": {
-                "const": "new",
-                "type": "string"
-              },
-              "planHash": {
-                "type": "string"
-              },
-              "schemaVersion": {
-                "const": "specs.agent-first/v1",
-                "type": "string"
-              },
-              "target": {
-                "additionalProperties": false,
-                "properties": {
-                  "directoryPath": {
-                    "type": "string"
-                  },
-                  "id": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "id",
-                  "directoryPath"
-                ],
-                "type": "object"
-              },
-              "unexpectedFiles": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "schemaVersion",
-              "planHash",
-              "binding",
-              "files",
-              "unexpectedFiles",
-              "index",
-              "observedAt",
-              "operation",
-              "target",
-              "ancestors"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "operation",
-          "planHash",
-          "outcome",
-          "readback"
-        ],
-        "type": "object"
-      },
-      {
-        "additionalProperties": false,
-        "properties": {
-          "operation": {
-            "const": "sync",
-            "type": "string"
-          },
-          "outcome": {
-            "enum": [
-              "confirmed",
-              "absent",
-              "divergent"
-            ],
-            "type": "string"
-          },
-          "planHash": {
-            "type": "string"
-          },
-          "readback": {
-            "additionalProperties": false,
-            "properties": {
-              "ancestors": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "exists": {
-                      "type": "boolean"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "path": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "path",
-                    "exists"
-                  ],
-                  "type": "object"
-                },
-                "maxItems": 0,
-                "type": "array"
-              },
-              "binding": {
-                "additionalProperties": false,
-                "properties": {
-                  "cwd": {
-                    "type": "string"
-                  },
-                  "dbPath": {
-                    "type": "string"
-                  },
-                  "specsRoot": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "cwd",
-                  "specsRoot",
-                  "dbPath"
-                ],
-                "type": "object"
-              },
-              "files": {
-                "items": {
-                  "anyOf": [
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "exists": {
-                          "const": false,
-                          "type": "boolean"
-                        },
-                        "expectedSha256": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "path": {
-                          "type": "string"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "exists",
-                        "expectedSha256"
-                      ],
-                      "type": "object"
-                    },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "exists": {
-                          "const": true,
-                          "type": "boolean"
-                        },
-                        "expectedSha256": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "path": {
-                          "type": "string"
-                        },
-                        "regularFile": {
-                          "const": false,
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "exists",
-                        "regularFile",
-                        "expectedSha256"
-                      ],
-                      "type": "object"
-                    },
-                    {
-                      "additionalProperties": false,
-                      "properties": {
-                        "actualSha256": {
-                          "type": "string"
-                        },
-                        "exists": {
-                          "const": true,
-                          "type": "boolean"
-                        },
-                        "expectedSha256": {
-                          "anyOf": [
-                            {
-                              "type": "string"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "matches": {
-                          "type": "boolean"
-                        },
-                        "path": {
-                          "type": "string"
-                        },
-                        "regularFile": {
-                          "const": true,
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "path",
-                        "exists",
-                        "regularFile",
-                        "actualSha256",
-                        "expectedSha256",
-                        "matches"
-                      ],
-                      "type": "object"
-                    }
-                  ]
-                },
-                "type": "array"
-              },
-              "index": {
-                "additionalProperties": false,
-                "properties": {
-                  "dbPath": {
-                    "type": "string"
-                  },
-                  "indexedIds": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "indexedTotal": {
-                    "type": "number"
-                  },
-                  "matches": {
-                    "type": "boolean"
-                  },
-                  "schemaExists": {
-                    "type": "boolean"
-                  },
-                  "sourceIds": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "sourceTotal": {
-                    "type": "number"
-                  }
-                },
-                "required": [
-                  "dbPath",
-                  "schemaExists",
-                  "matches",
-                  "indexedTotal",
-                  "sourceTotal",
-                  "indexedIds",
-                  "sourceIds"
-                ],
-                "type": "object"
-              },
-              "observedAt": {
-                "type": "string"
-              },
-              "operation": {
-                "const": "sync",
-                "type": "string"
-              },
-              "planHash": {
-                "type": "string"
-              },
-              "schemaVersion": {
-                "const": "specs.agent-first/v1",
-                "type": "string"
-              },
-              "target": {
-                "additionalProperties": false,
-                "properties": {
-                  "dbPath": {
-                    "type": "string"
-                  },
-                  "rootPath": {
-                    "type": "string"
-                  }
-                },
-                "required": [
-                  "dbPath",
-                  "rootPath"
-                ],
-                "type": "object"
-              },
-              "unexpectedFiles": {
-                "items": {
-                  "type": "string"
-                },
-                "type": "array"
-              }
-            },
-            "required": [
-              "schemaVersion",
-              "planHash",
-              "binding",
-              "files",
-              "unexpectedFiles",
-              "index",
-              "observedAt",
-              "operation",
-              "target",
-              "ancestors"
-            ],
-            "type": "object"
-          }
-        },
-        "required": [
-          "operation",
-          "planHash",
-          "outcome",
-          "readback"
-        ],
-        "type": "object"
-      }
-    ]
+    "type": "object",
+    "x-ravi-swift-nested": true
   }
   """#
 

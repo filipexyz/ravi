@@ -18,9 +18,13 @@ mock.module("../context.js", () => ({
   },
 }));
 
-const { SpecsCommands, SpecsFacadeCommands } = await import("./specs.js");
+const { SpecsCommands, SpecsFacadeCommands, SpecsFacadeNewCommands, SpecsFacadeSyncCommands } = await import(
+  "./specs.js"
+);
 const { ContractError } = await import("../agent-contract.js");
-const { getCommandAccessMetadata } = await import("../decorators.js");
+const { getCliOnlyMetadata, getCommandAccessMetadata } = await import("../decorators.js");
+const { buildRegistry } = await import("../registry-snapshot.js");
+const { buildInputSchema, buildReturnSchema } = await import("../../sdk/client-codegen/registry-shape.js");
 const {
   specsFacadeApplyReturnSchema,
   specsFacadePlanReturnSchema,
@@ -245,6 +249,43 @@ describe("SpecsFacadeCommands", () => {
     expect(facade.get("readback")).toMatchObject({ kind: "read", effectClass: "none" });
     expect(facade.get("verify")).toMatchObject({ kind: "read", effectClass: "none" });
     expect(facade.get("recover")).toMatchObject({ kind: "read", effectClass: "none" });
+  });
+
+  it("keeps the generic CLI compatible while publishing operation-specific SDK contracts", () => {
+    expect([...getCliOnlyMetadata(SpecsFacadeCommands)].sort()).toEqual([
+      "apply",
+      "plan",
+      "readback",
+      "recover",
+      "verify",
+    ]);
+
+    const registry = buildRegistry([SpecsFacadeCommands, SpecsFacadeNewCommands, SpecsFacadeSyncCommands]);
+    const generic = registry.commands.filter((command) => command.groupPath === "specs.facade");
+    expect(generic).toHaveLength(5);
+    expect(generic.every((command) => command.cliOnly === true)).toBe(true);
+
+    const newPlan = registry.commands.find((command) => command.fullName === "specs.facade.new.plan")!;
+    const syncPlan = registry.commands.find((command) => command.fullName === "specs.facade.sync.plan")!;
+    const syncApply = registry.commands.find((command) => command.fullName === "specs.facade.sync.apply")!;
+    expect(buildInputSchema(newPlan)).toMatchObject({
+      type: "object",
+      required: ["id", "kind", "title"],
+      properties: { id: {}, kind: {}, title: {}, full: {} },
+      additionalProperties: false,
+    });
+    expect(buildInputSchema(syncPlan)).toEqual({ type: "object", properties: {}, additionalProperties: false });
+    expect(buildInputSchema(syncApply)).toMatchObject({
+      type: "object",
+      required: ["planHash"],
+      properties: { planHash: {} },
+      additionalProperties: false,
+    });
+    expect(buildReturnSchema(newPlan)).toMatchObject({ type: "object", properties: { operation: { const: "new" } } });
+    expect(buildReturnSchema(syncPlan)).toMatchObject({
+      type: "object",
+      properties: { operation: { const: "sync" } },
+    });
   });
 
   it("plans without writing and applies the copied hash with independent readback", () => {
