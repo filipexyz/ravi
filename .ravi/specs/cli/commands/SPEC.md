@@ -67,9 +67,12 @@ COMMANDS operation has a write brake or a valid exit-3 path.
 10. Repeating an operation against unchanged files and config MUST preserve
     JSON values, ordering, pagination continuation, and rendered prompt hash.
 11. `list`, `show`, `validate`, and `run` MUST leave command files, every
-    SQLite table, every runtime state file, and runtime transport unchanged.
-    They MUST resolve agents without schema initialization or writable SQLite
-    access and MUST NOT emit command audit transport events.
+    SQLite table, every durable runtime state file (including `ravi.db` and its
+    WAL), and runtime transport unchanged. A read MAY update SQLite's ephemeral
+    `-shm` coordination index while a writer is active; that index is not
+    durable command or route state. Reads MUST remain current under concurrent
+    WAL writers, MUST resolve agents without schema initialization or writable
+    SQLite access, and MUST NOT emit command audit transport events.
     The audit opt-out policy MUST reject any operation that is not a low-risk
     read with resolved effect class `none`.
 12. A thrown `ContractError` MUST preserve its exit code through CLI, tool,

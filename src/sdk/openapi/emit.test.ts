@@ -252,13 +252,13 @@ describe("openapi emit (live registry)", () => {
     const nonCliOnlyCommands = reg.commands.filter((cmd) => !cmd.cliOnly).length;
     expect(Object.keys(spec.paths).length).toBe(nonCliOnlyCommands);
     expect(spec.openapi).toBe("3.1.0");
-  });
+  }, 30_000);
 
   it("every operation has a unique operationId on the live registry", () => {
     const spec = emit(getRegistry());
     const ids = Object.values(spec.paths).map((p) => p.post.operationId);
     expect(new Set(ids).size).toBe(ids.length);
-  });
+  }, 30_000);
 });
 
 describe("sortKeysDeep", () => {

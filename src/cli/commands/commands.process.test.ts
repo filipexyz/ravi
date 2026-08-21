@@ -78,7 +78,7 @@ function stateFileDigest(): SourceFileDigest[] {
     )) {
       const path = join(directory, entry.name);
       if (entry.isDirectory()) visit(path);
-      else if (entry.isFile()) {
+      else if (entry.isFile() && !entry.name.endsWith("-shm")) {
         files.push({
           path: relative(stateDir, path).replaceAll("\\", "/"),
           sha256: createHash("sha256").update(readFileSync(path)).digest("hex"),
@@ -114,8 +114,14 @@ function logicalStateDigest(): string {
 }
 
 function captureState(): { sources: SourceFileDigest[]; files: SourceFileDigest[]; logical: string } {
+  // Capture durable bytes before opening the independent logical reader. A
+  // SQLite read may legitimately participate in WAL coordination through the
+  // ephemeral -shm index, but it must not alter ravi.db, its WAL, command
+  // sources, other state files, or any logical row.
+  const sources = sourceDigest();
+  const files = stateFileDigest();
   const logical = logicalStateDigest();
-  return { sources: sourceDigest(), files: stateFileDigest(), logical };
+  return { sources, files, logical };
 }
 
 function expectStateUnchanged(before: ReturnType<typeof captureState>): void {
@@ -206,6 +212,27 @@ describe("commands process contract", () => {
     expect(payload.prompt).toContain("Review change-42");
     expect(payload.metadata).toMatchObject({ id: "review", scope: "agent" });
     expect((payload.metadata as { renderedPromptSha256: string }).renderedPromptSha256).toHaveLength(64);
+  });
+
+  it("preserves durable state while a WAL writer connection remains active", () => {
+    const database = new Database(join(stateDir, "ravi.db"));
+    try {
+      database.exec("PRAGMA journal_mode = WAL; PRAGMA wal_autocheckpoint = 0");
+      database
+        .prepare(
+          "INSERT OR REPLACE INTO settings (key, value, updated_at) VALUES ('commandsConcurrentProbe', 'active', ?)",
+        )
+        .run(Date.now());
+      const before = captureState();
+
+      const result = runCli(["commands", "list", "--json"]);
+
+      expect(result).toMatchObject({ status: 0, stderr: "" });
+      expectStateUnchanged(before);
+    } finally {
+      database.prepare("DELETE FROM settings WHERE key = 'commandsConcurrentProbe'").run();
+      database.close();
+    }
   });
 
   for (const testCase of [

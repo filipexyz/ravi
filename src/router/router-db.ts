@@ -8961,8 +8961,9 @@ export interface ReadOnlyAgentDirectorySnapshot {
  * Read only the agent identity and cwd needed by discovery-only CLI domains.
  *
  * This deliberately bypasses getDb(): it must not create the state directory,
- * initialize schema, enable WAL, run migrations, or mutate an existing WAL/SHM
- * pair. Missing legacy tables are represented as an empty snapshot.
+ * initialize schema, enable WAL, run migrations, or mutate durable DB/WAL
+ * bytes. SQLite may update its ephemeral -shm coordination index while a WAL
+ * writer is active. Missing legacy tables are represented as an empty snapshot.
  */
 export function dbReadAgentDirectorySnapshot(): ReadOnlyAgentDirectorySnapshot {
   const dbPath = resolveDbPath();

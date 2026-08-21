@@ -1666,3 +1666,47 @@ nao possui o executavel Swift, entao compilacao Swift local nao foi declarada;
 o teste nativo do gerador passou. Nao houve pacote, push, PR ou VPS. O novo
 commit continuara NO-GO ate auditoria independente, novo pacote e validacao
 posterior autorizada.
+
+### NO-GO independente do candidato `aec8c019`
+
+A nova auditoria confirmou que os bloqueadores de projecao, auditoria e
+contratos gerados foram corrigidos, mas rejeitou o commit
+`aec8c0196aab68b15f283092e1a9119db90b38da` por dois gaps de prova. O contrato
+exigia identidade de bytes do `ravi.db-shm`, embora esse arquivo seja indice
+efemero de coordenacao do SQLite e possa mudar durante leitura segura com o
+daemon escrevendo em WAL. O teste tambem abria uma leitora logica antes de
+capturar os hashes, o que podia mascarar a primeira coordenacao.
+
+A fronteira corrigida protege fontes de comandos, todas as linhas logicas e
+todos os arquivos duraveis, incluindo DB e WAL. O `-shm` fica explicitamente
+fora da identidade de estado duravel, e uma prova nativa mantem uma conexao
+escritora WAL aberta enquanto o processo real executa. O teste OpenAPI do
+registro vivo, que estourava o timeout padrao de cinco segundos neste host,
+agora declara 30 segundos nos dois casos pesados e passa pelo comando normal.
+
+A primeira fixture WAL falhou porque inseriu uma configuracao sem o campo
+obrigatorio `updated_at`; essa captura foi descartada. Com a fixture corrigida,
+o arquivo de processo passou 11 testes/57 assercoes e o OpenAPI normal passou
+22 testes/61 assercoes. Ainda nao existe novo commit candidato. Gates integrais,
+nova revisao independente, pacote e CI Linux continuam obrigatorios; nao houve
+push, PR ou VPS.
+
+### Recaptura dos gates apos a correcao concorrente
+
+Passaram 93 testes focados de COMMANDS, AGENTS, renderer e fundacao com 303
+assercoes; 11 testes de processo com 57 assercoes; 12 do router com 60; 41 do
+gateway com 171; seis de saida nativa com 19; e 22 do OpenAPI normal com 61.
+O SDK passou 76 testes/305 assercoes. Os dois snapshots OpenAPI, o check Swift,
+typecheck, build, Biome, Markdown e `git diff --check` tambem passaram.
+
+A primeira chamada local do quality runner foi invalida porque o fallback
+procura `origin/main`, referencia ausente neste worktree. Com os 43 caminhos
+exatos fornecidos por `CHANGED_FILES`, o runner passou e indexou 274 specs; os
+40 testes nativos do proprio gate passaram com 90 assercoes.
+
+O encadeamento `test:agent-contract` passou todos os arquivos anteriores e
+parou em dois casos Windows do artifact store: uma expectativa de blob e a
+criacao de symlink negada por `EPERM`. O mesmo arquivo no commit exato da
+fundacao `560517a4` reproduziu as duas falhas. A suite ampla nao e declarada
+verde, mas a comparacao demonstra que essas duas falhas nao foram introduzidas
+por COMMANDS. A compilacao Swift segue reservada a CI Linux.

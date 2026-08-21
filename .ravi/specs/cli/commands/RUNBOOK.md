@@ -43,8 +43,11 @@ Expected results, in order:
 - a rendered prompt preview with no session publication.
 
 For a zero-effect check, hash the configured agent and global command
-directories, every runtime state file (including SQLite WAL/SHM files), and a
-stable dump of every SQLite table before and after every call. Run without
+directories, every durable runtime state file (including SQLite DB/WAL files),
+and a stable dump of every SQLite table before and after every call. Keep a WAL
+writer connection open in one native check. SQLite's `-shm` file is an
+ephemeral coordination index and may change during a concurrency-safe read;
+it is not durable command state. Run without
 `RAVI_SUPPRESS_AUDIT_EVENTS`; COMMANDS declares transport-free inspection and
 must not contact the audit transport. Repeating unchanged calls must retain
 values, ordering, `pagination.nextCommand`, and

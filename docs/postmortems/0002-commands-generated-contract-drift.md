@@ -213,3 +213,56 @@ the native generator contract is green, but independent review and later Linux
 CI remain mandatory. No package was produced in this corrective round. The
 candidate remains NO-GO for push or PR until the new commit is independently
 audited and its final package is rebuilt and tested.
+
+## Revision note: 2026-08-21, independent review of `aec8c019` NO-GO
+
+Independent read-only review rejected commit
+`aec8c0196aab68b15f283092e1a9119db90b38da`. The earlier projection, audit and
+generated-contract blockers were confirmed fixed, but two new promotion gaps
+remained.
+
+The normative text and process proof required byte-identical SQLite `-shm`
+state even though that file is an ephemeral coordination index and may be
+updated by a safe reader while the daemon writes in WAL mode. The proof also
+opened its own logical reader before hashing files, which could hide the first
+coordination update. The corrected boundary protects command sources, every
+logical row and every durable state file, including `ravi.db` and its WAL;
+`-shm` is explicitly excluded from durable-state identity. A native case keeps
+a WAL writer open while the real COMMANDS process runs.
+
+The altered live-registry OpenAPI test also exceeded Bun's default five-second
+timeout on this host, although it passed with an external timeout override. Its
+two registry-heavy cases now declare a 30-second native timeout so the ordinary
+`bun test src/sdk/openapi/emit.test.ts` command is authoritative.
+
+The first concurrent-WAL fixture was invalid because it inserted a settings
+row without the required `updated_at` column. That failed run is discarded.
+After fixing only the fixture, the process file passed 11 tests with 57
+assertions, including the active writer, and the ordinary OpenAPI file passed
+22 tests with 61 assertions. These local corrections are not a candidate:
+full gates, a new commit, fresh independent review, package and Linux CI remain
+mandatory before push or PR.
+
+## Revision note: 2026-08-21, corrected candidate gate recapture
+
+The corrected tree passed 93 focused COMMANDS, AGENTS, renderer and foundation
+tests with 303 assertions; 11 real-process tests with 57 assertions; 12 router
+tests with 60 assertions; 41 gateway tests with 171 assertions; six native
+output tests with 19 assertions; and the ordinary OpenAPI file with 22 tests
+and 61 assertions. The SDK passed 76 tests with 305 assertions, and both
+OpenAPI snapshots, the Swift deterministic check, typecheck, full build,
+Biome, Markdown lint and `git diff --check` passed.
+
+The quality runner's first local invocation was invalid because its fallback
+expects `origin/main`, which this worktree does not have. Re-running it with
+the exact 43 changed paths through its documented `CHANGED_FILES` input passed
+both gates and indexed 274 specs. The quality runner's own 40 tests also passed
+with 90 assertions.
+
+The full `test:agent-contract` chain passed every preceding file and then
+failed two Windows artifact-store cases: one blob expectation and one symlink
+creation denied with `EPERM`. Running the same artifact-store file at the exact
+foundation commit `560517a4` reproduced the same two failures. They are kept as
+pre-existing Windows evidence and are not reported as a green suite. No
+commands-specific regression was observed. Swift compilation remains pending
+for Linux CI because this Windows host has no Swift toolchain.
