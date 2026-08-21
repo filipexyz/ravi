@@ -290,6 +290,25 @@ describe("AgentsCommands public return contracts", () => {
       console.log = originalLog;
     }
   });
+
+  it("keeps compact agents JSON while preserving its strict pre-serialization Returns contract", () => {
+    const commands = new AgentsCommands();
+    const originalLog = console.log;
+    console.log = () => {};
+
+    try {
+      const payload = commands.list(true, undefined, undefined, undefined, "id,cwd");
+      const item = payload.items[0] as Record<string, unknown>;
+      const serialized = JSON.parse(JSON.stringify(payload));
+
+      expect(Object.keys(item).sort()).toEqual(["cwd", "id"]);
+      expect(Object.getOwnPropertyNames(item).length).toBeGreaterThan(2);
+      expect(agentsListReturnSchema.safeParse(payload).success).toBe(true);
+      expect(Object.keys(serialized.items[0]).sort()).toEqual(["cwd", "id"]);
+    } finally {
+      console.log = originalLog;
+    }
+  });
 });
 
 describe("AgentsCommands set model validation", () => {

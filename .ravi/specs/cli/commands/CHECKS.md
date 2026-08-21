@@ -1,22 +1,53 @@
 # Ravi Commands agent-first CLI contract / CHECKS
 
-## Checks
+## Contract Checks
 
-- `commands show <unknown> --json` and `commands run <unknown> --json` MUST
-  exit 1 with the `COMMAND_NOT_FOUND` envelope and up to three `suggestions`
-  of real command ids from the same registry the lookup used.
-- Any commands op given an unknown `--agent` MUST exit 1 with
-  `AGENT_NOT_FOUND` and suggestions from the local agent config, before any
-  filesystem discovery runs.
-- `commands list --fields a,b,c --json` MUST return `items` (and `commands`)
-  containing only the requested fields.
-- `commands run` MUST remain a pure renderer: it returns the composed prompt
-  and MUST NOT publish to any session or emit runtime side effects.
-- No commands op may exit 3 — the domain is declared brake-free.
-- `commands validate` MUST keep its pre-existing exit-1 verdict when command
-  files carry validation errors; that exit is not renamed to a contract code.
-- The shipped `commands` skill MUST document the contract (envelope, exits,
-  `--fields`, absence of brakes) in its `## Contrato Do CLI` section.
-- An invalid flag on any `commands` op SHOULD exit 2 with `acceptedFlags`.
-- `bun test src/cli/commands/commands.test.ts` SHOULD pass after any change
-  to the commands contract surface.
+- `show` and `run` with a valid unknown name MUST exit 1 with
+  `COMMAND_NOT_FOUND` and suggestions from the lookup registry.
+- Empty and invalid names on `show` and `run` MUST exit 2 with
+  `INVALID_COMMAND_NAME` before agent resolution and MUST never surface as
+  `UNHANDLED_ERROR`.
+- An unknown agent MUST exit 1 with `AGENT_NOT_FOUND` before command
+  discovery, after command-name validation where applicable.
+- Invalid `limit` and `offset` MUST exit 2 with `USAGE_ERROR`, never exit 1
+  with `COMMAND_FAILED`.
+- Valid `--fields` MUST project equal `items` and `commands` rows, and the
+  serialized partial rows MUST validate against the published return schema.
+- One unknown field, alone or mixed with valid fields, MUST exit 2 with the
+  stable `acceptedFields` set, including when no commands are discovered. It
+  MUST never produce `{}` rows with exit 0.
+- Every success payload MUST validate against its declared return schema.
+- Parser-level invalid flags and arguments SHOULD exit 2 with accepted usage
+  metadata.
+- Bare `ravi commands` MUST print operation help and exit 0.
+
+## Read-Only and Determinism Checks
+
+- Repeating each operation against unchanged input MUST preserve JSON values
+  and ordering.
+- Repeating a paginated list MUST preserve `pagination.nextCommand`.
+- Repeating a render MUST preserve `metadata.renderedPromptSha256`.
+- `list`, `show`, `validate`, and `run` MUST leave command files, every SQLite
+  table, every runtime state file, and runtime transport unchanged without a
+  test-only audit suppression variable.
+- Agent resolution MUST use read-only SQLite access and MUST NOT initialize
+  schema, enable writable WAL behavior, or create missing state.
+- `run` MUST remain a pure renderer and MUST NOT publish to a session.
+- No COMMANDS operation may exit 3.
+- `validate` MUST preserve its exit-1 file verdict when validation errors
+  exist.
+
+## Surface Checks
+
+- The handler's stable list fields, return schema, generated tool surface,
+  Ravi Spec, and shipped COMMANDS skill MUST remain coherent.
+- The skill MUST document name validation, pagination, strict fields, exit
+  taxonomy, and the absence of write effects.
+- CLI, exported-tool, and gateway paths MUST all honor the declared
+  transport-free policy for COMMANDS.
+- The shared audit policy MUST reject opt-out declarations on mutations,
+  effectful reads, and reads above low risk.
+- `bun test src/cli/commands/commands.test.ts` SHOULD pass after every change
+  to this surface.
+- SDK generation/check, typecheck, build, quality gate, and documentation lint
+  SHOULD pass before the increment is considered ready.

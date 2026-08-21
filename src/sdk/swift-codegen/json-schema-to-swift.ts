@@ -5,10 +5,15 @@
  * shapes when safe; fall back to RaviJSON for complex unions.
  */
 
+import { swiftTypeName } from "./naming.js";
+
 export type JsonSchema = Record<string, unknown>;
 
 export function jsonSchemaToSwift(schema: JsonSchema | undefined | null): string {
   if (!schema || typeof schema !== "object") return "RaviJSON";
+
+  const title = (schema as { title?: unknown }).title;
+  if (typeof title === "string" && title.trim()) return swiftTypeName(title);
 
   const constValue = (schema as { const?: unknown }).const;
   if (constValue !== undefined) return literalType(constValue);

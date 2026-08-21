@@ -38,6 +38,7 @@ import {
 } from "../../cli/agent-contract.js";
 import { isCloudAuthError } from "../../cloud-auth/errors.js";
 import { cloudErrorToContractError, commandOperation } from "../../cli/cloud-error-contract.js";
+import { shouldEmitCommandAudit } from "../../cli/decorators.js";
 import { contractErrorResponse, json, returnShapeError, type JsonIssue } from "./errors.js";
 
 export interface DispatchOptions {
@@ -48,6 +49,8 @@ export interface DispatchOptions {
   /** Resolved runtime context record for audit lineage and contextId fields. */
   contextRecord?: ContextRecord | null;
 }
+
+type DispatchAuditEmitter = DispatchOptions["emitAudit"] | false;
 
 export interface AuditEvent {
   group: string;
@@ -97,6 +100,7 @@ export async function dispatch(
   const group = cmd.groupSegments.join("_");
   const lineage = extractLineage(opts.contextRecord);
   const startedAt = Date.now();
+  const auditEmitter: DispatchAuditEmitter = shouldEmitCommandAudit(cmd.access, cmd.fullName) ? opts.emitAudit : false;
 
   if (cmd.scope === "superadmin" && !opts.allowSuperadmin) {
     const error = permissionDeniedToContractError(
@@ -105,18 +109,18 @@ export async function dispatch(
     );
     const response = contractErrorResponse(error, 403, "denied");
     const audit = buildAuditEvent(cmd, tool, {}, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
-    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+    const auditEmitted = await emitDispatchAudit(audit, auditEmitter);
     return { response, audit: auditEmitted ? audit : null };
   }
 
   const normalized = normalizeBody(cmd, body);
   if (!normalized.ok) {
-    return usageErrorResult(cmd, tool, group, normalized.issues, startedAt, lineage, opts.emitAudit);
+    return usageErrorResult(cmd, tool, group, normalized.issues, startedAt, lineage, auditEmitter);
   }
 
   const validation = validateAndPack(cmd, normalized.input);
   if (!validation.ok) {
-    return usageErrorResult(cmd, tool, group, validation.issues, startedAt, lineage, opts.emitAudit);
+    return usageErrorResult(cmd, tool, group, validation.issues, startedAt, lineage, auditEmitter);
   }
   const auditInput = redactCommandAccessInput(cmd.access, validation.inputForAudit);
 
@@ -135,7 +139,7 @@ export async function dispatch(
     const error = permissionDeniedToContractError(commandOperation(group, cmd.command), accessResult.errorMessage);
     const response = contractErrorResponse(error, 403, "denied");
     const audit = buildAuditEvent(cmd, tool, auditInput, "denied", startedAt, lineage, 1, "PERMISSION_DENIED");
-    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+    const auditEmitted = await emitDispatchAudit(audit, auditEmitter);
     return { response, audit: auditEmitted ? audit : null };
   }
 
@@ -198,7 +202,7 @@ export async function dispatch(
       response = contractErrorResponse(unexpectedError, 500);
     }
     const audit = buildAuditEvent(cmd, tool, auditInput, outcome, startedAt, lineage, auditExitCode, auditErrorCode);
-    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+    const auditEmitted = await emitDispatchAudit(audit, auditEmitter);
     return { response, audit: auditEmitted ? audit : null };
   }
 
@@ -212,7 +216,7 @@ export async function dispatch(
         },
       ]);
       const audit = buildAuditEvent(cmd, tool, auditInput, "failed", startedAt, lineage, 1, "RETURN_SHAPE_ERROR");
-      const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+      const auditEmitted = await emitDispatchAudit(audit, auditEmitter);
       return { response, audit: auditEmitted ? audit : null };
     }
     if (!returnValue.ok) {
@@ -230,11 +234,11 @@ export async function dispatch(
         error.exitCode,
         error.code,
       );
-      const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+      const auditEmitted = await emitDispatchAudit(audit, auditEmitter);
       return { response, audit: auditEmitted ? audit : null };
     }
     const audit = buildAuditEvent(cmd, tool, auditInput, "succeeded", startedAt, lineage);
-    const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+    const auditEmitted = await emitDispatchAudit(audit, auditEmitter);
     return { response: returnValue, audit: auditEmitted ? audit : null };
   }
 
@@ -245,14 +249,14 @@ export async function dispatch(
     if (returnIssues) {
       response = returnShapeError(commandOperation(group, cmd.command), returnIssues);
       const audit = buildAuditEvent(cmd, tool, auditInput, "failed", startedAt, lineage, 1, "RETURN_SHAPE_ERROR");
-      const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+      const auditEmitted = await emitDispatchAudit(audit, auditEmitter);
       return { response, audit: auditEmitted ? audit : null };
     }
   }
 
   response = json(200, responseValue);
   const audit = buildAuditEvent(cmd, tool, auditInput, "succeeded", startedAt, lineage);
-  const auditEmitted = await emitDispatchAudit(audit, opts.emitAudit);
+  const auditEmitted = await emitDispatchAudit(audit, auditEmitter);
   return { response, audit: auditEmitted ? audit : null };
 }
 
@@ -312,7 +316,7 @@ async function usageErrorResult(
   issues: JsonIssue[],
   startedAt: number,
   lineage: AuditLineage,
-  emitAudit: DispatchOptions["emitAudit"],
+  emitAudit: DispatchAuditEmitter,
 ): Promise<DispatchResult> {
   const op = commandOperation(group, cmd.command);
   const error = new ContractError(op, "USAGE_ERROR", `Invalid input for ${op}.`, CONTRACT_EXIT_USAGE, {
@@ -491,7 +495,8 @@ function asToolContext(scope: ScopeContext, record: ContextRecord | null): ToolC
   return ctx;
 }
 
-async function emitDispatchAudit(event: AuditEvent, override: DispatchOptions["emitAudit"]): Promise<boolean> {
+async function emitDispatchAudit(event: AuditEvent, override: DispatchAuditEmitter): Promise<boolean> {
+  if (override === false) return false;
   if (override) {
     await override(event);
     return true;

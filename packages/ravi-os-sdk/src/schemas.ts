@@ -21123,7 +21123,7 @@ export const CommandsListInputSchema = {
       "type": "string"
     },
     "fields": {
-      "description": "Compact mode: keep only these fields of each item",
+      "description": "Compact fields: id,token,title,description,argumentHint,arguments,disabled,scope,path,relativePath,shadowedBy,shadows,issues",
       "type": "string"
     },
     "limit": {
@@ -21144,164 +21144,438 @@ export const CommandsListInputSchema = {
 
 /** JSON Schema for the return shape of `commands.list`. */
 export const CommandsListReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "cwd"
+      ],
+      "title": "CommandsListAgent",
       "type": "object"
     },
     "commands": {
       "items": {
-        "additionalProperties": {},
-        "properties": {
-          "argumentHint": {
-            "anyOf": [
-              {
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "argumentHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arguments": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "disabled": {
+                "type": "boolean"
+              },
+              "id": {
                 "type": "string"
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "arguments": {
-            "items": {},
-            "type": "array"
-          },
-          "description": {
-            "anyOf": [
-              {
+              "issues": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "level": {
+                      "enum": [
+                        "error",
+                        "warning"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "code",
+                    "message",
+                    "id",
+                    "scope",
+                    "path"
+                  ],
+                  "title": "CommandsListIssue",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "path": {
                 "type": "string"
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "disabled": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          },
-          "issues": {
-            "items": {
-              "additionalProperties": {},
-              "properties": {
-                "code": {
-                  "type": "string"
-                },
-                "id": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "level": {
-                  "type": "string"
-                },
-                "message": {
-                  "type": "string"
-                },
-                "path": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "scope": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
+              "relativePath": {
+                "type": "string"
               },
-              "required": [
-                "level",
-                "code",
-                "message",
-                "id",
-                "scope",
-                "path"
-              ],
-              "type": "object"
+              "scope": {
+                "type": "string"
+              },
+              "shadowedBy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shadows": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "token": {
+                "type": "string"
+              }
             },
-            "type": "array"
+            "type": "object"
           },
-          "path": {
-            "type": "string"
-          },
-          "relativePath": {
-            "type": "string"
-          },
-          "scope": {
-            "type": "string"
-          },
-          "shadowedBy": {
+          {
             "anyOf": [
               {
-                "type": "string"
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
               },
               {
-                "type": "null"
-              }
-            ]
-          },
-          "shadows": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
+                "additionalProperties": {},
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "type": "object"
               },
               {
-                "type": "null"
+                "additionalProperties": {},
+                "properties": {
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "description"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "argumentHint": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "argumentHint"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "arguments": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "disabled"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "relativePath": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "relativePath"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadowedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "shadowedBy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadows": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "shadows"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "issues": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "level": {
+                          "enum": [
+                            "error",
+                            "warning"
+                          ],
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "scope": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "code",
+                        "message",
+                        "id",
+                        "scope",
+                        "path"
+                      ],
+                      "title": "CommandsListIssue",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "issues"
+                ],
+                "type": "object"
               }
             ]
-          },
-          "token": {
-            "type": "string"
           }
-        },
-        "required": [
-          "id",
-          "token",
-          "title",
-          "description",
-          "argumentHint",
-          "arguments",
-          "disabled",
-          "scope",
-          "path",
-          "relativePath",
-          "shadowedBy",
-          "shadows",
-          "issues"
         ],
-        "type": "object"
+        "title": "CommandsListItem"
       },
       "type": "array"
     },
+    "filters": {
+      "additionalProperties": false,
+      "properties": {
+        "tag": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tag"
+      ],
+      "title": "CommandsListFilters",
+      "type": "object"
+    },
     "issues": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "code": {
             "type": "string"
@@ -21317,6 +21591,10 @@ export const CommandsListReturnSchema = {
             ]
           },
           "level": {
+            "enum": [
+              "error",
+              "warning"
+            ],
             "type": "string"
           },
           "message": {
@@ -21351,25 +21629,434 @@ export const CommandsListReturnSchema = {
           "scope",
           "path"
         ],
+        "title": "CommandsListIssue",
         "type": "object"
       },
       "type": "array"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "argumentHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arguments": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "disabled": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "string"
+              },
+              "issues": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "level": {
+                      "enum": [
+                        "error",
+                        "warning"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "code",
+                    "message",
+                    "id",
+                    "scope",
+                    "path"
+                  ],
+                  "title": "CommandsListIssue",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "path": {
+                "type": "string"
+              },
+              "relativePath": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "shadowedBy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shadows": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "token": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "description"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "argumentHint": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "argumentHint"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "arguments": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "disabled"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "relativePath": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "relativePath"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadowedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "shadowedBy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadows": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "shadows"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "issues": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "level": {
+                          "enum": [
+                            "error",
+                            "warning"
+                          ],
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "scope": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "code",
+                        "message",
+                        "id",
+                        "scope",
+                        "path"
+                      ],
+                      "title": "CommandsListIssue",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "issues"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ],
+        "title": "CommandsListItem"
       },
       "type": "array"
     },
     "locations": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "global": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "global"
+      ],
+      "title": "CommandsListLocations",
       "type": "object"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -21411,11 +22098,9 @@ export const CommandsListReturnSchema = {
         "limit",
         "offset",
         "returned",
-        "total",
-        "hasMore",
-        "nextOffset",
-        "nextCommand"
+        "total"
       ],
+      "title": "CommandsListPagination",
       "type": "object"
     },
     "total": {
@@ -21425,9 +22110,9 @@ export const CommandsListReturnSchema = {
   "required": [
     "total",
     "pagination",
-    "items",
     "agent",
     "locations",
+    "items",
     "commands",
     "issues"
   ],

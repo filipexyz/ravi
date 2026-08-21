@@ -48,7 +48,13 @@ function render(schema: JsonSchema, indent: number): string {
     return uniqueUnion(branches);
   }
   if (Array.isArray((schema as { allOf?: unknown[] }).allOf)) {
-    const parts = (schema as { allOf: JsonSchema[] }).allOf.map((s) => render(s, indent));
+    const schemas = (schema as { allOf: JsonSchema[] }).allOf;
+    const hasClosedObject = schemas.some(
+      (part) =>
+        (part as { type?: unknown }).type === "object" &&
+        (part as { additionalProperties?: unknown }).additionalProperties === false,
+    );
+    const parts = schemas.map((part) => render(hasClosedObject ? withoutOpenObjectIndexes(part) : part, indent));
     if (parts.length === 0) return "unknown";
     if (parts.length === 1) return parts[0];
     return parts.map(parenthesize).join(" & ");
@@ -64,6 +70,31 @@ function render(schema: JsonSchema, indent: number): string {
   }
 
   return "unknown";
+}
+
+function withoutOpenObjectIndexes(schema: JsonSchema): JsonSchema {
+  const copy: JsonSchema = { ...schema };
+  if (
+    (copy as { type?: unknown }).type === "object" &&
+    isEmptySchema((copy as { additionalProperties?: unknown }).additionalProperties)
+  ) {
+    delete copy.additionalProperties;
+  }
+  for (const keyword of ["anyOf", "oneOf", "allOf"] as const) {
+    const branches = copy[keyword];
+    if (Array.isArray(branches)) {
+      copy[keyword] = branches.map((branch) =>
+        branch && typeof branch === "object" && !Array.isArray(branch)
+          ? withoutOpenObjectIndexes(branch as JsonSchema)
+          : branch,
+      );
+    }
+  }
+  return copy;
+}
+
+function isEmptySchema(value: unknown): boolean {
+  return value !== null && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 0;
 }
 
 function renderTyped(schema: JsonSchema & { type: string }, indent: number): string {

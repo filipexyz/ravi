@@ -4,6 +4,274 @@
 
 import Foundation
 
+private struct RaviGeneratedCodingKey: CodingKey {
+  let stringValue: String
+  let intValue: Int?
+
+  init?(stringValue: String) {
+    self.stringValue = stringValue
+    self.intValue = nil
+  }
+
+  init?(intValue: Int) {
+    self.stringValue = String(intValue)
+    self.intValue = intValue
+  }
+}
+
+public struct CommandsListAgent: Codable, Sendable {
+  public var cwd: String
+  public var id: String
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case cwd = "cwd"
+    case id = "id"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "CommandsListAgent contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.cwd = try container.decode(String.self, forKey: .cwd)
+    self.id = try container.decode(String.self, forKey: .id)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.cwd, forKey: .cwd)
+    try container.encode(self.id, forKey: .id)
+  }
+}
+
+public struct CommandsListFilters: Codable, Sendable {
+  public var tag: String
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case tag = "tag"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "CommandsListFilters contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.tag = try container.decode(String.self, forKey: .tag)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.tag, forKey: .tag)
+  }
+}
+
+public struct CommandsListIssue: Codable, Sendable {
+  public var code: String
+  public var id: String?
+  public var level: String
+  public var message: String
+  public var path: String?
+  public var scope: String?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case code = "code"
+    case id = "id"
+    case level = "level"
+    case message = "message"
+    case path = "path"
+    case scope = "scope"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "CommandsListIssue contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.code = try container.decode(String.self, forKey: .code)
+    guard container.contains(.id) else {
+      throw DecodingError.keyNotFound(CodingKeys.id, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field id."))
+    }
+    self.id = try container.decodeIfPresent(String.self, forKey: .id)
+    self.level = try container.decode(String.self, forKey: .level)
+    self.message = try container.decode(String.self, forKey: .message)
+    guard container.contains(.path) else {
+      throw DecodingError.keyNotFound(CodingKeys.path, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field path."))
+    }
+    self.path = try container.decodeIfPresent(String.self, forKey: .path)
+    guard container.contains(.scope) else {
+      throw DecodingError.keyNotFound(CodingKeys.scope, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field scope."))
+    }
+    self.scope = try container.decodeIfPresent(String.self, forKey: .scope)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.code, forKey: .code)
+    try container.encode(self.id, forKey: .id)
+    try container.encode(self.level, forKey: .level)
+    try container.encode(self.message, forKey: .message)
+    try container.encode(self.path, forKey: .path)
+    try container.encode(self.scope, forKey: .scope)
+  }
+}
+
+public struct CommandsListItem: Codable, Sendable {
+  public var argumentHint: String?
+  public var arguments: [String]?
+  public var description: String?
+  public var disabled: Bool?
+  public var id: String?
+  public var issues: [CommandsListIssue]?
+  public var path: String?
+  public var relativePath: String?
+  public var scope: String?
+  public var shadowedBy: String?
+  public var shadows: [String]?
+  public var title: String?
+  public var token: String?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case argumentHint = "argumentHint"
+    case arguments = "arguments"
+    case description = "description"
+    case disabled = "disabled"
+    case id = "id"
+    case issues = "issues"
+    case path = "path"
+    case relativePath = "relativePath"
+    case scope = "scope"
+    case shadowedBy = "shadowedBy"
+    case shadows = "shadows"
+    case title = "title"
+    case token = "token"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "CommandsListItem contains an unknown field."))
+    }
+    guard !rawContainer.allKeys.isEmpty else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "CommandsListItem requires at least one field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.argumentHint = try container.decodeIfPresent(String.self, forKey: .argumentHint)
+    self.arguments = try container.decodeIfPresent([String].self, forKey: .arguments)
+    self.description = try container.decodeIfPresent(String.self, forKey: .description)
+    self.disabled = try container.decodeIfPresent(Bool.self, forKey: .disabled)
+    self.id = try container.decodeIfPresent(String.self, forKey: .id)
+    self.issues = try container.decodeIfPresent([CommandsListIssue].self, forKey: .issues)
+    self.path = try container.decodeIfPresent(String.self, forKey: .path)
+    self.relativePath = try container.decodeIfPresent(String.self, forKey: .relativePath)
+    self.scope = try container.decodeIfPresent(String.self, forKey: .scope)
+    self.shadowedBy = try container.decodeIfPresent(String.self, forKey: .shadowedBy)
+    self.shadows = try container.decodeIfPresent([String].self, forKey: .shadows)
+    self.title = try container.decodeIfPresent(String.self, forKey: .title)
+    self.token = try container.decodeIfPresent(String.self, forKey: .token)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.argumentHint, forKey: .argumentHint)
+    try container.encodeIfPresent(self.arguments, forKey: .arguments)
+    try container.encodeIfPresent(self.description, forKey: .description)
+    try container.encodeIfPresent(self.disabled, forKey: .disabled)
+    try container.encodeIfPresent(self.id, forKey: .id)
+    try container.encodeIfPresent(self.issues, forKey: .issues)
+    try container.encodeIfPresent(self.path, forKey: .path)
+    try container.encodeIfPresent(self.relativePath, forKey: .relativePath)
+    try container.encodeIfPresent(self.scope, forKey: .scope)
+    try container.encodeIfPresent(self.shadowedBy, forKey: .shadowedBy)
+    try container.encodeIfPresent(self.shadows, forKey: .shadows)
+    try container.encodeIfPresent(self.title, forKey: .title)
+    try container.encodeIfPresent(self.token, forKey: .token)
+  }
+}
+
+public struct CommandsListLocations: Codable, Sendable {
+  public var agent: String?
+  public var global: String
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case agent = "agent"
+    case global = "global"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "CommandsListLocations contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.agent) else {
+      throw DecodingError.keyNotFound(CodingKeys.agent, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field agent."))
+    }
+    self.agent = try container.decodeIfPresent(String.self, forKey: .agent)
+    self.global = try container.decode(String.self, forKey: .global)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.agent, forKey: .agent)
+    try container.encode(self.global, forKey: .global)
+  }
+}
+
+public struct CommandsListPagination: Codable, Sendable {
+  public var hasMore: Bool?
+  public var limit: Double
+  public var nextCommand: String?
+  public var nextOffset: Double?
+  public var offset: Double
+  public var returned: Double
+  public var total: Double
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case hasMore = "hasMore"
+    case limit = "limit"
+    case nextCommand = "nextCommand"
+    case nextOffset = "nextOffset"
+    case offset = "offset"
+    case returned = "returned"
+    case total = "total"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "CommandsListPagination contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.hasMore = try container.decodeIfPresent(Bool.self, forKey: .hasMore)
+    self.limit = try container.decode(Double.self, forKey: .limit)
+    self.nextCommand = try container.decodeIfPresent(String.self, forKey: .nextCommand)
+    self.nextOffset = try container.decodeIfPresent(Double.self, forKey: .nextOffset)
+    self.offset = try container.decode(Double.self, forKey: .offset)
+    self.returned = try container.decode(Double.self, forKey: .returned)
+    self.total = try container.decode(Double.self, forKey: .total)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.hasMore, forKey: .hasMore)
+    try container.encode(self.limit, forKey: .limit)
+    try container.encodeIfPresent(self.nextCommand, forKey: .nextCommand)
+    try container.encodeIfPresent(self.nextOffset, forKey: .nextOffset)
+    try container.encode(self.offset, forKey: .offset)
+    try container.encode(self.returned, forKey: .returned)
+    try container.encode(self.total, forKey: .total)
+  }
+}
+
 public struct AdaptersListOptions: Codable, Sendable {
   public var limit: String?
   public var offset: String?
@@ -4886,17 +5154,19 @@ public struct CommandsListOptions: Codable, Sendable {
 }
 
 public struct CommandsListReturn: Codable, Sendable {
-  public var agent: [String: RaviJSON]
-  public var commands: [RaviJSON]
-  public var issues: [RaviJSON]
-  public var items: [[String: RaviJSON]]
-  public var locations: [String: RaviJSON]
-  public var pagination: RaviJSON
+  public var agent: CommandsListAgent
+  public var commands: [CommandsListItem]
+  public var filters: CommandsListFilters?
+  public var issues: [CommandsListIssue]
+  public var items: [CommandsListItem]
+  public var locations: CommandsListLocations
+  public var pagination: CommandsListPagination
   public var total: Double
 
-  public init(agent: [String: RaviJSON], commands: [RaviJSON], issues: [RaviJSON], items: [[String: RaviJSON]], locations: [String: RaviJSON], pagination: RaviJSON, total: Double) {
+  public init(agent: CommandsListAgent, commands: [CommandsListItem], filters: CommandsListFilters? = nil, issues: [CommandsListIssue], items: [CommandsListItem], locations: CommandsListLocations, pagination: CommandsListPagination, total: Double) {
     self.agent = agent
     self.commands = commands
+    self.filters = filters
     self.issues = issues
     self.items = items
     self.locations = locations
@@ -4907,6 +5177,7 @@ public struct CommandsListReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case agent = "agent"
     case commands = "commands"
+    case filters = "filters"
     case issues = "issues"
     case items = "items"
     case locations = "locations"

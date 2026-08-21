@@ -1,0 +1,268 @@
+# Postmortem 0002: commands handoff left generated contracts stale
+
+**Date:** 2026-08-21
+
+**Severity:** medium
+
+**Status:** open; replacement candidate in validation
+
+**Project:** Ravi
+
+## Summary
+
+The implementation handoff reported OpenAPI and Swift artifacts as current,
+but the coordinator's official checks found drift in both OpenAPI snapshots and
+five Swift files. No commit, package, push, PR, or deployment had occurred.
+
+## Expected behavior
+
+Every CLI contract change must leave TypeScript, OpenAPI, and Swift artifacts
+equal to the live registry before a domain can be marked ready.
+
+## Actual behavior
+
+TypeScript SDK generation and `sdk:check` were current. Both OpenAPI checks
+failed with `OPENAPI_DRIFT`, and `sdk swift check` reported five divergent
+artifacts.
+
+## Root cause
+
+The handoff treated successful TypeScript code generation as evidence for all
+generated surfaces. The OpenAPI and Swift checks were not independently
+reproduced against the final worktree state before reporting readiness.
+
+## Resolution
+
+The two OpenAPI snapshots and all Swift generated files were regenerated with
+the repository's official CLI. Their checks, the SDK suite, and downstream
+gates must pass again before the candidate can be committed.
+
+## Prevention
+
+- Record each generated-surface command and exit code separately.
+- Do not infer OpenAPI or Swift status from TypeScript SDK status.
+- The coordinator must reproduce every claimed gate before accepting a handoff.
+
+## Revision note: 2026-08-21, generated surfaces recaptured
+
+The coordinator regenerated both OpenAPI snapshots and every affected Swift
+artifact with the repository CLI. The two OpenAPI checks and the deterministic
+Swift check then passed independently. The complete SDK suite passed 75 tests
+with 297 assertions and was followed by a green `sdk:check`.
+
+The changed commands slice was repeated after regeneration and passed 40 tests
+with 150 assertions, including nine installed-process-style CLI cases. The
+typecheck, full build, focused Biome, Markdown lint over nine applicable
+documents, and the diff-based quality gate over 23 paths with 274 specs indexed
+also passed.
+
+This closes the local generated-drift correction only. An exact commit, package,
+fresh independent review, and Linux CI are still mandatory before push or PR;
+merge and VPS remain outside this checkpoint.
+
+## Revision note: 2026-08-21, line-ending recapture
+
+A later focused Biome run found Windows line endings in the shared operational
+return-schema file after generation. The official formatter normalized that
+single file; no schema semantics changed. Focused Biome and the 40-test commands
+slice were repeated, with all 150 assertions passing. Evidence recorded before
+this normalization is not used as the final style/test capture.
+
+## Revision note: 2026-08-21, final coordinator recapture
+
+The final commands slice passed 40 tests with 150 assertions and typecheck. The
+complete SDK suite first ran under parallel load and two unchanged five-second
+hooks timed out; that output was discarded. Its isolated recapture passed all
+75 tests with 297 assertions and `sdk:check`.
+
+Both OpenAPI checks, the deterministic Swift check, full build, focused Biome
+over six command/framework source files, Markdown lint over 11 locally changed
+documents, `git diff --check`, 40 native quality-gate tests, and the quality
+runner over 56 accumulated foundation-plus-domain paths passed. The runner
+indexed 274 specs and approved `cli/commands`, `cli/foundation`, and `commands`.
+The generated-drift correction is locally closed. Exact commit, package,
+independent review, and Linux CI remain mandatory; push, PR, merge, and VPS have
+not occurred.
+
+## Revision note: 2026-08-21, independent package review NO-GO
+
+Independent review rejected commit
+`d648b40691300af98818331313a7445b93ab1e90` and its 4,944,320-byte package
+with SHA-256
+`206A02D753F590AEF798A74DA80C93D93A0963EF0F0ED721A1E9B253A4C2F4AB`.
+Neither candidate was pushed or opened as a PR. The historical status in this
+document's header describes the earlier generated-drift incident; it does not
+override this later NO-GO.
+
+The review found that `--fields` serialized partial records while the Returns,
+TypeScript, OpenAPI, and Swift schemas still required complete command records.
+Non-enumerable properties let validation pass before serialization but vanished
+from actual JSON, so the published contract rejected its own compact output.
+
+The review also disproved the strict read-only claim. Resolving the active agent
+through the normal config store opened writable SQLite, initialized schema/WAL,
+and changed `ravi.db-wal` and `ravi.db-shm`. The normal registry path also tried
+to publish audit events to NATS. The process test hid that transport with
+`RAVI_SUPPRESS_AUDIT_EVENTS` and compared only selected tables and command-file
+hashes, so it could not detect the state-file changes.
+
+A replacement candidate must publish an honest projected-record schema after
+JSON round-trip, remove the non-enumerable-field workaround, resolve command
+configuration through a genuinely read-only path, suppress domain audit effects
+by declared policy rather than test environment, compare all relevant SQLite
+tables and state files, add focused group-help tests, and repeat every generated
+artifact and package review. This candidate remains permanently NO-GO.
+
+## Revision note: 2026-08-21, replacement implementation
+
+The replacement removes non-enumerable projection fields and publishes a
+strict non-empty subset schema for the 13 documented command fields. Native
+tests validate the return only after JSON round-trip and reject arbitrary
+projected keys. The shared gateway fixture was migrated to the same honest
+projection contract.
+
+Agent lookup now uses a dedicated read-only SQLite snapshot that bypasses the
+normal config store, schema initialization, migrations, and writable database
+singleton. COMMANDS declares `audit: none`; CLI, exported-tool, and gateway
+paths skip audit transport for both allowed and denied calls. The process test
+no longer sets the suppression environment variable and compares command
+sources, every SQLite table, and every runtime state file before and after each
+operation.
+
+Focused unit, process, gateway, typecheck, and formatting captures are green at
+this checkpoint. Generated TypeScript, OpenAPI, and Swift artifacts, full
+build, quality gates, exact commit/package, fresh independent review, and Linux
+CI must still be repeated. No push, PR, merge, remote call, or VPS action has
+occurred.
+
+## Revision note: 2026-08-21, replacement gate recapture
+
+Generated TypeScript, both OpenAPI snapshots, and Swift artifacts were rebuilt
+and passed their deterministic checks. The SDK suite passed 75 tests with 297
+assertions, the build and typecheck passed, and focused formatting and Markdown
+lint were clean. The installed-process slice passed nine tests with 51
+assertions while comparing all SQLite tables and state files without audit
+suppression.
+
+One parallel gateway run exceeded two inherited five-second timeouts while the
+process suite was consuming the same host. That capture was discarded; the
+isolated rerun passed all 41 tests with 171 assertions. The first quality-gate
+run correctly rejected the new router read path because its approved focused
+test was absent from the diff. Two native router cases were added: one proves a
+missing database is not created, and one proves an existing agent snapshot
+does not alter any state file. The router file then passed 12 tests with 60
+assertions, and the repeated quality runner passed over 35 accumulated paths
+with 274 specs indexed.
+
+A final adversarial review narrowed `audit: none` itself. Shared policy now
+throws unless the command is a low-risk read with resolved effect class
+`none`; CLI, tool export, and gateway use the same resolver. The focused
+foundation test proves mutations and medium-risk reads cannot opt out. Exact
+commit, package, independent review, and Linux CI remain mandatory, so the
+replacement is still NO-GO for push or PR at this checkpoint.
+
+## Revision note: 2026-08-21, replacement package capture
+
+Commit `e78e106c5b63df66d16ecccec2f70e29ccfdc844` produced an eight-file
+package of 4,945,479 bytes with SHA-256
+`C763E1991CDED3A0E2BD50A237FE2F0C6D8BEEB3C018A5239AC140BBB7D42845`.
+An empty Bun project installed 367 packages from that archive. Bun reported two
+dependency postinstall scripts as blocked by its default trust policy; the Ravi
+package still installed with its binary and bundle intact.
+
+The installed bundle, executed directly on Windows, passed bare help, compact
+list, show, validate, and rendered run preview. It also returned exit 1 with
+`COMMAND_NOT_FOUND` and exit 2 with `USAGE_ERROR` for invalid fields. All seven
+processes had empty stderr, the isolated runtime state remained empty, and the
+command fixture hash was unchanged.
+
+This note changes the candidate commit, so that first archive is retained as
+diagnostic evidence only. The final archive must be rebuilt after the
+documentation commit, rehashed, reinstalled, and independently reviewed before
+push or PR. Linux CI remains mandatory after an authorized push.
+
+## Revision note: 2026-08-21, independent review of `d67ad42a` NO-GO
+
+Independent read-only review rejected commit
+`d67ad42acbb3fe33c1c89d413f1c5f691a37b7a0` and the inherited package recorded
+above. The package was not pushed or opened as a PR.
+
+The replacement made shared compact projection honest for COMMANDS by removing
+hidden fields globally. That silently invalidated strict pre-serialization
+Returns contracts in AGENTS and other compact consumers that had not migrated.
+The COMMANDS process test also inherited `RAVI_SUPPRESS_AUDIT_EVENTS=1` from its
+state helper, so its zero-transport result did not prove the declared
+`audit: none` behavior. Finally, the runtime non-empty refinement was lost by
+JSON Schema conversion: generated TypeScript allowed an empty projected row,
+OpenAPI carried no equivalent non-empty rule, and Swift lowered the row to
+`RaviJSON`.
+
+The corrective round restores the shared compatibility behavior by default and
+opts only COMMANDS into serialized-only projection. Native AGENTS regression
+coverage now proves that strict Returns validation sees the complete legacy row
+while JSON remains compact. COMMANDS publishes a strict union of 13 typed
+single-field-or-larger projections, which preserves the non-empty invariant in
+Returns, TypeScript, JSON Schema, OpenAPI, and typed Swift models. The process
+child environment explicitly removes both `RAVI_SUPPRESS_AUDIT_EVENTS` and
+`RAVI_NO_AUDIT`; all ten native process cases preserve every state file, every
+SQLite table, and command sources.
+
+Generated TypeScript, OpenAPI, and Swift drift checks pass locally. The Windows
+host has no Swift toolchain, so generated Swift compilation was not claimed;
+the native generator contract is green, but independent review and later Linux
+CI remain mandatory. No package was produced in this corrective round. The
+candidate remains NO-GO for push or PR until the new commit is independently
+audited and its final package is rebuilt and tested.
+
+## Revision note: 2026-08-21, independent review of `aec8c019` NO-GO
+
+Independent read-only review rejected commit
+`aec8c0196aab68b15f283092e1a9119db90b38da`. The earlier projection, audit and
+generated-contract blockers were confirmed fixed, but two new promotion gaps
+remained.
+
+The normative text and process proof required byte-identical SQLite `-shm`
+state even though that file is an ephemeral coordination index and may be
+updated by a safe reader while the daemon writes in WAL mode. The proof also
+opened its own logical reader before hashing files, which could hide the first
+coordination update. The corrected boundary protects command sources, every
+logical row and every durable state file, including `ravi.db` and its WAL;
+`-shm` is explicitly excluded from durable-state identity. A native case keeps
+a WAL writer open while the real COMMANDS process runs.
+
+The altered live-registry OpenAPI test also exceeded Bun's default five-second
+timeout on this host, although it passed with an external timeout override. Its
+two registry-heavy cases now declare a 30-second native timeout so the ordinary
+`bun test src/sdk/openapi/emit.test.ts` command is authoritative.
+
+The first concurrent-WAL fixture was invalid because it inserted a settings
+row without the required `updated_at` column. That failed run is discarded.
+After fixing only the fixture, the process file passed 11 tests with 57
+assertions, including the active writer, and the ordinary OpenAPI file passed
+22 tests with 61 assertions. These local corrections are not a candidate:
+full gates, a new commit, fresh independent review, package and Linux CI remain
+mandatory before push or PR.
+
+## Revision note: 2026-08-21, corrected candidate gate recapture
+
+The corrected tree passed 93 focused COMMANDS, AGENTS, renderer and foundation
+tests with 303 assertions; 11 real-process tests with 57 assertions; 12 router
+tests with 60 assertions; 41 gateway tests with 171 assertions; six native
+output tests with 19 assertions; and the ordinary OpenAPI file with 22 tests
+and 61 assertions. The SDK passed 76 tests with 305 assertions, and both
+OpenAPI snapshots, the Swift deterministic check, typecheck, full build,
+Biome, Markdown lint and `git diff --check` passed.
+
+The quality runner's first local invocation was invalid because its fallback
+expects `origin/main`, which this worktree does not have. Re-running it with
+the exact 43 changed paths through its documented `CHANGED_FILES` input passed
+both gates and indexed 274 specs. The quality runner's own 40 tests also passed
+with 90 assertions.
+
+The full `test:agent-contract` chain passed every preceding file and then
+failed two Windows artifact-store cases: one blob expectation and one symlink
+creation denied with `EPERM`. Running the same artifact-store file at the exact
+foundation commit `560517a4` reproduced the same two failures. They are kept as
+pre-existing Windows evidence and are not reported as a green suite. No
+commands-specific regression was observed. Swift compilation remains pending
+for Linux CI because this Windows host has no Swift toolchain.

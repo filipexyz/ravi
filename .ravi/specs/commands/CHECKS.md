@@ -7,8 +7,6 @@ status: draft
 normative: false
 ---
 
-# Ravi Commands Checks
-
 ## Unit Coverage
 
 - Parser accepts `#abc`, `#abc-123`, mixed-case input, and trailing arguments.
@@ -27,6 +25,11 @@ normative: false
 - Channel message `#command args` dispatches one composed prompt to the resolved session.
 - CLI/session message `#command args` follows the same path as channel messages.
 - `ravi commands run <name> -- <args>` returns the composed prompt preview and does not dispatch to a session.
+- Every operator operation is deterministic against unchanged files and does
+  not write command, config, session, or runtime state.
+- Empty/invalid operator names and invalid pagination are typed usage errors;
+  unknown fields never produce `{}` with exit 0.
+- Bare `ravi commands` prints operation discovery help and exits 0.
 - Unknown command passes through as ordinary chat without command expansion.
 - Invalid command name fails before provider handoff.
 - Disabled command fails before provider handoff.

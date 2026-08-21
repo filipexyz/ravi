@@ -16,26 +16,38 @@ Eles nao sao slash commands, nao sao shell commands e nao concedem permissao ext
 
 ## Contrato Do CLI
 
-Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
+Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?|acceptedFields?}}`.
 
 Taxonomia de saída:
 
 - `0` sucesso.
 - `1` erro de execução (`COMMAND_NOT_FOUND`, `AGENT_NOT_FOUND`). O envelope traz `suggestions` com ids reais parecidos (commands do mesmo registry, agents do config local) — consulte antes de concluir "não existe".
-- `2` erro de uso (flag/argumento inválido).
+- `2` erro de uso (`INVALID_COMMAND_NAME` para nome vazio/inválido;
+  `USAGE_ERROR` para flag, paginação ou `--fields` inválido).
 - `3` freio de escrita — NÃO existe neste domínio.
 
 Sem freio (declarado): o domínio inteiro é read-only. `commands run` só RENDERIZA o prompt composto para preview — não publica em sessão, não executa runtime — então nada aqui exige `--execute`.
 
+`ravi commands` sem subcomando é descoberta: imprime o help do grupo e sai 0.
+
 Caso especial: `commands validate` mantém o exit 1 PRÉ-EXISTENTE quando há erros de validação nos arquivos — é veredito sobre os arquivos, não envelope de erro.
 
 Compact mode: `commands list` aceita `--fields a,b,c` (ex.: `--fields id,scope`).
+Campos desconhecidos não são ignorados: o pedido inteiro falha com exit 2 e
+`acceptedFields`, inclusive se a lista estiver vazia. `--limit` aceita de 1 a
+500; `--offset` aceita zero ou mais; ambos exigem inteiros.
+
+A projecao JSON contem somente os campos pedidos e continua valida no contrato
+publicado depois de serializar. As quatro operacoes consultam o diretorio de
+agents sem inicializar ou alterar SQLite e nao publicam auditoria de transporte.
 
 Exemplos:
 
 ```bash
 ravi commands show nope --json              # exit 1 + COMMAND_NOT_FOUND + suggestions
+ravi commands show "" --json                # exit 2 + INVALID_COMMAND_NAME
 ravi commands list --fields id,scope --json # itens compactos
+ravi commands list --fields id,nope --json  # exit 2 + acceptedFields
 ravi commands run restart --json -- "motivo" # renderiza; sem side effects
 ```
 

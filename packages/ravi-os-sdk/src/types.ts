@@ -3929,54 +3929,145 @@ export type CommandsListInput = {
 
 /** Return shape for `commands.list`. */
 export type CommandsListReturn = {
-  agent: Record<string, unknown>;
-  commands: Array<{
-    argumentHint: string | null;
-    arguments: unknown[];
-    description: string | null;
-    disabled: boolean;
+  agent: {
+    cwd: string;
     id: string;
-    issues: Array<{
+  };
+  commands: Array<({
+    argumentHint?: string | null;
+    arguments?: string[];
+    description?: string | null;
+    disabled?: boolean;
+    id?: string;
+    issues?: Array<{
       code: string;
       id: string | null;
-      level: string;
+      level: "error" | "warning";
       message: string;
       path: string | null;
       scope: string | null;
-      [k: string]: unknown;
     }>;
-    path: string;
-    relativePath: string;
-    scope: string;
-    shadowedBy: string | null;
-    shadows: string[];
-    title: string | null;
+    path?: string;
+    relativePath?: string;
+    scope?: string;
+    shadowedBy?: string | null;
+    shadows?: string[];
+    title?: string | null;
+    token?: string;
+  }) & (({
+    id: string;
+  }) | ({
     token: string;
-    [k: string]: unknown;
-  }>;
+  }) | ({
+    title: string | null;
+  }) | ({
+    description: string | null;
+  }) | ({
+    argumentHint: string | null;
+  }) | ({
+    arguments: string[];
+  }) | ({
+    disabled: boolean;
+  }) | ({
+    scope: string;
+  }) | ({
+    path: string;
+  }) | ({
+    relativePath: string;
+  }) | ({
+    shadowedBy: string | null;
+  }) | ({
+    shadows: string[];
+  }) | ({
+    issues: Array<{
+      code: string;
+      id: string | null;
+      level: "error" | "warning";
+      message: string;
+      path: string | null;
+      scope: string | null;
+    }>;
+  }))>;
+  filters?: {
+    tag: string;
+  };
   issues: Array<{
     code: string;
     id: string | null;
-    level: string;
+    level: "error" | "warning";
     message: string;
     path: string | null;
     scope: string | null;
-    [k: string]: unknown;
   }>;
-  items: Array<Record<string, unknown>>;
-  locations: Record<string, unknown>;
+  items: Array<({
+    argumentHint?: string | null;
+    arguments?: string[];
+    description?: string | null;
+    disabled?: boolean;
+    id?: string;
+    issues?: Array<{
+      code: string;
+      id: string | null;
+      level: "error" | "warning";
+      message: string;
+      path: string | null;
+      scope: string | null;
+    }>;
+    path?: string;
+    relativePath?: string;
+    scope?: string;
+    shadowedBy?: string | null;
+    shadows?: string[];
+    title?: string | null;
+    token?: string;
+  }) & (({
+    id: string;
+  }) | ({
+    token: string;
+  }) | ({
+    title: string | null;
+  }) | ({
+    description: string | null;
+  }) | ({
+    argumentHint: string | null;
+  }) | ({
+    arguments: string[];
+  }) | ({
+    disabled: boolean;
+  }) | ({
+    scope: string;
+  }) | ({
+    path: string;
+  }) | ({
+    relativePath: string;
+  }) | ({
+    shadowedBy: string | null;
+  }) | ({
+    shadows: string[];
+  }) | ({
+    issues: Array<{
+      code: string;
+      id: string | null;
+      level: "error" | "warning";
+      message: string;
+      path: string | null;
+      scope: string | null;
+    }>;
+  }))>;
+  locations: {
+    agent: string | null;
+    global: string;
+  };
   pagination: {
-    hasMore: boolean;
+    hasMore?: boolean;
     limit: number;
-    nextCommand: string | null;
-    nextOffset: number | null;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `commands.run`. */

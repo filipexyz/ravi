@@ -59,4 +59,11 @@ export {
   type InferredOptionSchema,
 } from "./schema-inference.js";
 
-export { Returns, getReturnsMetadata } from "./decorators.js";
+export {
+  Returns,
+  getReturnsMetadata,
+  resolveCommandSafetyMetadata,
+  type CommandEffectClass,
+  type CommandSafetyClassificationSource,
+  type CommandSafetyMetadata,
+} from "./decorators.js";
