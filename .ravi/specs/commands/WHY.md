@@ -7,8 +7,6 @@ status: draft
 normative: false
 ---
 
-# Why Ravi Commands Exist
-
 Ravi already has CLIs, skills, task profiles, hooks, triggers, and cron. Commands fill a narrower gap: a human wants to type a short token in a chat or session and expand it into a known prompt for the same agent.
 
 The design intentionally follows the file-backed Markdown pattern used by coding agents:
@@ -31,6 +29,12 @@ Ravi should not copy the risky parts by default:
 - Commands do not auto-load like skills.
 - Commands do not change provider model or runtime settings.
 
+The operator CLI is intentionally narrower than channel execution. Its `run`
+operation is a read-only preview, and its agent-first contract is normative in
+`cli/commands`. The future conversational facade remains deferred until its
+revision, integrity, shadowing, materiality, and engine-routing decisions are
+explicit.
+
 ## Why `#` Instead of `/`
 
 Ravi runs in channels where `/` can collide with platform UX, provider-native slash commands, or ordinary text. `#name` gives Ravi its own command namespace while still being quick to type on mobile.
@@ -48,6 +52,6 @@ This lets `#review` mean one thing for a dev agent and another for a support age
 
 ## References
 
-- Claude Code skills/commands docs: https://code.claude.com/docs/en/slash-commands
-- OpenAI Codex CLI slash commands docs: https://developers.openai.com/codex/cli/slash-commands
-- Codex custom prompt issue example: https://github.com/openai/codex/issues/15941
+- [Claude Code skills and commands](https://code.claude.com/docs/en/slash-commands)
+- [OpenAI Codex CLI slash commands](https://developers.openai.com/codex/cli/slash-commands)
+- [Codex custom prompt issue example](https://github.com/openai/codex/issues/15941)

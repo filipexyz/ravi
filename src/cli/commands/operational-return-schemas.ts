@@ -1038,32 +1038,98 @@ export const commandIssueReturnSchema = z
   })
   .passthrough();
 
-export const commandRecordReturnSchema = z
-  .object({
-    id: z.string(),
-    token: z.string(),
-    title: z.string().nullable(),
-    description: z.string().nullable(),
-    argumentHint: z.string().nullable(),
-    arguments: z.array(z.unknown()),
-    disabled: z.boolean(),
-    scope: z.string(),
-    path: z.string(),
-    relativePath: z.string(),
-    shadowedBy: z.string().nullable(),
-    shadows: z.array(z.string()),
-    issues: z.array(commandIssueReturnSchema),
-  })
-  .passthrough();
+const commandRecordReturnShape = {
+  id: z.string(),
+  token: z.string(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  argumentHint: z.string().nullable(),
+  arguments: z.array(z.unknown()),
+  disabled: z.boolean(),
+  scope: z.string(),
+  path: z.string(),
+  relativePath: z.string(),
+  shadowedBy: z.string().nullable(),
+  shadows: z.array(z.string()),
+  issues: z.array(commandIssueReturnSchema),
+};
 
-export const commandsListReturnSchema = pagedItemsReturnSchema
-  .extend({
-    agent: looseObjectSchema,
-    locations: looseObjectSchema,
-    commands: z.array(commandRecordReturnSchema),
-    issues: z.array(commandIssueReturnSchema),
+export const commandRecordReturnSchema = z.object(commandRecordReturnShape).passthrough();
+
+const commandsListIssueReturnSchema = z
+  .object({
+    level: z.enum(["error", "warning"]),
+    code: z.string(),
+    message: z.string(),
+    id: z.string().nullable(),
+    scope: z.string().nullable(),
+    path: z.string().nullable(),
   })
-  .passthrough();
+  .strict()
+  .meta({ title: "CommandsListIssue" });
+
+const commandsListItemShape = {
+  id: z.string(),
+  token: z.string(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  argumentHint: z.string().nullable(),
+  arguments: z.array(z.string()),
+  disabled: z.boolean(),
+  scope: z.string(),
+  path: z.string(),
+  relativePath: z.string(),
+  shadowedBy: z.string().nullable(),
+  shadows: z.array(z.string()),
+  issues: z.array(commandsListIssueReturnSchema),
+};
+
+const commandsListItemSubsetSchema = z.object(commandsListItemShape).partial().strict();
+const commandsListItemFields = new Set(Object.keys(commandsListItemShape));
+const projectedCommandRecordVariants = Object.entries(commandsListItemShape).map(([requiredKey, schema]) =>
+  z.object({ [requiredKey]: schema }).passthrough(),
+);
+const projectedCommandRecordReturnSchema = z
+  .intersection(
+    commandsListItemSubsetSchema,
+    z.union(projectedCommandRecordVariants as unknown as [ZodTypeAny, ZodTypeAny, ...ZodTypeAny[]]),
+  )
+  .superRefine((record, context) => {
+    const unknownFields = Object.keys(record).filter((field) => !commandsListItemFields.has(field));
+    if (unknownFields.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: `Unrecognized projected command fields: ${unknownFields.join(", ")}`,
+      });
+    }
+  })
+  .meta({ title: "CommandsListItem" });
+
+const commandsListAgentReturnSchema = z
+  .object({ id: z.string(), cwd: z.string() })
+  .strict()
+  .meta({ title: "CommandsListAgent" });
+const commandsListLocationsReturnSchema = z
+  .object({ agent: z.string().nullable(), global: z.string() })
+  .strict()
+  .meta({ title: "CommandsListLocations" });
+const commandsListFiltersReturnSchema = z.object({ tag: z.string() }).strict().meta({ title: "CommandsListFilters" });
+const commandsListPaginationReturnSchema = strictCliOffsetPaginationSchema
+  .strict()
+  .meta({ title: "CommandsListPagination" });
+
+export const commandsListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: commandsListPaginationReturnSchema,
+    filters: commandsListFiltersReturnSchema.optional(),
+    agent: commandsListAgentReturnSchema,
+    locations: commandsListLocationsReturnSchema,
+    items: z.array(projectedCommandRecordReturnSchema),
+    commands: z.array(projectedCommandRecordReturnSchema),
+    issues: z.array(commandsListIssueReturnSchema),
+  })
+  .strict();
 
 export const commandShowReturnSchema = z
   .object({
@@ -2672,32 +2738,161 @@ export const toolInvokeReturnSchema = z
   })
   .strict();
 
-export const routesListReturnSchema = pagedItemsReturnSchema
+const routeRecordShape = {
+  id: z.number(),
+  pattern: z.string(),
+  accountId: z.string(),
+  agent: z.string(),
+  priority: z.number(),
+  policy: z.string().optional(),
+  session: z.string().optional(),
+  channel: z.string().optional(),
+  dmScope: z.enum(["main", "per-peer", "per-channel-peer", "per-account-channel-peer"]).optional(),
+};
+
+const routeRecordReturnSchema = z.object(routeRecordShape).strict().meta({ title: "RoutesRouteRecord" });
+
+const routesTagBindingReturnSchema = agentTagBindingReturnSchema.meta({ title: "RoutesTagBinding" });
+
+const routeWithTagsReturnSchema = routeRecordReturnSchema
   .extend({
-    instance: z.string().nullable(),
-    filter: looseObjectSchema,
-    routes: z.array(looseObjectSchema),
+    tags: z.array(routesTagBindingReturnSchema),
   })
-  .passthrough();
+  .strict()
+  .meta({ title: "RoutesRouteWithTags" });
+
+const routeProjectionShape = {
+  ...routeRecordShape,
+  policy: z.string().nullable().optional(),
+  tags: z.array(routesTagBindingReturnSchema),
+};
+const routeProjectionSubsetSchema = z.object(routeProjectionShape).partial().strict();
+const routeProjectionFields = new Set(Object.keys(routeProjectionShape));
+const projectedRouteRecordVariants = Object.entries(routeProjectionShape).map(([requiredKey, schema]) => {
+  const requiredSchema = schema instanceof z.ZodOptional ? schema.unwrap() : schema;
+  return z.object({ [requiredKey]: requiredSchema }).passthrough();
+});
+const routeProjectionReturnSchema = z
+  .intersection(
+    routeProjectionSubsetSchema,
+    z.union(projectedRouteRecordVariants as unknown as [ZodTypeAny, ZodTypeAny, ...ZodTypeAny[]]),
+  )
+  .superRefine((record, context) => {
+    const unknownFields = Object.keys(record).filter((field) => !routeProjectionFields.has(field));
+    if (unknownFields.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: `Unrecognized projected route fields: ${unknownFields.join(", ")}`,
+      });
+    }
+  })
+  .meta({ title: "RoutesListItem" });
+
+const routesListFilterReturnSchema = z
+  .object({
+    tagSlug: z.string().nullable(),
+  })
+  .strict()
+  .meta({ title: "RoutesListFilter" });
+
+const routesListPaginationReturnSchema = strictCliOffsetPaginationSchema
+  .strict()
+  .meta({ title: "RoutesListPagination" });
+
+export const routesListReturnSchema = z
+  .object({
+    instance: z.string().nullable(),
+    filter: routesListFilterReturnSchema,
+    total: z.number(),
+    pagination: routesListPaginationReturnSchema,
+    items: z.array(routeProjectionReturnSchema),
+    routes: z.array(routeProjectionReturnSchema),
+  })
+  .strict();
 
 export const routeShowReturnSchema = z
   .object({
     instance: z.string(),
     pattern: z.string(),
-    route: looseObjectSchema,
+    route: routeWithTagsReturnSchema,
   })
-  .passthrough();
+  .strict();
+
+const cliRuntimeTargetReturnSchema = z
+  .object({
+    cliExecPath: z.string().nullable(),
+    cliBundlePath: z.string().nullable(),
+    dbPath: z.string(),
+    daemon: z
+      .object({
+        online: z.boolean(),
+        execPath: z.string().nullable(),
+        cwd: z.string().nullable(),
+        matchesCli: z.boolean().nullable(),
+      })
+      .strict()
+      .meta({ title: "RoutesRuntimeDaemon" }),
+    instance: z
+      .object({
+        name: z.string(),
+        exists: z.boolean(),
+        enabled: z.boolean(),
+        instanceId: z.string().nullable(),
+        channel: z.string().nullable(),
+        affectsLiveMain: z.boolean(),
+      })
+      .strict()
+      .meta({ title: "RoutesRuntimeInstance" })
+      .nullable(),
+  })
+  .strict()
+  .meta({ title: "RoutesRuntimeTarget" });
+
+const routeExplainOriginReturnSchema = z
+  .object({
+    kind: z.literal("config_simulation"),
+    source: z.literal("router-config-db"),
+    freshness: z.literal("persisted-at-read-time"),
+    daemonObserved: z.literal(false),
+    limitation: z.string(),
+  })
+  .strict()
+  .meta({ title: "RoutesExplainOrigin" });
+
+const routeExplainResolutionReturnSchema = z
+  .object({
+    matchedBy: z.enum(["exact", "equivalent"]).nullable(),
+    canonicalPattern: z.string().nullable(),
+    targetKind: z.enum(["group", "phone", "lid", "thread", "literal", "glob"]),
+  })
+  .strict()
+  .meta({ title: "RoutesExplainResolution" });
+
+const routeExplainLiveEffectReturnSchema = z
+  .object({
+    status: z.enum(["verified", "different_winner", "matched", "unresolved", "skipped_broad_pattern"]),
+    verified: z.boolean(),
+    reason: z.string(),
+    canonicalPattern: z.string().nullable(),
+    targetKind: z.enum(["group", "phone", "lid", "thread", "literal", "glob"]),
+    winningPattern: z.string().nullable(),
+    winningAgent: z.string().nullable(),
+  })
+  .strict()
+  .meta({ title: "RoutesExplainLiveEffect" });
 
 export const routeExplainReturnSchema = z
   .object({
-    target: looseObjectSchema,
+    target: cliRuntimeTargetReturnSchema,
     instance: z.string(),
     pattern: z.string().nullable(),
     channel: z.string().nullable(),
-    configuredRoute: looseObjectOrNullSchema,
-    liveEffect: looseObjectOrNullSchema,
+    origin: routeExplainOriginReturnSchema,
+    resolution: routeExplainResolutionReturnSchema.nullable(),
+    configuredRoute: routeRecordReturnSchema.nullable(),
+    liveEffect: routeExplainLiveEffectReturnSchema.nullable(),
   })
-  .passthrough();
+  .strict();
 
 const sessionGoalObjectSchema = z
   .object({

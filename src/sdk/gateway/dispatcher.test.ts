@@ -20,6 +20,13 @@ const rejectedSensitiveInput = z.string().superRefine((value, ctx) => {
 
 @Group({ name: "demo", description: "Gateway demo commands", scope: "open" })
 class GatewayDemoCommands {
+  @Command({ name: "quiet", description: "Inspect without audit transport" })
+  @CommandAccess({ kind: "read", resource: "demo", action: "quiet", risk: "low", input: ["name"], audit: "none" })
+  @Returns(z.object({ name: z.string() }))
+  quiet(@Arg("name") name: string) {
+    return { name };
+  }
+
   @Command({ name: "negated", description: "Expose negated flag presence" })
   @CommandAccess({ kind: "read", resource: "demo", action: "negated", risk: "low", input: ["noCache"] })
   @Returns(z.object({ noCache: z.boolean() }))
@@ -119,7 +126,13 @@ class GatewayDemoCommands {
   @Returns(
     z
       .object({
-        items: z.array(z.object({ id: z.string(), label: z.string() }).strict()),
+        items: z.array(
+          z
+            .object({ id: z.string(), label: z.string() })
+            .partial()
+            .strict()
+            .refine((record) => Object.keys(record).length > 0),
+        ),
       })
       .strict(),
   )
@@ -566,7 +579,7 @@ describe("dispatch — validation", () => {
     });
   });
 
-  it("validates full projected rows while serializing only requested fields", async () => {
+  it("validates the honest projected row after serialization", async () => {
     const result = await dispatch(findCmd("demo.fields"), { fields: "id" }, {}, { contextRecord: demoContext });
 
     expect(result.response.status).toBe(200);
@@ -887,6 +900,31 @@ describe("dispatch — scope and superadmin gating", () => {
 });
 
 describe("dispatch — audit", () => {
+  it("skips the audit transport for audit:none on success, usage error, and denial", async () => {
+    const audits = captureAudits();
+    const success = await dispatch(
+      findCmd("demo.quiet"),
+      { name: "visible" },
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+    const usage = await dispatch(findCmd("demo.quiet"), {}, {}, { emitAudit: audits.emit });
+    const denied = await dispatch(
+      findCmd("demo.quiet"),
+      { name: "blocked" },
+      {},
+      { contextRecord: gatewayContext([], "quiet-denied"), emitAudit: audits.emit },
+    );
+
+    expect(success.response.status).toBe(200);
+    expect(usage.response.status).toBe(400);
+    expect(denied.response.status).toBe(403);
+    expect(success.audit).toBeNull();
+    expect(usage.audit).toBeNull();
+    expect(denied.audit).toBeNull();
+    expect(audits.events).toEqual([]);
+  });
+
   it("emits exactly one audit per request, with tool=<group>_<command>", async () => {
     const audits = captureAudits();
     await dispatch(findCmd("demo.echo"), { name: "x" }, {}, { contextRecord: demoContext, emitAudit: audits.emit });

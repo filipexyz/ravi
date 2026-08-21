@@ -1,161 +1,87 @@
 ---
 name: routes-manager
 description: |
-  Gerencia rotas de mensagens do Ravi. Use quando o usuário quiser:
-  - Criar, listar ou remover rotas
-  - Direcionar contatos/grupos/threads para agents específicos
-  - Configurar prioridade, policy e dmScope de rotas
-  - Ver qual agent atende qual padrão
+  Consulta e gerencia rotas do Ravi. Use para listar, mostrar ou explicar rotas
+  pela fachada somente de leitura e também para criar, ajustar, remover ou
+  restaurar rotas pelo grupo legado de mutação.
 ---
 
 # Routes Manager
 
-Rotas direcionam mensagens para agents baseado em padrões. São sempre gerenciadas via `ravi instances routes <name>` — rotas pertencem a uma instância.
-
-## Contrato Do CLI
-
-Rode com `--json` sempre que for decidir programaticamente. Com `--json`, falha sai em envelope `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`.
-
-Taxonomia de saída:
-
-- `0` sucesso.
-- `1` erro de execução (ex.: `ROUTE_NOT_FOUND`, `INSTANCE_NOT_FOUND`). O envelope traz `suggestions` com patterns/instâncias reais parecidos — consulte antes de concluir "não existe".
-- `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
-- `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` (pattern + instância + agent) com exatamente o que seria feito. Revise o plano e repita com `--execute`.
-
-Todas as escritas de rota gravam na hora, sem dry-run: `instances routes add`, `instances routes set`, `instances routes remove` e `instances routes restore`. Nessas o freio é você: confira instância, pattern e agent antes de rodar.
-
-Compact mode: `routes list` aceita `--fields a,b,c` (ex.: `--fields pattern,agent,priority`) — use em varredura para não arrastar o objeto inteiro de cada rota.
-
-Help por operação: `ravi routes <op> --help` e `ravi instances routes <op> --help` são enxutos; prefira-os ao help do domínio inteiro.
-
-Checklist antes de responder sobre rotas:
-
-- Tratei exit 3 como freio (revisei o `plan`) e não como falha?
-- Consultei `suggestions` do envelope antes de declarar not-found?
-
-## Comandos
-
-### Listar rotas
-```bash
-ravi instances routes list <name>
-```
-
-### Ver detalhes
-```bash
-ravi instances routes show <name> <pattern>
-```
-
-### Adicionar rota
-```bash
-ravi instances routes add <name> <pattern> <agent>
-ravi instances routes add vendas "5511*" vendas-agent --priority 10
-ravi instances routes add vendas "group:123456" suporte --policy closed
-ravi instances routes add vendas "*" main --channel whatsapp   # só pra um canal
-```
-
-Exemplos de padrões:
-- `5511*` - Todos com DDD 11
-- `*999*` - Números contendo 999
-- `group:123456` - Grupo específico do WhatsApp
-- `thread:abc123` - Thread específica dentro de um grupo
-- `*` - Catch-all (fallback)
-
-### Remover rota (soft-delete, recuperável)
-```bash
-ravi instances routes remove <name> <pattern>            # soft-delete imediato
-ravi instances routes restore <name> <pattern>   # recuperar
-ravi instances routes deleted [name]             # ver deletadas
-```
-
-### Configurar propriedades
-```bash
-ravi instances routes set <name> <pattern> <key> <value>
-```
-
-Keys disponíveis:
-- `agent` - Agent ID alvo
-- `priority` - Prioridade (maior = mais prioritário)
-- `dmScope` - Escopo de DM (main, per-peer, per-channel-peer, per-account-channel-peer)
-- `session` - Nome fixo de sessão (bypassa auto-geração)
-- `policy` - Policy override (open, pairing, closed, allowlist)
-- `channel` - Limitar a canal específico (whatsapp, telegram, etc). `-` pra limpar.
-
-## Prioridade de Resolução
-
-1. Rota `thread:ID` (mais específica — thread dentro de grupo)
-2. Rota `group:ID` ou padrão de grupo
-3. Rota por telefone/padrão
-4. Mapeamento agent da instância (`ravi instances set <name> agent <agent>`)
-5. Agent default
-
-Dentro do mesmo nível: rotas com `channel` específico ganham de rotas sem channel, depois desempata por `priority` DESC.
-
-## Herança de Policy
-
-```
-route.policy → instance.dmPolicy/groupPolicy → "open"
-```
-
-## Exemplos
-
-Rotear grupo para agent especializado:
-```bash
-ravi instances routes add main "group:120363123456789" projeto-x
-```
-
-Rotear thread específica dentro de um grupo:
-```bash
-ravi instances routes add main "thread:msg-abc123" suporte-vip
-```
-
-Rotear todos de SP para agent:
-```bash
-ravi instances routes add main "5511*" vendas
-```
-
-Definir política restrita em rota específica:
-```bash
-ravi instances routes set main "group:123456" policy closed
-```
-
-Definir fallback:
-```bash
-ravi instances routes add main "*" main
-```
-
-## Route vs Attach
-
-Route e attach (`sessions/attach`) operam em camadas diferentes — confundi-las leva a comportamento inesperado.
-
-| Camada | Define | Resultado |
-|--------|--------|-----------|
-| **Route** | Qual *agent* atende o chat | matchRoute escolhe agent, session_key é derivado de (agent, channel, instance, dmScope, peer). Cada combinação vira sessão própria. |
-| **Attach** (`sessions attach`) | Qual chat fica ligado a uma sessão já escolhida | Seleciona output target da sessão e cria subscription para o chat, mas não cria nem corrige route. |
-
-**Regra crítica:** `sessions attach` pressupõe que o chat já está chegando no agent correto. Se a rota ainda aponta para outro agent, para o default da instância, ou não existe, configure `ravi instances routes add` primeiro. Para usar uma sessão canônica específica desde a route, use `--session <name>`.
+`ravi routes` é uma fachada somente de leitura. Ela oferece três operações:
 
 ```bash
-# Chat novo que deve ir para agent dev e sessão dev
-ravi instances routes add main "group:<id>" dev --session dev --priority 10
-
-# Depois, se necessário, ajustar fala/output da sessão no chat
-ravi sessions attach dev --chat <chat-id> --reason "unificar chat na sessão dev"
+ravi routes list [instance] --json
+ravi routes show <instance> <stored-pattern> --json
+ravi routes explain <instance> <concrete-target> --json
 ```
 
-**Cuidado com a interação:**
+## Regras de operação
 
-- Se um chat tem subscription ativa (atachado a sessão X), o consumer **ignora** o agent escolhido pela route e dispatcha pra sessão X. A route não troca o destino sozinha.
-- Inbound-route bookkeeping pode criar subscription, mas não deve mudar o output target escolhido por `sessions attach`.
-- `routes add` faz cleanup automático de sessões conflitantes (apaga sessão paralela do agent antigo e libera o chat). Quando isso roda, a próxima inbound segue a nova route normalmente.
-- `routes add ... --session <name>` (redirect estático) força a sessão alvo e cria subscription automaticamente — é o caminho certo quando o requisito já é "este chat deve cair nesta sessão".
+- Use `list` para descobrir rotas e siga `pagination.nextCommand` enquanto
+  `hasMore` for verdadeiro.
+- Use `show` com o pattern exatamente como foi gravado.
+- Use `explain` para aceitar formatos concretos equivalentes. Por exemplo,
+  `group:X` e `X@g.us` representam o mesmo grupo; números e `phone:+X` também
+  compartilham a forma canônica usada pelo resolvedor.
+- Um glob como `5511*` não é um alvo concreto. Se o resultado for
+  `skipped_broad_pattern`, forneça um número concreto para simular; nunca trate
+  esse estado como prova de ausência.
+- Leia `origin` antes do veredito. `kind:config_simulation` e
+  `daemonObserved:false` significam que a configuração persistida foi
+  simulada, mas a memória atual do daemon não foi consultada.
+- Se houver `ROUTE_PATTERN_AMBIGUOUS`, escolha explicitamente um dos patterns
+  gravados em `suggestions`; não selecione por ordem ou semelhança.
+- Se `--channel` for inválido, corrija usando `acceptedChannels`. Se houver
+  `ROUTE_CHANNEL_AMBIGUOUS`, repita com uma das grafias exatas em `suggestions`;
+  não escolha por ordem nem normalize silenciosamente.
 
-**Quando usar cada um:**
+## Projeção e paginação
 
-- "Quero outro agent atendendo esse chat, com histórico próprio" → `routes add`
-- "Quero a MESMA sessão em um chat cuja route já está correta" → `sessions attach`
-- "Quero a MESMA sessão em um chat novo ou com route errada" → `routes add ... --session <name>` e depois `sessions attach` apenas se precisar ajustar fala/output
+`routes list --fields pattern,agent,channel --json` reduz cada item. Campos
+aceitos: `id`, `accountId`, `pattern`, `agent`, `priority`, `policy`, `session`,
+`channel`, `dmScope` e `tags`. Campo desconhecido é erro de uso, inclusive
+quando não há rotas.
 
-Focus foi removido: `attach` é o primitive que escolhe o chat de output da sessão; não é substituto de route. Ver skill `ravi-system:sessions` (seção Attach) pras receitas práticas e diagrama de fluxo.
+Limite máximo: 500. Limite inválido ou maior que o máximo falha; não existe
+redução silenciosa. Para consumidores novos, `items` é a coleção canônica;
+`routes` permanece como alias de compatibilidade.
 
-Para gerenciar contacts: use a skill `ravi-system:contacts`
+## Erros e parada
+
+- Exit `0`: leitura concluída.
+- Exit `1`: alvo ausente, ambíguo ou falha de execução. Leia `error.code`,
+  `suggestions` e `suggestedAction`.
+- Exit `2`: entrada inválida. Corrija campos, paginação ou canal antes de
+  tentar novamente.
+
+## Alterações de configuração
+
+As leituras ficam na fachada `ravi routes`; as alterações continuam no grupo
+legado `ravi instances routes`. Elas gravam imediatamente e não usam
+`--execute`, portanto confirme instância, pattern, agent e canal antes de rodar:
+
+```bash
+ravi instances routes add <instance> <pattern> <agent> [--priority <n>]
+ravi instances routes set <instance> <pattern> <key> <value>
+ravi instances routes remove <instance> <pattern>
+ravi instances routes restore <instance> <pattern>
+ravi instances routes deleted [instance]
+```
+
+Chaves aceitas por `set`: `agent`, `priority`, `dmScope`, `session`, `policy` e
+`channel`; use `-` para limpar o canal. `remove` é recuperável por `restore`.
+Não transforme automaticamente um `not-found`, uma ambiguidade ou uma
+simulação inconclusiva em escrita: primeiro descubra os valores reais e peça a
+confirmação exigida pelo contexto da operação.
+
+## Prioridade e sessões
+
+A resolução tenta primeiro `thread:ID`, depois grupo, telefone/glob, o agent da
+instância e, por último, o agent padrão. Dentro do mesmo nível, canal específico
+vence canal genérico e prioridade maior vence prioridade menor.
+
+`route` escolhe qual agent recebe o chat; `sessions attach` liga um chat a uma
+sessão já escolhida. Se a rota aponta para o agent errado, corrija a rota antes
+de usar `attach`. Para direcionar desde a rota a uma sessão canônica, use
+`instances routes add ... --session <name>`.

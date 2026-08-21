@@ -8952,6 +8952,54 @@ export function dbListAgents(): AgentConfig[] {
   return rows.map(rowToAgent);
 }
 
+export interface ReadOnlyAgentDirectorySnapshot {
+  defaultAgent: string;
+  agents: Array<Pick<AgentConfig, "id" | "cwd">>;
+}
+
+/**
+ * Read only the agent identity and cwd needed by discovery-only CLI domains.
+ *
+ * This deliberately bypasses getDb(): it must not create the state directory,
+ * initialize schema, enable WAL, run migrations, or mutate durable DB/WAL
+ * bytes. SQLite may update its ephemeral -shm coordination index while a WAL
+ * writer is active. Missing legacy tables are represented as an empty snapshot.
+ */
+export function dbReadAgentDirectorySnapshot(): ReadOnlyAgentDirectorySnapshot {
+  const dbPath = resolveDbPath();
+  if (!existsSync(dbPath)) return { defaultAgent: "main", agents: [] };
+
+  const database = new Database(dbPath, { readonly: true, create: false });
+  try {
+    database.exec("PRAGMA busy_timeout = 1000");
+    const tables = new Set(
+      (
+        database
+          .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('agents', 'settings')")
+          .all() as Array<{
+          name: string;
+        }>
+      ).map((row) => row.name),
+    );
+    const agents = tables.has("agents")
+      ? (database.prepare("SELECT id, cwd FROM agents ORDER BY id ASC").all() as Array<{
+          id: string;
+          cwd: string;
+        }>)
+      : [];
+    const defaultAgent = tables.has("settings")
+      ? ((
+          database.prepare("SELECT value FROM settings WHERE key = 'defaultAgent'").get() as
+            | { value: string }
+            | undefined
+        )?.value?.trim() ?? "main")
+      : "main";
+    return { defaultAgent: defaultAgent || "main", agents };
+  } finally {
+    database.close();
+  }
+}
+
 /**
  * Update an existing agent
  */

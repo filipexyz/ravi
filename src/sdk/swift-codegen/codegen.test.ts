@@ -1,7 +1,17 @@
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
+import {
+  commandsListReturnSchema,
+  routeExplainReturnSchema,
+  routeShowReturnSchema,
+  routesListReturnSchema,
+} from "../../cli/commands/operational-return-schemas.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { compareSwiftSdkSource, computeRegistryHash, emitAllSwift } from "./index.js";
 import { jsonSchemaToSwift } from "./json-schema-to-swift.js";
@@ -18,6 +28,19 @@ class ArtifactsCommands {
   @Returns.binary()
   blob(@Arg("id") _id: string) {
     return new Response("x");
+  }
+
+  @Command({ name: "nullable", description: "Exercise nullable return fields" })
+  @Returns(
+    z.object({
+      requiredNullable: z.string().nullable(),
+      optionalNullable: z.string().nullable().optional(),
+      optionalValue: z.string().optional(),
+      requiredValue: z.string(),
+    }),
+  )
+  nullable() {
+    return { requiredNullable: null, requiredValue: "x" };
   }
 }
 
@@ -100,6 +123,36 @@ class CollisionCommands {
   }
 }
 
+@Group({ name: "commands", description: "Ravi commands", scope: "open" })
+class CommandsContractCommands {
+  @Command({ name: "list", description: "List Ravi commands" })
+  @Returns(commandsListReturnSchema)
+  list() {
+    return {};
+  }
+}
+
+@Group({ name: "routes", description: "Read-only Ravi routes", scope: "admin" })
+class RoutesContractCommands {
+  @Command({ name: "list", description: "List routes" })
+  @Returns(routesListReturnSchema)
+  list() {
+    return {};
+  }
+
+  @Command({ name: "show", description: "Show one route" })
+  @Returns(routeShowReturnSchema)
+  show() {
+    return {};
+  }
+
+  @Command({ name: "explain", description: "Explain route resolution" })
+  @Returns(routeExplainReturnSchema)
+  explain() {
+    return {};
+  }
+}
+
 const FIXED_VERSION = {
   sdkVersion: "9.9.9",
   registryHash: "sha256:fixed",
@@ -166,11 +219,178 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.client).toContain("return try await transport.callBinary");
   });
 
+  it("emits typed commands projection models without RaviJSON", () => {
+    const output = emitAllSwift(buildRegistry([CommandsContractCommands]), { version: FIXED_VERSION });
+
+    expect(output.types).toContain("public struct CommandsListItem: Codable, Sendable");
+    expect(output.types).toContain("public var arguments: [String]?");
+    expect(output.types).toContain("public var issues: [CommandsListIssue]?");
+    expect(output.types).toContain("CommandsListItem requires at least one field.");
+    expect(output.types).toContain("CommandsListItem contains an unknown field.");
+    expect(output.types).toContain("public var items: [CommandsListItem]");
+    expect(output.types).toContain("public var agent: CommandsListAgent");
+    expect(output.types).not.toContain("RaviJSON");
+  });
+
+  it("emits typed non-empty route projections and concrete nested route models", () => {
+    const output = emitAllSwift(buildRegistry([RoutesContractCommands]), { version: FIXED_VERSION });
+
+    expect(output.types).toContain("public struct RoutesListItem: Codable, Sendable");
+    expect(output.types).toContain("RoutesListItem requires at least one field.");
+    expect(output.types).toContain("RoutesListItem contains an unknown field.");
+    expect(output.types).toContain("public var items: [RoutesListItem]");
+    expect(output.types).toContain("public var routes: [RoutesListItem]");
+    expect(output.types).toContain("public var policy: String?");
+    expect(output.types).toContain('self._raviPresentKeys.contains("policy")');
+    expect(output.types).toContain("try container.encodeNil(forKey: .policy)");
+    expect(output.types).toContain("public struct RoutesRouteWithTags: Codable, Sendable");
+    expect(output.types).toContain("public var route: RoutesRouteWithTags");
+    expect(output.types).toContain("public var origin: RoutesExplainOrigin");
+    expect(output.types).toContain("public var liveEffect: RoutesExplainLiveEffect?");
+    expect(output.types).toContain("guard container.contains(.liveEffect) else {");
+    expect(output.types).toContain("try container.encodeNil(forKey: .liveEffect)");
+    expect(output.types).toContain("guard container.contains(.channel) else {");
+    expect(output.types).toContain("try container.encodeNil(forKey: .channel)");
+  });
+
+  it("round-trips a selected null route policy when a Swift compiler is available", () => {
+    const output = emitAllSwift(buildRegistry([RoutesContractCommands]), { version: FIXED_VERSION });
+    const codingKeyMarker = "private struct RaviGeneratedCodingKey: CodingKey {";
+    const codingKeyStart = output.types.indexOf(codingKeyMarker);
+    const codingKeyEnd = output.types.indexOf("\n\npublic ", codingKeyStart + codingKeyMarker.length);
+    const routeMarker = "public struct RoutesListItem: Codable, Sendable {";
+    const routeStart = output.types.indexOf(routeMarker);
+    const routeEnd = output.types.indexOf("\n\npublic ", routeStart + routeMarker.length);
+
+    expect(codingKeyStart).toBeGreaterThanOrEqual(0);
+    expect(codingKeyEnd).toBeGreaterThan(codingKeyStart);
+    expect(routeStart).toBeGreaterThanOrEqual(0);
+    expect(routeEnd).toBeGreaterThan(routeStart);
+
+    const compilerProbe = spawnSync("swiftc", ["--version"], { encoding: "utf8" });
+    if (compilerProbe.status !== 0) return;
+
+    const directory = mkdtempSync(join(tmpdir(), "ravi-swift-route-policy-"));
+    const sourcePath = join(directory, "main.swift");
+    const executablePath = join(directory, process.platform === "win32" ? "roundtrip.exe" : "roundtrip");
+    const source = `import Foundation
+
+${output.types.slice(codingKeyStart, codingKeyEnd)}
+
+public struct RoutesTagBinding: Codable, Sendable {}
+
+${output.types.slice(routeStart, routeEnd)}
+
+let decoder = JSONDecoder()
+do {
+  _ = try decoder.decode(RoutesListItem.self, from: Data(#"{}"#.utf8))
+  fatalError("empty route projection was accepted")
+} catch DecodingError.dataCorrupted(_) {
+  // Expected: a projected route must contain at least one selected field.
+}
+
+let decodedNull = try decoder.decode(RoutesListItem.self, from: Data(#"{"policy":null}"#.utf8))
+let encodedNull = try JSONEncoder().encode(decodedNull)
+let nullObject = try JSONSerialization.jsonObject(with: encodedNull) as! [String: Any]
+guard nullObject["policy"] is NSNull else { fatalError("selected null policy was omitted") }
+guard !nullObject.isEmpty else { fatalError("selected null policy became an empty object") }
+
+let decodedPattern = try decoder.decode(RoutesListItem.self, from: Data(#"{"pattern":"5511*"}"#.utf8))
+let encodedPattern = try JSONEncoder().encode(decodedPattern)
+let patternObject = try JSONSerialization.jsonObject(with: encodedPattern) as! [String: Any]
+guard patternObject["pattern"] as? String == "5511*" else { fatalError("pattern changed") }
+guard patternObject["policy"] == nil else { fatalError("absent policy was emitted") }
+`;
+
+    try {
+      writeFileSync(sourcePath, source, "utf8");
+      const compilation = spawnSync("swiftc", [sourcePath, "-o", executablePath], { encoding: "utf8" });
+      if (compilation.status !== 0) {
+        throw new Error(`swiftc failed:\n${compilation.stdout}\n${compilation.stderr}`);
+      }
+      const execution = spawnSync(executablePath, [], { encoding: "utf8" });
+      if (execution.status !== 0) {
+        throw new Error(`Swift route policy round-trip failed:\n${execution.stdout}\n${execution.stderr}`);
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
   it("emits Swift return structs for top-level object schemas", () => {
     const { output } = emitMockSwiftSdk();
     expect(output.types).toContain("public struct ArtifactsShowReturn: Codable, Sendable");
     expect(output.types).toContain("public var id: String");
     expect(output.types).toContain("public var links: [RaviJSON]");
+  });
+
+  it("distinguishes required nullable return keys from truly optional keys", () => {
+    const { output } = emitMockSwiftSdk();
+
+    expect(output.types).toContain("public var requiredNullable: String?");
+    expect(output.types).toContain("guard container.contains(.requiredNullable) else {");
+    expect(output.types).toContain(
+      "self.requiredNullable = try container.decodeIfPresent(String.self, forKey: .requiredNullable)",
+    );
+    expect(output.types).toContain("try container.encodeNil(forKey: .requiredNullable)");
+    expect(output.types).not.toContain("guard container.contains(.optionalNullable) else {");
+    expect(output.types).not.toContain("guard container.contains(.optionalValue) else {");
+    expect(output.types).toContain("try container.encodeIfPresent(self.optionalNullable, forKey: .optionalNullable)");
+    expect(output.types).toContain("try container.encodeIfPresent(self.optionalValue, forKey: .optionalValue)");
+  });
+
+  it("round-trips required nullable keys when a Swift compiler is available", () => {
+    const { output } = emitMockSwiftSdk();
+    const marker = "public struct ArtifactsNullableReturn: Codable, Sendable {";
+    const start = output.types.indexOf(marker);
+    const end = output.types.indexOf("\n\npublic ", start + marker.length);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const generatedStruct = output.types.slice(start, end);
+
+    const compilerProbe = spawnSync("swiftc", ["--version"], { encoding: "utf8" });
+    if (compilerProbe.status !== 0) return;
+
+    const directory = mkdtempSync(join(tmpdir(), "ravi-swift-nullable-"));
+    const sourcePath = join(directory, "main.swift");
+    const executablePath = join(directory, process.platform === "win32" ? "roundtrip.exe" : "roundtrip");
+    const source = `import Foundation
+
+${generatedStruct}
+
+let decoder = JSONDecoder()
+do {
+  _ = try decoder.decode(ArtifactsNullableReturn.self, from: Data(#"{"requiredValue":"x"}"#.utf8))
+  fatalError("missing requiredNullable was accepted")
+} catch DecodingError.keyNotFound(_, _) {
+  // Expected: a required nullable key must still be present.
+}
+
+let decoded = try decoder.decode(
+  ArtifactsNullableReturn.self,
+  from: Data(#"{"requiredNullable":null,"requiredValue":"x"}"#.utf8)
+)
+guard decoded.requiredNullable == nil else { fatalError("null did not decode as nil") }
+let encoded = try JSONEncoder().encode(decoded)
+let object = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+guard object["requiredNullable"] is NSNull else { fatalError("required null key was omitted") }
+guard object["optionalNullable"] == nil else { fatalError("optional absent key was emitted") }
+guard object["optionalValue"] == nil else { fatalError("optional absent value was emitted") }
+`;
+
+    try {
+      writeFileSync(sourcePath, source, "utf8");
+      const compilation = spawnSync("swiftc", [sourcePath, "-o", executablePath], { encoding: "utf8" });
+      if (compilation.status !== 0) {
+        throw new Error(`swiftc failed:\n${compilation.stdout}\n${compilation.stderr}`);
+      }
+      const execution = spawnSync(executablePath, [], { encoding: "utf8" });
+      if (execution.status !== 0) {
+        throw new Error(`Swift round-trip failed:\n${execution.stdout}\n${execution.stderr}`);
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("disambiguates property names that normalize to the same Swift identifier", () => {
@@ -248,6 +468,17 @@ describe("swift-codegen :: emitAllSwift", () => {
 });
 
 describe("swift-codegen :: jsonSchemaToSwift", () => {
+  it("preserves a concrete named type through a nullable union", () => {
+    expect(
+      jsonSchemaToSwift({
+        anyOf: [
+          { type: "object", title: "RoutesExplainLiveEffect", properties: { verified: { type: "boolean" } } },
+          { type: "null" },
+        ],
+      }),
+    ).toBe("RoutesExplainLiveEffect");
+  });
+
   it("keeps JSON Schema enums in valid Swift scalar types", () => {
     expect(jsonSchemaToSwift({ enum: ["active", "paused"] })).toBe("String");
     expect(jsonSchemaToSwift({ enum: [1, 2] })).toBe("Int");

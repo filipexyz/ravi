@@ -95,6 +95,7 @@ export function loadRouterConfig(): RouterConfig {
       session: r.session,
       priority: r.priority,
       policy: r.policy,
+      channel: r.channel,
     })),
     defaultAgent: getDefaultAgentId(),
     defaultDmScope: getDefaultDmScope(),

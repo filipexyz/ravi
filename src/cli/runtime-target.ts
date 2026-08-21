@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { realpathSync } from "node:fs";
-import { getRaviDbPath, dbGetInstance } from "../router/router-db.js";
+import { getRaviDbPath, dbGetInstance, type InstanceConfig } from "../router/router-db.js";
 
 type DaemonRuntimeInfo = {
   online: boolean;
@@ -95,10 +95,18 @@ function readDaemonRuntimeInfo(): DaemonRuntimeInfo {
 export function inspectCliRuntimeTarget(instanceName?: string | null): CliRuntimeTargetSummary {
   const instance = instanceName ? dbGetInstance(instanceName) : null;
 
+  return inspectCliRuntimeTargetSnapshot(instanceName, instance, getRaviDbPath());
+}
+
+export function inspectCliRuntimeTargetSnapshot(
+  instanceName: string | null | undefined,
+  instance: InstanceConfig | null | undefined,
+  dbPath: string,
+): CliRuntimeTargetSummary {
   return {
     cliExecPath: safeRealpath(process.env._ ?? null),
     cliBundlePath: safeRealpath(process.argv[1] ?? null),
-    dbPath: getRaviDbPath(),
+    dbPath,
     daemon: readDaemonRuntimeInfo(),
     instance: instanceName
       ? {

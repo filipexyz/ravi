@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from "bun:test";
 import { Database } from "bun:sqlite";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import {
   dbCreateAgent,
   dbCreateChatReadingList,
   dbCreateContext,
+  dbCreateRoute,
   dbDeleteChannel,
   dbDeleteInstance,
   dbGetAgent,
@@ -14,6 +17,7 @@ import {
   dbListChannels,
   dbListContexts,
   dbPruneContexts,
+  dbReadAgentDirectorySnapshot,
   dbUpdateAgent,
   dbUpdateChannel,
   dbUpsertChannel,
@@ -23,12 +27,24 @@ import {
   closeRouterDb,
   getDb,
 } from "./router-db.js";
+import { loadRouterConfig } from "./config.js";
 import { getOrCreateSession } from "./sessions.js";
 import { createRuntimeModelPreset } from "../runtime/model-preset-store.js";
 
 let stateDir: string | null = null;
 
 const DAY = 24 * 60 * 60 * 1000;
+
+function stateFilesDigest(directory: string): Array<{ name: string; sha256: string }> {
+  return readdirSync(directory)
+    .sort()
+    .map((name) => ({
+      name,
+      sha256: createHash("sha256")
+        .update(readFileSync(join(directory, name)))
+        .digest("hex"),
+    }));
+}
 
 function createContext(input: {
   id: string;
@@ -60,6 +76,41 @@ describe("router context queries", () => {
   afterEach(async () => {
     await cleanupIsolatedRaviState(stateDir);
     stateDir = null;
+  });
+
+  it("reads an empty agent directory without creating the missing database", () => {
+    const dbPath = join(stateDir!, "ravi.db");
+    expect(existsSync(dbPath)).toBe(false);
+
+    expect(dbReadAgentDirectorySnapshot()).toEqual({ defaultAgent: "main", agents: [] });
+    expect(existsSync(dbPath)).toBe(false);
+  });
+
+  it("reads the existing agent directory without changing any state file", () => {
+    dbCreateAgent({ id: "readonly-agent", cwd: "/tmp/ravi-readonly-agent" });
+    closeRouterDb();
+    const before = stateFilesDigest(stateDir!);
+
+    const snapshot = dbReadAgentDirectorySnapshot();
+
+    expect(snapshot.defaultAgent).toBe("main");
+    expect(snapshot.agents).toContainEqual({ id: "readonly-agent", cwd: "/tmp/ravi-readonly-agent" });
+    expect(stateFilesDigest(stateDir!)).toEqual(before);
+  });
+
+  it("keeps a route channel in the live router configuration", () => {
+    dbUpsertInstance({ name: "main", channel: "whatsapp" });
+    dbCreateRoute({
+      accountId: "main",
+      pattern: "5511*",
+      agent: "main",
+      priority: 10,
+      channel: "whatsapp",
+    });
+
+    expect(loadRouterConfig().routes).toContainEqual(
+      expect.objectContaining({ accountId: "main", pattern: "5511*", channel: "whatsapp" }),
+    );
   });
 
   it("lists contexts with SQL-backed filters and excludes inactive contexts by default", () => {

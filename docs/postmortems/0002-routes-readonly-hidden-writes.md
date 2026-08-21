@@ -1,0 +1,220 @@
+# Routes read-only facade: hidden writes and invalid first proof
+
+Date: 2026-08-21
+Status: open
+Domain: routes
+
+## What failed
+
+The first local candidate called the normal router database accessors. A real
+`ravi routes list --json` against an empty isolated state created `ravi.db`,
+`ravi.db-wal`, and `ravi.db-shm`. Unit tests had replaced those accessors with
+mocks, so their zero-write counter could not observe database initialization,
+schema migration, or WAL setup.
+
+The first replacement proof also failed. Its behavior tests passed only in
+part: Windows kept temporary SQLite files locked during immediate cleanup, the
+real-process case exceeded Bun's default five-second test timeout, and the
+existing runtime-target mock did not export the new snapshot helper. That run
+is invalid evidence and must not be reported as a green gate.
+
+## Why it failed
+
+The facade shared helpers with the mutating `instances routes` domain and read
+through the lazy general-purpose database connection. “No explicit write
+function was called” was treated as equivalent to “no state changed,” which is
+false for an initializer that creates directories, migrates schema, and enables
+WAL on first access.
+
+The replacement test used immediate recursive cleanup instead of the repository
+SQLite cleanup pattern and did not update all existing module mocks after
+introducing the snapshot API.
+
+## Corrective direction
+
+- Route facade reads must use a dedicated SQLite connection with
+  `readonly:true` and `create:false` and return an empty snapshot when the
+  database is absent.
+- `routes list|show|explain` must receive one immutable snapshot per invocation;
+  neighboring mutation commands keep their established database path.
+- Native tests must cover missing database, current schema, minimal legacy
+  schema, unchanged state-file hashes, and the real CLI process.
+- Windows cleanup must retry after garbage collection, and process tests must
+  declare a realistic timeout.
+- No commit, package, push, or PR is allowed until the corrected proof is green
+  and an independent reviewer accepts the exact candidate.
+
+## Revision log
+
+- 2026-08-21: incident opened after the hidden SQLite writes and invalid first
+  replacement proof were reproduced locally.
+- 2026-08-21: `immutable=1` kept WAL/SHM bytes stable in an isolated probe but
+  was rejected because SQLite may return stale or corrupt results if the daemon
+  writes concurrently. The accepted boundary is `readonly:true/create:false`,
+  no missing-database creation, no logical table change, and no new durable
+  state. SQLite may update the existing SHM coordination index while serving a
+  concurrency-safe read; that is not a persisted route configuration change.
+- 2026-08-21: a later manual review found a second hidden read in human output:
+  `printRouteTable` called the contact store to render a status icon. The
+  top-level facade now renders a neutral marker from its existing snapshot and
+  never opens the contact store; the legacy `instances routes` table keeps its
+  previous contact-aware behavior. A real-process human-output check now
+  verifies route visibility and unchanged durable state.
+- 2026-08-21: the corrected reader passed all 152 router tests with 468
+  assertions. Its six native reader/process cases passed with 28 assertions,
+  including missing DB, legacy schema, active WAL, JSON output and human
+  output. The first parallel SDK run timed out in an unrelated hook; the
+  required isolated rerun passed 75 tests with 297 assertions and SDK drift
+  check. This evidence remains local and does not authorize promotion.
+- 2026-08-21: adversarial resolver review found that the first canonicalizer
+  could collapse unrelated alphanumeric identifiers sharing the same digits.
+  Canonicalization is now limited to valid phone syntax, known JIDs and
+  explicit group/LID forms; arbitrary identifiers remain case-insensitive
+  literals. The expanded router suite passed 153 tests with 474 assertions.
+- 2026-08-21: strengthening the three public route returns correctly tripped
+  the SDK quality-debt inventory. Removing those three now-strong contracts
+  from the baseline restored the required gate: 75 tests, 297 assertions,
+  current TypeScript SDK, both OpenAPI snapshots and current Swift artifacts.
+- 2026-08-21: a fail-closed review found that an existing table with missing
+  required columns was silently represented as empty configuration. The
+  reader now raises a bounded schema error, and the facade maps it to
+  `ROUTES_SCHEMA_UNSUPPORTED` without exposing the database path or attempting
+  migration. Native and real-process checks verify unchanged durable state.
+- 2026-08-21: the complete six-commit COMMANDS stack ending at `e91cfec9` was
+  integrated before restoring the ROUTES changes. The append-only ledger and
+  shared router tests preserved both histories; SDK, OpenAPI and Swift outputs
+  were regenerated by their official commands. The first Biome pass exposed
+  only CRLF restored from the Windows stash, and Markdown lint exposed one
+  missing blank line before a ledger separator. Official formatting plus the
+  documentary correction closed both issues. The final recapture passed 84
+  focused tests with 274 assertions, all 157 router tests with 486 assertions,
+  76 SDK tests with 305 assertions, 98 shared contract tests with 368
+  assertions, and 40 quality-gate tests with 90 assertions. The quality runner
+  accepted all 28 ROUTES paths and indexed 275 specs. Typecheck, build, drift
+  checks, Biome, Markdown lint and `git diff --check` also passed. Independent
+  review, package proof and Linux CI remain mandatory before promotion.
+- 2026-08-21: independent review rejected candidate `348c24a9`. The three
+  facade decorators still used default audit transport; `ROUTE_NOT_FOUND`
+  suggestions reopened the mutable router database; compact route projections
+  lost their non-empty guarantee in generated TypeScript/OpenAPI and nested
+  Swift models degraded to `RaviJSON`; case-colliding channel spellings could
+  select a value that the real resolver would not select. The candidate is
+  permanently invalid for package or promotion.
+- 2026-08-21: the correction declares `audit:"none"`, derives missing-route
+  suggestions from the captured snapshot, requires exact channel spelling on
+  case collisions, represents route projections as an explicit non-empty
+  union, and teaches Swift codegen to preserve concrete types through nullable
+  unions. A real-process NATS connection trap now runs with both audit
+  suppression variables absent, and the legacy missing-route case compares all
+  durable state including DB and WAL while exempting only SQLite SHM.
+- 2026-08-21: the first combined test capture after the correction is not gate
+  evidence. It exposed one real schema bug—optional fields also made the
+  non-empty union accept `{}`—and three cross-file errors caused by the known
+  global decorator mock when codegen files shared a process with
+  `routes.test.ts`. The union was fixed by requiring the selected field, and
+  each codegen suite was rerun in an isolated native process.
+- 2026-08-21: the first isolated Swift rerun correctly exposed that top-level
+  nullable properties were concrete but non-optional. The generator now
+  unwraps nullable schemas for type selection while preserving optionality in
+  top-level return structs. Subsequent isolated TypeScript, OpenAPI, Swift,
+  route command, process-reader, router and typecheck runs passed. Full gates,
+  regenerated artifacts and exact-commit review remain required.
+- 2026-08-21: the corrected pre-commit tree passed 87 focused ROUTES tests
+  with 286 assertions, all 158 router tests with 491 assertions, 77 SDK and
+  codegen tests with 314 assertions, 79 registry/tools/gateway/skill tests with
+  303 assertions, and 40 quality-gate tests with 90 assertions. The quality
+  runner accepted the full 89-file diff against `origin/dev` and indexed 275
+  specs. Typecheck, build, official TypeScript/OpenAPI/Swift generation and
+  drift checks, Biome, Markdown lint and `git diff --check` passed. A first
+  router capture whose output was filtered is not evidence because its wrapper
+  returned exit 1 despite a green test summary; the unfiltered rerun returned
+  exit 0 with the same 158 passing tests. The host has no Swift compiler, so
+  native generator tests and artifact drift are the local Swift evidence; CI
+  compilation remains required. SDK generation/check commands still log a
+  failed best-effort audit connection when local NATS is absent, but the
+  corrected `routes list/show/explain` process proof records no NATS connection
+  or bytes. No package, push, PR, merge or VPS operation occurred.
+- 2026-08-21: independent review rejected candidate `96f7bedb`. Although the
+  four previous ROUTES blockers were closed, top-level Swift return models
+  still relied on synthesized `Codable`. A JSON Schema property that was both
+  required and nullable therefore accepted an absent key and omitted that key
+  when encoding `nil`. This SHA is permanently invalid for package or
+  promotion.
+- 2026-08-21: the generator now emits presence-aware decoding only for
+  top-level returns that contain required nullable fields; named strict models
+  use the same explicit null encoding. Required nullable keys are checked with
+  `contains`, decoded with `decodeIfPresent`, and encoded with `encodeNil` when
+  their value is `nil`. Truly optional properties keep `decodeIfPresent` and
+  `encodeIfPresent`, and unaffected top-level models retain synthesized
+  `Codable` to minimize global change. Native codegen tests cover both classes
+  and contain a conditional Swift round-trip. This Windows host has no
+  `swiftc`, so no local Swift compilation is claimed.
+- 2026-08-21: an initial parallel capture was discarded after one router hook
+  and two quality-gate hooks exceeded their five-second Windows timeout under
+  contention. Isolated reruns passed: 87 focused ROUTES tests with 286
+  assertions, all 158 router tests with 491 assertions, 11 Commands process
+  tests with 57 assertions, 77 SDK tests with 314 assertions, 24 Swift codegen
+  tests with 98 assertions, and 40 quality tests with 90 assertions. Typecheck,
+  build, TypeScript SDK drift, both OpenAPI drifts, Swift drift, and the quality
+  runner against `origin/dev` also passed. Formatting, Markdown and final diff
+  checks remain required on the documentary tree before commit.
+- 2026-08-21: independent review rejected candidate `56052bcb` for provenance.
+  Its ROUTES history descended from `9f13a821`, not from the binding Commands
+  commit `e91cfec9`. Those Commands commits shared tree `f1217562`, so the
+  defect did not change the reviewed functional content, but tree equality did
+  not satisfy the required ancestry. Branch
+  `feat/routes-agent-first-provenance` was created directly from `e91cfec9` and
+  replayed only the three ROUTES commits as `8522a705`, `a466dde0` and
+  `ca928d76`. Before this append-only note, the corrected branch and rejected
+  candidate shared tree `8704fff8`. The old branch and rejected SHA remain
+  preserved; no reset, rebase, force, package, push, PR, merge or VPS operation
+  occurred.
+- 2026-08-21: independent review rejected candidate `50ead276`. Declared
+  `--fields` parsing silently removed empty names, so an empty value, interior
+  empty token, or trailing comma did not fail with the stable accepted field
+  set. A selected optional route field absent from storage could serialize as
+  `{}` rather than as an explicit `null`. The read-only snapshot also ran its
+  schema and data queries outside one read transaction, allowing WAL commits
+  to produce a result assembled from different moments. This SHA is
+  permanently invalid for package or promotion.
+- 2026-08-21: the correction rejects empty declared field names with
+  `USAGE_ERROR`, exit 2, and `acceptedFields`, while preserving legacy callers
+  that do not declare a field set. ROUTES materializes only an explicitly
+  selected absent optional field as `null`; without `--fields`, the original
+  omission is preserved. All schema and data reads now execute in
+  one SQLite read transaction. A deterministic native test uses a second WAL
+  connection to commit changed settings, agents, routes, and instances midway
+  through the reader and proves the returned snapshot contains only the
+  pre-commit values. No external testbench, package, push, PR, merge, or VPS
+  operation occurred.
+- 2026-08-21: the corrected pre-commit tree passed 33 ROUTES tests with 154
+  assertions, 11 real-process reader tests with 60 assertions, all 160 router
+  tests with 512 assertions, 11 foundation tests with 30 assertions, 26
+  Commands tests with 114 assertions, 11 Commands process tests with 57
+  assertions, and 51 Agents tests with 143 assertions. SDK passed 77/314,
+  OpenAPI 24/68, and Swift codegen 24/98. Typecheck, build, byte-identical
+  repeated generation, all SDK/OpenAPI/Swift drift checks, the quality runner
+  over 36 paths and 275 indexed specs, Biome, Markdown, and diff check passed.
+  This host has no `swiftc`, so local Swift compilation is not claimed.
+- 2026-08-21: a combined registry/tools/gateway/skill capture is not green
+  evidence: 97 tests passed and one unrelated skill-gate case exceeded its
+  fixed five-second timeout. The isolated case completed all six assertions
+  in about 30 seconds and passed with Bun's native 30-second timeout. No
+  `src/runtime` file differs from binding Commands `e91cfec9`, so this remains
+  an honestly recorded host timing limitation rather than a ROUTES regression.
+  The first quality test similarly exceeded a hook timeout by 82 milliseconds;
+  its native 30-second rerun passed all 40 tests and 90 assertions. Codegen
+  commands logged failed best-effort NATS audit connections while exiting zero;
+  the dedicated ROUTES NATS trap remained green. No external testbench,
+  package, push, PR, merge, or VPS operation occurred.
+- 2026-08-21: independent review rejected candidate `8ba9d8a014f8e30e13e7f93df8c1ba1ed8e6c00f`.
+  The CLI correctly emitted an explicitly selected absent `policy` as `null`,
+  but the canonical Zod schema and generated TypeScript/OpenAPI still required
+  a string. Generated Swift decoded that `null` as `nil` and used
+  `encodeIfPresent`, so a valid `{"policy":null}` could round-trip to `{}`.
+  The candidate is permanently invalid for package or promotion.
+- 2026-08-21: the correction makes only the compact projection's `policy`
+  nullable, preserves omission without `--fields`, and teaches generated Swift
+  projection models to retain present-null key identity. Focused native tests
+  bind Zod, TypeScript, OpenAPI and Swift to the same contract; the Swift test
+  compiles and executes the exact round-trip when `swiftc` is available.

@@ -21123,7 +21123,7 @@ export const CommandsListInputSchema = {
       "type": "string"
     },
     "fields": {
-      "description": "Compact mode: keep only these fields of each item",
+      "description": "Compact fields: id,token,title,description,argumentHint,arguments,disabled,scope,path,relativePath,shadowedBy,shadows,issues",
       "type": "string"
     },
     "limit": {
@@ -21144,164 +21144,438 @@ export const CommandsListInputSchema = {
 
 /** JSON Schema for the return shape of `commands.list`. */
 export const CommandsListReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "agent": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "cwd": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "cwd"
+      ],
+      "title": "CommandsListAgent",
       "type": "object"
     },
     "commands": {
       "items": {
-        "additionalProperties": {},
-        "properties": {
-          "argumentHint": {
-            "anyOf": [
-              {
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "argumentHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arguments": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "disabled": {
+                "type": "boolean"
+              },
+              "id": {
                 "type": "string"
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "arguments": {
-            "items": {},
-            "type": "array"
-          },
-          "description": {
-            "anyOf": [
-              {
+              "issues": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "level": {
+                      "enum": [
+                        "error",
+                        "warning"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "code",
+                    "message",
+                    "id",
+                    "scope",
+                    "path"
+                  ],
+                  "title": "CommandsListIssue",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "path": {
                 "type": "string"
               },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "disabled": {
-            "type": "boolean"
-          },
-          "id": {
-            "type": "string"
-          },
-          "issues": {
-            "items": {
-              "additionalProperties": {},
-              "properties": {
-                "code": {
-                  "type": "string"
-                },
-                "id": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "level": {
-                  "type": "string"
-                },
-                "message": {
-                  "type": "string"
-                },
-                "path": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                },
-                "scope": {
-                  "anyOf": [
-                    {
-                      "type": "string"
-                    },
-                    {
-                      "type": "null"
-                    }
-                  ]
-                }
+              "relativePath": {
+                "type": "string"
               },
-              "required": [
-                "level",
-                "code",
-                "message",
-                "id",
-                "scope",
-                "path"
-              ],
-              "type": "object"
+              "scope": {
+                "type": "string"
+              },
+              "shadowedBy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shadows": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "token": {
+                "type": "string"
+              }
             },
-            "type": "array"
+            "type": "object"
           },
-          "path": {
-            "type": "string"
-          },
-          "relativePath": {
-            "type": "string"
-          },
-          "scope": {
-            "type": "string"
-          },
-          "shadowedBy": {
+          {
             "anyOf": [
               {
-                "type": "string"
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
               },
               {
-                "type": "null"
-              }
-            ]
-          },
-          "shadows": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "title": {
-            "anyOf": [
-              {
-                "type": "string"
+                "additionalProperties": {},
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "type": "object"
               },
               {
-                "type": "null"
+                "additionalProperties": {},
+                "properties": {
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "description"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "argumentHint": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "argumentHint"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "arguments": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "disabled"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "relativePath": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "relativePath"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadowedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "shadowedBy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadows": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "shadows"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "issues": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "level": {
+                          "enum": [
+                            "error",
+                            "warning"
+                          ],
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "scope": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "code",
+                        "message",
+                        "id",
+                        "scope",
+                        "path"
+                      ],
+                      "title": "CommandsListIssue",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "issues"
+                ],
+                "type": "object"
               }
             ]
-          },
-          "token": {
-            "type": "string"
           }
-        },
-        "required": [
-          "id",
-          "token",
-          "title",
-          "description",
-          "argumentHint",
-          "arguments",
-          "disabled",
-          "scope",
-          "path",
-          "relativePath",
-          "shadowedBy",
-          "shadows",
-          "issues"
         ],
-        "type": "object"
+        "title": "CommandsListItem"
       },
       "type": "array"
     },
+    "filters": {
+      "additionalProperties": false,
+      "properties": {
+        "tag": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tag"
+      ],
+      "title": "CommandsListFilters",
+      "type": "object"
+    },
     "issues": {
       "items": {
-        "additionalProperties": {},
+        "additionalProperties": false,
         "properties": {
           "code": {
             "type": "string"
@@ -21317,6 +21591,10 @@ export const CommandsListReturnSchema = {
             ]
           },
           "level": {
+            "enum": [
+              "error",
+              "warning"
+            ],
             "type": "string"
           },
           "message": {
@@ -21351,25 +21629,434 @@ export const CommandsListReturnSchema = {
           "scope",
           "path"
         ],
+        "title": "CommandsListIssue",
         "type": "object"
       },
       "type": "array"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "argumentHint": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "arguments": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "disabled": {
+                "type": "boolean"
+              },
+              "id": {
+                "type": "string"
+              },
+              "issues": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "level": {
+                      "enum": [
+                        "error",
+                        "warning"
+                      ],
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "scope": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "level",
+                    "code",
+                    "message",
+                    "id",
+                    "scope",
+                    "path"
+                  ],
+                  "title": "CommandsListIssue",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "path": {
+                "type": "string"
+              },
+              "relativePath": {
+                "type": "string"
+              },
+              "scope": {
+                "type": "string"
+              },
+              "shadowedBy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "shadows": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "title": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "token": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "token"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "title": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "description": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "description"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "argumentHint": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "argumentHint"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "arguments": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "arguments"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "disabled": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "disabled"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "scope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "path"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "relativePath": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "relativePath"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadowedBy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "shadowedBy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "shadows": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "shadows"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "issues": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "code": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "level": {
+                          "enum": [
+                            "error",
+                            "warning"
+                          ],
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        },
+                        "path": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "scope": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "level",
+                        "code",
+                        "message",
+                        "id",
+                        "scope",
+                        "path"
+                      ],
+                      "title": "CommandsListIssue",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "issues"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ],
+        "title": "CommandsListItem"
       },
       "type": "array"
     },
     "locations": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "agent": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "global": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "agent",
+        "global"
+      ],
+      "title": "CommandsListLocations",
       "type": "object"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -21411,11 +22098,9 @@ export const CommandsListReturnSchema = {
         "limit",
         "offset",
         "returned",
-        "total",
-        "hasMore",
-        "nextOffset",
-        "nextCommand"
+        "total"
       ],
+      "title": "CommandsListPagination",
       "type": "object"
     },
     "total": {
@@ -21425,9 +22110,9 @@ export const CommandsListReturnSchema = {
   "required": [
     "total",
     "pagination",
-    "items",
     "agent",
     "locations",
+    "items",
     "commands",
     "issues"
   ],
@@ -53145,7 +53830,7 @@ export const RoutesExplainInputSchema = {
   "additionalProperties": false,
   "properties": {
     "channel": {
-      "description": "Optional channel hint for live route inspection",
+      "description": "Configured channel name or provider used as a simulation hint",
       "type": "string"
     },
     "name": {
@@ -53166,7 +53851,7 @@ export const RoutesExplainInputSchema = {
 
 /** JSON Schema for the return shape of `routes.explain`. */
 export const RoutesExplainReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "channel": {
       "anyOf": [
@@ -53181,8 +53866,50 @@ export const RoutesExplainReturnSchema = {
     "configuredRoute": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "agent": {
+              "type": "string"
+            },
+            "channel": {
+              "type": "string"
+            },
+            "dmScope": {
+              "enum": [
+                "main",
+                "per-peer",
+                "per-channel-peer",
+                "per-account-channel-peer"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "number"
+            },
+            "pattern": {
+              "type": "string"
+            },
+            "policy": {
+              "type": "string"
+            },
+            "priority": {
+              "type": "number"
+            },
+            "session": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "pattern",
+            "accountId",
+            "agent",
+            "priority"
+          ],
+          "title": "RoutesRouteRecord",
           "type": "object"
         },
         {
@@ -53196,14 +53923,115 @@ export const RoutesExplainReturnSchema = {
     "liveEffect": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": false,
+          "properties": {
+            "canonicalPattern": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "verified",
+                "different_winner",
+                "matched",
+                "unresolved",
+                "skipped_broad_pattern"
+              ],
+              "type": "string"
+            },
+            "targetKind": {
+              "enum": [
+                "group",
+                "phone",
+                "lid",
+                "thread",
+                "literal",
+                "glob"
+              ],
+              "type": "string"
+            },
+            "verified": {
+              "type": "boolean"
+            },
+            "winningAgent": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "winningPattern": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "status",
+            "verified",
+            "reason",
+            "canonicalPattern",
+            "targetKind",
+            "winningPattern",
+            "winningAgent"
+          ],
+          "title": "RoutesExplainLiveEffect",
           "type": "object"
         },
         {
           "type": "null"
         }
       ]
+    },
+    "origin": {
+      "additionalProperties": false,
+      "properties": {
+        "daemonObserved": {
+          "const": false,
+          "type": "boolean"
+        },
+        "freshness": {
+          "const": "persisted-at-read-time",
+          "type": "string"
+        },
+        "kind": {
+          "const": "config_simulation",
+          "type": "string"
+        },
+        "limitation": {
+          "type": "string"
+        },
+        "source": {
+          "const": "router-config-db",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "source",
+        "freshness",
+        "daemonObserved",
+        "limitation"
+      ],
+      "title": "RoutesExplainOrigin",
+      "type": "object"
     },
     "pattern": {
       "anyOf": [
@@ -53215,9 +54043,195 @@ export const RoutesExplainReturnSchema = {
         }
       ]
     },
+    "resolution": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "canonicalPattern": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "matchedBy": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "exact",
+                    "equivalent"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "targetKind": {
+              "enum": [
+                "group",
+                "phone",
+                "lid",
+                "thread",
+                "literal",
+                "glob"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "matchedBy",
+            "canonicalPattern",
+            "targetKind"
+          ],
+          "title": "RoutesExplainResolution",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "target": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "cliBundlePath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cliExecPath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "daemon": {
+          "additionalProperties": false,
+          "properties": {
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "execPath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "online": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "online",
+            "execPath",
+            "cwd",
+            "matchesCli"
+          ],
+          "title": "RoutesRuntimeDaemon",
+          "type": "object"
+        },
+        "dbPath": {
+          "type": "string"
+        },
+        "instance": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "affectsLiveMain": {
+                  "type": "boolean"
+                },
+                "channel": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "exists": {
+                  "type": "boolean"
+                },
+                "instanceId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "exists",
+                "enabled",
+                "instanceId",
+                "channel",
+                "affectsLiveMain"
+              ],
+              "title": "RoutesRuntimeInstance",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cliExecPath",
+        "cliBundlePath",
+        "dbPath",
+        "daemon",
+        "instance"
+      ],
+      "title": "RoutesRuntimeTarget",
       "type": "object"
     }
   },
@@ -53226,6 +54240,8 @@ export const RoutesExplainReturnSchema = {
     "instance",
     "pattern",
     "channel",
+    "origin",
+    "resolution",
     "configuredRoute",
     "liveEffect"
   ],
@@ -53262,11 +54278,63 @@ export const RoutesListInputSchema = {
 
 /** JSON Schema for the return shape of `routes.list`. */
 export const RoutesListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "filter": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "tagSlug": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tagSlug"
+      ],
+      "title": "RoutesListFilter",
       "type": "object"
     },
     "instance": {
@@ -53281,14 +54349,386 @@ export const RoutesListReturnSchema = {
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string"
+              },
+              "channel": {
+                "type": "string"
+              },
+              "dmScope": {
+                "enum": [
+                  "main",
+                  "per-peer",
+                  "per-channel-peer",
+                  "per-account-channel-peer"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "number"
+              },
+              "pattern": {
+                "type": "string"
+              },
+              "policy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "priority": {
+                "type": "number"
+              },
+              "session": {
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assetId": {
+                      "type": "string"
+                    },
+                    "assetType": {
+                      "enum": [
+                        "agent",
+                        "automation",
+                        "app",
+                        "session",
+                        "task",
+                        "project",
+                        "profile",
+                        "contact",
+                        "chat",
+                        "route",
+                        "instance",
+                        "artifact",
+                        "insight",
+                        "workflow_spec",
+                        "workflow_run",
+                        "workflow_node",
+                        "cron_job",
+                        "trigger",
+                        "hook",
+                        "task_automation",
+                        "observer_rule",
+                        "observer_binding",
+                        "observer_profile",
+                        "command",
+                        "skill",
+                        "skill_gate_rule",
+                        "context",
+                        "call_profile",
+                        "call_request",
+                        "call_voice_agent",
+                        "call_tool",
+                        "outbound_queue",
+                        "outbound_entry",
+                        "spec",
+                        "devin_session"
+                      ],
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "tagId": {
+                      "type": "string"
+                    },
+                    "tagSlug": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    },
+                    "updatedBy": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "tagId",
+                    "tagSlug",
+                    "assetType",
+                    "assetId",
+                    "source",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "title": "RoutesTagBinding",
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "pattern": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "pattern"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "accountId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "agent": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "agent"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "priority": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "priority"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "policy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "policy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "session": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "channel": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "channel"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "dmScope": {
+                    "enum": [
+                      "main",
+                      "per-peer",
+                      "per-channel-peer",
+                      "per-account-channel-peer"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "dmScope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "tags": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "type": "string"
+                        },
+                        "assetType": {
+                          "enum": [
+                            "agent",
+                            "automation",
+                            "app",
+                            "session",
+                            "task",
+                            "project",
+                            "profile",
+                            "contact",
+                            "chat",
+                            "route",
+                            "instance",
+                            "artifact",
+                            "insight",
+                            "workflow_spec",
+                            "workflow_run",
+                            "workflow_node",
+                            "cron_job",
+                            "trigger",
+                            "hook",
+                            "task_automation",
+                            "observer_rule",
+                            "observer_binding",
+                            "observer_profile",
+                            "command",
+                            "skill",
+                            "skill_gate_rule",
+                            "context",
+                            "call_profile",
+                            "call_request",
+                            "call_voice_agent",
+                            "call_tool",
+                            "outbound_queue",
+                            "outbound_entry",
+                            "spec",
+                            "devin_session"
+                          ],
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "tagId": {
+                          "type": "string"
+                        },
+                        "tagSlug": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        },
+                        "updatedBy": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "tagId",
+                        "tagSlug",
+                        "assetType",
+                        "assetId",
+                        "source",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "RoutesTagBinding",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "tags"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ],
+        "title": "RoutesListItem"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -53330,18 +54770,388 @@ export const RoutesListReturnSchema = {
         "limit",
         "offset",
         "returned",
-        "total",
-        "hasMore",
-        "nextOffset",
-        "nextCommand"
+        "total"
       ],
+      "title": "RoutesListPagination",
       "type": "object"
     },
     "routes": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string"
+              },
+              "channel": {
+                "type": "string"
+              },
+              "dmScope": {
+                "enum": [
+                  "main",
+                  "per-peer",
+                  "per-channel-peer",
+                  "per-account-channel-peer"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "number"
+              },
+              "pattern": {
+                "type": "string"
+              },
+              "policy": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "priority": {
+                "type": "number"
+              },
+              "session": {
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assetId": {
+                      "type": "string"
+                    },
+                    "assetType": {
+                      "enum": [
+                        "agent",
+                        "automation",
+                        "app",
+                        "session",
+                        "task",
+                        "project",
+                        "profile",
+                        "contact",
+                        "chat",
+                        "route",
+                        "instance",
+                        "artifact",
+                        "insight",
+                        "workflow_spec",
+                        "workflow_run",
+                        "workflow_node",
+                        "cron_job",
+                        "trigger",
+                        "hook",
+                        "task_automation",
+                        "observer_rule",
+                        "observer_binding",
+                        "observer_profile",
+                        "command",
+                        "skill",
+                        "skill_gate_rule",
+                        "context",
+                        "call_profile",
+                        "call_request",
+                        "call_voice_agent",
+                        "call_tool",
+                        "outbound_queue",
+                        "outbound_entry",
+                        "spec",
+                        "devin_session"
+                      ],
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "tagId": {
+                      "type": "string"
+                    },
+                    "tagSlug": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    },
+                    "updatedBy": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "tagId",
+                    "tagSlug",
+                    "assetType",
+                    "assetId",
+                    "source",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "title": "RoutesTagBinding",
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "pattern": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "pattern"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "accountId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "agent": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "agent"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "priority": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "priority"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "policy": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "policy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "session": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "channel": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "channel"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "dmScope": {
+                    "enum": [
+                      "main",
+                      "per-peer",
+                      "per-channel-peer",
+                      "per-account-channel-peer"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "dmScope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "tags": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "type": "string"
+                        },
+                        "assetType": {
+                          "enum": [
+                            "agent",
+                            "automation",
+                            "app",
+                            "session",
+                            "task",
+                            "project",
+                            "profile",
+                            "contact",
+                            "chat",
+                            "route",
+                            "instance",
+                            "artifact",
+                            "insight",
+                            "workflow_spec",
+                            "workflow_run",
+                            "workflow_node",
+                            "cron_job",
+                            "trigger",
+                            "hook",
+                            "task_automation",
+                            "observer_rule",
+                            "observer_binding",
+                            "observer_profile",
+                            "command",
+                            "skill",
+                            "skill_gate_rule",
+                            "context",
+                            "call_profile",
+                            "call_request",
+                            "call_voice_agent",
+                            "call_tool",
+                            "outbound_queue",
+                            "outbound_entry",
+                            "spec",
+                            "devin_session"
+                          ],
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "tagId": {
+                          "type": "string"
+                        },
+                        "tagSlug": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        },
+                        "updatedBy": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "tagId",
+                        "tagSlug",
+                        "assetType",
+                        "assetId",
+                        "source",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "RoutesTagBinding",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "tags"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ],
+        "title": "RoutesListItem"
       },
       "type": "array"
     },
@@ -53350,11 +55160,11 @@ export const RoutesListReturnSchema = {
     }
   },
   "required": [
+    "instance",
+    "filter",
     "total",
     "pagination",
     "items",
-    "instance",
-    "filter",
     "routes"
   ],
   "type": "object"
@@ -53382,7 +55192,44 @@ export const RoutesShowInputSchema = {
 
 /** JSON Schema for the return shape of `routes.show`. */
 export const RoutesShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "instance": {
       "type": "string"
@@ -53391,8 +55238,147 @@ export const RoutesShowReturnSchema = {
       "type": "string"
     },
     "route": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "dmScope": {
+          "enum": [
+            "main",
+            "per-peer",
+            "per-channel-peer",
+            "per-account-channel-peer"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "number"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "policy": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "number"
+        },
+        "session": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "enum": [
+                  "agent",
+                  "automation",
+                  "app",
+                  "session",
+                  "task",
+                  "project",
+                  "profile",
+                  "contact",
+                  "chat",
+                  "route",
+                  "instance",
+                  "artifact",
+                  "insight",
+                  "workflow_spec",
+                  "workflow_run",
+                  "workflow_node",
+                  "cron_job",
+                  "trigger",
+                  "hook",
+                  "task_automation",
+                  "observer_rule",
+                  "observer_binding",
+                  "observer_profile",
+                  "command",
+                  "skill",
+                  "skill_gate_rule",
+                  "context",
+                  "call_profile",
+                  "call_request",
+                  "call_voice_agent",
+                  "call_tool",
+                  "outbound_queue",
+                  "outbound_entry",
+                  "spec",
+                  "devin_session"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tagId": {
+                "type": "string"
+              },
+              "tagSlug": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "updatedBy": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tagId",
+              "tagSlug",
+              "assetType",
+              "assetId",
+              "source",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "RoutesTagBinding",
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "pattern",
+        "accountId",
+        "agent",
+        "priority",
+        "tags"
+      ],
+      "title": "RoutesRouteWithTags",
       "type": "object"
     }
   },

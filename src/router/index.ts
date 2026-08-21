@@ -26,15 +26,18 @@ export {
 
 // Resolver
 export {
+  areExactRouteTargetsEquivalent,
   matchPattern,
   findRoute,
   matchRoute,
+  normalizeExactRouteTarget,
   resolveRoute,
   commitMatchedRoute,
   generateThreadForkSessionName,
   expandHome,
   getAgentCwd,
 } from "./resolver.js";
+export type { ExactRouteTarget, ExactRouteTargetKind } from "./resolver.js";
 
 // Config
 export {
