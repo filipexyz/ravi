@@ -1,20 +1,19 @@
 ---
 id: cli/crm
-title: "CRM agent-first CLI contract"
+title: "CRM CLI interface"
 kind: capability
 domain: cli
 capabilities:
   - crm
+  - discovery
+  - machine-errors
+  - compact-output
 tags:
   - cli
   - crm
   - agent-first
-  - error-envelope
-  - exit-taxonomy
-  - write-brake
 applies_to:
   - src/cli/commands/crm.ts
-  - src/cli/agent-contract.ts
   - src/apps/router.ts
   - src/plugins/internal/ravi-system/skills/crm/SKILL.md
 owners:
@@ -22,97 +21,79 @@ owners:
 status: active
 normative: true
 ---
-# CRM agent-first CLI contract
+
+# CRM CLI interface
 
 ## Intent
 
-Make `ravi crm` reliable for agent consumers: every failure is machine-actionable,
-routine local persistence has no confirmation loop, and discovery is cheap.
-The original pilot benchmark established stable completion and cheaper
-discovery; its blanket write brake is superseded by the global risk policy.
-The shared helpers live in `src/cli/agent-contract.ts` and are reused by every
-migrated `cli/<domain>` spec.
+`cli/crm` owns CRM operation paths, semantic arguments, compact output,
+discovery, and domain-specific error identities.
+
+## Precedence
+
+The global `cli` spec owns the envelope, exit taxonomy, authorization,
+confirmation policy, and transport behavior. `crm/facade` owns controlled
+effects, and `crm/pipeline` owns pipeline metadata behavior.
 
 ## Invariants
 
-1. For the operations declared migrated in Delivery scope, every `--json`
-   failure MUST return the envelope
-   `{success:false, op, error:{code, message, retryable, suggestedAction, suggestions?|acceptedFlags?}}`
-   — never plain text, never a stack trace.
-2. Exit codes MUST follow the taxonomy: `0` success · `1` error (not-found /
-   provider) · `2` usage error (with `acceptedFlags`/`acceptedPositionals`) ·
-   `3` blocked by policy (write brake / HITL — not a failure of the system).
-3. Not-found errors MUST carry up to 3 `suggestions` of similar real entities
-   (bigram/substring over live data).
-4. `pipeline create`, `opportunity create`, and `opportunity move` are local
-   persistence operations. They MUST execute immediately without `--execute`
-   and MUST remain authorized as `kind: "mutate"`.
-5. The absence of an opportunity delete command does not turn routine internal
-   creation into irreversible destruction; idempotency keys remain available
-   to prevent duplicate creates.
-6. Migrated list ops MUST accept `--fields a,b,c` for compact output.
-7. Positional args MUST be semantic (`<pipeline>`, `<opportunity>`, never `argN`).
-8. Per-op help (`ravi crm <group> <op> --help`) MUST stay compact — a screenful
-   with semantic arguments and option defaults, never the whole-domain dump.
-9. Without `--json`, error output and exit 1 behavior MUST stay byte-compatible
-   with the legacy text path (`fail()`), except usage errors which exit 2 and
-   teach the correct syntax inline.
+1. Expected CRM failures MUST use the global `cli` contract with the real
+   operation path and a stable CRM error code.
+2. Not-found errors MUST identify the entity kind and MAY include at most three
+   similar, visible identifiers in `suggestions`.
+3. Invalid flags, arguments, enum values, and filters MUST be usage errors and
+   expose the accepted interface fields.
+4. Positional arguments MUST be semantic, such as `<pipeline>` and
+   `<opportunity>`, never generated names such as `<arg1>`.
+5. Migrated lists MUST accept `--fields a,b,c`; pagination MUST expose a
+   literal `pagination.nextCommand` or `null`.
+6. Per-operation help MUST stay compact. `ravi crm help --json` MUST provide a
+   machine-readable domain overview.
+7. Text-mode expected failures MUST stay concise and retain their legacy
+   message, except usage errors that teach valid syntax.
+8. Established immediate local mutations MUST NOT advertise an obsolete
+   `--execute` flag; classification remains governed by `cli`.
+9. `crm facade` operations MUST be discoverable through the same interface.
+   Their state, approval, execution, verification, and recovery rules exist
+   only in `crm/facade`.
+10. Existing aliases and response fields used by consumers MUST NOT be removed
+    or renamed without a documented consumer inventory and migration path.
 
-## Write classification (brake decision per op)
+## Official Error Identities
 
-| op | class | brake |
-|---|---|---|
-| pipeline create | routine internal config; idempotency supported | not braked |
-| opportunity create | routine internal record creation; idempotency supported | not braked |
-| opportunity move | reversible local transition (move back) | not braked |
-| pipeline set / stage ops | reversible config | not braked |
-| task / fact / contact / account writes | local CRM flows | not braked |
+| Case | Stable code |
+| --- | --- |
+| Pipeline not found | `PIPELINE_NOT_FOUND` |
+| Opportunity not found | `OPPORTUNITY_NOT_FOUND` |
+| Contact not found | `CONTACT_NOT_FOUND` |
+| CRM task not found | `CRM_TASK_NOT_FOUND` |
+| Pipeline review has blocking gaps | `PIPELINE_REVIEW_FAILED` |
+| Pipeline metadata is invalid | `PIPELINE_VALIDATION_FAILED` |
+| Invalid command input | `USAGE_ERROR` |
 
-## Official error cases
+The global `cli` spec determines exit codes and transport rendering.
 
-| case | code | exit |
-|---|---|---|
-| pipeline/opportunity not found | `PIPELINE_NOT_FOUND` / `OPPORTUNITY_NOT_FOUND` + suggestions | 1 |
-| contact/task not found on `show` | `CONTACT_NOT_FOUND` / `CRM_TASK_NOT_FOUND` | 1 |
-| pipeline review finds high-severity gaps | `PIPELINE_REVIEW_FAILED` + redacted gap summary | 1 |
-| pipeline metadata is invalid | `PIPELINE_VALIDATION_FAILED` + validation issues | 1 |
-| invalid flag/arg | `USAGE_ERROR` + acceptedFlags | 2 |
+## Delivery Scope
 
-## Delivery scope
+`pipeline` and `opportunity` expose typed errors, suggestions, semantic
+arguments, compact listings, and focused help. `contact show` and `task show`
+preserve entity-specific not-found identities. Other expected handler failures
+use the shared compatibility boundary until assigned a specific stable code.
 
-The benchmark surfaces — `pipeline` (show/list/create/review/validate) and
-`opportunity` (show/create/move) — carry the envelope, taxonomy, suggestions
-and immediate local writes. `contact show` and `task show` preserve the same
-not-found envelope at the real process boundary. Listings carry `--fields` and
-actionable pagination; per-op help for app aliases ships in the apps router
-builtin.
-
-Other expected CRM handler failures are normalized by the shared CLI boundary;
-domain-specific failures listed above retain their stable codes and details.
-
-## Internal consumers
-
-`src/plugins/internal/ravi-system/skills/crm/SKILL.md` teaches agents this CLI,
-including writes — it MUST be updated in the same change that lands a brake.
-No daemon code invokes `ravi crm` programmatically (audited on `dev`).
+The shipped CRM skill MUST match live command paths, arguments, and
+confirmation flags.
 
 ## Validation
 
-- Domain test suite green (`bun test src/cli/commands/crm.test.ts`), no new
-  failures vs the `dev` baseline.
-- Live checks on the local CLI (isolated `RAVI_STATE_DIR`): not-found envelope +
-  suggestions (exit 1); local create/move without `--execute` → exit 0 and the
-  record changes; unknown flag → exit 2 + acceptedFlags; `--fields` narrows list output;
-  per-op `--help` stays a screenful.
-- `bun test src/apps/router.test.ts src/channels/runtime-events.test.ts` — the
-  per-op help router MUST NOT make router init eager.
+- `bun test src/cli/commands/crm.test.ts src/apps/router.test.ts`
+- Exercise a not-found entity, invalid flag, filtered list, and focused help
+  through the real process CLI.
+- Validate controlled effects against `crm/facade`, not this spec.
 
 ## Known Failure Modes
 
-- Commander parser errors bypass the command body; without the installed usage
-  contract (`installUsageContract(program, "crm")` in `src/cli/index.ts`) they
-  regress to plain text + exit 1.
-- A new `@Option` shifts positional arguments in direct-call tests; suites MUST
-  keep direct invocations aligned with the decorated method signature.
-- `apps.help` per-op lookups on groups with their own positional argument
-  (`contact`, `opportunity`) fail; use `--help` on the op instead.
+- Parser errors bypass the global usage contract and regress to plain text.
+- A new option shifts positional arguments while a direct-call test remains
+  aligned to an old method signature.
+- Focused help mistakes a group positional argument for an operation.
+- Effect rules are copied here and diverge from `crm/facade`.

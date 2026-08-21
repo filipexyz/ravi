@@ -92,7 +92,7 @@ describe("artifact store", () => {
 
     expect(artifact.id.startsWith("art_")).toBe(true);
     expect(artifact.sha256).toHaveLength(64);
-    expect(artifact.blobPath).toContain("/artifacts/blobs/");
+    expect(artifact.blobPath).toContain(join("artifacts", "blobs"));
     expect(existsSync(artifact.blobPath!)).toBe(true);
     expect(artifact.metadata).toEqual({ outputFormat: "png" });
 
@@ -324,11 +324,12 @@ describe("artifact store", () => {
     ).toThrow(/Invalid artifact package asset path/);
 
     const symlinkDir = join(stateDir!, "symlink-package");
-    const outsideFile = join(stateDir!, "outside.txt");
+    const outsideDir = join(stateDir!, "outside");
     mkdirSync(symlinkDir, { recursive: true });
+    mkdirSync(outsideDir, { recursive: true });
     writeFileSync(join(symlinkDir, "index.html"), "<h1>Hello</h1>");
-    writeFileSync(outsideFile, "outside");
-    symlinkSync(outsideFile, join(symlinkDir, "linked.txt"));
+    writeFileSync(join(outsideDir, "outside.txt"), "outside");
+    symlinkSync(outsideDir, join(symlinkDir, "linked"), process.platform === "win32" ? "junction" : "dir");
 
     expect(() =>
       createArtifactPackage({

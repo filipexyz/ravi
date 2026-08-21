@@ -395,6 +395,8 @@ export const crmOpportunityReturnSchema = z
 export const crmBoardReturnSchema = z
   .object({
     total: z.number(),
+    pagination: looseObjectSchema,
+    items: z.array(looseObjectSchema),
     opportunities: z.array(looseObjectSchema),
     stages: z.array(looseObjectSchema).optional(),
   })
@@ -489,6 +491,153 @@ export const crmTaskReturnSchema = z
     task: looseObjectSchema,
   })
   .passthrough();
+
+export const crmFacadePlanReturnSchema = z
+  .object({
+    schemaVersion: z.literal("crm.agent-first/v1"),
+    planId: z.string(),
+    planHash: z.string(),
+    state: z.enum(["planned", "approved", "applying", "applied", "unknown", "partial"]),
+    operation: z.enum([
+      "task.done",
+      "task.cancel",
+      "task.snooze",
+      "opportunity.move",
+      "fact.confirm",
+      "fact.reject",
+      "contact.set",
+      "account.link-contact",
+      "opportunity.link-contact",
+    ]),
+    target: z.object({ type: z.string(), id: z.string(), label: z.string() }).strict(),
+    arguments: z
+      .object({
+        target: z.string(),
+        stage: z.string().optional(),
+        contact: z.string().optional(),
+        field: z.string().optional(),
+        value: jsonValueSchema.optional(),
+        until: z.string().optional(),
+        reason: z.string().optional(),
+        role: z.string().optional(),
+        account: z.string().nullable().optional(),
+        primary: z.boolean().optional(),
+      })
+      .strict(),
+    effects: z.array(
+      z
+        .object({
+          effectId: z.string(),
+          operation: z.enum([
+            "task.done",
+            "task.cancel",
+            "task.snooze",
+            "opportunity.move",
+            "fact.confirm",
+            "fact.reject",
+            "contact.set",
+            "account.link-contact",
+            "opportunity.link-contact",
+          ]),
+          primary: z.literal(true),
+          retry: z.literal("never"),
+        })
+        .strict(),
+    ),
+    approval: z
+      .object({
+        planHash: z.string(),
+        state: z.enum(["requested", "approved"]),
+        requestedAt: z.string(),
+        approvedAt: z.string().nullable(),
+        source: z
+          .object({
+            channel: z.string(),
+            accountId: z.string(),
+            chatId: z.string(),
+            threadId: z.string().optional(),
+          })
+          .strict(),
+        externalMessageId: z.string(),
+        authorizedApproverId: z.string(),
+        approverId: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
+    createdAt: z.string(),
+    expiresAt: z.string(),
+  })
+  .strict();
+
+export const crmFacadeVerificationReturnSchema = z
+  .object({
+    planId: z.string(),
+    planHash: z.string(),
+    state: z.enum(["planned", "approved", "applying", "applied", "unknown", "partial"]),
+    outcome: z.enum(["applied", "not_applied", "partial", "not_determined"]),
+    expired: z.boolean(),
+    observedAt: z.string(),
+    readback: jsonValueSchema,
+  })
+  .strict();
+
+export const crmFacadeRecoveryReturnSchema = z
+  .object({
+    planId: z.string(),
+    planHash: z.string(),
+    state: z.enum(["planned", "approved", "applying", "applied", "unknown", "partial"]),
+    outcome: z.enum(["applied", "not_applied", "partial", "not_determined"]),
+    expired: z.boolean(),
+    observedAt: z.string(),
+    readback: jsonValueSchema,
+    action: z.literal("manual_review_required"),
+    replay: z.literal(false),
+  })
+  .strict();
+
+export const crmFacadeApplyReturnSchema = z
+  .object({
+    planId: z.string(),
+    planHash: z.string(),
+    state: z.enum(["applied", "partial", "unknown"]),
+    effectId: z.string(),
+    readback: jsonValueSchema.optional(),
+    reason: z.string().optional(),
+  })
+  .strict();
+
+export const crmLifecycleReturnSchema = z
+  .object({
+    enforcement: z.literal("facade-only"),
+    legacyCommandsMayDiffer: z.literal(true),
+    contact: z.object({ states: z.array(z.string()), transitionPolicy: z.string() }).strict(),
+    opportunity: z.object({ states: z.array(z.string()), transitionPolicy: z.string() }).strict(),
+    task: z
+      .object({
+        states: z.array(z.string()),
+        operations: z.object({ done: z.string(), cancel: z.string(), snooze: z.string() }).strict(),
+        terminal: z.array(z.string()),
+      })
+      .strict(),
+    fact: z
+      .object({
+        states: z.array(z.string()),
+        operations: z.object({ confirm: z.string(), reject: z.string(), supersede: z.string() }).strict(),
+        terminal: z.array(z.string()),
+      })
+      .strict(),
+  })
+  .strict();
+
+export const crmHelpReturnSchema = z
+  .object({
+    domain: z.literal("crm"),
+    kind: z.literal("quick-start"),
+    scope: z.literal("curated-entry-points"),
+    commands: z.array(z.object({ name: z.string(), intent: z.string(), mutates: z.boolean() }).strict()),
+    next: z.array(z.string()),
+  })
+  .strict();
 
 export const inboxItemEnvelopeReturnSchema = z
   .object({

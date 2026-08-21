@@ -4,6 +4,7 @@ import { dbCreateAgent, dbCreateContext, dbDeleteContext, dbGetContext } from ".
 import { getOrCreateSession } from "../router/sessions.js";
 import {
   authorizeRuntimeContext,
+  requestCascadingApproval,
   setApprovalServiceDependenciesForTest,
   type ApprovalServiceDependencies,
 } from "./service.js";
@@ -206,6 +207,47 @@ describe("approval service", () => {
         objectId: "daemon",
       }),
     );
+  });
+
+  it("persists the external receipt before waiting and accepts only the bound approver", async () => {
+    subscribeEvents = [
+      {
+        topic: "ravi.inbound.reaction",
+        data: { targetMessageId: "msg_1", emoji: "👍", senderId: "intruder" },
+      },
+      {
+        topic: "ravi.inbound.reaction",
+        data: { targetMessageId: "msg_1", emoji: "👍", senderId: "human-1" },
+      },
+    ];
+
+    const result = await requestCascadingApproval({
+      resolvedSource: { channel: "whatsapp", accountId: "main", chatId: "group-1" },
+      type: "plan",
+      sessionName: "crm-facade-plan-1",
+      agentId: "crm-agent",
+      text: "Approve immutable CRM plan plan-1?",
+      timeoutMs: 20,
+      expectedApproverId: "human-1",
+      beforeExternalApproval: () => externalOrder.push("before-external-approval"),
+      onRequestDelivered: ({ externalMessageId }) => {
+        externalOrder.push(`receipt:${externalMessageId}`);
+      },
+    });
+
+    expect(result).toMatchObject({
+      approved: true,
+      externalMessageId: "msg_1",
+      approverId: "human-1",
+      isDelegated: false,
+    });
+    expect(externalOrder).toEqual([
+      "before-external-approval",
+      "ravi.approval.request",
+      "outbound.deliver",
+      "receipt:msg_1",
+      "ravi.approval.response",
+    ]);
   });
 
   it("stops before external approval emission when its boundary fence fails", async () => {

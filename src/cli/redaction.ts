@@ -10,6 +10,9 @@ const PATH_KEYS = new Set(["cwd", "exe", "execpath", "outputdir"]);
 const SAFE_PUBLIC_PATH_KEYS = new Set(["route"]);
 const URL_KEYS = new Set(["endpoint"]);
 const COMMAND_KEYS = new Set(["command", "commandline", "shellcommand"]);
+const PUBLIC_STRUCTURAL_PATH = Symbol("cli:public-structural-path");
+const STRUCTURAL_PATH_PATTERN =
+  /^(?:<root>|(?:[A-Za-z_][A-Za-z0-9_-]*|\d+)(?:(?:[./])(?:[A-Za-z_][A-Za-z0-9_-]*|\d+)|\[\d+\])*)$/;
 const SECRET_KEYS = new Set([
   "accesstoken",
   "apikey",
@@ -25,6 +28,30 @@ const SECRET_KEYS = new Set([
   "secretref",
   "token",
 ]);
+
+export interface PublicStructuralPath {
+  readonly [PUBLIC_STRUCTURAL_PATH]: string;
+}
+
+/**
+ * Mark a schema/field path as safe structural metadata.
+ *
+ * The marker is intentionally explicit: an arbitrary property named `path`
+ * remains private. `sanitizePublicValue` unwraps only canonical dotted/indexed
+ * field paths and still applies token redaction before publication.
+ */
+export function markPublicStructuralPath(value: string): PublicStructuralPath {
+  return Object.freeze({ [PUBLIC_STRUCTURAL_PATH]: value });
+}
+
+function isPublicStructuralPath(value: unknown): value is PublicStructuralPath {
+  return Boolean(value && typeof value === "object" && PUBLIC_STRUCTURAL_PATH in value);
+}
+
+function sanitizePublicStructuralPath(value: string): string {
+  if (!STRUCTURAL_PATH_PATTERN.test(value)) return "[REDACTED:path]";
+  return sanitizePublicString(value);
+}
 
 function normalizeKey(key: string): string {
   return key.replace(/[-_]/g, "").toLowerCase();
@@ -64,6 +91,7 @@ function parentNamesSecret(parent: Readonly<Record<string, unknown>> | undefined
 
 /** Sanitize values before they can cross CLI, tool, gateway or audit boundaries. */
 export function sanitizePublicValue(value: unknown, key?: string, parent?: Readonly<Record<string, unknown>>): unknown {
+  if (isPublicStructuralPath(value)) return sanitizePublicStructuralPath(value[PUBLIC_STRUCTURAL_PATH]);
   if (typeof value === "string" && REDACTION_MARKER_PATTERN.test(value)) return value;
   if (key && isSecretKey(key) && !isTypedSecretMetadata(key, value)) return "[REDACTED]";
   if (key === "value" && parentNamesSecret(parent, value)) return "[REDACTED]";

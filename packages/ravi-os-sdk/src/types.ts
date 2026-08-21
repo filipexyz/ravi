@@ -5423,12 +5423,16 @@ export type CrmAccountShowReturn = {
 export type CrmBoardInput = {
   fields?: string;
   includeEmptyStages?: boolean;
+  limit?: string;
+  offset?: string;
   pipeline?: string;
 };
 
 /** Return shape for `crm.board`. */
 export type CrmBoardReturn = {
+  items: Array<Record<string, unknown>>;
   opportunities: Array<Record<string, unknown>>;
+  pagination: Record<string, unknown>;
   stages?: Array<Record<string, unknown>>;
   total: number;
   [k: string]: unknown;
@@ -5497,6 +5501,173 @@ export type CrmContactsReturn = {
   };
   total: number;
   [k: string]: unknown;
+};
+
+/** Input shape for `crm.facade.apply`. */
+export type CrmFacadeApplyInput = {
+  planId: string;
+};
+
+/** Return shape for `crm.facade.apply`. */
+export type CrmFacadeApplyReturn = {
+  effectId: string;
+  planHash: string;
+  planId: string;
+  readback?: unknown;
+  reason?: string;
+  state: "applied" | "partial" | "unknown";
+};
+
+/** Input shape for `crm.facade.approve`. */
+export type CrmFacadeApproveInput = {
+  planId: string;
+};
+
+/** Return shape for `crm.facade.approve`. */
+export type CrmFacadeApproveReturn = {
+  approval: ({
+    approvedAt: string | null;
+    approverId: string | null;
+    authorizedApproverId: string;
+    externalMessageId: string;
+    planHash: string;
+    requestedAt: string;
+    source: {
+      accountId: string;
+      channel: string;
+      chatId: string;
+      threadId?: string;
+    };
+    state: "requested" | "approved";
+  }) | null;
+  arguments: {
+    account?: string | null;
+    contact?: string;
+    field?: string;
+    primary?: boolean;
+    reason?: string;
+    role?: string;
+    stage?: string;
+    target: string;
+    until?: string;
+    value?: unknown;
+  };
+  createdAt: string;
+  effects: Array<{
+    effectId: string;
+    operation: "task.done" | "task.cancel" | "task.snooze" | "opportunity.move" | "fact.confirm" | "fact.reject" | "contact.set" | "account.link-contact" | "opportunity.link-contact";
+    primary: true;
+    retry: "never";
+  }>;
+  expiresAt: string;
+  operation: "task.done" | "task.cancel" | "task.snooze" | "opportunity.move" | "fact.confirm" | "fact.reject" | "contact.set" | "account.link-contact" | "opportunity.link-contact";
+  planHash: string;
+  planId: string;
+  schemaVersion: "crm.agent-first/v1";
+  state: "planned" | "approved" | "applying" | "applied" | "unknown" | "partial";
+  target: {
+    id: string;
+    label: string;
+    type: string;
+  };
+};
+
+/** Input shape for `crm.facade.plan`. */
+export type CrmFacadePlanInput = {
+  account?: string;
+  contact?: string;
+  field?: string;
+  operation: "task.done" | "task.cancel" | "task.snooze" | "opportunity.move" | "fact.confirm" | "fact.reject" | "contact.set" | "account.link-contact" | "opportunity.link-contact";
+  primary?: boolean;
+  reason?: string;
+  role?: string;
+  stage?: string;
+  target: string;
+  until?: string;
+  value?: string;
+};
+
+/** Return shape for `crm.facade.plan`. */
+export type CrmFacadePlanReturn = {
+  approval: ({
+    approvedAt: string | null;
+    approverId: string | null;
+    authorizedApproverId: string;
+    externalMessageId: string;
+    planHash: string;
+    requestedAt: string;
+    source: {
+      accountId: string;
+      channel: string;
+      chatId: string;
+      threadId?: string;
+    };
+    state: "requested" | "approved";
+  }) | null;
+  arguments: {
+    account?: string | null;
+    contact?: string;
+    field?: string;
+    primary?: boolean;
+    reason?: string;
+    role?: string;
+    stage?: string;
+    target: string;
+    until?: string;
+    value?: unknown;
+  };
+  createdAt: string;
+  effects: Array<{
+    effectId: string;
+    operation: "task.done" | "task.cancel" | "task.snooze" | "opportunity.move" | "fact.confirm" | "fact.reject" | "contact.set" | "account.link-contact" | "opportunity.link-contact";
+    primary: true;
+    retry: "never";
+  }>;
+  expiresAt: string;
+  operation: "task.done" | "task.cancel" | "task.snooze" | "opportunity.move" | "fact.confirm" | "fact.reject" | "contact.set" | "account.link-contact" | "opportunity.link-contact";
+  planHash: string;
+  planId: string;
+  schemaVersion: "crm.agent-first/v1";
+  state: "planned" | "approved" | "applying" | "applied" | "unknown" | "partial";
+  target: {
+    id: string;
+    label: string;
+    type: string;
+  };
+};
+
+/** Input shape for `crm.facade.recover`. */
+export type CrmFacadeRecoverInput = {
+  planId: string;
+};
+
+/** Return shape for `crm.facade.recover`. */
+export type CrmFacadeRecoverReturn = {
+  action: "manual_review_required";
+  expired: boolean;
+  observedAt: string;
+  outcome: "applied" | "not_applied" | "partial" | "not_determined";
+  planHash: string;
+  planId: string;
+  readback: unknown;
+  replay: false;
+  state: "planned" | "approved" | "applying" | "applied" | "unknown" | "partial";
+};
+
+/** Input shape for `crm.facade.verify`. */
+export type CrmFacadeVerifyInput = {
+  planId: string;
+};
+
+/** Return shape for `crm.facade.verify`. */
+export type CrmFacadeVerifyReturn = {
+  expired: boolean;
+  observedAt: string;
+  outcome: "applied" | "not_applied" | "partial" | "not_determined";
+  planHash: string;
+  planId: string;
+  readback: unknown;
+  state: "planned" | "approved" | "applying" | "applied" | "unknown" | "partial";
 };
 
 /** Input shape for `crm.fact.confirm`. */
@@ -5572,6 +5743,57 @@ export type CrmFactRejectReturn = {
   changedCount: number;
   status: string;
   [k: string]: unknown;
+};
+
+/** Input shape for `crm.help`. */
+export type CrmHelpInput = Record<string, never>;
+
+/** Return shape for `crm.help`. */
+export type CrmHelpReturn = {
+  commands: Array<{
+    intent: string;
+    mutates: boolean;
+    name: string;
+  }>;
+  domain: "crm";
+  kind: "quick-start";
+  next: string[];
+  scope: "curated-entry-points";
+};
+
+/** Input shape for `crm.lifecycle.show`. */
+export type CrmLifecycleShowInput = Record<string, never>;
+
+/** Return shape for `crm.lifecycle.show`. */
+export type CrmLifecycleShowReturn = {
+  contact: {
+    states: string[];
+    transitionPolicy: string;
+  };
+  enforcement: "facade-only";
+  fact: {
+    operations: {
+      confirm: string;
+      reject: string;
+      supersede: string;
+    };
+    states: string[];
+    terminal: string[];
+  };
+  legacyCommandsMayDiffer: true;
+  opportunity: {
+    states: string[];
+    transitionPolicy: string;
+  };
+  task: {
+    operations: {
+      cancel: string;
+      done: string;
+      snooze: string;
+    };
+    states: string[];
+    terminal: string[];
+  };
 };
 
 /** Input shape for `crm.next`. */

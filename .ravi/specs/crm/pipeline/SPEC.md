@@ -12,7 +12,8 @@ tags:
   - declarative
 applies_to:
   - src/crm/pipeline-metadata.ts
-  - src/cli/commands/crm.ts (CrmPipelineCommands group)
+  - src/crm/pipeline-engines.ts
+  - src/cli/commands/crm.ts
 owners:
   - ravi-dev
 status: active
@@ -26,11 +27,15 @@ normative: true
 `pipeline.metadata` is the declarative contract that drives engine consumers (dispatcher gates, precondition engine, TTL sweep, VIP guard, send-window validator, régua tag engine). Before this spec, `metadata` was free-form `Record<string, unknown>` and each agent invented its own keys — drift, no validation, no help.
 
 This spec defines:
-1. The canonical TypeScript schema (`src/crm/pipeline-metadata.ts`).
-2. The JSON Schema export (Draft-07) for documentation/CI.
-3. The introspection model used by `ravi crm pipeline review/validate/show --explain`.
 
-**See:** PR body in `feat/crm-pipeline-schema` branch + `/home/ravi/ravi/main/meetings/CRM-KISS-MVP-V2-HIBRIDO-2026-06-16.md`.
+1. The normative compatibility and behavior rules for pipeline metadata.
+2. The TypeScript and JSON Schema projections used for runtime validation and
+   generated contracts.
+3. The introspection model used by
+   `ravi crm pipeline review/validate/show --explain`.
+
+For rationale and operational guidance, see [`WHY.md`](./WHY.md) and
+[`RUNBOOK.md`](./RUNBOOK.md).
 
 ## Invariants
 
@@ -42,12 +47,23 @@ This spec defines:
 - **I6 Stage key consistency:** validator MUST warn (not error) when `stages[X].key` does not match a runtime stage; warnings DO NOT block the metadata write.
 - **I7 Schema additions are non-breaking:** new optional fields can be added in a minor version. Removing or renaming fields requires a major version + migration plan.
 - **I8 Engine consumers MUST tolerate absence:** every engine that reads metadata MUST gracefully handle the missing-field case (no exceptions).
+- **I9 Single normative source:** this Ravi spec is normative for metadata
+  behavior and compatibility. The TypeScript schema and exported JSON Schema
+  are executable field-level projections and MUST remain aligned with it. A
+  behavioral change in either projection MUST update this spec in the same
+  change. `pipeline review` is a 12-checkpoint operational coverage report; it
+  does not claim to enumerate every schema field.
+- **I10 Active-pipeline compliance:** validation errors are actionable and
+  reported, but do not automatically disable or mutate existing active
+  pipelines. Enforcement requires a separately versioned migration decision.
 
 ## Validation
 
-- `bun test src/crm/pipeline-metadata.test.ts` — 14+ tests covering empty/partial/full/invalid metadata, passthrough, stage key drift, warnings.
+- `bun test src/crm/pipeline-metadata.test.ts` — covers empty, partial, full, and
+  invalid metadata, passthrough, stage-key drift, and warnings.
 - `ravi crm pipeline validate <id>` — runtime validation against any pipeline (FAIL exit 1 if schema errors).
-- `ravi crm pipeline review <id>` — structured 12-field report (✓/✗/⚠ + suggestions).
+- `ravi crm pipeline review <id>` — structured 12-checkpoint coverage report
+  (✓/✗/⚠ + suggestions); high-severity gaps exit 1.
 - `ravi crm pipeline show <id> --explain` — render metadata with field-by-field impact narrative.
 
 ## Known Failure Modes
@@ -62,11 +78,11 @@ This spec defines:
 
 1. Pipelines without `metadata` keys: zero change. Engine consumers see no fields → no-op.
 2. Pipelines that opt in: add fields incrementally; rollback at any time by removing the field.
-3. Migration scripts may bulk-add defaults (see `scripts/migrate-pipeline-metadata.ts`).
+3. Any bulk migration requires separate reviewed tooling and a rollback plan.
 
 ## References
 
 - Source: `src/crm/pipeline-metadata.ts`
 - Tests: `src/crm/pipeline-metadata.test.ts`
 - CLI: `src/cli/commands/crm.ts` (`CrmPipelineCommands` group)
-- Engine consumers: see PRD `/home/ravi/ravi/main/meetings/CRM-KISS-MVP-V2-HIBRIDO-2026-06-16.md`
+- Engine consumers: `src/crm/pipeline-engines.ts`

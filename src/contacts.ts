@@ -389,6 +389,31 @@ function initializeIdentitySchema(database: Database): void {
 
 function initializeCrmSchema(database: Database): void {
   database.exec(`
+    CREATE TABLE IF NOT EXISTS crm_facade_plans (
+      plan_id TEXT PRIMARY KEY,
+      plan_hash TEXT NOT NULL UNIQUE,
+      plan_json TEXT NOT NULL,
+      state TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      approval_json TEXT,
+      applied_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS crm_facade_effects (
+      effect_id TEXT PRIMARY KEY,
+      plan_id TEXT NOT NULL,
+      operation TEXT NOT NULL,
+      state TEXT NOT NULL,
+      idempotency_key TEXT NOT NULL UNIQUE,
+      dispatched_at TEXT,
+      observed_at TEXT,
+      readback_json TEXT,
+      FOREIGN KEY (plan_id) REFERENCES crm_facade_plans(plan_id)
+    );
+  `);
+
+  database.exec(`
     CREATE TABLE IF NOT EXISTS crm_events (
       id TEXT PRIMARY KEY,
       event_type TEXT NOT NULL,
@@ -4535,6 +4560,7 @@ export function updateCrmContactProfile(input: UpdateCrmContactProfileInput): Cr
         entityId: contactId,
         contactId,
         source: crmMutationSource(input),
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: input.confidence,
@@ -5053,6 +5079,37 @@ export function getCrmAccount(accountRef: string): CrmAccountDetail | null {
   };
 }
 
+export function getCrmAccountSummary(accountRef: string): CrmAccount | null {
+  const row = getCrmAccountRow(ensureDb(), accountRef);
+  return row ? rowToCrmAccount(row) : null;
+}
+
+export function listCrmAccountContactIds(accountRef: string): string[] {
+  const database = ensureDb();
+  const account = getCrmAccountRow(database, accountRef);
+  if (!account) return [];
+  const rows = database
+    .prepare("SELECT DISTINCT contact_id FROM crm_account_contacts WHERE account_id = ? ORDER BY contact_id")
+    .all(account.id) as Array<{ contact_id: string }>;
+  return rows.map((row) => row.contact_id);
+}
+
+export function getCrmAccountContact(
+  accountRef: string,
+  contactRef: string,
+  role = "member",
+): CrmAccountContact | null {
+  const database = ensureDb();
+  const account = getCrmAccountRow(database, accountRef);
+  const contactId = resolveCanonicalContactId(database, contactRef);
+  if (!account || !contactId) return null;
+  const id = stableId("crm_ac", [account.id, contactId, normalizeOptionalText(role) ?? "member"]);
+  const row = database.prepare("SELECT * FROM crm_account_contacts WHERE id = ?").get(id) as
+    | CrmAccountContactRow
+    | undefined;
+  return row ? rowToCrmAccountContact(row) : null;
+}
+
 export function linkCrmAccountContact(input: LinkCrmAccountContactInput): CrmAccountContact {
   const database = ensureDb();
   const account = requireCrmAccount(database, input.accountId);
@@ -5139,6 +5196,7 @@ export function linkCrmAccountContact(input: LinkCrmAccountContactInput): CrmAcc
         contactId,
         accountId: account.id,
         source: linkedMembership.source,
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: linkedMembership.confidence,
@@ -6019,6 +6077,7 @@ export function linkCrmOpportunityContact(input: LinkCrmOpportunityContactInput)
         accountId,
         opportunityId: opportunity.id,
         source: link.source,
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: link.confidence,
@@ -6044,6 +6103,28 @@ export function listCrmOpportunityContacts(opportunityId: string): CrmOpportunit
     )
     .all(opportunityId) as CrmOpportunityContactRow[];
   return rows.map(rowToCrmOpportunityContact);
+}
+
+export function listCrmOpportunityContactIds(opportunityId: string): string[] {
+  const rows = ensureDb()
+    .prepare("SELECT DISTINCT contact_id FROM crm_opportunity_contacts WHERE opportunity_id = ? ORDER BY contact_id")
+    .all(opportunityId) as Array<{ contact_id: string }>;
+  return rows.map((row) => row.contact_id);
+}
+
+export function getCrmOpportunityContact(
+  opportunityId: string,
+  contactRef: string,
+  role = "stakeholder",
+): CrmOpportunityContact | null {
+  const database = ensureDb();
+  const contactId = resolveCanonicalContactId(database, contactRef);
+  if (!contactId || !getCrmOpportunityRow(database, opportunityId)) return null;
+  const id = stableId("crm_oc", [opportunityId, contactId, normalizeOptionalText(role) ?? "stakeholder"]);
+  const row = database.prepare("SELECT * FROM crm_opportunity_contacts WHERE id = ?").get(id) as
+    | CrmOpportunityContactRow
+    | undefined;
+  return row ? rowToCrmOpportunityContact(row) : null;
 }
 
 export function moveCrmOpportunityStage(input: MoveCrmOpportunityStageInput): CrmOpportunity {
@@ -6081,6 +6162,7 @@ export function moveCrmOpportunityStage(input: MoveCrmOpportunityStageInput): Cr
         accountId: previous.account_id,
         opportunityId: previous.id,
         source: crmMutationSource(input),
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: input.confidence,
@@ -6099,6 +6181,7 @@ export function moveCrmOpportunityStage(input: MoveCrmOpportunityStageInput): Cr
           accountId: previous.account_id,
           opportunityId: previous.id,
           source: crmMutationSource(input),
+          idempotencyKey: input.idempotencyKey ? `${input.idempotencyKey}:status` : null,
           actorType: input.actorType,
           actorId: input.actorId,
           confidence: input.confidence,
@@ -6318,6 +6401,7 @@ export function cancelCrmTask(input: CancelCrmTaskInput): CrmTask {
         opportunityId: previous.opportunity_id,
         taskId: previous.id,
         source: crmMutationSource(input),
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: input.confidence,
@@ -6384,6 +6468,7 @@ export function snoozeCrmTask(input: SnoozeCrmTaskInput): CrmTask {
         opportunityId: previous.opportunity_id,
         taskId: previous.id,
         source: crmMutationSource(input),
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: input.confidence,
@@ -6499,6 +6584,7 @@ export function completeCrmTask(input: CompleteCrmTaskInput): CrmTask {
         opportunityId: previous.opportunity_id,
         taskId: previous.id,
         source: crmMutationSource(input),
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: input.confidence,
@@ -6589,6 +6675,178 @@ export function listCrmNextActions(options: ListCrmNextActionsOptions = {}): Lis
 function getCrmFactRow(database: Database, factId: string): CrmFactRow | null {
   const row = database.prepare("SELECT * FROM crm_facts WHERE id = ?").get(factId) as CrmFactRow | undefined;
   return row ?? null;
+}
+
+export function getCrmFact(factId: string): CrmFact | null {
+  const database = ensureDb();
+  const fact = getCrmFactRow(database, factId);
+  return fact ? rowToCrmFact(fact) : null;
+}
+
+export type CrmFacadePlanRecord = {
+  planId: string;
+  planHash: string;
+  planJson: string;
+  state: string;
+  createdAt: string;
+  expiresAt: string;
+  updatedAt: string;
+  approvalJson: string | null;
+  appliedAt: string | null;
+};
+
+export function pruneExpiredUnapprovedCrmFacadePlans(cutoff: string, limit = 100): string[] {
+  const database = ensureDb();
+  const safeLimit = Math.max(1, Math.min(Math.trunc(limit), 500));
+  const candidates = database
+    .query(
+      `SELECT p.plan_id
+       FROM crm_facade_plans p
+       LEFT JOIN crm_facade_effects e ON e.plan_id = p.plan_id
+       WHERE p.state = 'planned'
+         AND p.approval_json IS NULL
+         AND p.expires_at <= ?
+         AND e.effect_id IS NULL
+       ORDER BY p.expires_at ASC, p.plan_id ASC
+       LIMIT ?`,
+    )
+    .all(cutoff, safeLimit) as Array<{ plan_id: string }>;
+  const deleted: string[] = [];
+  executeWrite(
+    database,
+    () => {
+      const remove = database.query(
+        `DELETE FROM crm_facade_plans
+         WHERE plan_id = ? AND state = 'planned' AND approval_json IS NULL AND expires_at <= ?
+           AND NOT EXISTS (SELECT 1 FROM crm_facade_effects WHERE plan_id = ?)`,
+      );
+      for (const candidate of candidates) {
+        const result = remove.run(candidate.plan_id, cutoff, candidate.plan_id) as { changes?: number };
+        if (result.changes === 1) deleted.push(candidate.plan_id);
+      }
+    },
+    { label: "contacts:pruneExpiredUnapprovedCrmFacadePlans" },
+  );
+  return deleted;
+}
+
+export function saveCrmFacadePlan(record: CrmFacadePlanRecord): void {
+  const database = ensureDb();
+  database
+    .query(
+      `INSERT INTO crm_facade_plans (plan_id, plan_hash, plan_json, state, created_at, expires_at, updated_at, approval_json, applied_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      record.planId,
+      record.planHash,
+      record.planJson,
+      record.state,
+      record.createdAt,
+      record.expiresAt,
+      record.updatedAt,
+      record.approvalJson,
+      record.appliedAt,
+    );
+}
+
+export function getCrmFacadePlan(planId: string): CrmFacadePlanRecord | null {
+  const row = ensureDb().query(`SELECT * FROM crm_facade_plans WHERE plan_id = ?`).get(planId) as Record<
+    string,
+    unknown
+  > | null;
+  if (!row) return null;
+  return {
+    planId: String(row.plan_id),
+    planHash: String(row.plan_hash),
+    planJson: String(row.plan_json),
+    state: String(row.state),
+    createdAt: String(row.created_at),
+    expiresAt: String(row.expires_at),
+    updatedAt: String(row.updated_at),
+    approvalJson: row.approval_json ? String(row.approval_json) : null,
+    appliedAt: row.applied_at ? String(row.applied_at) : null,
+  };
+}
+
+export function updateCrmFacadePlanState(planId: string, state: string, updatedAt: string, appliedAt?: string): void {
+  ensureDb()
+    .query(
+      `UPDATE crm_facade_plans SET state = ?, updated_at = ?, applied_at = COALESCE(?, applied_at) WHERE plan_id = ?`,
+    )
+    .run(state, updatedAt, appliedAt ?? null, planId);
+}
+
+export function recordCrmFacadeApprovalRequest(planId: string, approvalJson: string, updatedAt: string): boolean {
+  const result = ensureDb()
+    .query(
+      `UPDATE crm_facade_plans
+       SET approval_json = ?, updated_at = ?
+       WHERE plan_id = ? AND state = 'planned' AND approval_json IS NULL AND expires_at > ?`,
+    )
+    .run(approvalJson, updatedAt, planId, updatedAt) as { changes?: number };
+  return result.changes === 1;
+}
+
+export function recordCrmFacadeApproval(
+  planId: string,
+  expectedApprovalJson: string,
+  approvalJson: string,
+  updatedAt: string,
+): boolean {
+  const result = ensureDb()
+    .query(
+      `UPDATE crm_facade_plans
+       SET state = 'approved', approval_json = ?, updated_at = ?
+       WHERE plan_id = ? AND state = 'planned' AND approval_json = ? AND expires_at > ?`,
+    )
+    .run(approvalJson, updatedAt, planId, expectedApprovalJson, updatedAt) as { changes?: number };
+  return result.changes === 1;
+}
+
+export function claimCrmFacadePlanApply(planId: string, now: string): boolean {
+  const result = ensureDb()
+    .query(
+      `UPDATE crm_facade_plans SET state = 'applying', updated_at = ? WHERE plan_id = ? AND state = 'approved' AND expires_at > ?`,
+    )
+    .run(now, planId, now) as { changes?: number };
+  return result.changes === 1;
+}
+
+export function saveCrmFacadeEffect(input: {
+  effectId: string;
+  planId: string;
+  operation: string;
+  state: string;
+  idempotencyKey: string;
+  dispatchedAt?: string | null;
+  observedAt?: string | null;
+  readbackJson?: string | null;
+}): void {
+  ensureDb()
+    .query(
+      `INSERT INTO crm_facade_effects (effect_id, plan_id, operation, state, idempotency_key, dispatched_at, observed_at, readback_json) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      input.effectId,
+      input.planId,
+      input.operation,
+      input.state,
+      input.idempotencyKey,
+      input.dispatchedAt ?? null,
+      input.observedAt ?? null,
+      input.readbackJson ?? null,
+    );
+}
+
+export function updateCrmFacadeEffect(
+  effectId: string,
+  input: { state: string; observedAt?: string | null; readbackJson?: string | null },
+): void {
+  ensureDb()
+    .query(
+      `UPDATE crm_facade_effects SET state = ?, observed_at = COALESCE(?, observed_at), readback_json = COALESCE(?, readback_json) WHERE effect_id = ?`,
+    )
+    .run(input.state, input.observedAt ?? null, input.readbackJson ?? null, effectId);
 }
 
 function requireCrmFact(database: Database, factId: string): CrmFactRow {
@@ -6781,6 +7039,7 @@ function updateCrmFactStatus(input: UpdateCrmFactStatusInput, status: Exclude<Cr
         accountId: previous.account_id,
         opportunityId: previous.opportunity_id,
         source: crmMutationSource(input),
+        idempotencyKey: input.idempotencyKey,
         actorType: input.actorType,
         actorId: input.actorId,
         confidence: input.confidence ?? previous.confidence,

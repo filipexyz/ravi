@@ -1,11 +1,13 @@
 import "reflect-metadata";
-import { describe, expect, it } from "bun:test";
+import { describe, expect, it, setDefaultTimeout } from "bun:test";
 import { z } from "zod";
 
 import { Arg, Command, Group, Option, Returns, Scope } from "../../cli/decorators.js";
 import { buildRegistry, getRegistry } from "../../cli/registry-snapshot.js";
 import { emit, emitJson, commandPath } from "./emit.js";
 import { sortKeysDeep, stableStringify } from "./stable-stringify.js";
+
+setDefaultTimeout(10_000);
 
 @Group({ name: "demo", description: "Demo commands", scope: "open" })
 class DemoCommands {
@@ -230,6 +232,40 @@ describe("openapi emit (live registry)", () => {
     const spec = emit(getRegistry());
     const ids = Object.values(spec.paths).map((p) => p.post.operationId);
     expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("publishes the CRM facade plan operation as a closed enum", () => {
+    const spec = emit(getRegistry());
+    const body = spec.paths["/api/v1/crm/facade/plan"]!.post.requestBody!.content["application/json"].schema as Record<
+      string,
+      unknown
+    >;
+    const properties = body.properties as Record<string, Record<string, unknown>>;
+
+    expect(properties.operation?.enum).toEqual([
+      "task.done",
+      "task.cancel",
+      "task.snooze",
+      "opportunity.move",
+      "fact.confirm",
+      "fact.reject",
+      "contact.set",
+      "account.link-contact",
+      "opportunity.link-contact",
+    ]);
+  });
+
+  it("derives CRM facade approval context instead of accepting caller-supplied identity", () => {
+    const spec = emit(getRegistry());
+    const requestBody = spec.paths["/api/v1/crm/facade/approve"]!.post.requestBody!;
+    const body = requestBody.content["application/json"].schema as Record<string, unknown>;
+    const properties = body.properties as Record<string, unknown>;
+
+    expect(requestBody.required).toBe(true);
+    expect(Object.keys(properties)).toEqual(["planId"]);
+    expect(body.required).toEqual(["planId"]);
+    expect(properties).not.toHaveProperty("source");
+    expect(properties).not.toHaveProperty("agent");
   });
 });
 

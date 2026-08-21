@@ -1615,8 +1615,16 @@ public struct CrmNamespace: Sendable {
     CrmContactNamespace(transport: transport)
   }
 
+  public var facade: CrmFacadeNamespace {
+    CrmFacadeNamespace(transport: transport)
+  }
+
   public var fact: CrmFactNamespace {
     CrmFactNamespace(transport: transport)
+  }
+
+  public var lifecycle: CrmLifecycleNamespace {
+    CrmLifecycleNamespace(transport: transport)
   }
 
   public var opportunity: CrmOpportunityNamespace {
@@ -1653,6 +1661,11 @@ public struct CrmNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     try options.encodeBody(into: &requestBody)
     return try await transport.call(groupSegments: ["crm"], command: "contacts", body: requestBody, as: CrmContactsReturn.self)
+  }
+
+  public func help() async throws -> CrmHelpReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["crm"], command: "help", body: requestBody, as: CrmHelpReturn.self)
   }
 
   public func next(_ options: CrmNextOptions = .init()) async throws -> CrmNextReturn {
@@ -1720,6 +1733,46 @@ public struct CrmContactNamespace: Sendable {
   }
 }
 
+public struct CrmFacadeNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func apply(_ planId: String) async throws -> CrmFacadeApplyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["planId"] = try RaviJSON.fromEncodable(planId)
+    return try await transport.call(groupSegments: ["crm","facade"], command: "apply", body: requestBody, as: CrmFacadeApplyReturn.self)
+  }
+
+  public func approve(_ planId: String) async throws -> CrmFacadeApproveReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["planId"] = try RaviJSON.fromEncodable(planId)
+    return try await transport.call(groupSegments: ["crm","facade"], command: "approve", body: requestBody, as: CrmFacadeApproveReturn.self)
+  }
+
+  public func plan(_ operation: String, _ target: String, _ options: CrmFacadePlanOptions = .init()) async throws -> CrmFacadePlanReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["operation"] = try RaviJSON.fromEncodable(operation)
+    requestBody["target"] = try RaviJSON.fromEncodable(target)
+    try options.encodeBody(into: &requestBody)
+    return try await transport.call(groupSegments: ["crm","facade"], command: "plan", body: requestBody, as: CrmFacadePlanReturn.self)
+  }
+
+  public func recover(_ planId: String) async throws -> CrmFacadeRecoverReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["planId"] = try RaviJSON.fromEncodable(planId)
+    return try await transport.call(groupSegments: ["crm","facade"], command: "recover", body: requestBody, as: CrmFacadeRecoverReturn.self)
+  }
+
+  public func verify(_ planId: String) async throws -> CrmFacadeVerifyReturn {
+    var requestBody: [String: RaviJSON] = [:]
+    requestBody["planId"] = try RaviJSON.fromEncodable(planId)
+    return try await transport.call(groupSegments: ["crm","facade"], command: "verify", body: requestBody, as: CrmFacadeVerifyReturn.self)
+  }
+}
+
 public struct CrmFactNamespace: Sendable {
   private let transport: any RaviTransport
 
@@ -1753,6 +1806,19 @@ public struct CrmFactNamespace: Sendable {
     var requestBody: [String: RaviJSON] = [:]
     requestBody["fact"] = try RaviJSON.fromEncodable(fact)
     return try await transport.call(groupSegments: ["crm","fact"], command: "reject", body: requestBody, as: CrmFactRejectReturn.self)
+  }
+}
+
+public struct CrmLifecycleNamespace: Sendable {
+  private let transport: any RaviTransport
+
+  init(transport: any RaviTransport) {
+    self.transport = transport
+  }
+
+  public func show() async throws -> CrmLifecycleShowReturn {
+    let requestBody: [String: RaviJSON] = [:]
+    return try await transport.call(groupSegments: ["crm","lifecycle"], command: "show", body: requestBody, as: CrmLifecycleShowReturn.self)
   }
 }
 

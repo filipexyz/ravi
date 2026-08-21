@@ -1,9 +1,21 @@
 import { afterAll, beforeEach, describe, expect, it, mock } from "bun:test";
+import type { CrmFacadePlan, CrmFacadePlanInput } from "../../crm/facade.js";
 
 afterAll(() => mock.restore());
 
 const actualCliContextModule = await import("../context.js");
 const actualContactsModule = await import("../../contacts.js");
+type StoredPlan = {
+  planId: string;
+  planHash: string;
+  planJson: string;
+  state: string;
+  createdAt: string;
+  expiresAt: string;
+  updatedAt: string;
+  approvalJson: string | null;
+  appliedAt: string | null;
+};
 
 let crmContactProfile: Record<string, unknown> | null = null;
 let crmAccount: Record<string, unknown> | null = null;
@@ -18,21 +30,27 @@ let pipelineRecords: Array<Record<string, unknown>> = [];
 let pipelineStageRecords: Array<Record<string, unknown>> = [];
 let pipelineTopicRecords: Array<Record<string, unknown>> = [];
 let factRecords: Array<Record<string, unknown>> = [];
+let accountContactIds: string[] = [];
 let scopeEnforced = false;
 let readableContactIds = new Set<string>();
 let lastAccountCreateInput: Record<string, unknown> | null = null;
+let lastAccountContactInput: Record<string, unknown> | null = null;
 let lastOpportunityCreateInput: Record<string, unknown> | null = null;
 let lastOpportunityMoveInput: Record<string, unknown> | null = null;
 let lastTaskCreateInput: Record<string, unknown> | null = null;
+let lastTaskMutationInput: Record<string, unknown> | null = null;
 let lastProfileUpdateInput: Record<string, unknown> | null = null;
 let lastOpportunityContactInput: Record<string, unknown> | null = null;
 let lastFactInput: Record<string, unknown> | null = null;
+let lastFactMutationInput: Record<string, unknown> | null = null;
 let lastPipelineCreateInput: Record<string, unknown> | null = null;
 let lastPipelineUpdateInput: Record<string, unknown> | null = null;
 let lastPipelineStageCreateInput: Record<string, unknown> | null = null;
 let lastPipelineStageUpdateInput: Record<string, unknown> | null = null;
 let lastPipelineTopicCreateInput: Record<string, unknown> | null = null;
 let lastPipelineTopicUpdateInput: Record<string, unknown> | null = null;
+const facadePlans = new Map<string, StoredPlan>();
+const facadeEffects: Array<Record<string, unknown>> = [];
 
 function pageRecords<T>(
   records: T[],
@@ -100,6 +118,14 @@ mock.module("../../contacts.js", () => ({
           tasks: [],
           nextActions: [],
           facts: [],
+        }
+      : null,
+  getContactDetails: (contactRef: string) =>
+    crmContactProfile
+      ? {
+          contact: { id: contactRef, displayName: "Alice" },
+          policy: null,
+          platformIdentities: [],
         }
       : null,
   getAllContactAccessRecords: () =>
@@ -245,17 +271,22 @@ mock.module("../../contacts.js", () => ({
           tasks: [],
         }
       : null,
+  getCrmAccountSummary: (accountRef: string) => (crmAccount ? { id: accountRef, name: "Acme", ...crmAccount } : null),
+  listCrmAccountContactIds: () => accountContactIds,
   createCrmAccount: (input: Record<string, unknown>) => {
     lastAccountCreateInput = input;
     return { id: "crm_acc_1", name: input.name, domain: input.domain ?? null };
   },
-  linkCrmAccountContact: (input: Record<string, unknown>) => ({
-    id: "crm_ac_1",
-    accountId: input.accountId,
-    contactId: input.contactRef,
-    role: input.role ?? "member",
-    isPrimary: input.isPrimary === true,
-  }),
+  linkCrmAccountContact: (input: Record<string, unknown>) => {
+    lastAccountContactInput = input;
+    return {
+      id: "crm_ac_1",
+      accountId: input.accountId,
+      contactId: input.contactRef,
+      role: input.role ?? "member",
+      isPrimary: input.isPrimary === true,
+    };
+  },
   getCrmOpportunity: (opportunityId: string) =>
     crmOpportunity
       ? {
@@ -268,6 +299,10 @@ mock.module("../../contacts.js", () => ({
           ...crmOpportunity,
         }
       : null,
+  listCrmOpportunityContactIds: () =>
+    opportunityContactRecords
+      .map((record) => record.contactId)
+      .filter((contactId): contactId is string => typeof contactId === "string"),
   createCrmOpportunity: (input: Record<string, unknown>) => {
     lastOpportunityCreateInput = input;
     return { id: "crm_opp_1", title: input.title, accountId: input.accountId ?? null };
@@ -293,6 +328,10 @@ mock.module("../../contacts.js", () => ({
   },
   listCrmFacts: (options: { limit?: string; offset?: string; readableContactIds?: readonly string[] }) =>
     pageRecords(filterReadableRecords(factRecords, options), options),
+  getCrmFact: (factId: string) => {
+    const fact = factRecords.find((record) => record.id === factId);
+    return fact ? { ...fact, contactId: fact.entityType === "contact" ? fact.entityId : null } : null;
+  },
   proposeCrmFact: (input: Record<string, unknown>) => {
     lastFactInput = input;
     return {
@@ -304,16 +343,14 @@ mock.module("../../contacts.js", () => ({
       status: input.status ?? "proposed",
     };
   },
-  confirmCrmFact: (input: Record<string, unknown>) => ({
-    id: input.factId,
-    key: "profile.role",
-    status: "confirmed",
-  }),
-  rejectCrmFact: (input: Record<string, unknown>) => ({
-    id: input.factId,
-    key: "profile.role",
-    status: "rejected",
-  }),
+  confirmCrmFact: (input: Record<string, unknown>) => {
+    lastFactMutationInput = input;
+    return { id: input.factId, key: "profile.role", status: "confirmed" };
+  },
+  rejectCrmFact: (input: Record<string, unknown>) => {
+    lastFactMutationInput = input;
+    return { id: input.factId, key: "profile.role", status: "rejected" };
+  },
   getCrmTask: (taskId: string) =>
     crmTask
       ? {
@@ -330,11 +367,18 @@ mock.module("../../contacts.js", () => ({
     lastTaskCreateInput = input;
     return { id: "crm_task_1", title: input.title, contactId: input.contactRef ?? null };
   },
-  completeCrmTask: (input: Record<string, unknown>) => ({
-    id: input.taskId,
-    title: "Follow up",
-    status: "done",
-  }),
+  completeCrmTask: (input: Record<string, unknown>) => {
+    lastTaskMutationInput = input;
+    return { id: input.taskId, title: "Follow up", status: "done" };
+  },
+  cancelCrmTask: (input: Record<string, unknown>) => {
+    lastTaskMutationInput = input;
+    return { id: input.taskId, title: "Follow up", status: "canceled" };
+  },
+  snoozeCrmTask: (input: Record<string, unknown>) => {
+    lastTaskMutationInput = input;
+    return { id: input.taskId, title: "Follow up", status: "snoozed" };
+  },
   updateCrmContactProfile: (input: Record<string, unknown>) => {
     lastProfileUpdateInput = input;
     return {
@@ -344,13 +388,60 @@ mock.module("../../contacts.js", () => ({
       priority: input.priority ?? "normal",
     };
   },
+  saveCrmFacadePlan: (record: StoredPlan) => facadePlans.set(record.planId, { ...record }),
+  pruneExpiredUnapprovedCrmFacadePlans: () => [],
+  getCrmFacadePlan: (planId: string) => facadePlans.get(planId) ?? null,
+  updateCrmFacadePlanState: (planId: string, state: string, updatedAt: string, appliedAt?: string) => {
+    const plan = facadePlans.get(planId);
+    if (plan) facadePlans.set(planId, { ...plan, state, updatedAt, appliedAt: appliedAt ?? plan.appliedAt });
+  },
+  recordCrmFacadeApprovalRequest: (planId: string, approvalJson: string, updatedAt: string) => {
+    const plan = facadePlans.get(planId);
+    if (
+      plan?.state !== "planned" ||
+      plan.approvalJson !== null ||
+      Date.parse(plan.expiresAt) <= Date.parse(updatedAt)
+    ) {
+      return false;
+    }
+    facadePlans.set(planId, { ...plan, approvalJson, updatedAt });
+    return true;
+  },
+  recordCrmFacadeApproval: (planId: string, expectedApprovalJson: string, approvalJson: string, updatedAt: string) => {
+    const plan = facadePlans.get(planId);
+    if (
+      plan?.state !== "planned" ||
+      plan.approvalJson !== expectedApprovalJson ||
+      Date.parse(plan.expiresAt) <= Date.parse(updatedAt)
+    ) {
+      return false;
+    }
+    facadePlans.set(planId, { ...plan, state: "approved", approvalJson, updatedAt });
+    return true;
+  },
+  claimCrmFacadePlanApply: (planId: string) => {
+    const plan = facadePlans.get(planId);
+    if (!plan || plan.state !== "approved" || Date.parse(plan.expiresAt) <= Date.now()) return false;
+    facadePlans.set(planId, { ...plan, state: "applying", updatedAt: new Date().toISOString() });
+    return true;
+  },
+  saveCrmFacadeEffect: (effect: Record<string, unknown>) => {
+    facadeEffects.push(effect);
+  },
+  updateCrmFacadeEffect: (effectId: string, update: Record<string, unknown>) => {
+    const effect = facadeEffects.find((candidate) => candidate.effectId === effectId);
+    if (effect) Object.assign(effect, update);
+  },
 }));
 
 const {
   ACrmCommands,
   CrmAccountCommands,
   CrmContactCommands,
+  CrmFacadeCommands,
+  formatCrmFacadeApprovalText,
   CrmFactCommands,
+  CrmLifecycleCommands,
   CrmOpportunityCommands,
   CrmPipelineCommands,
   CrmPipelinePolicyCommands,
@@ -362,6 +453,7 @@ const {
 const { ContractError: CrmContractError, installUsageContract } = await import("../agent-contract.js");
 const { Command: CommanderCommand } = await import("commander");
 const { registerCommands } = await import("../registry.js");
+const { buildCrmFacadePlan, persistCrmFacadePlan } = await import("../../crm/facade.js");
 
 /**
  * Real commander tree for the `crm` group, wired exactly like `src/cli/index.ts`
@@ -376,7 +468,9 @@ function buildCrmProgram() {
     ACrmCommands,
     CrmAccountCommands,
     CrmContactCommands,
+    CrmFacadeCommands,
     CrmFactCommands,
+    CrmLifecycleCommands,
     CrmOpportunityCommands,
     CrmPipelineCommands,
     CrmPipelinePolicyCommands,
@@ -419,6 +513,37 @@ function captureJsonError(run: () => unknown): { payload: Record<string, unknown
   return { payload: JSON.parse(lines.join("\n")) as Record<string, unknown>, error };
 }
 
+async function captureJsonErrorAsync(
+  run: () => Promise<unknown>,
+): Promise<{ payload: Record<string, unknown>; error: unknown }> {
+  const original = console.log;
+  const lines: string[] = [];
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  };
+  let error: unknown;
+  try {
+    await run();
+  } catch (caught) {
+    error = caught;
+  } finally {
+    console.log = original;
+  }
+  return { payload: JSON.parse(lines.join("\n")) as Record<string, unknown>, error };
+}
+
+function expectTypedNotFound(run: () => unknown, op: string, code: string): Record<string, unknown> {
+  const { payload, error } = captureJsonError(run);
+  expect(error).toBeInstanceOf(CrmContractError);
+  const contractError = error as InstanceType<typeof CrmContractError>;
+  expect(contractError.exitCode).toBe(1);
+  expect(contractError.code).toBe(code);
+  expect(payload).toMatchObject({ success: false, op });
+  expect(payload.error).toMatchObject({ code, retryable: false });
+  expect((payload.error as Record<string, unknown>).suggestedAction).toBeTruthy();
+  return payload;
+}
+
 function silenceLogs(run: () => unknown): void {
   const original = console.log;
   console.log = () => {};
@@ -429,10 +554,28 @@ function silenceLogs(run: () => unknown): void {
   }
 }
 
+function planFacade(input: CrmFacadePlanInput): unknown {
+  return new CrmFacadeCommands().plan(
+    input.operation,
+    input.target,
+    input.stage,
+    input.contact,
+    input.field,
+    input.value,
+    input.until,
+    input.reason,
+    input.role,
+    input.account,
+    input.primary,
+    true,
+  );
+}
+
 describe("CRM commands", () => {
   beforeEach(() => {
     scopeEnforced = false;
     readableContactIds = new Set<string>();
+    accountContactIds = [];
     crmContactProfile = {
       contactId: "contact-1",
       lifecycle: "lead",
@@ -536,18 +679,23 @@ describe("CRM commands", () => {
       },
     ];
     lastAccountCreateInput = null;
+    lastAccountContactInput = null;
     lastOpportunityCreateInput = null;
     lastOpportunityMoveInput = null;
     lastTaskCreateInput = null;
+    lastTaskMutationInput = null;
     lastProfileUpdateInput = null;
     lastOpportunityContactInput = null;
     lastFactInput = null;
+    lastFactMutationInput = null;
     lastPipelineCreateInput = null;
     lastPipelineUpdateInput = null;
     lastPipelineStageCreateInput = null;
     lastPipelineStageUpdateInput = null;
     lastPipelineTopicCreateInput = null;
     lastPipelineTopicUpdateInput = null;
+    facadePlans.clear();
+    facadeEffects.length = 0;
   });
 
   it("lists CRM next actions as a paginated JSON surface", () => {
@@ -1021,7 +1169,8 @@ describe("CRM commands", () => {
 
   it("emits PIPELINE_VALIDATION_FAILED when pipeline metadata is invalid", () => {
     process.env.RAVI_AGENT_ID = "crm-contract-test";
-    pipelineRecords[0] = { ...pipelineRecords[0], metadata: { priority_global: 99 } };
+    const secretValue = "SENTINEL_SECRET_7M4Q";
+    pipelineRecords[0] = { ...pipelineRecords[0], metadata: { priority_global: secretValue } };
     try {
       const { payload, error } = captureJsonError(() => {
         new CrmPipelineCommands().validate("crm_pipeline_default", true);
@@ -1035,13 +1184,16 @@ describe("CRM commands", () => {
       const errorPayload = payload.error as Record<string, unknown>;
       expect(errorPayload.code).toBe("PIPELINE_VALIDATION_FAILED");
       expect(errorPayload.pipelineId).toBe("crm_pipeline_default");
-      expect((errorPayload.errors as unknown[]).length).toBeGreaterThan(0);
+      const errors = errorPayload.errors as Array<Record<string, unknown>>;
+      expect(errors).toHaveLength(1);
+      expect(errors[0]?.path).toBe("priority_global");
+      expect(JSON.stringify(payload)).not.toContain(secretValue);
     } finally {
       delete process.env.RAVI_AGENT_ID;
     }
   });
 
-  it("emits OPPORTUNITY_NOT_FOUND envelope with suggestions on --json (exit 1)", () => {
+  it("emits OPPORTUNITY_NOT_FOUND without broad suggestions on --json (exit 1)", () => {
     process.env.RAVI_AGENT_ID = "crm-contract-test";
     crmOpportunity = null;
     try {
@@ -1055,10 +1207,139 @@ describe("CRM commands", () => {
       const errorPayload = payload.error as Record<string, unknown>;
       expect(payload.success).toBe(false);
       expect(errorPayload.code).toBe("OPPORTUNITY_NOT_FOUND");
-      expect(errorPayload.suggestions).toContain("crm_opp_1");
+      expect(errorPayload).not.toHaveProperty("suggestions");
     } finally {
       delete process.env.RAVI_AGENT_ID;
     }
+  });
+
+  it("fails task mutations with CRM_TASK_NOT_FOUND before calling a mutator", () => {
+    crmTask = null;
+
+    expectTypedNotFound(
+      () => new CrmTaskCommands().done("crm_task_missing", true),
+      "crm task done",
+      "CRM_TASK_NOT_FOUND",
+    );
+    expect(lastTaskMutationInput).toBeNull();
+
+    expectTypedNotFound(
+      () => new CrmTaskCommands().cancel("crm_task_missing", "duplicate", true),
+      "crm task cancel",
+      "CRM_TASK_NOT_FOUND",
+    );
+    expect(lastTaskMutationInput).toBeNull();
+
+    expectTypedNotFound(
+      () => new CrmTaskCommands().snooze("crm_task_missing", "2026-08-21T12:00:00Z", "later", true),
+      "crm task snooze",
+      "CRM_TASK_NOT_FOUND",
+    );
+    expect(lastTaskMutationInput).toBeNull();
+  });
+
+  it("does not reveal a task linked to a hidden contact during mutation preflight", () => {
+    crmTask = { contactId: "contact-1" };
+    scopeEnforced = true;
+    readableContactIds = new Set<string>();
+
+    expectTypedNotFound(() => new CrmTaskCommands().done("crm_task_1", true), "crm task done", "CRM_TASK_NOT_FOUND");
+    expect(lastTaskMutationInput).toBeNull();
+  });
+
+  it("fails fact mutations with CRM_FACT_NOT_FOUND before calling a mutator", () => {
+    factRecords = [];
+
+    expectTypedNotFound(
+      () => new CrmFactCommands().confirm("crm_fact_missing", true),
+      "crm fact confirm",
+      "CRM_FACT_NOT_FOUND",
+    );
+    expect(lastFactMutationInput).toBeNull();
+
+    expectTypedNotFound(
+      () => new CrmFactCommands().reject("crm_fact_missing", true),
+      "crm fact reject",
+      "CRM_FACT_NOT_FOUND",
+    );
+    expect(lastFactMutationInput).toBeNull();
+  });
+
+  it("fails opportunity move with OPPORTUNITY_NOT_FOUND before calling the mutator", () => {
+    crmOpportunity = null;
+
+    const payload = expectTypedNotFound(
+      () => new CrmOpportunityCommands().move("crm_opp_missing", "qualified", undefined, true),
+      "crm opportunity move",
+      "OPPORTUNITY_NOT_FOUND",
+    );
+    expect(payload.error).not.toHaveProperty("suggestions");
+    expect(lastOpportunityMoveInput).toBeNull();
+  });
+
+  it("preflights every target of contact set and link-contact mutations", () => {
+    crmContactProfile = null;
+    expectTypedNotFound(
+      () => new CrmContactCommands().set("contact-missing", "priority", "high", undefined, true),
+      "crm contact set",
+      "CONTACT_NOT_FOUND",
+    );
+    expect(lastProfileUpdateInput).toBeNull();
+
+    crmContactProfile = { contactId: "contact-1" };
+    crmAccount = null;
+    expectTypedNotFound(
+      () => new CrmAccountCommands().linkContact("crm_acc_missing", "contact-1", undefined, undefined, true),
+      "crm account link-contact",
+      "CRM_ACCOUNT_NOT_FOUND",
+    );
+    expect(lastAccountContactInput).toBeNull();
+
+    crmAccount = { lifecycle: "lead" };
+    crmContactProfile = null;
+    expectTypedNotFound(
+      () => new CrmAccountCommands().linkContact("crm_acc_1", "contact-missing", undefined, undefined, true),
+      "crm account link-contact",
+      "CONTACT_NOT_FOUND",
+    );
+    expect(lastAccountContactInput).toBeNull();
+
+    crmContactProfile = { contactId: "contact-1" };
+    crmOpportunity = null;
+    expectTypedNotFound(
+      () =>
+        new CrmOpportunityCommands().linkContact("crm_opp_missing", "contact-1", undefined, undefined, undefined, true),
+      "crm opportunity link-contact",
+      "OPPORTUNITY_NOT_FOUND",
+    );
+    expect(lastOpportunityContactInput).toBeNull();
+
+    crmOpportunity = { valueCents: 500_000 };
+    crmContactProfile = null;
+    expectTypedNotFound(
+      () =>
+        new CrmOpportunityCommands().linkContact("crm_opp_1", "contact-missing", undefined, undefined, undefined, true),
+      "crm opportunity link-contact",
+      "CONTACT_NOT_FOUND",
+    );
+    expect(lastOpportunityContactInput).toBeNull();
+
+    crmContactProfile = { contactId: "contact-1" };
+    crmAccount = null;
+    expectTypedNotFound(
+      () =>
+        new CrmOpportunityCommands().linkContact(
+          "crm_opp_1",
+          "contact-1",
+          undefined,
+          "crm_acc_missing",
+          undefined,
+          true,
+        ),
+      "crm opportunity link-contact",
+      "CRM_ACCOUNT_NOT_FOUND",
+    );
+    expect(lastOpportunityContactInput).toBeNull();
   });
 
   it("creates an opportunity immediately without --execute", () => {
@@ -1224,5 +1505,486 @@ describe("CRM commands", () => {
     });
     const boardOpportunity = (boardPayload.opportunities as Array<Record<string, unknown>>)[0];
     expect(Object.keys(boardOpportunity).sort()).toEqual(["opportunityId", "title"]);
+  });
+
+  it("rejects an invalid task status before querying the store", () => {
+    const { payload, error } = captureJsonError(() => {
+      new CrmTaskCommands().list(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "bogus",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("USAGE_ERROR");
+    expect((payload.error as Record<string, unknown>).acceptedValues).toEqual([
+      "open",
+      "scheduled",
+      "waiting",
+      "done",
+      "canceled",
+      "snoozed",
+    ]);
+  });
+
+  it("rejects an invalid date filter before querying next actions", () => {
+    const { payload, error } = captureJsonError(() => {
+      new ACrmCommands().next(
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        "not-a-date",
+        undefined,
+        undefined,
+        true,
+      );
+    });
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("USAGE_ERROR");
+    expect((payload.error as Record<string, unknown>).parameter).toBe("--due-after");
+  });
+
+  it("rejects invalid list ranges and enum filters with usage errors", () => {
+    const cases = [
+      () => new ACrmCommands().contacts(undefined, undefined, "0", undefined, true),
+      () => new ACrmCommands().board(true, undefined, undefined, undefined, "501", "0"),
+      () => new CrmPipelineCommands().list("bogus", undefined, true),
+      () => new CrmPipelineStageCommands().list("crm_pipeline_default", undefined, true, "abc", "0"),
+      () => new CrmPipelineStageCommands().topics("crm_pipeline_default", "qualified", undefined, true, "1", "-1"),
+      () => new ACrmCommands().contacts(undefined, "bot:sales", undefined, undefined, true),
+    ];
+    for (const run of cases) {
+      const { error } = captureJsonError(run);
+      expect(error).toBeInstanceOf(CrmContractError);
+      expect((error as InstanceType<typeof CrmContractError>).code).toBe("USAGE_ERROR");
+      expect((error as InstanceType<typeof CrmContractError>).exitCode).toBe(2);
+    }
+  });
+
+  it("returns a typed error before a mutation targets a missing opportunity", () => {
+    crmOpportunity = null;
+    const { payload, error } = captureJsonError(() => {
+      new CrmOpportunityCommands().move("crm_opp_missing", "won", undefined, true);
+    });
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("OPPORTUNITY_NOT_FOUND");
+    expect(payload.error).not.toHaveProperty("suggestions");
+    expect((payload.error as Record<string, unknown>).suggestedAction).toBe(
+      "Check visible opportunities with: ravi crm board --json",
+    );
+  });
+
+  it("paginates the opportunity board while preserving its legacy opportunities alias", () => {
+    opportunityBoardRecords = [
+      { opportunityId: "crm_opp_1", title: "First", pipelineId: "crm_pipeline_default", stageKey: "qualified" },
+      { opportunityId: "crm_opp_2", title: "Second", pipelineId: "crm_pipeline_default", stageKey: "qualified" },
+    ];
+    const payload = captureJson(() => {
+      new ACrmCommands().board(true, "crm_pipeline_default", true, undefined, "1", "0");
+    });
+    expect(payload.total).toBe(2);
+    expect((payload.pagination as Record<string, unknown>).returned).toBe(1);
+    expect(payload.items as Array<Record<string, unknown>>).toHaveLength(1);
+    expect(payload.opportunities).toEqual(payload.items);
+    expect((payload.stages as Array<Record<string, unknown>>)[0]?.opportunities as unknown[]).toHaveLength(1);
+  });
+
+  it("returns a usage envelope when pipeline validation has no target", () => {
+    const { payload, error } = captureJsonError(() => {
+      new CrmPipelineCommands().validate(undefined, true, false);
+    });
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("USAGE_ERROR");
+    expect((payload.error as Record<string, unknown>).acceptedPositionals).toEqual(["<pipeline>"]);
+  });
+
+  it("publishes CRM lifecycle states for agent discovery", () => {
+    const payload = captureJson(() => new CrmLifecycleCommands().show(true));
+    expect(payload.enforcement).toBe("facade-only");
+    expect(payload.legacyCommandsMayDiffer).toBe(true);
+    expect((payload.task as Record<string, unknown>).states).toContain("done");
+    expect((payload.fact as Record<string, unknown>).operations).toMatchObject({ confirm: expect.any(String) });
+  });
+
+  it("offers a machine-readable CRM discovery overview", () => {
+    const payload = captureJson(() => new ACrmCommands().help(true));
+    expect(payload.domain).toBe("crm");
+    expect(payload.kind).toBe("quick-start");
+    expect(payload.scope).toBe("curated-entry-points");
+    expect(payload.commands as Array<Record<string, unknown>>).toEqual(
+      expect.arrayContaining([expect.objectContaining({ name: "facade plan", mutates: true })]),
+    );
+  });
+
+  it("does not reveal a hidden CRM target through facade planning", () => {
+    scopeEnforced = true;
+    crmTask = { contactId: "contact-hidden" };
+    const { payload, error } = captureJsonError(() => {
+      new CrmFacadeCommands().plan(
+        "task.done",
+        "crm_task_hidden",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("CRM_TASK_NOT_FOUND");
+    expect(JSON.stringify(payload)).not.toContain("Follow up");
+  });
+
+  it("fails closed for uppercase primary-account before persisting a plan", () => {
+    scopeEnforced = true;
+    readableContactIds = new Set(["contact-1"]);
+    crmAccount = { id: "crm_acc_hidden", lifecycle: "lead" };
+    accountContactIds = ["contact-hidden"];
+
+    const { payload, error } = captureJsonError(() =>
+      planFacade({
+        operation: "contact.set",
+        target: "contact-1",
+        field: "PRIMARY-ACCOUNT",
+        value: "crm_acc_hidden",
+      }),
+    );
+
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+    expect(payload).toMatchObject({ success: false, op: "crm facade plan" });
+    expect(facadePlans.size).toBe(0);
+  });
+
+  it("fails closed for spaced primary-account before persisting a plan", () => {
+    scopeEnforced = true;
+    readableContactIds = new Set(["contact-1"]);
+    crmAccount = { id: "crm_acc_hidden", lifecycle: "lead" };
+    accountContactIds = ["contact-hidden"];
+
+    const { payload, error } = captureJsonError(() =>
+      planFacade({
+        operation: "contact.set",
+        target: "contact-1",
+        field: " primary-account ",
+        value: "crm_acc_hidden",
+      }),
+    );
+
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+    expect(payload).toMatchObject({ success: false, op: "crm facade plan" });
+    expect(facadePlans.size).toBe(0);
+  });
+
+  it("fails closed for uppercase primary-opportunity before persisting a plan", () => {
+    scopeEnforced = true;
+    readableContactIds = new Set(["contact-1"]);
+    crmOpportunity = { id: "crm_opp_hidden", valueCents: 500_000 };
+    opportunityContactRecords = [{ opportunityId: "crm_opp_hidden", contactId: "contact-hidden", role: "observer" }];
+
+    const { payload, error } = captureJsonError(() =>
+      planFacade({
+        operation: "contact.set",
+        target: "contact-1",
+        field: "PRIMARY-OPPORTUNITY",
+        value: "crm_opp_hidden",
+      }),
+    );
+
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("OPPORTUNITY_NOT_FOUND");
+    expect(payload).toMatchObject({ success: false, op: "crm facade plan" });
+    expect(facadePlans.size).toBe(0);
+  });
+
+  it("fails closed for spaced primary-opportunity before persisting a plan", () => {
+    scopeEnforced = true;
+    readableContactIds = new Set(["contact-1"]);
+    crmOpportunity = { id: "crm_opp_hidden", valueCents: 500_000 };
+    opportunityContactRecords = [{ opportunityId: "crm_opp_hidden", contactId: "contact-hidden", role: "observer" }];
+
+    const { payload, error } = captureJsonError(() =>
+      planFacade({
+        operation: "contact.set",
+        target: "contact-1",
+        field: " primary-opportunity ",
+        value: "crm_opp_hidden",
+      }),
+    );
+
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("OPPORTUNITY_NOT_FOUND");
+    expect(payload).toMatchObject({ success: false, op: "crm facade plan" });
+    expect(facadePlans.size).toBe(0);
+  });
+
+  for (const clearValue of ["-", "null", "NULL", " null "]) {
+    it(`treats '${clearValue}' as a clear value without relational lookup`, () => {
+      scopeEnforced = true;
+      readableContactIds = new Set(["contact-1"]);
+      crmAccount = { id: "crm_acc_hidden", lifecycle: "lead" };
+      accountContactIds = ["contact-hidden"];
+
+      const plan = captureJson(() =>
+        planFacade({
+          operation: "contact.set",
+          target: "contact-1",
+          field: " PRIMARY-ACCOUNT ",
+          value: clearValue,
+        }),
+      ) as unknown as CrmFacadePlan;
+
+      expect(plan.arguments).toMatchObject({ field: "primary-account", value: null });
+      expect(facadePlans.size).toBe(1);
+    });
+  }
+
+  it("blocks a persisted hidden relationship plan in verify, recover, approve, and apply", async () => {
+    scopeEnforced = true;
+    readableContactIds = new Set(["contact-1"]);
+    crmAccount = { id: "crm_acc_hidden", lifecycle: "lead" };
+    accountContactIds = ["contact-hidden"];
+
+    const plan = buildCrmFacadePlan({
+      operation: "contact.set",
+      target: "contact-1",
+      field: "primary-account",
+      value: "crm_acc_hidden",
+    });
+    persistCrmFacadePlan(plan);
+
+    const verify = captureJsonError(() => new CrmFacadeCommands().verify(plan.planId, true));
+    expect(verify.error).toBeInstanceOf(CrmContractError);
+    expect((verify.error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+
+    const recover = captureJsonError(() => new CrmFacadeCommands().recover(plan.planId, true));
+    expect(recover.error).toBeInstanceOf(CrmContractError);
+    expect((recover.error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+
+    const approve = await captureJsonErrorAsync(() => new CrmFacadeCommands().approve(plan.planId, true));
+    expect(approve.error).toBeInstanceOf(CrmContractError);
+    expect((approve.error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+
+    const apply = captureJsonError(() => new CrmFacadeCommands().apply(plan.planId, true));
+    expect(apply.error).toBeInstanceOf(CrmContractError);
+    expect((apply.error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+  });
+
+  const hiddenFacadeCases: Array<{
+    input: CrmFacadePlanInput;
+    code: string;
+    prepare: () => void;
+  }> = [
+    ...(["task.done", "task.cancel", "task.snooze"] as const).map((operation) => ({
+      input: {
+        operation,
+        target: "crm_task_hidden",
+        ...(operation === "task.snooze" ? { until: "2030-01-01T10:00:00Z" } : {}),
+      } as CrmFacadePlanInput,
+      code: "CRM_TASK_NOT_FOUND",
+      prepare: () => {
+        crmTask = { contactId: "contact-hidden" };
+      },
+    })),
+    ...(["opportunity.move", "opportunity.link-contact"] as const).map((operation) => ({
+      input: {
+        operation,
+        target: "crm_opp_hidden",
+        ...(operation === "opportunity.move" ? { stage: "qualified" } : { contact: "contact-visible" }),
+      } as CrmFacadePlanInput,
+      code: "OPPORTUNITY_NOT_FOUND",
+      prepare: () => {
+        opportunityContactRecords = [{ opportunityId: "crm_opp_hidden", contactId: "contact-hidden" }];
+      },
+    })),
+    ...(["fact.confirm", "fact.reject"] as const).map((operation) => ({
+      input: { operation, target: "crm_fact_hidden" },
+      code: "CRM_FACT_NOT_FOUND",
+      prepare: () => {
+        factRecords = [
+          {
+            id: "crm_fact_hidden",
+            entityType: "contact",
+            entityId: "contact-hidden",
+            key: "budget",
+            status: "proposed",
+          },
+        ];
+      },
+    })),
+    {
+      input: { operation: "contact.set", target: "contact-hidden", field: "priority", value: "high" },
+      code: "CONTACT_NOT_FOUND",
+      prepare: () => {},
+    },
+    {
+      input: {
+        operation: "account.link-contact",
+        target: "crm_acc_hidden",
+        contact: "contact-visible",
+      },
+      code: "CRM_ACCOUNT_NOT_FOUND",
+      prepare: () => {
+        accountContactIds = ["contact-hidden"];
+      },
+    },
+  ];
+
+  for (const scenario of hiddenFacadeCases) {
+    it(`${scenario.input.operation} fails closed for a hidden target`, () => {
+      scopeEnforced = true;
+      readableContactIds = new Set(["contact-visible"]);
+      scenario.prepare();
+
+      const { payload, error } = captureJsonError(() => planFacade(scenario.input));
+
+      expect(error).toBeInstanceOf(CrmContractError);
+      expect((error as InstanceType<typeof CrmContractError>).code).toBe(scenario.code);
+      const serialized = JSON.stringify(payload);
+      if (scenario.input.operation === "contact.set") {
+        expect(serialized).not.toContain("Alice");
+        expect(serialized).not.toContain("relationshipHealth");
+      } else {
+        expect(serialized).not.toContain("contact-hidden");
+      }
+    });
+  }
+
+  it("hides accounts linked to any unreadable contact before facade resolution", () => {
+    scopeEnforced = true;
+    accountContactIds = ["contact-visible", "contact-hidden"];
+    readableContactIds = new Set(["contact-visible"]);
+
+    const { payload, error } = captureJsonError(() => {
+      new CrmFacadeCommands().plan(
+        "account.link-contact",
+        "crm_acc_1",
+        undefined,
+        "contact-visible",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+    expect(JSON.stringify(payload)).not.toContain("contact-hidden");
+  });
+
+  it("hides opportunities when a secondary linked contact is unreadable", () => {
+    scopeEnforced = true;
+    readableContactIds = new Set(["contact-visible"]);
+    opportunityContactRecords = [
+      { opportunityId: "crm_opp_1", contactId: "contact-visible", role: "stakeholder" },
+      { opportunityId: "crm_opp_1", contactId: "contact-hidden", role: "observer" },
+    ];
+
+    const { payload, error } = captureJsonError(() => {
+      new CrmFacadeCommands().plan(
+        "opportunity.move",
+        "crm_opp_1",
+        "qualified",
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        true,
+      );
+    });
+
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("OPPORTUNITY_NOT_FOUND");
+    expect(JSON.stringify(payload)).not.toContain("contact-hidden");
+  });
+
+  it("shows the complete canonical change in every facade approval prompt", () => {
+    const cases: Array<{
+      operation: CrmFacadePlan["operation"];
+      arguments: Record<string, unknown>;
+    }> = [
+      { operation: "task.done", arguments: { target: "crm_task_1" } },
+      { operation: "task.cancel", arguments: { target: "crm_task_1", reason: "duplicate" } },
+      {
+        operation: "task.snooze",
+        arguments: { target: "crm_task_1", until: "2026-08-21T12:00:00.000Z" },
+      },
+      { operation: "opportunity.move", arguments: { target: "crm_opp_1", stage: "crm_stage_won" } },
+      { operation: "fact.confirm", arguments: { target: "crm_fact_1" } },
+      { operation: "fact.reject", arguments: { target: "crm_fact_1", reason: "unsupported" } },
+      {
+        operation: "contact.set",
+        arguments: { target: "contact-1", field: "priority", value: "high" },
+      },
+      {
+        operation: "account.link-contact",
+        arguments: { target: "crm_acc_1", contact: "contact-1", role: "buyer", primary: true },
+      },
+      {
+        operation: "opportunity.link-contact",
+        arguments: {
+          target: "crm_opp_1",
+          contact: "contact-1",
+          account: "crm_acc_1",
+          role: "decision-maker",
+          primary: false,
+        },
+      },
+    ];
+
+    for (const entry of cases) {
+      const plan: CrmFacadePlan = {
+        schemaVersion: "crm.agent-first/v1",
+        planId: `plan-${entry.operation}`,
+        planHash: `hash-${entry.operation}`,
+        state: "planned",
+        operation: entry.operation,
+        target: { type: "record", id: "target-1", label: "Visible target" },
+        arguments: entry.arguments,
+        effects: [{ effectId: "effect-1", operation: entry.operation, primary: true, retry: "never" }],
+        approval: null,
+        createdAt: "2026-08-20T12:00:00.000Z",
+        expiresAt: "2026-08-20T12:15:00.000Z",
+      };
+
+      const text = formatCrmFacadeApprovalText(plan);
+      const argumentsLine = text.split("\n").find((line) => line.startsWith("Arguments: "));
+      const targetLine = text.split("\n").find((line) => line.startsWith("Target: "));
+
+      expect(text).toContain(`Plan ID: ${plan.planId}`);
+      expect(text).toContain(`Plan hash: ${plan.planHash}`);
+      expect(text).toContain(`Operation: ${plan.operation}`);
+      expect(text).toContain(`Expires at: ${plan.expiresAt}`);
+      expect(JSON.parse(argumentsLine!.slice("Arguments: ".length))).toEqual(entry.arguments);
+      expect(JSON.parse(targetLine!.slice("Target: ".length))).toEqual(plan.target);
+    }
   });
 });

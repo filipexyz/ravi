@@ -440,10 +440,11 @@ function arrayLength(value: unknown): number {
 }
 
 /**
- * Produce a human-readable review of a pipeline.metadata, used by
- * `ravi crm pipeline review`. The 12 fields below cover the canonical
- * model — each is classified as present / absent / partial with a
- * suggestion when applicable.
+ * Produce an operational coverage report for `ravi crm pipeline review`.
+ * The JSON Schema is the normative complete contract; these 12 checkpoints
+ * are the high-signal subset used for human and agent remediation. A review is
+ * therefore not a second schema and must not be used to reject legacy active
+ * pipelines by itself.
  */
 export function reviewPipelineMetadata(
   pipeline: { id: string; name: string; metadata: unknown },

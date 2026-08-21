@@ -28578,6 +28578,14 @@ export const CrmBoardInputSchema = {
       "description": "Include configured stages with no opportunities",
       "type": "boolean"
     },
+    "limit": {
+      "description": "Page size (default: 50, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of matching opportunities to skip (default: 0)",
+      "type": "string"
+    },
     "pipeline": {
       "description": "Filter by CRM pipeline ID or name",
       "type": "string"
@@ -28590,6 +28598,14 @@ export const CrmBoardInputSchema = {
 export const CrmBoardReturnSchema = {
   "additionalProperties": {},
   "properties": {
+    "items": {
+      "items": {
+        "additionalProperties": {},
+        "properties": {},
+        "type": "object"
+      },
+      "type": "array"
+    },
     "opportunities": {
       "items": {
         "additionalProperties": {},
@@ -28597,6 +28613,11 @@ export const CrmBoardReturnSchema = {
         "type": "object"
       },
       "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": {},
+      "properties": {},
+      "type": "object"
     },
     "stages": {
       "items": {
@@ -28612,6 +28633,8 @@ export const CrmBoardReturnSchema = {
   },
   "required": [
     "total",
+    "pagination",
+    "items",
     "opportunities"
   ],
   "type": "object"
@@ -28832,6 +28855,975 @@ export const CrmContactsReturnSchema = {
     "total",
     "pagination",
     "items"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.facade.apply`. */
+export const CrmFacadeApplyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "planId": {
+      "description": "Plan identifier",
+      "type": "string"
+    }
+  },
+  "required": [
+    "planId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.facade.apply`. */
+export const CrmFacadeApplyReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "effectId": {
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "planId": {
+      "type": "string"
+    },
+    "readback": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "reason": {
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "applied",
+        "partial",
+        "unknown"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "planId",
+    "planHash",
+    "state",
+    "effectId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.facade.approve`. */
+export const CrmFacadeApproveInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "planId": {
+      "description": "Plan identifier",
+      "type": "string"
+    }
+  },
+  "required": [
+    "planId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.facade.approve`. */
+export const CrmFacadeApproveReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "approval": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "approvedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approverId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "authorizedApproverId": {
+              "type": "string"
+            },
+            "externalMessageId": {
+              "type": "string"
+            },
+            "planHash": {
+              "type": "string"
+            },
+            "requestedAt": {
+              "type": "string"
+            },
+            "source": {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "channel": {
+                  "type": "string"
+                },
+                "chatId": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "channel",
+                "accountId",
+                "chatId"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "enum": [
+                "requested",
+                "approved"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "planHash",
+            "state",
+            "requestedAt",
+            "approvedAt",
+            "source",
+            "externalMessageId",
+            "authorizedApproverId",
+            "approverId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "arguments": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contact": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        },
+        "primary": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "until": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/__schema0"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "effects": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "effectId": {
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "task.done",
+              "task.cancel",
+              "task.snooze",
+              "opportunity.move",
+              "fact.confirm",
+              "fact.reject",
+              "contact.set",
+              "account.link-contact",
+              "opportunity.link-contact"
+            ],
+            "type": "string"
+          },
+          "primary": {
+            "const": true,
+            "type": "boolean"
+          },
+          "retry": {
+            "const": "never",
+            "type": "string"
+          }
+        },
+        "required": [
+          "effectId",
+          "operation",
+          "primary",
+          "retry"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "expiresAt": {
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "task.done",
+        "task.cancel",
+        "task.snooze",
+        "opportunity.move",
+        "fact.confirm",
+        "fact.reject",
+        "contact.set",
+        "account.link-contact",
+        "opportunity.link-contact"
+      ],
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "planId": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "crm.agent-first/v1",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "planned",
+        "approved",
+        "applying",
+        "applied",
+        "unknown",
+        "partial"
+      ],
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "label"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "planId",
+    "planHash",
+    "state",
+    "operation",
+    "target",
+    "arguments",
+    "effects",
+    "approval",
+    "createdAt",
+    "expiresAt"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.facade.plan`. */
+export const CrmFacadePlanInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "account": {
+      "description": "Account context for opportunity.link-contact",
+      "type": "string"
+    },
+    "contact": {
+      "description": "Contact for a link-contact operation",
+      "type": "string"
+    },
+    "field": {
+      "description": "CRM contact field for contact.set",
+      "type": "string"
+    },
+    "operation": {
+      "description": "CRM operation, e.g. task.done or opportunity.move",
+      "enum": [
+        "task.done",
+        "task.cancel",
+        "task.snooze",
+        "opportunity.move",
+        "fact.confirm",
+        "fact.reject",
+        "contact.set",
+        "account.link-contact",
+        "opportunity.link-contact"
+      ],
+      "type": "string"
+    },
+    "primary": {
+      "description": "Mark the linked contact as primary",
+      "type": "boolean"
+    },
+    "reason": {
+      "description": "Reason recorded with the operation",
+      "type": "string"
+    },
+    "role": {
+      "description": "Relationship role for a link-contact operation",
+      "type": "string"
+    },
+    "stage": {
+      "description": "Target stage for opportunity.move",
+      "type": "string"
+    },
+    "target": {
+      "description": "Exact CRM target id or contact identity",
+      "type": "string"
+    },
+    "until": {
+      "description": "Snooze deadline for task.snooze",
+      "type": "string"
+    },
+    "value": {
+      "description": "CRM contact field value for contact.set",
+      "type": "string"
+    }
+  },
+  "required": [
+    "operation",
+    "target"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.facade.plan`. */
+export const CrmFacadePlanReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "approval": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "approvedAt": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "approverId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "authorizedApproverId": {
+              "type": "string"
+            },
+            "externalMessageId": {
+              "type": "string"
+            },
+            "planHash": {
+              "type": "string"
+            },
+            "requestedAt": {
+              "type": "string"
+            },
+            "source": {
+              "additionalProperties": false,
+              "properties": {
+                "accountId": {
+                  "type": "string"
+                },
+                "channel": {
+                  "type": "string"
+                },
+                "chatId": {
+                  "type": "string"
+                },
+                "threadId": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "channel",
+                "accountId",
+                "chatId"
+              ],
+              "type": "object"
+            },
+            "state": {
+              "enum": [
+                "requested",
+                "approved"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "planHash",
+            "state",
+            "requestedAt",
+            "approvedAt",
+            "source",
+            "externalMessageId",
+            "authorizedApproverId",
+            "approverId"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "arguments": {
+      "additionalProperties": false,
+      "properties": {
+        "account": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "contact": {
+          "type": "string"
+        },
+        "field": {
+          "type": "string"
+        },
+        "primary": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "stage": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "until": {
+          "type": "string"
+        },
+        "value": {
+          "$ref": "#/$defs/__schema0"
+        }
+      },
+      "required": [
+        "target"
+      ],
+      "type": "object"
+    },
+    "createdAt": {
+      "type": "string"
+    },
+    "effects": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "effectId": {
+            "type": "string"
+          },
+          "operation": {
+            "enum": [
+              "task.done",
+              "task.cancel",
+              "task.snooze",
+              "opportunity.move",
+              "fact.confirm",
+              "fact.reject",
+              "contact.set",
+              "account.link-contact",
+              "opportunity.link-contact"
+            ],
+            "type": "string"
+          },
+          "primary": {
+            "const": true,
+            "type": "boolean"
+          },
+          "retry": {
+            "const": "never",
+            "type": "string"
+          }
+        },
+        "required": [
+          "effectId",
+          "operation",
+          "primary",
+          "retry"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "expiresAt": {
+      "type": "string"
+    },
+    "operation": {
+      "enum": [
+        "task.done",
+        "task.cancel",
+        "task.snooze",
+        "opportunity.move",
+        "fact.confirm",
+        "fact.reject",
+        "contact.set",
+        "account.link-contact",
+        "opportunity.link-contact"
+      ],
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "planId": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "const": "crm.agent-first/v1",
+      "type": "string"
+    },
+    "state": {
+      "enum": [
+        "planned",
+        "approved",
+        "applying",
+        "applied",
+        "unknown",
+        "partial"
+      ],
+      "type": "string"
+    },
+    "target": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "id",
+        "label"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "planId",
+    "planHash",
+    "state",
+    "operation",
+    "target",
+    "arguments",
+    "effects",
+    "approval",
+    "createdAt",
+    "expiresAt"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.facade.recover`. */
+export const CrmFacadeRecoverInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "planId": {
+      "description": "Plan identifier",
+      "type": "string"
+    }
+  },
+  "required": [
+    "planId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.facade.recover`. */
+export const CrmFacadeRecoverReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "const": "manual_review_required",
+      "type": "string"
+    },
+    "expired": {
+      "type": "boolean"
+    },
+    "observedAt": {
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "applied",
+        "not_applied",
+        "partial",
+        "not_determined"
+      ],
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "planId": {
+      "type": "string"
+    },
+    "readback": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "replay": {
+      "const": false,
+      "type": "boolean"
+    },
+    "state": {
+      "enum": [
+        "planned",
+        "approved",
+        "applying",
+        "applied",
+        "unknown",
+        "partial"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "planId",
+    "planHash",
+    "state",
+    "outcome",
+    "expired",
+    "observedAt",
+    "readback",
+    "action",
+    "replay"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.facade.verify`. */
+export const CrmFacadeVerifyInputSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "planId": {
+      "description": "Plan identifier",
+      "type": "string"
+    }
+  },
+  "required": [
+    "planId"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.facade.verify`. */
+export const CrmFacadeVerifyReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "expired": {
+      "type": "boolean"
+    },
+    "observedAt": {
+      "type": "string"
+    },
+    "outcome": {
+      "enum": [
+        "applied",
+        "not_applied",
+        "partial",
+        "not_determined"
+      ],
+      "type": "string"
+    },
+    "planHash": {
+      "type": "string"
+    },
+    "planId": {
+      "type": "string"
+    },
+    "readback": {
+      "$ref": "#/$defs/__schema0"
+    },
+    "state": {
+      "enum": [
+        "planned",
+        "approved",
+        "applying",
+        "applied",
+        "unknown",
+        "partial"
+      ],
+      "type": "string"
+    }
+  },
+  "required": [
+    "planId",
+    "planHash",
+    "state",
+    "outcome",
+    "expired",
+    "observedAt",
+    "readback"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -29088,6 +30080,224 @@ export const CrmFactRejectReturnSchema = {
   "required": [
     "status",
     "changedCount"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.help`. */
+export const CrmHelpInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.help`. */
+export const CrmHelpReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "commands": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "intent": {
+            "type": "string"
+          },
+          "mutates": {
+            "type": "boolean"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "intent",
+          "mutates"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "domain": {
+      "const": "crm",
+      "type": "string"
+    },
+    "kind": {
+      "const": "quick-start",
+      "type": "string"
+    },
+    "next": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array"
+    },
+    "scope": {
+      "const": "curated-entry-points",
+      "type": "string"
+    }
+  },
+  "required": [
+    "domain",
+    "kind",
+    "scope",
+    "commands",
+    "next"
+  ],
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the input body of `crm.lifecycle.show`. */
+export const CrmLifecycleShowInputSchema = {
+  "additionalProperties": false,
+  "properties": {},
+  "type": "object"
+} as const satisfies SdkJsonSchema;
+
+/** JSON Schema for the return shape of `crm.lifecycle.show`. */
+export const CrmLifecycleShowReturnSchema = {
+  "additionalProperties": false,
+  "properties": {
+    "contact": {
+      "additionalProperties": false,
+      "properties": {
+        "states": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "transitionPolicy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "states",
+        "transitionPolicy"
+      ],
+      "type": "object"
+    },
+    "enforcement": {
+      "const": "facade-only",
+      "type": "string"
+    },
+    "fact": {
+      "additionalProperties": false,
+      "properties": {
+        "operations": {
+          "additionalProperties": false,
+          "properties": {
+            "confirm": {
+              "type": "string"
+            },
+            "reject": {
+              "type": "string"
+            },
+            "supersede": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "confirm",
+            "reject",
+            "supersede"
+          ],
+          "type": "object"
+        },
+        "states": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "terminal": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "states",
+        "operations",
+        "terminal"
+      ],
+      "type": "object"
+    },
+    "legacyCommandsMayDiffer": {
+      "const": true,
+      "type": "boolean"
+    },
+    "opportunity": {
+      "additionalProperties": false,
+      "properties": {
+        "states": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "transitionPolicy": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "states",
+        "transitionPolicy"
+      ],
+      "type": "object"
+    },
+    "task": {
+      "additionalProperties": false,
+      "properties": {
+        "operations": {
+          "additionalProperties": false,
+          "properties": {
+            "cancel": {
+              "type": "string"
+            },
+            "done": {
+              "type": "string"
+            },
+            "snooze": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "done",
+            "cancel",
+            "snooze"
+          ],
+          "type": "object"
+        },
+        "states": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "terminal": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "states",
+        "operations",
+        "terminal"
+      ],
+      "type": "object"
+    }
+  },
+  "required": [
+    "enforcement",
+    "legacyCommandsMayDiffer",
+    "contact",
+    "opportunity",
+    "task",
+    "fact"
   ],
   "type": "object"
 } as const satisfies SdkJsonSchema;
@@ -31083,7 +32293,7 @@ export const CrmTaskListInputSchema = {
       "type": "string"
     },
     "status": {
-      "description": "Filter by status (open, scheduled, done, canceled, snoozed)",
+      "description": "Filter by status (open, scheduled, waiting, done, canceled, snoozed)",
       "type": "string"
     },
     "taskType": {

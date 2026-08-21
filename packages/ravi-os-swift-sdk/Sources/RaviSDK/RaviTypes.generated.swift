@@ -7104,17 +7104,23 @@ public struct CrmAccountShowReturn: Codable, Sendable {
 public struct CrmBoardOptions: Codable, Sendable {
   public var fields: String?
   public var includeEmptyStages: Bool?
+  public var limit: String?
+  public var offset: String?
   public var pipeline: String?
 
-  public init(fields: String? = nil, includeEmptyStages: Bool? = nil, pipeline: String? = nil) {
+  public init(fields: String? = nil, includeEmptyStages: Bool? = nil, limit: String? = nil, offset: String? = nil, pipeline: String? = nil) {
     self.fields = fields
     self.includeEmptyStages = includeEmptyStages
+    self.limit = limit
+    self.offset = offset
     self.pipeline = pipeline
   }
 
   enum CodingKeys: String, CodingKey {
     case fields = "fields"
     case includeEmptyStages = "includeEmptyStages"
+    case limit = "limit"
+    case offset = "offset"
     case pipeline = "pipeline"
   }
 
@@ -7125,6 +7131,12 @@ public struct CrmBoardOptions: Codable, Sendable {
     if let value = self.includeEmptyStages {
       body["includeEmptyStages"] = try RaviJSON.fromEncodable(value)
     }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
+    }
     if let value = self.pipeline {
       body["pipeline"] = try RaviJSON.fromEncodable(value)
     }
@@ -7132,18 +7144,24 @@ public struct CrmBoardOptions: Codable, Sendable {
 }
 
 public struct CrmBoardReturn: Codable, Sendable {
+  public var items: [[String: RaviJSON]]
   public var opportunities: [[String: RaviJSON]]
+  public var pagination: [String: RaviJSON]
   public var stages: [[String: RaviJSON]]?
   public var total: Double
 
-  public init(opportunities: [[String: RaviJSON]], stages: [[String: RaviJSON]]? = nil, total: Double) {
+  public init(items: [[String: RaviJSON]], opportunities: [[String: RaviJSON]], pagination: [String: RaviJSON], stages: [[String: RaviJSON]]? = nil, total: Double) {
+    self.items = items
     self.opportunities = opportunities
+    self.pagination = pagination
     self.stages = stages
     self.total = total
   }
 
   enum CodingKeys: String, CodingKey {
+    case items = "items"
     case opportunities = "opportunities"
+    case pagination = "pagination"
     case stages = "stages"
     case total = "total"
   }
@@ -7269,6 +7287,249 @@ public struct CrmContactsReturn: Codable, Sendable {
     case items = "items"
     case pagination = "pagination"
     case total = "total"
+  }
+}
+
+public struct CrmFacadeApplyReturn: Codable, Sendable {
+  public var effectId: String
+  public var planHash: String
+  public var planId: String
+  public var readback: RaviJSON?
+  public var reason: String?
+  public var state: String
+
+  public init(effectId: String, planHash: String, planId: String, readback: RaviJSON? = nil, reason: String? = nil, state: String) {
+    self.effectId = effectId
+    self.planHash = planHash
+    self.planId = planId
+    self.readback = readback
+    self.reason = reason
+    self.state = state
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case effectId = "effectId"
+    case planHash = "planHash"
+    case planId = "planId"
+    case readback = "readback"
+    case reason = "reason"
+    case state = "state"
+  }
+}
+
+public struct CrmFacadeApproveReturn: Codable, Sendable {
+  public var approval: RaviJSON
+  public var arguments: RaviJSON
+  public var createdAt: String
+  public var effects: [RaviJSON]
+  public var expiresAt: String
+  public var operation: String
+  public var planHash: String
+  public var planId: String
+  public var schemaVersion: String
+  public var state: String
+  public var target: RaviJSON
+
+  public init(approval: RaviJSON, arguments: RaviJSON, createdAt: String, effects: [RaviJSON], expiresAt: String, operation: String, planHash: String, planId: String, schemaVersion: String, state: String, target: RaviJSON) {
+    self.approval = approval
+    self.arguments = arguments
+    self.createdAt = createdAt
+    self.effects = effects
+    self.expiresAt = expiresAt
+    self.operation = operation
+    self.planHash = planHash
+    self.planId = planId
+    self.schemaVersion = schemaVersion
+    self.state = state
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case approval = "approval"
+    case arguments = "arguments"
+    case createdAt = "createdAt"
+    case effects = "effects"
+    case expiresAt = "expiresAt"
+    case operation = "operation"
+    case planHash = "planHash"
+    case planId = "planId"
+    case schemaVersion = "schemaVersion"
+    case state = "state"
+    case target = "target"
+  }
+}
+
+public struct CrmFacadePlanOptions: Codable, Sendable {
+  public var account: String?
+  public var contact: String?
+  public var field: String?
+  public var primary: Bool?
+  public var reason: String?
+  public var role: String?
+  public var stage: String?
+  public var until: String?
+  public var value: String?
+
+  public init(account: String? = nil, contact: String? = nil, field: String? = nil, primary: Bool? = nil, reason: String? = nil, role: String? = nil, stage: String? = nil, until: String? = nil, value: String? = nil) {
+    self.account = account
+    self.contact = contact
+    self.field = field
+    self.primary = primary
+    self.reason = reason
+    self.role = role
+    self.stage = stage
+    self.until = until
+    self.value = value
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case account = "account"
+    case contact = "contact"
+    case field = "field"
+    case primary = "primary"
+    case reason = "reason"
+    case role = "role"
+    case stage = "stage"
+    case until = "until"
+    case value = "value"
+  }
+
+  func encodeBody(into body: inout [String: RaviJSON]) throws {
+    if let value = self.account {
+      body["account"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.contact {
+      body["contact"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.field {
+      body["field"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.primary {
+      body["primary"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.reason {
+      body["reason"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.role {
+      body["role"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.stage {
+      body["stage"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.until {
+      body["until"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.value {
+      body["value"] = try RaviJSON.fromEncodable(value)
+    }
+  }
+}
+
+public struct CrmFacadePlanReturn: Codable, Sendable {
+  public var approval: RaviJSON
+  public var arguments: RaviJSON
+  public var createdAt: String
+  public var effects: [RaviJSON]
+  public var expiresAt: String
+  public var operation: String
+  public var planHash: String
+  public var planId: String
+  public var schemaVersion: String
+  public var state: String
+  public var target: RaviJSON
+
+  public init(approval: RaviJSON, arguments: RaviJSON, createdAt: String, effects: [RaviJSON], expiresAt: String, operation: String, planHash: String, planId: String, schemaVersion: String, state: String, target: RaviJSON) {
+    self.approval = approval
+    self.arguments = arguments
+    self.createdAt = createdAt
+    self.effects = effects
+    self.expiresAt = expiresAt
+    self.operation = operation
+    self.planHash = planHash
+    self.planId = planId
+    self.schemaVersion = schemaVersion
+    self.state = state
+    self.target = target
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case approval = "approval"
+    case arguments = "arguments"
+    case createdAt = "createdAt"
+    case effects = "effects"
+    case expiresAt = "expiresAt"
+    case operation = "operation"
+    case planHash = "planHash"
+    case planId = "planId"
+    case schemaVersion = "schemaVersion"
+    case state = "state"
+    case target = "target"
+  }
+}
+
+public struct CrmFacadeRecoverReturn: Codable, Sendable {
+  public var action: String
+  public var expired: Bool
+  public var observedAt: String
+  public var outcome: String
+  public var planHash: String
+  public var planId: String
+  public var readback: RaviJSON
+  public var replay: Bool
+  public var state: String
+
+  public init(action: String, expired: Bool, observedAt: String, outcome: String, planHash: String, planId: String, readback: RaviJSON, replay: Bool, state: String) {
+    self.action = action
+    self.expired = expired
+    self.observedAt = observedAt
+    self.outcome = outcome
+    self.planHash = planHash
+    self.planId = planId
+    self.readback = readback
+    self.replay = replay
+    self.state = state
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case action = "action"
+    case expired = "expired"
+    case observedAt = "observedAt"
+    case outcome = "outcome"
+    case planHash = "planHash"
+    case planId = "planId"
+    case readback = "readback"
+    case replay = "replay"
+    case state = "state"
+  }
+}
+
+public struct CrmFacadeVerifyReturn: Codable, Sendable {
+  public var expired: Bool
+  public var observedAt: String
+  public var outcome: String
+  public var planHash: String
+  public var planId: String
+  public var readback: RaviJSON
+  public var state: String
+
+  public init(expired: Bool, observedAt: String, outcome: String, planHash: String, planId: String, readback: RaviJSON, state: String) {
+    self.expired = expired
+    self.observedAt = observedAt
+    self.outcome = outcome
+    self.planHash = planHash
+    self.planId = planId
+    self.readback = readback
+    self.state = state
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case expired = "expired"
+    case observedAt = "observedAt"
+    case outcome = "outcome"
+    case planHash = "planHash"
+    case planId = "planId"
+    case readback = "readback"
+    case state = "state"
   }
 }
 
@@ -7446,6 +7707,57 @@ public struct CrmFactRejectReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case changedCount = "changedCount"
     case status = "status"
+  }
+}
+
+public struct CrmHelpReturn: Codable, Sendable {
+  public var commands: [RaviJSON]
+  public var domain: String
+  public var kind: String
+  public var next: [String]
+  public var scope: String
+
+  public init(commands: [RaviJSON], domain: String, kind: String, next: [String], scope: String) {
+    self.commands = commands
+    self.domain = domain
+    self.kind = kind
+    self.next = next
+    self.scope = scope
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case commands = "commands"
+    case domain = "domain"
+    case kind = "kind"
+    case next = "next"
+    case scope = "scope"
+  }
+}
+
+public struct CrmLifecycleShowReturn: Codable, Sendable {
+  public var contact: RaviJSON
+  public var enforcement: String
+  public var fact: RaviJSON
+  public var legacyCommandsMayDiffer: Bool
+  public var opportunity: RaviJSON
+  public var task: RaviJSON
+
+  public init(contact: RaviJSON, enforcement: String, fact: RaviJSON, legacyCommandsMayDiffer: Bool, opportunity: RaviJSON, task: RaviJSON) {
+    self.contact = contact
+    self.enforcement = enforcement
+    self.fact = fact
+    self.legacyCommandsMayDiffer = legacyCommandsMayDiffer
+    self.opportunity = opportunity
+    self.task = task
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case contact = "contact"
+    case enforcement = "enforcement"
+    case fact = "fact"
+    case legacyCommandsMayDiffer = "legacyCommandsMayDiffer"
+    case opportunity = "opportunity"
+    case task = "task"
   }
 }
 

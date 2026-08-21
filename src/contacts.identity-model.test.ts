@@ -75,6 +75,15 @@ import {
   dbUpsertChatParticipant,
 } from "./router/router-db.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "./test/ravi-state.js";
+import {
+  applyCrmFacadePlan,
+  approveCrmFacadePlan,
+  buildCrmFacadePlan,
+  loadCrmFacadePlan,
+  persistCrmFacadePlan,
+  recordCrmFacadeApprovalRequest,
+  type CrmFacadePlanInput,
+} from "./crm/facade.js";
 
 let stateDir: string | null = null;
 
@@ -89,6 +98,97 @@ afterEach(async () => {
 });
 
 describe("contacts identity graph schema", () => {
+  it("persists facade actor and idempotency evidence for every supported operation", () => {
+    upsertContact("5511999910191", "Facade Primary", "allowed", "manual");
+    upsertContact("5511999910192", "Facade Linked", "allowed", "manual");
+    const primary = getContact("5511999910191")!;
+    const linked = getContact("5511999910192")!;
+    const account = createCrmAccount({ name: "Facade Account", source: "test" });
+    const opportunity = createCrmOpportunity({
+      title: "Facade Opportunity",
+      accountId: account.id,
+      contactRef: primary.id,
+      source: "test",
+    });
+    const doneTask = createCrmTask({ title: "Done", contactRef: primary.id, source: "test" });
+    const cancelTask = createCrmTask({ title: "Cancel", contactRef: primary.id, source: "test" });
+    const snoozeTask = createCrmTask({ title: "Snooze", contactRef: primary.id, source: "test" });
+    const confirmFact = proposeCrmFact({
+      entityType: "contact",
+      entityId: primary.id,
+      key: "facade.confirm",
+      value: true,
+      source: "test",
+    });
+    const rejectFact = proposeCrmFact({
+      entityType: "contact",
+      entityId: primary.id,
+      key: "facade.reject",
+      value: true,
+      source: "test",
+    });
+    const inputs: CrmFacadePlanInput[] = [
+      { operation: "task.done", target: doneTask.id },
+      { operation: "task.cancel", target: cancelTask.id, reason: "duplicate" },
+      { operation: "task.snooze", target: snoozeTask.id, until: "2030-01-01T10:00:00Z" },
+      { operation: "opportunity.move", target: opportunity.id, stage: "proposal" },
+      { operation: "fact.confirm", target: confirmFact.id },
+      { operation: "fact.reject", target: rejectFact.id },
+      { operation: "contact.set", target: primary.id, field: "priority", value: "high" },
+      { operation: "account.link-contact", target: account.id, contact: linked.id },
+      { operation: "opportunity.link-contact", target: opportunity.id, contact: linked.id },
+    ];
+    const effectIds: string[] = [];
+    for (const [index, input] of inputs.entries()) {
+      const plan = buildCrmFacadePlan(input);
+      persistCrmFacadePlan(plan);
+      recordCrmFacadeApprovalRequest(plan.planId, {
+        source: { channel: "test", accountId: "test", chatId: "test" },
+        externalMessageId: `message-${index}`,
+        authorizedApproverId: "human-1",
+      });
+      approveCrmFacadePlan(plan.planId, { externalMessageId: `message-${index}`, approverId: "human-1" });
+      expect(applyCrmFacadePlan(plan.planId, { actorId: "agent-integration" }).state).toBe("applied");
+      effectIds.push(plan.effects[0]!.effectId);
+    }
+
+    const db = new Database(join(stateDir!, "chat.db"));
+    const rows = db
+      .query(
+        `SELECT event_type, actor_id, idempotency_key
+         FROM crm_events
+         WHERE idempotency_key IN (${effectIds.map(() => "?").join(",")})
+         ORDER BY event_type`,
+      )
+      .all(...effectIds) as Array<{ event_type: string; actor_id: string | null; idempotency_key: string | null }>;
+    db.close();
+
+    expect(rows).toHaveLength(inputs.length);
+    expect(rows.every((row) => row.actor_id === "agent-integration")).toBe(true);
+    expect(new Set(rows.map((row) => row.idempotency_key))).toEqual(new Set(effectIds));
+  });
+
+  it("prunes only expired unapproved plans before persisting a new durable plan", () => {
+    const expired = buildCrmFacadePlan(
+      {
+        operation: "task.done",
+        target: createCrmTask({ title: "Expired", sessionKey: "retention-expired", source: "test" }).id,
+      },
+      new Date(Date.now() - 20 * 60 * 1000),
+    );
+    persistCrmFacadePlan(expired);
+    expect(loadCrmFacadePlan(expired.planId)).not.toBeNull();
+
+    const current = buildCrmFacadePlan({
+      operation: "task.done",
+      target: createCrmTask({ title: "Current", sessionKey: "retention-current", source: "test" }).id,
+    });
+    persistCrmFacadePlan(current);
+
+    expect(loadCrmFacadePlan(expired.planId)).toBeNull();
+    expect(loadCrmFacadePlan(current.planId)).not.toBeNull();
+  });
+
   it("prefers an exact Slack identity over a legacy phone-normalized shadow contact", () => {
     upsertContact("021", "Legacy shadow", "blocked", "manual");
     const inbound = ensureContactFromInbound({
@@ -801,6 +901,68 @@ describe("contacts identity graph schema", () => {
       .all(account.id) as Array<{ contact_id: string }>;
     db.close();
     expect(primaryRows.map((row) => row.contact_id)).toEqual([second!.id]);
+  });
+
+  it("preserves existing primary links when facade primary is omitted", () => {
+    upsertContact("5511999910313", "CRM Omitted Primary", "allowed", "manual");
+    const contact = getContact("5511999910313");
+    expect(contact).not.toBeNull();
+
+    const account = createCrmAccount({ name: "Omitted Primary Account", source: "test" });
+    const opportunity = createCrmOpportunity({
+      title: "Omitted Primary Opportunity",
+      accountId: account.id,
+      contactRef: contact!.id,
+      source: "test",
+    });
+    linkCrmAccountContact({
+      accountId: account.id,
+      contactRef: contact!.id,
+      role: "member",
+      isPrimary: true,
+      source: "test",
+    });
+    linkCrmOpportunityContact({
+      opportunityId: opportunity.id,
+      contactRef: contact!.id,
+      role: "stakeholder",
+      isPrimary: true,
+      source: "test",
+    });
+
+    const inputs: CrmFacadePlanInput[] = [
+      { operation: "account.link-contact", target: account.id, contact: contact!.id },
+      { operation: "opportunity.link-contact", target: opportunity.id, contact: contact!.id },
+    ];
+    for (const [index, input] of inputs.entries()) {
+      const plan = buildCrmFacadePlan(input);
+      expect(plan.arguments).not.toHaveProperty("primary");
+      persistCrmFacadePlan(plan);
+      recordCrmFacadeApprovalRequest(plan.planId, {
+        source: { channel: "test", accountId: "test", chatId: "test" },
+        externalMessageId: `omitted-primary-${index}`,
+        authorizedApproverId: "human-1",
+      });
+      approveCrmFacadePlan(plan.planId, {
+        externalMessageId: `omitted-primary-${index}`,
+        approverId: "human-1",
+      });
+      expect(applyCrmFacadePlan(plan.planId, { actorId: "agent-primary-regression" }).state).toBe("applied");
+    }
+
+    const database = new Database(join(stateDir!, "chat.db"));
+    const accountPrimary = database
+      .query("SELECT is_primary FROM crm_account_contacts WHERE account_id = ? AND contact_id = ? AND role = 'member'")
+      .get(account.id, contact!.id) as { is_primary: number };
+    const opportunityPrimary = database
+      .query(
+        "SELECT is_primary FROM crm_opportunity_contacts WHERE opportunity_id = ? AND contact_id = ? AND role = 'stakeholder'",
+      )
+      .get(opportunity.id, contact!.id) as { is_primary: number };
+    database.close();
+
+    expect(accountPrimary.is_primary).toBe(1);
+    expect(opportunityPrimary.is_primary).toBe(1);
   });
 
   it("includes CRM opportunities where the contact is linked as a stakeholder", () => {
