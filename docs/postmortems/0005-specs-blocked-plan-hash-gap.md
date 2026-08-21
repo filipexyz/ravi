@@ -1,8 +1,8 @@
 # Postmortem 0005: blocked specs plan did not bind its blockers
 
-**Date:** 2026-08-21  
-**Severity:** high  
-**Status:** corrected locally; final gates pending  
+**Date:** 2026-08-21
+**Severity:** high
+**Status:** corrected locally; final gates pending
 **Project:** Ravi
 
 ## Summary

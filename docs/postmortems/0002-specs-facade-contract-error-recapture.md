@@ -1,8 +1,8 @@
 # Postmortem 0002: specs facade recaptured a typed usage error
 
-**Date:** 2026-08-21  
-**Severity:** low  
-**Status:** resolved before commit  
+**Date:** 2026-08-21
+**Severity:** low
+**Status:** resolved before commit
 **Project:** Ravi
 
 ## Summary
@@ -50,4 +50,3 @@ After the fix, the focused command suite preserved `USAGE_ERROR` for both
 cases. A separate cold-start setup timeout was classified as a known Windows
 test-environment fluctuation; the specs-native files now use the repository's
 established 20-second setup allowance, without weakening operation assertions.
-

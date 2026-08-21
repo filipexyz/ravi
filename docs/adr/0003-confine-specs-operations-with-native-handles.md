@@ -1,6 +1,6 @@
 # ADR 0003: Confine specs operations with native filesystem handles
 
-**Date:** 2026-08-21  
+**Date:** 2026-08-21
 **Status:** accepted
 
 ## Context

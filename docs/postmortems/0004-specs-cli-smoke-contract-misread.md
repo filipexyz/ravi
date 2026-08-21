@@ -1,8 +1,8 @@
 # Postmortem 0004: specs CLI smoke script misread the public contract
 
-**Date:** 2026-08-21  
-**Severity:** low  
-**Status:** resolved locally  
+**Date:** 2026-08-21
+**Severity:** low
+**Status:** resolved locally
 **Project:** Ravi
 
 ## Summary

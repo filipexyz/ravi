@@ -1,8 +1,8 @@
 # Postmortem 0003: specs facade failed SDK return-schema quality
 
-**Date:** 2026-08-21  
-**Severity:** medium  
-**Status:** resolved locally; full gate rerun pending  
+**Date:** 2026-08-21
+**Severity:** medium
+**Status:** resolved locally; full gate rerun pending
 **Project:** Ravi
 
 ## Summary

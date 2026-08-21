@@ -1710,6 +1710,7 @@ criacao de symlink negada por `EPERM`. O mesmo arquivo no commit exato da
 fundacao `560517a4` reproduziu as duas falhas. A suite ampla nao e declarada
 verde, mas a comparacao demonstra que essas duas falhas nao foram introduzidas
 por COMMANDS. A compilacao Swift segue reservada a CI Linux.
+
 ---
 
 ## FASE 10 - facade local segura de specs (2026-08-21)
@@ -2249,3 +2250,62 @@ Windows x64 tem 904.704 bytes e SHA-256
 Windows executou o addon em Bun e Node. Linux apenas compilou, e a geracao/drift
 Swift ocorreu sem compilador Swift neste host. Nao houve pacote, push, PR,
 merge ou VPS.
+
+### Retificacao do candidato `8882efd3` e nova linha sobre Commands
+
+A auditoria independente rejeitou
+`8882efd3a5035f7e333e370c84a3303ed89e9fe8`. Esse candidato partia da fundacao
+`560517a43248c3798f82e3da98c088df0743016e`; o commit Commands vinculante
+`e91cfec9c85c84f4051910996e26634ad64459eb` nao era seu ancestral. A captura
+final anterior tambem afirmou que o diff check havia passado, mas seis
+documentos Specs ainda continham espacos no fim de linhas. Essa afirmacao era
+falsa e fica expressamente substituida por esta retificacao, sem apagar o
+registro original.
+
+O mesmo candidato gerou propriedades Swift opcionais para chaves JSON Schema
+obrigatorias e nullable, entre elas `expectedSha256`, usando `Codable`
+sintetizado nos modelos afetados. Assim, uma chave ausente era aceita como
+`nil` e o reencode omitia a chave, embora o contrato exigisse presenca e
+permitisse apenas o valor `null`.
+
+A branch rejeitada foi preservada no SHA exato. A linha corretiva nasceu
+diretamente de Commands `e91cfec9c` e reaplicou somente a sequencia Specs. A
+fonte global do gerador Swift agora exige a presenca de required+nullable,
+decodifica `null` e reencoda `nil` como `null`, tanto em retornos de topo quanto
+em modelos internos; propriedades realmente opcionais continuam podendo faltar.
+Os testes nativos verificam o codigo emitido e executam round trip somente se
+`swiftc` existir. O compilador Swift nao esta disponivel neste host e nenhuma
+compilacao local e alegada. Os espacos finais dos seis documentos afetados
+foram removidos. Gates completos e o SHA final ainda estao pendentes neste
+checkpoint; nao houve pacote, push, PR, merge ou VPS.
+
+### Recaptura final da correcao sobre Commands
+
+A primeira tentativa de preservacao de Commands colocou onze suites no mesmo
+processo Bun. Mocks globais de registry e codegen vazaram entre arquivos e
+produziram 85 falhas em cascata depois de 158 passes; o setup do router tambem
+estourou o hook sob essa carga. Esse lote foi invalido e nao conta como gate.
+Cada arquivo foi repetido em processo nativo isolado. Fundacao, agents,
+Commands, processo, registry, tools export, descoberta de comandos e router
+passaram respectivamente 9/22, 51/143, 26/114, 11/57, 13/27, 15/68, 7/24 e
+12/60 testes/assercoes. Client codegen, gateway, OpenAPI e Swift codegen
+passaram 23/72, 41/171, 22/61 e 24/94.
+
+SPECS passou 41 testes e 149 assercoes, com os dois casos de runtime exclusivos
+de Linux pulados; o CLI Specs passou 13/73. O SDK completo passou 76/305 e
+quality passou 40/90. O runner recebeu exatamente os 55 caminhos do delta entre
+Commands e a candidata, indexou 274 specs e aprovou `cli/specs` e `specs`.
+
+A primeira chamada Biome encontrou somente terminadores de linha herdados em
+`src/specs/service.test.ts`. O formatador oficial normalizou o arquivo, seus
+sete testes passaram com 27 assercoes e o Biome repetido ficou verde. A primeira
+chamada Markdown encontrou a linha em branco ausente na juncao do ledger
+Commands/Specs; o separador era interpretado como titulo setext. A separacao
+estrutural foi restaurada e os 19 documentos alterados passaram.
+
+Passaram tambem typecheck, build completo, drifts do SDK TypeScript, dos dois
+OpenAPI e do Swift, diff check acumulado, compilacao cruzada dos addons Linux e
+Windows e verificacao da fronteira nativa publicavel. `swiftc` nao existe neste
+host: o teste condicional validou o codigo emitido, mas nao executou compilacao
+Swift. O binario Linux compilou e nao executou no Windows. Nao houve pacote,
+push, PR, merge ou VPS.

@@ -488,3 +488,62 @@ Windows x64 is 904,704 bytes with SHA-256
 Windows executed the addon in Bun and Node. Linux compiled but did not execute,
 and Swift generation/drift ran without a Swift compiler on this host. No
 package, push, PR, merge, or VPS operation occurred.
+
+## Revision note: 2026-08-21, rejection of `8882efd3` and clean replay
+
+Independent audit rejected `8882efd3a5035f7e333e370c84a3303ed89e9fe8` for
+three additional reasons. First, the candidate descended from foundation
+`560517a43248c3798f82e3da98c088df0743016e`, not from the binding Commands
+commit `e91cfec9c85c84f4051910996e26634ad64459eb`; therefore it did not contain
+the required Commands stack. Second, generated Swift models represented
+required nullable keys, including `expectedSha256`, with synthesized `Codable`.
+That accepted an absent key and omitted the key when encoding `nil`. Third, the
+final capture above claimed a green diff check, but the committed ADR and
+postmortem files still contained trailing whitespace. That claim was false and
+is superseded by this note; the original record remains visible.
+
+The rejected branch remains preserved at the exact SHA. A separate correction
+line was created directly from Commands `e91cfec9c` and only the Specs commit
+sequence was replayed. The Swift generator source now distinguishes a required
+nullable key from a truly optional key for top-level and nested return models:
+decoding requires presence and accepts `null`, while encoding writes explicit
+`null`; truly optional fields retain absent-key behavior. Native generator tests
+cover generated source and conditionally execute a Swift round trip. This host
+does not provide `swiftc`, so no local Swift compilation is claimed.
+
+The trailing whitespace in all six affected Specs documents was removed. At
+this checkpoint the correction still requires the complete native gate recapture
+and an exact final commit before review. No package, push, PR, merge, or VPS
+operation occurred.
+
+## Revision note: 2026-08-21, correction gate recapture
+
+The first Commands preservation attempt placed eleven suites in one Bun test
+process. Global registry and code-generation mocks leaked between files, causing
+85 cascading failures after 158 passes; the router setup also exceeded its hook
+timeout under that load. This batch was invalid and is not counted as a gate.
+Each file was rerun in its own native test process. Foundation, agents,
+Commands, process, registry, tools export, command discovery, and router then
+passed 9/22, 51/143, 26/114, 11/57, 13/27, 15/68, 7/24, and 12/60
+tests/assertions respectively. Client codegen, gateway, OpenAPI, and Swift
+codegen passed 23/72, 41/171, 22/61, and 24/94.
+
+Specs passed 41 tests with 149 assertions and skipped the two Linux-only runtime
+cases; its CLI passed 13 tests with 73 assertions. The complete SDK passed 76
+tests with 305 assertions. Quality passed 40 tests with 90 assertions, and the
+runner evaluated the exact 55-file Commands-to-candidate delta, indexed 274
+specs, and approved `cli/specs` and `specs`.
+
+The first Biome pass found only inherited line-ending drift in
+`src/specs/service.test.ts`. The formatter normalized it, its seven tests passed
+with 27 assertions, and the repeated Biome check was clean. The first scoped
+Markdown pass found a missing blank line at the Commands/Specs ledger join; the
+separator had been interpreted as a setext heading. The structural blank line
+was restored and all 19 changed Markdown files then passed.
+
+Typecheck, full build, TypeScript SDK drift, both OpenAPI drift checks, Swift
+drift, accumulated diff check, cross-compilation of both native targets, and
+the native publication-boundary check passed. `swiftc` remains unavailable, so
+the conditional round-trip test checked emitted source but did not compile
+Swift locally. Linux binaries compiled but did not execute on this Windows host.
+No package, push, PR, merge, or VPS operation occurred.
