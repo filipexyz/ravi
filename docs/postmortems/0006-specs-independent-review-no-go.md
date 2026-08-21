@@ -225,3 +225,32 @@ symbolic link. Neither artifact source nor test differs from `origin/dev`.
 These results are recorded as local platform boundaries, not as passes. Linux
 CI on the exact committed candidate remains mandatory, and the candidate stays
 NO-GO until package review and CI complete.
+
+## Revision note: 2026-08-21, third independent review NO-GO
+
+Independent review rejected commit
+`0910d850a8fba109a5f0e50d121a7a69b5a62b71` and its 4,968,478-byte package
+with SHA-256
+`2A96AC5B2069052890EC34B39A458778309C212999FC376B4D9617ACB50F0C74`.
+Neither candidate was pushed or opened as a PR.
+
+The review reproduced a high-severity confinement gap: a junction placed below
+`.ravi/specs` in a branch unrelated to the requested target was followed by
+planning and application. Checking only root and target path components was not
+enough because the sync scanner and later observations share the complete tree.
+Specific spec and companion reads also needed their own no-follow checks to
+reduce the race window between tree validation and file access.
+
+The review also found that `sync` read the current index before acquiring its
+`BEGIN IMMEDIATE` write lock. Two writers could therefore both decide that a
+replacement was needed from stale observations. Finally, the PRD listed a
+`blocked` verify result not emitted by the runtime, and legacy `createdFiles`
+had been normalized to forward slashes instead of preserving native paths.
+
+The next candidate must scan the entire bound specs tree without following
+links before reads, promotion, and index replacement; repeat that validation at
+effect boundaries; compare and replace the index in one write transaction;
+preserve native legacy paths; align the PRD with the actual verify outcomes;
+and add native regression coverage for nested, target, file, late-swap, and
+writer-interleaving cases. A new commit, package, independent review, and Linux
+CI are mandatory. The rejected package remains permanently NO-GO.

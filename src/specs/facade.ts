@@ -4,11 +4,13 @@ import { join, parse, resolve } from "node:path";
 import { getRaviDbPath } from "../router/router-db.js";
 import {
   applyPreparedSpecCreation,
+  assertSafeSpecsTree,
   getSpecsRoot,
   inspectPreparedSpecCreation,
   listSpecs,
   prepareSpecCreation,
   syncSpecsSnapshot,
+  UnsafeSpecsTreeError,
 } from "./service.js";
 import { inspectSpecsIndex } from "./spec-db.js";
 import type { NewSpecInput, PreparedSpecCreation, SpecKind, SpecRecord } from "./types.js";
@@ -146,6 +148,14 @@ function canonicalSpecsRoot(cwd: string): string {
       });
     }
   }
+  try {
+    assertSafeSpecsTree(path);
+  } catch (error) {
+    if (error instanceof UnsafeSpecsTreeError) {
+      throw new SpecsFacadeError("UNSAFE_SPECS_ROOT", error.message, { path: error.unsafePath });
+    }
+    throw error;
+  }
   return path;
 }
 
@@ -206,15 +216,18 @@ function assertCurrentDatabaseBinding(expectedPath: string): void {
 }
 
 function newPlanState(intent: Extract<SpecsFacadeIntent, { operation: "new" }>): SpecsFacadePlanState {
+  const binding = bindingForCwd(intent.cwd);
   let prepared: PreparedSpecCreation;
   try {
-    prepared = prepareSpecCreation(intent as NewSpecInput);
+    prepared = prepareSpecCreation({ ...intent, cwd: binding.cwd } as NewSpecInput);
   } catch (error) {
+    if (error instanceof UnsafeSpecsTreeError) {
+      throw new SpecsFacadeError("UNSAFE_SPECS_ROOT", error.message, { path: error.unsafePath });
+    }
     throw new SpecsFacadeError("INVALID_SPEC_INTENT", error instanceof Error ? error.message : String(error), {
       operation: intent.operation,
     });
   }
-  const binding = bindingForCwd(prepared.cwd);
   const inspection = inspectPreparedSpecCreation(prepared);
   const blockers: SpecsFacadePlan["blockers"] = [];
   if (prepared.missingAncestors.length > 0) {
@@ -278,7 +291,15 @@ function newPlanState(intent: Extract<SpecsFacadeIntent, { operation: "new" }>):
 
 function syncPlanState(intent: Extract<SpecsFacadeIntent, { operation: "sync" }>): SpecsFacadePlanState {
   const binding = bindingForCwd(intent.cwd);
-  const specs = listSpecs({ cwd: binding.cwd });
+  let specs: SpecRecord[];
+  try {
+    specs = listSpecs({ cwd: binding.cwd });
+  } catch (error) {
+    if (error instanceof UnsafeSpecsTreeError) {
+      throw new SpecsFacadeError("UNSAFE_SPECS_ROOT", error.message, { path: error.unsafePath });
+    }
+    throw error;
+  }
   const source = specs.map(comparableIndexSpec);
   const index = inspectSpecsIndex(binding.specsRoot, specs, binding.dbPath);
   const sourceDigest = sha256(canonicalJson(source));
@@ -404,6 +425,7 @@ export function readbackSpecsFacade(intent: SpecsFacadeIntent, expectedPlanHash:
 
 function readbackCapturedSync(state: SpecsFacadePlanState, expectedPlanHash: string): SpecsFacadeReadback {
   const plan = state.plan;
+  assertCurrentSpecsBinding(plan.binding.specsRoot, plan.binding.cwd);
   assertCurrentDatabaseBinding(plan.binding.dbPath);
   return {
     schemaVersion: plan.schemaVersion,
@@ -469,7 +491,10 @@ export function applySpecsFacadePlan(
     const result = applyPreparedSpecCreation(state.prepared!, {
       requireAncestors: true,
       existing: "noop",
-      beforePromote: options.beforePromote,
+      beforePromote: (stagingPath) => {
+        options.beforePromote?.(stagingPath);
+        assertCurrentSpecsBinding(plan.binding.specsRoot, plan.binding.cwd);
+      },
     });
     const verification = verifySpecsFacade(intent, plan.planHash);
     if (verification.outcome !== "confirmed") {

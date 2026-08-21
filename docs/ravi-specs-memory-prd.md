@@ -286,7 +286,7 @@ Agents use a closed sequence for creation and index synchronization:
 2. `apply` requires that exact hash and revalidates the bound workspace, specs
    root, database path, ancestors, and source snapshot before mutation.
 3. `readback` observes files and index state independently of the write result.
-4. `verify` classifies the result as `confirmed`, `divergent`, or `blocked`.
+4. `verify` classifies the result as `confirmed`, `absent`, or `divergent`.
 5. `recover` recommends no action, a fresh plan, or manual review; it never
    silently repeats an effect.
 

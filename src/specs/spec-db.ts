@@ -63,7 +63,10 @@ function specsIndexSchemaExists(db: Database): boolean {
 }
 
 export function ensureSpecsIndexSchema(): boolean {
-  const db = getDb();
+  return ensureSpecsIndexSchemaInDb(getDb());
+}
+
+function ensureSpecsIndexSchemaInDb(db: Database): boolean {
   const existed = specsIndexSchemaExists(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS specs_index (
@@ -118,41 +121,48 @@ function sameSpecs(left: SpecRecord[], right: SpecRecord[]): boolean {
   );
 }
 
-export function replaceSpecsIndex(rootPath: string, specs: SpecRecord[]): boolean {
-  const schemaCreated = ensureSpecsIndexSchema();
-  const db = getDb();
-  const current = schemaCreated
-    ? []
-    : (db.prepare("SELECT * FROM specs_index WHERE root_path = ? ORDER BY id ASC").all(rootPath) as SpecIndexRow[]).map(
-        rowToSpec,
-      );
-  if (!schemaCreated && sameSpecs(current, specs)) return false;
-  const now = Date.now();
-  const insert = db.prepare(`
-    INSERT INTO specs_index (
-      root_path,
-      id,
-      path,
-      kind,
-      domain,
-      capability,
-      feature,
-      title,
-      capabilities_json,
-      tags_json,
-      applies_to_json,
-      owners_json,
-      status,
-      normative,
-      mtime,
-      updated_at
-    )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
+export interface ReplaceSpecsIndexOptions {
+  /** Test seam for a writer that completes before this caller acquires the transaction lock. */
+  beforeTransaction?: () => void;
+}
 
-  executeWrite(
+export function replaceSpecsIndex(
+  rootPath: string,
+  specs: SpecRecord[],
+  options: ReplaceSpecsIndexOptions = {},
+): boolean {
+  const db = getDb();
+  options.beforeTransaction?.();
+  return executeWrite(
     db,
     () => {
+      const schemaCreated = ensureSpecsIndexSchemaInDb(db);
+      const current = (
+        db.prepare("SELECT * FROM specs_index WHERE root_path = ? ORDER BY id ASC").all(rootPath) as SpecIndexRow[]
+      ).map(rowToSpec);
+      if (!schemaCreated && sameSpecs(current, specs)) return false;
+      const now = Date.now();
+      const insert = db.prepare(`
+        INSERT INTO specs_index (
+          root_path,
+          id,
+          path,
+          kind,
+          domain,
+          capability,
+          feature,
+          title,
+          capabilities_json,
+          tags_json,
+          applies_to_json,
+          owners_json,
+          status,
+          normative,
+          mtime,
+          updated_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
       db.prepare("DELETE FROM specs_index WHERE root_path = ?").run(rootPath);
       for (const spec of specs) {
         insert.run(
@@ -174,10 +184,10 @@ export function replaceSpecsIndex(rootPath: string, specs: SpecRecord[]): boolea
           now,
         );
       }
+      return true;
     },
     { label: "specs:reindex" },
   );
-  return true;
 }
 
 export function listIndexedSpecs(rootPath: string): SpecRecord[] {

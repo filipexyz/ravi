@@ -366,6 +366,156 @@ describe("specs facade", () => {
     expect(isolatedStateDir ? existsSync(join(isolatedStateDir, "ravi.db")) : false).toBe(false);
   });
 
+  it("rejects an unrelated nested junction anywhere inside the specs tree", () => {
+    const cwd = makeWorkspace();
+    const outside = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const ignoredBranch = join(cwd, ".ravi", "specs", "ignored", "deep", "branch", "level");
+    mkdirSync(ignoredBranch, { recursive: true });
+    const junction = join(ignoredBranch, "unrelated-junction");
+    try {
+      symlinkSync(outside, junction, "junction");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return;
+      throw error;
+    }
+
+    for (const intent of [
+      { operation: "sync" as const, cwd },
+      { operation: "new" as const, cwd, id: "runtime", title: "Runtime", kind: "domain" as const },
+    ]) {
+      try {
+        buildSpecsFacadePlan(intent);
+        throw new Error("Expected the unsafe descendant to fail");
+      } catch (error) {
+        expect(error).toBeInstanceOf(SpecsFacadeError);
+        expect((error as SpecsFacadeError).code).toBe("UNSAFE_SPECS_ROOT");
+      }
+    }
+    expect(existsSync(join(outside, "runtime", "SPEC.md"))).toBe(false);
+    expect(existsSync(join(isolatedStateDir!, "ravi.db"))).toBe(false);
+  });
+
+  it("rejects linked spec and companion files before reading them", () => {
+    const cwd = makeWorkspace();
+    const outside = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain", full: true });
+    const outsideFile = join(outside, "outside.md");
+    writeFileSync(outsideFile, "outside", "utf8");
+
+    for (const fileName of ["SPEC.md", "WHY.md"]) {
+      const target = join(cwd, ".ravi", "specs", "channels", fileName);
+      const original = readFileSync(target, "utf8");
+      rmSync(target);
+      try {
+        symlinkSync(outsideFile, target, "file");
+      } catch (error) {
+        writeFileSync(target, original, "utf8");
+        if ((error as NodeJS.ErrnoException).code === "EPERM") return;
+        throw error;
+      }
+
+      try {
+        buildSpecsFacadePlan({ operation: "sync", cwd });
+        throw new Error("Expected the linked file to fail");
+      } catch (error) {
+        expect(error).toBeInstanceOf(SpecsFacadeError);
+        expect((error as SpecsFacadeError).code).toBe("UNSAFE_SPECS_ROOT");
+      }
+      rmSync(target);
+      writeFileSync(target, original, "utf8");
+    }
+    expect(existsSync(join(isolatedStateDir!, "ravi.db"))).toBe(false);
+  });
+
+  it("rejects a junction introduced after validation before any effect", () => {
+    const cwd = makeWorkspace();
+    const outside = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const intent = { operation: "new" as const, cwd, id: "runtime", title: "Runtime", kind: "domain" as const };
+    const plan = buildSpecsFacadePlan(intent);
+    const junction = join(cwd, ".ravi", "specs", "late-junction");
+
+    try {
+      applySpecsFacadePlan(intent, plan.planHash, {
+        afterValidation: () => symlinkSync(outside, junction, "junction"),
+      });
+      throw new Error("Expected the late unsafe descendant to fail");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return;
+      expect(error).toBeInstanceOf(SpecsFacadeError);
+      expect((error as SpecsFacadeError).code).toBe("UNSAFE_SPECS_ROOT");
+    }
+
+    expect(existsSync(join(cwd, ".ravi", "specs", "runtime"))).toBe(false);
+    expect(existsSync(join(outside, "SPEC.md"))).toBe(false);
+  });
+
+  it("rejects a junction introduced immediately before promotion and cleans staging", () => {
+    const cwd = makeWorkspace();
+    const outside = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const intent = { operation: "new" as const, cwd, id: "runtime", title: "Runtime", kind: "domain" as const };
+    const plan = buildSpecsFacadePlan(intent);
+    const specsRoot = join(cwd, ".ravi", "specs");
+
+    try {
+      applySpecsFacadePlan(intent, plan.planHash, {
+        beforePromote: () => symlinkSync(outside, join(specsRoot, "promotion-junction"), "junction"),
+      });
+      throw new Error("Expected the promotion-time unsafe descendant to fail");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return;
+      expect(error).toBeInstanceOf(SpecsFacadeError);
+      expect((error as SpecsFacadeError).code).toBe("UNSAFE_SPECS_ROOT");
+    }
+
+    expect(existsSync(join(specsRoot, "runtime"))).toBe(false);
+    expect(readdirSync(specsRoot).some((entry) => entry.includes(".runtime.ravi-stage-"))).toBe(false);
+  });
+
+  it("rejects a junction introduced before sync without creating the index", () => {
+    const cwd = makeWorkspace();
+    const outside = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const intent = { operation: "sync" as const, cwd };
+    const plan = buildSpecsFacadePlan(intent);
+
+    try {
+      applySpecsFacadePlan(intent, plan.planHash, {
+        afterValidation: () => symlinkSync(outside, join(cwd, ".ravi", "specs", "late-sync-junction"), "junction"),
+      });
+      throw new Error("Expected the late sync junction to fail");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return;
+      expect(error).toBeInstanceOf(SpecsFacadeError);
+      expect((error as SpecsFacadeError).code).toBe("UNSAFE_SPECS_ROOT");
+    }
+
+    expect(existsSync(join(isolatedStateDir!, "ravi.db"))).toBe(false);
+  });
+
+  it("rejects a target-path junction before planning creation", () => {
+    const cwd = makeWorkspace();
+    const outside = makeWorkspace();
+    mkdirSync(join(cwd, ".ravi", "specs"), { recursive: true });
+    try {
+      symlinkSync(outside, join(cwd, ".ravi", "specs", "channels"), "junction");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") return;
+      throw error;
+    }
+
+    try {
+      buildSpecsFacadePlan({ operation: "new", cwd, id: "channels", title: "Channels", kind: "domain" });
+      throw new Error("Expected the target junction to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(SpecsFacadeError);
+      expect((error as SpecsFacadeError).code).toBe("UNSAFE_SPECS_ROOT");
+    }
+    expect(existsSync(join(outside, "SPEC.md"))).toBe(false);
+  });
+
   it("syncs once, then returns noop while readback remains confirmed", () => {
     const cwd = makeWorkspace();
     createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });

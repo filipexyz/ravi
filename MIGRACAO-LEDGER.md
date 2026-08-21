@@ -2025,3 +2025,25 @@ passes e duas limitacoes do Windows: expectativa de separador POSIX e falta de
 permissao para criar link simbolico. Fonte e teste de artifacts nao diferem de
 `origin/dev`. Isso nao conta como passe completo; CI Linux no commit exato,
 pacote e revisao independente continuam obrigatorios. Permanece NO-GO.
+
+### Terceiro NO-GO independente de SPECS
+
+A auditoria independente rejeitou o commit
+`0910d850a8fba109a5f0e50d121a7a69b5a62b71` e o pacote de 4.968.478 bytes com
+SHA-256
+`2A96AC5B2069052890EC34B39A458778309C212999FC376B4D9617ACB50F0C74`.
+O commit e o pacote nao foram publicados nem usados para abrir PR.
+
+Uma junction escondida em qualquer descendente de `.ravi/specs`, mesmo fora do
+alvo solicitado, ainda podia ser seguida pelo plano e pela aplicacao. A leitura
+do indice SQLite tambem acontecia antes da trava de escrita, permitindo que
+gravadores concorrentes comparassem observacoes antigas. A revisao encontrou
+ainda divergencia entre os resultados de verificacao documentados e reais, e
+mudanca indevida dos caminhos nativos retornados pelo comando legado.
+
+O proximo candidato deve recusar toda entrada insegura na arvore completa antes
+de ler ou alterar, repetir a verificacao nas fronteiras de efeito, comparar e
+substituir o indice dentro da mesma transacao, preservar os caminhos legados e
+cobrir os casos de junction aninhada, alvo, arquivo, troca tardia e concorrencia
+com testes nativos. Novo commit, pacote, auditoria independente e CI Linux no
+SHA exato continuam obrigatorios. O terceiro pacote permanece NO-GO definitivo.

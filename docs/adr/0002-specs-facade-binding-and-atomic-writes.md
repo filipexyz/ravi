@@ -30,9 +30,11 @@ human-facing surface and publish separate `specs.facade.new.*` and
   makes the old plan stale. No CLI option accepts an arbitrary filesystem root.
 - The database binding is absolute and rejects any observed symbolic-link
   component before planning or applying database work.
-- The `.ravi/specs` binding rejects a symbolic link or junction in every
-  existing path component before scanning, reading, or applying. The binding is
-  checked again before an effect or observation is accepted.
+- The `.ravi/specs` binding rejects symbolic links, junctions, and non-regular
+  entries in every existing path component and anywhere below the bound root,
+  including branches unrelated to the requested spec. The complete tree is
+  checked before scanning, reading, promotion, index replacement, or accepting
+  an observation.
 - Facade `new` blocks when required ancestor `SPEC.md` files are absent. The
   legacy `new` command preserves its explicit compatibility behavior and still
   reports missing ancestors after creation.
@@ -47,6 +49,9 @@ human-facing surface and publish separate `specs.facade.new.*` and
   service.
 - Facade `sync` writes the exact in-memory Markdown snapshot used to produce
   the approved hash; it does not perform a second source scan after validation.
+- `sync` compares the current SQLite index and replaces it within the same
+  `BEGIN IMMEDIATE` transaction. A writer that finishes before this transaction
+  acquires its lock is therefore visible to the comparison.
 - `readback`, `verify`, and `recover` are read-only. They expose the bound
   targets, ancestor state, expected versus observed file hashes, and SQLite
   index state. Observation recognizes the identity of an originally executable
@@ -86,6 +91,9 @@ human-facing surface and publish separate `specs.facade.new.*` and
 - A stale or differently bound hash is rejected before mutation.
 - A linked specs root or a hierarchy that changes before promotion is rejected
   without publishing the target directory.
+- An unsafe entry in an unrelated or deeper specs branch also blocks the whole
+  operation. This fail-closed scan intentionally favors confinement over partial
+  availability.
 - A post-apply edit remains observable as `divergent`/`manual_review` without
   granting authority to overwrite it with the old hash.
 - Sync cannot silently index a Markdown version that appeared after the copied

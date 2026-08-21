@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
-import { listIndexedSpecs } from "./spec-db.js";
+import { listIndexedSpecs, replaceSpecsIndex } from "./spec-db.js";
 import { createSpec, getSpec, getSpecContext, listSpecs, syncSpecs } from "./service.js";
 
 const tempRoots: string[] = [];
@@ -58,12 +58,8 @@ describe("specs service", () => {
       status: "active",
       normative: true,
     });
-    expect(result.createdFiles.map((file) => file.split("/").at(-1))).toEqual([
-      "SPEC.md",
-      "WHY.md",
-      "RUNBOOK.md",
-      "CHECKS.md",
-    ]);
+    expect(result.createdFiles.map((file) => basename(file))).toEqual(["SPEC.md", "WHY.md", "RUNBOOK.md", "CHECKS.md"]);
+    expect(result.createdFiles.every((file) => isAbsolute(file))).toBe(true);
     expect(result.missingAncestors.map((entry) => entry.id)).toEqual(["channels", "channels/presence"]);
     expect(existsSync(join(cwd, ".ravi/specs/channels/presence/lifecycle/SPEC.md"))).toBe(true);
   });
@@ -136,6 +132,23 @@ describe("specs service", () => {
 
     const replay = syncSpecs({ cwd });
     expect(replay.changed).toBe(false);
+  });
+
+  it("compares and replaces the specs index under the same write lock", () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const initial = syncSpecs({ cwd });
+    createSpec({ cwd, id: "runtime", title: "Runtime", kind: "domain" });
+    const updated = listSpecs({ cwd });
+
+    const changed = replaceSpecsIndex(initial.rootPath, updated, {
+      beforeTransaction: () => {
+        expect(replaceSpecsIndex(initial.rootPath, updated)).toBe(true);
+      },
+    });
+
+    expect(changed).toBe(false);
+    expect(listIndexedSpecs(initial.rootPath).map((spec) => spec.id)).toEqual(["channels", "runtime"]);
   });
 
   it("rejects kind/path mismatches", () => {

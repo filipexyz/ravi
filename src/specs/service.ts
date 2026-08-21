@@ -7,7 +7,6 @@ import {
   realpathSync,
   renameSync,
   rmSync,
-  statSync,
   writeFileSync,
 } from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -50,6 +49,13 @@ type FrontmatterValue = string | string[] | boolean;
 interface ParsedSpecFile {
   frontmatter: Record<string, FrontmatterValue>;
   body: string;
+}
+
+export class UnsafeSpecsTreeError extends Error {
+  constructor(readonly unsafePath: string) {
+    super(`Unsafe symbolic link or non-regular entry in specs tree: ${unsafePath}`);
+    this.name = "UnsafeSpecsTreeError";
+  }
 }
 
 function normalizeText(value: string, label: string): string {
@@ -211,13 +217,17 @@ function parseSpecFile(content: string, path: string): ParsedSpecFile {
 
 function recordFromSpecFile(rootPath: string, path: string): SpecRecord {
   const normalizedPath = resolve(path);
+  assertNoSymlinkOnExistingPath(rootPath, normalizedPath);
+  const stat = lstatSync(normalizedPath);
+  if (stat.isSymbolicLink() || !stat.isFile()) {
+    throw new UnsafeSpecsTreeError(normalizedPath);
+  }
   const specDirPath = dirname(normalizedPath);
   const pathId = normalizeSpecId(
     relative(rootPath, specDirPath)
       .split(/[\\/]+/)
       .join("/"),
   );
-  const stat = statSync(normalizedPath);
   const { frontmatter } = parseSpecFile(readFileSync(normalizedPath, "utf8"), normalizedPath);
   const id = normalizeSpecId(scalarToString(frontmatter.id, "id"));
   if (id !== pathId) {
@@ -262,23 +272,42 @@ function recordFromSpecFile(rootPath: string, path: string): SpecRecord {
   };
 }
 
-function findSpecFiles(rootPath: string): string[] {
-  if (!existsSync(rootPath)) return [];
-  const found: string[] = [];
+function walkSafeSpecsTree(rootPath: string, onFile?: (path: string, directoryDepth: number) => void): void {
+  if (!existsSync(rootPath)) return;
+  const rootStat = lstatSync(rootPath);
+  if (rootStat.isSymbolicLink() || !rootStat.isDirectory()) {
+    throw new UnsafeSpecsTreeError(rootPath);
+  }
 
-  const visit = (dir: string, depth: number) => {
-    if (depth > 3) return;
+  const visit = (dir: string, directoryDepth: number): void => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name);
-      if (entry.isDirectory()) {
-        visit(path, depth + 1);
-      } else if (entry.isFile() && entry.name === SPEC_FILE) {
-        found.push(path);
+      const stat = lstatSync(path);
+      if (stat.isSymbolicLink()) {
+        throw new UnsafeSpecsTreeError(path);
+      }
+      if (stat.isDirectory()) {
+        visit(path, directoryDepth + 1);
+      } else if (stat.isFile()) {
+        onFile?.(path, directoryDepth);
+      } else {
+        throw new UnsafeSpecsTreeError(path);
       }
     }
   };
 
   visit(rootPath, 0);
+}
+
+export function assertSafeSpecsTree(rootPath: string): void {
+  walkSafeSpecsTree(resolve(rootPath));
+}
+
+function findSpecFiles(rootPath: string): string[] {
+  const found: string[] = [];
+  walkSafeSpecsTree(rootPath, (path, directoryDepth) => {
+    if (directoryDepth <= 3 && basename(path) === SPEC_FILE) found.push(path);
+  });
   return found.sort();
 }
 
@@ -296,6 +325,7 @@ export function listSpecs(options: ListSpecsOptions = {}): SpecRecord[] {
 
 export function getSpec(id: string, options: GetSpecOptions = {}): SpecRecord {
   const rootPath = getSpecsRoot(options.cwd);
+  assertSafeSpecsTree(rootPath);
   const normalizedId = normalizeSpecId(id);
   const path = specFilePath(rootPath, normalizedId);
   if (!existsSync(path)) {
@@ -348,6 +378,11 @@ function readContextFile(
 ): SpecContextFile {
   const path = join(specDir(rootPath, entry.id), fileName);
   const exists = existsSync(path);
+  if (exists) {
+    assertNoSymlinkOnExistingPath(rootPath, path);
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink() || !stat.isFile()) throw new UnsafeSpecsTreeError(path);
+  }
   return {
     specId: entry.id,
     kind: entry.kind,
@@ -390,6 +425,7 @@ function renderSpecContext(files: SpecContextFile[]): string {
 
 export function getSpecContext(id: string, options: GetSpecContextOptions = {}): SpecContext {
   const rootPath = getSpecsRoot(options.cwd);
+  assertSafeSpecsTree(rootPath);
   const normalizedId = normalizeSpecId(id);
   const mode = options.mode ?? "rules";
   const chain = chainIdsForSpec(normalizedId).map((chainId) => chainEntryForId(rootPath, chainId));
@@ -525,6 +561,7 @@ function ensureSafeDirectory(workspace: string, targetPath: string): void {
 export function prepareSpecCreation(input: NewSpecInput): PreparedSpecCreation {
   const cwd = canonicalWorkspace(input.cwd);
   const rootPath = getSpecsRoot(cwd);
+  assertSafeSpecsTree(rootPath);
   const id = normalizeSpecId(input.id);
   const kind = normalizeSpecKind(input.kind);
   const expectedKind = expectedKindForId(id);
@@ -622,6 +659,7 @@ export function applyPreparedSpecCreation(
   prepared: PreparedSpecCreation,
   options: ApplyPreparedSpecCreationOptions,
 ): AppliedSpecCreation {
+  assertSafeSpecsTree(prepared.rootPath);
   const inspection = inspectPreparedSpecCreation(prepared);
   if (options.requireAncestors) {
     assertCurrentPreparedAncestors(prepared);
@@ -654,7 +692,7 @@ export function applyPreparedSpecCreation(
     }
     return {
       spec: getSpec(prepared.id, { cwd: prepared.cwd }),
-      createdFiles: prepared.files.map((file) => file.path.split("\\").join("/")),
+      createdFiles: prepared.files.map((file) => file.path),
       missingAncestors: prepared.missingAncestors,
       changed: true,
       status: "created",
@@ -676,6 +714,7 @@ export function applyPreparedSpecCreation(
     if (options.requireAncestors) {
       assertCurrentPreparedAncestors(prepared);
     }
+    assertSafeSpecsTree(prepared.rootPath);
     assertNoSymlinkOnExistingPath(prepared.cwd, parent);
     renameSync(stagingPath, prepared.directoryPath);
     renamed = true;
@@ -687,7 +726,7 @@ export function applyPreparedSpecCreation(
 
   return {
     spec: getSpec(prepared.id, { cwd: prepared.cwd }),
-    createdFiles: prepared.files.map((file) => file.path.split("\\").join("/")),
+    createdFiles: prepared.files.map((file) => file.path),
     missingAncestors: prepared.missingAncestors,
     changed: true,
     status: "created",
@@ -709,6 +748,7 @@ export function createSpec(input: NewSpecInput): NewSpecResult {
 
 export function syncSpecsSnapshot(specs: SpecRecord[], options: SyncSpecsOptions = {}): SyncSpecsResult {
   const rootPath = getSpecsRoot(options.cwd);
+  assertSafeSpecsTree(rootPath);
   for (const spec of specs) {
     if (spec.rootPath !== rootPath || relativeInside(rootPath, spec.path).startsWith("..")) {
       throw new Error(`Spec snapshot is not bound to root: ${spec.id}`);
