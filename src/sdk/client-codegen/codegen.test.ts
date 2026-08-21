@@ -13,6 +13,7 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
+import { commandsListReturnSchema } from "../../cli/commands/operational-return-schemas.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { compareSdkSource, computeRegistryHash, emitAll } from "./index.js";
 
@@ -67,6 +68,15 @@ class CrmCommands {
 class CrmAccountCommands {
   @Command({ name: "create", description: "Create account" })
   create(@Arg("name") _name: string) {
+    return {};
+  }
+}
+
+@Group({ name: "commands", description: "Ravi commands", scope: "open" })
+class CommandsContractCommands {
+  @Command({ name: "list", description: "List Ravi commands" })
+  @Returns(commandsListReturnSchema)
+  list() {
     return {};
   }
 }
@@ -144,6 +154,23 @@ describe("client-codegen :: emitAll", () => {
     expect(output.types).toContain("export type ArtifactsShowReturn = {");
     expect(output.types).toMatch(/id: string;/);
     expect(output.types).toMatch(/kind: string;/);
+  });
+
+  it("keeps commands projected rows non-empty and fully typed in generated TypeScript", () => {
+    const output = emitAll(buildRegistry([CommandsContractCommands]), { version: FIXED_VERSION });
+
+    expect(output.types).toContain("export type CommandsListReturn = {");
+    expect(output.types).toContain("arguments?: string[];");
+    expect(output.types).toContain("issues?: Array<{");
+    expect(output.types).not.toContain("RaviJSON");
+    expect(output.types).not.toContain("Record<string, unknown>");
+    expect(output.types).not.toContain("[k: string]: unknown");
+    expect(output.schemas).toContain('"title": "CommandsListItem"');
+    expect(
+      output.schemas.match(
+        /"required": \[\s+"(?:id|token|title|description|argumentHint|arguments|disabled|scope|path|relativePath|shadowedBy|shadows|issues)"\s+\]/g,
+      )?.length,
+    ).toBeGreaterThanOrEqual(13);
   });
 
   it("falls back to unknown for return when no @Returns", () => {

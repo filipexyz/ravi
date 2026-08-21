@@ -117,6 +117,13 @@ export function expectedErrorToContractError(op: string, error: unknown): Contra
 export interface PickFieldsOptions {
   /** Stable public field set supplied by the owning domain. */
   acceptedFields: readonly string[];
+  /**
+   * `legacy-compatible` keeps non-selected fields non-enumerable so strict
+   * pre-serialization @Returns validators used by older domains still see the
+   * complete record. Migrated domains may opt into an honest serialized-only
+   * record once their projected Returns contract is explicit.
+   */
+  projection?: "legacy-compatible" | "serialized-only";
 }
 
 function parseRequestedFields(fields?: string): string[] {
@@ -154,8 +161,20 @@ export function pickFields<T>(items: T[], fields?: string, options?: PickFieldsO
   return items.map((item) => {
     const record = item as Record<string, unknown>;
     const picked: Record<string, unknown> = {};
-    for (const key of keys) {
-      if (Object.hasOwn(record, key)) picked[key] = record[key];
+    const requested = new Set(keys);
+    for (const key of Object.keys(record)) {
+      if (requested.has(key)) {
+        picked[key] = record[key];
+        continue;
+      }
+      if (options?.projection === "serialized-only") continue;
+
+      Object.defineProperty(picked, key, {
+        value: record[key],
+        enumerable: false,
+        configurable: false,
+        writable: false,
+      });
     }
     return picked as T;
   });

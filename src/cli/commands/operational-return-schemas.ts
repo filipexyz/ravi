@@ -1056,23 +1056,80 @@ const commandRecordReturnShape = {
 
 export const commandRecordReturnSchema = z.object(commandRecordReturnShape).passthrough();
 
-const projectedCommandRecordReturnSchema = z
-  .object(commandRecordReturnShape)
-  .partial()
+const commandsListIssueReturnSchema = z
+  .object({
+    level: z.enum(["error", "warning"]),
+    code: z.string(),
+    message: z.string(),
+    id: z.string().nullable(),
+    scope: z.string().nullable(),
+    path: z.string().nullable(),
+  })
   .strict()
-  .refine((record) => Object.keys(record).length > 0, {
-    message: "A projected command must contain at least one field.",
-  });
+  .meta({ title: "CommandsListIssue" });
 
-export const commandsListReturnSchema = pagedItemsReturnSchema
-  .extend({
-    agent: looseObjectSchema,
-    locations: looseObjectSchema,
+const commandsListItemShape = {
+  id: z.string(),
+  token: z.string(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  argumentHint: z.string().nullable(),
+  arguments: z.array(z.string()),
+  disabled: z.boolean(),
+  scope: z.string(),
+  path: z.string(),
+  relativePath: z.string(),
+  shadowedBy: z.string().nullable(),
+  shadows: z.array(z.string()),
+  issues: z.array(commandsListIssueReturnSchema),
+};
+
+const commandsListItemSubsetSchema = z.object(commandsListItemShape).partial().strict();
+const commandsListItemFields = new Set(Object.keys(commandsListItemShape));
+const projectedCommandRecordVariants = Object.entries(commandsListItemShape).map(([requiredKey, schema]) =>
+  z.object({ [requiredKey]: schema }).passthrough(),
+);
+const projectedCommandRecordReturnSchema = z
+  .intersection(
+    commandsListItemSubsetSchema,
+    z.union(projectedCommandRecordVariants as unknown as [ZodTypeAny, ZodTypeAny, ...ZodTypeAny[]]),
+  )
+  .superRefine((record, context) => {
+    const unknownFields = Object.keys(record).filter((field) => !commandsListItemFields.has(field));
+    if (unknownFields.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: `Unrecognized projected command fields: ${unknownFields.join(", ")}`,
+      });
+    }
+  })
+  .meta({ title: "CommandsListItem" });
+
+const commandsListAgentReturnSchema = z
+  .object({ id: z.string(), cwd: z.string() })
+  .strict()
+  .meta({ title: "CommandsListAgent" });
+const commandsListLocationsReturnSchema = z
+  .object({ agent: z.string().nullable(), global: z.string() })
+  .strict()
+  .meta({ title: "CommandsListLocations" });
+const commandsListFiltersReturnSchema = z.object({ tag: z.string() }).strict().meta({ title: "CommandsListFilters" });
+const commandsListPaginationReturnSchema = strictCliOffsetPaginationSchema
+  .strict()
+  .meta({ title: "CommandsListPagination" });
+
+export const commandsListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: commandsListPaginationReturnSchema,
+    filters: commandsListFiltersReturnSchema.optional(),
+    agent: commandsListAgentReturnSchema,
+    locations: commandsListLocationsReturnSchema,
     items: z.array(projectedCommandRecordReturnSchema),
     commands: z.array(projectedCommandRecordReturnSchema),
-    issues: z.array(commandIssueReturnSchema),
+    issues: z.array(commandsListIssueReturnSchema),
   })
-  .passthrough();
+  .strict();
 
 export const commandShowReturnSchema = z
   .object({

@@ -111,8 +111,20 @@ describe("agent-first CLI foundation contract", () => {
   it("keeps the projection API compatible for callers not migrated yet", () => {
     const rows = pickFields([{ id: "main", name: "Main" }], "id");
     expect(Object.keys(rows[0] ?? {})).toEqual(["id"]);
-    expect(Object.getOwnPropertyNames(rows[0] ?? {})).toEqual(["id"]);
+    expect(Object.getOwnPropertyNames(rows[0] ?? {})).toEqual(["id", "name"]);
+    expect(Object.getOwnPropertyDescriptor(rows[0] ?? {}, "name")?.enumerable).toBe(false);
     expect(JSON.parse(JSON.stringify(rows))).toEqual([{ id: "main" }]);
+  });
+
+  it("allows a migrated domain to request an honest serialized-only projection", () => {
+    const rows = pickFields([{ id: "review", scope: "agent" }], "id", {
+      acceptedFields: ["id", "scope"],
+      projection: "serialized-only",
+    });
+
+    expect(Object.keys(rows[0] ?? {})).toEqual(["id"]);
+    expect(Object.getOwnPropertyNames(rows[0] ?? {})).toEqual(["id"]);
+    expect(JSON.parse(JSON.stringify(rows))).toEqual([{ id: "review" }]);
   });
 
   it("routes direct legacy fail termination through the top-level flush boundary", () => {

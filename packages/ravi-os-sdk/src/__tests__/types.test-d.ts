@@ -24,6 +24,7 @@ import type {
   ChannelsBackendRuntimeInterruptReturn,
   ChannelsBackendRuntimeReadbackInput,
   ChannelsBackendRuntimeReadbackReturn,
+  CommandsListReturn,
   ContextCredentialsListReturn,
 } from "../types.js";
 
@@ -125,6 +126,19 @@ type _ListReturnOk = ExpectTrue<Eq<ListResult, ContextCredentialsListReturn>>;
 type _ListReturnIsUnknown = ExpectTrue<Eq<ContextCredentialsListReturn, unknown>>;
 type _ListParamsOk = ExpectFalse<Eq<ListParams, [string]>>;
 
+// Projected COMMANDS rows remain typed and require at least one declared field.
+type CommandsListRow = CommandsListReturn["items"][number];
+type _CommandsEmptyRowRejected = ExpectFalse<{} extends CommandsListRow ? true : false>;
+type _CommandsIdRowAccepted = ExpectTrue<{ id: string } extends CommandsListRow ? true : false>;
+const validCommandsRow: CommandsListRow = { arguments: ["target"] };
+// @ts-expect-error an empty projection violates the generated non-empty contract
+const emptyCommandsRow: CommandsListRow = {};
+// @ts-expect-error command arguments are strings, not arbitrary JSON
+const invalidCommandsArguments: CommandsListRow = { arguments: [1] };
+void validCommandsRow;
+void emptyCommandsRow;
+void invalidCommandsArguments;
+
 describe("types.test-d", () => {
   it("compiles the typed surface", () => {
     // The Expect* aliases above run at compile time — this test only ensures
@@ -156,5 +170,7 @@ type _Touched =
   | _ChannelBackendRuntimeReadbackReturnOk
   | _ListReturnOk
   | _ListReturnIsUnknown
-  | _ListParamsOk;
+  | _ListParamsOk
+  | _CommandsEmptyRowRejected
+  | _CommandsIdRowAccepted;
 export type { _Touched };

@@ -29,11 +29,14 @@ interface SourceFileDigest {
 }
 
 function runCli(args: string[]): CliResult {
+  const childEnv = withoutRaviRuntimeContextEnv();
+  delete childEnv.RAVI_SUPPRESS_AUDIT_EVENTS;
+  delete childEnv.RAVI_NO_AUDIT;
   const result = spawnSync("bun", ["src/cli/index.ts", ...args], {
     cwd: process.cwd(),
     encoding: "utf8",
     env: {
-      ...withoutRaviRuntimeContextEnv(),
+      ...childEnv,
       RAVI_HOME: stateDir,
       RAVI_STATE_DIR: stateDir,
     },
@@ -162,6 +165,15 @@ afterAll(async () => {
 });
 
 describe("commands process contract", () => {
+  it("does not inherit test-only audit suppression into native CLI processes", () => {
+    const childEnv = withoutRaviRuntimeContextEnv();
+    delete childEnv.RAVI_SUPPRESS_AUDIT_EVENTS;
+    delete childEnv.RAVI_NO_AUDIT;
+
+    expect(childEnv.RAVI_SUPPRESS_AUDIT_EVENTS).toBeUndefined();
+    expect(childEnv.RAVI_NO_AUDIT).toBeUndefined();
+  });
+
   it("prints group help with exit 0 when no operation is supplied", () => {
     const before = captureState();
     const result = runCli(["commands"]);

@@ -2,6 +2,7 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
+import { commandsListReturnSchema } from "../../cli/commands/operational-return-schemas.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { compareSwiftSdkSource, computeRegistryHash, emitAllSwift } from "./index.js";
 import { jsonSchemaToSwift } from "./json-schema-to-swift.js";
@@ -100,6 +101,15 @@ class CollisionCommands {
   }
 }
 
+@Group({ name: "commands", description: "Ravi commands", scope: "open" })
+class CommandsContractCommands {
+  @Command({ name: "list", description: "List Ravi commands" })
+  @Returns(commandsListReturnSchema)
+  list() {
+    return {};
+  }
+}
+
 const FIXED_VERSION = {
   sdkVersion: "9.9.9",
   registryHash: "sha256:fixed",
@@ -164,6 +174,19 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.types).toContain("public typealias ContextCredentialsListReturn = RaviJSON");
     expect(output.types).toContain("public typealias ArtifactsBlobReturn = RaviBinaryResponse");
     expect(output.client).toContain("return try await transport.callBinary");
+  });
+
+  it("emits typed commands projection models without RaviJSON", () => {
+    const output = emitAllSwift(buildRegistry([CommandsContractCommands]), { version: FIXED_VERSION });
+
+    expect(output.types).toContain("public struct CommandsListItem: Codable, Sendable");
+    expect(output.types).toContain("public var arguments: [String]?");
+    expect(output.types).toContain("public var issues: [CommandsListIssue]?");
+    expect(output.types).toContain("CommandsListItem requires at least one field.");
+    expect(output.types).toContain("CommandsListItem contains an unknown field.");
+    expect(output.types).toContain("public var items: [CommandsListItem]");
+    expect(output.types).toContain("public var agent: CommandsListAgent");
+    expect(output.types).not.toContain("RaviJSON");
   });
 
   it("emits Swift return structs for top-level object schemas", () => {

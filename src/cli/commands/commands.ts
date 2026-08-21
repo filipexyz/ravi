@@ -218,7 +218,7 @@ export class RaviCommandsCommands {
     const commandRows = pickFields(
       pageCommands.map((command) => serializeCommand(command)),
       fields,
-      { acceptedFields: COMMAND_LIST_FIELDS },
+      { acceptedFields: COMMAND_LIST_FIELDS, projection: "serialized-only" },
     );
     const payload = {
       total: page.total,

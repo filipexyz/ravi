@@ -1638,3 +1638,31 @@ emitiram stderr, nao criaram arquivo de estado e nao alteraram o fixture. Como
 este registro muda o commit, o primeiro arquivo fica apenas como diagnostico;
 o pacote final deve ser reconstruido, rehashado, reinstalado e auditado no novo
 SHA antes de push ou PR.
+
+### NO-GO independente do candidato `d67ad42a`
+
+A auditoria read-only rejeitou o commit
+`d67ad42acbb3fe33c1c89d413f1c5f691a37b7a0` e o pacote herdado. A projecao
+honesta havia sido aplicada no helper compartilhado e quebrou a validacao
+estrita anterior ao JSON de AGENTS e de outros dominios compactos ainda nao
+migrados. O teste de processo tambem herdava
+`RAVI_SUPPRESS_AUDIT_EVENTS=1` do helper de estado, portanto nao provava
+transporte zero por `audit: none`. O refinamento de linha nao vazia funcionava
+em Returns, mas desaparecia do TypeScript e do OpenAPI gerados; Swift publicava
+o item como `RaviJSON`.
+
+A rodada corretiva restaura a compatibilidade do helper por padrao e ativa a
+projecao serializada somente em COMMANDS. Um teste nativo de AGENTS exige, ao
+mesmo tempo, Returns estrito valido antes da serializacao e JSON contendo apenas
+os campos pedidos. COMMANDS agora representa qualquer subconjunto nao vazio dos
+13 campos como uniao estrita; TypeScript e OpenAPI preservam cada alternativa,
+e Swift gera modelos tipados com rejeicao de linha vazia e campo desconhecido.
+
+O processo filho remove explicitamente `RAVI_SUPPRESS_AUDIT_EVENTS` e
+`RAVI_NO_AUDIT`. Os dez casos nativos passaram mantendo fontes, todos os
+arquivos de estado e todas as tabelas SQLite sem alteracao. Os artefatos SDK e
+OpenAPI foram regenerados e seus checks deterministas passaram. O host Windows
+nao possui o executavel Swift, entao compilacao Swift local nao foi declarada;
+o teste nativo do gerador passou. Nao houve pacote, push, PR ou VPS. O novo
+commit continuara NO-GO ate auditoria independente, novo pacote e validacao
+posterior autorizada.

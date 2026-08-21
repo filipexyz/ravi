@@ -319,6 +319,35 @@ describe("commands read-only surface and compact mode", () => {
     expect(commandsListReturnSchema.safeParse(serializedPayload).success).toBe(true);
   });
 
+  it("list Returns rejects empty projected rows and accepts every declared singleton field", async () => {
+    const commands = new RaviCommandsCommands();
+    const emptyProjection = await silenced(() => commands.list(undefined, true, undefined, undefined, undefined, "id"));
+    const serialized = JSON.parse(JSON.stringify(emptyProjection));
+    serialized.items[0] = {};
+    serialized.commands[0] = {};
+
+    expect(commandsListReturnSchema.safeParse(serialized).success).toBe(false);
+
+    for (const field of [
+      "id",
+      "token",
+      "title",
+      "description",
+      "argumentHint",
+      "arguments",
+      "disabled",
+      "scope",
+      "path",
+      "relativePath",
+      "shadowedBy",
+      "shadows",
+      "issues",
+    ]) {
+      const payload = await silenced(() => commands.list(undefined, true, undefined, undefined, undefined, field));
+      expect(commandsListReturnSchema.safeParse(JSON.parse(JSON.stringify(payload))).success).toBe(true);
+    }
+  });
+
   it("list Returns accepts complete records and rejects arbitrary projected fields", async () => {
     const commands = new RaviCommandsCommands();
     const completePayload = await silenced(() => commands.list(undefined, true));

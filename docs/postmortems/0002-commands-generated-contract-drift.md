@@ -180,3 +180,36 @@ This note changes the candidate commit, so that first archive is retained as
 diagnostic evidence only. The final archive must be rebuilt after the
 documentation commit, rehashed, reinstalled, and independently reviewed before
 push or PR. Linux CI remains mandatory after an authorized push.
+
+## Revision note: 2026-08-21, independent review of `d67ad42a` NO-GO
+
+Independent read-only review rejected commit
+`d67ad42acbb3fe33c1c89d413f1c5f691a37b7a0` and the inherited package recorded
+above. The package was not pushed or opened as a PR.
+
+The replacement made shared compact projection honest for COMMANDS by removing
+hidden fields globally. That silently invalidated strict pre-serialization
+Returns contracts in AGENTS and other compact consumers that had not migrated.
+The COMMANDS process test also inherited `RAVI_SUPPRESS_AUDIT_EVENTS=1` from its
+state helper, so its zero-transport result did not prove the declared
+`audit: none` behavior. Finally, the runtime non-empty refinement was lost by
+JSON Schema conversion: generated TypeScript allowed an empty projected row,
+OpenAPI carried no equivalent non-empty rule, and Swift lowered the row to
+`RaviJSON`.
+
+The corrective round restores the shared compatibility behavior by default and
+opts only COMMANDS into serialized-only projection. Native AGENTS regression
+coverage now proves that strict Returns validation sees the complete legacy row
+while JSON remains compact. COMMANDS publishes a strict union of 13 typed
+single-field-or-larger projections, which preserves the non-empty invariant in
+Returns, TypeScript, JSON Schema, OpenAPI, and typed Swift models. The process
+child environment explicitly removes both `RAVI_SUPPRESS_AUDIT_EVENTS` and
+`RAVI_NO_AUDIT`; all ten native process cases preserve every state file, every
+SQLite table, and command sources.
+
+Generated TypeScript, OpenAPI, and Swift drift checks pass locally. The Windows
+host has no Swift toolchain, so generated Swift compilation was not claimed;
+the native generator contract is green, but independent review and later Linux
+CI remain mandatory. No package was produced in this corrective round. The
+candidate remains NO-GO for push or PR until the new commit is independently
+audited and its final package is rebuilt and tested.
