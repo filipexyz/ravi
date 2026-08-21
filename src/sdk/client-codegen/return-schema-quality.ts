@@ -44,7 +44,11 @@ export function analyzeCommandReturnSchema(cmd: CommandRegistryEntry): ReturnSch
   };
 }
 
-function collectWeakSchemaIssues(schema: JsonSchema, path: string): ReturnSchemaQualityIssue[] {
+function collectWeakSchemaIssues(
+  schema: JsonSchema,
+  path: string,
+  objectClosedByIntersection = false,
+): ReturnSchemaQualityIssue[] {
   const issues: ReturnSchemaQualityIssue[] = [];
   if (Object.keys(schema).length === 0) {
     issues.push({
@@ -58,6 +62,17 @@ function collectWeakSchemaIssues(schema: JsonSchema, path: string): ReturnSchema
   const anyOf = getSchemaArray(schema, "anyOf");
   const oneOf = getSchemaArray(schema, "oneOf");
   const allOf = getSchemaArray(schema, "allOf");
+  const closedByThisIntersection =
+    objectClosedByIntersection ||
+    Boolean(
+      allOf?.some(
+        (branch) =>
+          branch.type === "object" &&
+          branch.additionalProperties === false &&
+          isRecord(branch.properties) &&
+          Object.keys(branch.properties).length > 0,
+      ),
+    );
   for (const [keyword, branches] of [
     ["anyOf", anyOf],
     ["oneOf", oneOf],
@@ -65,7 +80,9 @@ function collectWeakSchemaIssues(schema: JsonSchema, path: string): ReturnSchema
   ] as const) {
     if (!branches) continue;
     for (let index = 0; index < branches.length; index++) {
-      issues.push(...collectWeakSchemaIssues(branches[index], `${path}.${keyword}[${index}]`));
+      issues.push(
+        ...collectWeakSchemaIssues(branches[index], `${path}.${keyword}[${index}]`, closedByThisIntersection),
+      );
     }
   }
 
@@ -73,17 +90,23 @@ function collectWeakSchemaIssues(schema: JsonSchema, path: string): ReturnSchema
   if (Array.isArray(type)) {
     for (const branchType of type) {
       if (typeof branchType !== "string") continue;
-      issues.push(...collectWeakTypedSchemaIssues({ ...schema, type: branchType }, path));
+      issues.push(...collectWeakTypedSchemaIssues({ ...schema, type: branchType }, path, objectClosedByIntersection));
     }
     return issues;
   }
   if (typeof type === "string") {
-    issues.push(...collectWeakTypedSchemaIssues(schema as JsonSchema & { type: string }, path));
+    issues.push(
+      ...collectWeakTypedSchemaIssues(schema as JsonSchema & { type: string }, path, objectClosedByIntersection),
+    );
   }
   return issues;
 }
 
-function collectWeakTypedSchemaIssues(schema: JsonSchema & { type: string }, path: string): ReturnSchemaQualityIssue[] {
+function collectWeakTypedSchemaIssues(
+  schema: JsonSchema & { type: string },
+  path: string,
+  objectClosedByIntersection = false,
+): ReturnSchemaQualityIssue[] {
   switch (schema.type) {
     case "array": {
       const items = schema.items;
@@ -99,13 +122,17 @@ function collectWeakTypedSchemaIssues(schema: JsonSchema & { type: string }, pat
       return collectWeakSchemaIssues(items, `${path}.items`);
     }
     case "object":
-      return collectWeakObjectIssues(schema, path);
+      return collectWeakObjectIssues(schema, path, objectClosedByIntersection);
     default:
       return [];
   }
 }
 
-function collectWeakObjectIssues(schema: JsonSchema, path: string): ReturnSchemaQualityIssue[] {
+function collectWeakObjectIssues(
+  schema: JsonSchema,
+  path: string,
+  objectClosedByIntersection = false,
+): ReturnSchemaQualityIssue[] {
   const issues: ReturnSchemaQualityIssue[] = [];
   const properties = isRecord(schema.properties) ? schema.properties : {};
   const propertyNames = Object.keys(properties).sort();
@@ -119,7 +146,11 @@ function collectWeakObjectIssues(schema: JsonSchema, path: string): ReturnSchema
     });
   }
 
-  if (additional === undefined) {
+  if (objectClosedByIntersection) {
+    // A sibling closed-object branch in the same allOf already constrains the
+    // keys accepted by this object. Passthrough alternatives may express
+    // required-key unions without making the intersected result open.
+  } else if (additional === undefined) {
     issues.push({
       code: "OPEN_OBJECT",
       path,

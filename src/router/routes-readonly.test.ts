@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { Database } from "bun:sqlite";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -33,18 +33,71 @@ function durableStateDigest(stateDir: string): Array<{ name: string; sha256: str
   return stateDigest(stateDir).filter(({ name }) => !name.endsWith("-shm"));
 }
 
-function runRoutesCli(stateDir: string, args: string[]) {
-  const cleanEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("RAVI_")));
+function runRoutesCli(stateDir: string, args: string[], extraEnv: NodeJS.ProcessEnv = {}) {
+  const cleanEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith("RAVI_") && key !== "NATS_URL"),
+  );
   return spawnSync("bun", ["src/cli/index.ts", "routes", ...args], {
     cwd: process.cwd(),
     encoding: "utf8",
     env: {
       ...cleanEnv,
       RAVI_STATE_DIR: stateDir,
-      RAVI_NO_AUDIT: "1",
-      RAVI_SUPPRESS_AUDIT_EVENTS: "1",
+      ...extraEnv,
     },
   });
+}
+
+const NATS_TRAP_SOURCE = String.raw`
+  const { appendFileSync, writeFileSync } = require("node:fs");
+  const marker = process.env.RAVI_TEST_NATS_MARKER;
+  const ready = process.env.RAVI_TEST_NATS_READY;
+  if (!marker || !ready) throw new Error("missing trap paths");
+  const listener = Bun.listen({
+    hostname: "127.0.0.1",
+    port: 0,
+    socket: {
+      open() { appendFileSync(marker, "connection\n", "utf8"); },
+      data() { appendFileSync(marker, "data\n", "utf8"); },
+    },
+  });
+  writeFileSync(ready, String(listener.port), "utf8");
+  const stop = () => { listener.stop(true); process.exit(0); };
+  process.on("SIGTERM", stop);
+  process.on("SIGINT", stop);
+  setInterval(() => {}, 1000);
+`;
+
+function waitForFile(path: string, timeoutMs = 5_000): void {
+  const deadline = Date.now() + timeoutMs;
+  const sleeper = new Int32Array(new SharedArrayBuffer(4));
+  while (!existsSync(path) && Date.now() < deadline) Atomics.wait(sleeper, 0, 0, 20);
+  if (!existsSync(path)) throw new Error(`Timed out waiting for helper file: ${path}`);
+}
+
+function startNatsConnectionTrap(stateDir: string): {
+  child: ChildProcess;
+  markerPath: string;
+  natsUrl: string;
+} {
+  const markerPath = join(stateDir, "nats-contacted.log");
+  const readyPath = join(stateDir, "nats-ready.txt");
+  const child = spawn("bun", ["-e", NATS_TRAP_SOURCE], {
+    cwd: process.cwd(),
+    stdio: "ignore",
+    env: {
+      ...process.env,
+      RAVI_TEST_NATS_MARKER: markerPath,
+      RAVI_TEST_NATS_READY: readyPath,
+    },
+  });
+  waitForFile(readyPath);
+  const port = readFileSync(readyPath, "utf8").trim();
+  return { child, markerPath, natsUrl: `nats://127.0.0.1:${port}` };
+}
+
+function stopChild(child: ChildProcess): void {
+  if (child.exitCode === null && child.signalCode === null) child.kill();
 }
 
 afterEach(async () => {
@@ -264,6 +317,35 @@ describe("readRoutesSnapshot", () => {
     expect(durableStateDigest(stateDir)).toEqual(before);
   });
 
+  it("keeps a missing route lookup on a legacy database read-only", () => {
+    const stateDir = createStateDir();
+    const database = new Database(join(stateDir, "ravi.db"));
+    database.exec(`
+      CREATE TABLE agents (id TEXT PRIMARY KEY, cwd TEXT NOT NULL);
+      CREATE TABLE routes (id INTEGER PRIMARY KEY, pattern TEXT, account_id TEXT, agent_id TEXT);
+      CREATE TABLE instances (name TEXT PRIMARY KEY);
+      INSERT INTO agents VALUES ('main', '/legacy/main');
+      INSERT INTO instances VALUES ('main');
+      INSERT INTO routes VALUES (1, '5511*', 'main', 'main');
+    `);
+    database.close();
+    const before = durableStateDigest(stateDir);
+
+    const result = runRoutesCli(stateDir, ["show", "main", "missing-route", "--json"]);
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      success: false,
+      op: "routes show",
+      error: {
+        code: "ROUTE_NOT_FOUND",
+        suggestions: expect.any(Array),
+      },
+    });
+    expect(durableStateDigest(stateDir)).toEqual(before);
+  });
+
   it("runs list, show, and explain against one persisted fixture without changing durable state", () => {
     const stateDir = createStateDir();
     const database = new Database(join(stateDir, "ravi.db"));
@@ -290,10 +372,22 @@ describe("readRoutesSnapshot", () => {
     database.close();
     const before = durableStateDigest(stateDir);
 
-    const list = runRoutesCli(stateDir, ["list", "main", "--json", "--fields", "pattern,agent,channel"]);
-    const humanList = runRoutesCli(stateDir, ["list", "main"]);
-    const show = runRoutesCli(stateDir, ["show", "main", "123@g.us", "--json"]);
-    const explain = runRoutesCli(stateDir, ["explain", "main", "group:123", "--channel", "WHATSAPP", "--json"]);
+    const trap = startNatsConnectionTrap(createStateDir());
+    const natsEnv = { NATS_URL: trap.natsUrl };
+    let list;
+    let humanList;
+    let show;
+    let explain;
+    try {
+      list = runRoutesCli(stateDir, ["list", "main", "--json", "--fields", "pattern,agent,channel"], natsEnv);
+      humanList = runRoutesCli(stateDir, ["list", "main"], natsEnv);
+      show = runRoutesCli(stateDir, ["show", "main", "123@g.us", "--json"], natsEnv);
+      explain = runRoutesCli(stateDir, ["explain", "main", "group:123", "--channel", "WHATSAPP", "--json"], natsEnv);
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100);
+      expect(existsSync(trap.markerPath)).toBe(false);
+    } finally {
+      stopChild(trap.child);
+    }
 
     expect(list).toMatchObject({ status: 0, stderr: "" });
     expect(JSON.parse(list.stdout).items).toEqual([{ pattern: "123@g.us", agent: "sales", channel: "whatsapp" }]);

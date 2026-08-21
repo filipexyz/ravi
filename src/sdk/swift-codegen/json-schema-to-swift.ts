@@ -28,8 +28,18 @@ export function jsonSchemaToSwift(schema: JsonSchema | undefined | null): string
     return "RaviJSON";
   }
 
-  if (Array.isArray((schema as { anyOf?: unknown[] }).anyOf)) return "RaviJSON";
-  if (Array.isArray((schema as { oneOf?: unknown[] }).oneOf)) return "RaviJSON";
+  const anyOf = (schema as { anyOf?: JsonSchema[] }).anyOf;
+  if (Array.isArray(anyOf)) {
+    const nonNull = anyOf.filter((branch) => (branch as { type?: unknown }).type !== "null");
+    if (nonNull.length === 1 && nonNull.length !== anyOf.length) return jsonSchemaToSwift(nonNull[0]);
+    return "RaviJSON";
+  }
+  const oneOf = (schema as { oneOf?: JsonSchema[] }).oneOf;
+  if (Array.isArray(oneOf)) {
+    const nonNull = oneOf.filter((branch) => (branch as { type?: unknown }).type !== "null");
+    if (nonNull.length === 1 && nonNull.length !== oneOf.length) return jsonSchemaToSwift(nonNull[0]);
+    return "RaviJSON";
+  }
   if (Array.isArray((schema as { allOf?: unknown[] }).allOf)) return "RaviJSON";
 
   const type = (schema as { type?: unknown }).type;

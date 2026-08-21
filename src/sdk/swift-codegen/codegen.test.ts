@@ -2,7 +2,12 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
-import { commandsListReturnSchema } from "../../cli/commands/operational-return-schemas.js";
+import {
+  commandsListReturnSchema,
+  routeExplainReturnSchema,
+  routeShowReturnSchema,
+  routesListReturnSchema,
+} from "../../cli/commands/operational-return-schemas.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { compareSwiftSdkSource, computeRegistryHash, emitAllSwift } from "./index.js";
 import { jsonSchemaToSwift } from "./json-schema-to-swift.js";
@@ -110,6 +115,27 @@ class CommandsContractCommands {
   }
 }
 
+@Group({ name: "routes", description: "Read-only Ravi routes", scope: "admin" })
+class RoutesContractCommands {
+  @Command({ name: "list", description: "List routes" })
+  @Returns(routesListReturnSchema)
+  list() {
+    return {};
+  }
+
+  @Command({ name: "show", description: "Show one route" })
+  @Returns(routeShowReturnSchema)
+  show() {
+    return {};
+  }
+
+  @Command({ name: "explain", description: "Explain route resolution" })
+  @Returns(routeExplainReturnSchema)
+  explain() {
+    return {};
+  }
+}
+
 const FIXED_VERSION = {
   sdkVersion: "9.9.9",
   registryHash: "sha256:fixed",
@@ -187,6 +213,20 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.types).toContain("public var items: [CommandsListItem]");
     expect(output.types).toContain("public var agent: CommandsListAgent");
     expect(output.types).not.toContain("RaviJSON");
+  });
+
+  it("emits typed non-empty route projections and concrete nested route models", () => {
+    const output = emitAllSwift(buildRegistry([RoutesContractCommands]), { version: FIXED_VERSION });
+
+    expect(output.types).toContain("public struct RoutesListItem: Codable, Sendable");
+    expect(output.types).toContain("RoutesListItem requires at least one field.");
+    expect(output.types).toContain("RoutesListItem contains an unknown field.");
+    expect(output.types).toContain("public var items: [RoutesListItem]");
+    expect(output.types).toContain("public var routes: [RoutesListItem]");
+    expect(output.types).toContain("public struct RoutesRouteWithTags: Codable, Sendable");
+    expect(output.types).toContain("public var route: RoutesRouteWithTags");
+    expect(output.types).toContain("public var origin: RoutesExplainOrigin");
+    expect(output.types).toContain("public var liveEffect: RoutesExplainLiveEffect?");
   });
 
   it("emits Swift return structs for top-level object schemas", () => {
@@ -271,6 +311,17 @@ describe("swift-codegen :: emitAllSwift", () => {
 });
 
 describe("swift-codegen :: jsonSchemaToSwift", () => {
+  it("preserves a concrete named type through a nullable union", () => {
+    expect(
+      jsonSchemaToSwift({
+        anyOf: [
+          { type: "object", title: "RoutesExplainLiveEffect", properties: { verified: { type: "boolean" } } },
+          { type: "null" },
+        ],
+      }),
+    ).toBe("RoutesExplainLiveEffect");
+  });
+
   it("keeps JSON Schema enums in valid Swift scalar types", () => {
     expect(jsonSchemaToSwift({ enum: ["active", "paused"] })).toBe("String");
     expect(jsonSchemaToSwift({ enum: [1, 2] })).toBe("Int");

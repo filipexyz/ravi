@@ -3,7 +3,12 @@ import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 
 import { Arg, Command, Group, Option, Returns, Scope } from "../../cli/decorators.js";
-import { commandsListReturnSchema } from "../../cli/commands/operational-return-schemas.js";
+import {
+  commandsListReturnSchema,
+  routeExplainReturnSchema,
+  routeShowReturnSchema,
+  routesListReturnSchema,
+} from "../../cli/commands/operational-return-schemas.js";
 import { buildRegistry, getRegistry } from "../../cli/registry-snapshot.js";
 import { emit, emitJson, commandPath } from "./emit.js";
 import { sortKeysDeep, stableStringify } from "./stable-stringify.js";
@@ -53,6 +58,27 @@ class CommandsContractCommands {
   @Command({ name: "list", description: "List Ravi commands" })
   @Returns(commandsListReturnSchema)
   list() {
+    return {};
+  }
+}
+
+@Group({ name: "routes", description: "Read-only Ravi routes", scope: "admin" })
+class RoutesContractCommands {
+  @Command({ name: "list", description: "List routes" })
+  @Returns(routesListReturnSchema)
+  list() {
+    return {};
+  }
+
+  @Command({ name: "show", description: "Show one route" })
+  @Returns(routeShowReturnSchema)
+  show() {
+    return {};
+  }
+
+  @Command({ name: "explain", description: "Explain route resolution" })
+  @Returns(routeExplainReturnSchema)
+  explain() {
     return {};
   }
 }
@@ -144,6 +170,35 @@ describe("openapi emit", () => {
     expect(subset.anyOf.every((branch) => (branch.required as string[]).length === 1)).toBe(true);
     const shape = itemSchema.allOf.find((part) => part.additionalProperties === false) as Record<string, unknown>;
     expect(Object.keys(shape.properties as Record<string, unknown>)).toHaveLength(13);
+  });
+
+  it("publishes routes projection and nested returns as concrete OpenAPI contracts", () => {
+    const spec = emit(buildRegistry([RoutesContractCommands]));
+    const listResponse = spec.paths["/api/v1/routes/list"]!.post.responses["200"]!.content!["application/json"]
+      .schema as Record<string, unknown>;
+    const listProperties = listResponse.properties as Record<string, Record<string, unknown>>;
+    const itemSchema = listProperties.items.items as { allOf: Array<Record<string, unknown>>; title: string };
+    const variants = itemSchema.allOf.find((part) => Array.isArray(part.anyOf)) as {
+      anyOf: Array<Record<string, unknown>>;
+    };
+    const showResponse = spec.paths["/api/v1/routes/show"]!.post.responses["200"]!.content!["application/json"]
+      .schema as Record<string, unknown>;
+    const explainResponse = spec.paths["/api/v1/routes/explain"]!.post.responses["200"]!.content!["application/json"]
+      .schema as Record<string, unknown>;
+
+    expect(itemSchema.title).toBe("RoutesListItem");
+    expect(variants.anyOf).toHaveLength(10);
+    expect(variants.anyOf.every((branch) => (branch.required as string[]).length === 1)).toBe(true);
+    expect((showResponse.properties as Record<string, Record<string, unknown>>).route.title).toBe(
+      "RoutesRouteWithTags",
+    );
+    expect((explainResponse.properties as Record<string, Record<string, unknown>>).origin.title).toBe(
+      "RoutesExplainOrigin",
+    );
+    const liveEffect = (explainResponse.properties as Record<string, Record<string, unknown>>).liveEffect;
+    expect(
+      (liveEffect.anyOf as Array<Record<string, unknown>>).some((branch) => branch.title === "RoutesExplainLiveEffect"),
+    ).toBe(true);
   });
 
   it("falls back to additionalProperties: true response when no @Returns", () => {

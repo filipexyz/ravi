@@ -1851,3 +1851,51 @@ build, SDK check, os dois OpenAPI checks, Swift drift, Biome, Markdown e
 `git diff --check` passaram. O bloqueio compartilhado foi fechado localmente;
 revisao independente, pacote do commit exato e CI Linux continuam obrigatorios
 antes de push, PR, merge ou VPS.
+
+### NO-GO independente do candidato `348c24a9`
+
+A revisao independente rejeitou o commit
+`348c24a96f4e4397cd6ee643fe94b423dc3c10b5`. `routes list`, `show` e `explain`
+ainda herdavam auditoria com transporte; a falha `ROUTE_NOT_FOUND` reabria o
+banco pelo inicializador mutavel para montar sugestoes; os gerados aceitavam
+projecao vazia ou reduziam modelos de rota a `RaviJSON`; e variantes de canal
+que diferiam apenas por caixa podiam ser escolhidas em desacordo com o
+resolvedor real. Esse SHA nao pode ser empacotado nem promovido.
+
+A rodada corretiva declara `audit:"none"` nos tres comandos e executa processos
+reais sem variaveis de supressao contra uma armadilha TCP: nenhuma conexao ou
+byte NATS e aceito. Sugestoes de rota ausente usam somente o snapshot ja
+capturado; o caso em banco legado compara DB, WAL e todo estado duravel antes e
+depois, mantendo somente SHM fora da identidade. Canais com colisao por caixa
+exigem grafia exata ou falham com `ROUTE_CHANNEL_AMBIGUOUS` exit 2 antes da
+simulacao.
+
+O schema de projecao agora representa cada subconjunto nao vazio como uniao
+explicita. TypeScript e OpenAPI preservam as dez alternativas, e Swift gera
+modelos concretos para item, detalhe, tags, origem, resolucao, efeito e alvo de
+runtime. A primeira captura combinada revelou que campos originalmente
+opcionais ainda permitiam `{}` e foi descartada; as alternativas passaram a
+exigir a chave escolhida. A primeira repeticao Swift tambem revelou tipo
+concreto sem opcionalidade para `null`; o gerador foi corrigido na fonte e a
+repeticao isolada passou. Gates integrais, novo commit e nova revisao
+independente continuam obrigatorios; nao houve pacote, push, PR, merge ou VPS.
+
+### Fechamento local das correcoes do NO-GO de ROUTES
+
+A arvore corretiva anterior ao novo commit passou 87 testes focados de ROUTES
+com 286 assercoes, 158 testes do router com 491 assercoes, 77 testes de SDK e
+codegen com 314 assercoes, 79 testes de registry/tools/gateway/skill com 303
+assercoes e 40 testes do quality gate com 90 assercoes. O runner de qualidade
+aprovou os 89 arquivos da diferenca real contra `origin/dev` e indexou 275
+specs. Typecheck, build, geracoes e drift oficiais de TypeScript, dos dois
+OpenAPI e de Swift, Biome, Markdown e `git diff --check` passaram.
+
+A captura do router com saida filtrada foi descartada porque o invólucro
+retornou exit 1 apesar do resumo sem falhas; a repeticao integral, sem filtro,
+retornou exit 0 com os mesmos 158 testes aprovados. O host nao possui compilador
+Swift, portanto os testes nativos do gerador e o drift dos artefatos sao a
+evidencia local aplicavel; a compilacao continua reservada ao CI. Os comandos
+de SDK ainda registram a tentativa de auditoria quando NATS local nao existe,
+sem falhar o gate. Isso e separado da prova dos tres comandos de ROUTES, que
+nao abriram conexao nem enviaram bytes para a armadilha NATS. Nao houve bancada
+de testes, pacote, push, PR, merge ou operacao em VPS.

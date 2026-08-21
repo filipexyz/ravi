@@ -45,7 +45,6 @@ export const WEAK_PUBLIC_RETURN_COMMANDS_BASELINE = [
   "chats.lists.mark-read",
   "chats.lists.members",
   "chats.lists.remove",
-  "commands.list",
   "commands.run",
   "commands.show",
   "commands.validate",

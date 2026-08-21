@@ -80,6 +80,21 @@ router.
     MUST identify only the affected table and missing column names, MUST NOT
     report an empty configuration, and MUST NOT migrate or otherwise change
     durable state.
+14. All three facade commands MUST declare `audit:"none"`. A normal CLI
+    process, without global audit-suppression variables, MUST NOT publish an
+    audit event or open a NATS connection for either success or typed failure.
+15. Every facade failure path MUST continue from the one snapshot captured for
+    that invocation. In particular, `ROUTE_NOT_FOUND` suggestions MUST NOT call
+    the mutable router initializer or reopen the database by pathname.
+16. If configured channel values contain multiple spellings that compare equal
+    without case, an exact spelling MAY proceed. A non-exact spelling MUST fail
+    with exit 2 `ROUTE_CHANNEL_AMBIGUOUS` and list the exact candidates; the
+    facade MUST NOT pick one by ordering.
+17. Compact route items MUST remain non-empty in runtime validation and in the
+    generated TypeScript, JSON Schema/OpenAPI, and Swift contracts. Route
+    detail, origin, resolution, live effect, runtime target, and tag shapes MUST
+    remain concrete generated models; nullable concrete models MUST NOT degrade
+    to `RaviJSON`.
 
 ## Operations
 
@@ -87,7 +102,7 @@ router.
 |---|---|---|---|
 | `routes list [instance]` | none | page + stable projection | `INSTANCE_NOT_FOUND`, `USAGE_ERROR`, `ROUTES_SCHEMA_UNSUPPORTED` |
 | `routes show <instance> <pattern>` | none | literal route + tags | `INSTANCE_NOT_FOUND`, `ROUTE_NOT_FOUND`, `ROUTES_SCHEMA_UNSUPPORTED` |
-| `routes explain <instance> <pattern>` | none | config lookup + honest simulation | `INSTANCE_NOT_FOUND`, `USAGE_ERROR`, `ROUTE_PATTERN_AMBIGUOUS`, `ROUTES_SCHEMA_UNSUPPORTED` |
+| `routes explain <instance> <pattern>` | none | config lookup + honest simulation | `INSTANCE_NOT_FOUND`, `USAGE_ERROR`, `ROUTE_PATTERN_AMBIGUOUS`, `ROUTE_CHANNEL_AMBIGUOUS`, `ROUTES_SCHEMA_UNSUPPORTED` |
 
 ## Compatibility boundary
 

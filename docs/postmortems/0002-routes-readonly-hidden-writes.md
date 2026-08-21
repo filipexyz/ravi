@@ -93,3 +93,44 @@ introducing the snapshot API.
   accepted all 28 ROUTES paths and indexed 275 specs. Typecheck, build, drift
   checks, Biome, Markdown lint and `git diff --check` also passed. Independent
   review, package proof and Linux CI remain mandatory before promotion.
+- 2026-08-21: independent review rejected candidate `348c24a9`. The three
+  facade decorators still used default audit transport; `ROUTE_NOT_FOUND`
+  suggestions reopened the mutable router database; compact route projections
+  lost their non-empty guarantee in generated TypeScript/OpenAPI and nested
+  Swift models degraded to `RaviJSON`; case-colliding channel spellings could
+  select a value that the real resolver would not select. The candidate is
+  permanently invalid for package or promotion.
+- 2026-08-21: the correction declares `audit:"none"`, derives missing-route
+  suggestions from the captured snapshot, requires exact channel spelling on
+  case collisions, represents route projections as an explicit non-empty
+  union, and teaches Swift codegen to preserve concrete types through nullable
+  unions. A real-process NATS connection trap now runs with both audit
+  suppression variables absent, and the legacy missing-route case compares all
+  durable state including DB and WAL while exempting only SQLite SHM.
+- 2026-08-21: the first combined test capture after the correction is not gate
+  evidence. It exposed one real schema bug—optional fields also made the
+  non-empty union accept `{}`—and three cross-file errors caused by the known
+  global decorator mock when codegen files shared a process with
+  `routes.test.ts`. The union was fixed by requiring the selected field, and
+  each codegen suite was rerun in an isolated native process.
+- 2026-08-21: the first isolated Swift rerun correctly exposed that top-level
+  nullable properties were concrete but non-optional. The generator now
+  unwraps nullable schemas for type selection while preserving optionality in
+  top-level return structs. Subsequent isolated TypeScript, OpenAPI, Swift,
+  route command, process-reader, router and typecheck runs passed. Full gates,
+  regenerated artifacts and exact-commit review remain required.
+- 2026-08-21: the corrected pre-commit tree passed 87 focused ROUTES tests
+  with 286 assertions, all 158 router tests with 491 assertions, 77 SDK and
+  codegen tests with 314 assertions, 79 registry/tools/gateway/skill tests with
+  303 assertions, and 40 quality-gate tests with 90 assertions. The quality
+  runner accepted the full 89-file diff against `origin/dev` and indexed 275
+  specs. Typecheck, build, official TypeScript/OpenAPI/Swift generation and
+  drift checks, Biome, Markdown lint and `git diff --check` passed. A first
+  router capture whose output was filtered is not evidence because its wrapper
+  returned exit 1 despite a green test summary; the unfiltered rerun returned
+  exit 0 with the same 158 passing tests. The host has no Swift compiler, so
+  native generator tests and artifact drift are the local Swift evidence; CI
+  compilation remains required. SDK generation/check commands still log a
+  failed best-effort audit connection when local NATS is absent, but the
+  corrected `routes list/show/explain` process proof records no NATS connection
+  or bytes. No package, push, PR, merge or VPS operation occurred.

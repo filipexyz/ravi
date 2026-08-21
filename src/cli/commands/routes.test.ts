@@ -604,6 +604,37 @@ describe("RoutesCommands", () => {
     expect(matchRouteInputs).toHaveLength(0);
   });
 
+  it("requires exact channel spelling when configured variants collide by case", () => {
+    routes = [
+      { id: 1, accountId: "main", pattern: "5511999999999", agent: "sales", channel: "whatsapp" },
+      { id: 2, accountId: "main", pattern: "group:other", agent: "main", channel: "WhatsApp" },
+    ];
+
+    const thrown = captureThrown(() => new RoutesCommands().explain("main", "5511999999999", "WHATSAPP", true));
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const error = thrown as InstanceType<typeof ContractError>;
+    expect(error.code).toBe("ROUTE_CHANNEL_AMBIGUOUS");
+    expect(error.exitCode).toBe(2);
+    expect(error.details.suggestions).toEqual(["WhatsApp", "whatsapp"]);
+    expect(matchRouteInputs).toHaveLength(0);
+  });
+
+  it("uses the exact configured channel spelling when case variants coexist", () => {
+    routes = [
+      { id: 1, accountId: "main", pattern: "5511999999999", agent: "sales", channel: "whatsapp" },
+      { id: 2, accountId: "main", pattern: "group:other", agent: "main", channel: "WhatsApp" },
+    ];
+    liveWinner = { route: { pattern: "5511999999999" }, agentId: "sales" };
+
+    const payload = captureJson(() => {
+      new RoutesCommands().explain("main", "5511999999999", "whatsapp", true);
+    });
+
+    expect(payload.channel).toBe("whatsapp");
+    expect(matchRouteInputs[0]).toEqual(expect.objectContaining({ channel: "whatsapp" }));
+  });
+
   it("fails closed when equivalent configured patterns are ambiguous", () => {
     routes = [
       { id: 1, accountId: "main", pattern: "123@g.us", agent: "sales" },

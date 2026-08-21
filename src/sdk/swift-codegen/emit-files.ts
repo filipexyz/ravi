@@ -338,18 +338,20 @@ function renderReturnStruct(name: string, schema: JsonSchema): string {
   const swiftNames = uniquePropertyNames(rawNames);
   const fields = rawNames.map((rawName) => {
     const swiftName = swiftNames.get(rawName)!;
-    const swiftType = jsonSchemaToSwift(props[rawName]);
+    const { schema: valueSchema, nullable } = unwrapNullableSchema(props[rawName]);
+    const swiftType = jsonSchemaToSwift(valueSchema);
     const isRequired = required.has(rawName);
-    return { rawName, swiftName, swiftType, isRequired };
+    const isOptional = nullable || !isRequired;
+    return { rawName, swiftName, swiftType, isRequired, isOptional };
   });
 
   const lines: string[] = [
     `public struct ${name}: Codable, Sendable {`,
-    ...fields.map((field) => `  public var ${field.swiftName}: ${field.swiftType}${field.isRequired ? "" : "?"}`),
+    ...fields.map((field) => `  public var ${field.swiftName}: ${field.swiftType}${field.isOptional ? "?" : ""}`),
     "",
   ];
   const initParams = fields.map((field) => {
-    const type = `${field.swiftType}${field.isRequired ? "" : "?"}`;
+    const type = `${field.swiftType}${field.isOptional ? "?" : ""}`;
     const suffix = field.isRequired ? "" : " = nil";
     return `${field.swiftName}: ${type}${suffix}`;
   });

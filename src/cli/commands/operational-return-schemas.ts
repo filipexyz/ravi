@@ -2738,41 +2738,72 @@ export const toolInvokeReturnSchema = z
   })
   .strict();
 
-const routeRecordReturnSchema = z
-  .object({
-    id: z.number(),
-    pattern: z.string(),
-    accountId: z.string(),
-    agent: z.string(),
-    priority: z.number(),
-    policy: z.string().optional(),
-    session: z.string().optional(),
-    channel: z.string().optional(),
-    dmScope: z.enum(["main", "per-peer", "per-channel-peer", "per-account-channel-peer"]).optional(),
-  })
-  .strict();
+const routeRecordShape = {
+  id: z.number(),
+  pattern: z.string(),
+  accountId: z.string(),
+  agent: z.string(),
+  priority: z.number(),
+  policy: z.string().optional(),
+  session: z.string().optional(),
+  channel: z.string().optional(),
+  dmScope: z.enum(["main", "per-peer", "per-channel-peer", "per-account-channel-peer"]).optional(),
+};
+
+const routeRecordReturnSchema = z.object(routeRecordShape).strict().meta({ title: "RoutesRouteRecord" });
+
+const routesTagBindingReturnSchema = agentTagBindingReturnSchema.meta({ title: "RoutesTagBinding" });
 
 const routeWithTagsReturnSchema = routeRecordReturnSchema
   .extend({
-    tags: z.array(agentTagBindingReturnSchema),
+    tags: z.array(routesTagBindingReturnSchema),
   })
-  .strict();
-
-const routeProjectionReturnSchema = routeWithTagsReturnSchema
-  .partial()
   .strict()
-  .refine((value) => Object.keys(value).length > 0, "A projected route must contain at least one accepted field");
+  .meta({ title: "RoutesRouteWithTags" });
+
+const routeProjectionShape = {
+  ...routeRecordShape,
+  tags: z.array(routesTagBindingReturnSchema),
+};
+const routeProjectionSubsetSchema = z.object(routeProjectionShape).partial().strict();
+const routeProjectionFields = new Set(Object.keys(routeProjectionShape));
+const projectedRouteRecordVariants = Object.entries(routeProjectionShape).map(([requiredKey, schema]) => {
+  const requiredSchema = schema instanceof z.ZodOptional ? schema.unwrap() : schema;
+  return z.object({ [requiredKey]: requiredSchema }).passthrough();
+});
+const routeProjectionReturnSchema = z
+  .intersection(
+    routeProjectionSubsetSchema,
+    z.union(projectedRouteRecordVariants as unknown as [ZodTypeAny, ZodTypeAny, ...ZodTypeAny[]]),
+  )
+  .superRefine((record, context) => {
+    const unknownFields = Object.keys(record).filter((field) => !routeProjectionFields.has(field));
+    if (unknownFields.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: `Unrecognized projected route fields: ${unknownFields.join(", ")}`,
+      });
+    }
+  })
+  .meta({ title: "RoutesListItem" });
+
+const routesListFilterReturnSchema = z
+  .object({
+    tagSlug: z.string().nullable(),
+  })
+  .strict()
+  .meta({ title: "RoutesListFilter" });
+
+const routesListPaginationReturnSchema = strictCliOffsetPaginationSchema
+  .strict()
+  .meta({ title: "RoutesListPagination" });
 
 export const routesListReturnSchema = z
   .object({
     instance: z.string().nullable(),
-    filter: z
-      .object({
-        tagSlug: z.string().nullable(),
-      })
-      .strict(),
+    filter: routesListFilterReturnSchema,
     total: z.number(),
-    pagination: strictCliOffsetPaginationSchema.strict(),
+    pagination: routesListPaginationReturnSchema,
     items: z.array(routeProjectionReturnSchema),
     routes: z.array(routeProjectionReturnSchema),
   })
@@ -2798,7 +2829,8 @@ const cliRuntimeTargetReturnSchema = z
         cwd: z.string().nullable(),
         matchesCli: z.boolean().nullable(),
       })
-      .strict(),
+      .strict()
+      .meta({ title: "RoutesRuntimeDaemon" }),
     instance: z
       .object({
         name: z.string(),
@@ -2809,9 +2841,44 @@ const cliRuntimeTargetReturnSchema = z
         affectsLiveMain: z.boolean(),
       })
       .strict()
+      .meta({ title: "RoutesRuntimeInstance" })
       .nullable(),
   })
-  .strict();
+  .strict()
+  .meta({ title: "RoutesRuntimeTarget" });
+
+const routeExplainOriginReturnSchema = z
+  .object({
+    kind: z.literal("config_simulation"),
+    source: z.literal("router-config-db"),
+    freshness: z.literal("persisted-at-read-time"),
+    daemonObserved: z.literal(false),
+    limitation: z.string(),
+  })
+  .strict()
+  .meta({ title: "RoutesExplainOrigin" });
+
+const routeExplainResolutionReturnSchema = z
+  .object({
+    matchedBy: z.enum(["exact", "equivalent"]).nullable(),
+    canonicalPattern: z.string().nullable(),
+    targetKind: z.enum(["group", "phone", "lid", "thread", "literal", "glob"]),
+  })
+  .strict()
+  .meta({ title: "RoutesExplainResolution" });
+
+const routeExplainLiveEffectReturnSchema = z
+  .object({
+    status: z.enum(["verified", "different_winner", "matched", "unresolved", "skipped_broad_pattern"]),
+    verified: z.boolean(),
+    reason: z.string(),
+    canonicalPattern: z.string().nullable(),
+    targetKind: z.enum(["group", "phone", "lid", "thread", "literal", "glob"]),
+    winningPattern: z.string().nullable(),
+    winningAgent: z.string().nullable(),
+  })
+  .strict()
+  .meta({ title: "RoutesExplainLiveEffect" });
 
 export const routeExplainReturnSchema = z
   .object({
@@ -2819,36 +2886,10 @@ export const routeExplainReturnSchema = z
     instance: z.string(),
     pattern: z.string().nullable(),
     channel: z.string().nullable(),
-    origin: z
-      .object({
-        kind: z.literal("config_simulation"),
-        source: z.literal("router-config-db"),
-        freshness: z.literal("persisted-at-read-time"),
-        daemonObserved: z.literal(false),
-        limitation: z.string(),
-      })
-      .strict(),
-    resolution: z
-      .object({
-        matchedBy: z.enum(["exact", "equivalent"]).nullable(),
-        canonicalPattern: z.string().nullable(),
-        targetKind: z.enum(["group", "phone", "lid", "thread", "literal", "glob"]),
-      })
-      .strict()
-      .nullable(),
+    origin: routeExplainOriginReturnSchema,
+    resolution: routeExplainResolutionReturnSchema.nullable(),
     configuredRoute: routeRecordReturnSchema.nullable(),
-    liveEffect: z
-      .object({
-        status: z.enum(["verified", "different_winner", "matched", "unresolved", "skipped_broad_pattern"]),
-        verified: z.boolean(),
-        reason: z.string(),
-        canonicalPattern: z.string().nullable(),
-        targetKind: z.enum(["group", "phone", "lid", "thread", "literal", "glob"]),
-        winningPattern: z.string().nullable(),
-        winningAgent: z.string().nullable(),
-      })
-      .strict()
-      .nullable(),
+    liveEffect: routeExplainLiveEffectReturnSchema.nullable(),
   })
   .strict();
 

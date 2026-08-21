@@ -272,6 +272,591 @@ public struct CommandsListPagination: Codable, Sendable {
   }
 }
 
+public struct RoutesExplainLiveEffect: Codable, Sendable {
+  public var canonicalPattern: String?
+  public var reason: String
+  public var status: String
+  public var targetKind: String
+  public var verified: Bool
+  public var winningAgent: String?
+  public var winningPattern: String?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case canonicalPattern = "canonicalPattern"
+    case reason = "reason"
+    case status = "status"
+    case targetKind = "targetKind"
+    case verified = "verified"
+    case winningAgent = "winningAgent"
+    case winningPattern = "winningPattern"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesExplainLiveEffect contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.canonicalPattern) else {
+      throw DecodingError.keyNotFound(CodingKeys.canonicalPattern, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field canonicalPattern."))
+    }
+    self.canonicalPattern = try container.decodeIfPresent(String.self, forKey: .canonicalPattern)
+    self.reason = try container.decode(String.self, forKey: .reason)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.targetKind = try container.decode(String.self, forKey: .targetKind)
+    self.verified = try container.decode(Bool.self, forKey: .verified)
+    guard container.contains(.winningAgent) else {
+      throw DecodingError.keyNotFound(CodingKeys.winningAgent, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field winningAgent."))
+    }
+    self.winningAgent = try container.decodeIfPresent(String.self, forKey: .winningAgent)
+    guard container.contains(.winningPattern) else {
+      throw DecodingError.keyNotFound(CodingKeys.winningPattern, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field winningPattern."))
+    }
+    self.winningPattern = try container.decodeIfPresent(String.self, forKey: .winningPattern)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.canonicalPattern, forKey: .canonicalPattern)
+    try container.encode(self.reason, forKey: .reason)
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.targetKind, forKey: .targetKind)
+    try container.encode(self.verified, forKey: .verified)
+    try container.encode(self.winningAgent, forKey: .winningAgent)
+    try container.encode(self.winningPattern, forKey: .winningPattern)
+  }
+}
+
+public struct RoutesExplainOrigin: Codable, Sendable {
+  public var daemonObserved: Bool
+  public var freshness: String
+  public var kind: String
+  public var limitation: String
+  public var source: String
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case daemonObserved = "daemonObserved"
+    case freshness = "freshness"
+    case kind = "kind"
+    case limitation = "limitation"
+    case source = "source"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesExplainOrigin contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.daemonObserved = try container.decode(Bool.self, forKey: .daemonObserved)
+    self.freshness = try container.decode(String.self, forKey: .freshness)
+    self.kind = try container.decode(String.self, forKey: .kind)
+    self.limitation = try container.decode(String.self, forKey: .limitation)
+    self.source = try container.decode(String.self, forKey: .source)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.daemonObserved, forKey: .daemonObserved)
+    try container.encode(self.freshness, forKey: .freshness)
+    try container.encode(self.kind, forKey: .kind)
+    try container.encode(self.limitation, forKey: .limitation)
+    try container.encode(self.source, forKey: .source)
+  }
+}
+
+public struct RoutesExplainResolution: Codable, Sendable {
+  public var canonicalPattern: String?
+  public var matchedBy: String?
+  public var targetKind: String
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case canonicalPattern = "canonicalPattern"
+    case matchedBy = "matchedBy"
+    case targetKind = "targetKind"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesExplainResolution contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.canonicalPattern) else {
+      throw DecodingError.keyNotFound(CodingKeys.canonicalPattern, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field canonicalPattern."))
+    }
+    self.canonicalPattern = try container.decodeIfPresent(String.self, forKey: .canonicalPattern)
+    guard container.contains(.matchedBy) else {
+      throw DecodingError.keyNotFound(CodingKeys.matchedBy, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field matchedBy."))
+    }
+    self.matchedBy = try container.decodeIfPresent(String.self, forKey: .matchedBy)
+    self.targetKind = try container.decode(String.self, forKey: .targetKind)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.canonicalPattern, forKey: .canonicalPattern)
+    try container.encode(self.matchedBy, forKey: .matchedBy)
+    try container.encode(self.targetKind, forKey: .targetKind)
+  }
+}
+
+public struct RoutesListFilter: Codable, Sendable {
+  public var tagSlug: String?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case tagSlug = "tagSlug"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesListFilter contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.tagSlug) else {
+      throw DecodingError.keyNotFound(CodingKeys.tagSlug, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field tagSlug."))
+    }
+    self.tagSlug = try container.decodeIfPresent(String.self, forKey: .tagSlug)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.tagSlug, forKey: .tagSlug)
+  }
+}
+
+public struct RoutesListItem: Codable, Sendable {
+  public var accountId: String?
+  public var agent: String?
+  public var channel: String?
+  public var dmScope: String?
+  public var id: Double?
+  public var pattern: String?
+  public var policy: String?
+  public var priority: Double?
+  public var session: String?
+  public var tags: [RoutesTagBinding]?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case accountId = "accountId"
+    case agent = "agent"
+    case channel = "channel"
+    case dmScope = "dmScope"
+    case id = "id"
+    case pattern = "pattern"
+    case policy = "policy"
+    case priority = "priority"
+    case session = "session"
+    case tags = "tags"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesListItem contains an unknown field."))
+    }
+    guard !rawContainer.allKeys.isEmpty else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesListItem requires at least one field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.accountId = try container.decodeIfPresent(String.self, forKey: .accountId)
+    self.agent = try container.decodeIfPresent(String.self, forKey: .agent)
+    self.channel = try container.decodeIfPresent(String.self, forKey: .channel)
+    self.dmScope = try container.decodeIfPresent(String.self, forKey: .dmScope)
+    self.id = try container.decodeIfPresent(Double.self, forKey: .id)
+    self.pattern = try container.decodeIfPresent(String.self, forKey: .pattern)
+    self.policy = try container.decodeIfPresent(String.self, forKey: .policy)
+    self.priority = try container.decodeIfPresent(Double.self, forKey: .priority)
+    self.session = try container.decodeIfPresent(String.self, forKey: .session)
+    self.tags = try container.decodeIfPresent([RoutesTagBinding].self, forKey: .tags)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.accountId, forKey: .accountId)
+    try container.encodeIfPresent(self.agent, forKey: .agent)
+    try container.encodeIfPresent(self.channel, forKey: .channel)
+    try container.encodeIfPresent(self.dmScope, forKey: .dmScope)
+    try container.encodeIfPresent(self.id, forKey: .id)
+    try container.encodeIfPresent(self.pattern, forKey: .pattern)
+    try container.encodeIfPresent(self.policy, forKey: .policy)
+    try container.encodeIfPresent(self.priority, forKey: .priority)
+    try container.encodeIfPresent(self.session, forKey: .session)
+    try container.encodeIfPresent(self.tags, forKey: .tags)
+  }
+}
+
+public struct RoutesListPagination: Codable, Sendable {
+  public var hasMore: Bool?
+  public var limit: Double
+  public var nextCommand: String?
+  public var nextOffset: Double?
+  public var offset: Double
+  public var returned: Double
+  public var total: Double
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case hasMore = "hasMore"
+    case limit = "limit"
+    case nextCommand = "nextCommand"
+    case nextOffset = "nextOffset"
+    case offset = "offset"
+    case returned = "returned"
+    case total = "total"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesListPagination contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.hasMore = try container.decodeIfPresent(Bool.self, forKey: .hasMore)
+    self.limit = try container.decode(Double.self, forKey: .limit)
+    self.nextCommand = try container.decodeIfPresent(String.self, forKey: .nextCommand)
+    self.nextOffset = try container.decodeIfPresent(Double.self, forKey: .nextOffset)
+    self.offset = try container.decode(Double.self, forKey: .offset)
+    self.returned = try container.decode(Double.self, forKey: .returned)
+    self.total = try container.decode(Double.self, forKey: .total)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.hasMore, forKey: .hasMore)
+    try container.encode(self.limit, forKey: .limit)
+    try container.encodeIfPresent(self.nextCommand, forKey: .nextCommand)
+    try container.encodeIfPresent(self.nextOffset, forKey: .nextOffset)
+    try container.encode(self.offset, forKey: .offset)
+    try container.encode(self.returned, forKey: .returned)
+    try container.encode(self.total, forKey: .total)
+  }
+}
+
+public struct RoutesRouteRecord: Codable, Sendable {
+  public var accountId: String
+  public var agent: String
+  public var channel: String?
+  public var dmScope: String?
+  public var id: Double
+  public var pattern: String
+  public var policy: String?
+  public var priority: Double
+  public var session: String?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case accountId = "accountId"
+    case agent = "agent"
+    case channel = "channel"
+    case dmScope = "dmScope"
+    case id = "id"
+    case pattern = "pattern"
+    case policy = "policy"
+    case priority = "priority"
+    case session = "session"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesRouteRecord contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.accountId = try container.decode(String.self, forKey: .accountId)
+    self.agent = try container.decode(String.self, forKey: .agent)
+    self.channel = try container.decodeIfPresent(String.self, forKey: .channel)
+    self.dmScope = try container.decodeIfPresent(String.self, forKey: .dmScope)
+    self.id = try container.decode(Double.self, forKey: .id)
+    self.pattern = try container.decode(String.self, forKey: .pattern)
+    self.policy = try container.decodeIfPresent(String.self, forKey: .policy)
+    self.priority = try container.decode(Double.self, forKey: .priority)
+    self.session = try container.decodeIfPresent(String.self, forKey: .session)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.accountId, forKey: .accountId)
+    try container.encode(self.agent, forKey: .agent)
+    try container.encodeIfPresent(self.channel, forKey: .channel)
+    try container.encodeIfPresent(self.dmScope, forKey: .dmScope)
+    try container.encode(self.id, forKey: .id)
+    try container.encode(self.pattern, forKey: .pattern)
+    try container.encodeIfPresent(self.policy, forKey: .policy)
+    try container.encode(self.priority, forKey: .priority)
+    try container.encodeIfPresent(self.session, forKey: .session)
+  }
+}
+
+public struct RoutesRouteWithTags: Codable, Sendable {
+  public var accountId: String
+  public var agent: String
+  public var channel: String?
+  public var dmScope: String?
+  public var id: Double
+  public var pattern: String
+  public var policy: String?
+  public var priority: Double
+  public var session: String?
+  public var tags: [RoutesTagBinding]
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case accountId = "accountId"
+    case agent = "agent"
+    case channel = "channel"
+    case dmScope = "dmScope"
+    case id = "id"
+    case pattern = "pattern"
+    case policy = "policy"
+    case priority = "priority"
+    case session = "session"
+    case tags = "tags"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesRouteWithTags contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.accountId = try container.decode(String.self, forKey: .accountId)
+    self.agent = try container.decode(String.self, forKey: .agent)
+    self.channel = try container.decodeIfPresent(String.self, forKey: .channel)
+    self.dmScope = try container.decodeIfPresent(String.self, forKey: .dmScope)
+    self.id = try container.decode(Double.self, forKey: .id)
+    self.pattern = try container.decode(String.self, forKey: .pattern)
+    self.policy = try container.decodeIfPresent(String.self, forKey: .policy)
+    self.priority = try container.decode(Double.self, forKey: .priority)
+    self.session = try container.decodeIfPresent(String.self, forKey: .session)
+    self.tags = try container.decode([RoutesTagBinding].self, forKey: .tags)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.accountId, forKey: .accountId)
+    try container.encode(self.agent, forKey: .agent)
+    try container.encodeIfPresent(self.channel, forKey: .channel)
+    try container.encodeIfPresent(self.dmScope, forKey: .dmScope)
+    try container.encode(self.id, forKey: .id)
+    try container.encode(self.pattern, forKey: .pattern)
+    try container.encodeIfPresent(self.policy, forKey: .policy)
+    try container.encode(self.priority, forKey: .priority)
+    try container.encodeIfPresent(self.session, forKey: .session)
+    try container.encode(self.tags, forKey: .tags)
+  }
+}
+
+public struct RoutesRuntimeDaemon: Codable, Sendable {
+  public var cwd: String?
+  public var execPath: String?
+  public var matchesCli: Bool?
+  public var online: Bool
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case cwd = "cwd"
+    case execPath = "execPath"
+    case matchesCli = "matchesCli"
+    case online = "online"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesRuntimeDaemon contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.cwd) else {
+      throw DecodingError.keyNotFound(CodingKeys.cwd, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field cwd."))
+    }
+    self.cwd = try container.decodeIfPresent(String.self, forKey: .cwd)
+    guard container.contains(.execPath) else {
+      throw DecodingError.keyNotFound(CodingKeys.execPath, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field execPath."))
+    }
+    self.execPath = try container.decodeIfPresent(String.self, forKey: .execPath)
+    guard container.contains(.matchesCli) else {
+      throw DecodingError.keyNotFound(CodingKeys.matchesCli, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field matchesCli."))
+    }
+    self.matchesCli = try container.decodeIfPresent(Bool.self, forKey: .matchesCli)
+    self.online = try container.decode(Bool.self, forKey: .online)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.cwd, forKey: .cwd)
+    try container.encode(self.execPath, forKey: .execPath)
+    try container.encode(self.matchesCli, forKey: .matchesCli)
+    try container.encode(self.online, forKey: .online)
+  }
+}
+
+public struct RoutesRuntimeInstance: Codable, Sendable {
+  public var affectsLiveMain: Bool
+  public var channel: String?
+  public var enabled: Bool
+  public var exists: Bool
+  public var instanceId: String?
+  public var name: String
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case affectsLiveMain = "affectsLiveMain"
+    case channel = "channel"
+    case enabled = "enabled"
+    case exists = "exists"
+    case instanceId = "instanceId"
+    case name = "name"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesRuntimeInstance contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.affectsLiveMain = try container.decode(Bool.self, forKey: .affectsLiveMain)
+    guard container.contains(.channel) else {
+      throw DecodingError.keyNotFound(CodingKeys.channel, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field channel."))
+    }
+    self.channel = try container.decodeIfPresent(String.self, forKey: .channel)
+    self.enabled = try container.decode(Bool.self, forKey: .enabled)
+    self.exists = try container.decode(Bool.self, forKey: .exists)
+    guard container.contains(.instanceId) else {
+      throw DecodingError.keyNotFound(CodingKeys.instanceId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field instanceId."))
+    }
+    self.instanceId = try container.decodeIfPresent(String.self, forKey: .instanceId)
+    self.name = try container.decode(String.self, forKey: .name)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.affectsLiveMain, forKey: .affectsLiveMain)
+    try container.encode(self.channel, forKey: .channel)
+    try container.encode(self.enabled, forKey: .enabled)
+    try container.encode(self.exists, forKey: .exists)
+    try container.encode(self.instanceId, forKey: .instanceId)
+    try container.encode(self.name, forKey: .name)
+  }
+}
+
+public struct RoutesRuntimeTarget: Codable, Sendable {
+  public var cliBundlePath: String?
+  public var cliExecPath: String?
+  public var daemon: RoutesRuntimeDaemon
+  public var dbPath: String
+  public var instance: RoutesRuntimeInstance?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case cliBundlePath = "cliBundlePath"
+    case cliExecPath = "cliExecPath"
+    case daemon = "daemon"
+    case dbPath = "dbPath"
+    case instance = "instance"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesRuntimeTarget contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.cliBundlePath) else {
+      throw DecodingError.keyNotFound(CodingKeys.cliBundlePath, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field cliBundlePath."))
+    }
+    self.cliBundlePath = try container.decodeIfPresent(String.self, forKey: .cliBundlePath)
+    guard container.contains(.cliExecPath) else {
+      throw DecodingError.keyNotFound(CodingKeys.cliExecPath, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field cliExecPath."))
+    }
+    self.cliExecPath = try container.decodeIfPresent(String.self, forKey: .cliExecPath)
+    self.daemon = try container.decode(RoutesRuntimeDaemon.self, forKey: .daemon)
+    self.dbPath = try container.decode(String.self, forKey: .dbPath)
+    guard container.contains(.instance) else {
+      throw DecodingError.keyNotFound(CodingKeys.instance, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field instance."))
+    }
+    self.instance = try container.decodeIfPresent(RoutesRuntimeInstance.self, forKey: .instance)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.cliBundlePath, forKey: .cliBundlePath)
+    try container.encode(self.cliExecPath, forKey: .cliExecPath)
+    try container.encode(self.daemon, forKey: .daemon)
+    try container.encode(self.dbPath, forKey: .dbPath)
+    try container.encode(self.instance, forKey: .instance)
+  }
+}
+
+public struct RoutesTagBinding: Codable, Sendable {
+  public var assetId: String
+  public var assetType: String
+  public var createdAt: Double
+  public var createdBy: String?
+  public var id: String
+  public var metadata: [String: RaviJSON]?
+  public var source: String
+  public var tagId: String
+  public var tagSlug: String
+  public var updatedAt: Double
+  public var updatedBy: String?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case assetId = "assetId"
+    case assetType = "assetType"
+    case createdAt = "createdAt"
+    case createdBy = "createdBy"
+    case id = "id"
+    case metadata = "metadata"
+    case source = "source"
+    case tagId = "tagId"
+    case tagSlug = "tagSlug"
+    case updatedAt = "updatedAt"
+    case updatedBy = "updatedBy"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesTagBinding contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.assetId = try container.decode(String.self, forKey: .assetId)
+    self.assetType = try container.decode(String.self, forKey: .assetType)
+    self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    self.createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
+    self.id = try container.decode(String.self, forKey: .id)
+    self.metadata = try container.decodeIfPresent([String: RaviJSON].self, forKey: .metadata)
+    self.source = try container.decode(String.self, forKey: .source)
+    self.tagId = try container.decode(String.self, forKey: .tagId)
+    self.tagSlug = try container.decode(String.self, forKey: .tagSlug)
+    self.updatedAt = try container.decode(Double.self, forKey: .updatedAt)
+    self.updatedBy = try container.decodeIfPresent(String.self, forKey: .updatedBy)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.assetId, forKey: .assetId)
+    try container.encode(self.assetType, forKey: .assetType)
+    try container.encode(self.createdAt, forKey: .createdAt)
+    try container.encodeIfPresent(self.createdBy, forKey: .createdBy)
+    try container.encode(self.id, forKey: .id)
+    try container.encodeIfPresent(self.metadata, forKey: .metadata)
+    try container.encode(self.source, forKey: .source)
+    try container.encode(self.tagId, forKey: .tagId)
+    try container.encode(self.tagSlug, forKey: .tagSlug)
+    try container.encode(self.updatedAt, forKey: .updatedAt)
+    try container.encodeIfPresent(self.updatedBy, forKey: .updatedBy)
+  }
+}
+
 public struct AdaptersListOptions: Codable, Sendable {
   public var limit: String?
   public var offset: String?
@@ -338,16 +923,16 @@ public struct AdaptersShowReturn: Codable, Sendable {
   public var bind: RaviJSON
   public var diagnosticState: String
   public var health: [String: RaviJSON]
-  public var lastCommand: RaviJSON
-  public var lastEvent: RaviJSON
-  public var lastProtocolError: RaviJSON
+  public var lastCommand: [String: RaviJSON]?
+  public var lastEvent: [String: RaviJSON]?
+  public var lastProtocolError: [String: RaviJSON]?
   public var sessionKey: String
-  public var sessionName: RaviJSON
+  public var sessionName: String?
   public var status: String
   public var transport: String
   public var updatedAt: Double
 
-  public init(adapterId: String, adapterName: String, bind: RaviJSON, diagnosticState: String, health: [String: RaviJSON], lastCommand: RaviJSON, lastEvent: RaviJSON, lastProtocolError: RaviJSON, sessionKey: String, sessionName: RaviJSON, status: String, transport: String, updatedAt: Double) {
+  public init(adapterId: String, adapterName: String, bind: RaviJSON, diagnosticState: String, health: [String: RaviJSON], lastCommand: [String: RaviJSON]?, lastEvent: [String: RaviJSON]?, lastProtocolError: [String: RaviJSON]?, sessionKey: String, sessionName: String?, status: String, transport: String, updatedAt: Double) {
     self.adapterId = adapterId
     self.adapterName = adapterName
     self.bind = bind
@@ -444,10 +1029,10 @@ public struct AgentsDebounceReturn: Codable, Sendable {
   public var action: String?
   public var agentId: String
   public var changed: Bool?
-  public var debounceMs: RaviJSON
+  public var debounceMs: Double?
   public var enabled: Bool
 
-  public init(action: String? = nil, agentId: String, changed: Bool? = nil, debounceMs: RaviJSON, enabled: Bool) {
+  public init(action: String? = nil, agentId: String, changed: Bool? = nil, debounceMs: Double?, enabled: Bool) {
     self.action = action
     self.agentId = agentId
     self.changed = changed
@@ -633,10 +1218,10 @@ public struct AgentsModelBrokerReturn: Codable, Sendable {
   public var agent: RaviJSON?
   public var agentId: String
   public var changed: Bool
-  public var defaults: RaviJSON?
-  public var modelBroker: RaviJSON
+  public var defaults: [String: RaviJSON]?
+  public var modelBroker: RaviJSON?
 
-  public init(action: String, agent: RaviJSON? = nil, agentId: String, changed: Bool, defaults: RaviJSON? = nil, modelBroker: RaviJSON) {
+  public init(action: String, agent: RaviJSON? = nil, agentId: String, changed: Bool, defaults: [String: RaviJSON]? = nil, modelBroker: RaviJSON?) {
     self.action = action
     self.agent = agent
     self.agentId = agentId
@@ -693,11 +1278,11 @@ public struct AgentsPermissionsReturn: Codable, Sendable {
   public var before: RaviJSON?
   public var changed: Bool
   public var command: String?
-  public var defaults: RaviJSON?
+  public var defaults: [String: RaviJSON]?
   public var profile: String?
   public var runtimePermissions: RaviJSON?
 
-  public init(action: String, after: RaviJSON? = nil, agent: RaviJSON? = nil, agentId: String, before: RaviJSON? = nil, changed: Bool, command: String? = nil, defaults: RaviJSON? = nil, profile: String? = nil, runtimePermissions: RaviJSON? = nil) {
+  public init(action: String, after: RaviJSON? = nil, agent: RaviJSON? = nil, agentId: String, before: RaviJSON? = nil, changed: Bool, command: String? = nil, defaults: [String: RaviJSON]? = nil, profile: String? = nil, runtimePermissions: RaviJSON? = nil) {
     self.action = action
     self.after = after
     self.agent = agent
@@ -829,9 +1414,9 @@ public struct AgentsSetReturn: Codable, Sendable {
 public struct AgentsShowReturn: Codable, Sendable {
   public var agent: RaviJSON
   public var permissionsCommand: String
-  public var runtimePermissions: RaviJSON
+  public var runtimePermissions: RaviJSON?
 
-  public init(agent: RaviJSON, permissionsCommand: String, runtimePermissions: RaviJSON) {
+  public init(agent: RaviJSON, permissionsCommand: String, runtimePermissions: RaviJSON?) {
     self.agent = agent
     self.permissionsCommand = permissionsCommand
     self.runtimePermissions = runtimePermissions
@@ -980,15 +1565,15 @@ public struct AppsDeleteReturn: Codable, Sendable {
 }
 
 public struct AppsGuideReturn: Codable, Sendable {
-  public var app: RaviJSON
-  public var appId: RaviJSON
+  public var app: RaviJSON?
+  public var appId: String?
   public var builder: RaviJSON
   public var nextCommands: [String]
   public var prompts: [RaviJSON]
   public var skill: String
   public var skillGate: RaviJSON
 
-  public init(app: RaviJSON, appId: RaviJSON, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
+  public init(app: RaviJSON?, appId: String?, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
     self.app = app
     self.appId = appId
     self.builder = builder
@@ -1077,7 +1662,7 @@ public struct AppsImportCliOptions: Codable, Sendable {
 
 public struct AppsImportCliReturn: Codable, Sendable {
   public var builder: RaviJSON
-  public var cliPath: RaviJSON
+  public var cliPath: String?
   public var command: String
   public var confidence: String
   public var debugCandidates: [RaviJSON]
@@ -1092,14 +1677,14 @@ public struct AppsImportCliReturn: Codable, Sendable {
   public var nextCommands: [String]
   public var operationCandidates: [RaviJSON]
   public var reviewRequired: [String]
-  public var skill: RaviJSON
-  public var skillPath: RaviJSON
+  public var skill: String?
+  public var skillPath: String?
   public var source: String
   public var sourceCommand: String
-  public var specPath: RaviJSON
+  public var specPath: String?
   public var warnings: [String]
 
-  public init(builder: RaviJSON, cliPath: RaviJSON, command: String, confidence: String, debugCandidates: [RaviJSON], description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], operationCandidates: [RaviJSON], reviewRequired: [String], skill: RaviJSON, skillPath: RaviJSON, source: String, sourceCommand: String, specPath: RaviJSON, warnings: [String]) {
+  public init(builder: RaviJSON, cliPath: String?, command: String, confidence: String, debugCandidates: [RaviJSON], description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], operationCandidates: [RaviJSON], reviewRequired: [String], skill: String?, skillPath: String?, source: String, sourceCommand: String, specPath: String?, warnings: [String]) {
     self.builder = builder
     self.cliPath = cliPath
     self.command = command
@@ -1202,15 +1787,15 @@ public struct AppsListReturn: Codable, Sendable {
 }
 
 public struct AppsPromptsReturn: Codable, Sendable {
-  public var app: RaviJSON
-  public var appId: RaviJSON
+  public var app: RaviJSON?
+  public var appId: String?
   public var builder: RaviJSON
   public var nextCommands: [String]
   public var prompts: [RaviJSON]
   public var skill: String
   public var skillGate: RaviJSON
 
-  public init(app: RaviJSON, appId: RaviJSON, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
+  public init(app: RaviJSON?, appId: String?, builder: RaviJSON, nextCommands: [String], prompts: [RaviJSON], skill: String, skillGate: RaviJSON) {
     self.app = app
     self.appId = appId
     self.builder = builder
@@ -1250,7 +1835,7 @@ public struct AppsRunOptions: Codable, Sendable {
 }
 
 public struct AppsRunReturn: Codable, Sendable {
-  public var appId: RaviJSON
+  public var appId: String?
   public var callerContextId: String?
   public var channel: String?
   public var childContextId: String?
@@ -1259,13 +1844,13 @@ public struct AppsRunReturn: Codable, Sendable {
   public var durationMs: Double
   public var error: String?
   public var errorCode: String?
-  public var exitCode: RaviJSON?
+  public var exitCode: Double?
   public var handler: String?
-  public var interface: RaviJSON
+  public var interface: String?
   public var mutating: Bool
   public var ok: Bool
-  public var operation: RaviJSON
-  public var operationId: RaviJSON
+  public var operation: String?
+  public var operationId: String?
   public var permissionProvider: RaviJSON?
   public var plan: RaviJSON?
   public var result: RaviJSON?
@@ -1273,7 +1858,7 @@ public struct AppsRunReturn: Codable, Sendable {
   public var stderr: String?
   public var stdout: String?
 
-  public init(appId: RaviJSON, callerContextId: String? = nil, channel: String? = nil, childContextId: String? = nil, command: String? = nil, dryRun: Bool? = nil, durationMs: Double, error: String? = nil, errorCode: String? = nil, exitCode: RaviJSON? = nil, handler: String? = nil, interface: RaviJSON, mutating: Bool, ok: Bool, operation: RaviJSON, operationId: RaviJSON, permissionProvider: RaviJSON? = nil, plan: RaviJSON? = nil, result: RaviJSON? = nil, status: String, stderr: String? = nil, stdout: String? = nil) {
+  public init(appId: String?, callerContextId: String? = nil, channel: String? = nil, childContextId: String? = nil, command: String? = nil, dryRun: Bool? = nil, durationMs: Double, error: String? = nil, errorCode: String? = nil, exitCode: Double? = nil, handler: String? = nil, interface: String?, mutating: Bool, ok: Bool, operation: String?, operationId: String?, permissionProvider: RaviJSON? = nil, plan: RaviJSON? = nil, result: RaviJSON? = nil, status: String, stderr: String? = nil, stdout: String? = nil) {
     self.appId = appId
     self.callerContextId = callerContextId
     self.channel = channel
@@ -1386,7 +1971,7 @@ public struct AppsScaffoldOptions: Codable, Sendable {
 
 public struct AppsScaffoldReturn: Codable, Sendable {
   public var builder: RaviJSON
-  public var cliPath: RaviJSON
+  public var cliPath: String?
   public var command: String
   public var description: String
   public var dryRun: Bool
@@ -1397,11 +1982,11 @@ public struct AppsScaffoldReturn: Codable, Sendable {
   public var manifestPath: String
   public var name: String
   public var nextCommands: [String]
-  public var skill: RaviJSON
-  public var skillPath: RaviJSON
-  public var specPath: RaviJSON
+  public var skill: String?
+  public var skillPath: String?
+  public var specPath: String?
 
-  public init(builder: RaviJSON, cliPath: RaviJSON, command: String, description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], skill: RaviJSON, skillPath: RaviJSON, specPath: RaviJSON) {
+  public init(builder: RaviJSON, cliPath: String?, command: String, description: String, dryRun: Bool, files: [RaviJSON], force: Bool, id: String, manifest: [String: RaviJSON], manifestPath: String, name: String, nextCommands: [String], skill: String?, skillPath: String?, specPath: String?) {
     self.builder = builder
     self.cliPath = cliPath
     self.command = command
@@ -1985,10 +2570,10 @@ public struct ArtifactsPublishReturn: Codable, Sendable {
   public var site: RaviJSON
   public var success: Bool
   public var upload: RaviJSON
-  public var uploadSession: RaviJSON
-  public var url: RaviJSON
+  public var uploadSession: [String: RaviJSON]?
+  public var url: String?
 
-  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: RaviJSON, url: RaviJSON) {
+  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: [String: RaviJSON]?, url: String?) {
     self.artifact = artifact
     self.artifactVersion = artifactVersion
     self.authenticated = authenticated
@@ -2068,9 +2653,9 @@ public struct ArtifactsReleaseActivateReturn: Codable, Sendable {
   public var release: RaviJSON
   public var routes: [RaviJSON]
   public var site: RaviJSON
-  public var url: RaviJSON
+  public var url: String?
 
-  public init(localSync: [String: RaviJSON]? = nil, release: RaviJSON, routes: [RaviJSON], site: RaviJSON, url: RaviJSON) {
+  public init(localSync: [String: RaviJSON]? = nil, release: RaviJSON, routes: [RaviJSON], site: RaviJSON, url: String?) {
     self.localSync = localSync
     self.release = release
     self.routes = routes
@@ -2880,13 +3465,13 @@ public struct BridgesCreateOptions: Codable, Sendable {
 
 public struct BridgesCreateReturn: Codable, Sendable {
   public var bridge: [String: RaviJSON]
-  public var bridgeToken: RaviJSON
-  public var bridgeUrl: RaviJSON
+  public var bridgeToken: String?
+  public var bridgeUrl: String?
   public var consoleUrl: String
   public var projectRef: String
   public var success: Bool
 
-  public init(bridge: [String: RaviJSON], bridgeToken: RaviJSON, bridgeUrl: RaviJSON, consoleUrl: String, projectRef: String, success: Bool) {
+  public init(bridge: [String: RaviJSON], bridgeToken: String?, bridgeUrl: String?, consoleUrl: String, projectRef: String, success: Bool) {
     self.bridge = bridge
     self.bridgeToken = bridgeToken
     self.bridgeUrl = bridgeUrl
@@ -3207,9 +3792,9 @@ public struct CalendarsEventsCancelOptions: Codable, Sendable {
 
 public struct CalendarsEventsCancelReturn: Codable, Sendable {
   public var event: RaviJSON
-  public var outbox: RaviJSON
+  public var outbox: RaviJSON?
 
-  public init(event: RaviJSON, outbox: RaviJSON) {
+  public init(event: RaviJSON, outbox: RaviJSON?) {
     self.event = event
     self.outbox = outbox
   }
@@ -3288,9 +3873,9 @@ public struct CalendarsEventsCreateOptions: Codable, Sendable {
 
 public struct CalendarsEventsCreateReturn: Codable, Sendable {
   public var event: RaviJSON
-  public var outbox: RaviJSON
+  public var outbox: RaviJSON?
 
-  public init(event: RaviJSON, outbox: RaviJSON) {
+  public init(event: RaviJSON, outbox: RaviJSON?) {
     self.event = event
     self.outbox = outbox
   }
@@ -3519,9 +4104,9 @@ public struct CalendarsEventsUpdateOptions: Codable, Sendable {
 
 public struct CalendarsEventsUpdateReturn: Codable, Sendable {
   public var event: RaviJSON
-  public var outbox: RaviJSON
+  public var outbox: RaviJSON?
 
-  public init(event: RaviJSON, outbox: RaviJSON) {
+  public init(event: RaviJSON, outbox: RaviJSON?) {
     self.event = event
     self.outbox = outbox
   }
@@ -3873,9 +4458,9 @@ public struct ChannelsProbeReturn: Codable, Sendable {
   public var outbound: [String: RaviJSON]
   public var pid: Double
   public var running: Bool
-  public var startedAt: RaviJSON
+  public var startedAt: Double?
 
-  public init(adapters: [[String: RaviJSON]], outbound: [String: RaviJSON], pid: Double, running: Bool, startedAt: RaviJSON) {
+  public init(adapters: [[String: RaviJSON]], outbound: [String: RaviJSON], pid: Double, running: Bool, startedAt: Double?) {
     self.adapters = adapters
     self.outbound = outbound
     self.pid = pid
@@ -3913,13 +4498,13 @@ public struct ChannelsRestartOptions: Codable, Sendable {
 public struct ChannelsRestartReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
-  public var pm2Status: RaviJSON?
+  public var pm2Status: Double?
   public var reason: String?
   public var runnerEnv: RaviJSON?
   public var status: RaviJSON?
   public var target: RaviJSON?
 
-  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
+  public init(action: String, changed: Bool, pm2Status: Double? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
     self.action = action
     self.changed = changed
     self.pm2Status = pm2Status
@@ -4012,13 +4597,13 @@ public struct ChannelsStartOptions: Codable, Sendable {
 public struct ChannelsStartReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
-  public var pm2Status: RaviJSON?
+  public var pm2Status: Double?
   public var reason: String?
   public var runnerEnv: RaviJSON?
   public var status: RaviJSON?
   public var target: RaviJSON?
 
-  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
+  public init(action: String, changed: Bool, pm2Status: Double? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
     self.action = action
     self.changed = changed
     self.pm2Status = pm2Status
@@ -4069,13 +4654,13 @@ public struct ChannelsStatusReturn: Codable, Sendable {
 public struct ChannelsStopReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
-  public var pm2Status: RaviJSON?
+  public var pm2Status: Double?
   public var reason: String?
   public var runnerEnv: RaviJSON?
   public var status: RaviJSON?
   public var target: RaviJSON?
 
-  public init(action: String, changed: Bool, pm2Status: RaviJSON? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
+  public init(action: String, changed: Bool, pm2Status: Double? = nil, reason: String? = nil, runnerEnv: RaviJSON? = nil, status: RaviJSON? = nil, target: RaviJSON? = nil) {
     self.action = action
     self.changed = changed
     self.pm2Status = pm2Status
@@ -4814,10 +5399,10 @@ public struct CloudProjectsCreateOptions: Codable, Sendable {
 public struct CloudProjectsCreateReturn: Codable, Sendable {
   public var consoleUrl: String
   public var project: [String: RaviJSON]
-  public var redirectTo: RaviJSON
+  public var redirectTo: String?
   public var success: Bool
 
-  public init(consoleUrl: String, project: [String: RaviJSON], redirectTo: RaviJSON, success: Bool) {
+  public init(consoleUrl: String, project: [String: RaviJSON], redirectTo: String?, success: Bool) {
     self.consoleUrl = consoleUrl
     self.project = project
     self.redirectTo = redirectTo
@@ -4985,12 +5570,12 @@ public struct CloudScopeExplainOptions: Codable, Sendable {
 public struct CloudScopeExplainReturn: Codable, Sendable {
   public var candidates: [RaviJSON]
   public var consoleUrl: String
-  public var missingProjectCommand: RaviJSON?
+  public var missingProjectCommand: String?
   public var organization: RaviJSON?
-  public var resolved: RaviJSON
+  public var resolved: RaviJSON?
   public var success: Bool
 
-  public init(candidates: [RaviJSON], consoleUrl: String, missingProjectCommand: RaviJSON? = nil, organization: RaviJSON? = nil, resolved: RaviJSON, success: Bool) {
+  public init(candidates: [RaviJSON], consoleUrl: String, missingProjectCommand: String? = nil, organization: RaviJSON? = nil, resolved: RaviJSON?, success: Bool) {
     self.candidates = candidates
     self.consoleUrl = consoleUrl
     self.missingProjectCommand = missingProjectCommand
@@ -5993,7 +6578,7 @@ public typealias ContactsUnlinkReturn = [String: RaviJSON]
 public typealias ContactsUntagReturn = [String: RaviJSON]
 
 public struct ContextAuthorizeReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var allowed: Bool
   public var approved: Bool
   public var capabilitiesCount: Double
@@ -6002,9 +6587,9 @@ public struct ContextAuthorizeReturn: Codable, Sendable {
   public var objectId: String
   public var objectType: String
   public var permission: String
-  public var reason: RaviJSON
+  public var reason: String?
 
-  public init(agentId: RaviJSON, allowed: Bool, approved: Bool, capabilitiesCount: Double, contextId: String, inherited: Bool, objectId: String, objectType: String, permission: String, reason: RaviJSON) {
+  public init(agentId: String?, allowed: Bool, approved: Bool, capabilitiesCount: Double, contextId: String, inherited: Bool, objectId: String, objectType: String, permission: String, reason: String?) {
     self.agentId = agentId
     self.allowed = allowed
     self.approved = approved
@@ -6032,14 +6617,14 @@ public struct ContextAuthorizeReturn: Codable, Sendable {
 }
 
 public struct ContextCapabilitiesReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var capabilities: [RaviJSON]
   public var contextId: String
   public var kind: String
-  public var sessionKey: RaviJSON
-  public var sessionName: RaviJSON
+  public var sessionKey: String?
+  public var sessionName: String?
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], contextId: String, kind: String, sessionKey: RaviJSON, sessionName: RaviJSON) {
+  public init(agentId: String?, capabilities: [RaviJSON], contextId: String, kind: String, sessionKey: String?, sessionName: String?) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.contextId = contextId
@@ -6059,7 +6644,7 @@ public struct ContextCapabilitiesReturn: Codable, Sendable {
 }
 
 public struct ContextCheckReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var allowed: Bool
   public var capabilitiesCount: Double
   public var contextId: String
@@ -6067,7 +6652,7 @@ public struct ContextCheckReturn: Codable, Sendable {
   public var objectType: String
   public var permission: String
 
-  public init(agentId: RaviJSON, allowed: Bool, capabilitiesCount: Double, contextId: String, objectId: String, objectType: String, permission: String) {
+  public init(agentId: String?, allowed: Bool, capabilitiesCount: Double, contextId: String, objectId: String, objectType: String, permission: String) {
     self.agentId = agentId
     self.allowed = allowed
     self.capabilitiesCount = capabilitiesCount
@@ -6137,12 +6722,12 @@ public struct ContextCleanupAgentRuntimeReturn: Codable, Sendable {
   public var dryRun: Bool
   public var olderThan: String
   public var olderThanMs: Double
-  public var reason: RaviJSON
+  public var reason: String?
   public var revoked: [RaviJSON]
   public var revokedCount: Double
   public var scanned: RaviJSON
 
-  public init(candidates: [RaviJSON], candidatesCount: Double, cutoffAt: Double, dryRun: Bool, olderThan: String, olderThanMs: Double, reason: RaviJSON, revoked: [RaviJSON], revokedCount: Double, scanned: RaviJSON) {
+  public init(candidates: [RaviJSON], candidatesCount: Double, cutoffAt: Double, dryRun: Bool, olderThan: String, olderThanMs: Double, reason: String?, revoked: [RaviJSON], revokedCount: Double, scanned: RaviJSON) {
     self.candidates = candidates
     self.candidatesCount = candidatesCount
     self.cutoffAt = cutoffAt
@@ -6207,10 +6792,10 @@ public struct ContextCredentialsAddOptions: Codable, Sendable {
 
 public struct ContextCredentialsAddReturn: Codable, Sendable {
   public var added: String
-  public var default_: RaviJSON
+  public var default_: String?
   public var path: String
 
-  public init(added: String, default_: RaviJSON, path: String) {
+  public init(added: String, default_: String?, path: String) {
     self.added = added
     self.default_ = default_
     self.path = path
@@ -6254,7 +6839,7 @@ public struct ContextCredentialsListOptions: Codable, Sendable {
 }
 
 public struct ContextCredentialsListReturn: Codable, Sendable {
-  public var default_: RaviJSON
+  public var default_: String?
   public var entries: [RaviJSON]
   public var exists: Bool
   public var items: [RaviJSON]
@@ -6262,7 +6847,7 @@ public struct ContextCredentialsListReturn: Codable, Sendable {
   public var path: String
   public var total: Double
 
-  public init(default_: RaviJSON, entries: [RaviJSON], exists: Bool, items: [RaviJSON], pagination: RaviJSON, path: String, total: Double) {
+  public init(default_: String?, entries: [RaviJSON], exists: Bool, items: [RaviJSON], pagination: RaviJSON, path: String, total: Double) {
     self.default_ = default_
     self.entries = entries
     self.exists = exists
@@ -6302,11 +6887,11 @@ public struct ContextCredentialsRemoveOptions: Codable, Sendable {
 }
 
 public struct ContextCredentialsRemoveReturn: Codable, Sendable {
-  public var default_: RaviJSON
+  public var default_: String?
   public var path: String
   public var removed: String
 
-  public init(default_: RaviJSON, path: String, removed: String) {
+  public init(default_: String?, path: String, removed: String) {
     self.default_ = default_
     self.path = path
     self.removed = removed
@@ -6320,10 +6905,10 @@ public struct ContextCredentialsRemoveReturn: Codable, Sendable {
 }
 
 public struct ContextCredentialsSetDefaultReturn: Codable, Sendable {
-  public var default_: RaviJSON
+  public var default_: String?
   public var path: String
 
-  public init(default_: RaviJSON, path: String) {
+  public init(default_: String?, path: String) {
     self.default_ = default_
     self.path = path
   }
@@ -6335,26 +6920,26 @@ public struct ContextCredentialsSetDefaultReturn: Codable, Sendable {
 }
 
 public struct ContextInfoReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var capabilities: [RaviJSON]
   public var capabilitiesCount: Double
   public var contextId: String
   public var createdAt: Double
-  public var expiresAt: RaviJSON
-  public var issuanceMode: RaviJSON
-  public var issuedFor: RaviJSON
+  public var expiresAt: Double?
+  public var issuanceMode: String?
+  public var issuedFor: String?
   public var kind: String
-  public var lastUsedAt: RaviJSON
+  public var lastUsedAt: Double?
   public var lineage: RaviJSON
-  public var metadata: RaviJSON
-  public var parentContextId: RaviJSON
-  public var revokedAt: RaviJSON
-  public var sessionKey: RaviJSON
-  public var sessionName: RaviJSON
-  public var source: RaviJSON
+  public var metadata: [String: RaviJSON]?
+  public var parentContextId: String?
+  public var revokedAt: Double?
+  public var sessionKey: String?
+  public var sessionName: String?
+  public var source: RaviJSON?
   public var status: String
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], capabilitiesCount: Double, contextId: String, createdAt: Double, expiresAt: RaviJSON, issuanceMode: RaviJSON, issuedFor: RaviJSON, kind: String, lastUsedAt: RaviJSON, lineage: RaviJSON, metadata: RaviJSON, parentContextId: RaviJSON, revokedAt: RaviJSON, sessionKey: RaviJSON, sessionName: RaviJSON, source: RaviJSON, status: String) {
+  public init(agentId: String?, capabilities: [RaviJSON], capabilitiesCount: Double, contextId: String, createdAt: Double, expiresAt: Double?, issuanceMode: String?, issuedFor: String?, kind: String, lastUsedAt: Double?, lineage: RaviJSON, metadata: [String: RaviJSON]?, parentContextId: String?, revokedAt: Double?, sessionKey: String?, sessionName: String?, source: RaviJSON?, status: String) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.capabilitiesCount = capabilitiesCount
@@ -6428,7 +7013,7 @@ public struct ContextIssueOptions: Codable, Sendable {
 }
 
 public struct ContextIssueReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var capabilities: [RaviJSON]
   public var capabilitiesCount: Double
   public var cliName: String
@@ -6436,15 +7021,15 @@ public struct ContextIssueReturn: Codable, Sendable {
   public var contextKey: String
   public var createdAt: Double
   public var env: [String: String]
-  public var expiresAt: RaviJSON
+  public var expiresAt: Double?
   public var kind: String
-  public var metadata: RaviJSON
+  public var metadata: [String: RaviJSON]?
   public var parentContextId: String
-  public var sessionKey: RaviJSON
-  public var sessionName: RaviJSON
-  public var source: RaviJSON
+  public var sessionKey: String?
+  public var sessionName: String?
+  public var source: RaviJSON?
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], capabilitiesCount: Double, cliName: String, contextId: String, contextKey: String, createdAt: Double, env: [String: String], expiresAt: RaviJSON, kind: String, metadata: RaviJSON, parentContextId: String, sessionKey: RaviJSON, sessionName: RaviJSON, source: RaviJSON) {
+  public init(agentId: String?, capabilities: [RaviJSON], capabilitiesCount: Double, cliName: String, contextId: String, contextKey: String, createdAt: Double, env: [String: String], expiresAt: Double?, kind: String, metadata: [String: RaviJSON]?, parentContextId: String, sessionKey: String?, sessionName: String?, source: RaviJSON?) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.capabilitiesCount = capabilitiesCount
@@ -6678,12 +7263,12 @@ public struct ContextVisibilityReturn: Codable, Sendable {
   public var compact: RaviJSON
   public var lastUpdatedAt: Double
   public var loadedSkills: [String]
-  public var provider: RaviJSON
+  public var provider: String?
   public var sessionKey: String
   public var skills: [RaviJSON]
   public var tokens: RaviJSON
 
-  public init(agentId: String, compact: RaviJSON, lastUpdatedAt: Double, loadedSkills: [String], provider: RaviJSON, sessionKey: String, skills: [RaviJSON], tokens: RaviJSON) {
+  public init(agentId: String, compact: RaviJSON, lastUpdatedAt: Double, loadedSkills: [String], provider: String?, sessionKey: String, skills: [RaviJSON], tokens: RaviJSON) {
     self.agentId = agentId
     self.compact = compact
     self.lastUpdatedAt = lastUpdatedAt
@@ -6707,26 +7292,26 @@ public struct ContextVisibilityReturn: Codable, Sendable {
 }
 
 public struct ContextWhoamiReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var capabilities: [RaviJSON]
   public var capabilitiesCount: Double
   public var contextId: String
   public var createdAt: Double
-  public var expiresAt: RaviJSON
-  public var issuanceMode: RaviJSON
-  public var issuedFor: RaviJSON
+  public var expiresAt: Double?
+  public var issuanceMode: String?
+  public var issuedFor: String?
   public var kind: String
-  public var lastUsedAt: RaviJSON
+  public var lastUsedAt: Double?
   public var lineage: RaviJSON
-  public var metadata: RaviJSON
-  public var parentContextId: RaviJSON
-  public var revokedAt: RaviJSON
-  public var sessionKey: RaviJSON
-  public var sessionName: RaviJSON
-  public var source: RaviJSON
+  public var metadata: [String: RaviJSON]?
+  public var parentContextId: String?
+  public var revokedAt: Double?
+  public var sessionKey: String?
+  public var sessionName: String?
+  public var source: RaviJSON?
   public var status: String
 
-  public init(agentId: RaviJSON, capabilities: [RaviJSON], capabilitiesCount: Double, contextId: String, createdAt: Double, expiresAt: RaviJSON, issuanceMode: RaviJSON, issuedFor: RaviJSON, kind: String, lastUsedAt: RaviJSON, lineage: RaviJSON, metadata: RaviJSON, parentContextId: RaviJSON, revokedAt: RaviJSON, sessionKey: RaviJSON, sessionName: RaviJSON, source: RaviJSON, status: String) {
+  public init(agentId: String?, capabilities: [RaviJSON], capabilitiesCount: Double, contextId: String, createdAt: Double, expiresAt: Double?, issuanceMode: String?, issuedFor: String?, kind: String, lastUsedAt: Double?, lineage: RaviJSON, metadata: [String: RaviJSON]?, parentContextId: String?, revokedAt: Double?, sessionKey: String?, sessionName: String?, source: RaviJSON?, status: String) {
     self.agentId = agentId
     self.capabilities = capabilities
     self.capabilitiesCount = capabilitiesCount
@@ -6923,12 +7508,12 @@ public struct CostsPricingReturn: Codable, Sendable {
 }
 
 public struct CostsSessionReturn: Codable, Sendable {
-  public var agentId: RaviJSON
+  public var agentId: String?
   public var sessionKey: String
-  public var sessionName: RaviJSON
+  public var sessionName: String?
   public var summary: RaviJSON
 
-  public init(agentId: RaviJSON, sessionKey: String, sessionName: RaviJSON, summary: RaviJSON) {
+  public init(agentId: String?, sessionKey: String, sessionName: String?, summary: RaviJSON) {
     self.agentId = agentId
     self.sessionKey = sessionKey
     self.sessionName = sessionName
@@ -7049,9 +7634,9 @@ public struct CredentialsConnectionsDisableOptions: Codable, Sendable {
 }
 
 public struct CredentialsConnectionsDisableReturn: Codable, Sendable {
-  public var connection: RaviJSON
+  public var connection: RaviJSON?
 
-  public init(connection: RaviJSON) {
+  public init(connection: RaviJSON?) {
     self.connection = connection
   }
 
@@ -7085,9 +7670,9 @@ public struct CredentialsConnectionsEnableOptions: Codable, Sendable {
 }
 
 public struct CredentialsConnectionsEnableReturn: Codable, Sendable {
-  public var connection: RaviJSON
+  public var connection: RaviJSON?
 
-  public init(connection: RaviJSON) {
+  public init(connection: RaviJSON?) {
     self.connection = connection
   }
 
@@ -9253,11 +9838,11 @@ public struct CronAddOptions: Codable, Sendable {
 
 public struct CronAddReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -9274,11 +9859,11 @@ public struct CronAddReturn: Codable, Sendable {
 
 public struct CronDisableReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -9295,11 +9880,11 @@ public struct CronDisableReturn: Codable, Sendable {
 
 public struct CronEnableReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -9403,11 +9988,11 @@ public struct CronRmOptions: Codable, Sendable {
 
 public struct CronRmReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -9442,11 +10027,11 @@ public struct CronRunOptions: Codable, Sendable {
 
 public struct CronRunReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -9463,11 +10048,11 @@ public struct CronRunReturn: Codable, Sendable {
 
 public struct CronSetReturn: Codable, Sendable {
   public var changedCount: Double
-  public var job: RaviJSON
+  public var job: [String: RaviJSON]?
   public var status: String
   public var target: RaviJSON
 
-  public init(changedCount: Double, job: RaviJSON, status: String, target: RaviJSON) {
+  public init(changedCount: Double, job: [String: RaviJSON]?, status: String, target: RaviJSON) {
     self.changedCount = changedCount
     self.job = job
     self.status = status
@@ -10020,15 +10605,15 @@ public struct DevinSessionsCreateOptions: Codable, Sendable {
 }
 
 public struct DevinSessionsCreateReturn: Codable, Sendable {
-  public var devinMode: RaviJSON?
-  public var maxAcuLimit: RaviJSON
+  public var devinMode: String?
+  public var maxAcuLimit: Double?
   public var maxAcuLimitSource: String
-  public var platform: RaviJSON?
-  public var resumable: RaviJSON?
+  public var platform: String?
+  public var resumable: Bool?
   public var session: RaviJSON
   public var status: String
 
-  public init(devinMode: RaviJSON? = nil, maxAcuLimit: RaviJSON, maxAcuLimitSource: String, platform: RaviJSON? = nil, resumable: RaviJSON? = nil, session: RaviJSON, status: String) {
+  public init(devinMode: String? = nil, maxAcuLimit: Double?, maxAcuLimitSource: String, platform: String? = nil, resumable: Bool? = nil, session: RaviJSON, status: String) {
     self.devinMode = devinMode
     self.maxAcuLimit = maxAcuLimit
     self.maxAcuLimitSource = maxAcuLimitSource
@@ -10076,9 +10661,9 @@ public struct DevinSessionsInsightsOptions: Codable, Sendable {
 public struct DevinSessionsInsightsReturn: Codable, Sendable {
   public var insights: RaviJSON
   public var session: RaviJSON
-  public var summary: RaviJSON
+  public var summary: [String: RaviJSON]?
 
-  public init(insights: RaviJSON, session: RaviJSON, summary: RaviJSON) {
+  public init(insights: RaviJSON, session: RaviJSON, summary: [String: RaviJSON]?) {
     self.insights = insights
     self.session = session
     self.summary = summary
@@ -10298,11 +10883,11 @@ public struct DevinSessionsSyncOptions: Codable, Sendable {
 public struct DevinSessionsSyncReturn: Codable, Sendable {
   public var artifacts: [String]
   public var attachments: Double
-  public var insights: RaviJSON
+  public var insights: [String: RaviJSON]?
   public var messages: Double
   public var session: RaviJSON
 
-  public init(artifacts: [String], attachments: Double, insights: RaviJSON, messages: Double, session: RaviJSON) {
+  public init(artifacts: [String], attachments: Double, insights: [String: RaviJSON]?, messages: Double, session: RaviJSON) {
     self.artifacts = artifacts
     self.attachments = attachments
     self.insights = insights
@@ -11230,11 +11815,11 @@ public struct ImageAtlasSplitReturn: Codable, Sendable {
   public var crops: [[String: RaviJSON]]
   public var manifestPath: String
   public var outputDir: String
-  public var parentArtifactId: RaviJSON
+  public var parentArtifactId: String?
   public var sent: [[String: RaviJSON]]
   public var success: Bool
 
-  public init(artifactId: String, artifact_id: String, crops: [[String: RaviJSON]], manifestPath: String, outputDir: String, parentArtifactId: RaviJSON, sent: [[String: RaviJSON]], success: Bool) {
+  public init(artifactId: String, artifact_id: String, crops: [[String: RaviJSON]], manifestPath: String, outputDir: String, parentArtifactId: String?, sent: [[String: RaviJSON]], success: Bool) {
     self.artifactId = artifactId
     self.artifact_id = artifact_id
     self.crops = crops
@@ -12649,10 +13234,10 @@ public struct MailMessagesImportOptions: Codable, Sendable {
 
 public struct MailMessagesImportReturn: Codable, Sendable {
   public var inboxCreated: Bool
-  public var inboxItem: RaviJSON
+  public var inboxItem: [String: RaviJSON]?
   public var message: RaviJSON
 
-  public init(inboxCreated: Bool, inboxItem: RaviJSON, message: RaviJSON) {
+  public init(inboxCreated: Bool, inboxItem: [String: RaviJSON]?, message: RaviJSON) {
     self.inboxCreated = inboxCreated
     self.inboxItem = inboxItem
     self.message = message
@@ -14003,10 +14588,10 @@ public struct ObserversRefreshReturn: Codable, Sendable {
   public var mode: String
   public var refreshedProfiles: [[String: RaviJSON]]
   public var skipped: [[String: RaviJSON]]
-  public var source: RaviJSON
+  public var source: [String: RaviJSON]?
   public var total: Double
 
-  public init(bindings: [[String: RaviJSON]], created: [[String: RaviJSON]], disabled: [[String: RaviJSON]], mode: String, refreshedProfiles: [[String: RaviJSON]], skipped: [[String: RaviJSON]], source: RaviJSON, total: Double) {
+  public init(bindings: [[String: RaviJSON]], created: [[String: RaviJSON]], disabled: [[String: RaviJSON]], mode: String, refreshedProfiles: [[String: RaviJSON]], skipped: [[String: RaviJSON]], source: [String: RaviJSON]?, total: Double) {
     self.bindings = bindings
     self.created = created
     self.disabled = disabled
@@ -14397,13 +14982,13 @@ public struct PagesCreateOptions: Codable, Sendable {
 
 public struct PagesCreateReturn: Codable, Sendable {
   public var consoleUrl: String
-  public var contentPublishCommand: RaviJSON
+  public var contentPublishCommand: String?
   public var projectRef: String
   public var site: [String: RaviJSON]
   public var success: Bool
-  public var url: RaviJSON
+  public var url: String?
 
-  public init(consoleUrl: String, contentPublishCommand: RaviJSON, projectRef: String, site: [String: RaviJSON], success: Bool, url: RaviJSON) {
+  public init(consoleUrl: String, contentPublishCommand: String?, projectRef: String, site: [String: RaviJSON], success: Bool, url: String?) {
     self.consoleUrl = consoleUrl
     self.contentPublishCommand = contentPublishCommand
     self.projectRef = projectRef
@@ -14604,7 +15189,7 @@ public struct PagesPasswordRemoveReturn: Codable, Sendable {
   public var configured: Bool
   public var consoleUrl: String
   public var path: String
-  public var policy: RaviJSON
+  public var policy: [String: RaviJSON]?
   public var projectRef: String
   public var release: [String: RaviJSON]
   public var route: [String: RaviJSON]
@@ -14614,7 +15199,7 @@ public struct PagesPasswordRemoveReturn: Codable, Sendable {
   public var success: Bool
   public var url: String
 
-  public init(action: String, configured: Bool, consoleUrl: String, path: String, policy: RaviJSON, projectRef: String, release: [String: RaviJSON], route: [String: RaviJSON], scope: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String) {
+  public init(action: String, configured: Bool, consoleUrl: String, path: String, policy: [String: RaviJSON]?, projectRef: String, release: [String: RaviJSON], route: [String: RaviJSON], scope: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String) {
     self.action = action
     self.configured = configured
     self.consoleUrl = consoleUrl
@@ -14682,7 +15267,7 @@ public struct PagesPasswordStatusReturn: Codable, Sendable {
   public var configured: Bool
   public var consoleUrl: String
   public var path: String
-  public var policy: RaviJSON
+  public var policy: [String: RaviJSON]?
   public var projectRef: String
   public var release: [String: RaviJSON]
   public var route: [String: RaviJSON]
@@ -14692,7 +15277,7 @@ public struct PagesPasswordStatusReturn: Codable, Sendable {
   public var success: Bool
   public var url: String
 
-  public init(action: String, configured: Bool, consoleUrl: String, path: String, policy: RaviJSON, projectRef: String, release: [String: RaviJSON], route: [String: RaviJSON], scope: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String) {
+  public init(action: String, configured: Bool, consoleUrl: String, path: String, policy: [String: RaviJSON]?, projectRef: String, release: [String: RaviJSON], route: [String: RaviJSON], scope: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String) {
     self.action = action
     self.configured = configured
     self.consoleUrl = consoleUrl
@@ -14857,10 +15442,10 @@ public struct PagesPublishReturn: Codable, Sendable {
   public var site: RaviJSON
   public var success: Bool
   public var upload: RaviJSON
-  public var uploadSession: RaviJSON
-  public var url: RaviJSON
+  public var uploadSession: [String: RaviJSON]?
+  public var url: String?
 
-  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: RaviJSON, url: RaviJSON) {
+  public init(artifact: RaviJSON, artifactVersion: RaviJSON, authenticated: Bool, consoleUrl: String, localSync: RaviJSON, publish: RaviJSON, release: RaviJSON, routes: [[String: RaviJSON]], site: RaviJSON, success: Bool, upload: RaviJSON, uploadSession: [String: RaviJSON]?, url: String?) {
     self.artifact = artifact
     self.artifactVersion = artifactVersion
     self.authenticated = authenticated
@@ -15002,9 +15587,9 @@ public struct PagesUpdateReturn: Codable, Sendable {
   public var site: [String: RaviJSON]
   public var siteRef: String
   public var success: Bool
-  public var url: RaviJSON
+  public var url: String?
 
-  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: RaviJSON) {
+  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String?) {
     self.consoleUrl = consoleUrl
     self.edgeManifestRepair = edgeManifestRepair
     self.projectRef = projectRef
@@ -15062,9 +15647,9 @@ public struct PagesVisibilityReturn: Codable, Sendable {
   public var site: [String: RaviJSON]
   public var siteRef: String
   public var success: Bool
-  public var url: RaviJSON
+  public var url: String?
 
-  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: RaviJSON) {
+  public init(consoleUrl: String, edgeManifestRepair: RaviJSON, projectRef: String, site: [String: RaviJSON], siteRef: String, success: Bool, url: String?) {
     self.consoleUrl = consoleUrl
     self.edgeManifestRepair = edgeManifestRepair
     self.projectRef = projectRef
@@ -16337,9 +16922,9 @@ public struct ProxCallsProfilesConfigureOptions: Codable, Sendable {
 
 public struct ProxCallsProfilesConfigureReturn: Codable, Sendable {
   public var profile: [String: RaviJSON]
-  public var providerSync: RaviJSON
+  public var providerSync: RaviJSON?
 
-  public init(profile: [String: RaviJSON], providerSync: RaviJSON) {
+  public init(profile: [String: RaviJSON], providerSync: RaviJSON?) {
     self.profile = profile
     self.providerSync = providerSync
   }
@@ -16473,13 +17058,13 @@ public struct ProxCallsRequestOptions: Codable, Sendable {
 }
 
 public struct ProxCallsRequestReturn: Codable, Sendable {
-  public var blockReason: RaviJSON?
+  public var blockReason: String?
   public var blocked: Bool
   public var hint: String
   public var providerMode: String
   public var request: [String: RaviJSON]
 
-  public init(blockReason: RaviJSON? = nil, blocked: Bool, hint: String, providerMode: String, request: [String: RaviJSON]) {
+  public init(blockReason: String? = nil, blocked: Bool, hint: String, providerMode: String, request: [String: RaviJSON]) {
     self.blockReason = blockReason
     self.blocked = blocked
     self.hint = hint
@@ -16518,10 +17103,10 @@ public typealias ProxCallsRulesReturn = RaviJSON
 
 public struct ProxCallsShowReturn: Codable, Sendable {
   public var request: [String: RaviJSON]
-  public var result: RaviJSON
+  public var result: [String: RaviJSON]?
   public var runs: [[String: RaviJSON]]
 
-  public init(request: [String: RaviJSON], result: RaviJSON, runs: [[String: RaviJSON]]) {
+  public init(request: [String: RaviJSON], result: [String: RaviJSON]?, runs: [[String: RaviJSON]]) {
     self.request = request
     self.result = result
     self.runs = runs
@@ -16800,10 +17385,10 @@ public struct ProxCallsTranscriptOptions: Codable, Sendable {
 public struct ProxCallsTranscriptReturn: Codable, Sendable {
   public var outcome: String
   public var requestId: String
-  public var summary: RaviJSON?
+  public var summary: String?
   public var transcript: String
 
-  public init(outcome: String, requestId: String, summary: RaviJSON? = nil, transcript: String) {
+  public init(outcome: String, requestId: String, summary: String? = nil, transcript: String) {
     self.outcome = outcome
     self.requestId = requestId
     self.summary = summary
@@ -16998,11 +17583,11 @@ public struct ProxCallsVoiceAgentsSyncReturn: Codable, Sendable {
   public var dryRun: Bool
   public var intendedChanges: [String: RaviJSON]
   public var provider: String
-  public var providerAgentId: RaviJSON?
+  public var providerAgentId: String?
   public var providerSync: String
   public var voiceAgentId: String
 
-  public init(dryRun: Bool, intendedChanges: [String: RaviJSON], provider: String, providerAgentId: RaviJSON? = nil, providerSync: String, voiceAgentId: String) {
+  public init(dryRun: Bool, intendedChanges: [String: RaviJSON], provider: String, providerAgentId: String? = nil, providerSync: String, voiceAgentId: String) {
     self.dryRun = dryRun
     self.intendedChanges = intendedChanges
     self.provider = provider
@@ -17100,16 +17685,16 @@ public struct RoutesExplainOptions: Codable, Sendable {
 }
 
 public struct RoutesExplainReturn: Codable, Sendable {
-  public var channel: RaviJSON
-  public var configuredRoute: RaviJSON
+  public var channel: String?
+  public var configuredRoute: RoutesRouteRecord?
   public var instance: String
-  public var liveEffect: RaviJSON
-  public var origin: RaviJSON
-  public var pattern: RaviJSON
-  public var resolution: RaviJSON
-  public var target: RaviJSON
+  public var liveEffect: RoutesExplainLiveEffect?
+  public var origin: RoutesExplainOrigin
+  public var pattern: String?
+  public var resolution: RoutesExplainResolution?
+  public var target: RoutesRuntimeTarget
 
-  public init(channel: RaviJSON, configuredRoute: RaviJSON, instance: String, liveEffect: RaviJSON, origin: RaviJSON, pattern: RaviJSON, resolution: RaviJSON, target: RaviJSON) {
+  public init(channel: String?, configuredRoute: RoutesRouteRecord?, instance: String, liveEffect: RoutesExplainLiveEffect?, origin: RoutesExplainOrigin, pattern: String?, resolution: RoutesExplainResolution?, target: RoutesRuntimeTarget) {
     self.channel = channel
     self.configuredRoute = configuredRoute
     self.instance = instance
@@ -17169,14 +17754,14 @@ public struct RoutesListOptions: Codable, Sendable {
 }
 
 public struct RoutesListReturn: Codable, Sendable {
-  public var filter: RaviJSON
-  public var instance: RaviJSON
-  public var items: [RaviJSON]
-  public var pagination: RaviJSON
-  public var routes: [RaviJSON]
+  public var filter: RoutesListFilter
+  public var instance: String?
+  public var items: [RoutesListItem]
+  public var pagination: RoutesListPagination
+  public var routes: [RoutesListItem]
   public var total: Double
 
-  public init(filter: RaviJSON, instance: RaviJSON, items: [RaviJSON], pagination: RaviJSON, routes: [RaviJSON], total: Double) {
+  public init(filter: RoutesListFilter, instance: String?, items: [RoutesListItem], pagination: RoutesListPagination, routes: [RoutesListItem], total: Double) {
     self.filter = filter
     self.instance = instance
     self.items = items
@@ -17198,9 +17783,9 @@ public struct RoutesListReturn: Codable, Sendable {
 public struct RoutesShowReturn: Codable, Sendable {
   public var instance: String
   public var pattern: String
-  public var route: RaviJSON
+  public var route: RoutesRouteWithTags
 
-  public init(instance: String, pattern: String, route: RaviJSON) {
+  public init(instance: String, pattern: String, route: RoutesRouteWithTags) {
     self.instance = instance
     self.pattern = pattern
     self.route = route
@@ -17740,9 +18325,9 @@ public struct RuntimeCredentialsRefreshReturn: Codable, Sendable {
 
 public struct RuntimeCredentialsResetHealthReturn: Codable, Sendable {
   public var credential: [String: RaviJSON]
-  public var health: RaviJSON
+  public var health: [String: RaviJSON]?
 
-  public init(credential: [String: RaviJSON], health: RaviJSON) {
+  public init(credential: [String: RaviJSON], health: [String: RaviJSON]?) {
     self.credential = credential
     self.health = health
   }
@@ -17798,9 +18383,9 @@ public struct RuntimeCredentialsSelectOptions: Codable, Sendable {
 public struct RuntimeCredentialsSelectReturn: Codable, Sendable {
   public var candidates: [[String: RaviJSON]]
   public var rejected: [[String: RaviJSON]]
-  public var selected: RaviJSON
+  public var selected: [String: RaviJSON]?
 
-  public init(candidates: [[String: RaviJSON]], rejected: [[String: RaviJSON]], selected: RaviJSON) {
+  public init(candidates: [[String: RaviJSON]], rejected: [[String: RaviJSON]], selected: [String: RaviJSON]?) {
     self.candidates = candidates
     self.rejected = rejected
     self.selected = selected
@@ -17815,9 +18400,9 @@ public struct RuntimeCredentialsSelectReturn: Codable, Sendable {
 
 public struct RuntimeCredentialsStatusReturn: Codable, Sendable {
   public var credential: [String: RaviJSON]
-  public var health: RaviJSON
+  public var health: [String: RaviJSON]?
 
-  public init(credential: [String: RaviJSON], health: RaviJSON) {
+  public init(credential: [String: RaviJSON], health: [String: RaviJSON]?) {
     self.credential = credential
     self.health = health
   }
@@ -18028,7 +18613,7 @@ public struct RuntimePresetsImpactOptions: Codable, Sendable {
 
 public struct RuntimePresetsImpactReturn: Codable, Sendable {
   public var agents: [RaviJSON]
-  public var correctionCommand: RaviJSON
+  public var correctionCommand: String?
   public var enabled: Bool
   public var limit: Double
   public var model: String
@@ -18041,7 +18626,7 @@ public struct RuntimePresetsImpactReturn: Codable, Sendable {
   public var shadowingSessionsTotal: Double
   public var version: Double
 
-  public init(agents: [RaviJSON], correctionCommand: RaviJSON, enabled: Bool, limit: Double, model: String, offset: Double, pagination: RaviJSON, presetId: String, provider: String, referenced: Bool, referencingAgentsTotal: Double, shadowingSessionsTotal: Double, version: Double) {
+  public init(agents: [RaviJSON], correctionCommand: String?, enabled: Bool, limit: Double, model: String, offset: Double, pagination: RaviJSON, presetId: String, provider: String, referenced: Bool, referencingAgentsTotal: Double, shadowingSessionsTotal: Double, version: Double) {
     self.agents = agents
     self.correctionCommand = correctionCommand
     self.enabled = enabled
@@ -19457,10 +20042,10 @@ public struct SessionsGoalOptions: Codable, Sendable {
 public struct SessionsGoalReturn: Codable, Sendable {
   public var action: String
   public var changed: Bool
-  public var goal: RaviJSON
+  public var goal: RaviJSON?
   public var session: RaviJSON
 
-  public init(action: String, changed: Bool, goal: RaviJSON, session: RaviJSON) {
+  public init(action: String, changed: Bool, goal: RaviJSON?, session: RaviJSON) {
     self.action = action
     self.changed = changed
     self.goal = goal
@@ -20143,9 +20728,9 @@ public struct SessionsSendReturn: Codable, Sendable {
   public var published: Bool
   public var response: RaviJSON?
   public var session: RaviJSON
-  public var thread: RaviJSON
+  public var thread: [String: RaviJSON]?
 
-  public init(action: String, createdSession: Bool, delivery: [String: RaviJSON], mode: String, promptLength: Int, published: Bool, response: RaviJSON? = nil, session: RaviJSON, thread: RaviJSON) {
+  public init(action: String, createdSession: Bool, delivery: [String: RaviJSON], mode: String, promptLength: Int, published: Bool, response: RaviJSON? = nil, session: RaviJSON, thread: [String: RaviJSON]?) {
     self.action = action
     self.createdSession = createdSession
     self.delivery = delivery
@@ -20174,17 +20759,17 @@ public typealias SessionsSetDisplayReturn = [String: RaviJSON]
 
 public struct SessionsSetEffortReturn: Codable, Sendable {
   public var action: String
-  public var after: RaviJSON
+  public var after: RaviJSON?
   public var appliesOn: String
   public var before: RaviJSON
   public var changed: Bool
   public var effectiveEffort: String
   public var effectiveEffortSource: String
-  public var effortOverride: RaviJSON
+  public var effortOverride: String?
   public var sessionKey: String
-  public var sessionName: RaviJSON
+  public var sessionName: String?
 
-  public init(action: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, effectiveEffort: String, effectiveEffortSource: String, effortOverride: RaviJSON, sessionKey: String, sessionName: RaviJSON) {
+  public init(action: String, after: RaviJSON?, appliesOn: String, before: RaviJSON, changed: Bool, effectiveEffort: String, effectiveEffortSource: String, effortOverride: String?, sessionKey: String, sessionName: String?) {
     self.action = action
     self.after = after
     self.appliesOn = appliesOn
@@ -20215,16 +20800,16 @@ public typealias SessionsSetModelReturn = [String: RaviJSON]
 
 public struct SessionsSetProviderReturn: Codable, Sendable {
   public var action: String
-  public var after: RaviJSON
+  public var after: RaviJSON?
   public var appliesOn: String
   public var before: RaviJSON
   public var changed: Bool
   public var effectiveProvider: String
-  public var runtimeProviderOverride: RaviJSON
+  public var runtimeProviderOverride: String?
   public var sessionKey: String
-  public var sessionName: RaviJSON
+  public var sessionName: String?
 
-  public init(action: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, effectiveProvider: String, runtimeProviderOverride: RaviJSON, sessionKey: String, sessionName: RaviJSON) {
+  public init(action: String, after: RaviJSON?, appliesOn: String, before: RaviJSON, changed: Bool, effectiveProvider: String, runtimeProviderOverride: String?, sessionKey: String, sessionName: String?) {
     self.action = action
     self.after = after
     self.appliesOn = appliesOn
@@ -23983,7 +24568,7 @@ public struct SyncPullOptions: Codable, Sendable {
 
 public struct SyncPullReturn: Codable, Sendable {
   public var applied: Double
-  public var cursor: RaviJSON
+  public var cursor: String?
   public var downloaded: Double
   public var enqueued: Double
   public var errorCode: String?
@@ -23992,7 +24577,7 @@ public struct SyncPullReturn: Codable, Sendable {
   public var skipped: Double
   public var status: String
 
-  public init(applied: Double, cursor: RaviJSON, downloaded: Double, enqueued: Double, errorCode: String? = nil, failed: Double, linked: Bool, skipped: Double, status: String) {
+  public init(applied: Double, cursor: String?, downloaded: Double, enqueued: Double, errorCode: String? = nil, failed: Double, linked: Bool, skipped: Double, status: String) {
     self.applied = applied
     self.cursor = cursor
     self.downloaded = downloaded
@@ -24156,18 +24741,18 @@ public struct SyncRetryReturn: Codable, Sendable {
 }
 
 public struct SyncStatusReturn: Codable, Sendable {
-  public var consoleUrl: RaviJSON
+  public var consoleUrl: String?
   public var cursors: [RaviJSON]
   public var inbox: RaviJSON
-  public var installationId: RaviJSON
-  public var lastDownload: RaviJSON
-  public var lastError: RaviJSON
-  public var lastUpload: RaviJSON
+  public var installationId: String?
+  public var lastDownload: String?
+  public var lastError: String?
+  public var lastUpload: String?
   public var linked: Bool
   public var outbox: RaviJSON
   public var runner: RaviJSON
 
-  public init(consoleUrl: RaviJSON, cursors: [RaviJSON], inbox: RaviJSON, installationId: RaviJSON, lastDownload: RaviJSON, lastError: RaviJSON, lastUpload: RaviJSON, linked: Bool, outbox: RaviJSON, runner: RaviJSON) {
+  public init(consoleUrl: String?, cursors: [RaviJSON], inbox: RaviJSON, installationId: String?, lastDownload: String?, lastError: String?, lastUpload: String?, linked: Bool, outbox: RaviJSON, runner: RaviJSON) {
     self.consoleUrl = consoleUrl
     self.cursors = cursors
     self.inbox = inbox
@@ -25782,14 +26367,14 @@ public struct TasksCreateReturn: Codable, Sendable {
   public var dependencies: [[String: RaviJSON]]
   public var dependents: [[String: RaviJSON]]
   public var event: [String: RaviJSON]
-  public var launchPlan: RaviJSON
-  public var parentTaskId: RaviJSON
+  public var launchPlan: [String: RaviJSON]?
+  public var parentTaskId: String?
   public var readiness: [String: RaviJSON]
   public var relatedEvents: [[String: RaviJSON]]
   public var task: [String: RaviJSON]
   public var taskProfile: [String: RaviJSON]
 
-  public init(dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], event: [String: RaviJSON], launchPlan: RaviJSON, parentTaskId: RaviJSON, readiness: [String: RaviJSON], relatedEvents: [[String: RaviJSON]], task: [String: RaviJSON], taskProfile: [String: RaviJSON]) {
+  public init(dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], event: [String: RaviJSON], launchPlan: [String: RaviJSON]?, parentTaskId: String?, readiness: [String: RaviJSON], relatedEvents: [[String: RaviJSON]], task: [String: RaviJSON], taskProfile: [String: RaviJSON]) {
     self.dependencies = dependencies
     self.dependents = dependents
     self.event = event
@@ -25857,13 +26442,13 @@ public struct TasksDepsLsReturn: Codable, Sendable {
   public var dependencies: [[String: RaviJSON]]
   public var dependents: [[String: RaviJSON]]
   public var items: [[String: RaviJSON]]
-  public var launchPlan: RaviJSON
+  public var launchPlan: [String: RaviJSON]?
   public var pagination: RaviJSON
   public var readiness: [String: RaviJSON]
   public var taskId: String
   public var total: Double
 
-  public init(dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], items: [[String: RaviJSON]], launchPlan: RaviJSON, pagination: RaviJSON, readiness: [String: RaviJSON], taskId: String, total: Double) {
+  public init(dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], items: [[String: RaviJSON]], launchPlan: [String: RaviJSON]?, pagination: RaviJSON, readiness: [String: RaviJSON], taskId: String, total: Double) {
     self.dependencies = dependencies
     self.dependents = dependents
     self.items = items
@@ -26220,12 +26805,12 @@ public struct TasksListReturn: Codable, Sendable {
   public var archiveMode: String
   public var filters: [String: RaviJSON]
   public var items: [[String: RaviJSON]]
-  public var limit: RaviJSON
+  public var limit: Double?
   public var page: [String: RaviJSON]
   public var tasks: [[String: RaviJSON]]
   public var total: Double
 
-  public init(archiveMode: String, filters: [String: RaviJSON], items: [[String: RaviJSON]], limit: RaviJSON, page: [String: RaviJSON], tasks: [[String: RaviJSON]], total: Double) {
+  public init(archiveMode: String, filters: [String: RaviJSON], items: [[String: RaviJSON]], limit: Double?, page: [String: RaviJSON], tasks: [[String: RaviJSON]], total: Double) {
     self.archiveMode = archiveMode
     self.filters = filters
     self.items = items
@@ -26487,12 +27072,12 @@ public struct TasksShowReturn: Codable, Sendable {
   public var dependencies: [[String: RaviJSON]]
   public var dependents: [[String: RaviJSON]]
   public var events: [[String: RaviJSON]]
-  public var historyLimit: RaviJSON
-  public var launchPlan: RaviJSON
+  public var historyLimit: Double?
+  public var launchPlan: [String: RaviJSON]?
   public var readiness: [String: RaviJSON]
   public var task: [String: RaviJSON]
 
-  public init(comments: [[String: RaviJSON]], dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], events: [[String: RaviJSON]], historyLimit: RaviJSON, launchPlan: RaviJSON, readiness: [String: RaviJSON], task: [String: RaviJSON]) {
+  public init(comments: [[String: RaviJSON]], dependencies: [[String: RaviJSON]], dependents: [[String: RaviJSON]], events: [[String: RaviJSON]], historyLimit: Double?, launchPlan: [String: RaviJSON]?, readiness: [String: RaviJSON], task: [String: RaviJSON]) {
     self.comments = comments
     self.dependencies = dependencies
     self.dependents = dependents
@@ -27125,15 +27710,15 @@ public struct ToolsShowReturn: Codable, Sendable {
 }
 
 public struct ToolsTestReturn: Codable, Sendable {
-  public var access: RaviJSON
+  public var access: RaviJSON?
   public var args: [String: RaviJSON]
   public var executed: Bool
   public var invokeCommand: String
   public var mode: String
-  public var schema: RaviJSON
+  public var schema: [String: RaviJSON]?
   public var tool: RaviJSON
 
-  public init(access: RaviJSON, args: [String: RaviJSON], executed: Bool, invokeCommand: String, mode: String, schema: RaviJSON, tool: RaviJSON) {
+  public init(access: RaviJSON?, args: [String: RaviJSON], executed: Bool, invokeCommand: String, mode: String, schema: [String: RaviJSON]?, tool: RaviJSON) {
     self.access = access
     self.args = args
     self.executed = executed
@@ -27287,9 +27872,9 @@ public struct TriggersAddReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -27308,9 +27893,9 @@ public struct TriggersDisableReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -27329,9 +27914,9 @@ public struct TriggersEnableReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -27425,9 +28010,9 @@ public struct TriggersRmReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -27446,9 +28031,9 @@ public struct TriggersSetReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -27497,9 +28082,9 @@ public struct TriggersTestReturn: Codable, Sendable {
   public var changedCount: Double
   public var status: String
   public var target: RaviJSON
-  public var trigger: RaviJSON
+  public var trigger: [String: RaviJSON]?
 
-  public init(changedCount: Double, status: String, target: RaviJSON, trigger: RaviJSON) {
+  public init(changedCount: Double, status: String, target: RaviJSON, trigger: [String: RaviJSON]?) {
     self.changedCount = changedCount
     self.status = status
     self.target = target
@@ -28807,9 +29392,9 @@ public struct WorkflowsRunsTaskCreateOptions: Codable, Sendable {
 
 public struct WorkflowsRunsTaskCreateReturn: Codable, Sendable {
   public var task: [String: RaviJSON]
-  public var workflow: RaviJSON
+  public var workflow: [String: RaviJSON]?
 
-  public init(task: [String: RaviJSON], workflow: RaviJSON) {
+  public init(task: [String: RaviJSON], workflow: [String: RaviJSON]?) {
     self.task = task
     self.workflow = workflow
   }

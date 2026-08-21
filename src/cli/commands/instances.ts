@@ -229,9 +229,15 @@ function failInstanceNotFound(op: string, ref: string, asJson?: boolean, candida
   });
 }
 
-/** Route patterns are scoped per instance; suggestions come from that instance's real routes. */
-function failRouteNotFound(op: string, name: string, pattern: string, asJson?: boolean): never {
-  const candidates = dbListRoutes(name).map((route) => route.pattern);
+/** Route patterns are scoped per instance; suggestions come from the already captured read snapshot when available. */
+function failRouteNotFound(
+  op: string,
+  name: string,
+  pattern: string,
+  asJson?: boolean,
+  snapshot?: ReadOnlyRoutesSnapshot,
+): never {
+  const candidates = listRoutesForRead(snapshot, name).map((route) => route.pattern);
   contractFail(op, "ROUTE_NOT_FOUND", `Route not found: ${pattern} (instance: ${name})`, {
     asJson,
     details: {
@@ -316,8 +322,23 @@ function validateRouteChannel(
   const requested = channel?.trim();
   if (!requested) return undefined;
   const acceptedChannels = listAcceptedRouteChannels(snapshot);
-  const canonical = acceptedChannels.find((candidate) => candidate.toLowerCase() === requested.toLowerCase());
-  if (canonical) return canonical;
+  const exact = acceptedChannels.find((candidate) => candidate === requested);
+  if (exact) return exact;
+  const caseInsensitiveMatches = acceptedChannels.filter(
+    (candidate) => candidate.toLowerCase() === requested.toLowerCase(),
+  );
+  if (caseInsensitiveMatches.length === 1) return caseInsensitiveMatches[0];
+  if (caseInsensitiveMatches.length > 1) {
+    contractFail(op, "ROUTE_CHANNEL_AMBIGUOUS", `Multiple configured route channels match: ${requested}`, {
+      asJson,
+      exitCode: CONTRACT_EXIT_USAGE,
+      details: {
+        acceptedChannels,
+        suggestions: caseInsensitiveMatches,
+        suggestedAction: "Retry with one exact channel spelling from suggestions",
+      },
+    });
+  }
   contractFail(op, "USAGE_ERROR", `Unknown route channel: ${requested}`, {
     asJson,
     exitCode: CONTRACT_EXIT_USAGE,
@@ -644,7 +665,7 @@ function buildRouteListPayload(
 function printRouteDetails(op: string, name: string, pattern: string, snapshot?: ReadOnlyRoutesSnapshot): void {
   requireRouteInstance(op, name, undefined, snapshot);
   const route = getRouteForRead(snapshot, name, pattern);
-  if (!route) failRouteNotFound(op, name, pattern);
+  if (!route) failRouteNotFound(op, name, pattern, undefined, snapshot);
 
   console.log(`\nRoute: ${route.pattern} (instance: ${name})\n`);
   console.log(`  Agent:     ${route.agent}`);
@@ -668,7 +689,7 @@ function buildRouteDetailsPayload(
 ) {
   requireRouteInstance(op, name, asJson, snapshot);
   const route = getRouteForRead(snapshot, name, pattern);
-  if (!route) failRouteNotFound(op, name, pattern, asJson);
+  if (!route) failRouteNotFound(op, name, pattern, asJson, snapshot);
   return {
     instance: name,
     pattern,
@@ -1821,7 +1842,7 @@ export class InstancesCommands {
 })
 export class RoutesCommands {
   @Command({ name: "list", description: "List routes across all instances or for one instance" })
-  @CommandAccess({ kind: "read", resource: "routes", action: "list", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "routes", action: "list", risk: "low", audit: "none" })
   list(
     @Arg("name", { description: "Instance name (omit for all)", required: false }) name?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
@@ -1852,7 +1873,7 @@ export class RoutesCommands {
   }
 
   @Command({ name: "show", description: "Show route details" })
-  @CommandAccess({ kind: "read", resource: "routes", action: "show", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "routes", action: "show", risk: "low", audit: "none" })
   show(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
@@ -1872,7 +1893,7 @@ export class RoutesCommands {
     name: "explain",
     description: "Explain equivalent pattern lookup and simulate resolution from persisted config",
   })
-  @CommandAccess({ kind: "read", resource: "routes", action: "explain", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "routes", action: "explain", risk: "low", audit: "none" })
   explain(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,

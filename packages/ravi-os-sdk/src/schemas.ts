@@ -53909,6 +53909,7 @@ export const RoutesExplainReturnSchema = {
             "agent",
             "priority"
           ],
+          "title": "RoutesRouteRecord",
           "type": "object"
         },
         {
@@ -53991,6 +53992,7 @@ export const RoutesExplainReturnSchema = {
             "winningPattern",
             "winningAgent"
           ],
+          "title": "RoutesExplainLiveEffect",
           "type": "object"
         },
         {
@@ -54028,6 +54030,7 @@ export const RoutesExplainReturnSchema = {
         "daemonObserved",
         "limitation"
       ],
+      "title": "RoutesExplainOrigin",
       "type": "object"
     },
     "pattern": {
@@ -54086,6 +54089,7 @@ export const RoutesExplainReturnSchema = {
             "canonicalPattern",
             "targetKind"
           ],
+          "title": "RoutesExplainResolution",
           "type": "object"
         },
         {
@@ -54159,6 +54163,7 @@ export const RoutesExplainReturnSchema = {
             "cwd",
             "matchesCli"
           ],
+          "title": "RoutesRuntimeDaemon",
           "type": "object"
         },
         "dbPath": {
@@ -54210,6 +54215,7 @@ export const RoutesExplainReturnSchema = {
                 "channel",
                 "affectsLiveMain"
               ],
+              "title": "RoutesRuntimeInstance",
               "type": "object"
             },
             {
@@ -54225,6 +54231,7 @@ export const RoutesExplainReturnSchema = {
         "daemon",
         "instance"
       ],
+      "title": "RoutesRuntimeTarget",
       "type": "object"
     }
   },
@@ -54327,6 +54334,7 @@ export const RoutesListReturnSchema = {
       "required": [
         "tagSlug"
       ],
+      "title": "RoutesListFilter",
       "type": "object"
     },
     "instance": {
@@ -54341,138 +54349,367 @@ export const RoutesListReturnSchema = {
     },
     "items": {
       "items": {
-        "additionalProperties": false,
-        "properties": {
-          "accountId": {
-            "type": "string"
-          },
-          "agent": {
-            "type": "string"
-          },
-          "channel": {
-            "type": "string"
-          },
-          "dmScope": {
-            "enum": [
-              "main",
-              "per-peer",
-              "per-channel-peer",
-              "per-account-channel-peer"
-            ],
-            "type": "string"
-          },
-          "id": {
-            "type": "number"
-          },
-          "pattern": {
-            "type": "string"
-          },
-          "policy": {
-            "type": "string"
-          },
-          "priority": {
-            "type": "number"
-          },
-          "session": {
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "assetId": {
-                  "type": "string"
-                },
-                "assetType": {
-                  "enum": [
-                    "agent",
-                    "automation",
-                    "app",
-                    "session",
-                    "task",
-                    "project",
-                    "profile",
-                    "contact",
-                    "chat",
-                    "route",
-                    "instance",
-                    "artifact",
-                    "insight",
-                    "workflow_spec",
-                    "workflow_run",
-                    "workflow_node",
-                    "cron_job",
-                    "trigger",
-                    "hook",
-                    "task_automation",
-                    "observer_rule",
-                    "observer_binding",
-                    "observer_profile",
-                    "command",
-                    "skill",
-                    "skill_gate_rule",
-                    "context",
-                    "call_profile",
-                    "call_request",
-                    "call_voice_agent",
-                    "call_tool",
-                    "outbound_queue",
-                    "outbound_entry",
-                    "spec",
-                    "devin_session"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string"
+              },
+              "channel": {
+                "type": "string"
+              },
+              "dmScope": {
+                "enum": [
+                  "main",
+                  "per-peer",
+                  "per-channel-peer",
+                  "per-account-channel-peer"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "number"
+              },
+              "pattern": {
+                "type": "string"
+              },
+              "policy": {
+                "type": "string"
+              },
+              "priority": {
+                "type": "number"
+              },
+              "session": {
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assetId": {
+                      "type": "string"
+                    },
+                    "assetType": {
+                      "enum": [
+                        "agent",
+                        "automation",
+                        "app",
+                        "session",
+                        "task",
+                        "project",
+                        "profile",
+                        "contact",
+                        "chat",
+                        "route",
+                        "instance",
+                        "artifact",
+                        "insight",
+                        "workflow_spec",
+                        "workflow_run",
+                        "workflow_node",
+                        "cron_job",
+                        "trigger",
+                        "hook",
+                        "task_automation",
+                        "observer_rule",
+                        "observer_binding",
+                        "observer_profile",
+                        "command",
+                        "skill",
+                        "skill_gate_rule",
+                        "context",
+                        "call_profile",
+                        "call_request",
+                        "call_voice_agent",
+                        "call_tool",
+                        "outbound_queue",
+                        "outbound_entry",
+                        "spec",
+                        "devin_session"
+                      ],
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "tagId": {
+                      "type": "string"
+                    },
+                    "tagSlug": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    },
+                    "updatedBy": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "tagId",
+                    "tagSlug",
+                    "assetType",
+                    "assetId",
+                    "source",
+                    "createdAt",
+                    "updatedAt"
                   ],
-                  "type": "string"
-                },
-                "createdAt": {
-                  "type": "number"
-                },
-                "createdBy": {
-                  "type": "string"
-                },
-                "id": {
-                  "type": "string"
-                },
-                "metadata": {
-                  "additionalProperties": {
-                    "$ref": "#/$defs/__schema0"
-                  },
-                  "propertyNames": {
-                    "type": "string"
-                  },
+                  "title": "RoutesTagBinding",
                   "type": "object"
                 },
-                "source": {
-                  "type": "string"
-                },
-                "tagId": {
-                  "type": "string"
-                },
-                "tagSlug": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "type": "number"
-                },
-                "updatedBy": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "tagId",
-                "tagSlug",
-                "assetType",
-                "assetId",
-                "source",
-                "createdAt",
-                "updatedAt"
-              ],
-              "type": "object"
+                "type": "array"
+              }
             },
-            "type": "array"
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "pattern": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "pattern"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "accountId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "agent": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "agent"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "priority": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "priority"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "policy": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "policy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "session": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "channel": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "channel"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "dmScope": {
+                    "enum": [
+                      "main",
+                      "per-peer",
+                      "per-channel-peer",
+                      "per-account-channel-peer"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "dmScope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "tags": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "type": "string"
+                        },
+                        "assetType": {
+                          "enum": [
+                            "agent",
+                            "automation",
+                            "app",
+                            "session",
+                            "task",
+                            "project",
+                            "profile",
+                            "contact",
+                            "chat",
+                            "route",
+                            "instance",
+                            "artifact",
+                            "insight",
+                            "workflow_spec",
+                            "workflow_run",
+                            "workflow_node",
+                            "cron_job",
+                            "trigger",
+                            "hook",
+                            "task_automation",
+                            "observer_rule",
+                            "observer_binding",
+                            "observer_profile",
+                            "command",
+                            "skill",
+                            "skill_gate_rule",
+                            "context",
+                            "call_profile",
+                            "call_request",
+                            "call_voice_agent",
+                            "call_tool",
+                            "outbound_queue",
+                            "outbound_entry",
+                            "spec",
+                            "devin_session"
+                          ],
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "tagId": {
+                          "type": "string"
+                        },
+                        "tagSlug": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        },
+                        "updatedBy": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "tagId",
+                        "tagSlug",
+                        "assetType",
+                        "assetId",
+                        "source",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "RoutesTagBinding",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "tags"
+                ],
+                "type": "object"
+              }
+            ]
           }
-        },
-        "type": "object"
+        ],
+        "title": "RoutesListItem"
       },
       "type": "array"
     },
@@ -54521,142 +54758,372 @@ export const RoutesListReturnSchema = {
         "returned",
         "total"
       ],
+      "title": "RoutesListPagination",
       "type": "object"
     },
     "routes": {
       "items": {
-        "additionalProperties": false,
-        "properties": {
-          "accountId": {
-            "type": "string"
-          },
-          "agent": {
-            "type": "string"
-          },
-          "channel": {
-            "type": "string"
-          },
-          "dmScope": {
-            "enum": [
-              "main",
-              "per-peer",
-              "per-channel-peer",
-              "per-account-channel-peer"
-            ],
-            "type": "string"
-          },
-          "id": {
-            "type": "number"
-          },
-          "pattern": {
-            "type": "string"
-          },
-          "policy": {
-            "type": "string"
-          },
-          "priority": {
-            "type": "number"
-          },
-          "session": {
-            "type": "string"
-          },
-          "tags": {
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "assetId": {
-                  "type": "string"
-                },
-                "assetType": {
-                  "enum": [
-                    "agent",
-                    "automation",
-                    "app",
-                    "session",
-                    "task",
-                    "project",
-                    "profile",
-                    "contact",
-                    "chat",
-                    "route",
-                    "instance",
-                    "artifact",
-                    "insight",
-                    "workflow_spec",
-                    "workflow_run",
-                    "workflow_node",
-                    "cron_job",
-                    "trigger",
-                    "hook",
-                    "task_automation",
-                    "observer_rule",
-                    "observer_binding",
-                    "observer_profile",
-                    "command",
-                    "skill",
-                    "skill_gate_rule",
-                    "context",
-                    "call_profile",
-                    "call_request",
-                    "call_voice_agent",
-                    "call_tool",
-                    "outbound_queue",
-                    "outbound_entry",
-                    "spec",
-                    "devin_session"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "accountId": {
+                "type": "string"
+              },
+              "agent": {
+                "type": "string"
+              },
+              "channel": {
+                "type": "string"
+              },
+              "dmScope": {
+                "enum": [
+                  "main",
+                  "per-peer",
+                  "per-channel-peer",
+                  "per-account-channel-peer"
+                ],
+                "type": "string"
+              },
+              "id": {
+                "type": "number"
+              },
+              "pattern": {
+                "type": "string"
+              },
+              "policy": {
+                "type": "string"
+              },
+              "priority": {
+                "type": "number"
+              },
+              "session": {
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assetId": {
+                      "type": "string"
+                    },
+                    "assetType": {
+                      "enum": [
+                        "agent",
+                        "automation",
+                        "app",
+                        "session",
+                        "task",
+                        "project",
+                        "profile",
+                        "contact",
+                        "chat",
+                        "route",
+                        "instance",
+                        "artifact",
+                        "insight",
+                        "workflow_spec",
+                        "workflow_run",
+                        "workflow_node",
+                        "cron_job",
+                        "trigger",
+                        "hook",
+                        "task_automation",
+                        "observer_rule",
+                        "observer_binding",
+                        "observer_profile",
+                        "command",
+                        "skill",
+                        "skill_gate_rule",
+                        "context",
+                        "call_profile",
+                        "call_request",
+                        "call_voice_agent",
+                        "call_tool",
+                        "outbound_queue",
+                        "outbound_entry",
+                        "spec",
+                        "devin_session"
+                      ],
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "tagId": {
+                      "type": "string"
+                    },
+                    "tagSlug": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    },
+                    "updatedBy": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "tagId",
+                    "tagSlug",
+                    "assetType",
+                    "assetId",
+                    "source",
+                    "createdAt",
+                    "updatedAt"
                   ],
-                  "type": "string"
-                },
-                "createdAt": {
-                  "type": "number"
-                },
-                "createdBy": {
-                  "type": "string"
-                },
-                "id": {
-                  "type": "string"
-                },
-                "metadata": {
-                  "additionalProperties": {
-                    "$ref": "#/$defs/__schema0"
-                  },
-                  "propertyNames": {
-                    "type": "string"
-                  },
+                  "title": "RoutesTagBinding",
                   "type": "object"
                 },
-                "source": {
-                  "type": "string"
-                },
-                "tagId": {
-                  "type": "string"
-                },
-                "tagSlug": {
-                  "type": "string"
-                },
-                "updatedAt": {
-                  "type": "number"
-                },
-                "updatedBy": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "id",
-                "tagId",
-                "tagSlug",
-                "assetType",
-                "assetId",
-                "source",
-                "createdAt",
-                "updatedAt"
-              ],
-              "type": "object"
+                "type": "array"
+              }
             },
-            "type": "array"
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "pattern": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "pattern"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "accountId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "accountId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "agent": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "agent"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "priority": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "priority"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "policy": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "policy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "session": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "session"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "channel": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "channel"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "dmScope": {
+                    "enum": [
+                      "main",
+                      "per-peer",
+                      "per-channel-peer",
+                      "per-account-channel-peer"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "dmScope"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "tags": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "type": "string"
+                        },
+                        "assetType": {
+                          "enum": [
+                            "agent",
+                            "automation",
+                            "app",
+                            "session",
+                            "task",
+                            "project",
+                            "profile",
+                            "contact",
+                            "chat",
+                            "route",
+                            "instance",
+                            "artifact",
+                            "insight",
+                            "workflow_spec",
+                            "workflow_run",
+                            "workflow_node",
+                            "cron_job",
+                            "trigger",
+                            "hook",
+                            "task_automation",
+                            "observer_rule",
+                            "observer_binding",
+                            "observer_profile",
+                            "command",
+                            "skill",
+                            "skill_gate_rule",
+                            "context",
+                            "call_profile",
+                            "call_request",
+                            "call_voice_agent",
+                            "call_tool",
+                            "outbound_queue",
+                            "outbound_entry",
+                            "spec",
+                            "devin_session"
+                          ],
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "tagId": {
+                          "type": "string"
+                        },
+                        "tagSlug": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        },
+                        "updatedBy": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "tagId",
+                        "tagSlug",
+                        "assetType",
+                        "assetId",
+                        "source",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "RoutesTagBinding",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "tags"
+                ],
+                "type": "object"
+              }
+            ]
           }
-        },
-        "type": "object"
+        ],
+        "title": "RoutesListItem"
       },
       "type": "array"
     },
@@ -54869,6 +55336,7 @@ export const RoutesShowReturnSchema = {
               "createdAt",
               "updatedAt"
             ],
+            "title": "RoutesTagBinding",
             "type": "object"
           },
           "type": "array"
@@ -54882,6 +55350,7 @@ export const RoutesShowReturnSchema = {
         "priority",
         "tags"
       ],
+      "title": "RoutesRouteWithTags",
       "type": "object"
     }
   },

@@ -4,6 +4,10 @@
 
 - The top-level `RoutesCommands` methods MUST remain read-only and MUST NOT
   invoke any write primitive or emit config-change events.
+- `routes list`, `routes show`, and `routes explain` MUST declare
+  `audit:"none"`. Real CLI processes MUST run without `RAVI_NO_AUDIT` or
+  `RAVI_SUPPRESS_AUDIT_EVENTS` and prove that a listening NATS trap receives no
+  connection or bytes.
 - An absent database MUST remain absent after the real `routes list` process.
   Current and minimal legacy databases MUST be opened read-only without schema
   migration; logical rows and durable DB/WAL bytes MUST remain unchanged.
@@ -33,12 +37,23 @@
   distinction.
 - Unknown instance and literal route lookups MUST preserve typed not-found
   behavior and stable suggestions.
+- `ROUTE_NOT_FOUND` suggestions MUST come from the captured
+  `ReadOnlyRoutesSnapshot`. A real missing-route lookup on a minimal legacy
+  database MUST preserve DB and WAL bytes; only SQLite `-shm` coordination is
+  exempt.
+- If channel names/providers/routes contain case-colliding variants, a
+  non-exact spelling MUST produce exit 2 `ROUTE_CHANNEL_AMBIGUOUS` before the
+  resolver runs. An exact spelling MUST reach the resolver unchanged.
 - Two unchanged executions of list, show, and explain MUST serialize equally
   and leave route, instance, contact, pending, session, settings, channel, and
   event state unchanged.
 - `items` and `routes` MUST remain equivalent compatibility aliases.
 - Public return schemas MUST reject undeclared detail fields and empty compact
   route items while preserving typed projections in generated clients.
+- TypeScript and JSON Schema/OpenAPI MUST encode compact route items as a union
+  requiring at least one accepted field. Swift MUST emit concrete named models
+  for route items, details, origin, resolution, live effect, runtime target and
+  tags, including concrete optional types through nullable unions.
 
 ## Required native checks
 

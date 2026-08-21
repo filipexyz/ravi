@@ -32,7 +32,9 @@ ravi routes explain <instance> <concrete-target> --json
   simulada, mas a memória atual do daemon não foi consultada.
 - Se houver `ROUTE_PATTERN_AMBIGUOUS`, escolha explicitamente um dos patterns
   gravados em `suggestions`; não selecione por ordem ou semelhança.
-- Se `--channel` for inválido, corrija usando `acceptedChannels`.
+- Se `--channel` for inválido, corrija usando `acceptedChannels`. Se houver
+  `ROUTE_CHANNEL_AMBIGUOUS`, repita com uma das grafias exatas em `suggestions`;
+  não escolha por ordem nem normalize silenciosamente.
 
 ## Projeção e paginação
 

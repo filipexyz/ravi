@@ -13,7 +13,12 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
-import { commandsListReturnSchema } from "../../cli/commands/operational-return-schemas.js";
+import {
+  commandsListReturnSchema,
+  routeExplainReturnSchema,
+  routeShowReturnSchema,
+  routesListReturnSchema,
+} from "../../cli/commands/operational-return-schemas.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { compareSdkSource, computeRegistryHash, emitAll } from "./index.js";
 
@@ -77,6 +82,27 @@ class CommandsContractCommands {
   @Command({ name: "list", description: "List Ravi commands" })
   @Returns(commandsListReturnSchema)
   list() {
+    return {};
+  }
+}
+
+@Group({ name: "routes", description: "Read-only Ravi routes", scope: "admin" })
+class RoutesContractCommands {
+  @Command({ name: "list", description: "List routes" })
+  @Returns(routesListReturnSchema)
+  list() {
+    return {};
+  }
+
+  @Command({ name: "show", description: "Show one route" })
+  @Returns(routeShowReturnSchema)
+  show() {
+    return {};
+  }
+
+  @Command({ name: "explain", description: "Explain route resolution" })
+  @Returns(routeExplainReturnSchema)
+  explain() {
     return {};
   }
 }
@@ -171,6 +197,28 @@ describe("client-codegen :: emitAll", () => {
         /"required": \[\s+"(?:id|token|title|description|argumentHint|arguments|disabled|scope|path|relativePath|shadowedBy|shadows|issues)"\s+\]/g,
       )?.length,
     ).toBeGreaterThanOrEqual(13);
+  });
+
+  it("keeps routes projections non-empty and route returns concrete in generated TypeScript", () => {
+    const output = emitAll(buildRegistry([RoutesContractCommands]), { version: FIXED_VERSION });
+    const listType = output.types.slice(
+      output.types.indexOf("export type RoutesListReturn"),
+      output.types.indexOf("export type RoutesShowReturn"),
+    );
+
+    expect(listType).toContain("items: Array<({");
+    expect(listType).toContain("}) & (({");
+    expect(listType).toContain("pattern?: string;");
+    expect(listType).toContain("pattern: string;");
+    expect(output.types).toMatch(/export type RoutesShowReturn = \{[\s\S]*route: \{/);
+    expect(output.types).toMatch(/export type RoutesExplainReturn = \{[\s\S]*origin: \{/);
+    expect(output.types).toMatch(/export type RoutesExplainReturn = \{[\s\S]*liveEffect: \(\{/);
+    expect(output.schemas).toContain('"title": "RoutesListItem"');
+    expect(
+      output.schemas.match(
+        /"required": \[\s+"(?:id|pattern|accountId|agent|priority|policy|session|channel|dmScope|tags)"\s+\]/g,
+      )?.length,
+    ).toBeGreaterThanOrEqual(10);
   });
 
   it("falls back to unknown for return when no @Returns", () => {

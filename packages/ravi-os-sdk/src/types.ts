@@ -10784,7 +10784,7 @@ export type RoutesListReturn = {
     tagSlug: string | null;
   };
   instance: string | null;
-  items: Array<{
+  items: Array<({
     accountId?: string;
     agent?: string;
     channel?: string;
@@ -10807,7 +10807,39 @@ export type RoutesListReturn = {
       updatedAt: number;
       updatedBy?: string;
     }>;
-  }>;
+  }) & (({
+    id: number;
+  }) | ({
+    pattern: string;
+  }) | ({
+    accountId: string;
+  }) | ({
+    agent: string;
+  }) | ({
+    priority: number;
+  }) | ({
+    policy: string;
+  }) | ({
+    session: string;
+  }) | ({
+    channel: string;
+  }) | ({
+    dmScope: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
+  }) | ({
+    tags: Array<{
+      assetId: string;
+      assetType: "agent" | "automation" | "app" | "session" | "task" | "project" | "profile" | "contact" | "chat" | "route" | "instance" | "artifact" | "insight" | "workflow_spec" | "workflow_run" | "workflow_node" | "cron_job" | "trigger" | "hook" | "task_automation" | "observer_rule" | "observer_binding" | "observer_profile" | "command" | "skill" | "skill_gate_rule" | "context" | "call_profile" | "call_request" | "call_voice_agent" | "call_tool" | "outbound_queue" | "outbound_entry" | "spec" | "devin_session";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+  }))>;
   pagination: {
     hasMore?: boolean;
     limit: number;
@@ -10817,7 +10849,7 @@ export type RoutesListReturn = {
     returned: number;
     total: number;
   };
-  routes: Array<{
+  routes: Array<({
     accountId?: string;
     agent?: string;
     channel?: string;
@@ -10840,7 +10872,39 @@ export type RoutesListReturn = {
       updatedAt: number;
       updatedBy?: string;
     }>;
-  }>;
+  }) & (({
+    id: number;
+  }) | ({
+    pattern: string;
+  }) | ({
+    accountId: string;
+  }) | ({
+    agent: string;
+  }) | ({
+    priority: number;
+  }) | ({
+    policy: string;
+  }) | ({
+    session: string;
+  }) | ({
+    channel: string;
+  }) | ({
+    dmScope: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
+  }) | ({
+    tags: Array<{
+      assetId: string;
+      assetType: "agent" | "automation" | "app" | "session" | "task" | "project" | "profile" | "contact" | "chat" | "route" | "instance" | "artifact" | "insight" | "workflow_spec" | "workflow_run" | "workflow_node" | "cron_job" | "trigger" | "hook" | "task_automation" | "observer_rule" | "observer_binding" | "observer_profile" | "command" | "skill" | "skill_gate_rule" | "context" | "call_profile" | "call_request" | "call_voice_agent" | "call_tool" | "outbound_queue" | "outbound_entry" | "spec" | "devin_session";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+  }))>;
   total: number;
 };
 
