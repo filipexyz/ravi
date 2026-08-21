@@ -1835,3 +1835,60 @@ passaram. O encadeamento amplo `test:agent-contract` continuou nao verde apenas
 nas duas falhas Windows preexistentes do artifact store: separador POSIX no
 matcher e `symlinkSync` negado. Elas foram registradas como comparacao, nao como
 sucesso. Nao houve pacote, push, PR, merge ou VPS.
+
+### NO-GO de Projects `75cfa478` e correcao de presenca Swift
+
+A auditoria independente invalidou formalmente
+`75cfa478f8cdb546f72386c5a079b3977db01882`. O candidato corrigia o contrato
+JSON de projecao, mas o codec Swift gerado ainda transformava uma chave
+selecionada com `null` em chave ausente no round-trip, permitindo que o item
+voltasse a `{}`. A prova de leitura com escritor WAL ativo tambem existia apenas
+como experimento e nao como teste nativo versionado.
+
+A fonte global do gerador Swift foi corrigida a partir da regra comprovada em
+Routes `ca928d76bb04e31f18711af112781aec629aaedd` e ampliada para unioes de
+projecao: required+nullable preserva a chave, opcionais ausentes continuam
+omitidos e campo selecionado nao anulavel rejeita `null`. Testes de geracao
+protegem todos os hosts; o round-trip compilado roda somente onde `swiftc`
+estiver disponivel e continua gate obrigatorio de CI.
+
+Projects agora mantem um escritor SQLite WAL aberto, executa a leitura Ravi em
+processo separado e exige identidade byte a byte do banco principal e do WAL.
+O teste focado passou localmente junto com os testes do gerador. Esta e uma
+captura de implementacao, nao uma auditoria independente final. Nenhum pacote,
+push, PR, merge ou acesso a VPS foi realizado.
+
+### Projects: recaptura apos a correcao Swift e a prova WAL
+
+A matriz serial de Projects passou 65 testes com 262 assercoes, incluindo o
+processo separado com escritor WAL aberto. Commands preservou seus 11 casos de
+processo e 26 contratos locais; uma execucao compartilhada contaminou o estado
+de `sdk-returns`, mas a repeticao isolada passou 1/1 com 10 assercoes.
+
+O SDK passou 77/77 com 314 assercoes. OpenAPI e Swift codegen passaram 48/48
+com 168 assercoes, e os checks de drift do TypeScript, dos dois snapshots
+OpenAPI e do Swift terminaram com codigo zero. Typecheck e build passaram. O
+quality gate nativo passou 40/40 com 90 assercoes na repeticao isolada, e o
+runner passou com a lista exata de arquivos, indexando 274 specs.
+
+Os TypeScript alterados passaram Biome e `git diff --check` passou. Sete dos
+nove Markdown alterados passaram o lint; os dois contratos Swift mantiveram a
+falha MD025 ja presente em seus titulos originais, tambem observada no contrato
+Rust equivalente. Os scripts globais de Biome e Markdown continuam nao verdes
+por problemas de fim de linha e documentacao fora deste delta; nenhuma
+correcao em massa foi feita. Este host Windows nao possui
+`swiftc`, portanto a compilacao e o
+round-trip Swift executavel permanecem gates de CI, sem alegacao de execucao
+local. As tentativas de contato com NATS local falharam durante geracao e drift,
+mas esses comandos terminaram com codigo zero e confirmaram os artefatos. Nao
+houve auditoria final do proprio codigo, pacote, push, PR, merge ou VPS.
+
+O encadeamento amplo de `agent-contract` nao ficou integralmente verde neste
+host. O dispatcher passou isoladamente 41/41 depois de dois timeouts na
+execucao encadeada. O teste de carregamento dinamico de ferramenta continuou
+expirando, e o artifact store manteve duas falhas Windows: comparacao com
+separador POSIX e criacao de symlink negada. As mesmas tres falhas foram
+reproduzidas na base Commands exata
+`e91cfec9c85c84f4051910996e26634ad64459eb`, cuja arvore permaneceu limpa;
+portanto sao limitacoes comparadas da base/host, nao gates declarados verdes e
+nao evidenciam regressao introduzida pelo delta de Projects.

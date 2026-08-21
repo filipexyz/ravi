@@ -69,3 +69,14 @@ Inspect generated Swift for:
 - binary methods call `callBinary`;
 - generated structs are `public`, `Codable`, and `Sendable`;
 - no generated file imports SwiftUI or Combine.
+
+## Required nullable codec checks
+
+- Generation tests MUST distinguish globally required nullable properties from
+  truly optional nullable and non-null properties.
+- A compiler-backed test MUST reject a missing required-nullable key, preserve
+  explicit JSON `null` on re-encoding, and omit absent optional keys.
+- Compact-union generation MUST retain selected nullable key presence, reject
+  `{}`, and strictly reject JSON `null` for a selected non-null field.
+- On hosts without `swiftc`, emitted-source assertions MUST still run and the
+  missing local compilation MUST remain an explicit CI limitation.

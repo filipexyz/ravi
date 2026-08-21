@@ -180,3 +180,22 @@ field with JSON `null`; it MUST NOT serialize as `{}` or be removed from the
 page. In the compact schema, that selected field is required and nullable.
 Required source fields remain non-null, and full entity and mutation contracts
 remain unchanged.
+
+## Swift key-presence correction
+
+Generated Swift MUST preserve the distinction between an absent key and a key
+whose JSON value is `null`. A globally required nullable key MUST reject
+absence, accept `null`, and re-encode that value as an explicit `null` key. A
+nullable compact-projection key required by the selected alternative MUST also
+re-encode present `null` as `null`, while a truly optional absent key MUST stay
+absent and MUST NOT be emitted merely because its Swift value is `nil`.
+
+A compact model MUST reject `{}`. When a non-null source field is the selected
+projection key, a present JSON `null` MUST be rejected rather than decoded as
+an absent optional value. These rules are generator-level invariants shared by
+all SDK consumers, not manual exceptions in generated Projects artifacts.
+
+The read-only facade MUST also preserve the main SQLite database and active WAL
+byte-for-byte while another connection remains open as a writer. This claim
+MUST be exercised by a versioned native test that performs the Ravi read in a
+separate process.

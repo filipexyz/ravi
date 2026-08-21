@@ -43,3 +43,12 @@ the projector, real CLI processes, TypeScript generation, OpenAPI, and Swift.
 - Generated-contract tests verify both required membership and nullability.
 - A candidate invalidation is recorded append-only; an earlier acceptance claim
   is never silently rewritten.
+
+## Revision on 2026-08-21
+
+The resolution claim above was incomplete for Swift. Independent review of
+candidate `75cfa478f8cdb546f72386c5a079b3977db01882` showed that the generated
+codec accepted the intended required-nullable wire value but erased its key on
+re-encoding. The review also found that the successful active-WAL experiment
+had not become a permanent native Projects test. Postmortem 0005 records these
+gaps and their correction; this earlier account remains unchanged as history.

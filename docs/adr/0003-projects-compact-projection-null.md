@@ -45,3 +45,13 @@ Compact items always demonstrate the requested projection, and generated
 clients can distinguish a known absent value from a field that was not
 selected. Consumers must accept `null` for originally optional fields. Full
 entity schemas and mutation payloads are unchanged.
+
+## 2026-08-21 supersession note
+
+The wire-contract decision remains valid, but the original Swift consequence
+was incomplete in candidate
+`75cfa478f8cdb546f72386c5a079b3977db01882`: its generated decoder collapsed a
+selected key containing `null` and an absent key into the same Swift value, and
+its encoder then omitted the key. ADR 0004 supersedes the Swift codec portion
+of this decision. The rejected candidate remains in history and is not an
+acceptable promotion source.

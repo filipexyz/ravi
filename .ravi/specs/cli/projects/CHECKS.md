@@ -69,3 +69,20 @@
 - Runtime Zod, OpenAPI, TypeScript, and Swift contracts MUST describe a selected
   originally optional field as required in that compact variant and nullable.
   Originally required fields MUST remain non-null.
+
+## Swift key-presence and active-WAL checks
+
+- Generate a required-nullable top-level Swift return model. Missing required
+  keys MUST fail, explicit `null` MUST decode and re-encode as `null`, required
+  non-null values MUST remain strict, and truly optional absent keys MUST be
+  omitted.
+- Generate a compact projection Swift model. `{}` MUST fail; a selected
+  nullable key with `null` MUST survive a decode/encode round-trip as an
+  explicit `null`; and a selected non-null key containing `null` MUST fail.
+- Run the compiler-backed Swift round-trip wherever `swiftc` is available. A
+  host without `swiftc` MAY run source-generation assertions, but MUST leave
+  compilation as an explicit CI gate and MUST NOT report local compilation as
+  passing.
+- Run `bun test src/cli/commands/projects-read-process.test.ts` with a WAL
+  writer connection kept open. The Ravi read MUST execute in a separate process
+  and both `ravi.db` and `ravi.db-wal` MUST be byte-identical afterward.
