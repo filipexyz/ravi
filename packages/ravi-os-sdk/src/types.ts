@@ -10714,12 +10714,59 @@ export type RoutesExplainInput = {
 /** Return shape for `routes.explain`. */
 export type RoutesExplainReturn = {
   channel: string | null;
-  configuredRoute: (Record<string, unknown>) | null;
+  configuredRoute: ({
+    accountId: string;
+    agent: string;
+    channel?: string;
+    dmScope?: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
+    id: number;
+    pattern: string;
+    policy?: string;
+    priority: number;
+    session?: string;
+  }) | null;
   instance: string;
-  liveEffect: (Record<string, unknown>) | null;
+  liveEffect: ({
+    canonicalPattern: string | null;
+    reason: string;
+    status: "verified" | "different_winner" | "matched" | "unresolved" | "skipped_broad_pattern";
+    targetKind: "group" | "phone" | "lid" | "thread" | "literal" | "glob";
+    verified: boolean;
+    winningAgent: string | null;
+    winningPattern: string | null;
+  }) | null;
+  origin: {
+    daemonObserved: false;
+    freshness: "persisted-at-read-time";
+    kind: "config_simulation";
+    limitation: string;
+    source: "router-config-db";
+  };
   pattern: string | null;
-  target: Record<string, unknown>;
-  [k: string]: unknown;
+  resolution: ({
+    canonicalPattern: string | null;
+    matchedBy: ("exact" | "equivalent") | null;
+    targetKind: "group" | "phone" | "lid" | "thread" | "literal" | "glob";
+  }) | null;
+  target: {
+    cliBundlePath: string | null;
+    cliExecPath: string | null;
+    daemon: {
+      cwd: string | null;
+      execPath: string | null;
+      matchesCli: boolean | null;
+      online: boolean;
+    };
+    dbPath: string;
+    instance: ({
+      affectsLiveMain: boolean;
+      channel: string | null;
+      enabled: boolean;
+      exists: boolean;
+      instanceId: string | null;
+      name: string;
+    }) | null;
+  };
 };
 
 /** Input shape for `routes.list`. */
@@ -10733,22 +10780,68 @@ export type RoutesListInput = {
 
 /** Return shape for `routes.list`. */
 export type RoutesListReturn = {
-  filter: Record<string, unknown>;
+  filter: {
+    tagSlug: string | null;
+  };
   instance: string | null;
-  items: Array<Record<string, unknown>>;
+  items: Array<{
+    accountId?: string;
+    agent?: string;
+    channel?: string;
+    dmScope?: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
+    id?: number;
+    pattern?: string;
+    policy?: string;
+    priority?: number;
+    session?: string;
+    tags?: Array<{
+      assetId: string;
+      assetType: "agent" | "automation" | "app" | "session" | "task" | "project" | "profile" | "contact" | "chat" | "route" | "instance" | "artifact" | "insight" | "workflow_spec" | "workflow_run" | "workflow_node" | "cron_job" | "trigger" | "hook" | "task_automation" | "observer_rule" | "observer_binding" | "observer_profile" | "command" | "skill" | "skill_gate_rule" | "context" | "call_profile" | "call_request" | "call_voice_agent" | "call_tool" | "outbound_queue" | "outbound_entry" | "spec" | "devin_session";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+  }>;
   pagination: {
-    hasMore: boolean;
+    hasMore?: boolean;
     limit: number;
-    nextCommand: string | null;
-    nextOffset: number | null;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
     offset: number;
     returned: number;
     total: number;
-    [k: string]: unknown;
   };
-  routes: Array<Record<string, unknown>>;
+  routes: Array<{
+    accountId?: string;
+    agent?: string;
+    channel?: string;
+    dmScope?: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
+    id?: number;
+    pattern?: string;
+    policy?: string;
+    priority?: number;
+    session?: string;
+    tags?: Array<{
+      assetId: string;
+      assetType: "agent" | "automation" | "app" | "session" | "task" | "project" | "profile" | "contact" | "chat" | "route" | "instance" | "artifact" | "insight" | "workflow_spec" | "workflow_run" | "workflow_node" | "cron_job" | "trigger" | "hook" | "task_automation" | "observer_rule" | "observer_binding" | "observer_profile" | "command" | "skill" | "skill_gate_rule" | "context" | "call_profile" | "call_request" | "call_voice_agent" | "call_tool" | "outbound_queue" | "outbound_entry" | "spec" | "devin_session";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+  }>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `routes.show`. */
@@ -10761,8 +10854,30 @@ export type RoutesShowInput = {
 export type RoutesShowReturn = {
   instance: string;
   pattern: string;
-  route: Record<string, unknown>;
-  [k: string]: unknown;
+  route: {
+    accountId: string;
+    agent: string;
+    channel?: string;
+    dmScope?: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
+    id: number;
+    pattern: string;
+    policy?: string;
+    priority: number;
+    session?: string;
+    tags: Array<{
+      assetId: string;
+      assetType: "agent" | "automation" | "app" | "session" | "task" | "project" | "profile" | "contact" | "chat" | "route" | "instance" | "artifact" | "insight" | "workflow_spec" | "workflow_run" | "workflow_node" | "cron_job" | "trigger" | "hook" | "task_automation" | "observer_rule" | "observer_binding" | "observer_profile" | "command" | "skill" | "skill_gate_rule" | "context" | "call_profile" | "call_request" | "call_voice_agent" | "call_tool" | "outbound_queue" | "outbound_entry" | "spec" | "devin_session";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+  };
 };
 
 /** Input shape for `rules.import`. */

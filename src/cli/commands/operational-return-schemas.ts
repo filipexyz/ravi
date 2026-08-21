@@ -2738,32 +2738,119 @@ export const toolInvokeReturnSchema = z
   })
   .strict();
 
-export const routesListReturnSchema = pagedItemsReturnSchema
-  .extend({
-    instance: z.string().nullable(),
-    filter: looseObjectSchema,
-    routes: z.array(looseObjectSchema),
+const routeRecordReturnSchema = z
+  .object({
+    id: z.number(),
+    pattern: z.string(),
+    accountId: z.string(),
+    agent: z.string(),
+    priority: z.number(),
+    policy: z.string().optional(),
+    session: z.string().optional(),
+    channel: z.string().optional(),
+    dmScope: z.enum(["main", "per-peer", "per-channel-peer", "per-account-channel-peer"]).optional(),
   })
-  .passthrough();
+  .strict();
+
+const routeWithTagsReturnSchema = routeRecordReturnSchema
+  .extend({
+    tags: z.array(agentTagBindingReturnSchema),
+  })
+  .strict();
+
+const routeProjectionReturnSchema = routeWithTagsReturnSchema
+  .partial()
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, "A projected route must contain at least one accepted field");
+
+export const routesListReturnSchema = z
+  .object({
+    instance: z.string().nullable(),
+    filter: z
+      .object({
+        tagSlug: z.string().nullable(),
+      })
+      .strict(),
+    total: z.number(),
+    pagination: strictCliOffsetPaginationSchema.strict(),
+    items: z.array(routeProjectionReturnSchema),
+    routes: z.array(routeProjectionReturnSchema),
+  })
+  .strict();
 
 export const routeShowReturnSchema = z
   .object({
     instance: z.string(),
     pattern: z.string(),
-    route: looseObjectSchema,
+    route: routeWithTagsReturnSchema,
   })
-  .passthrough();
+  .strict();
+
+const cliRuntimeTargetReturnSchema = z
+  .object({
+    cliExecPath: z.string().nullable(),
+    cliBundlePath: z.string().nullable(),
+    dbPath: z.string(),
+    daemon: z
+      .object({
+        online: z.boolean(),
+        execPath: z.string().nullable(),
+        cwd: z.string().nullable(),
+        matchesCli: z.boolean().nullable(),
+      })
+      .strict(),
+    instance: z
+      .object({
+        name: z.string(),
+        exists: z.boolean(),
+        enabled: z.boolean(),
+        instanceId: z.string().nullable(),
+        channel: z.string().nullable(),
+        affectsLiveMain: z.boolean(),
+      })
+      .strict()
+      .nullable(),
+  })
+  .strict();
 
 export const routeExplainReturnSchema = z
   .object({
-    target: looseObjectSchema,
+    target: cliRuntimeTargetReturnSchema,
     instance: z.string(),
     pattern: z.string().nullable(),
     channel: z.string().nullable(),
-    configuredRoute: looseObjectOrNullSchema,
-    liveEffect: looseObjectOrNullSchema,
+    origin: z
+      .object({
+        kind: z.literal("config_simulation"),
+        source: z.literal("router-config-db"),
+        freshness: z.literal("persisted-at-read-time"),
+        daemonObserved: z.literal(false),
+        limitation: z.string(),
+      })
+      .strict(),
+    resolution: z
+      .object({
+        matchedBy: z.enum(["exact", "equivalent"]).nullable(),
+        canonicalPattern: z.string().nullable(),
+        targetKind: z.enum(["group", "phone", "lid", "thread", "literal", "glob"]),
+      })
+      .strict()
+      .nullable(),
+    configuredRoute: routeRecordReturnSchema.nullable(),
+    liveEffect: z
+      .object({
+        status: z.enum(["verified", "different_winner", "matched", "unresolved", "skipped_broad_pattern"]),
+        verified: z.boolean(),
+        reason: z.string(),
+        canonicalPattern: z.string().nullable(),
+        targetKind: z.enum(["group", "phone", "lid", "thread", "literal", "glob"]),
+        winningPattern: z.string().nullable(),
+        winningAgent: z.string().nullable(),
+      })
+      .strict()
+      .nullable(),
   })
-  .passthrough();
+  .strict();
 
 const sessionGoalObjectSchema = z
   .object({

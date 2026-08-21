@@ -53830,7 +53830,7 @@ export const RoutesExplainInputSchema = {
   "additionalProperties": false,
   "properties": {
     "channel": {
-      "description": "Optional channel hint for live route inspection",
+      "description": "Configured channel name or provider used as a simulation hint",
       "type": "string"
     },
     "name": {
@@ -53851,7 +53851,7 @@ export const RoutesExplainInputSchema = {
 
 /** JSON Schema for the return shape of `routes.explain`. */
 export const RoutesExplainReturnSchema = {
-  "additionalProperties": {},
+  "additionalProperties": false,
   "properties": {
     "channel": {
       "anyOf": [
@@ -53866,8 +53866,49 @@ export const RoutesExplainReturnSchema = {
     "configuredRoute": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": false,
+          "properties": {
+            "accountId": {
+              "type": "string"
+            },
+            "agent": {
+              "type": "string"
+            },
+            "channel": {
+              "type": "string"
+            },
+            "dmScope": {
+              "enum": [
+                "main",
+                "per-peer",
+                "per-channel-peer",
+                "per-account-channel-peer"
+              ],
+              "type": "string"
+            },
+            "id": {
+              "type": "number"
+            },
+            "pattern": {
+              "type": "string"
+            },
+            "policy": {
+              "type": "string"
+            },
+            "priority": {
+              "type": "number"
+            },
+            "session": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "pattern",
+            "accountId",
+            "agent",
+            "priority"
+          ],
           "type": "object"
         },
         {
@@ -53881,14 +53922,113 @@ export const RoutesExplainReturnSchema = {
     "liveEffect": {
       "anyOf": [
         {
-          "additionalProperties": {},
-          "properties": {},
+          "additionalProperties": false,
+          "properties": {
+            "canonicalPattern": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "reason": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "verified",
+                "different_winner",
+                "matched",
+                "unresolved",
+                "skipped_broad_pattern"
+              ],
+              "type": "string"
+            },
+            "targetKind": {
+              "enum": [
+                "group",
+                "phone",
+                "lid",
+                "thread",
+                "literal",
+                "glob"
+              ],
+              "type": "string"
+            },
+            "verified": {
+              "type": "boolean"
+            },
+            "winningAgent": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "winningPattern": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "status",
+            "verified",
+            "reason",
+            "canonicalPattern",
+            "targetKind",
+            "winningPattern",
+            "winningAgent"
+          ],
           "type": "object"
         },
         {
           "type": "null"
         }
       ]
+    },
+    "origin": {
+      "additionalProperties": false,
+      "properties": {
+        "daemonObserved": {
+          "const": false,
+          "type": "boolean"
+        },
+        "freshness": {
+          "const": "persisted-at-read-time",
+          "type": "string"
+        },
+        "kind": {
+          "const": "config_simulation",
+          "type": "string"
+        },
+        "limitation": {
+          "type": "string"
+        },
+        "source": {
+          "const": "router-config-db",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "source",
+        "freshness",
+        "daemonObserved",
+        "limitation"
+      ],
+      "type": "object"
     },
     "pattern": {
       "anyOf": [
@@ -53900,9 +54040,191 @@ export const RoutesExplainReturnSchema = {
         }
       ]
     },
+    "resolution": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "canonicalPattern": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "matchedBy": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "exact",
+                    "equivalent"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "targetKind": {
+              "enum": [
+                "group",
+                "phone",
+                "lid",
+                "thread",
+                "literal",
+                "glob"
+              ],
+              "type": "string"
+            }
+          },
+          "required": [
+            "matchedBy",
+            "canonicalPattern",
+            "targetKind"
+          ],
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "target": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "cliBundlePath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cliExecPath": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "daemon": {
+          "additionalProperties": false,
+          "properties": {
+            "cwd": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "execPath": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "matchesCli": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "online": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "online",
+            "execPath",
+            "cwd",
+            "matchesCli"
+          ],
+          "type": "object"
+        },
+        "dbPath": {
+          "type": "string"
+        },
+        "instance": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "affectsLiveMain": {
+                  "type": "boolean"
+                },
+                "channel": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "exists": {
+                  "type": "boolean"
+                },
+                "instanceId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "name": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name",
+                "exists",
+                "enabled",
+                "instanceId",
+                "channel",
+                "affectsLiveMain"
+              ],
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "cliExecPath",
+        "cliBundlePath",
+        "dbPath",
+        "daemon",
+        "instance"
+      ],
       "type": "object"
     }
   },
@@ -53911,6 +54233,8 @@ export const RoutesExplainReturnSchema = {
     "instance",
     "pattern",
     "channel",
+    "origin",
+    "resolution",
     "configuredRoute",
     "liveEffect"
   ],
@@ -53947,11 +54271,62 @@ export const RoutesListInputSchema = {
 
 /** JSON Schema for the return shape of `routes.list`. */
 export const RoutesListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "filter": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "tagSlug": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "tagSlug"
+      ],
       "type": "object"
     },
     "instance": {
@@ -53966,14 +54341,143 @@ export const RoutesListReturnSchema = {
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "dmScope": {
+            "enum": [
+              "main",
+              "per-peer",
+              "per-channel-peer",
+              "per-account-channel-peer"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "number"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "policy": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "number"
+          },
+          "session": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "assetId": {
+                  "type": "string"
+                },
+                "assetType": {
+                  "enum": [
+                    "agent",
+                    "automation",
+                    "app",
+                    "session",
+                    "task",
+                    "project",
+                    "profile",
+                    "contact",
+                    "chat",
+                    "route",
+                    "instance",
+                    "artifact",
+                    "insight",
+                    "workflow_spec",
+                    "workflow_run",
+                    "workflow_node",
+                    "cron_job",
+                    "trigger",
+                    "hook",
+                    "task_automation",
+                    "observer_rule",
+                    "observer_binding",
+                    "observer_profile",
+                    "command",
+                    "skill",
+                    "skill_gate_rule",
+                    "context",
+                    "call_profile",
+                    "call_request",
+                    "call_voice_agent",
+                    "call_tool",
+                    "outbound_queue",
+                    "outbound_entry",
+                    "spec",
+                    "devin_session"
+                  ],
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "createdBy": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "tagId": {
+                  "type": "string"
+                },
+                "tagSlug": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                },
+                "updatedBy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "tagId",
+                "tagSlug",
+                "assetType",
+                "assetId",
+                "source",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "type": "array"
     },
     "pagination": {
-      "additionalProperties": {},
+      "additionalProperties": false,
       "properties": {
         "hasMore": {
           "type": "boolean"
@@ -54015,17 +54519,143 @@ export const RoutesListReturnSchema = {
         "limit",
         "offset",
         "returned",
-        "total",
-        "hasMore",
-        "nextOffset",
-        "nextCommand"
+        "total"
       ],
       "type": "object"
     },
     "routes": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "dmScope": {
+            "enum": [
+              "main",
+              "per-peer",
+              "per-channel-peer",
+              "per-account-channel-peer"
+            ],
+            "type": "string"
+          },
+          "id": {
+            "type": "number"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "policy": {
+            "type": "string"
+          },
+          "priority": {
+            "type": "number"
+          },
+          "session": {
+            "type": "string"
+          },
+          "tags": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "assetId": {
+                  "type": "string"
+                },
+                "assetType": {
+                  "enum": [
+                    "agent",
+                    "automation",
+                    "app",
+                    "session",
+                    "task",
+                    "project",
+                    "profile",
+                    "contact",
+                    "chat",
+                    "route",
+                    "instance",
+                    "artifact",
+                    "insight",
+                    "workflow_spec",
+                    "workflow_run",
+                    "workflow_node",
+                    "cron_job",
+                    "trigger",
+                    "hook",
+                    "task_automation",
+                    "observer_rule",
+                    "observer_binding",
+                    "observer_profile",
+                    "command",
+                    "skill",
+                    "skill_gate_rule",
+                    "context",
+                    "call_profile",
+                    "call_request",
+                    "call_voice_agent",
+                    "call_tool",
+                    "outbound_queue",
+                    "outbound_entry",
+                    "spec",
+                    "devin_session"
+                  ],
+                  "type": "string"
+                },
+                "createdAt": {
+                  "type": "number"
+                },
+                "createdBy": {
+                  "type": "string"
+                },
+                "id": {
+                  "type": "string"
+                },
+                "metadata": {
+                  "additionalProperties": {
+                    "$ref": "#/$defs/__schema0"
+                  },
+                  "propertyNames": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "source": {
+                  "type": "string"
+                },
+                "tagId": {
+                  "type": "string"
+                },
+                "tagSlug": {
+                  "type": "string"
+                },
+                "updatedAt": {
+                  "type": "number"
+                },
+                "updatedBy": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "id",
+                "tagId",
+                "tagSlug",
+                "assetType",
+                "assetId",
+                "source",
+                "createdAt",
+                "updatedAt"
+              ],
+              "type": "object"
+            },
+            "type": "array"
+          }
+        },
         "type": "object"
       },
       "type": "array"
@@ -54035,11 +54665,11 @@ export const RoutesListReturnSchema = {
     }
   },
   "required": [
+    "instance",
+    "filter",
     "total",
     "pagination",
     "items",
-    "instance",
-    "filter",
     "routes"
   ],
   "type": "object"
@@ -54067,7 +54697,44 @@ export const RoutesShowInputSchema = {
 
 /** JSON Schema for the return shape of `routes.show`. */
 export const RoutesShowReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "instance": {
       "type": "string"
@@ -54076,8 +54743,145 @@ export const RoutesShowReturnSchema = {
       "type": "string"
     },
     "route": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "accountId": {
+          "type": "string"
+        },
+        "agent": {
+          "type": "string"
+        },
+        "channel": {
+          "type": "string"
+        },
+        "dmScope": {
+          "enum": [
+            "main",
+            "per-peer",
+            "per-channel-peer",
+            "per-account-channel-peer"
+          ],
+          "type": "string"
+        },
+        "id": {
+          "type": "number"
+        },
+        "pattern": {
+          "type": "string"
+        },
+        "policy": {
+          "type": "string"
+        },
+        "priority": {
+          "type": "number"
+        },
+        "session": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "enum": [
+                  "agent",
+                  "automation",
+                  "app",
+                  "session",
+                  "task",
+                  "project",
+                  "profile",
+                  "contact",
+                  "chat",
+                  "route",
+                  "instance",
+                  "artifact",
+                  "insight",
+                  "workflow_spec",
+                  "workflow_run",
+                  "workflow_node",
+                  "cron_job",
+                  "trigger",
+                  "hook",
+                  "task_automation",
+                  "observer_rule",
+                  "observer_binding",
+                  "observer_profile",
+                  "command",
+                  "skill",
+                  "skill_gate_rule",
+                  "context",
+                  "call_profile",
+                  "call_request",
+                  "call_voice_agent",
+                  "call_tool",
+                  "outbound_queue",
+                  "outbound_entry",
+                  "spec",
+                  "devin_session"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tagId": {
+                "type": "string"
+              },
+              "tagSlug": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "updatedBy": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tagId",
+              "tagSlug",
+              "assetType",
+              "assetId",
+              "source",
+              "createdAt",
+              "updatedAt"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "id",
+        "pattern",
+        "accountId",
+        "agent",
+        "priority",
+        "tags"
+      ],
       "type": "object"
     }
   },

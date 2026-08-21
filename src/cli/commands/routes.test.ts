@@ -22,11 +22,13 @@ type RouteRecord = {
 };
 
 let routes: RouteRecord[] = [];
+let writeCalls = 0;
 let instanceNames = new Set<string>(["main"]);
 let deleteInstanceCalls: string[] = [];
 let contactStatuses = new Map<string, { status: string }>();
 let allowContactCalls: string[] = [];
 let liveWinner: { route?: { pattern?: string | null } | null; agentId: string } | null = null;
+let matchRouteInputs: Array<Record<string, unknown>> = [];
 let sessions: Array<Partial<SessionEntry> & Pick<SessionEntry, "sessionKey" | "agentId">> = [];
 let deletedSessionKeys: string[] = [];
 let pendingEntries: Array<{
@@ -70,7 +72,9 @@ mock.module("../../nats.js", () => ({
   publish: mock(async () => {}),
   subscribe: mock(() => (async function* () {})()),
   nats: {
-    emit: mock(async () => {}),
+    emit: mock(async () => {
+      writeCalls += 1;
+    }),
     subscribe: mock(() => (async function* () {})()),
     close: mock(async () => {}),
   },
@@ -119,21 +123,36 @@ mock.module("../../router/router-db.js", () => ({
       enabled: true,
       instanceId: `omni-${name}`,
     })),
-  dbUpsertInstance: () => {},
-  dbUpdateInstance: () => {},
+  dbUpsertInstance: () => {
+    writeCalls += 1;
+  },
+  dbUpdateInstance: () => {
+    writeCalls += 1;
+  },
   dbDeleteInstance: (name: string) => {
+    writeCalls += 1;
     deleteInstanceCalls.push(name);
     return instanceNames.delete(name);
   },
-  dbRestoreInstance: () => false,
+  dbRestoreInstance: () => {
+    writeCalls += 1;
+    return false;
+  },
   dbListDeletedInstances: () => [],
   dbGetAgent: (id: string) => ({ id }),
-  dbCreateAgent: () => {},
+  dbCreateAgent: () => {
+    writeCalls += 1;
+  },
   dbListAgents: () => [{ id: "main" }, { id: "sales" }],
+  dbListChannels: () => [
+    { name: "whatsapp", provider: "whatsapp", enabled: true, createdAt: 1, updatedAt: 1 },
+    { name: "rbbt-slack", provider: "slack", enabled: true, createdAt: 1, updatedAt: 1 },
+  ],
   dbGetRoute: (pattern: string, accountId: string) =>
     routes.find((route) => route.accountId === accountId && route.pattern === pattern) ?? null,
   dbListRoutes: (accountId?: string) => routes.filter((route) => (accountId ? route.accountId === accountId : true)),
   dbCreateRoute: (input: Record<string, unknown>) => {
+    writeCalls += 1;
     const route = {
       id: routes.length + 1,
       accountId: input.accountId as string,
@@ -149,17 +168,22 @@ mock.module("../../router/router-db.js", () => ({
     return route;
   },
   dbUpdateRoute: (pattern: string, updates: Record<string, unknown>, accountId: string) => {
+    writeCalls += 1;
     const route = routes.find((item) => item.accountId === accountId && item.pattern === pattern);
     if (!route) throw new Error("Route not found");
     Object.assign(route, updates);
     return route;
   },
   dbDeleteRoute: (pattern: string, accountId: string) => {
+    writeCalls += 1;
     const before = routes.length;
     routes = routes.filter((route) => !(route.accountId === accountId && route.pattern === pattern));
     return routes.length !== before;
   },
-  dbRestoreRoute: () => true,
+  dbRestoreRoute: () => {
+    writeCalls += 1;
+    return true;
+  },
   dbListDeletedRoutes: () => [],
   DmScopeSchema: {
     options: ["main", "per-peer"],
@@ -175,13 +199,58 @@ mock.module("../../router/router-db.js", () => ({
     safeParse: (value: string) => ({ success: ["open", "allowlist", "closed"].includes(value) }),
   },
   dbGetSetting: () => null,
-  dbSetSetting: () => {},
+  dbSetSetting: () => {
+    writeCalls += 1;
+  },
 }));
 
 mock.module("../../router/index.js", () => ({
   ...actualRouterIndexModule,
   loadRouterConfig: () => ({}),
-  matchRoute: () => liveWinner,
+  matchRoute: (_config: unknown, params: Record<string, unknown>) => {
+    matchRouteInputs.push(params);
+    return liveWinner;
+  },
+}));
+
+mock.module("../../router/routes-readonly.js", () => ({
+  readRoutesSnapshot: () => {
+    const instances = [...instanceNames].map((name) => ({
+      name,
+      channel: "whatsapp",
+      dmPolicy: "open",
+      groupPolicy: "open",
+      contactIntakeMode: "off",
+      enabled: true,
+      createdAt: 1,
+      updatedAt: 1,
+    }));
+    const channels = [
+      { name: "whatsapp", provider: "whatsapp", enabled: true, createdAt: 1, updatedAt: 1 },
+      { name: "rbbt-slack", provider: "slack", enabled: true, createdAt: 1, updatedAt: 1 },
+    ];
+    return {
+      dbPath: "/state/ravi.db",
+      databaseExists: true,
+      routes: routes.map((route) => ({ priority: 0, ...route })),
+      instances,
+      channels,
+      tags: [],
+      routerConfig: {
+        agents: {
+          main: { id: "main", cwd: "/tmp/main" },
+          sales: { id: "sales", cwd: "/tmp/sales" },
+        },
+        routes: routes.map(({ id: _id, ...route }) => route),
+        defaultAgent: "main",
+        defaultDmScope: "per-peer",
+        accountAgents: {},
+        instanceToAccount: {},
+        instances: Object.fromEntries(instances.map((instance) => [instance.name, instance])),
+        channels: Object.fromEntries(channels.map((channel) => [channel.name, channel])),
+      },
+    };
+  },
 }));
 
 mock.module("../../router/omni-ignore.js", () => ({
@@ -209,11 +278,13 @@ mock.module("../../contacts.js", () => ({
         chatType: entry.isGroup ? "group" : "dm",
       })),
   removeAccountPending: (accountId: string, phone: string) => {
+    writeCalls += 1;
     const before = pendingEntries.length;
     pendingEntries = pendingEntries.filter((entry) => !(entry.accountId === accountId && entry.phone === phone));
     return pendingEntries.length !== before;
   },
   allowContact: (contact: string) => {
+    writeCalls += 1;
     allowContactCalls.push(contact);
   },
 }));
@@ -222,6 +293,7 @@ mock.module("../../router/sessions.js", () => ({
   ...actualRouterSessionsModule,
   listSessions: () => sessions as SessionEntry[],
   deleteSession: (sessionKey: string) => {
+    writeCalls += 1;
     deletedSessionKeys.push(sessionKey);
     sessions = sessions.filter((session) => session.sessionKey !== sessionKey);
   },
@@ -229,6 +301,10 @@ mock.module("../../router/sessions.js", () => ({
 
 mock.module("../runtime-target.js", () => ({
   inspectCliRuntimeTarget: (name: string) => ({
+    name,
+    instance: { exists: instanceNames.has(name) },
+  }),
+  inspectCliRuntimeTargetSnapshot: (name: string) => ({
     name,
     instance: { exists: instanceNames.has(name) },
   }),
@@ -240,6 +316,7 @@ const { InstancesCommands, RoutesCommands, InstancesRoutesCommands, InstancesPen
   "./instances.js"
 );
 const { ContractError } = await import("../agent-contract.js");
+const { routeShowReturnSchema, routesListReturnSchema } = await import("./operational-return-schemas.js");
 
 function captureLogs(run: () => void): string {
   const lines: string[] = [];
@@ -261,13 +338,74 @@ function captureJson(run: () => void): Record<string, unknown> {
   return JSON.parse(captureLogs(run)) as Record<string, unknown>;
 }
 
+function captureThrown(run: () => unknown): unknown {
+  const originalLog = console.log;
+  console.log = () => {};
+  let thrown: unknown;
+  try {
+    run();
+  } catch (error) {
+    thrown = error;
+  } finally {
+    console.log = originalLog;
+  }
+  return thrown;
+}
+
+describe("routes public return schemas", () => {
+  const pagination = {
+    limit: 50,
+    offset: 0,
+    returned: 1,
+    total: 1,
+    hasMore: false,
+    nextOffset: null,
+    nextCommand: null,
+  };
+
+  it("accepts a typed compact projection and rejects an empty route item", () => {
+    const base = {
+      instance: null,
+      filter: { tagSlug: null },
+      total: 1,
+      pagination,
+    };
+
+    expect(
+      routesListReturnSchema.safeParse({ ...base, items: [{ pattern: "5511*" }], routes: [{ pattern: "5511*" }] })
+        .success,
+    ).toBe(true);
+    expect(routesListReturnSchema.safeParse({ ...base, items: [{}], routes: [{}] }).success).toBe(false);
+  });
+
+  it("rejects undeclared fields from route details", () => {
+    const route = {
+      id: 1,
+      pattern: "5511*",
+      accountId: "main",
+      agent: "sales",
+      priority: 7,
+      tags: [],
+    };
+
+    expect(routeShowReturnSchema.safeParse({ instance: "main", pattern: "5511*", route }).success).toBe(true);
+    expect(
+      routeShowReturnSchema.safeParse({ instance: "main", pattern: "5511*", route: { ...route, secret: true } })
+        .success,
+    ).toBe(false);
+  });
+});
+
 describe("RoutesCommands", () => {
   beforeEach(() => {
     routes = [];
+    writeCalls = 0;
     instanceNames = new Set(["main"]);
+    deleteInstanceCalls = [];
     contactStatuses = new Map();
     allowContactCalls = [];
     liveWinner = null;
+    matchRouteInputs = [];
     sessions = [];
     deletedSessionKeys = [];
     pendingEntries = [];
@@ -357,11 +495,11 @@ describe("RoutesCommands", () => {
     expect(output).toContain("DM Scope:  per-peer");
     expect(output).toContain("Session:   vip");
     expect(output).toContain("Channel:   whatsapp");
-    expect(output).toContain('Explain live routing: ravi routes explain main "5511999999999"');
+    expect(output).toContain('Explain config simulation: ravi routes explain main "5511999999999"');
     expect(output).toContain('Mutate config:        ravi instances routes set main "5511999999999" <key> <value>');
   });
 
-  it("explains configured routes against the live winner", () => {
+  it("explains configured routes as an honest persisted-config simulation", () => {
     routes = [
       {
         id: 1,
@@ -381,12 +519,13 @@ describe("RoutesCommands", () => {
     });
 
     expect(output).toContain("Target instance: main");
-    expect(output).toContain("Config route:  5511999999999 → sales");
-    expect(output).toContain("Live effect:   verified");
-    expect(output).toContain("Winning route: 5511999999999");
-    expect(output).toContain("Winning agent: sales");
+    expect(output).toContain("Evaluation:    persisted config simulation");
+    expect(output).toContain("Daemon state:  not observed");
+    expect(output).toContain("Config route:    5511999999999 → sales");
+    expect(output).toContain("Simulation:      verified");
+    expect(output).toContain("Winning route:   5511999999999");
+    expect(output).toContain("Winning agent:   sales");
     expect(output).toContain('Route details: ravi routes show main "5511999999999"');
-    expect(output).toContain('Mutate config: ravi instances routes set main "5511999999999" <key> <value>');
   });
 
   it("explains configured routes as typed JSON", () => {
@@ -410,6 +549,99 @@ describe("RoutesCommands", () => {
 
     expect((payload.configuredRoute as Record<string, unknown>).agent).toBe("sales");
     expect((payload.liveEffect as Record<string, unknown>).status).toBe("verified");
+    expect(payload.origin).toEqual({
+      kind: "config_simulation",
+      source: "router-config-db",
+      freshness: "persisted-at-read-time",
+      daemonObserved: false,
+      limitation: "This result does not inspect the daemon's in-memory router.",
+    });
+  });
+
+  it("normalizes equivalent group formats through the router canonicalizer", () => {
+    routes = [{ id: 1, accountId: "main", pattern: "123456789@g.us", agent: "sales", channel: "whatsapp" }];
+    liveWinner = { route: { pattern: "123456789@g.us" }, agentId: "sales" };
+
+    const payload = captureJson(() => {
+      new RoutesCommands().explain("main", "group:123456789", "whatsapp", true);
+    });
+
+    expect((payload.configuredRoute as Record<string, unknown>).pattern).toBe("123456789@g.us");
+    expect(payload.resolution).toEqual({
+      matchedBy: "equivalent",
+      canonicalPattern: "group:123456789",
+      targetKind: "group",
+    });
+    expect((payload.liveEffect as Record<string, unknown>).status).toBe("verified");
+    expect(matchRouteInputs[0]).toEqual(
+      expect.objectContaining({ phone: "123456789", groupId: "123456789", isGroup: true, accountId: "main" }),
+    );
+  });
+
+  it("normalizes phone-prefixed concrete formats without treating them as broad", () => {
+    routes = [{ id: 1, accountId: "main", pattern: "5511999999999", agent: "sales", channel: "whatsapp" }];
+    liveWinner = { route: { pattern: "5511999999999" }, agentId: "sales" };
+
+    const payload = captureJson(() => {
+      new RoutesCommands().explain("main", "phone:+55 (11) 99999-9999", "whatsapp", true);
+    });
+
+    expect((payload.configuredRoute as Record<string, unknown>).pattern).toBe("5511999999999");
+    expect((payload.resolution as Record<string, unknown>).canonicalPattern).toBe("5511999999999");
+    expect((payload.liveEffect as Record<string, unknown>).status).toBe("verified");
+  });
+
+  it("rejects an unknown channel with a typed usage error before simulation", () => {
+    routes = [{ id: 1, accountId: "main", pattern: "5511999999999", agent: "sales" }];
+
+    const thrown = captureThrown(() => new RoutesCommands().explain("main", "5511999999999", "bogus", true));
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const error = thrown as InstanceType<typeof ContractError>;
+    expect(error.code).toBe("USAGE_ERROR");
+    expect(error.exitCode).toBe(2);
+    expect(error.details.acceptedChannels).toEqual(["rbbt-slack", "slack", "whatsapp"]);
+    expect(matchRouteInputs).toHaveLength(0);
+  });
+
+  it("fails closed when equivalent configured patterns are ambiguous", () => {
+    routes = [
+      { id: 1, accountId: "main", pattern: "123@g.us", agent: "sales" },
+      { id: 2, accountId: "main", pattern: "group:123", agent: "main" },
+    ];
+
+    const thrown = captureThrown(() => new RoutesCommands().explain("main", "GROUP:123", undefined, true));
+
+    expect(thrown).toBeInstanceOf(ContractError);
+    const error = thrown as InstanceType<typeof ContractError>;
+    expect(error.code).toBe("ROUTE_PATTERN_AMBIGUOUS");
+    expect(error.exitCode).toBe(1);
+    expect(error.details.suggestions).toEqual(["123@g.us", "group:123"]);
+    expect(matchRouteInputs).toHaveLength(0);
+  });
+
+  it("keeps list, show, and explain deterministic and read-only", () => {
+    routes = [{ id: 1, accountId: "main", pattern: "5511999999999", agent: "sales", channel: "whatsapp" }];
+    liveWinner = { route: { pattern: "5511999999999" }, agentId: "sales" };
+    const before = JSON.stringify(routes);
+
+    const first = captureLogs(() => {
+      new RoutesCommands().list("main", true);
+      new RoutesCommands().show("main", "5511999999999", true);
+      new RoutesCommands().explain("main", "5511999999999", "whatsapp", true);
+    });
+    const second = captureLogs(() => {
+      new RoutesCommands().list("main", true);
+      new RoutesCommands().show("main", "5511999999999", true);
+      new RoutesCommands().explain("main", "5511999999999", "whatsapp", true);
+    });
+
+    expect(second).toBe(first);
+    expect(JSON.stringify(routes)).toBe(before);
+    expect(deleteInstanceCalls).toEqual([]);
+    expect(allowContactCalls).toEqual([]);
+    expect(deletedSessionKeys).toEqual([]);
+    expect(writeCalls).toBe(0);
   });
 
   it("prints route mutation results in --json mode", () => {
@@ -576,29 +808,17 @@ describe("RoutesCommands", () => {
 describe("instances/routes agent-first contract", () => {
   beforeEach(() => {
     routes = [];
+    writeCalls = 0;
     instanceNames = new Set(["main"]);
     deleteInstanceCalls = [];
     contactStatuses = new Map();
     allowContactCalls = [];
     liveWinner = null;
+    matchRouteInputs = [];
     sessions = [];
     deletedSessionKeys = [];
     pendingEntries = [];
   });
-
-  function captureThrown(run: () => unknown): unknown {
-    const originalLog = console.log;
-    console.log = () => {};
-    let thrown: unknown;
-    try {
-      run();
-    } catch (error) {
-      thrown = error;
-    } finally {
-      console.log = originalLog;
-    }
-    return thrown;
-  }
 
   it("soft-deletes the instance immediately without --execute", () => {
     const payload = captureJson(() => {
@@ -756,6 +976,49 @@ describe("instances/routes agent-first contract", () => {
     const items = payload.items as Array<Record<string, unknown>>;
     expect(items).toHaveLength(1);
     expect(Object.keys(items[0]).sort()).toEqual(["agent", "pattern"]);
+  });
+
+  it("rejects unknown --fields even when the routes page is empty", () => {
+    const thrown = captureThrown(() =>
+      new RoutesCommands().list(undefined, true, undefined, undefined, undefined, "bogus"),
+    );
+
+    expect(thrown).toBeDefined();
+    expect((thrown as { code?: string }).code).toBe("USAGE_ERROR");
+    expect((thrown as { exitCode?: number }).exitCode).toBe(2);
+    expect((thrown as { details?: { acceptedFields?: string[] } }).details?.acceptedFields).toEqual([
+      "id",
+      "accountId",
+      "pattern",
+      "agent",
+      "priority",
+      "policy",
+      "session",
+      "channel",
+      "dmScope",
+      "tags",
+    ]);
+  });
+
+  it("returns typed pagination causes and preserves the next-page command", () => {
+    routes = [
+      { id: 1, accountId: "main", pattern: "1", agent: "main" },
+      { id: 2, accountId: "main", pattern: "2", agent: "sales" },
+    ];
+
+    const invalid = captureThrown(() => new RoutesCommands().list("main", true, undefined, "abc"));
+    expect((invalid as { code?: string }).code).toBe("USAGE_ERROR");
+    expect((invalid as Error).message).toContain("--limit must be an integer");
+
+    const excessive = captureThrown(() => new RoutesCommands().list("main", true, undefined, "501"));
+    expect((excessive as { code?: string }).code).toBe("USAGE_ERROR");
+    expect((excessive as { details?: { maximum?: number } }).details?.maximum).toBe(500);
+
+    const payload = captureJson(() => new RoutesCommands().list("main", true, undefined, "1", "0", "pattern"));
+    const pagination = payload.pagination as Record<string, unknown>;
+    expect(pagination.hasMore).toBe(true);
+    expect(pagination.nextOffset).toBe(1);
+    expect(pagination.nextCommand).toBe("ravi routes list main --json --limit 1 --offset 1 --fields pattern");
   });
 
   it("supports --fields compact mode on instances list", async () => {

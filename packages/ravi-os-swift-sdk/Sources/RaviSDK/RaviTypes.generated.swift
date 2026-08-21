@@ -17104,15 +17104,19 @@ public struct RoutesExplainReturn: Codable, Sendable {
   public var configuredRoute: RaviJSON
   public var instance: String
   public var liveEffect: RaviJSON
+  public var origin: RaviJSON
   public var pattern: RaviJSON
-  public var target: [String: RaviJSON]
+  public var resolution: RaviJSON
+  public var target: RaviJSON
 
-  public init(channel: RaviJSON, configuredRoute: RaviJSON, instance: String, liveEffect: RaviJSON, pattern: RaviJSON, target: [String: RaviJSON]) {
+  public init(channel: RaviJSON, configuredRoute: RaviJSON, instance: String, liveEffect: RaviJSON, origin: RaviJSON, pattern: RaviJSON, resolution: RaviJSON, target: RaviJSON) {
     self.channel = channel
     self.configuredRoute = configuredRoute
     self.instance = instance
     self.liveEffect = liveEffect
+    self.origin = origin
     self.pattern = pattern
+    self.resolution = resolution
     self.target = target
   }
 
@@ -17121,7 +17125,9 @@ public struct RoutesExplainReturn: Codable, Sendable {
     case configuredRoute = "configuredRoute"
     case instance = "instance"
     case liveEffect = "liveEffect"
+    case origin = "origin"
     case pattern = "pattern"
+    case resolution = "resolution"
     case target = "target"
   }
 }
@@ -17163,14 +17169,14 @@ public struct RoutesListOptions: Codable, Sendable {
 }
 
 public struct RoutesListReturn: Codable, Sendable {
-  public var filter: [String: RaviJSON]
+  public var filter: RaviJSON
   public var instance: RaviJSON
-  public var items: [[String: RaviJSON]]
+  public var items: [RaviJSON]
   public var pagination: RaviJSON
-  public var routes: [[String: RaviJSON]]
+  public var routes: [RaviJSON]
   public var total: Double
 
-  public init(filter: [String: RaviJSON], instance: RaviJSON, items: [[String: RaviJSON]], pagination: RaviJSON, routes: [[String: RaviJSON]], total: Double) {
+  public init(filter: RaviJSON, instance: RaviJSON, items: [RaviJSON], pagination: RaviJSON, routes: [RaviJSON], total: Double) {
     self.filter = filter
     self.instance = instance
     self.items = items
@@ -17192,9 +17198,9 @@ public struct RoutesListReturn: Codable, Sendable {
 public struct RoutesShowReturn: Codable, Sendable {
   public var instance: String
   public var pattern: String
-  public var route: [String: RaviJSON]
+  public var route: RaviJSON
 
-  public init(instance: String, pattern: String, route: [String: RaviJSON]) {
+  public init(instance: String, pattern: String, route: RaviJSON) {
     self.instance = instance
     self.pattern = pattern
     self.route = route

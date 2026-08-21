@@ -8,7 +8,14 @@
  */
 
 import { describe, it, expect } from "bun:test";
-import { matchPattern, findRoute, matchRoute, resolveCommittedSessionKey } from "./resolver.js";
+import {
+  areExactRouteTargetsEquivalent,
+  findRoute,
+  matchPattern,
+  matchRoute,
+  normalizeExactRouteTarget,
+  resolveCommittedSessionKey,
+} from "./resolver.js";
 import type { RouterConfig, RouteConfig, AgentConfig } from "./types.js";
 
 // ============================================================================
@@ -100,6 +107,27 @@ describe("matchPattern", () => {
     expect(matchPattern("group:123456789", "group:123456789")).toBe(true);
     expect(matchPattern("group:123456789", "group:000000000")).toBe(false);
   });
+
+  it("uses one canonical representation for equivalent concrete route formats", () => {
+    expect(areExactRouteTargetsEquivalent("group:123456789", "123456789@g.us")).toBe(true);
+    expect(areExactRouteTargetsEquivalent("phone:+55 (11) 99999-9999", "5511999999999")).toBe(true);
+    expect(matchPattern("group:123456789", "123456789@g.us")).toBe(true);
+    expect(matchPattern("5511999999999", "phone:+55 (11) 99999-9999")).toBe(true);
+  });
+
+  it("does not pretend a glob is one concrete target", () => {
+    expect(normalizeExactRouteTarget("5511*")).toBeNull();
+    expect(areExactRouteTargetsEquivalent("5511*", "5511999999999")).toBe(false);
+  });
+
+  it("keeps arbitrary alphanumeric channel identifiers literal", () => {
+    expect(normalizeExactRouteTarget("room-A123")).toMatchObject({
+      canonicalPattern: "room-a123",
+      kind: "literal",
+    });
+    expect(areExactRouteTargetsEquivalent("room-A123", "queue-B123")).toBe(false);
+    expect(matchPattern("room-A123", "queue-B123")).toBe(false);
+  });
 });
 
 // ============================================================================
@@ -147,6 +175,21 @@ describe("findRoute", () => {
     const mixedRoutes: RouteConfig[] = [{ pattern: "*", accountId: "acc-A", agent: "main", priority: 0 }];
     const route = findRoute("5511999", mixedRoutes, "acc-B");
     expect(route).toBeNull();
+  });
+
+  it("prefers the literal canonical pattern over an equivalent format on a priority tie", () => {
+    const equivalentRoutes: RouteConfig[] = [
+      { pattern: "123@g.us", accountId: "main", agent: "vendas", priority: 10 },
+      { pattern: "group:123", accountId: "main", agent: "support", priority: 10 },
+    ];
+
+    expect(findRoute("group:123", equivalentRoutes, "main")?.agent).toBe("support");
+  });
+
+  it("uses an equivalent concrete format when no literal route exists", () => {
+    const equivalentRoutes: RouteConfig[] = [{ pattern: "123@g.us", accountId: "main", agent: "vendas", priority: 10 }];
+
+    expect(findRoute("group:123", equivalentRoutes, "main")?.agent).toBe("vendas");
   });
 });
 

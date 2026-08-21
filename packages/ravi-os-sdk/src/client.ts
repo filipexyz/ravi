@@ -4916,7 +4916,7 @@ export class RaviClient {
   };
 
   readonly routes = {
-    /** Explain how a pattern resolves in config and the live router */
+    /** Explain equivalent pattern lookup and simulate resolution from persisted config */
     explain: async (name: string, pattern: string, options?: {
       channel?: string;
     }): Promise<RoutesExplainReturn> => {

@@ -8,6 +8,7 @@ import {
   dbCreateAgent,
   dbCreateChatReadingList,
   dbCreateContext,
+  dbCreateRoute,
   dbDeleteChannel,
   dbDeleteInstance,
   dbGetAgent,
@@ -26,6 +27,7 @@ import {
   closeRouterDb,
   getDb,
 } from "./router-db.js";
+import { loadRouterConfig } from "./config.js";
 import { getOrCreateSession } from "./sessions.js";
 import { createRuntimeModelPreset } from "../runtime/model-preset-store.js";
 
@@ -94,6 +96,21 @@ describe("router context queries", () => {
     expect(snapshot.defaultAgent).toBe("main");
     expect(snapshot.agents).toContainEqual({ id: "readonly-agent", cwd: "/tmp/ravi-readonly-agent" });
     expect(stateFilesDigest(stateDir!)).toEqual(before);
+  });
+
+  it("keeps a route channel in the live router configuration", () => {
+    dbUpsertInstance({ name: "main", channel: "whatsapp" });
+    dbCreateRoute({
+      accountId: "main",
+      pattern: "5511*",
+      agent: "main",
+      priority: 10,
+      channel: "whatsapp",
+    });
+
+    expect(loadRouterConfig().routes).toContainEqual(
+      expect.objectContaining({ accountId: "main", pattern: "5511*", channel: "whatsapp" }),
+    );
   });
 
   it("lists contexts with SQL-backed filters and excludes inactive contexts by default", () => {

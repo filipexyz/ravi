@@ -9,8 +9,94 @@ import { buildSessionKey } from "./session-key.js";
 import { generateSessionName, ensureUniqueName, slugify } from "./session-name.js";
 import { getOrCreateSession, getSession, updateSessionName, getSessionByName } from "./sessions.js";
 import { logger } from "../utils/logger.js";
+import { isPhoneNumber, normalizePhone, parseJid } from "../utils/phone.js";
 
 const log = logger.child("router");
+
+export type ExactRouteTargetKind = "group" | "phone" | "lid" | "thread" | "literal";
+
+export interface ExactRouteTarget {
+  canonicalPattern: string;
+  kind: ExactRouteTargetKind;
+  matchParams: {
+    phone: string;
+    isGroup?: boolean;
+    groupId?: string;
+    threadId?: string;
+    peerKind?: string;
+  };
+}
+
+/**
+ * Canonicalize a concrete route target using the same representation consumed
+ * by matchRoute. Glob patterns deliberately return null because they describe
+ * a set of targets rather than one target that can be simulated safely.
+ */
+export function normalizeExactRouteTarget(input: string): ExactRouteTarget | null {
+  const trimmed = input.trim();
+  if (!trimmed || trimmed.includes("*")) return null;
+
+  const lower = trimmed.toLowerCase();
+  if (lower.startsWith("thread:")) {
+    const threadId = trimmed.slice("thread:".length).trim();
+    if (!threadId) return null;
+    return {
+      canonicalPattern: `thread:${threadId.toLowerCase()}`,
+      kind: "thread",
+      matchParams: { phone: trimmed, threadId, peerKind: "channel" },
+    };
+  }
+
+  const explicitPhone = lower.startsWith("phone:") ? trimmed.slice("phone:".length).trim() : trimmed;
+  const phoneCandidate = explicitPhone.toLowerCase();
+  const hasPhoneSemantics =
+    phoneCandidate.startsWith("group:") ||
+    phoneCandidate.startsWith("lid:") ||
+    parseJid(explicitPhone) !== null ||
+    isPhoneNumber(explicitPhone);
+  if (hasPhoneSemantics) {
+    const normalized = normalizePhone(explicitPhone);
+    if (normalized.startsWith("group:")) {
+      const groupId = normalized.slice("group:".length).replace(/@.*$/, "").toLowerCase();
+      if (!groupId) return null;
+      return {
+        canonicalPattern: `group:${groupId}`,
+        kind: "group",
+        matchParams: { phone: groupId, groupId, isGroup: true, peerKind: "group" },
+      };
+    }
+    if (normalized.startsWith("lid:")) {
+      const lid = normalized.slice("lid:".length).toLowerCase();
+      if (!lid) return null;
+      return {
+        canonicalPattern: `lid:${lid}`,
+        kind: "lid",
+        matchParams: { phone: `lid:${lid}` },
+      };
+    }
+    if (/^\d+$/.test(normalized)) {
+      return {
+        canonicalPattern: normalized,
+        kind: "phone",
+        matchParams: { phone: normalized },
+      };
+    }
+  }
+
+  return {
+    canonicalPattern: lower,
+    kind: "literal",
+    matchParams: { phone: trimmed },
+  };
+}
+
+export function areExactRouteTargetsEquivalent(left: string, right: string): boolean {
+  const normalizedLeft = normalizeExactRouteTarget(left);
+  const normalizedRight = normalizeExactRouteTarget(right);
+  return Boolean(
+    normalizedLeft && normalizedRight && normalizedLeft.canonicalPattern === normalizedRight.canonicalPattern,
+  );
+}
 
 /**
  * Match a phone number against a pattern
@@ -28,7 +114,7 @@ export function matchPattern(phone: string, pattern: string): boolean {
 
   // Exact match
   if (!pat.includes("*")) {
-    return p === pat;
+    return areExactRouteTargetsEquivalent(p, pat) || p === pat;
   }
 
   // All match
@@ -72,7 +158,13 @@ export function findRoute(
     const aSpecific = channel && a.channel === channel ? 1 : 0;
     const bSpecific = channel && b.channel === channel ? 1 : 0;
     if (bSpecific !== aSpecific) return bSpecific - aSpecific;
-    return (b.priority ?? 0) - (a.priority ?? 0);
+    const priorityDifference = (b.priority ?? 0) - (a.priority ?? 0);
+    if (priorityDifference !== 0) return priorityDifference;
+    // When two concrete stored formats are equivalent, prefer the literal
+    // canonical target. This prevents database row order from deciding ties.
+    const aLiteral = a.pattern.toLowerCase() === phone.toLowerCase() ? 1 : 0;
+    const bLiteral = b.pattern.toLowerCase() === phone.toLowerCase() ? 1 : 0;
+    return bLiteral - aLiteral;
   });
 
   for (const route of sorted) {
@@ -104,7 +196,11 @@ export function matchRoute(
 
   // Find matching route — scoped to the account that received the message
   // Priority order: thread:* > group:* > phone/*
-  const normalizedGroupId = groupId ? `group:${groupId.replace(/@.*$/, "")}` : undefined;
+  const normalizedGroupId = groupId
+    ? (normalizeExactRouteTarget(
+        groupId.startsWith("group:") || groupId.endsWith("@g.us") ? groupId : `group:${groupId}`,
+      )?.canonicalPattern ?? `group:${groupId.replace(/@.*$/, "")}`)
+    : undefined;
   const normalizedThreadId = params.threadId ? `thread:${params.threadId}` : undefined;
   const effectiveAccount = accountId;
 

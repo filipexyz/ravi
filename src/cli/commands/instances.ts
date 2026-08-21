@@ -29,7 +29,7 @@ import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import qrcode from "qrcode-terminal";
 import { Group, Command, CommandAccess, CliOnly, Arg, Option } from "../decorators.js";
-import { contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { fail } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -53,6 +53,7 @@ import {
   dbGetAgent,
   dbCreateAgent,
   dbListAgents,
+  dbListChannels,
   dbGetRoute,
   dbListRoutes,
   dbCreateRoute,
@@ -67,7 +68,17 @@ import {
   dbGetSetting,
   dbSetSetting,
 } from "../../router/router-db.js";
-import { loadRouterConfig, matchRoute } from "../../router/index.js";
+import {
+  areExactRouteTargetsEquivalent,
+  loadRouterConfig,
+  matchRoute,
+  normalizeExactRouteTarget,
+} from "../../router/index.js";
+import {
+  readRoutesSnapshot,
+  type ReadOnlyRouteRecord,
+  type ReadOnlyRoutesSnapshot,
+} from "../../router/routes-readonly.js";
 import {
   IGNORED_OMNI_INSTANCE_IDS_SETTING,
   parseIgnoredOmniInstanceIds,
@@ -87,12 +98,62 @@ import type { SessionEntry } from "../../router/types.js";
 import { filterItemsByCanonicalTag } from "../../tags/helpers.js";
 import { searchTagBindingsForSelector } from "../../tags/service.js";
 import type { TagBinding } from "../../tags/types.js";
-import { formatCliRuntimeTarget, getCliRuntimeMismatchMessage, inspectCliRuntimeTarget } from "../runtime-target.js";
+import {
+  formatCliRuntimeTarget,
+  getCliRuntimeMismatchMessage,
+  inspectCliRuntimeTarget,
+  inspectCliRuntimeTargetSnapshot,
+} from "../runtime-target.js";
 import { formatInspectionSection, printInspectionField } from "../inspection-output.js";
 
 const CONFIG_DB_META = { source: "config-db", freshness: "persisted" } as const;
 const LIVE_OMNI_META = { source: "live-omni", freshness: "live" } as const;
-type ListedRoute = ReturnType<typeof dbListRoutes>[number];
+const ROUTE_EXPLAIN_ORIGIN = {
+  kind: "config_simulation",
+  source: "router-config-db",
+  freshness: "persisted-at-read-time",
+  daemonObserved: false,
+  limitation: "This result does not inspect the daemon's in-memory router.",
+} as const;
+
+function readRoutesSnapshotForCommand(op: string, asJson?: boolean): ReadOnlyRoutesSnapshot {
+  try {
+    return readRoutesSnapshot();
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.name === "RoutesSnapshotSchemaError" &&
+      "table" in error &&
+      typeof error.table === "string" &&
+      "missingColumns" in error &&
+      Array.isArray(error.missingColumns) &&
+      error.missingColumns.every((column) => typeof column === "string")
+    ) {
+      contractFail(op, "ROUTES_SCHEMA_UNSUPPORTED", "Persisted routes data uses an unsupported schema.", {
+        asJson,
+        details: {
+          table: error.table,
+          missingColumns: error.missingColumns,
+          suggestedAction: "Upgrade or recover the Ravi database before retrying this read.",
+        },
+      });
+    }
+    throw error;
+  }
+}
+const ROUTE_LIST_FIELDS = [
+  "id",
+  "accountId",
+  "pattern",
+  "agent",
+  "priority",
+  "policy",
+  "session",
+  "channel",
+  "dmScope",
+  "tags",
+] as const;
+type ListedRoute = ReadOnlyRouteRecord;
 type OmniInstanceStatus = { isConnected?: boolean; profileName?: string; state?: string };
 
 function printJson(payload: unknown): void {
@@ -157,8 +218,8 @@ function resolveInstanceByNameOrId(value: string) {
  * cloak — only the optional tag filter), so INSTANCE_NOT_FOUND enriches the
  * envelope with real similar names and omni instanceIds.
  */
-function failInstanceNotFound(op: string, ref: string, asJson?: boolean): never {
-  const candidates = dbListInstances().flatMap((inst) => [inst.name, inst.instanceId ?? null]);
+function failInstanceNotFound(op: string, ref: string, asJson?: boolean, candidateOverrides?: string[]): never {
+  const candidates = candidateOverrides ?? dbListInstances().flatMap((inst) => [inst.name, inst.instanceId ?? null]);
   contractFail(op, "INSTANCE_NOT_FOUND", `Instance not found: ${ref}`, {
     asJson,
     details: {
@@ -203,72 +264,185 @@ function assertInstanceMutationRuntime(name: string, allowRuntimeMismatch?: bool
   }
 }
 
-function inspectRouteLiveWinner(
+function listRoutesForRead(snapshot?: ReadOnlyRoutesSnapshot, name?: string): ListedRoute[] {
+  return snapshot ? snapshot.routes.filter((route) => (name ? route.accountId === name : true)) : dbListRoutes(name);
+}
+
+function getRouteForRead(snapshot: ReadOnlyRoutesSnapshot | undefined, name: string, pattern: string) {
+  return snapshot
+    ? (snapshot.routes.find((route) => route.accountId === name && route.pattern === pattern) ?? null)
+    : dbGetRoute(pattern, name);
+}
+
+function getInstanceForRead(snapshot: ReadOnlyRoutesSnapshot | undefined, name: string) {
+  return snapshot ? (snapshot.instances.find((instance) => instance.name === name) ?? null) : dbGetInstance(name);
+}
+
+function requireRouteInstance(op: string, name: string, asJson?: boolean, snapshot?: ReadOnlyRoutesSnapshot): void {
+  if (!snapshot) {
+    requireInstance(op, name, asJson);
+    return;
+  }
+  if (!getInstanceForRead(snapshot, name)) {
+    failInstanceNotFound(
+      op,
+      name,
+      asJson,
+      snapshot.instances.map((instance) => instance.name),
+    );
+  }
+}
+
+function listAcceptedRouteChannels(snapshot?: ReadOnlyRoutesSnapshot): string[] {
+  return [
+    ...new Set(
+      [
+        ...(snapshot?.channels ?? dbListChannels()).flatMap((channel) => [channel.name, channel.provider]),
+        ...(snapshot?.instances ?? dbListInstances()).map((instance) => instance.channel),
+        ...listRoutesForRead(snapshot).map((route) => route.channel),
+      ]
+        .filter((value): value is string => Boolean(value?.trim()))
+        .map((value) => value.trim()),
+    ),
+  ].sort((left, right) => (left === right ? 0 : left < right ? -1 : 1));
+}
+
+function validateRouteChannel(
+  op: string,
+  channel?: string,
+  asJson?: boolean,
+  snapshot?: ReadOnlyRoutesSnapshot,
+): string | undefined {
+  const requested = channel?.trim();
+  if (!requested) return undefined;
+  const acceptedChannels = listAcceptedRouteChannels(snapshot);
+  const canonical = acceptedChannels.find((candidate) => candidate.toLowerCase() === requested.toLowerCase());
+  if (canonical) return canonical;
+  contractFail(op, "USAGE_ERROR", `Unknown route channel: ${requested}`, {
+    asJson,
+    exitCode: CONTRACT_EXIT_USAGE,
+    details: {
+      acceptedChannels,
+      suggestions: suggestSimilar(requested, acceptedChannels),
+      suggestedAction: "Retry with a channel listed in acceptedChannels",
+    },
+  });
+}
+
+function findEquivalentConfiguredRoute(
+  op: string,
+  name: string,
+  pattern: string,
+  asJson?: boolean,
+  snapshot?: ReadOnlyRoutesSnapshot,
+): { route: ListedRoute; matchedBy: "exact" | "equivalent" } | null {
+  const exact = getRouteForRead(snapshot, name, pattern);
+  if (exact) return { route: exact, matchedBy: "exact" };
+
+  if (!normalizeExactRouteTarget(pattern)) return null;
+  const equivalents = listRoutesForRead(snapshot, name)
+    .filter((route) => areExactRouteTargetsEquivalent(route.pattern, pattern))
+    .sort((left, right) =>
+      left.pattern === right.pattern ? left.id - right.id : left.pattern < right.pattern ? -1 : 1,
+    );
+  if (equivalents.length === 0) return null;
+  if (equivalents.length > 1) {
+    contractFail(op, "ROUTE_PATTERN_AMBIGUOUS", `Multiple configured routes are equivalent to: ${pattern}`, {
+      asJson,
+      details: {
+        suggestions: equivalents.map((route) => route.pattern),
+        suggestedAction: "Retry explain with one exact stored pattern from suggestions",
+      },
+    });
+  }
+  return { route: equivalents[0]!, matchedBy: "equivalent" };
+}
+
+function inspectRouteConfigWinner(
   name: string,
   pattern: string,
   channel?: string,
-): { winningPattern: string; winningAgent: string } | null {
-  const config = loadRouterConfig();
-
-  if (pattern.startsWith("group:")) {
-    const groupId = pattern.slice("group:".length);
-    const resolved = matchRoute(config, {
-      phone: groupId,
-      groupId,
-      isGroup: true,
-      accountId: name,
-      ...(channel ? { channel } : {}),
-    });
-
-    if (!resolved) {
-      return null;
-    }
-
-    return {
-      winningPattern: resolved.route?.pattern ?? "(instance default)",
-      winningAgent: resolved.agentId,
-    };
-  }
-
-  if (!pattern.includes("*") && /^\d+$/.test(pattern)) {
-    const resolved = matchRoute(config, {
-      phone: pattern,
-      accountId: name,
-      ...(channel ? { channel } : {}),
-    });
-
-    if (!resolved) {
-      return null;
-    }
-
-    return {
-      winningPattern: resolved.route?.pattern ?? "(instance default)",
-      winningAgent: resolved.agentId,
-    };
-  }
-
-  return null;
+  snapshot?: ReadOnlyRoutesSnapshot,
+): { winningPattern: string; winningAgent: string; canonicalPattern: string; targetKind: string } | null {
+  const target = normalizeExactRouteTarget(pattern);
+  if (!target) return null;
+  const resolved = matchRoute(snapshot?.routerConfig ?? loadRouterConfig(), {
+    ...target.matchParams,
+    accountId: name,
+    ...(channel ? { channel } : {}),
+  });
+  if (!resolved) return null;
+  return {
+    winningPattern: resolved.route?.pattern ?? "(instance default)",
+    winningAgent: resolved.agentId,
+    canonicalPattern: target.canonicalPattern,
+    targetKind: target.kind,
+  };
 }
 
-function getRouteLiveEffect(name: string, pattern: string, expectedAgent?: string, channel?: string) {
-  const winner = inspectRouteLiveWinner(name, pattern, channel);
-  if (!winner) {
-    const exactPattern = pattern.startsWith("group:") || (!pattern.includes("*") && /^\d+$/.test(pattern));
+function getRouteConfigSimulation(
+  name: string,
+  pattern: string,
+  expectedRoute?: ListedRoute,
+  channel?: string,
+  snapshot?: ReadOnlyRoutesSnapshot,
+) {
+  const target = normalizeExactRouteTarget(pattern);
+  if (!target) {
     return {
-      status: exactPattern ? "unresolved" : "skipped_broad_pattern",
+      status: "skipped_broad_pattern",
       verified: false,
+      reason: "A glob pattern describes many targets; provide one concrete target to simulate.",
+      canonicalPattern: null,
+      targetKind: "glob",
       winningPattern: null,
       winningAgent: null,
     };
   }
 
-  const verified = expectedAgent ? winner.winningPattern === pattern && winner.winningAgent === expectedAgent : false;
+  const winner = inspectRouteConfigWinner(name, pattern, channel, snapshot);
+  if (!winner) {
+    return {
+      status: "unresolved",
+      verified: false,
+      reason: "The persisted config simulation did not resolve a winner.",
+      canonicalPattern: target.canonicalPattern,
+      targetKind: target.kind,
+      winningPattern: null,
+      winningAgent: null,
+    };
+  }
+
+  const verified = expectedRoute
+    ? winner.winningPattern === expectedRoute.pattern && winner.winningAgent === expectedRoute.agent
+    : false;
   return {
-    status: expectedAgent ? (verified ? "verified" : "different_winner") : "matched",
+    status: expectedRoute ? (verified ? "verified" : "different_winner") : "matched",
     verified,
+    reason: expectedRoute
+      ? verified
+        ? "The persisted config simulation selected the configured route and agent."
+        : "The persisted config simulation selected a different route or agent."
+      : "The persisted config simulation resolved a winner without an equivalent exact route lookup.",
+    canonicalPattern: winner.canonicalPattern,
+    targetKind: winner.targetKind,
     winningPattern: winner.winningPattern,
     winningAgent: winner.winningAgent,
   };
+}
+
+// Compatibility adapter for neighboring instances mutation output. The
+// top-level read-only routes facade uses getRouteConfigSimulation directly.
+function inspectRouteLiveWinner(name: string, pattern: string, channel?: string) {
+  const winner = inspectRouteConfigWinner(name, pattern, channel);
+  return winner ? { winningPattern: winner.winningPattern, winningAgent: winner.winningAgent } : null;
+}
+
+function getRouteLiveEffect(name: string, pattern: string, expectedAgent?: string, channel?: string) {
+  const expectedRoute = expectedAgent
+    ? ({ id: -1, accountId: name, pattern, agent: expectedAgent, priority: 0 } as ListedRoute)
+    : undefined;
+  return getRouteConfigSimulation(name, pattern, expectedRoute, channel);
 }
 
 function printRouteLiveEffect(name: string, pattern: string, expectedAgent: string, channel?: string): void {
@@ -295,7 +469,7 @@ function getRouteStatusIcon(pattern: string): string {
   return "\x1b[36m○\x1b[0m";
 }
 
-function printRouteTable(routes: ListedRoute[], includeInstanceColumn: boolean): void {
+function printRouteTable(routes: ListedRoute[], includeInstanceColumn: boolean, readOnlyFacade = false): void {
   if (includeInstanceColumn) {
     console.log(
       "  INSTANCE         ST  PATTERN                              AGENT           POLICY       PRI  SESSION",
@@ -309,7 +483,9 @@ function printRouteTable(routes: ListedRoute[], includeInstanceColumn: boolean):
   }
 
   for (const route of routes) {
-    const statusIcon = getRouteStatusIcon(route.pattern);
+    // The top-level routes facade must not consult the contact store: doing so
+    // initializes/migrates ravi.db while rendering an otherwise read-only list.
+    const statusIcon = readOnlyFacade ? "\x1b[90m-\x1b[0m" : getRouteStatusIcon(route.pattern);
     const policy = route.policy ?? "-";
     const session = route.session ?? "-";
     const channelLabel = route.channel ? ` [${route.channel}]` : "";
@@ -326,11 +502,24 @@ function printRouteTable(routes: ListedRoute[], includeInstanceColumn: boolean):
   }
 }
 
-function filterRoutesByTag(routes: ListedRoute[], tagSlug?: string): ListedRoute[] {
+function filterRoutesByTag(routes: ListedRoute[], tagSlug?: string, snapshot?: ReadOnlyRoutesSnapshot): ListedRoute[] {
+  if (snapshot) {
+    const normalized = tagSlug?.trim().toLowerCase();
+    if (!normalized) return routes;
+    const allowed = new Set(
+      snapshot.tags
+        .filter((binding) => binding.assetType === "route" && binding.tagSlug === normalized)
+        .map((binding) => binding.assetId),
+    );
+    return routes.filter((route) => allowed.has(String(route.id)));
+  }
   return filterItemsByCanonicalTag(routes, "route", tagSlug, (route) => String(route.id));
 }
 
-function listRouteTags(routeId: string | number): TagBinding[] {
+function listRouteTags(routeId: string | number, snapshot?: ReadOnlyRoutesSnapshot): TagBinding[] {
+  if (snapshot) {
+    return snapshot.tags.filter((binding) => binding.assetType === "route" && binding.assetId === String(routeId));
+  }
   return searchTagBindingsForSelector({ selector: { target: `route:${String(routeId)}` } }).bindings;
 }
 
@@ -345,10 +534,11 @@ function printRouteList(
   limit?: string,
   offset?: string,
   baseCommand: Array<string | null | undefined> = ["ravi", "routes", "list", name],
+  snapshot?: ReadOnlyRoutesSnapshot,
 ): void {
   if (name) {
-    requireInstance(op, name);
-    const routes = filterRoutesByTag(dbListRoutes(name), tagSlug);
+    requireRouteInstance(op, name, undefined, snapshot);
+    const routes = filterRoutesByTag(listRoutesForRead(snapshot, name), tagSlug, snapshot);
     const page = paginateCliItems(routes, { limit, offset });
     const pagination = buildCliOffsetPagination({
       baseCommand,
@@ -368,7 +558,7 @@ function printRouteList(
     }
 
     console.log(tagSlug ? `\nRoutes for: ${name} tagged ${tagSlug}\n` : `\nRoutes for: ${name}\n`);
-    printRouteTable(page.items, false);
+    printRouteTable(page.items, false, Boolean(snapshot));
     console.log(`\n  Total: ${page.total} (${page.items.length} returned, limit ${page.limit}, offset ${page.offset})`);
     if (pagination.nextCommand) {
       console.log("\n  Next page:");
@@ -380,7 +570,7 @@ function printRouteList(
     return;
   }
 
-  const routes = filterRoutesByTag(dbListRoutes(), tagSlug);
+  const routes = filterRoutesByTag(listRoutesForRead(snapshot), tagSlug, snapshot);
   const page = paginateCliItems(routes, { limit, offset });
   const pagination = buildCliOffsetPagination({
     baseCommand,
@@ -397,7 +587,7 @@ function printRouteList(
   }
 
   console.log(tagSlug ? `\nRoutes across all instances tagged ${tagSlug}:\n` : "\nRoutes across all instances:\n");
-  printRouteTable(page.items, true);
+  printRouteTable(page.items, true, Boolean(snapshot));
   console.log(`\n  Total: ${page.total} (${page.items.length} returned, limit ${page.limit}, offset ${page.offset})`);
   if (pagination.nextCommand) {
     console.log("\n  Next page:");
@@ -417,11 +607,12 @@ function buildRouteListPayload(
   baseCommand: Array<string | null | undefined> = ["ravi", "routes", "list", name],
   fields?: string,
   asJson?: boolean,
+  snapshot?: ReadOnlyRoutesSnapshot,
 ) {
   if (name) {
-    requireInstance(op, name, asJson);
+    requireRouteInstance(op, name, asJson, snapshot);
   }
-  const routes = filterRoutesByTag(dbListRoutes(name), tagSlug);
+  const routes = filterRoutesByTag(listRoutesForRead(snapshot, name), tagSlug, snapshot);
   const page = paginateCliItems(routes, { limit, offset });
   const pagination = buildCliOffsetPagination({
     fields,
@@ -435,9 +626,10 @@ function buildRouteListPayload(
   const routeRows = pickFields(
     page.items.map((route) => ({
       ...route,
-      tags: listRouteTags(route.id),
+      tags: listRouteTags(route.id, snapshot),
     })),
     fields,
+    { acceptedFields: ROUTE_LIST_FIELDS },
   );
   return {
     instance: name ?? null,
@@ -449,9 +641,9 @@ function buildRouteListPayload(
   };
 }
 
-function printRouteDetails(op: string, name: string, pattern: string): void {
-  requireInstance(op, name);
-  const route = dbGetRoute(pattern, name);
+function printRouteDetails(op: string, name: string, pattern: string, snapshot?: ReadOnlyRoutesSnapshot): void {
+  requireRouteInstance(op, name, undefined, snapshot);
+  const route = getRouteForRead(snapshot, name, pattern);
   if (!route) failRouteNotFound(op, name, pattern);
 
   console.log(`\nRoute: ${route.pattern} (instance: ${name})\n`);
@@ -461,80 +653,132 @@ function printRouteDetails(op: string, name: string, pattern: string): void {
   console.log(`  DM Scope:  ${route.dmScope ?? "(inherits)"}`);
   console.log(`  Session:   ${route.session ?? "(auto)"}`);
   console.log(`  Channel:   ${route.channel ?? "(all channels)"}`);
-  const routeTags = listRouteTags(route.id);
+  const routeTags = listRouteTags(route.id, snapshot);
   console.log(`  Tags:      ${routeTags.length > 0 ? routeTags.map((tag) => tag.tagSlug).join(", ") : "-"}`);
-  console.log(`\n  Explain live routing: ravi routes explain ${name} "${pattern}"`);
+  console.log(`\n  Explain config simulation: ravi routes explain ${name} "${pattern}"`);
   console.log(`  Mutate config:        ravi instances routes set ${name} "${pattern}" <key> <value>`);
 }
 
-function buildRouteDetailsPayload(op: string, name: string, pattern: string, asJson?: boolean) {
-  requireInstance(op, name, asJson);
-  const route = dbGetRoute(pattern, name);
+function buildRouteDetailsPayload(
+  op: string,
+  name: string,
+  pattern: string,
+  asJson?: boolean,
+  snapshot?: ReadOnlyRoutesSnapshot,
+) {
+  requireRouteInstance(op, name, asJson, snapshot);
+  const route = getRouteForRead(snapshot, name, pattern);
   if (!route) failRouteNotFound(op, name, pattern, asJson);
   return {
     instance: name,
     pattern,
     route: {
       ...route,
-      tags: listRouteTags(route.id),
+      tags: listRouteTags(route.id, snapshot),
     },
   };
 }
 
-function buildRouteExplanationPayload(op: string, name: string, pattern?: string, channel?: string, asJson?: boolean) {
-  const target = inspectCliRuntimeTarget(name);
+function buildRouteExplanationPayload(
+  op: string,
+  name: string,
+  pattern?: string,
+  channel?: string,
+  asJson?: boolean,
+  snapshot?: ReadOnlyRoutesSnapshot,
+) {
+  const instance = getInstanceForRead(snapshot, name);
+  const target = snapshot
+    ? inspectCliRuntimeTargetSnapshot(name, instance, snapshot.dbPath)
+    : inspectCliRuntimeTarget(name);
 
   if (!target.instance?.exists) {
-    failInstanceNotFound(op, name, asJson);
+    failInstanceNotFound(
+      op,
+      name,
+      asJson,
+      snapshot?.instances.map((candidate) => candidate.name),
+    );
   }
 
+  const validatedChannel = validateRouteChannel(op, channel, asJson, snapshot);
   if (!pattern) {
     return {
       target,
       instance: name,
       pattern: null,
-      channel: channel ?? null,
+      channel: validatedChannel ?? null,
+      origin: ROUTE_EXPLAIN_ORIGIN,
+      resolution: null,
       configuredRoute: null,
       liveEffect: null,
     };
   }
 
-  const configuredRoute = dbGetRoute(pattern, name);
-  if (configuredRoute) {
-    return {
-      target,
-      instance: name,
-      pattern,
-      channel: channel ?? configuredRoute.channel ?? null,
-      configuredRoute,
-      liveEffect: getRouteLiveEffect(
-        name,
-        pattern,
-        configuredRoute.agent,
-        channel ?? configuredRoute.channel ?? undefined,
-      ),
-    };
-  }
-
-  const winner = inspectRouteLiveWinner(name, pattern, channel);
+  const configured = findEquivalentConfiguredRoute(op, name, pattern, asJson, snapshot);
+  const effectiveChannel = validatedChannel ?? configured?.route.channel ?? undefined;
+  const normalizedTarget = normalizeExactRouteTarget(pattern);
   return {
     target,
     instance: name,
     pattern,
-    channel: channel ?? null,
-    configuredRoute: null,
-    liveEffect: winner
-      ? {
-          status: "different_winner",
-          verified: false,
-          winningPattern: winner.winningPattern,
-          winningAgent: winner.winningAgent,
-        }
-      : getRouteLiveEffect(name, pattern, undefined, channel),
+    channel: effectiveChannel ?? null,
+    origin: ROUTE_EXPLAIN_ORIGIN,
+    resolution: {
+      matchedBy: configured?.matchedBy ?? null,
+      canonicalPattern: normalizedTarget?.canonicalPattern ?? null,
+      targetKind: normalizedTarget?.kind ?? "glob",
+    },
+    configuredRoute: configured?.route ?? null,
+    liveEffect: getRouteConfigSimulation(name, pattern, configured?.route, effectiveChannel, snapshot),
   };
 }
 
-function printRouteExplanation(op: string, name: string, pattern?: string, channel?: string): void {
+type RouteExplanationPayload = ReturnType<typeof buildRouteExplanationPayload>;
+
+function printRouteExplanation(
+  op: string,
+  name: string,
+  pattern?: string,
+  channel?: string,
+  payload?: RouteExplanationPayload,
+): void {
+  if (payload) {
+    for (const line of formatCliRuntimeTarget(payload.target)) {
+      console.log(line);
+    }
+    console.log("  Evaluation:    persisted config simulation");
+    console.log("  Daemon state:  not observed");
+
+    if (!payload.pattern || !payload.liveEffect) {
+      console.log(`\n  Discover routes: ravi routes list ${name}`);
+      console.log(`  Explain one:     ravi routes explain ${name} "<pattern>"`);
+      return;
+    }
+
+    if (payload.resolution?.canonicalPattern && payload.resolution.canonicalPattern !== payload.pattern) {
+      console.log(`  Canonical input: ${payload.resolution.canonicalPattern}`);
+    }
+    if (payload.configuredRoute) {
+      console.log(`  Config route:    ${payload.configuredRoute.pattern} → ${payload.configuredRoute.agent}`);
+      console.log(`  Lookup:          ${payload.resolution?.matchedBy ?? "exact"}`);
+    } else {
+      console.log("  Config route:    (no equivalent exact route)");
+    }
+    console.log(`  Simulation:      ${payload.liveEffect.status}`);
+    console.log(`  Reason:          ${payload.liveEffect.reason}`);
+    if (payload.liveEffect.winningPattern) {
+      console.log(`  Winning route:   ${payload.liveEffect.winningPattern}`);
+      console.log(`  Winning agent:   ${payload.liveEffect.winningAgent}`);
+    }
+    if (payload.configuredRoute) {
+      console.log(`\n  Route details: ravi routes show ${name} "${payload.configuredRoute.pattern}"`);
+    } else {
+      console.log(`\n  Cross-check: ravi routes list ${name} --json`);
+    }
+    return;
+  }
+
   const summary = inspectCliRuntimeTarget(name);
   for (const line of formatCliRuntimeTarget(summary)) {
     console.log(line);
@@ -1572,7 +1816,7 @@ export class InstancesCommands {
 
 @Group({
   name: "routes",
-  description: "Inspect route config and live routing without drilling into instances",
+  description: "Read route config and simulate resolution without inspecting daemon memory",
   scope: "admin",
 })
 export class RoutesCommands {
@@ -1587,11 +1831,22 @@ export class RoutesCommands {
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each route" })
     fields?: string,
   ) {
-    const payload = buildRouteListPayload("routes list", name, tagSlug, limit, offset, undefined, fields, asJson);
+    const snapshot = readRoutesSnapshotForCommand("routes list", asJson);
+    const payload = buildRouteListPayload(
+      "routes list",
+      name,
+      tagSlug,
+      limit,
+      offset,
+      undefined,
+      fields,
+      asJson,
+      snapshot,
+    );
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteList("routes list", name, tagSlug, limit, offset);
+      printRouteList("routes list", name, tagSlug, limit, offset, undefined, snapshot);
     }
     return payload;
   }
@@ -1603,32 +1858,37 @@ export class RoutesCommands {
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const payload = buildRouteDetailsPayload("routes show", name, pattern, asJson);
+    const snapshot = readRoutesSnapshotForCommand("routes show", asJson);
+    const payload = buildRouteDetailsPayload("routes show", name, pattern, asJson, snapshot);
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteDetails("routes show", name, pattern);
+      printRouteDetails("routes show", name, pattern, snapshot);
     }
     return payload;
   }
 
-  @Command({ name: "explain", description: "Explain how a pattern resolves in config and the live router" })
+  @Command({
+    name: "explain",
+    description: "Explain equivalent pattern lookup and simulate resolution from persisted config",
+  })
   @CommandAccess({ kind: "read", resource: "routes", action: "explain", risk: "low" })
   explain(
     @Arg("name", { description: "Instance name" }) name: string,
     @Arg("pattern", { description: "Route pattern" }) pattern: string,
     @Option({
       flags: "--channel <channel>",
-      description: "Optional channel hint for live route inspection",
+      description: "Configured channel name or provider used as a simulation hint",
     })
     channel?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const payload = buildRouteExplanationPayload("routes explain", name, pattern, channel, asJson);
+    const snapshot = readRoutesSnapshotForCommand("routes explain", asJson);
+    const payload = buildRouteExplanationPayload("routes explain", name, pattern, channel, asJson, snapshot);
     if (asJson) {
       printJson(payload);
     } else {
-      printRouteExplanation("routes explain", name, pattern, channel);
+      printRouteExplanation("routes explain", name, pattern, channel, payload);
     }
     return payload;
   }

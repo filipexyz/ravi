@@ -1,0 +1,95 @@
+# Routes read-only facade: hidden writes and invalid first proof
+
+Date: 2026-08-21
+Status: open
+Domain: routes
+
+## What failed
+
+The first local candidate called the normal router database accessors. A real
+`ravi routes list --json` against an empty isolated state created `ravi.db`,
+`ravi.db-wal`, and `ravi.db-shm`. Unit tests had replaced those accessors with
+mocks, so their zero-write counter could not observe database initialization,
+schema migration, or WAL setup.
+
+The first replacement proof also failed. Its behavior tests passed only in
+part: Windows kept temporary SQLite files locked during immediate cleanup, the
+real-process case exceeded Bun's default five-second test timeout, and the
+existing runtime-target mock did not export the new snapshot helper. That run
+is invalid evidence and must not be reported as a green gate.
+
+## Why it failed
+
+The facade shared helpers with the mutating `instances routes` domain and read
+through the lazy general-purpose database connection. “No explicit write
+function was called” was treated as equivalent to “no state changed,” which is
+false for an initializer that creates directories, migrates schema, and enables
+WAL on first access.
+
+The replacement test used immediate recursive cleanup instead of the repository
+SQLite cleanup pattern and did not update all existing module mocks after
+introducing the snapshot API.
+
+## Corrective direction
+
+- Route facade reads must use a dedicated SQLite connection with
+  `readonly:true` and `create:false` and return an empty snapshot when the
+  database is absent.
+- `routes list|show|explain` must receive one immutable snapshot per invocation;
+  neighboring mutation commands keep their established database path.
+- Native tests must cover missing database, current schema, minimal legacy
+  schema, unchanged state-file hashes, and the real CLI process.
+- Windows cleanup must retry after garbage collection, and process tests must
+  declare a realistic timeout.
+- No commit, package, push, or PR is allowed until the corrected proof is green
+  and an independent reviewer accepts the exact candidate.
+
+## Revision log
+
+- 2026-08-21: incident opened after the hidden SQLite writes and invalid first
+  replacement proof were reproduced locally.
+- 2026-08-21: `immutable=1` kept WAL/SHM bytes stable in an isolated probe but
+  was rejected because SQLite may return stale or corrupt results if the daemon
+  writes concurrently. The accepted boundary is `readonly:true/create:false`,
+  no missing-database creation, no logical table change, and no new durable
+  state. SQLite may update the existing SHM coordination index while serving a
+  concurrency-safe read; that is not a persisted route configuration change.
+- 2026-08-21: a later manual review found a second hidden read in human output:
+  `printRouteTable` called the contact store to render a status icon. The
+  top-level facade now renders a neutral marker from its existing snapshot and
+  never opens the contact store; the legacy `instances routes` table keeps its
+  previous contact-aware behavior. A real-process human-output check now
+  verifies route visibility and unchanged durable state.
+- 2026-08-21: the corrected reader passed all 152 router tests with 468
+  assertions. Its six native reader/process cases passed with 28 assertions,
+  including missing DB, legacy schema, active WAL, JSON output and human
+  output. The first parallel SDK run timed out in an unrelated hook; the
+  required isolated rerun passed 75 tests with 297 assertions and SDK drift
+  check. This evidence remains local and does not authorize promotion.
+- 2026-08-21: adversarial resolver review found that the first canonicalizer
+  could collapse unrelated alphanumeric identifiers sharing the same digits.
+  Canonicalization is now limited to valid phone syntax, known JIDs and
+  explicit group/LID forms; arbitrary identifiers remain case-insensitive
+  literals. The expanded router suite passed 153 tests with 474 assertions.
+- 2026-08-21: strengthening the three public route returns correctly tripped
+  the SDK quality-debt inventory. Removing those three now-strong contracts
+  from the baseline restored the required gate: 75 tests, 297 assertions,
+  current TypeScript SDK, both OpenAPI snapshots and current Swift artifacts.
+- 2026-08-21: a fail-closed review found that an existing table with missing
+  required columns was silently represented as empty configuration. The
+  reader now raises a bounded schema error, and the facade maps it to
+  `ROUTES_SCHEMA_UNSUPPORTED` without exposing the database path or attempting
+  migration. Native and real-process checks verify unchanged durable state.
+- 2026-08-21: the complete six-commit COMMANDS stack ending at `e91cfec9` was
+  integrated before restoring the ROUTES changes. The append-only ledger and
+  shared router tests preserved both histories; SDK, OpenAPI and Swift outputs
+  were regenerated by their official commands. The first Biome pass exposed
+  only CRLF restored from the Windows stash, and Markdown lint exposed one
+  missing blank line before a ledger separator. Official formatting plus the
+  documentary correction closed both issues. The final recapture passed 84
+  focused tests with 274 assertions, all 157 router tests with 486 assertions,
+  76 SDK tests with 305 assertions, 98 shared contract tests with 368
+  assertions, and 40 quality-gate tests with 90 assertions. The quality runner
+  accepted all 28 ROUTES paths and indexed 275 specs. Typecheck, build, drift
+  checks, Biome, Markdown lint and `git diff --check` also passed. Independent
+  review, package proof and Linux CI remain mandatory before promotion.
