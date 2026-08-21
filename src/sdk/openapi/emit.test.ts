@@ -189,6 +189,14 @@ describe("openapi emit", () => {
     expect(itemSchema.title).toBe("RoutesListItem");
     expect(variants.anyOf).toHaveLength(10);
     expect(variants.anyOf.every((branch) => (branch.required as string[]).length === 1)).toBe(true);
+    const shape = itemSchema.allOf.find((part) => part.additionalProperties === false) as {
+      properties: Record<string, { anyOf?: Array<{ type?: string }> }>;
+    };
+    expect(shape.properties.policy.anyOf?.map((branch) => branch.type)).toEqual(["string", "null"]);
+    const policyVariant = variants.anyOf.find((branch) => (branch.required as string[]).includes("policy")) as {
+      properties: Record<string, { anyOf?: Array<{ type?: string }> }>;
+    };
+    expect(policyVariant.properties.policy.anyOf?.map((branch) => branch.type)).toEqual(["string", "null"]);
     expect((showResponse.properties as Record<string, Record<string, unknown>>).route.title).toBe(
       "RoutesRouteWithTags",
     );

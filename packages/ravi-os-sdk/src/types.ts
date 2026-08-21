@@ -10791,7 +10791,7 @@ export type RoutesListReturn = {
     dmScope?: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
     id?: number;
     pattern?: string;
-    policy?: string;
+    policy?: string | null;
     priority?: number;
     session?: string;
     tags?: Array<{
@@ -10818,7 +10818,7 @@ export type RoutesListReturn = {
   }) | ({
     priority: number;
   }) | ({
-    policy: string;
+    policy: string | null;
   }) | ({
     session: string;
   }) | ({
@@ -10856,7 +10856,7 @@ export type RoutesListReturn = {
     dmScope?: "main" | "per-peer" | "per-channel-peer" | "per-account-channel-peer";
     id?: number;
     pattern?: string;
-    policy?: string;
+    policy?: string | null;
     priority?: number;
     session?: string;
     tags?: Array<{
@@ -10883,7 +10883,7 @@ export type RoutesListReturn = {
   }) | ({
     priority: number;
   }) | ({
-    policy: string;
+    policy: string | null;
   }) | ({
     session: string;
   }) | ({

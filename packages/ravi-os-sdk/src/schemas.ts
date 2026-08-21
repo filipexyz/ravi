@@ -54378,7 +54378,14 @@ export const RoutesListReturnSchema = {
                 "type": "string"
               },
               "policy": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "priority": {
                 "type": "number"
@@ -54551,7 +54558,14 @@ export const RoutesListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "policy": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54792,7 +54806,14 @@ export const RoutesListReturnSchema = {
                 "type": "string"
               },
               "policy": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "priority": {
                 "type": "number"
@@ -54965,7 +54986,14 @@ export const RoutesListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "policy": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [

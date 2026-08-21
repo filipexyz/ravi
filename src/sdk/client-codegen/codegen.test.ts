@@ -210,6 +210,8 @@ describe("client-codegen :: emitAll", () => {
     expect(listType).toContain("}) & (({");
     expect(listType).toContain("pattern?: string;");
     expect(listType).toContain("pattern: string;");
+    expect(listType).toContain("policy?: string | null;");
+    expect(listType).toContain("policy: string | null;");
     expect(output.types).toMatch(/export type RoutesShowReturn = \{[\s\S]*route: \{/);
     expect(output.types).toMatch(/export type RoutesExplainReturn = \{[\s\S]*origin: \{/);
     expect(output.types).toMatch(/export type RoutesExplainReturn = \{[\s\S]*liveEffect: \(\{/);

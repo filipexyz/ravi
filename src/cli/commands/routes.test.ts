@@ -375,6 +375,9 @@ describe("routes public return schemas", () => {
       routesListReturnSchema.safeParse({ ...base, items: [{ pattern: "5511*" }], routes: [{ pattern: "5511*" }] })
         .success,
     ).toBe(true);
+    expect(
+      routesListReturnSchema.safeParse({ ...base, items: [{ policy: null }], routes: [{ policy: null }] }).success,
+    ).toBe(true);
     expect(routesListReturnSchema.safeParse({ ...base, items: [{}], routes: [{}] }).success).toBe(false);
   });
 

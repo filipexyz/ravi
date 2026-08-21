@@ -116,3 +116,16 @@ equivalent-format resolution.
 This spec remains `draft` until the exact candidate receives independent
 review and green Linux CI. Local native tests and build checks are necessary
 evidence, not authorization to merge or deploy.
+
+## Compact projection amendment
+
+An explicitly supplied `--fields` value MUST reject an empty value, an empty
+token between commas, and a trailing comma with exit 2 `USAGE_ERROR` and the
+stable `acceptedFields` set. If a selected optional route field is absent from
+storage, the compact JSON item and every generated contract MUST preserve that
+selected key with value `null`. Without `--fields`, absent optional fields MUST
+remain omitted.
+
+Swift generated models MUST preserve selected nullable key presence across a
+decode/encode round-trip. In particular, `{"policy":null}` MUST re-encode as
+`{"policy":null}` and MUST NOT become `{}`. Empty compact items remain invalid.

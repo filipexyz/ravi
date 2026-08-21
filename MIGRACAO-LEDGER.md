@@ -1997,3 +1997,20 @@ passou os 40 testes e 90 assercoes. As geracoes registraram falha da auditoria
 NATS opcional sem servidor local, mas retornaram exit 0; a prova dedicada de
 ROUTES com armadilha NATS permaneceu verde. Nao houve bancada externa, pacote,
 push, PR, merge ou operacao em VPS.
+
+### NO-GO de ROUTES para contrato nullable gerado
+
+A auditoria independente rejeitou
+`8ba9d8a014f8e30e13e7f93df8c1ba1ed8e6c00f`. A CLI materializava corretamente
+`policy:null` quando o campo opcional era solicitado e ausente, mas o Zod
+canonico e os contratos TypeScript/OpenAPI aceitavam apenas string. O Swift
+gerado decodificava o `null` como `nil` e o omitia ao reencodar, permitindo que
+`{"policy":null}` virasse `{}`. Esse SHA e invalido para pacote ou promocao.
+
+A correcao torna nullable somente o `policy` da projecao compacta e preserva a
+omissao sem `--fields`. O gerador Swift agora registra a presenca das chaves
+exigidas por alguma alternativa da projecao e reencoda `null` explicitamente.
+SPEC e CHECKS vinculam tokens vazios, virgula final, materializacao seletiva de
+`null`, omissao sem projecao e o round-trip Swift. Esta nota registra a
+implementacao antes da auditoria independente do novo commit; nao houve
+bancada, pacote, push, PR, merge ou operacao em VPS.

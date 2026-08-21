@@ -55166,7 +55166,14 @@ public enum RaviSchemas {
                   "type": "string"
                 },
                 "policy": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "priority": {
                   "type": "number"
@@ -55339,7 +55346,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "policy": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55580,7 +55594,14 @@ public enum RaviSchemas {
                   "type": "string"
                 },
                 "policy": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "priority": {
                   "type": "number"
@@ -55753,7 +55774,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "policy": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [

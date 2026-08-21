@@ -207,3 +207,14 @@ introducing the snapshot API.
   commands logged failed best-effort NATS audit connections while exiting zero;
   the dedicated ROUTES NATS trap remained green. No external testbench,
   package, push, PR, merge, or VPS operation occurred.
+- 2026-08-21: independent review rejected candidate `8ba9d8a014f8e30e13e7f93df8c1ba1ed8e6c00f`.
+  The CLI correctly emitted an explicitly selected absent `policy` as `null`,
+  but the canonical Zod schema and generated TypeScript/OpenAPI still required
+  a string. Generated Swift decoded that `null` as `nil` and used
+  `encodeIfPresent`, so a valid `{"policy":null}` could round-trip to `{}`.
+  The candidate is permanently invalid for package or promotion.
+- 2026-08-21: the correction makes only the compact projection's `policy`
+  nullable, preserves omission without `--fields`, and teaches generated Swift
+  projection models to retain present-null key identity. Focused native tests
+  bind Zod, TypeScript, OpenAPI and Swift to the same contract; the Swift test
+  compiles and executes the exact round-trip when `swiftc` is available.

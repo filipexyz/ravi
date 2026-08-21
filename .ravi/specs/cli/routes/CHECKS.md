@@ -72,3 +72,14 @@ is the executable inventory check.
 Promotion additionally requires independent review and green Linux CI on the
 exact commit. Local success alone does not authorize commit, push, merge, or
 deployment.
+
+## Compact nullable projection checks
+
+- Native CLI tests MUST cover empty `--fields`, an interior empty token, and a
+  trailing comma as exit 2 `USAGE_ERROR` with stable `acceptedFields`.
+- Runtime and Zod tests MUST accept an explicitly selected absent `policy` as
+  `{ "policy": null }` and MUST continue to reject `{}`.
+- A call without `--fields` MUST omit absent optional route fields.
+- TypeScript and OpenAPI MUST publish the selected `policy` variant as required
+  and nullable. Swift generation MUST retain present-null key identity and its
+  compiler-backed test MUST prove `{"policy":null}` round-trips unchanged.

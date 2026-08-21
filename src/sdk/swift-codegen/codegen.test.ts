@@ -240,6 +240,9 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.types).toContain("RoutesListItem contains an unknown field.");
     expect(output.types).toContain("public var items: [RoutesListItem]");
     expect(output.types).toContain("public var routes: [RoutesListItem]");
+    expect(output.types).toContain("public var policy: String?");
+    expect(output.types).toContain('self._raviPresentKeys.contains("policy")');
+    expect(output.types).toContain("try container.encodeNil(forKey: .policy)");
     expect(output.types).toContain("public struct RoutesRouteWithTags: Codable, Sendable");
     expect(output.types).toContain("public var route: RoutesRouteWithTags");
     expect(output.types).toContain("public var origin: RoutesExplainOrigin");
@@ -248,6 +251,70 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.types).toContain("try container.encodeNil(forKey: .liveEffect)");
     expect(output.types).toContain("guard container.contains(.channel) else {");
     expect(output.types).toContain("try container.encodeNil(forKey: .channel)");
+  });
+
+  it("round-trips a selected null route policy when a Swift compiler is available", () => {
+    const output = emitAllSwift(buildRegistry([RoutesContractCommands]), { version: FIXED_VERSION });
+    const codingKeyMarker = "private struct RaviGeneratedCodingKey: CodingKey {";
+    const codingKeyStart = output.types.indexOf(codingKeyMarker);
+    const codingKeyEnd = output.types.indexOf("\n\npublic ", codingKeyStart + codingKeyMarker.length);
+    const routeMarker = "public struct RoutesListItem: Codable, Sendable {";
+    const routeStart = output.types.indexOf(routeMarker);
+    const routeEnd = output.types.indexOf("\n\npublic ", routeStart + routeMarker.length);
+
+    expect(codingKeyStart).toBeGreaterThanOrEqual(0);
+    expect(codingKeyEnd).toBeGreaterThan(codingKeyStart);
+    expect(routeStart).toBeGreaterThanOrEqual(0);
+    expect(routeEnd).toBeGreaterThan(routeStart);
+
+    const compilerProbe = spawnSync("swiftc", ["--version"], { encoding: "utf8" });
+    if (compilerProbe.status !== 0) return;
+
+    const directory = mkdtempSync(join(tmpdir(), "ravi-swift-route-policy-"));
+    const sourcePath = join(directory, "main.swift");
+    const executablePath = join(directory, process.platform === "win32" ? "roundtrip.exe" : "roundtrip");
+    const source = `import Foundation
+
+${output.types.slice(codingKeyStart, codingKeyEnd)}
+
+public struct RoutesTagBinding: Codable, Sendable {}
+
+${output.types.slice(routeStart, routeEnd)}
+
+let decoder = JSONDecoder()
+do {
+  _ = try decoder.decode(RoutesListItem.self, from: Data(#"{}"#.utf8))
+  fatalError("empty route projection was accepted")
+} catch DecodingError.dataCorrupted(_) {
+  // Expected: a projected route must contain at least one selected field.
+}
+
+let decodedNull = try decoder.decode(RoutesListItem.self, from: Data(#"{"policy":null}"#.utf8))
+let encodedNull = try JSONEncoder().encode(decodedNull)
+let nullObject = try JSONSerialization.jsonObject(with: encodedNull) as! [String: Any]
+guard nullObject["policy"] is NSNull else { fatalError("selected null policy was omitted") }
+guard !nullObject.isEmpty else { fatalError("selected null policy became an empty object") }
+
+let decodedPattern = try decoder.decode(RoutesListItem.self, from: Data(#"{"pattern":"5511*"}"#.utf8))
+let encodedPattern = try JSONEncoder().encode(decodedPattern)
+let patternObject = try JSONSerialization.jsonObject(with: encodedPattern) as! [String: Any]
+guard patternObject["pattern"] as? String == "5511*" else { fatalError("pattern changed") }
+guard patternObject["policy"] == nil else { fatalError("absent policy was emitted") }
+`;
+
+    try {
+      writeFileSync(sourcePath, source, "utf8");
+      const compilation = spawnSync("swiftc", [sourcePath, "-o", executablePath], { encoding: "utf8" });
+      if (compilation.status !== 0) {
+        throw new Error(`swiftc failed:\n${compilation.stdout}\n${compilation.stderr}`);
+      }
+      const execution = spawnSync(executablePath, [], { encoding: "utf8" });
+      if (execution.status !== 0) {
+        throw new Error(`Swift route policy round-trip failed:\n${execution.stdout}\n${execution.stderr}`);
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("emits Swift return structs for top-level object schemas", () => {

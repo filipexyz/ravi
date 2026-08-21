@@ -2763,6 +2763,7 @@ const routeWithTagsReturnSchema = routeRecordReturnSchema
 
 const routeProjectionShape = {
   ...routeRecordShape,
+  policy: z.string().nullable().optional(),
   tags: z.array(routesTagBindingReturnSchema),
 };
 const routeProjectionSubsetSchema = z.object(routeProjectionShape).partial().strict();

@@ -148,6 +148,8 @@ public struct CommandsListItem: Codable, Sendable {
   public var title: String?
   public var token: String?
 
+  private var _raviPresentKeys: Set<String> = []
+
   enum CodingKeys: String, CodingKey, CaseIterable {
     case argumentHint = "argumentHint"
     case arguments = "arguments"
@@ -173,36 +175,89 @@ public struct CommandsListItem: Codable, Sendable {
     guard !rawContainer.allKeys.isEmpty else {
       throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "CommandsListItem requires at least one field."))
     }
+    self._raviPresentKeys = Set(rawContainer.allKeys.map(\.stringValue))
     let container = try decoder.container(keyedBy: CodingKeys.self)
     self.argumentHint = try container.decodeIfPresent(String.self, forKey: .argumentHint)
-    self.arguments = try container.decodeIfPresent([String].self, forKey: .arguments)
+    if container.contains(.arguments) {
+      self.arguments = try container.decode([String].self, forKey: .arguments)
+    } else {
+      self.arguments = nil
+    }
     self.description = try container.decodeIfPresent(String.self, forKey: .description)
-    self.disabled = try container.decodeIfPresent(Bool.self, forKey: .disabled)
-    self.id = try container.decodeIfPresent(String.self, forKey: .id)
-    self.issues = try container.decodeIfPresent([CommandsListIssue].self, forKey: .issues)
-    self.path = try container.decodeIfPresent(String.self, forKey: .path)
-    self.relativePath = try container.decodeIfPresent(String.self, forKey: .relativePath)
-    self.scope = try container.decodeIfPresent(String.self, forKey: .scope)
+    if container.contains(.disabled) {
+      self.disabled = try container.decode(Bool.self, forKey: .disabled)
+    } else {
+      self.disabled = nil
+    }
+    if container.contains(.id) {
+      self.id = try container.decode(String.self, forKey: .id)
+    } else {
+      self.id = nil
+    }
+    if container.contains(.issues) {
+      self.issues = try container.decode([CommandsListIssue].self, forKey: .issues)
+    } else {
+      self.issues = nil
+    }
+    if container.contains(.path) {
+      self.path = try container.decode(String.self, forKey: .path)
+    } else {
+      self.path = nil
+    }
+    if container.contains(.relativePath) {
+      self.relativePath = try container.decode(String.self, forKey: .relativePath)
+    } else {
+      self.relativePath = nil
+    }
+    if container.contains(.scope) {
+      self.scope = try container.decode(String.self, forKey: .scope)
+    } else {
+      self.scope = nil
+    }
     self.shadowedBy = try container.decodeIfPresent(String.self, forKey: .shadowedBy)
-    self.shadows = try container.decodeIfPresent([String].self, forKey: .shadows)
+    if container.contains(.shadows) {
+      self.shadows = try container.decode([String].self, forKey: .shadows)
+    } else {
+      self.shadows = nil
+    }
     self.title = try container.decodeIfPresent(String.self, forKey: .title)
-    self.token = try container.decodeIfPresent(String.self, forKey: .token)
+    if container.contains(.token) {
+      self.token = try container.decode(String.self, forKey: .token)
+    } else {
+      self.token = nil
+    }
   }
 
   public func encode(to encoder: Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encodeIfPresent(self.argumentHint, forKey: .argumentHint)
+    if let value = self.argumentHint {
+      try container.encode(value, forKey: .argumentHint)
+    } else if self._raviPresentKeys.contains("argumentHint") {
+      try container.encodeNil(forKey: .argumentHint)
+    }
     try container.encodeIfPresent(self.arguments, forKey: .arguments)
-    try container.encodeIfPresent(self.description, forKey: .description)
+    if let value = self.description {
+      try container.encode(value, forKey: .description)
+    } else if self._raviPresentKeys.contains("description") {
+      try container.encodeNil(forKey: .description)
+    }
     try container.encodeIfPresent(self.disabled, forKey: .disabled)
     try container.encodeIfPresent(self.id, forKey: .id)
     try container.encodeIfPresent(self.issues, forKey: .issues)
     try container.encodeIfPresent(self.path, forKey: .path)
     try container.encodeIfPresent(self.relativePath, forKey: .relativePath)
     try container.encodeIfPresent(self.scope, forKey: .scope)
-    try container.encodeIfPresent(self.shadowedBy, forKey: .shadowedBy)
+    if let value = self.shadowedBy {
+      try container.encode(value, forKey: .shadowedBy)
+    } else if self._raviPresentKeys.contains("shadowedBy") {
+      try container.encodeNil(forKey: .shadowedBy)
+    }
     try container.encodeIfPresent(self.shadows, forKey: .shadows)
-    try container.encodeIfPresent(self.title, forKey: .title)
+    if let value = self.title {
+      try container.encode(value, forKey: .title)
+    } else if self._raviPresentKeys.contains("title") {
+      try container.encodeNil(forKey: .title)
+    }
     try container.encodeIfPresent(self.token, forKey: .token)
   }
 }
@@ -482,6 +537,8 @@ public struct RoutesListItem: Codable, Sendable {
   public var session: String?
   public var tags: [RoutesTagBinding]?
 
+  private var _raviPresentKeys: Set<String> = []
+
   enum CodingKeys: String, CodingKey, CaseIterable {
     case accountId = "accountId"
     case agent = "agent"
@@ -504,17 +561,54 @@ public struct RoutesListItem: Codable, Sendable {
     guard !rawContainer.allKeys.isEmpty else {
       throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "RoutesListItem requires at least one field."))
     }
+    self._raviPresentKeys = Set(rawContainer.allKeys.map(\.stringValue))
     let container = try decoder.container(keyedBy: CodingKeys.self)
-    self.accountId = try container.decodeIfPresent(String.self, forKey: .accountId)
-    self.agent = try container.decodeIfPresent(String.self, forKey: .agent)
-    self.channel = try container.decodeIfPresent(String.self, forKey: .channel)
-    self.dmScope = try container.decodeIfPresent(String.self, forKey: .dmScope)
-    self.id = try container.decodeIfPresent(Double.self, forKey: .id)
-    self.pattern = try container.decodeIfPresent(String.self, forKey: .pattern)
+    if container.contains(.accountId) {
+      self.accountId = try container.decode(String.self, forKey: .accountId)
+    } else {
+      self.accountId = nil
+    }
+    if container.contains(.agent) {
+      self.agent = try container.decode(String.self, forKey: .agent)
+    } else {
+      self.agent = nil
+    }
+    if container.contains(.channel) {
+      self.channel = try container.decode(String.self, forKey: .channel)
+    } else {
+      self.channel = nil
+    }
+    if container.contains(.dmScope) {
+      self.dmScope = try container.decode(String.self, forKey: .dmScope)
+    } else {
+      self.dmScope = nil
+    }
+    if container.contains(.id) {
+      self.id = try container.decode(Double.self, forKey: .id)
+    } else {
+      self.id = nil
+    }
+    if container.contains(.pattern) {
+      self.pattern = try container.decode(String.self, forKey: .pattern)
+    } else {
+      self.pattern = nil
+    }
     self.policy = try container.decodeIfPresent(String.self, forKey: .policy)
-    self.priority = try container.decodeIfPresent(Double.self, forKey: .priority)
-    self.session = try container.decodeIfPresent(String.self, forKey: .session)
-    self.tags = try container.decodeIfPresent([RoutesTagBinding].self, forKey: .tags)
+    if container.contains(.priority) {
+      self.priority = try container.decode(Double.self, forKey: .priority)
+    } else {
+      self.priority = nil
+    }
+    if container.contains(.session) {
+      self.session = try container.decode(String.self, forKey: .session)
+    } else {
+      self.session = nil
+    }
+    if container.contains(.tags) {
+      self.tags = try container.decode([RoutesTagBinding].self, forKey: .tags)
+    } else {
+      self.tags = nil
+    }
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -525,7 +619,11 @@ public struct RoutesListItem: Codable, Sendable {
     try container.encodeIfPresent(self.dmScope, forKey: .dmScope)
     try container.encodeIfPresent(self.id, forKey: .id)
     try container.encodeIfPresent(self.pattern, forKey: .pattern)
-    try container.encodeIfPresent(self.policy, forKey: .policy)
+    if let value = self.policy {
+      try container.encode(value, forKey: .policy)
+    } else if self._raviPresentKeys.contains("policy") {
+      try container.encodeNil(forKey: .policy)
+    }
     try container.encodeIfPresent(self.priority, forKey: .priority)
     try container.encodeIfPresent(self.session, forKey: .session)
     try container.encodeIfPresent(self.tags, forKey: .tags)
