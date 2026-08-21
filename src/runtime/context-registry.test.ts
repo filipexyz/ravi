@@ -11,6 +11,7 @@ import {
   resolveRuntimeContext,
   resolveRuntimeContextOrThrow,
   revokeAgentRuntimeContextsForSession,
+  revokeLiveRuntimeContextsForAgent,
   revokeRuntimeContext,
   snapshotAgentCapabilities,
 } from "./context-registry.js";
@@ -171,6 +172,36 @@ describe("runtime context registry", () => {
     expect(resolveRuntimeContext(first.contextKey, { touch: false })).toBeNull();
     expect(resolveRuntimeContext(child.contextKey, { touch: false })).toBeNull();
     expect(dbGetContext(first.contextId)?.metadata?.revocationReason).toBe("session_reset_test");
+  });
+
+  it("revokes every live authority snapshot when agent permissions change", () => {
+    const agentRuntime = createRuntimeContext({
+      kind: "agent-runtime",
+      agentId: TEST_AGENT_ID,
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+    });
+    const turnRuntime = createRuntimeContext({
+      kind: "turn-runtime",
+      agentId: TEST_AGENT_ID,
+      capabilities: [{ permission: "admin", objectType: "system", objectId: "*" }],
+    });
+    const child = issueRuntimeContext({
+      parent: turnRuntime,
+      cliName: "child-cli",
+      inheritCapabilities: true,
+    });
+    const unrelated = createRuntimeContext({ kind: "turn-runtime", capabilities: [] });
+
+    const result = revokeLiveRuntimeContextsForAgent(TEST_AGENT_ID);
+
+    expect(result.map((entry) => entry.context.contextId).sort()).toEqual(
+      [agentRuntime.contextId, turnRuntime.contextId].sort(),
+    );
+    expect(resolveRuntimeContext(agentRuntime.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(turnRuntime.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(child.contextKey, { touch: false })).toBeNull();
+    expect(resolveRuntimeContext(unrelated.contextKey, { touch: false })).not.toBeNull();
+    expect(dbGetContext(turnRuntime.contextId)?.metadata?.revocationReason).toBe("agent_permissions_changed");
   });
 
   it("snapshots provider materialized capabilities only", () => {
