@@ -1509,3 +1509,80 @@ O primeiro `biome check` apontou apenas finais de linha misturados nos dois
 arquivos SDK editados no Windows. A formatacao oficial corrigiu o problema; o
 check e os 20 testes dos arquivos formatados passaram. Novo SHA, pacote, revisao
 independente e CI Linux verde continuam obrigatorios.
+
+### COMMANDS read-only agent-first - incremento local
+
+**Base:** `560517a43248c3798f82e3da98c088df0743016e`. O slice cobre
+`commands list`, `show`, `validate` e `run`; nenhuma operacao escreve e `run`
+continua sendo somente preview do prompt. A fachada conversacional proposta no
+dossie foi adiada porque revisao do registry, integridade do envelope,
+sombreamento real, materialidade e roteamento de engine ainda exigem decisao.
+
+**Contrato implementado:** nome vazio/invalido vira
+`INVALID_COMMAND_NAME`, exit 2, antes da resolucao do agente; paginacao invalida
+preserva o `USAGE_ERROR`, exit 2, da fundacao; `--fields` usa um conjunto
+estavel de 13 campos e rejeita qualquer desconhecido, inclusive misturado ou
+com lista vazia. Permanecem compativeis nomes sem distincao de caixa e com `#`,
+`items` igual a `commands`, veredito exit 1 de `validate` e
+`renderedPromptSha256`.
+
+**Evidencia nativa:** contrato do handler 24/24, 93 assercoes; registro e
+renderer 7/7, 24 assercoes; processo real isolado 9/9, 33 assercoes. O grupo
+sem subcomando imprimiu help com exit 0. As quatro
+operacoes preservaram hashes dos command files e o digest logico final de
+agente, rotas e sessoes; auditoria NATS ficou suprimida no processo isolado.
+Os testes proporcionais da fundacao de registry passaram 27/27, com 76
+assercoes. Codegen e `sdk:check`, typecheck, build integral, Biome dos seis
+arquivos TS, markdownlint dos dez documentos e quality gate explicito dos 18
+caminhos passaram. A geracao atualizou a descricao de `--fields` no schema SDK
+e o hash de registry/versionamento derivado.
+
+**Estado:** implementacao local pronta para revisao, sem commit, push, PR ou
+VPS. A fachada futura e as decisoes acima permanecem fora deste incremento.
+
+### Correcao da divergencia dos contratos gerados
+
+A verificacao independente do handoff encontrou os dois snapshots OpenAPI e
+cinco artefatos Swift divergentes do registry vivo, apesar do relato anterior
+de que estavam atuais. O TypeScript SDK estava sincronizado, mas isso nao prova
+as outras superficies. A candidata voltou para **NO-GO** sem commit, pacote,
+push, PR ou acesso remoto.
+
+Os dois OpenAPI e todos os arquivos Swift foram regenerados pelos comandos
+oficiais. O incidente esta em
+`docs/postmortems/0002-commands-generated-contract-drift.md`. Checks de drift,
+SDK e gates finais devem ser repetidos antes de qualquer promocao.
+
+### Fechamento local da divergencia gerada de COMMANDS
+
+Depois da regeneracao oficial, os dois checks OpenAPI e o check deterministico
+do SDK Swift passaram separadamente. O SDK completo passou 75 testes com 297
+assercoes e `sdk:check` verde. O recorte de commands foi repetido e passou 40
+testes com 150 assercoes, incluindo nove casos de processo real isolado.
+
+Typecheck, build integral, Biome focado, lint dos nove documentos aplicaveis e
+quality gate dos 23 caminhos com 274 specs indexadas tambem passaram. Isso
+fecha apenas a correcao local do drift. Commit exato, pacote, nova auditoria
+independente e CI Linux ainda sao obrigatorios antes de push ou PR; merge e VPS
+continuam fora deste checkpoint.
+
+Uma recaptura posterior do Biome encontrou finais de linha Windows no arquivo
+compartilhado de schemas depois da geracao. O formatador oficial normalizou
+somente esse arquivo, sem mudanca semantica. O Biome focado e os 40 testes de
+commands foram repetidos; as 150 assercoes passaram. A evidencia de estilo e
+teste anterior a essa normalizacao nao e usada como captura final.
+
+### Recaptura final do coordenador para COMMANDS
+
+O recorte final passou 40 testes com 150 assercoes e typecheck. A primeira
+execucao do SDK sob carga paralela teve timeout em dois hooks inalterados de
+cinco segundos e foi descartada; a repeticao isolada passou os 75 testes com
+297 assercoes e `sdk:check`.
+
+Passaram tambem os dois checks OpenAPI, o check deterministico Swift, build
+integral, Biome dos seis fontes de commands/framework, lint dos 11 documentos
+alterados localmente, `git diff --check`, os 40 testes nativos do quality gate e
+o runner sobre 56 caminhos acumulados da foundation e do dominio. Foram
+indexadas 274 specs, com aprovacao de `cli/commands`, `cli/foundation` e
+`commands`. O drift gerado esta fechado localmente. Ainda faltam commit exato,
+pacote, auditoria independente e CI Linux; nao houve push, PR, merge ou VPS.

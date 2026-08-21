@@ -1,11 +1,12 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { configStore } from "../../config-store.js";
 import {
   discoverRaviCommands,
   normalizeRaviCommandId,
+  RaviCommandError,
   renderRaviCommand,
   resolveRaviCommand,
   type RaviCommandIssue,
@@ -37,6 +38,23 @@ function printJson(payload: unknown): void {
 interface ContractCallSite {
   op: string;
   asJson?: boolean;
+}
+
+function normalizeCommandName(name: string, site: ContractCallSite): string {
+  try {
+    return normalizeRaviCommandId(typeof name === "string" ? name : "");
+  } catch (error) {
+    if (error instanceof RaviCommandError && error.code === "invalid_command_name") {
+      contractFail(site.op, "INVALID_COMMAND_NAME", error.message, {
+        asJson: site.asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: {
+          suggestedAction: "Retry with a non-empty command name matching [A-Za-z0-9][A-Za-z0-9-]{0,63}",
+        },
+      });
+    }
+    throw error;
+  }
 }
 
 /**
@@ -110,6 +128,22 @@ function serializeCommand(
   };
 }
 
+const COMMAND_LIST_FIELDS = [
+  "id",
+  "token",
+  "title",
+  "description",
+  "argumentHint",
+  "arguments",
+  "disabled",
+  "scope",
+  "path",
+  "relativePath",
+  "shadowedBy",
+  "shadows",
+  "issues",
+] as const satisfies ReadonlyArray<keyof ReturnType<typeof serializeCommand>>;
+
 function printCommandSummary(command: RaviCommandRecord): void {
   const disabled = command.disabled ? " disabled" : "";
   const shadow = command.shadows?.length ? " shadows global" : command.shadowedBy ? " shadowed" : "";
@@ -138,6 +172,7 @@ function normalizeRestArgs(rest?: string[]): string[] {
   name: "commands",
   description: "Manage Ravi prompt commands",
   scope: "open",
+  showHelpOnBare: true,
 })
 export class RaviCommandsCommands {
   @Command({ name: "list", description: "List Ravi commands" })
@@ -149,7 +184,11 @@ export class RaviCommandsCommands {
     @Option({ flags: "--tag <slug>", description: "Filter by canonical command tag" }) tagSlug?: string,
     @Option({ flags: "--limit <n>", description: "Page size (default: 50, max: 500)" }) limit?: string,
     @Option({ flags: "--offset <n>", description: "Number of matching commands to skip (default: 0)" }) offset?: string,
-    @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
+    @Option({
+      flags: "--fields <a,b,c>",
+      description:
+        "Compact fields: id,token,title,description,argumentHint,arguments,disabled,scope,path,relativePath,shadowedBy,shadows,issues",
+    })
     fields?: string,
   ) {
     const agent = resolveAgent(agentId, { op: "commands list", asJson });
@@ -175,6 +214,7 @@ export class RaviCommandsCommands {
     const commandRows = pickFields(
       pageCommands.map((command) => serializeCommand(command)),
       fields,
+      { acceptedFields: COMMAND_LIST_FIELDS },
     );
     const payload = {
       total: page.total,
@@ -224,8 +264,9 @@ export class RaviCommandsCommands {
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const agent = resolveAgent(agentId, { op: "commands show", asJson });
-    const id = normalizeRaviCommandId(name);
+    const site = { op: "commands show", asJson };
+    const id = normalizeCommandName(name, site);
+    const agent = resolveAgent(agentId, site);
     const registry = discoverRaviCommands({ agentCwd: agent.cwd });
     const command = resolveRaviCommand(registry, id);
     if (!command) {
@@ -289,8 +330,9 @@ export class RaviCommandsCommands {
     @Option({ flags: "--agent <id>", description: "Resolve agent-scoped commands for this agent" }) agentId?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const agent = resolveAgent(agentId, { op: "commands run", asJson });
-    const id = normalizeRaviCommandId(name);
+    const site = { op: "commands run", asJson };
+    const id = normalizeCommandName(name, site);
+    const agent = resolveAgent(agentId, site);
     const args = normalizeRestArgs(rest);
     const rawArguments = args.join(" ");
     const registry = discoverRaviCommands({ agentCwd: agent.cwd });

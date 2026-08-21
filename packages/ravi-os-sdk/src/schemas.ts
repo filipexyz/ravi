@@ -21123,7 +21123,7 @@ export const CommandsListInputSchema = {
       "type": "string"
     },
     "fields": {
-      "description": "Compact mode: keep only these fields of each item",
+      "description": "Compact fields: id,token,title,description,argumentHint,arguments,disabled,scope,path,relativePath,shadowedBy,shadows,issues",
       "type": "string"
     },
     "limit": {

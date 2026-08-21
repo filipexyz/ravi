@@ -154,6 +154,8 @@ export interface GroupOptions {
   scope?: ScopeType;
   aliases?: string[];
   hidden?: boolean;
+  /** Print group help and succeed when the group is invoked without a subcommand. */
+  showHelpOnBare?: boolean;
 }
 
 export interface CommandOptions {

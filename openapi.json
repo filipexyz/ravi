@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "035eb8a0686f51ec"
+    "version": "2370946ba69718e6"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -24106,7 +24106,7 @@
                     "type": "string"
                   },
                   "fields": {
-                    "description": "Compact mode: keep only these fields of each item",
+                    "description": "Compact fields: id,token,title,description,argumentHint,arguments,disabled,scope,path,relativePath,shadowedBy,shadows,issues",
                     "type": "string"
                   },
                   "limit": {

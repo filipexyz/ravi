@@ -24,8 +24,6 @@ status: draft
 normative: true
 ---
 
-# Ravi Commands
-
 ## Intent
 
 Ravi Commands are user-invoked prompt templates. A command expands a Markdown file into a composed prompt and sends that prompt to the resolved Ravi agent through the normal session runtime.
@@ -153,7 +151,7 @@ The durable user message and session trace MUST retain command metadata so the e
 The operator CLI SHOULD expose:
 
 ```bash
-ravi commands list [--agent <agent>] [--json]
+ravi commands list [--agent <agent>] [--limit <n>] [--offset <n>] [--fields <a,b,c>] [--json]
 ravi commands show <name> [--agent <agent>] [--json]
 ravi commands validate [--agent <agent>] [--json]
 ravi commands run <name> [--agent <agent>] [--json] -- <arguments>
@@ -162,6 +160,14 @@ ravi commands run <name> [--agent <agent>] [--json] -- <arguments>
 `ravi commands run` MUST render and return the composed prompt only. It MUST NOT publish to a session or start runtime execution.
 
 All machine-consumed outputs MUST support `--json`.
+
+The operator surface is a pure read boundary. Name and pagination mistakes
+MUST use the typed usage taxonomy, and unknown compact fields MUST fail rather
+than return empty objects with success. The normative CLI details and stable
+field set live in `cli/commands`.
+
+Bare `ravi commands` MUST act as successful operation discovery: print group
+help and exit 0.
 
 ## Non-Goals
 
@@ -179,6 +185,8 @@ All machine-consumed outputs MUST support `--json`.
 - `#review-pr 123 high` renders `$ARGUMENTS`, `$ARGUMENTS[0]`, `$0`, and named placeholders correctly.
 - Unknown commands are ordinary chat and dispatch without command expansion.
 - Invalid command names return structured errors without dispatching to the model.
+- Repeating an unchanged operator call returns deterministic values and does
+  not modify command files, config, sessions, or runtime transport.
 - Unsupported frontmatter cannot grant tools or change runtime settings.
 - Editing a command file is visible without daemon restart.
 - The session trace can show which command produced a prompt and where the Markdown came from.

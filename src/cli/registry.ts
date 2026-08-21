@@ -118,6 +118,9 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
     // Support nested groups via dot notation
     const segments = groupMeta.name.split(".");
     const group = resolveCommandPath(program, segments, groupMeta.description, groupMeta.aliases);
+    if (groupMeta.showHelpOnBare) {
+      group.action(() => group.outputHelp());
+    }
 
     const instance = new cls();
 
