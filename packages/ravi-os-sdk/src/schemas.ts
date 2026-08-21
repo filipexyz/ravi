@@ -54083,19 +54083,47 @@ export const ProjectsListReturnSchema = {
             "additionalProperties": false,
             "properties": {
               "archivedAt": {
-                "type": "number"
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "createdAt": {
                 "type": "number"
               },
               "createdBy": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "createdByAgentId": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "createdBySessionName": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "hypothesis": {
                 "type": "string"
@@ -54113,10 +54141,24 @@ export const ProjectsListReturnSchema = {
                 "type": "string"
               },
               "operatorSessionName": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "ownerAgentId": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "slug": {
                 "type": "string"
@@ -54135,64 +54177,71 @@ export const ProjectsListReturnSchema = {
                 "type": "string"
               },
               "tags": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "assetId": {
-                      "type": "string"
-                    },
-                    "assetType": {
-                      "const": "project",
-                      "type": "string"
-                    },
-                    "createdAt": {
-                      "type": "number"
-                    },
-                    "createdBy": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "metadata": {
-                      "additionalProperties": {
-                        "$ref": "#/$defs/__schema0"
+                "anyOf": [
+                  {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "type": "string"
+                        },
+                        "assetType": {
+                          "const": "project",
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "tagId": {
+                          "type": "string"
+                        },
+                        "tagSlug": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        },
+                        "updatedBy": {
+                          "type": "string"
+                        }
                       },
-                      "propertyNames": {
-                        "type": "string"
-                      },
+                      "required": [
+                        "id",
+                        "tagId",
+                        "tagSlug",
+                        "assetType",
+                        "assetId",
+                        "source",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "ProjectTagBinding",
                       "type": "object"
                     },
-                    "source": {
-                      "type": "string"
-                    },
-                    "tagId": {
-                      "type": "string"
-                    },
-                    "tagSlug": {
-                      "type": "string"
-                    },
-                    "updatedAt": {
-                      "type": "number"
-                    },
-                    "updatedBy": {
-                      "type": "string"
-                    }
+                    "type": "array"
                   },
-                  "required": [
-                    "id",
-                    "tagId",
-                    "tagSlug",
-                    "assetType",
-                    "assetId",
-                    "source",
-                    "createdAt",
-                    "updatedAt"
-                  ],
-                  "title": "ProjectTagBinding",
-                  "type": "object"
-                },
-                "type": "array"
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "title": {
                 "type": "string"
@@ -54312,7 +54361,14 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "ownerAgentId": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54324,7 +54380,14 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "operatorSessionName": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54336,7 +54399,14 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "createdBy": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54348,7 +54418,14 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "createdByAgentId": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54360,7 +54437,14 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "createdBySessionName": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54372,7 +54456,14 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "archivedAt": {
-                    "type": "number"
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54420,64 +54511,71 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "tags": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "assetId": {
-                          "type": "string"
-                        },
-                        "assetType": {
-                          "const": "project",
-                          "type": "string"
-                        },
-                        "createdAt": {
-                          "type": "number"
-                        },
-                        "createdBy": {
-                          "type": "string"
-                        },
-                        "id": {
-                          "type": "string"
-                        },
-                        "metadata": {
-                          "additionalProperties": {
-                            "$ref": "#/$defs/__schema0"
+                    "anyOf": [
+                      {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "assetId": {
+                              "type": "string"
+                            },
+                            "assetType": {
+                              "const": "project",
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "number"
+                            },
+                            "createdBy": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "metadata": {
+                              "additionalProperties": {
+                                "$ref": "#/$defs/__schema0"
+                              },
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "tagId": {
+                              "type": "string"
+                            },
+                            "tagSlug": {
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "type": "number"
+                            },
+                            "updatedBy": {
+                              "type": "string"
+                            }
                           },
-                          "propertyNames": {
-                            "type": "string"
-                          },
+                          "required": [
+                            "id",
+                            "tagId",
+                            "tagSlug",
+                            "assetType",
+                            "assetId",
+                            "source",
+                            "createdAt",
+                            "updatedAt"
+                          ],
+                          "title": "ProjectTagBinding",
                           "type": "object"
                         },
-                        "source": {
-                          "type": "string"
-                        },
-                        "tagId": {
-                          "type": "string"
-                        },
-                        "tagSlug": {
-                          "type": "string"
-                        },
-                        "updatedAt": {
-                          "type": "number"
-                        },
-                        "updatedBy": {
-                          "type": "string"
-                        }
+                        "type": "array"
                       },
-                      "required": [
-                        "id",
-                        "tagId",
-                        "tagSlug",
-                        "assetType",
-                        "assetId",
-                        "source",
-                        "createdAt",
-                        "updatedAt"
-                      ],
-                      "title": "ProjectTagBinding",
-                      "type": "object"
-                    },
-                    "type": "array"
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54549,19 +54647,47 @@ export const ProjectsListReturnSchema = {
             "additionalProperties": false,
             "properties": {
               "archivedAt": {
-                "type": "number"
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "createdAt": {
                 "type": "number"
               },
               "createdBy": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "createdByAgentId": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "createdBySessionName": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "hypothesis": {
                 "type": "string"
@@ -54579,10 +54705,24 @@ export const ProjectsListReturnSchema = {
                 "type": "string"
               },
               "operatorSessionName": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "ownerAgentId": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "slug": {
                 "type": "string"
@@ -54601,64 +54741,71 @@ export const ProjectsListReturnSchema = {
                 "type": "string"
               },
               "tags": {
-                "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "assetId": {
-                      "type": "string"
-                    },
-                    "assetType": {
-                      "const": "project",
-                      "type": "string"
-                    },
-                    "createdAt": {
-                      "type": "number"
-                    },
-                    "createdBy": {
-                      "type": "string"
-                    },
-                    "id": {
-                      "type": "string"
-                    },
-                    "metadata": {
-                      "additionalProperties": {
-                        "$ref": "#/$defs/__schema0"
+                "anyOf": [
+                  {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "type": "string"
+                        },
+                        "assetType": {
+                          "const": "project",
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "tagId": {
+                          "type": "string"
+                        },
+                        "tagSlug": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        },
+                        "updatedBy": {
+                          "type": "string"
+                        }
                       },
-                      "propertyNames": {
-                        "type": "string"
-                      },
+                      "required": [
+                        "id",
+                        "tagId",
+                        "tagSlug",
+                        "assetType",
+                        "assetId",
+                        "source",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "ProjectTagBinding",
                       "type": "object"
                     },
-                    "source": {
-                      "type": "string"
-                    },
-                    "tagId": {
-                      "type": "string"
-                    },
-                    "tagSlug": {
-                      "type": "string"
-                    },
-                    "updatedAt": {
-                      "type": "number"
-                    },
-                    "updatedBy": {
-                      "type": "string"
-                    }
+                    "type": "array"
                   },
-                  "required": [
-                    "id",
-                    "tagId",
-                    "tagSlug",
-                    "assetType",
-                    "assetId",
-                    "source",
-                    "createdAt",
-                    "updatedAt"
-                  ],
-                  "title": "ProjectTagBinding",
-                  "type": "object"
-                },
-                "type": "array"
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "title": {
                 "type": "string"
@@ -54778,7 +54925,14 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "ownerAgentId": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54790,7 +54944,14 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "operatorSessionName": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54802,7 +54963,14 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "createdBy": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54814,7 +54982,14 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "createdByAgentId": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54826,7 +55001,14 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "createdBySessionName": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54838,7 +55020,14 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "archivedAt": {
-                    "type": "number"
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -54886,64 +55075,71 @@ export const ProjectsListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "tags": {
-                    "items": {
-                      "additionalProperties": false,
-                      "properties": {
-                        "assetId": {
-                          "type": "string"
-                        },
-                        "assetType": {
-                          "const": "project",
-                          "type": "string"
-                        },
-                        "createdAt": {
-                          "type": "number"
-                        },
-                        "createdBy": {
-                          "type": "string"
-                        },
-                        "id": {
-                          "type": "string"
-                        },
-                        "metadata": {
-                          "additionalProperties": {
-                            "$ref": "#/$defs/__schema0"
+                    "anyOf": [
+                      {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "assetId": {
+                              "type": "string"
+                            },
+                            "assetType": {
+                              "const": "project",
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "number"
+                            },
+                            "createdBy": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "metadata": {
+                              "additionalProperties": {
+                                "$ref": "#/$defs/__schema0"
+                              },
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "tagId": {
+                              "type": "string"
+                            },
+                            "tagSlug": {
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "type": "number"
+                            },
+                            "updatedBy": {
+                              "type": "string"
+                            }
                           },
-                          "propertyNames": {
-                            "type": "string"
-                          },
+                          "required": [
+                            "id",
+                            "tagId",
+                            "tagSlug",
+                            "assetType",
+                            "assetId",
+                            "source",
+                            "createdAt",
+                            "updatedAt"
+                          ],
+                          "title": "ProjectTagBinding",
                           "type": "object"
                         },
-                        "source": {
-                          "type": "string"
-                        },
-                        "tagId": {
-                          "type": "string"
-                        },
-                        "tagSlug": {
-                          "type": "string"
-                        },
-                        "updatedAt": {
-                          "type": "number"
-                        },
-                        "updatedBy": {
-                          "type": "string"
-                        }
+                        "type": "array"
                       },
-                      "required": [
-                        "id",
-                        "tagId",
-                        "tagSlug",
-                        "assetType",
-                        "assetId",
-                        "source",
-                        "createdAt",
-                        "updatedAt"
-                      ],
-                      "title": "ProjectTagBinding",
-                      "type": "object"
-                    },
-                    "type": "array"
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -58622,13 +58818,34 @@ export const ProjectsResourcesListReturnSchema = {
                 "type": "number"
               },
               "createdBy": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "createdByAgentId": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "createdBySessionName": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "id": {
                 "type": "string"
@@ -58647,13 +58864,20 @@ export const ProjectsResourcesListReturnSchema = {
                 "type": "string"
               },
               "metadata": {
-                "additionalProperties": {
-                  "$ref": "#/$defs/__schema0"
-                },
-                "propertyNames": {
-                  "type": "string"
-                },
-                "type": "object"
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "projectId": {
                 "type": "string"
@@ -58679,7 +58903,14 @@ export const ProjectsResourcesListReturnSchema = {
                 ]
               },
               "role": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "updatedAt": {
                 "type": "number"
@@ -58742,7 +58973,14 @@ export const ProjectsResourcesListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "role": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -58754,13 +58992,20 @@ export const ProjectsResourcesListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "metadata": {
-                    "additionalProperties": {
-                      "$ref": "#/$defs/__schema0"
-                    },
-                    "propertyNames": {
-                      "type": "string"
-                    },
-                    "type": "object"
+                    "anyOf": [
+                      {
+                        "additionalProperties": {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -58772,7 +59017,14 @@ export const ProjectsResourcesListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "createdBy": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -58784,7 +59036,14 @@ export const ProjectsResourcesListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "createdByAgentId": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -58796,7 +59055,14 @@ export const ProjectsResourcesListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "createdBySessionName": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -58962,13 +59228,34 @@ export const ProjectsResourcesListReturnSchema = {
                 "type": "number"
               },
               "createdBy": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "createdByAgentId": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "createdBySessionName": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "id": {
                 "type": "string"
@@ -58987,13 +59274,20 @@ export const ProjectsResourcesListReturnSchema = {
                 "type": "string"
               },
               "metadata": {
-                "additionalProperties": {
-                  "$ref": "#/$defs/__schema0"
-                },
-                "propertyNames": {
-                  "type": "string"
-                },
-                "type": "object"
+                "anyOf": [
+                  {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "projectId": {
                 "type": "string"
@@ -59019,7 +59313,14 @@ export const ProjectsResourcesListReturnSchema = {
                 ]
               },
               "role": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "updatedAt": {
                 "type": "number"
@@ -59082,7 +59383,14 @@ export const ProjectsResourcesListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "role": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -59094,13 +59402,20 @@ export const ProjectsResourcesListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "metadata": {
-                    "additionalProperties": {
-                      "$ref": "#/$defs/__schema0"
-                    },
-                    "propertyNames": {
-                      "type": "string"
-                    },
-                    "type": "object"
+                    "anyOf": [
+                      {
+                        "additionalProperties": {
+                          "$ref": "#/$defs/__schema0"
+                        },
+                        "propertyNames": {
+                          "type": "string"
+                        },
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -59112,7 +59427,14 @@ export const ProjectsResourcesListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "createdBy": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -59124,7 +59446,14 @@ export const ProjectsResourcesListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "createdByAgentId": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [
@@ -59136,7 +59465,14 @@ export const ProjectsResourcesListReturnSchema = {
                 "additionalProperties": {},
                 "properties": {
                   "createdBySessionName": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": [

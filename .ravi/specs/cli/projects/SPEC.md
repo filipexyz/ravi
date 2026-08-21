@@ -166,3 +166,17 @@ status, tag, or resource type.
 Invalid status, tag, and resource-type filters MUST return typed public causes.
 An incompatible read schema MUST fail closed with
 `PROJECTS_READ_SCHEMA_UNSUPPORTED`; the reader MUST NOT migrate it.
+
+## Compact projection correction
+
+Supplying `--fields` creates a strict field list. Empty input, comma-only input,
+a leading or trailing comma, or any empty token between valid fields MUST fail
+with `USAGE_ERROR`, exit 2, and the operation's `acceptedFields`; normalization
+MUST NOT erase malformed tokens.
+
+A compact result MUST expose every requested field. If a requested field is
+optional in the full entity and absent for one item, that item MUST contain the
+field with JSON `null`; it MUST NOT serialize as `{}` or be removed from the
+page. In the compact schema, that selected field is required and nullable.
+Required source fields remain non-null, and full entity and mutation contracts
+remain unchanged.

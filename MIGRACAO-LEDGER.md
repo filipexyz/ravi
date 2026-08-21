@@ -1809,3 +1809,29 @@ testes/202 assercoes; typecheck, build, Biome, Markdown, quality gate nativo,
 SDK 77/77 e os quatro checks de drift tambem passaram. O commit anterior
 permanece apenas como historico; revisao independente, pacote, PR e VPS exigem
 o novo SHA.
+
+### Projects: retificacao do contrato de projecao compacta
+
+A alegacao anterior de que o candidato
+`163c1565ac6833bc99fb3849f5bd7cf98137106a` encerrava integralmente a correcao
+de `--fields` era falsa. Esse SHA foi invalidado: ainda descartava tokens
+vazios, aceitando entrada vazia, somente virgulas, virgula final e lacunas entre
+campos; alem disso, um campo opcional solicitado mas ausente podia produzir um
+item `{}`. Esta retificacao e append-only e nao altera as capturas historicas.
+
+A correcao valida a estrutura original dos tokens antes da normalizacao e
+responde `USAGE_ERROR`, exit 2 e `acceptedFields` para toda entrada malformada.
+Uma projecao valida agora representa campo opcional solicitado e ausente com
+`null`, preservando item, ordem, ranking e paginacao. Zod, OpenAPI, TypeScript e
+Swift publicam o mesmo contrato required+nullable apenas na variante compacta;
+entidades completas e mutacoes nao mudaram.
+
+A recaptura serial passou os 57 testes nativos de Projects com 235 assercoes,
+incluindo seis processos reais com 70 assercoes. Commands process permaneceu
+11/11 com 57 assercoes; SDK passou 77/77 com 314 assercoes; OpenAPI e Swift
+codegen passaram 45/45 com 146 assercoes; quality passou 40/40 com 90 assercoes.
+Typecheck, build, Biome, Markdown, diff check e os quatro checks de drift tambem
+passaram. O encadeamento amplo `test:agent-contract` continuou nao verde apenas
+nas duas falhas Windows preexistentes do artifact store: separador POSIX no
+matcher e `symlinkSync` negado. Elas foram registradas como comparacao, nao como
+sucesso. Nao houve pacote, push, PR, merge ou VPS.

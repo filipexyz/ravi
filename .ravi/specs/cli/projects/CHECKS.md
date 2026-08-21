@@ -57,3 +57,15 @@
   after domain-specific error mapping.
 - Every prepared read query MUST be finalized before the read-only database is
   closed, including Windows where a leaked statement keeps the file locked.
+
+## Compact projection correction checks
+
+- Exercise empty, comma-only, trailing-comma, and embedded-empty-token
+  `--fields` values through the real process. Every case MUST exit 2 with
+  `USAGE_ERROR` and `acceptedFields`.
+- Select an absent optional project field and an absent optional resource
+  field. The projector and real process MUST return the requested key with
+  `null`, never `{}`, while preserving item count and order.
+- Runtime Zod, OpenAPI, TypeScript, and Swift contracts MUST describe a selected
+  originally optional field as required in that compact variant and nullable.
+  Originally required fields MUST remain non-null.

@@ -124,21 +124,36 @@ export interface PickFieldsOptions {
    * record once their projected Returns contract is explicit.
    */
   projection?: "legacy-compatible" | "serialized-only";
+  /** Representation for a requested field that is absent or undefined. */
+  missingFields?: "omit" | "null";
 }
 
-function parseRequestedFields(fields?: string): string[] {
-  return [
-    ...new Set(
-      (fields ?? "")
-        .split(",")
-        .map((key) => key.trim())
-        .filter(Boolean),
-    ),
-  ];
+interface ParsedRequestedFields {
+  keys: string[];
+  hasEmptyToken: boolean;
 }
 
-function validateRequestedFields(keys: readonly string[], acceptedFields: readonly string[]): string[] {
+function parseRequestedFields(fields?: string): ParsedRequestedFields {
+  if (fields === undefined) return { keys: [], hasEmptyToken: false };
+  const tokens = fields.split(",").map((key) => key.trim());
+  return {
+    keys: [...new Set(tokens.filter(Boolean))],
+    hasEmptyToken: tokens.some((key) => key.length === 0),
+  };
+}
+
+function validateRequestedFields(
+  keys: readonly string[],
+  acceptedFields: readonly string[],
+  hasEmptyToken: boolean,
+): string[] {
   const stableAcceptedFields = [...new Set(acceptedFields)];
+  if (hasEmptyToken) {
+    throw cliUsageError("--fields contains one or more empty fields.", {
+      suggestedAction: "Retry with a comma-separated list from acceptedFields and no empty entries",
+      details: { acceptedFields: stableAcceptedFields },
+    });
+  }
   const accepted = new Set(stableAcceptedFields);
   if (keys.some((key) => !accepted.has(key))) {
     throw cliUsageError("--fields contains one or more unknown fields.", {
@@ -155,18 +170,19 @@ function validateRequestedFields(keys: readonly string[], acceptedFields: readon
  * depend on the first result row and also works for empty result sets.
  */
 export function pickFields<T>(items: T[], fields?: string, options?: PickFieldsOptions): T[] {
-  const keys = parseRequestedFields(fields);
+  const { keys, hasEmptyToken } = parseRequestedFields(fields);
+  if (options) validateRequestedFields(keys, options.acceptedFields, hasEmptyToken);
   if (keys.length === 0) return items;
-  if (options) validateRequestedFields(keys, options.acceptedFields);
   return items.map((item) => {
     const record = item as Record<string, unknown>;
     const picked: Record<string, unknown> = {};
     const requested = new Set(keys);
+    for (const key of keys) {
+      if (Object.hasOwn(record, key) && record[key] !== undefined) picked[key] = record[key];
+      else if (options?.missingFields === "null") picked[key] = null;
+    }
     for (const key of Object.keys(record)) {
-      if (requested.has(key)) {
-        picked[key] = record[key];
-        continue;
-      }
+      if (requested.has(key)) continue;
       if (options?.projection === "serialized-only") continue;
 
       Object.defineProperty(picked, key, {

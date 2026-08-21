@@ -1654,9 +1654,15 @@ const projectSummaryShape = {
 const projectSummaryReturnSchema = z.object(projectSummaryShape).strict().meta({ title: "ProjectSummary" });
 
 function nonEmptyProjectProjection(shape: Record<string, ZodTypeAny>, title: string): ZodTypeAny {
-  const subset = z.object(shape).partial().strict();
+  const projectedShape = Object.fromEntries(
+    Object.entries(shape).map(([key, schema]) => [
+      key,
+      schema instanceof z.ZodOptional ? z.optional(z.nullable(schema.unwrap() as ZodTypeAny)) : z.optional(schema),
+    ]),
+  );
+  const subset = z.object(projectedShape).strict();
   const variants = Object.entries(shape).map(([requiredKey, schema]) => {
-    const requiredSchema = schema instanceof z.ZodOptional ? schema.unwrap() : schema;
+    const requiredSchema = schema instanceof z.ZodOptional ? z.nullable(schema.unwrap() as ZodTypeAny) : schema;
     return z.object({ [requiredKey]: requiredSchema }).passthrough();
   });
   return z

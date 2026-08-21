@@ -1152,7 +1152,11 @@ export class ProjectCommands {
         total: page.total,
         options: ["--status", status, "--tag", normalizedTagSlug],
       });
-      const projectedItems = pickFields(page.items, fields, { acceptedFields: PROJECT_LIST_FIELDS });
+      const projectedItems = pickFields(page.items, fields, {
+        acceptedFields: PROJECT_LIST_FIELDS,
+        projection: "serialized-only",
+        missingFields: "null",
+      });
       const payload = {
         total: page.total,
         pagination,
@@ -1260,7 +1264,11 @@ export class ProjectCommands {
         total: page.total,
         options: ["--status", status, "--tag", normalizedTagSlug],
       });
-      const projectedItems = pickFields(page.items, fields, { acceptedFields: PROJECT_NEXT_FIELDS });
+      const projectedItems = pickFields(page.items, fields, {
+        acceptedFields: PROJECT_NEXT_FIELDS,
+        projection: "serialized-only",
+        missingFields: "null",
+      });
       const payload = {
         total: entries.length,
         pagination,
@@ -1744,7 +1752,11 @@ export class ProjectResourceCommands {
         total: page.total,
         options: ["--type", resourceType?.trim() || null],
       });
-      const projectedResources = pickFields(page.items, fields, { acceptedFields: PROJECT_RESOURCE_FIELDS });
+      const projectedResources = pickFields(page.items, fields, {
+        acceptedFields: PROJECT_RESOURCE_FIELDS,
+        projection: "serialized-only",
+        missingFields: "null",
+      });
       const payload = { total: page.total, pagination, items: projectedResources, resources: projectedResources };
 
       if (asJson) {

@@ -54791,19 +54791,47 @@ public enum RaviSchemas {
               "additionalProperties": false,
               "properties": {
                 "archivedAt": {
-                  "type": "number"
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "createdAt": {
                   "type": "number"
                 },
                 "createdBy": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "createdByAgentId": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "createdBySessionName": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "hypothesis": {
                   "type": "string"
@@ -54821,10 +54849,24 @@ public enum RaviSchemas {
                   "type": "string"
                 },
                 "operatorSessionName": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "ownerAgentId": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "slug": {
                   "type": "string"
@@ -54843,64 +54885,71 @@ public enum RaviSchemas {
                   "type": "string"
                 },
                 "tags": {
-                  "items": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "assetId": {
-                        "type": "string"
-                      },
-                      "assetType": {
-                        "const": "project",
-                        "type": "string"
-                      },
-                      "createdAt": {
-                        "type": "number"
-                      },
-                      "createdBy": {
-                        "type": "string"
-                      },
-                      "id": {
-                        "type": "string"
-                      },
-                      "metadata": {
-                        "additionalProperties": {
-                          "$ref": "#/$defs/__schema0"
+                  "anyOf": [
+                    {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "type": "string"
+                          },
+                          "assetType": {
+                            "const": "project",
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "number"
+                          },
+                          "createdBy": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "metadata": {
+                            "additionalProperties": {
+                              "$ref": "#/$defs/__schema0"
+                            },
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "type": "object"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "tagId": {
+                            "type": "string"
+                          },
+                          "tagSlug": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "number"
+                          },
+                          "updatedBy": {
+                            "type": "string"
+                          }
                         },
-                        "propertyNames": {
-                          "type": "string"
-                        },
+                        "required": [
+                          "id",
+                          "tagId",
+                          "tagSlug",
+                          "assetType",
+                          "assetId",
+                          "source",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "title": "ProjectTagBinding",
                         "type": "object"
                       },
-                      "source": {
-                        "type": "string"
-                      },
-                      "tagId": {
-                        "type": "string"
-                      },
-                      "tagSlug": {
-                        "type": "string"
-                      },
-                      "updatedAt": {
-                        "type": "number"
-                      },
-                      "updatedBy": {
-                        "type": "string"
-                      }
+                      "type": "array"
                     },
-                    "required": [
-                      "id",
-                      "tagId",
-                      "tagSlug",
-                      "assetType",
-                      "assetId",
-                      "source",
-                      "createdAt",
-                      "updatedAt"
-                    ],
-                    "title": "ProjectTagBinding",
-                    "type": "object"
-                  },
-                  "type": "array"
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "title": {
                   "type": "string"
@@ -55020,7 +55069,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "ownerAgentId": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55032,7 +55088,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "operatorSessionName": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55044,7 +55107,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "createdBy": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55056,7 +55126,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "createdByAgentId": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55068,7 +55145,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "createdBySessionName": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55080,7 +55164,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "archivedAt": {
-                      "type": "number"
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55128,64 +55219,71 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "tags": {
-                      "items": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "type": "string"
-                          },
-                          "assetType": {
-                            "const": "project",
-                            "type": "string"
-                          },
-                          "createdAt": {
-                            "type": "number"
-                          },
-                          "createdBy": {
-                            "type": "string"
-                          },
-                          "id": {
-                            "type": "string"
-                          },
-                          "metadata": {
-                            "additionalProperties": {
-                              "$ref": "#/$defs/__schema0"
+                      "anyOf": [
+                        {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "assetId": {
+                                "type": "string"
+                              },
+                              "assetType": {
+                                "const": "project",
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "number"
+                              },
+                              "createdBy": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "metadata": {
+                                "additionalProperties": {
+                                  "$ref": "#/$defs/__schema0"
+                                },
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "type": "object"
+                              },
+                              "source": {
+                                "type": "string"
+                              },
+                              "tagId": {
+                                "type": "string"
+                              },
+                              "tagSlug": {
+                                "type": "string"
+                              },
+                              "updatedAt": {
+                                "type": "number"
+                              },
+                              "updatedBy": {
+                                "type": "string"
+                              }
                             },
-                            "propertyNames": {
-                              "type": "string"
-                            },
+                            "required": [
+                              "id",
+                              "tagId",
+                              "tagSlug",
+                              "assetType",
+                              "assetId",
+                              "source",
+                              "createdAt",
+                              "updatedAt"
+                            ],
+                            "title": "ProjectTagBinding",
                             "type": "object"
                           },
-                          "source": {
-                            "type": "string"
-                          },
-                          "tagId": {
-                            "type": "string"
-                          },
-                          "tagSlug": {
-                            "type": "string"
-                          },
-                          "updatedAt": {
-                            "type": "number"
-                          },
-                          "updatedBy": {
-                            "type": "string"
-                          }
+                          "type": "array"
                         },
-                        "required": [
-                          "id",
-                          "tagId",
-                          "tagSlug",
-                          "assetType",
-                          "assetId",
-                          "source",
-                          "createdAt",
-                          "updatedAt"
-                        ],
-                        "title": "ProjectTagBinding",
-                        "type": "object"
-                      },
-                      "type": "array"
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55257,19 +55355,47 @@ public enum RaviSchemas {
               "additionalProperties": false,
               "properties": {
                 "archivedAt": {
-                  "type": "number"
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "createdAt": {
                   "type": "number"
                 },
                 "createdBy": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "createdByAgentId": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "createdBySessionName": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "hypothesis": {
                   "type": "string"
@@ -55287,10 +55413,24 @@ public enum RaviSchemas {
                   "type": "string"
                 },
                 "operatorSessionName": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "ownerAgentId": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "slug": {
                   "type": "string"
@@ -55309,64 +55449,71 @@ public enum RaviSchemas {
                   "type": "string"
                 },
                 "tags": {
-                  "items": {
-                    "additionalProperties": false,
-                    "properties": {
-                      "assetId": {
-                        "type": "string"
-                      },
-                      "assetType": {
-                        "const": "project",
-                        "type": "string"
-                      },
-                      "createdAt": {
-                        "type": "number"
-                      },
-                      "createdBy": {
-                        "type": "string"
-                      },
-                      "id": {
-                        "type": "string"
-                      },
-                      "metadata": {
-                        "additionalProperties": {
-                          "$ref": "#/$defs/__schema0"
+                  "anyOf": [
+                    {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "assetId": {
+                            "type": "string"
+                          },
+                          "assetType": {
+                            "const": "project",
+                            "type": "string"
+                          },
+                          "createdAt": {
+                            "type": "number"
+                          },
+                          "createdBy": {
+                            "type": "string"
+                          },
+                          "id": {
+                            "type": "string"
+                          },
+                          "metadata": {
+                            "additionalProperties": {
+                              "$ref": "#/$defs/__schema0"
+                            },
+                            "propertyNames": {
+                              "type": "string"
+                            },
+                            "type": "object"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "tagId": {
+                            "type": "string"
+                          },
+                          "tagSlug": {
+                            "type": "string"
+                          },
+                          "updatedAt": {
+                            "type": "number"
+                          },
+                          "updatedBy": {
+                            "type": "string"
+                          }
                         },
-                        "propertyNames": {
-                          "type": "string"
-                        },
+                        "required": [
+                          "id",
+                          "tagId",
+                          "tagSlug",
+                          "assetType",
+                          "assetId",
+                          "source",
+                          "createdAt",
+                          "updatedAt"
+                        ],
+                        "title": "ProjectTagBinding",
                         "type": "object"
                       },
-                      "source": {
-                        "type": "string"
-                      },
-                      "tagId": {
-                        "type": "string"
-                      },
-                      "tagSlug": {
-                        "type": "string"
-                      },
-                      "updatedAt": {
-                        "type": "number"
-                      },
-                      "updatedBy": {
-                        "type": "string"
-                      }
+                      "type": "array"
                     },
-                    "required": [
-                      "id",
-                      "tagId",
-                      "tagSlug",
-                      "assetType",
-                      "assetId",
-                      "source",
-                      "createdAt",
-                      "updatedAt"
-                    ],
-                    "title": "ProjectTagBinding",
-                    "type": "object"
-                  },
-                  "type": "array"
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "title": {
                   "type": "string"
@@ -55486,7 +55633,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "ownerAgentId": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55498,7 +55652,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "operatorSessionName": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55510,7 +55671,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "createdBy": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55522,7 +55690,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "createdByAgentId": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55534,7 +55709,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "createdBySessionName": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55546,7 +55728,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "archivedAt": {
-                      "type": "number"
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -55594,64 +55783,71 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "tags": {
-                      "items": {
-                        "additionalProperties": false,
-                        "properties": {
-                          "assetId": {
-                            "type": "string"
-                          },
-                          "assetType": {
-                            "const": "project",
-                            "type": "string"
-                          },
-                          "createdAt": {
-                            "type": "number"
-                          },
-                          "createdBy": {
-                            "type": "string"
-                          },
-                          "id": {
-                            "type": "string"
-                          },
-                          "metadata": {
-                            "additionalProperties": {
-                              "$ref": "#/$defs/__schema0"
+                      "anyOf": [
+                        {
+                          "items": {
+                            "additionalProperties": false,
+                            "properties": {
+                              "assetId": {
+                                "type": "string"
+                              },
+                              "assetType": {
+                                "const": "project",
+                                "type": "string"
+                              },
+                              "createdAt": {
+                                "type": "number"
+                              },
+                              "createdBy": {
+                                "type": "string"
+                              },
+                              "id": {
+                                "type": "string"
+                              },
+                              "metadata": {
+                                "additionalProperties": {
+                                  "$ref": "#/$defs/__schema0"
+                                },
+                                "propertyNames": {
+                                  "type": "string"
+                                },
+                                "type": "object"
+                              },
+                              "source": {
+                                "type": "string"
+                              },
+                              "tagId": {
+                                "type": "string"
+                              },
+                              "tagSlug": {
+                                "type": "string"
+                              },
+                              "updatedAt": {
+                                "type": "number"
+                              },
+                              "updatedBy": {
+                                "type": "string"
+                              }
                             },
-                            "propertyNames": {
-                              "type": "string"
-                            },
+                            "required": [
+                              "id",
+                              "tagId",
+                              "tagSlug",
+                              "assetType",
+                              "assetId",
+                              "source",
+                              "createdAt",
+                              "updatedAt"
+                            ],
+                            "title": "ProjectTagBinding",
                             "type": "object"
                           },
-                          "source": {
-                            "type": "string"
-                          },
-                          "tagId": {
-                            "type": "string"
-                          },
-                          "tagSlug": {
-                            "type": "string"
-                          },
-                          "updatedAt": {
-                            "type": "number"
-                          },
-                          "updatedBy": {
-                            "type": "string"
-                          }
+                          "type": "array"
                         },
-                        "required": [
-                          "id",
-                          "tagId",
-                          "tagSlug",
-                          "assetType",
-                          "assetId",
-                          "source",
-                          "createdAt",
-                          "updatedAt"
-                        ],
-                        "title": "ProjectTagBinding",
-                        "type": "object"
-                      },
-                      "type": "array"
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -59338,13 +59534,34 @@ public enum RaviSchemas {
                   "type": "number"
                 },
                 "createdBy": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "createdByAgentId": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "createdBySessionName": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "id": {
                   "type": "string"
@@ -59363,13 +59580,20 @@ public enum RaviSchemas {
                   "type": "string"
                 },
                 "metadata": {
-                  "additionalProperties": {
-                    "$ref": "#/$defs/__schema0"
-                  },
-                  "propertyNames": {
-                    "type": "string"
-                  },
-                  "type": "object"
+                  "anyOf": [
+                    {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "projectId": {
                   "type": "string"
@@ -59395,7 +59619,14 @@ public enum RaviSchemas {
                   ]
                 },
                 "role": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "updatedAt": {
                   "type": "number"
@@ -59458,7 +59689,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "role": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -59470,13 +59708,20 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "metadata": {
-                      "additionalProperties": {
-                        "$ref": "#/$defs/__schema0"
-                      },
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "type": "object"
+                      "anyOf": [
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -59488,7 +59733,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "createdBy": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -59500,7 +59752,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "createdByAgentId": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -59512,7 +59771,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "createdBySessionName": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -59678,13 +59944,34 @@ public enum RaviSchemas {
                   "type": "number"
                 },
                 "createdBy": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "createdByAgentId": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "createdBySessionName": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "id": {
                   "type": "string"
@@ -59703,13 +59990,20 @@ public enum RaviSchemas {
                   "type": "string"
                 },
                 "metadata": {
-                  "additionalProperties": {
-                    "$ref": "#/$defs/__schema0"
-                  },
-                  "propertyNames": {
-                    "type": "string"
-                  },
-                  "type": "object"
+                  "anyOf": [
+                    {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "projectId": {
                   "type": "string"
@@ -59735,7 +60029,14 @@ public enum RaviSchemas {
                   ]
                 },
                 "role": {
-                  "type": "string"
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
                 },
                 "updatedAt": {
                   "type": "number"
@@ -59798,7 +60099,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "role": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -59810,13 +60118,20 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "metadata": {
-                      "additionalProperties": {
-                        "$ref": "#/$defs/__schema0"
-                      },
-                      "propertyNames": {
-                        "type": "string"
-                      },
-                      "type": "object"
+                      "anyOf": [
+                        {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -59828,7 +60143,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "createdBy": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -59840,7 +60162,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "createdByAgentId": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -59852,7 +60181,14 @@ public enum RaviSchemas {
                   "additionalProperties": {},
                   "properties": {
                     "createdBySessionName": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [

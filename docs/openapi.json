@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "d0f598042a1f6220"
+    "version": "22926ebdf50b5d04"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -65338,19 +65338,47 @@
                             "additionalProperties": false,
                             "properties": {
                               "archivedAt": {
-                                "type": "number"
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "createdAt": {
                                 "type": "number"
                               },
                               "createdBy": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "createdByAgentId": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "createdBySessionName": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "hypothesis": {
                                 "type": "string"
@@ -65368,10 +65396,24 @@
                                 "type": "string"
                               },
                               "operatorSessionName": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "ownerAgentId": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "slug": {
                                 "type": "string"
@@ -65390,64 +65432,71 @@
                                 "type": "string"
                               },
                               "tags": {
-                                "items": {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "assetId": {
-                                      "type": "string"
-                                    },
-                                    "assetType": {
-                                      "const": "project",
-                                      "type": "string"
-                                    },
-                                    "createdAt": {
-                                      "type": "number"
-                                    },
-                                    "createdBy": {
-                                      "type": "string"
-                                    },
-                                    "id": {
-                                      "type": "string"
-                                    },
-                                    "metadata": {
-                                      "additionalProperties": {
-                                        "$ref": "#/$defs/__schema0"
+                                "anyOf": [
+                                  {
+                                    "items": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "assetId": {
+                                          "type": "string"
+                                        },
+                                        "assetType": {
+                                          "const": "project",
+                                          "type": "string"
+                                        },
+                                        "createdAt": {
+                                          "type": "number"
+                                        },
+                                        "createdBy": {
+                                          "type": "string"
+                                        },
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "metadata": {
+                                          "additionalProperties": {
+                                            "$ref": "#/$defs/__schema0"
+                                          },
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "type": "object"
+                                        },
+                                        "source": {
+                                          "type": "string"
+                                        },
+                                        "tagId": {
+                                          "type": "string"
+                                        },
+                                        "tagSlug": {
+                                          "type": "string"
+                                        },
+                                        "updatedAt": {
+                                          "type": "number"
+                                        },
+                                        "updatedBy": {
+                                          "type": "string"
+                                        }
                                       },
-                                      "propertyNames": {
-                                        "type": "string"
-                                      },
+                                      "required": [
+                                        "id",
+                                        "tagId",
+                                        "tagSlug",
+                                        "assetType",
+                                        "assetId",
+                                        "source",
+                                        "createdAt",
+                                        "updatedAt"
+                                      ],
+                                      "title": "ProjectTagBinding",
                                       "type": "object"
                                     },
-                                    "source": {
-                                      "type": "string"
-                                    },
-                                    "tagId": {
-                                      "type": "string"
-                                    },
-                                    "tagSlug": {
-                                      "type": "string"
-                                    },
-                                    "updatedAt": {
-                                      "type": "number"
-                                    },
-                                    "updatedBy": {
-                                      "type": "string"
-                                    }
+                                    "type": "array"
                                   },
-                                  "required": [
-                                    "id",
-                                    "tagId",
-                                    "tagSlug",
-                                    "assetType",
-                                    "assetId",
-                                    "source",
-                                    "createdAt",
-                                    "updatedAt"
-                                  ],
-                                  "title": "ProjectTagBinding",
-                                  "type": "object"
-                                },
-                                "type": "array"
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "title": {
                                 "type": "string"
@@ -65567,7 +65616,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "ownerAgentId": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -65579,7 +65635,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "operatorSessionName": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -65591,7 +65654,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "createdBy": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -65603,7 +65673,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "createdByAgentId": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -65615,7 +65692,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "createdBySessionName": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -65627,7 +65711,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "archivedAt": {
-                                    "type": "number"
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -65675,64 +65766,71 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "tags": {
-                                    "items": {
-                                      "additionalProperties": false,
-                                      "properties": {
-                                        "assetId": {
-                                          "type": "string"
-                                        },
-                                        "assetType": {
-                                          "const": "project",
-                                          "type": "string"
-                                        },
-                                        "createdAt": {
-                                          "type": "number"
-                                        },
-                                        "createdBy": {
-                                          "type": "string"
-                                        },
-                                        "id": {
-                                          "type": "string"
-                                        },
-                                        "metadata": {
-                                          "additionalProperties": {
-                                            "$ref": "#/$defs/__schema0"
+                                    "anyOf": [
+                                      {
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "assetId": {
+                                              "type": "string"
+                                            },
+                                            "assetType": {
+                                              "const": "project",
+                                              "type": "string"
+                                            },
+                                            "createdAt": {
+                                              "type": "number"
+                                            },
+                                            "createdBy": {
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string"
+                                            },
+                                            "metadata": {
+                                              "additionalProperties": {
+                                                "$ref": "#/$defs/__schema0"
+                                              },
+                                              "propertyNames": {
+                                                "type": "string"
+                                              },
+                                              "type": "object"
+                                            },
+                                            "source": {
+                                              "type": "string"
+                                            },
+                                            "tagId": {
+                                              "type": "string"
+                                            },
+                                            "tagSlug": {
+                                              "type": "string"
+                                            },
+                                            "updatedAt": {
+                                              "type": "number"
+                                            },
+                                            "updatedBy": {
+                                              "type": "string"
+                                            }
                                           },
-                                          "propertyNames": {
-                                            "type": "string"
-                                          },
+                                          "required": [
+                                            "id",
+                                            "tagId",
+                                            "tagSlug",
+                                            "assetType",
+                                            "assetId",
+                                            "source",
+                                            "createdAt",
+                                            "updatedAt"
+                                          ],
+                                          "title": "ProjectTagBinding",
                                           "type": "object"
                                         },
-                                        "source": {
-                                          "type": "string"
-                                        },
-                                        "tagId": {
-                                          "type": "string"
-                                        },
-                                        "tagSlug": {
-                                          "type": "string"
-                                        },
-                                        "updatedAt": {
-                                          "type": "number"
-                                        },
-                                        "updatedBy": {
-                                          "type": "string"
-                                        }
+                                        "type": "array"
                                       },
-                                      "required": [
-                                        "id",
-                                        "tagId",
-                                        "tagSlug",
-                                        "assetType",
-                                        "assetId",
-                                        "source",
-                                        "createdAt",
-                                        "updatedAt"
-                                      ],
-                                      "title": "ProjectTagBinding",
-                                      "type": "object"
-                                    },
-                                    "type": "array"
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -65804,19 +65902,47 @@
                             "additionalProperties": false,
                             "properties": {
                               "archivedAt": {
-                                "type": "number"
+                                "anyOf": [
+                                  {
+                                    "type": "number"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "createdAt": {
                                 "type": "number"
                               },
                               "createdBy": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "createdByAgentId": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "createdBySessionName": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "hypothesis": {
                                 "type": "string"
@@ -65834,10 +65960,24 @@
                                 "type": "string"
                               },
                               "operatorSessionName": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "ownerAgentId": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "slug": {
                                 "type": "string"
@@ -65856,64 +65996,71 @@
                                 "type": "string"
                               },
                               "tags": {
-                                "items": {
-                                  "additionalProperties": false,
-                                  "properties": {
-                                    "assetId": {
-                                      "type": "string"
-                                    },
-                                    "assetType": {
-                                      "const": "project",
-                                      "type": "string"
-                                    },
-                                    "createdAt": {
-                                      "type": "number"
-                                    },
-                                    "createdBy": {
-                                      "type": "string"
-                                    },
-                                    "id": {
-                                      "type": "string"
-                                    },
-                                    "metadata": {
-                                      "additionalProperties": {
-                                        "$ref": "#/$defs/__schema0"
+                                "anyOf": [
+                                  {
+                                    "items": {
+                                      "additionalProperties": false,
+                                      "properties": {
+                                        "assetId": {
+                                          "type": "string"
+                                        },
+                                        "assetType": {
+                                          "const": "project",
+                                          "type": "string"
+                                        },
+                                        "createdAt": {
+                                          "type": "number"
+                                        },
+                                        "createdBy": {
+                                          "type": "string"
+                                        },
+                                        "id": {
+                                          "type": "string"
+                                        },
+                                        "metadata": {
+                                          "additionalProperties": {
+                                            "$ref": "#/$defs/__schema0"
+                                          },
+                                          "propertyNames": {
+                                            "type": "string"
+                                          },
+                                          "type": "object"
+                                        },
+                                        "source": {
+                                          "type": "string"
+                                        },
+                                        "tagId": {
+                                          "type": "string"
+                                        },
+                                        "tagSlug": {
+                                          "type": "string"
+                                        },
+                                        "updatedAt": {
+                                          "type": "number"
+                                        },
+                                        "updatedBy": {
+                                          "type": "string"
+                                        }
                                       },
-                                      "propertyNames": {
-                                        "type": "string"
-                                      },
+                                      "required": [
+                                        "id",
+                                        "tagId",
+                                        "tagSlug",
+                                        "assetType",
+                                        "assetId",
+                                        "source",
+                                        "createdAt",
+                                        "updatedAt"
+                                      ],
+                                      "title": "ProjectTagBinding",
                                       "type": "object"
                                     },
-                                    "source": {
-                                      "type": "string"
-                                    },
-                                    "tagId": {
-                                      "type": "string"
-                                    },
-                                    "tagSlug": {
-                                      "type": "string"
-                                    },
-                                    "updatedAt": {
-                                      "type": "number"
-                                    },
-                                    "updatedBy": {
-                                      "type": "string"
-                                    }
+                                    "type": "array"
                                   },
-                                  "required": [
-                                    "id",
-                                    "tagId",
-                                    "tagSlug",
-                                    "assetType",
-                                    "assetId",
-                                    "source",
-                                    "createdAt",
-                                    "updatedAt"
-                                  ],
-                                  "title": "ProjectTagBinding",
-                                  "type": "object"
-                                },
-                                "type": "array"
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "title": {
                                 "type": "string"
@@ -66033,7 +66180,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "ownerAgentId": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -66045,7 +66199,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "operatorSessionName": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -66057,7 +66218,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "createdBy": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -66069,7 +66237,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "createdByAgentId": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -66081,7 +66256,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "createdBySessionName": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -66093,7 +66275,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "archivedAt": {
-                                    "type": "number"
+                                    "anyOf": [
+                                      {
+                                        "type": "number"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -66141,64 +66330,71 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "tags": {
-                                    "items": {
-                                      "additionalProperties": false,
-                                      "properties": {
-                                        "assetId": {
-                                          "type": "string"
-                                        },
-                                        "assetType": {
-                                          "const": "project",
-                                          "type": "string"
-                                        },
-                                        "createdAt": {
-                                          "type": "number"
-                                        },
-                                        "createdBy": {
-                                          "type": "string"
-                                        },
-                                        "id": {
-                                          "type": "string"
-                                        },
-                                        "metadata": {
-                                          "additionalProperties": {
-                                            "$ref": "#/$defs/__schema0"
+                                    "anyOf": [
+                                      {
+                                        "items": {
+                                          "additionalProperties": false,
+                                          "properties": {
+                                            "assetId": {
+                                              "type": "string"
+                                            },
+                                            "assetType": {
+                                              "const": "project",
+                                              "type": "string"
+                                            },
+                                            "createdAt": {
+                                              "type": "number"
+                                            },
+                                            "createdBy": {
+                                              "type": "string"
+                                            },
+                                            "id": {
+                                              "type": "string"
+                                            },
+                                            "metadata": {
+                                              "additionalProperties": {
+                                                "$ref": "#/$defs/__schema0"
+                                              },
+                                              "propertyNames": {
+                                                "type": "string"
+                                              },
+                                              "type": "object"
+                                            },
+                                            "source": {
+                                              "type": "string"
+                                            },
+                                            "tagId": {
+                                              "type": "string"
+                                            },
+                                            "tagSlug": {
+                                              "type": "string"
+                                            },
+                                            "updatedAt": {
+                                              "type": "number"
+                                            },
+                                            "updatedBy": {
+                                              "type": "string"
+                                            }
                                           },
-                                          "propertyNames": {
-                                            "type": "string"
-                                          },
+                                          "required": [
+                                            "id",
+                                            "tagId",
+                                            "tagSlug",
+                                            "assetType",
+                                            "assetId",
+                                            "source",
+                                            "createdAt",
+                                            "updatedAt"
+                                          ],
+                                          "title": "ProjectTagBinding",
                                           "type": "object"
                                         },
-                                        "source": {
-                                          "type": "string"
-                                        },
-                                        "tagId": {
-                                          "type": "string"
-                                        },
-                                        "tagSlug": {
-                                          "type": "string"
-                                        },
-                                        "updatedAt": {
-                                          "type": "number"
-                                        },
-                                        "updatedBy": {
-                                          "type": "string"
-                                        }
+                                        "type": "array"
                                       },
-                                      "required": [
-                                        "id",
-                                        "tagId",
-                                        "tagSlug",
-                                        "assetType",
-                                        "assetId",
-                                        "source",
-                                        "createdAt",
-                                        "updatedAt"
-                                      ],
-                                      "title": "ProjectTagBinding",
-                                      "type": "object"
-                                    },
-                                    "type": "array"
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -69989,13 +70185,34 @@
                                 "type": "number"
                               },
                               "createdBy": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "createdByAgentId": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "createdBySessionName": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "id": {
                                 "type": "string"
@@ -70014,13 +70231,20 @@
                                 "type": "string"
                               },
                               "metadata": {
-                                "additionalProperties": {
-                                  "$ref": "#/$defs/__schema0"
-                                },
-                                "propertyNames": {
-                                  "type": "string"
-                                },
-                                "type": "object"
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": {
+                                      "$ref": "#/$defs/__schema0"
+                                    },
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "projectId": {
                                 "type": "string"
@@ -70046,7 +70270,14 @@
                                 ]
                               },
                               "role": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "updatedAt": {
                                 "type": "number"
@@ -70109,7 +70340,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "role": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -70121,13 +70359,20 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "metadata": {
-                                    "additionalProperties": {
-                                      "$ref": "#/$defs/__schema0"
-                                    },
-                                    "propertyNames": {
-                                      "type": "string"
-                                    },
-                                    "type": "object"
+                                    "anyOf": [
+                                      {
+                                        "additionalProperties": {
+                                          "$ref": "#/$defs/__schema0"
+                                        },
+                                        "propertyNames": {
+                                          "type": "string"
+                                        },
+                                        "type": "object"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -70139,7 +70384,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "createdBy": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -70151,7 +70403,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "createdByAgentId": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -70163,7 +70422,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "createdBySessionName": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -70329,13 +70595,34 @@
                                 "type": "number"
                               },
                               "createdBy": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "createdByAgentId": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "createdBySessionName": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "id": {
                                 "type": "string"
@@ -70354,13 +70641,20 @@
                                 "type": "string"
                               },
                               "metadata": {
-                                "additionalProperties": {
-                                  "$ref": "#/$defs/__schema0"
-                                },
-                                "propertyNames": {
-                                  "type": "string"
-                                },
-                                "type": "object"
+                                "anyOf": [
+                                  {
+                                    "additionalProperties": {
+                                      "$ref": "#/$defs/__schema0"
+                                    },
+                                    "propertyNames": {
+                                      "type": "string"
+                                    },
+                                    "type": "object"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "projectId": {
                                 "type": "string"
@@ -70386,7 +70680,14 @@
                                 ]
                               },
                               "role": {
-                                "type": "string"
+                                "anyOf": [
+                                  {
+                                    "type": "string"
+                                  },
+                                  {
+                                    "type": "null"
+                                  }
+                                ]
                               },
                               "updatedAt": {
                                 "type": "number"
@@ -70449,7 +70750,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "role": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -70461,13 +70769,20 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "metadata": {
-                                    "additionalProperties": {
-                                      "$ref": "#/$defs/__schema0"
-                                    },
-                                    "propertyNames": {
-                                      "type": "string"
-                                    },
-                                    "type": "object"
+                                    "anyOf": [
+                                      {
+                                        "additionalProperties": {
+                                          "$ref": "#/$defs/__schema0"
+                                        },
+                                        "propertyNames": {
+                                          "type": "string"
+                                        },
+                                        "type": "object"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -70479,7 +70794,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "createdBy": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -70491,7 +70813,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "createdByAgentId": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [
@@ -70503,7 +70832,14 @@
                                 "additionalProperties": {},
                                 "properties": {
                                   "createdBySessionName": {
-                                    "type": "string"
+                                    "anyOf": [
+                                      {
+                                        "type": "string"
+                                      },
+                                      {
+                                        "type": "null"
+                                      }
+                                    ]
                                   }
                                 },
                                 "required": [

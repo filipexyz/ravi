@@ -43,6 +43,28 @@ describe("projects generated return contracts", () => {
     ).toBe(false);
   });
 
+  it("accepts null only for an explicitly projected optional project field", () => {
+    const base = {
+      total: 1,
+      pagination,
+      filters: { status: null, tagSlug: null },
+    };
+    expect(
+      projectsListReturnSchema.safeParse({
+        ...base,
+        items: [{ ownerAgentId: null }],
+        projects: [{ ownerAgentId: null }],
+      }).success,
+    ).toBe(true);
+    expect(
+      projectsListReturnSchema.safeParse({
+        ...base,
+        items: [{ slug: null }],
+        projects: [{ slug: null }],
+      }).success,
+    ).toBe(false);
+  });
+
   it("requires pagination and a non-empty status projection on next", () => {
     const filters = { status: "active", tagSlug: null };
     expect(

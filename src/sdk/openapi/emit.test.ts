@@ -259,6 +259,14 @@ describe("openapi emit (live registry)", () => {
     const ids = Object.values(spec.paths).map((p) => p.post.operationId);
     expect(new Set(ids).size).toBe(ids.length);
   }, 30_000);
+
+  it("publishes nullable optional fields for non-empty Projects projections", () => {
+    const spec = emit(getRegistry());
+    const operation = spec.paths["/api/v1/projects/list"];
+    const serialized = JSON.stringify(operation?.post.responses?.["200"] ?? null);
+    expect(serialized).toContain('"required":["ownerAgentId"]');
+    expect(serialized).toMatch(/"ownerAgentId":\{"anyOf":\[\{"type":"string"\},\{"type":"null"\}\]\}/);
+  }, 30_000);
 });
 
 describe("sortKeysDeep", () => {

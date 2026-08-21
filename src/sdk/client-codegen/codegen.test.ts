@@ -189,8 +189,11 @@ describe("client-codegen :: emitAll", () => {
     expect(output.types).toContain("slug?: string;");
     expect(output.types).toContain("linkCount?: number;");
     expect(output.types).toContain("slug: string;");
+    expect(output.types).toMatch(/ownerAgentId\?: string \| null;/);
+    expect(output.types).toMatch(/ownerAgentId: string \| null;/);
     expect(output.types).not.toContain("items: Array<Record<string, unknown>>");
     expect(output.schemas).toContain('"title": "ProjectedProjectSummary"');
+    expect(output.schemas).toMatch(/"ownerAgentId": \{[\s\S]{0,180}"type": "null"/);
   });
 
   it("falls back to unknown for return when no @Returns", () => {

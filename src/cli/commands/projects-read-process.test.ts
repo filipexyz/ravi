@@ -6,7 +6,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 import { withoutRaviRuntimeContextEnv } from "../../test/ravi-state.js";
-import { projectsNextReturnSchema } from "./operational-return-schemas.js";
+import {
+  projectResourcesListReturnSchema,
+  projectsListReturnSchema,
+  projectsNextReturnSchema,
+} from "./operational-return-schemas.js";
 
 setDefaultTimeout(90_000);
 
@@ -81,6 +85,17 @@ beforeAll(() => {
       const slug = `project-${String(index).padStart(2, "0")}`;
       insert.run(id, slug, `Project ${index}`, index === 0 ? "blocked" : "active", "S", "H", "N", 100 - index, 1, 1);
     }
+    database.run(
+      `INSERT INTO project_links (
+         id, project_id, asset_type, asset_id, role, metadata_json, created_at, updated_at
+       ) VALUES (?, ?, 'resource', ?, NULL, ?, 1, 1)`,
+      [
+        "resource-00",
+        "project-00",
+        "repo:project-00",
+        JSON.stringify({ type: "repo", locator: "https://example.test/project-00", label: "Project 00" }),
+      ],
+    );
   } finally {
     insert.finalize();
     database.close();
@@ -154,5 +169,43 @@ describe("projects read process contract", () => {
       expect(payload.error.acceptedFields).toContain(testCase.accepted);
       expect(payload.error.acceptedFields).not.toContain("unknown");
     }
+  });
+
+  it("rejects every empty compact-field token with the usage contract", () => {
+    const cases = ["", ",,,", "slug,", "slug,,status"];
+
+    for (const fields of cases) {
+      const result = expectReadOnly(["projects", "list", "--fields", fields, "--json"], 2);
+      expect(result.stderr).toBe("");
+      const payload = JSON.parse(result.stdout) as {
+        success: boolean;
+        error: { code: string; acceptedFields: string[] };
+      };
+      expect(payload).toMatchObject({ success: false, error: { code: "USAGE_ERROR" } });
+      expect(payload.error.acceptedFields).toContain("slug");
+    }
+  });
+
+  it("serializes an explicitly requested absent optional field as null", () => {
+    const result = expectReadOnly(["projects", "list", "--fields", "ownerAgentId", "--limit", "1", "--json"]);
+    expect(result.stderr).toBe("");
+    const payload = JSON.parse(result.stdout) as { items: unknown[]; projects: unknown[] };
+    expect(payload.items).toEqual([{ ownerAgentId: null }]);
+    expect(payload.projects).toEqual(payload.items);
+    expect(projectsListReturnSchema.safeParse(payload).success).toBe(true);
+
+    const resourceResult = expectReadOnly([
+      "projects",
+      "resources",
+      "list",
+      "project-00",
+      "--fields",
+      "role",
+      "--json",
+    ]);
+    const resourcePayload = JSON.parse(resourceResult.stdout) as { items: unknown[]; resources: unknown[] };
+    expect(resourcePayload.items).toEqual([{ role: null }]);
+    expect(resourcePayload.resources).toEqual(resourcePayload.items);
+    expect(projectResourcesListReturnSchema.safeParse(resourcePayload).success).toBe(true);
   });
 });

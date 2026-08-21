@@ -108,6 +108,25 @@ describe("agent-first CLI foundation contract", () => {
     });
   });
 
+  it("rejects empty compact-field tokens without normalizing them away", () => {
+    for (const fields of ["", "   ", ",", ",,,", "id,", ",id", "id,,name", "id, ,name"]) {
+      let failure: unknown;
+      try {
+        pickFields([], fields, { acceptedFields: ["id", "name"] });
+      } catch (error) {
+        failure = error;
+      }
+
+      const contract = expectedErrorToContractError("agents list", failure);
+      expect(contract?.exitCode).toBe(2);
+      expect(contract?.envelope().error).toMatchObject({
+        code: "USAGE_ERROR",
+        message: "--fields contains one or more empty fields.",
+        acceptedFields: ["id", "name"],
+      });
+    }
+  });
+
   it("keeps the projection API compatible for callers not migrated yet", () => {
     const rows = pickFields([{ id: "main", name: "Main" }], "id");
     expect(Object.keys(rows[0] ?? {})).toEqual(["id"]);
@@ -125,6 +144,18 @@ describe("agent-first CLI foundation contract", () => {
     expect(Object.keys(rows[0] ?? {})).toEqual(["id"]);
     expect(Object.getOwnPropertyNames(rows[0] ?? {})).toEqual(["id"]);
     expect(JSON.parse(JSON.stringify(rows))).toEqual([{ id: "review" }]);
+  });
+
+  it("can represent a requested but absent optional field as null", () => {
+    const rows = pickFields([{ id: "review" }], "ownerAgentId", {
+      acceptedFields: ["id", "ownerAgentId"],
+      projection: "serialized-only",
+      missingFields: "null",
+    });
+
+    expect(Object.keys(rows[0] ?? {})).toEqual(["ownerAgentId"]);
+    expect(Object.getOwnPropertyNames(rows[0] ?? {})).toEqual(["ownerAgentId"]);
+    expect(JSON.parse(JSON.stringify(rows))).toEqual([{ ownerAgentId: null }]);
   });
 
   it("routes direct legacy fail termination through the top-level flush boundary", () => {

@@ -203,10 +203,12 @@ describe("swift-codegen :: emitAllSwift", () => {
 
     expect(output.types).toContain("public struct ProjectedProjectSummary: Codable, Sendable");
     expect(output.types).toContain("public var slug: String?");
+    expect(output.types).toContain("public var ownerAgentId: String?");
     expect(output.types).toContain("ProjectedProjectSummary requires at least one field.");
     expect(output.types).toContain("ProjectedProjectSummary contains an unknown field.");
     expect(output.types).toContain("public var items: [ProjectedProjectSummary]");
     expect(output.types).not.toContain("public var items: [RaviJSON]");
+    expect(output.schemas).toMatch(/"ownerAgentId": \{[\s\S]{0,180}"type": "null"/);
   });
 
   it("emits Swift return structs for top-level object schemas", () => {

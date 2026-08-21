@@ -10387,22 +10387,22 @@ export type ProjectsListReturn = {
     tagSlug: string | null;
   };
   items: Array<({
-    archivedAt?: number;
+    archivedAt?: number | null;
     createdAt?: number;
-    createdBy?: string;
-    createdByAgentId?: string;
-    createdBySessionName?: string;
+    createdBy?: string | null;
+    createdByAgentId?: string | null;
+    createdBySessionName?: string | null;
     hypothesis?: string;
     id?: string;
     lastSignalAt?: number;
     linkCount?: number;
     nextStep?: string;
-    operatorSessionName?: string;
-    ownerAgentId?: string;
+    operatorSessionName?: string | null;
+    ownerAgentId?: string | null;
     slug?: string;
     status?: "active" | "paused" | "blocked" | "done" | "archived";
     summary?: string;
-    tags?: Array<{
+    tags?: (Array<{
       assetId: string;
       assetType: "project";
       createdAt: number;
@@ -10414,7 +10414,7 @@ export type ProjectsListReturn = {
       tagSlug: string;
       updatedAt: number;
       updatedBy?: string;
-    }>;
+    }>) | null;
     title?: string;
     updatedAt?: number;
   }) & (({
@@ -10434,17 +10434,17 @@ export type ProjectsListReturn = {
   }) | ({
     lastSignalAt: number;
   }) | ({
-    ownerAgentId: string;
+    ownerAgentId: string | null;
   }) | ({
-    operatorSessionName: string;
+    operatorSessionName: string | null;
   }) | ({
-    createdBy: string;
+    createdBy: string | null;
   }) | ({
-    createdByAgentId: string;
+    createdByAgentId: string | null;
   }) | ({
-    createdBySessionName: string;
+    createdBySessionName: string | null;
   }) | ({
-    archivedAt: number;
+    archivedAt: number | null;
   }) | ({
     createdAt: number;
   }) | ({
@@ -10452,7 +10452,7 @@ export type ProjectsListReturn = {
   }) | ({
     linkCount: number;
   }) | ({
-    tags: Array<{
+    tags: (Array<{
       assetId: string;
       assetType: "project";
       createdAt: number;
@@ -10464,7 +10464,7 @@ export type ProjectsListReturn = {
       tagSlug: string;
       updatedAt: number;
       updatedBy?: string;
-    }>;
+    }>) | null;
   }))>;
   pagination: {
     hasMore: boolean;
@@ -10477,22 +10477,22 @@ export type ProjectsListReturn = {
     [k: string]: unknown;
   };
   projects: Array<({
-    archivedAt?: number;
+    archivedAt?: number | null;
     createdAt?: number;
-    createdBy?: string;
-    createdByAgentId?: string;
-    createdBySessionName?: string;
+    createdBy?: string | null;
+    createdByAgentId?: string | null;
+    createdBySessionName?: string | null;
     hypothesis?: string;
     id?: string;
     lastSignalAt?: number;
     linkCount?: number;
     nextStep?: string;
-    operatorSessionName?: string;
-    ownerAgentId?: string;
+    operatorSessionName?: string | null;
+    ownerAgentId?: string | null;
     slug?: string;
     status?: "active" | "paused" | "blocked" | "done" | "archived";
     summary?: string;
-    tags?: Array<{
+    tags?: (Array<{
       assetId: string;
       assetType: "project";
       createdAt: number;
@@ -10504,7 +10504,7 @@ export type ProjectsListReturn = {
       tagSlug: string;
       updatedAt: number;
       updatedBy?: string;
-    }>;
+    }>) | null;
     title?: string;
     updatedAt?: number;
   }) & (({
@@ -10524,17 +10524,17 @@ export type ProjectsListReturn = {
   }) | ({
     lastSignalAt: number;
   }) | ({
-    ownerAgentId: string;
+    ownerAgentId: string | null;
   }) | ({
-    operatorSessionName: string;
+    operatorSessionName: string | null;
   }) | ({
-    createdBy: string;
+    createdBy: string | null;
   }) | ({
-    createdByAgentId: string;
+    createdByAgentId: string | null;
   }) | ({
-    createdBySessionName: string;
+    createdBySessionName: string | null;
   }) | ({
-    archivedAt: number;
+    archivedAt: number | null;
   }) | ({
     createdAt: number;
   }) | ({
@@ -10542,7 +10542,7 @@ export type ProjectsListReturn = {
   }) | ({
     linkCount: number;
   }) | ({
-    tags: Array<{
+    tags: (Array<{
       assetId: string;
       assetType: "project";
       createdAt: number;
@@ -10554,7 +10554,7 @@ export type ProjectsListReturn = {
       tagSlug: string;
       updatedAt: number;
       updatedBy?: string;
-    }>;
+    }>) | null;
   }))>;
   total: number;
 };
@@ -11060,16 +11060,16 @@ export type ProjectsResourcesListReturn = {
     assetId?: string;
     assetType?: "resource";
     createdAt?: number;
-    createdBy?: string;
-    createdByAgentId?: string;
-    createdBySessionName?: string;
+    createdBy?: string | null;
+    createdByAgentId?: string | null;
+    createdBySessionName?: string | null;
     id?: string;
     label?: string | null;
     locator?: string;
-    metadata?: Record<string, unknown>;
+    metadata?: (Record<string, unknown>) | null;
     projectId?: string;
     resourceType?: ("repo" | "worktree" | "notion_page" | "notion_database" | "file" | "url" | "group" | "contact") | null;
-    role?: string;
+    role?: string | null;
     updatedAt?: number;
   }) & (({
     id: string;
@@ -11080,15 +11080,15 @@ export type ProjectsResourcesListReturn = {
   }) | ({
     assetId: string;
   }) | ({
-    role: string;
+    role: string | null;
   }) | ({
-    metadata: Record<string, unknown>;
+    metadata: (Record<string, unknown>) | null;
   }) | ({
-    createdBy: string;
+    createdBy: string | null;
   }) | ({
-    createdByAgentId: string;
+    createdByAgentId: string | null;
   }) | ({
-    createdBySessionName: string;
+    createdBySessionName: string | null;
   }) | ({
     createdAt: number;
   }) | ({
@@ -11114,16 +11114,16 @@ export type ProjectsResourcesListReturn = {
     assetId?: string;
     assetType?: "resource";
     createdAt?: number;
-    createdBy?: string;
-    createdByAgentId?: string;
-    createdBySessionName?: string;
+    createdBy?: string | null;
+    createdByAgentId?: string | null;
+    createdBySessionName?: string | null;
     id?: string;
     label?: string | null;
     locator?: string;
-    metadata?: Record<string, unknown>;
+    metadata?: (Record<string, unknown>) | null;
     projectId?: string;
     resourceType?: ("repo" | "worktree" | "notion_page" | "notion_database" | "file" | "url" | "group" | "contact") | null;
-    role?: string;
+    role?: string | null;
     updatedAt?: number;
   }) & (({
     id: string;
@@ -11134,15 +11134,15 @@ export type ProjectsResourcesListReturn = {
   }) | ({
     assetId: string;
   }) | ({
-    role: string;
+    role: string | null;
   }) | ({
-    metadata: Record<string, unknown>;
+    metadata: (Record<string, unknown>) | null;
   }) | ({
-    createdBy: string;
+    createdBy: string | null;
   }) | ({
-    createdByAgentId: string;
+    createdByAgentId: string | null;
   }) | ({
-    createdBySessionName: string;
+    createdBySessionName: string | null;
   }) | ({
     createdAt: number;
   }) | ({
