@@ -200,8 +200,7 @@ function renderNamedReturnStruct(name: string, schema: JsonSchema): string {
     "    var container = encoder.container(keyedBy: CodingKeys.self)",
   );
   for (const field of fields) {
-    const encodeMethod = field.isRequired ? "encode" : "encodeIfPresent";
-    lines.push(`    try container.${encodeMethod}(self.${field.swiftName}, forKey: .${field.swiftName})`);
+    appendReturnFieldEncoding(lines, field);
   }
   lines.push("  }", "}");
   return lines.join("\n");
@@ -366,8 +365,61 @@ function renderReturnStruct(name: string, schema: JsonSchema): string {
     lines.push(`    case ${field.swiftName} = ${JSON.stringify(field.rawName)}`);
   }
   lines.push("  }");
+  if (!fields.some((field) => field.isRequired && field.isOptional)) {
+    lines.push("}");
+    return lines.join("\n");
+  }
+  lines.push("", "  public init(from decoder: Decoder) throws {");
+  lines.push("    let container = try decoder.container(keyedBy: CodingKeys.self)");
+  for (const field of fields) {
+    if (field.isRequired && field.isOptional) {
+      lines.push(
+        `    guard container.contains(.${field.swiftName}) else {`,
+        `      throw DecodingError.keyNotFound(CodingKeys.${field.swiftName}, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field ${field.rawName}."))`,
+        "    }",
+      );
+    }
+    const decodeMethod = field.isOptional ? "decodeIfPresent" : "decode";
+    lines.push(
+      `    self.${field.swiftName} = try container.${decodeMethod}(${field.swiftType}.self, forKey: .${field.swiftName})`,
+    );
+  }
+  lines.push(
+    "  }",
+    "",
+    "  public func encode(to encoder: Encoder) throws {",
+    "    var container = encoder.container(keyedBy: CodingKeys.self)",
+  );
+  for (const field of fields) {
+    appendReturnFieldEncoding(lines, field);
+  }
+  lines.push("  }");
   lines.push("}");
   return lines.join("\n");
+}
+
+interface SwiftReturnField {
+  swiftName: string;
+  isRequired: boolean;
+  isOptional: boolean;
+}
+
+function appendReturnFieldEncoding(lines: string[], field: SwiftReturnField): void {
+  if (!field.isRequired) {
+    lines.push(`    try container.encodeIfPresent(self.${field.swiftName}, forKey: .${field.swiftName})`);
+    return;
+  }
+  if (!field.isOptional) {
+    lines.push(`    try container.encode(self.${field.swiftName}, forKey: .${field.swiftName})`);
+    return;
+  }
+  lines.push(
+    `    if let value = self.${field.swiftName} {`,
+    `      try container.encode(value, forKey: .${field.swiftName})`,
+    "    } else {",
+    `      try container.encodeNil(forKey: .${field.swiftName})`,
+    "    }",
+  );
 }
 
 function isObjectWithProperties(schema: JsonSchema): boolean {

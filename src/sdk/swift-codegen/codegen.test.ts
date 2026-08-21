@@ -1,5 +1,9 @@
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
 import {
@@ -24,6 +28,19 @@ class ArtifactsCommands {
   @Returns.binary()
   blob(@Arg("id") _id: string) {
     return new Response("x");
+  }
+
+  @Command({ name: "nullable", description: "Exercise nullable return fields" })
+  @Returns(
+    z.object({
+      requiredNullable: z.string().nullable(),
+      optionalNullable: z.string().nullable().optional(),
+      optionalValue: z.string().optional(),
+      requiredValue: z.string(),
+    }),
+  )
+  nullable() {
+    return { requiredNullable: null, requiredValue: "x" };
   }
 }
 
@@ -227,6 +244,10 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.types).toContain("public var route: RoutesRouteWithTags");
     expect(output.types).toContain("public var origin: RoutesExplainOrigin");
     expect(output.types).toContain("public var liveEffect: RoutesExplainLiveEffect?");
+    expect(output.types).toContain("guard container.contains(.liveEffect) else {");
+    expect(output.types).toContain("try container.encodeNil(forKey: .liveEffect)");
+    expect(output.types).toContain("guard container.contains(.channel) else {");
+    expect(output.types).toContain("try container.encodeNil(forKey: .channel)");
   });
 
   it("emits Swift return structs for top-level object schemas", () => {
@@ -234,6 +255,75 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.types).toContain("public struct ArtifactsShowReturn: Codable, Sendable");
     expect(output.types).toContain("public var id: String");
     expect(output.types).toContain("public var links: [RaviJSON]");
+  });
+
+  it("distinguishes required nullable return keys from truly optional keys", () => {
+    const { output } = emitMockSwiftSdk();
+
+    expect(output.types).toContain("public var requiredNullable: String?");
+    expect(output.types).toContain("guard container.contains(.requiredNullable) else {");
+    expect(output.types).toContain(
+      "self.requiredNullable = try container.decodeIfPresent(String.self, forKey: .requiredNullable)",
+    );
+    expect(output.types).toContain("try container.encodeNil(forKey: .requiredNullable)");
+    expect(output.types).not.toContain("guard container.contains(.optionalNullable) else {");
+    expect(output.types).not.toContain("guard container.contains(.optionalValue) else {");
+    expect(output.types).toContain("try container.encodeIfPresent(self.optionalNullable, forKey: .optionalNullable)");
+    expect(output.types).toContain("try container.encodeIfPresent(self.optionalValue, forKey: .optionalValue)");
+  });
+
+  it("round-trips required nullable keys when a Swift compiler is available", () => {
+    const { output } = emitMockSwiftSdk();
+    const marker = "public struct ArtifactsNullableReturn: Codable, Sendable {";
+    const start = output.types.indexOf(marker);
+    const end = output.types.indexOf("\n\npublic ", start + marker.length);
+    expect(start).toBeGreaterThanOrEqual(0);
+    expect(end).toBeGreaterThan(start);
+    const generatedStruct = output.types.slice(start, end);
+
+    const compilerProbe = spawnSync("swiftc", ["--version"], { encoding: "utf8" });
+    if (compilerProbe.status !== 0) return;
+
+    const directory = mkdtempSync(join(tmpdir(), "ravi-swift-nullable-"));
+    const sourcePath = join(directory, "main.swift");
+    const executablePath = join(directory, process.platform === "win32" ? "roundtrip.exe" : "roundtrip");
+    const source = `import Foundation
+
+${generatedStruct}
+
+let decoder = JSONDecoder()
+do {
+  _ = try decoder.decode(ArtifactsNullableReturn.self, from: Data(#"{"requiredValue":"x"}"#.utf8))
+  fatalError("missing requiredNullable was accepted")
+} catch DecodingError.keyNotFound(_, _) {
+  // Expected: a required nullable key must still be present.
+}
+
+let decoded = try decoder.decode(
+  ArtifactsNullableReturn.self,
+  from: Data(#"{"requiredNullable":null,"requiredValue":"x"}"#.utf8)
+)
+guard decoded.requiredNullable == nil else { fatalError("null did not decode as nil") }
+let encoded = try JSONEncoder().encode(decoded)
+let object = try JSONSerialization.jsonObject(with: encoded) as! [String: Any]
+guard object["requiredNullable"] is NSNull else { fatalError("required null key was omitted") }
+guard object["optionalNullable"] == nil else { fatalError("optional absent key was emitted") }
+guard object["optionalValue"] == nil else { fatalError("optional absent value was emitted") }
+`;
+
+    try {
+      writeFileSync(sourcePath, source, "utf8");
+      const compilation = spawnSync("swiftc", [sourcePath, "-o", executablePath], { encoding: "utf8" });
+      if (compilation.status !== 0) {
+        throw new Error(`swiftc failed:\n${compilation.stdout}\n${compilation.stderr}`);
+      }
+      const execution = spawnSync(executablePath, [], { encoding: "utf8" });
+      if (execution.status !== 0) {
+        throw new Error(`Swift round-trip failed:\n${execution.stdout}\n${execution.stderr}`);
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("disambiguates property names that normalize to the same Swift identifier", () => {

@@ -1899,3 +1899,33 @@ de SDK ainda registram a tentativa de auditoria quando NATS local nao existe,
 sem falhar o gate. Isso e separado da prova dos tres comandos de ROUTES, que
 nao abriram conexao nem enviaram bytes para a armadilha NATS. Nao houve bancada
 de testes, pacote, push, PR, merge ou operacao em VPS.
+
+### Segundo NO-GO de ROUTES: presenca de `null` no Swift
+
+A revisao independente rejeitou o candidato
+`96f7bedb9429276f3279d0842689bcba7103da4b`. Os quatro bloqueadores anteriores
+estavam corrigidos, mas retornos Swift de topo com propriedades obrigatorias e
+nullable ainda usavam `Codable` sintetizado. Isso aceitava uma chave ausente
+como se fosse `null` e omitia a chave ao reencodar `nil`. O SHA rejeitado nao
+pode ser empacotado nem promovido.
+
+O gerador agora distingue presenca de valor. Para propriedades obrigatorias e
+nullable, a leitura exige `contains`, aceita `null` por `decodeIfPresent` e a
+escrita usa `encodeNil` quando necessario. Propriedades verdadeiramente
+opcionais continuam sem exigencia de presenca e usam `encodeIfPresent`. A
+mudanca de codec customizado nos retornos de topo fica restrita aos modelos
+afetados; modelos nomeados estritos compartilham a mesma regra de escrita.
+
+O teste nativo do gerador prova chave ausente rejeitada, `null` aceito e
+reencodado, e chave opcional ausente preservada. Ele tambem executa compilacao
+e round-trip quando `swiftc` existe. O compilador nao esta instalado neste host,
+portanto nao ha alegacao de compilacao Swift local.
+
+Uma primeira captura paralela foi descartada porque a concorrencia fez um hook
+de router e dois hooks de quality excederem cinco segundos no Windows. As
+repeticoes isoladas passaram: ROUTES 87/286, router 158/491, Commands process
+11/57, SDK 77/314, Swift codegen 24/98 e quality 40/90. Typecheck, build, drifts
+de TypeScript, dos dois OpenAPI e de Swift, e o quality runner contra
+`origin/dev` tambem passaram. Biome, Markdown e `git diff --check` ainda devem
+ser repetidos na arvore documental final antes do commit. Nao houve bancada de
+testes, pacote, push, PR, merge ou operacao em VPS.

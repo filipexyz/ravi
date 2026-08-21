@@ -134,3 +134,27 @@ introducing the snapshot API.
   failed best-effort audit connection when local NATS is absent, but the
   corrected `routes list/show/explain` process proof records no NATS connection
   or bytes. No package, push, PR, merge or VPS operation occurred.
+- 2026-08-21: independent review rejected candidate `96f7bedb`. Although the
+  four previous ROUTES blockers were closed, top-level Swift return models
+  still relied on synthesized `Codable`. A JSON Schema property that was both
+  required and nullable therefore accepted an absent key and omitted that key
+  when encoding `nil`. This SHA is permanently invalid for package or
+  promotion.
+- 2026-08-21: the generator now emits presence-aware decoding only for
+  top-level returns that contain required nullable fields; named strict models
+  use the same explicit null encoding. Required nullable keys are checked with
+  `contains`, decoded with `decodeIfPresent`, and encoded with `encodeNil` when
+  their value is `nil`. Truly optional properties keep `decodeIfPresent` and
+  `encodeIfPresent`, and unaffected top-level models retain synthesized
+  `Codable` to minimize global change. Native codegen tests cover both classes
+  and contain a conditional Swift round-trip. This Windows host has no
+  `swiftc`, so no local Swift compilation is claimed.
+- 2026-08-21: an initial parallel capture was discarded after one router hook
+  and two quality-gate hooks exceeded their five-second Windows timeout under
+  contention. Isolated reruns passed: 87 focused ROUTES tests with 286
+  assertions, all 158 router tests with 491 assertions, 11 Commands process
+  tests with 57 assertions, 77 SDK tests with 314 assertions, 24 Swift codegen
+  tests with 98 assertions, and 40 quality tests with 90 assertions. Typecheck,
+  build, TypeScript SDK drift, both OpenAPI drifts, Swift drift, and the quality
+  runner against `origin/dev` also passed. Formatting, Markdown and final diff
+  checks remain required on the documentary tree before commit.
