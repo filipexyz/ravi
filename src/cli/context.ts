@@ -95,8 +95,13 @@ export function getContext(options: GetContextOptions = {}): ToolContext | undef
   //  2. ~/.ravi/credentials.json `default` entry
   //  3. Legacy RAVI_AGENT_ID / RAVI_SESSION_* fallback (TODO: remove once sdk/auth fully lands)
   const resolutionOptions = { touch: options.touch, readOnly: options.readOnly };
-  const resolvedContext =
-    getRuntimeContextFromEnv(env, resolutionOptions) ?? resolveDefaultCredential(resolutionOptions);
+  const explicitContextKeyPresent = env[RAVI_CONTEXT_KEY_ENV] !== undefined;
+  const environmentContext = getRuntimeContextFromEnv(env, resolutionOptions);
+  // An explicitly presented credential is an authority claim. If it is
+  // unknown, expired, or revoked, never replace it with a different default or
+  // legacy identity.
+  if (explicitContextKeyPresent && !environmentContext) return undefined;
+  const resolvedContext = environmentContext ?? resolveDefaultCredential(resolutionOptions);
   if (resolvedContext) {
     const ctx: ToolContext = {
       contextId: resolvedContext.contextId,

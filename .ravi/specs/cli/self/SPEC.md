@@ -13,6 +13,8 @@ tags:
   - compact-mode
 applies_to:
   - src/cli/commands/self.ts
+  - src/cli/context.ts
+  - src/cli/tools-export.ts
   - src/cli/agent-contract.ts
   - src/cli/commands/operational-return-schemas.ts
   - src/runtime/runtime-operational-context.ts
@@ -72,6 +74,12 @@ registered context facts whenever one is resolved.
 - Context resolution reads a resolved CLI context first. That context may come
   from `RAVI_CONTEXT_KEY`, the default credential, or tool/gateway binding. A
   direct `RAVI_CONTEXT_KEY` lookup is the final context fallback.
+- An explicit `RAVI_CONTEXT_KEY` is binding: if it is unknown, expired or
+  revoked, resolution MUST fail closed and MUST NOT substitute the default
+  credential or legacy environment identity.
+- Tool execution MUST receive a registered context bound to that in-process
+  invocation. A tool MUST NOT inherit authority from ambient process env or
+  the operator's default credential.
 - Actor env names are `RAVI_ACTOR_TYPE`, `RAVI_CONTACT_ID`,
   `RAVI_ACTOR_AGENT_ID`, `RAVI_PLATFORM_IDENTITY_ID`,
   `RAVI_CANONICAL_CHAT_ID`, `RAVI_RAW_SENDER_ID`,
@@ -154,3 +162,9 @@ statuses when no contradictory ownership fact exists.
 These checks apply equally to direct CLI, local tools and gateway dispatch.
 Validation MUST NOT refresh TTL, `lastUsedAt`, schema, journal mode or any
 durable state.
+
+The tool boundary is conjunctive with the registry check. `self_*` tools MUST
+first have an invocation-bound context; ambient `RAVI_CONTEXT_KEY`, default
+credentials and legacy `RAVI_*` values are not tool authority. A missing bound
+context MUST fail with `TOOL_CONTEXT_REQUIRED` before command authorization or
+SELF data access.

@@ -259,6 +259,23 @@ describe("tools export surface", () => {
     expect(createSdkTools([EffectMetadataCommands])[0]).toMatchObject(expected);
   });
 
+  it("rejects ambient authority when no context is bound to the tool invocation", async () => {
+    const previousContextKey = process.env.RAVI_CONTEXT_KEY;
+    process.env.RAVI_CONTEXT_KEY = "rctx_ambient_must_not_be_inherited";
+    try {
+      const tool = extractTools([NegatedToolCommands])[0];
+      const result = await tool!.handler({});
+      expect(result).toMatchObject({ isError: true, outcome: "failed", exitCode: 1 });
+      expect(JSON.parse(result.content[0]?.text ?? "{}")).toMatchObject({
+        success: false,
+        error: { code: "TOOL_CONTEXT_REQUIRED", retryable: false },
+      });
+    } finally {
+      if (previousContextKey === undefined) delete process.env.RAVI_CONTEXT_KEY;
+      else process.env.RAVI_CONTEXT_KEY = previousContextKey;
+    }
+  });
+
   it("does not contact the global audit transport for allowed or denied calls when suppressed", async () => {
     const originalEmit = nats.emit;
     let emits = 0;

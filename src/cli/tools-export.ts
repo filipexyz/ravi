@@ -204,6 +204,22 @@ export function manifestToJSON(tools: ExportedTool[]): string {
 
 const MAX_INPUT_LENGTH = 500;
 
+function toolContextRequiredResult(group: string, command: string): ToolResult {
+  const error = new ContractError(
+    commandOperation(group, command),
+    "TOOL_CONTEXT_REQUIRED",
+    "Tool execution requires a context bound to this invocation.",
+    1,
+    { suggestedAction: "Retry through an authenticated Ravi runtime or gateway tool call" },
+  );
+  return {
+    content: [{ type: "text", text: JSON.stringify(error.envelope()) }],
+    isError: true,
+    outcome: "failed",
+    exitCode: error.exitCode,
+  };
+}
+
 function truncateForEvent(value: unknown): unknown {
   if (typeof value === "string") {
     return value.length > MAX_INPUT_LENGTH ? value.slice(0, MAX_INPUT_LENGTH) + "…" : value;
@@ -233,7 +249,11 @@ function buildHandler(
   access: CommandAccessOptions | undefined,
 ): (args: Record<string, unknown>) => Promise<ToolResult> {
   return async (toolArgs: Record<string, unknown>): Promise<ToolResult> => {
-    const ctx = access?.kind === "read" ? getContext({ touch: false, readOnly: true }) : getContext();
+    const ctx =
+      access?.kind === "read"
+        ? getContext({ localOnly: true, touch: false, readOnly: true })
+        : getContext({ localOnly: true });
+    if (!ctx?.context) return toolContextRequiredResult(group, command);
     const sessionKey = ctx?.sessionKey ?? "_cli";
     const agentId = ctx?.agentId;
     const startTime = Date.now();

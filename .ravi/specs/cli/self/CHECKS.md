@@ -40,6 +40,12 @@
 
 - A fabricated inline context MUST fail through the local tool handler and the
   gateway dispatcher even when it grants itself SELF read capability.
+- A tool invoked without an in-process bound context MUST fail with
+  `TOOL_CONTEXT_REQUIRED`; a valid ambient or default credential MUST NOT be
+  inherited.
+- When `RAVI_CONTEXT_KEY` is explicitly present but invalid, context resolution
+  MUST NOT fall through to a valid default credential or legacy `RAVI_*`
+  identity.
 - Unknown, expired and revoked registered contexts MUST retain distinct typed
   errors and MUST be resolved with `touch: false, readOnly: true`.
 - Material changes to agent, session, source, capabilities, metadata, creation,
@@ -49,3 +55,6 @@
   route or recent-message data is returned.
 - Binding owner, chat owner, route owner and runtime provider contradictions
   MUST fail closed with only the failed relation in public details.
+- `bun test src/cli/self-process.test.ts src/cli/context.test.ts
+  src/cli/tools-export.test.ts` MUST cover the real invalid-key/default-key
+  substitution path and the invocation-bound tool requirement.

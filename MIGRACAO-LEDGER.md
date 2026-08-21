@@ -2029,3 +2029,40 @@ negada por `EPERM`; portanto elas nao foram introduzidas por SELF. Biome,
 Markdown e `git diff --check` devem permanecer verdes no fechamento. Nao houve
 alteracao de versao, pacote, push, PR, merge ou operacao na VPS. Linux CI e
 compilacao Swift real continuam fora desta prova local.
+
+### SELF: autoridade ambiente em tools rejeitada pela auditoria
+
+A auditoria independente rejeitou o candidato `e3ecdf84` porque o handler de
+tools resolvia ambiente e credencial default antes de criar o contexto local.
+Assim, uma chave explicita inexistente, expirada ou revogada podia ser trocada
+silenciosamente por outro principal valido, e uma chamada direta podia herdar
+uma chave ambiente sem binding proprio. As afirmacoes anteriores de cobertura
+completa de tools ficam formalmente superadas; o historico foi mantido.
+
+A correcao torna `RAVI_CONTEXT_KEY` vinculante: se a chave apresentada nao
+resolve, nao existe fallback para default nem para identidade `RAVI_*` legada.
+Handlers exportados tambem exigem um contexto registrado no
+`AsyncLocalStorage` da propria invocacao e retornam
+`TOOL_CONTEXT_REQUIRED` antes de autorizacao ou execucao quando ele falta.
+SELF continua relendo a chave vinculada no registro confiavel, mantendo
+binding de transporte e identidade registrada como requisitos conjuntos.
+
+Os focos iniciais passaram: contexto 8/8 com 11 assercoes, tools 16/16 com 70,
+SELF 35/35 com 104 e processo real 3/3 com 27. O novo processo provisiona uma
+credencial default valida e uma chave explicita forjada e prova que o principal
+default nao executa nem aparece na resposta. Gates amplos, novo commit,
+auditoria independente, pacote, PR e CI Linux continuam obrigatorios.
+
+O fechamento local da correcao passou em typecheck, build, Biome dos cinco
+arquivos TypeScript tocados, Markdown dos quatro documentos tocados,
+`git diff --check`, quality gate 41/41 com 92 assercoes, SDK 76/76 com 305,
+drift do SDK TypeScript, dos dois OpenAPI e do Swift, Commands 37/37 com 171,
+contexto/tools 24/24 com 81 e fronteira SELF 38/38 com 131. O contexto de
+request passou isolado 30/30 com 133 assercoes; host e hooks passaram 14/14 com
+42. O timeout observado sob quatro grupos concorrentes desapareceu na repeticao
+isolada. `server.test.ts` manteve o mesmo unico teste obsoleto tanto nesta arvore
+quanto no Commands vinculante: ambos retornam o envelope canonico atual onde a
+expectativa antiga ainda procura uma string. Esse desvio preexistente nao foi
+contado como evidencia positiva nem atribuido a SELF. O quality runner
+cumulativo tambem passou para 48 arquivos e 274 specs. Ainda faltam novo SHA e
+auditoria independente antes de pacote ou PR.

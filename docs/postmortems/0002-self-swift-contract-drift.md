@@ -168,3 +168,25 @@ expectation and symlink creation denied with `EPERM`. They are therefore not a
 SELF regression. No version change, package, push, PR, merge, VPS operation, or
 Linux CI run occurred; real Swift compilation remains outside this local
 evidence.
+
+## Revision note: 2026-08-21, ambient tool authority claim rejected
+
+The independent review of `e3ecdf84b08c69cb642248676916518521498efc`
+proved that the earlier local-tool statement was incomplete. `tools-export`
+resolved process environment and default credentials before binding the tool
+handler. An explicit unknown, expired, or revoked `RAVI_CONTEXT_KEY` could
+therefore be replaced by another valid default principal, and a direct tool
+call could inherit a valid ambient key without an invocation binding. The SHA
+and its previous GO claims are rejected.
+
+The correction makes explicit context keys fail closed before default or
+legacy fallback and requires every exported tool handler to receive a context
+bound through the in-process invocation. Missing binding returns the canonical
+`TOOL_CONTEXT_REQUIRED` envelope before authorization or command execution.
+SELF still re-reads the bound key from the trusted registry, so transport
+binding and trusted identity are conjunctive rather than interchangeable.
+
+A native subprocess now provisions both a valid default credential and an
+invalid explicit key, invokes `self_whoami` through the real exported handler,
+and proves that neither the default agent nor its key appears in output. This
+revision appends the missing evidence; it does not erase the rejected claim.

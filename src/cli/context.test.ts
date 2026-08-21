@@ -19,12 +19,17 @@ let resolvedContext:
     }
   | undefined;
 let runtimeResolutionOptions: unknown;
+let defaultResolutionCalls = 0;
 
 mock.module("../runtime/context-registry.js", () => ({
   ...actualRuntimeContextRegistryModule,
   RAVI_CONTEXT_KEY_ENV: "RAVI_CONTEXT_KEY",
   getRuntimeContextFromEnv: (_env?: NodeJS.ProcessEnv, options?: unknown) => {
     runtimeResolutionOptions = options;
+    return resolvedContext;
+  },
+  resolveRuntimeContext: () => {
+    defaultResolutionCalls += 1;
     return resolvedContext;
   },
 }));
@@ -48,6 +53,7 @@ describe("cli context resolution", () => {
   beforeEach(() => {
     resolvedContext = undefined;
     runtimeResolutionOptions = undefined;
+    defaultResolutionCalls = 0;
     delete process.env.RAVI_CONTEXT_KEY;
     delete process.env.RAVI_SESSION_KEY;
     delete process.env.RAVI_SESSION_NAME;
@@ -132,6 +138,18 @@ describe("cli context resolution", () => {
         canonicalChatId: "chat-main",
       },
     });
+  });
+
+  it("never replaces an invalid or empty explicit context key with default or legacy authority", () => {
+    for (const explicitKey of ["rctx_invalid_explicit", "", "   "]) {
+      process.env.RAVI_CONTEXT_KEY = explicitKey;
+      process.env.RAVI_SESSION_KEY = "agent:fallback:main";
+      process.env.RAVI_SESSION_NAME = "fallback-main";
+      process.env.RAVI_AGENT_ID = "fallback";
+
+      expect(getContext()).toBeUndefined();
+      expect(defaultResolutionCalls).toBe(0);
+    }
   });
 
   it("does not mistake the generic CLI handler boundary for a runtime invocation", () => {
