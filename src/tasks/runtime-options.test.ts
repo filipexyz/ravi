@@ -102,4 +102,33 @@ describe("task runtime options", () => {
       }),
     ).toThrow(/Invalid runtime effort/);
   });
+
+  it("labels env fallback separately from stored global defaults", () => {
+    const env = resolveTaskRuntimeOptions({
+      configModel: "env-sonnet",
+      configModelSource: "env_fallback",
+    });
+    expect(env.options.model).toBe("env-sonnet");
+    expect(env.sources.model).toBe("env_fallback");
+
+    const stored = resolveTaskRuntimeOptions({
+      configModel: "stored-opus",
+      configModelSource: "global_default",
+      configEffort: "high",
+    });
+    expect(stored.options.model).toBe("stored-opus");
+    expect(stored.sources.model).toBe("global_default");
+    expect(stored.options.effort).toBe("high");
+    expect(stored.sources.effort).toBe("global_default");
+  });
+
+  it("keeps a stored agent model ahead of env fallback", () => {
+    const resolved = resolveTaskRuntimeOptions({
+      agentModel: "agent-opus",
+      configModel: "env-sonnet",
+      configModelSource: "env_fallback",
+    });
+    expect(resolved.options.model).toBe("agent-opus");
+    expect(resolved.sources.model).toBe("agent_default");
+  });
 });

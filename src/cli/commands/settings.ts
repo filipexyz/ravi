@@ -11,6 +11,16 @@ import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import { cliOffsetPaginationSchema, commandTargetSchema } from "../return-schemas.js";
 import { nats } from "../../nats.js";
 import { parseDurationMs } from "../../cron/schedule.js";
+import { DEFAULT_RUNTIME_EFFORT, formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
+import {
+  HARDCODED_RUNTIME_MODEL,
+  RUNTIME_DEFAULT_EFFORT_SETTING,
+  RUNTIME_DEFAULT_MODEL_ENV,
+  RUNTIME_DEFAULT_MODEL_SETTING,
+  RUNTIME_DEFAULT_PROVIDER_SETTING,
+} from "../../runtime/runtime-defaults.js";
+import { DEFAULT_RUNTIME_PROVIDER_ID, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
+import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 
 /** Notify gateway that config changed */
 function emitConfigChanged() {
@@ -77,6 +87,31 @@ function isValidTimezone(tz: string): boolean {
 }
 
 const KNOWN_SETTINGS: Record<string, { description: string; validate?: (value: string) => void }> = {
+  [RUNTIME_DEFAULT_PROVIDER_SETTING]: {
+    description: "Stored global runtime provider default for the next unshadowed turn",
+    validate: (value: string) => {
+      const normalized = value.trim();
+      if (!listRegisteredRuntimeProviderIds().includes(normalized)) {
+        throw new Error(`Invalid provider. Must be one of: ${listRegisteredRuntimeProviderIds().join(", ")}`);
+      }
+    },
+  },
+  [RUNTIME_DEFAULT_MODEL_SETTING]: {
+    description: "Stored global runtime model default. Env RAVI_MODEL is fallback only when this is unset",
+    validate: (value: string) => {
+      const provider = dbGetSetting(RUNTIME_DEFAULT_PROVIDER_SETTING) ?? DEFAULT_RUNTIME_PROVIDER_ID;
+      const result = validateRuntimeModelSelector(provider, value);
+      if (!result.ok) {
+        throw new Error(result.error ?? `Invalid model: ${value}`);
+      }
+    },
+  },
+  [RUNTIME_DEFAULT_EFFORT_SETTING]: {
+    description: "Stored global runtime effort default for the next unshadowed turn",
+    validate: (value: string) => {
+      parseRuntimeEffort(value);
+    },
+  },
   "runtime.model_broker.required": {
     description: "Require every active agent to resolve inference through its selected model broker",
     validate: (value: string) => {
@@ -208,6 +243,10 @@ function knownSettingDefault(key: string): string | null {
   if (key === "image.mode") return "fast";
   if (key === "tasks.sessionTtl") return "1d";
   if (key === "tasks.sessionTtl.knowledgeEngineer") return "5m";
+  if (key === RUNTIME_DEFAULT_PROVIDER_SETTING) return DEFAULT_RUNTIME_PROVIDER_ID;
+  if (key === RUNTIME_DEFAULT_MODEL_SETTING)
+    return process.env[RUNTIME_DEFAULT_MODEL_ENV]?.trim() || HARDCODED_RUNTIME_MODEL;
+  if (key === RUNTIME_DEFAULT_EFFORT_SETTING) return DEFAULT_RUNTIME_EFFORT;
   return null;
 }
 
@@ -358,6 +397,17 @@ export class SettingsCommands {
           console.log("  Default: main");
         } else if (key === "defaultDmScope") {
           console.log("  Default: per-peer");
+        } else if (key === RUNTIME_DEFAULT_PROVIDER_SETTING) {
+          console.log(`  Fallback: ${DEFAULT_RUNTIME_PROVIDER_ID} (hardcoded)`);
+        } else if (key === RUNTIME_DEFAULT_MODEL_SETTING) {
+          const envModel = process.env[RUNTIME_DEFAULT_MODEL_ENV]?.trim();
+          console.log(
+            envModel
+              ? `  Fallback: ${envModel} (env ${RUNTIME_DEFAULT_MODEL_ENV})`
+              : `  Fallback: ${HARDCODED_RUNTIME_MODEL} (hardcoded; env ${RUNTIME_DEFAULT_MODEL_ENV} unset)`,
+          );
+        } else if (key === RUNTIME_DEFAULT_EFFORT_SETTING) {
+          console.log(`  Fallback: ${DEFAULT_RUNTIME_EFFORT} (hardcoded; ${formatRuntimeEffortLevels()})`);
         }
       }
     } else if (legacy) {

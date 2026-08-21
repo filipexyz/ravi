@@ -37,6 +37,7 @@ export type TaskRuntimeOptionsSource =
   | "agent_preset"
   | "agent_default"
   | "global_default"
+  | "env_fallback"
   | "runtime_default";
 
 export interface TaskRuntimeOptions {

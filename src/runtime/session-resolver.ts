@@ -9,8 +9,9 @@ import {
 } from "../router/index.js";
 import { logger } from "../utils/logger.js";
 import { createRuntimeProvider } from "./provider-registry.js";
-import { resolveAgentModelSelection } from "./model-preset-resolver.js";
 import type { RuntimeProviderId } from "./types.js";
+import { resolveRuntimeDefaults } from "./runtime-defaults.js";
+import { resolveRequestedRuntimeProvider } from "./runtime-selection.js";
 import { resolveStoredRuntimeProvider } from "./host-session.js";
 import type { RuntimeLaunchPrompt } from "./message-types.js";
 import type { RuntimeCapabilities, SessionRuntimeProvider } from "./types.js";
@@ -76,20 +77,25 @@ export function resolveRuntimeSession(options: {
   const identity = options.identity ?? resolveRuntimeSessionIdentity(options);
   if (!identity) return null;
   const { sessionEntry, agent, session, sessionCwd, dbSessionKey } = identity;
-  const agentSelection = resolveAgentModelSelection(agent);
   const sessionRuntimeProviderOverride =
     options.prompt._observation && options.prompt._runtimeProviderId
       ? undefined
       : sessionEntry?.runtimeProviderOverride;
-  const runtimeProviderId: RuntimeProviderId = options.runtimeProviderIdOverride
-    ? options.runtimeProviderIdOverride
-    : options.prompt._observation && options.prompt._runtimeProviderId
-      ? options.prompt._runtimeProviderId
-      : sessionRuntimeProviderOverride
-        ? sessionRuntimeProviderOverride
-        : agentSelection.modelSource === "agent_preset"
-          ? agentSelection.effectiveProvider
-          : (agent.provider ?? options.defaultRuntimeProviderId);
+  const defaults = resolveRuntimeDefaults();
+  const runtimeProviderId = resolveRequestedRuntimeProvider({
+    runtimeProviderIdOverride: options.runtimeProviderIdOverride,
+    observationProviderId:
+      options.prompt._observation && options.prompt._runtimeProviderId ? options.prompt._runtimeProviderId : undefined,
+    sessionProviderOverride: sessionRuntimeProviderOverride,
+    agent,
+    defaults: {
+      ...defaults,
+      provider:
+        defaults.provider.source === "global_default"
+          ? defaults.provider
+          : { value: options.defaultRuntimeProviderId, source: "runtime_default" },
+    },
+  }).value;
   const runtimeProvider = createRuntimeProvider(runtimeProviderId);
   const runtimeCapabilities = runtimeProvider.getCapabilities();
 

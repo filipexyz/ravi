@@ -1,7 +1,11 @@
 export interface Config {
   /** ANTHROPIC_API_KEY for Claude API access */
   apiKey: string;
-  /** Model to use (default: claude-sonnet-4-20250514) */
+  /**
+   * Env-only model fallback (`RAVI_MODEL` or hardcoded `sonnet`).
+   * Not the live runtime default — use `resolveRuntimeDefaults()` for the
+   * next-turn selection. Stored settings win over this value.
+   */
   model: string;
   /** Log level */
   logLevel: "debug" | "info" | "warn" | "error";

@@ -52,8 +52,7 @@ import {
   type RuntimeUserMessage,
 } from "./host-session.js";
 import { applyDirectRuntimeModelSwitch, resolveRuntimeModelSwitchStrategy } from "./model-switch.js";
-import { resolveAgentModelSelection } from "./model-preset-resolver.js";
-import { DEFAULT_RUNTIME_PROVIDER_ID } from "./provider-registry.js";
+import { resolveRequestedRuntimeProvider } from "./runtime-selection.js";
 import {
   MODEL_BROKER_REQUIRED_SETTING,
   buildRuntimeModelBrokerPhysicalFingerprint,
@@ -803,18 +802,16 @@ export class RuntimeSessionDispatcher {
     if (modelBrokerPlan && prompt._modelBrokerTurnId !== modelBrokerTurnId) {
       prompt = { ...prompt, _modelBrokerTurnId: modelBrokerTurnId };
     }
-    const agentSelection = resolveAgentModelSelection(agent);
     const sessionRuntimeProviderOverride =
       prompt._observation && prompt._runtimeProviderId ? undefined : sessionEntry?.runtimeProviderOverride;
     const requestedProvider: RuntimeProviderId = modelBrokerPlan
       ? modelBrokerPlan.lease.runtimeProvider
-      : prompt._observation && prompt._runtimeProviderId
-        ? prompt._runtimeProviderId
-        : sessionRuntimeProviderOverride
-          ? sessionRuntimeProviderOverride
-          : agentSelection.modelSource === "agent_preset"
-            ? agentSelection.effectiveProvider
-            : (agent.provider ?? DEFAULT_RUNTIME_PROVIDER_ID);
+      : resolveRequestedRuntimeProvider({
+          observationProviderId:
+            prompt._observation && prompt._runtimeProviderId ? prompt._runtimeProviderId : undefined,
+          sessionProviderOverride: sessionRuntimeProviderOverride,
+          agent,
+        }).value;
     let retainReleasedSlot = false;
 
     if (existing && !existing.done) {

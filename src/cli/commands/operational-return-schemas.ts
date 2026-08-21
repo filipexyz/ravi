@@ -1901,9 +1901,13 @@ export const agentJsonSummaryReturnSchema = z
     defaults: jsonObjectSchema.nullable().optional(),
     isDefault: z.boolean(),
     effectiveProvider: z.string(),
+    providerSource: z.string(),
     effectiveModel: z.string().nullable(),
-    modelSource: z.enum(["agent_preset", "agent_default", "global_default"]).nullable(),
+    modelSource: z
+      .enum(["agent_preset", "agent_default", "global_default", "env_fallback", "runtime_default"])
+      .nullable(),
     modelPresetVersion: z.number().nullable(),
+    modelError: z.string().nullable(),
     tags: z.array(agentTagBindingReturnSchema),
   })
   .strict();

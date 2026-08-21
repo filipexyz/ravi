@@ -1061,6 +1061,16 @@ public enum RaviSchemas {
             "model": {
               "type": "string"
             },
+            "modelError": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "modelPresetId": {
               "anyOf": [
                 {
@@ -1087,7 +1097,9 @@ public enum RaviSchemas {
                   "enum": [
                     "agent_preset",
                     "agent_default",
-                    "global_default"
+                    "global_default",
+                    "env_fallback",
+                    "runtime_default"
                   ],
                   "type": "string"
                 },
@@ -1100,6 +1112,9 @@ public enum RaviSchemas {
               "type": "string"
             },
             "provider": {
+              "type": "string"
+            },
+            "providerSource": {
               "type": "string"
             },
             "remote": {
@@ -1226,9 +1241,11 @@ public enum RaviSchemas {
             "modelPresetId",
             "isDefault",
             "effectiveProvider",
+            "providerSource",
             "effectiveModel",
             "modelSource",
             "modelPresetVersion",
+            "modelError",
             "tags"
           ],
           "type": "object"
@@ -1383,6 +1400,16 @@ public enum RaviSchemas {
             "model": {
               "type": "string"
             },
+            "modelError": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "modelPresetId": {
               "anyOf": [
                 {
@@ -1409,7 +1436,9 @@ public enum RaviSchemas {
                   "enum": [
                     "agent_preset",
                     "agent_default",
-                    "global_default"
+                    "global_default",
+                    "env_fallback",
+                    "runtime_default"
                   ],
                   "type": "string"
                 },
@@ -1422,6 +1451,9 @@ public enum RaviSchemas {
               "type": "string"
             },
             "provider": {
+              "type": "string"
+            },
+            "providerSource": {
               "type": "string"
             },
             "remote": {
@@ -1548,9 +1580,11 @@ public enum RaviSchemas {
             "modelPresetId",
             "isDefault",
             "effectiveProvider",
+            "providerSource",
             "effectiveModel",
             "modelSource",
             "modelPresetVersion",
+            "modelError",
             "tags"
           ],
           "type": "object"
@@ -1826,6 +1860,16 @@ public enum RaviSchemas {
           "model": {
             "type": "string"
           },
+          "modelError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "modelPresetId": {
             "anyOf": [
               {
@@ -1852,7 +1896,9 @@ public enum RaviSchemas {
                 "enum": [
                   "agent_preset",
                   "agent_default",
-                  "global_default"
+                  "global_default",
+                  "env_fallback",
+                  "runtime_default"
                 ],
                 "type": "string"
               },
@@ -1865,6 +1911,9 @@ public enum RaviSchemas {
             "type": "string"
           },
           "provider": {
+            "type": "string"
+          },
+          "providerSource": {
             "type": "string"
           },
           "remote": {
@@ -1991,9 +2040,11 @@ public enum RaviSchemas {
           "modelPresetId",
           "isDefault",
           "effectiveProvider",
+          "providerSource",
           "effectiveModel",
           "modelSource",
           "modelPresetVersion",
+          "modelError",
           "tags"
         ],
         "type": "object"
@@ -2307,6 +2358,16 @@ public enum RaviSchemas {
           "model": {
             "type": "string"
           },
+          "modelError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "modelPresetId": {
             "anyOf": [
               {
@@ -2333,7 +2394,9 @@ public enum RaviSchemas {
                 "enum": [
                   "agent_preset",
                   "agent_default",
-                  "global_default"
+                  "global_default",
+                  "env_fallback",
+                  "runtime_default"
                 ],
                 "type": "string"
               },
@@ -2346,6 +2409,9 @@ public enum RaviSchemas {
             "type": "string"
           },
           "provider": {
+            "type": "string"
+          },
+          "providerSource": {
             "type": "string"
           },
           "remote": {
@@ -2472,9 +2538,11 @@ public enum RaviSchemas {
           "modelPresetId",
           "isDefault",
           "effectiveProvider",
+          "providerSource",
           "effectiveModel",
           "modelSource",
           "modelPresetVersion",
+          "modelError",
           "tags"
         ],
         "type": "object"
@@ -3019,6 +3087,16 @@ public enum RaviSchemas {
           "model": {
             "type": "string"
           },
+          "modelError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "modelPresetId": {
             "anyOf": [
               {
@@ -3045,7 +3123,9 @@ public enum RaviSchemas {
                 "enum": [
                   "agent_preset",
                   "agent_default",
-                  "global_default"
+                  "global_default",
+                  "env_fallback",
+                  "runtime_default"
                 ],
                 "type": "string"
               },
@@ -3058,6 +3138,9 @@ public enum RaviSchemas {
             "type": "string"
           },
           "provider": {
+            "type": "string"
+          },
+          "providerSource": {
             "type": "string"
           },
           "remote": {
@@ -3184,9 +3267,11 @@ public enum RaviSchemas {
           "modelPresetId",
           "isDefault",
           "effectiveProvider",
+          "providerSource",
           "effectiveModel",
           "modelSource",
           "modelPresetVersion",
+          "modelError",
           "tags"
         ],
         "type": "object"
@@ -59471,7 +59556,14 @@ public enum RaviSchemas {
                 "type": "string"
               },
               "effectiveModel": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "effectiveProvider": {
                 "type": "string"
@@ -59505,6 +59597,16 @@ public enum RaviSchemas {
               "label": {
                 "type": "string"
               },
+              "modelError": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "modelOverride": {
                 "type": "string"
               },
@@ -59529,9 +59631,19 @@ public enum RaviSchemas {
                 ]
               },
               "modelSource": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "name": {
+                "type": "string"
+              },
+              "providerSource": {
                 "type": "string"
               },
               "runtimeOptions": {
@@ -59544,6 +59656,7 @@ public enum RaviSchemas {
                         "enum": [
                           "session_override",
                           "agent_default",
+                          "global_default",
                           "runtime_default"
                         ],
                         "type": "string"
@@ -59569,6 +59682,36 @@ public enum RaviSchemas {
                     "type": "object"
                   },
                   "model": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "source": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "source"
+                    ],
+                    "type": "object"
+                  },
+                  "provider": {
                     "additionalProperties": false,
                     "properties": {
                       "source": {
@@ -59616,6 +59759,7 @@ public enum RaviSchemas {
                   }
                 },
                 "required": [
+                  "provider",
                   "model",
                   "effort",
                   "thinking"
@@ -59631,10 +59775,12 @@ public enum RaviSchemas {
               "label",
               "agentId",
               "effectiveProvider",
+              "providerSource",
               "effectiveModel",
               "modelSource",
               "modelPresetId",
               "modelPresetVersion",
+              "modelError",
               "ephemeral",
               "expiresAt",
               "runtimeOptions"
@@ -59657,7 +59803,14 @@ public enum RaviSchemas {
             "type": "string"
           },
           "effectiveModel": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "effectiveProvider": {
             "type": "string"
@@ -59691,6 +59844,16 @@ public enum RaviSchemas {
           "label": {
             "type": "string"
           },
+          "modelError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "modelOverride": {
             "type": "string"
           },
@@ -59715,9 +59878,19 @@ public enum RaviSchemas {
             ]
           },
           "modelSource": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "name": {
+            "type": "string"
+          },
+          "providerSource": {
             "type": "string"
           },
           "runtimeOptions": {
@@ -59730,6 +59903,7 @@ public enum RaviSchemas {
                     "enum": [
                       "session_override",
                       "agent_default",
+                      "global_default",
                       "runtime_default"
                     ],
                     "type": "string"
@@ -59755,6 +59929,36 @@ public enum RaviSchemas {
                 "type": "object"
               },
               "model": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "value",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "provider": {
                 "additionalProperties": false,
                 "properties": {
                   "source": {
@@ -59802,6 +60006,7 @@ public enum RaviSchemas {
               }
             },
             "required": [
+              "provider",
               "model",
               "effort",
               "thinking"
@@ -59817,10 +60022,12 @@ public enum RaviSchemas {
           "label",
           "agentId",
           "effectiveProvider",
+          "providerSource",
           "effectiveModel",
           "modelSource",
           "modelPresetId",
           "modelPresetVersion",
+          "modelError",
           "ephemeral",
           "expiresAt",
           "runtimeOptions"
@@ -59847,6 +60054,7 @@ public enum RaviSchemas {
         "enum": [
           "session_override",
           "agent_default",
+          "global_default",
           "runtime_default"
         ],
         "type": "string"
@@ -59968,7 +60176,14 @@ public enum RaviSchemas {
                 "type": "string"
               },
               "effectiveModel": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "effectiveProvider": {
                 "type": "string"
@@ -60002,6 +60217,16 @@ public enum RaviSchemas {
               "label": {
                 "type": "string"
               },
+              "modelError": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
               "modelOverride": {
                 "type": "string"
               },
@@ -60026,9 +60251,19 @@ public enum RaviSchemas {
                 ]
               },
               "modelSource": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               },
               "name": {
+                "type": "string"
+              },
+              "providerSource": {
                 "type": "string"
               },
               "runtimeOptions": {
@@ -60041,6 +60276,7 @@ public enum RaviSchemas {
                         "enum": [
                           "session_override",
                           "agent_default",
+                          "global_default",
                           "runtime_default"
                         ],
                         "type": "string"
@@ -60066,6 +60302,36 @@ public enum RaviSchemas {
                     "type": "object"
                   },
                   "model": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "source": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "value": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "value",
+                      "source"
+                    ],
+                    "type": "object"
+                  },
+                  "provider": {
                     "additionalProperties": false,
                     "properties": {
                       "source": {
@@ -60113,6 +60379,7 @@ public enum RaviSchemas {
                   }
                 },
                 "required": [
+                  "provider",
                   "model",
                   "effort",
                   "thinking"
@@ -60128,10 +60395,12 @@ public enum RaviSchemas {
               "label",
               "agentId",
               "effectiveProvider",
+              "providerSource",
               "effectiveModel",
               "modelSource",
               "modelPresetId",
               "modelPresetVersion",
+              "modelError",
               "ephemeral",
               "expiresAt",
               "runtimeOptions"
@@ -60154,7 +60423,14 @@ public enum RaviSchemas {
             "type": "string"
           },
           "effectiveModel": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "effectiveProvider": {
             "type": "string"
@@ -60188,6 +60464,16 @@ public enum RaviSchemas {
           "label": {
             "type": "string"
           },
+          "modelError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "modelOverride": {
             "type": "string"
           },
@@ -60212,9 +60498,19 @@ public enum RaviSchemas {
             ]
           },
           "modelSource": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "name": {
+            "type": "string"
+          },
+          "providerSource": {
             "type": "string"
           },
           "runtimeOptions": {
@@ -60227,6 +60523,7 @@ public enum RaviSchemas {
                     "enum": [
                       "session_override",
                       "agent_default",
+                      "global_default",
                       "runtime_default"
                     ],
                     "type": "string"
@@ -60252,6 +60549,36 @@ public enum RaviSchemas {
                 "type": "object"
               },
               "model": {
+                "additionalProperties": false,
+                "properties": {
+                  "source": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "value": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "value",
+                  "source"
+                ],
+                "type": "object"
+              },
+              "provider": {
                 "additionalProperties": false,
                 "properties": {
                   "source": {
@@ -60299,6 +60626,7 @@ public enum RaviSchemas {
               }
             },
             "required": [
+              "provider",
               "model",
               "effort",
               "thinking"
@@ -60314,10 +60642,12 @@ public enum RaviSchemas {
           "label",
           "agentId",
           "effectiveProvider",
+          "providerSource",
           "effectiveModel",
           "modelSource",
           "modelPresetId",
           "modelPresetVersion",
+          "modelError",
           "ephemeral",
           "expiresAt",
           "runtimeOptions"
@@ -60328,6 +60658,9 @@ public enum RaviSchemas {
         "type": "boolean"
       },
       "effectiveProvider": {
+        "type": "string"
+      },
+      "providerSource": {
         "type": "string"
       },
       "runtimeProviderOverride": {
@@ -60363,6 +60696,7 @@ public enum RaviSchemas {
       "after",
       "runtimeProviderOverride",
       "effectiveProvider",
+      "providerSource",
       "appliesOn"
     ],
     "type": "object"

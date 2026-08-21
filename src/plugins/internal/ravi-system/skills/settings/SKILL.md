@@ -64,6 +64,9 @@ ravi settings delete <key> --execute  # apaga de verdade
 | `defaultAgent` | Agent padrão quando nenhuma rota casa | ID do agent |
 | `defaultDmScope` | Escopo padrão de DMs | main, per-peer, per-channel-peer, per-account-channel-peer |
 | `defaultTimezone` | Fuso horário padrão | America/Sao_Paulo, etc |
+| `runtime.defaultProvider` | Provider runtime global (próximo turno sem override) | `codex`, `claude`, `pi` |
+| `runtime.defaultModel` | Model runtime global. `RAVI_MODEL` só é fallback se esta key estiver unset | seletor de model |
+| `runtime.defaultEffort` | Effort runtime global | `none\|minimal\|low\|medium\|high\|xhigh\|max\|ultra` |
 | `tasks.sessionTtl` | TTL padrão para sessões de trabalho de tasks | duração como 1d, 12h, ou off |
 | `tasks.sessionTtl.knowledgeEngineer` | TTL para sessões de task de `knowledge-engineer-*` | duração como 5m, 1h, ou off |
 
@@ -82,6 +85,17 @@ A migração acontece automaticamente na primeira inicialização do daemon.
 Por default, `ravi settings list` esconde essas keys; use `--legacy` só para inspecionar ou limpar restos antigos.
 
 ## Exemplos
+
+Definir defaults runtime (provider/model/effort do próximo turno sem override):
+```bash
+ravi settings set runtime.defaultProvider claude
+ravi settings set runtime.defaultModel opus
+ravi settings set runtime.defaultEffort high
+ravi settings get runtime.defaultModel
+ravi sessions info <session> --json   # source de cada eixo
+```
+
+`RAVI_MODEL` no `~/.ravi/.env` é só fallback quando `runtime.defaultModel` não está setada.
 
 Definir agent default:
 ```bash

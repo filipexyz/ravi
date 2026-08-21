@@ -57,7 +57,8 @@ import {
 import { validateRuntimeModelSelector } from "../../runtime/model-validation.js";
 import { getRuntimeModelPreset } from "../../runtime/model-preset-store.js";
 import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
-import { loadConfig } from "../../utils/config.js";
+import { resolveRuntimeDefaults } from "../../runtime/runtime-defaults.js";
+import { resolveRequestedRuntimeProvider } from "../../runtime/runtime-selection.js";
 import { formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
 import {
@@ -165,10 +166,12 @@ interface AgentSetMutationPayload {
 type AgentJsonSummary = Omit<AgentConfig, "modelPresetId"> & {
   isDefault: boolean;
   effectiveProvider: string;
+  providerSource: string;
   effectiveModel: string | null;
-  modelSource: "agent_preset" | "agent_default" | "global_default" | null;
+  modelSource: "agent_preset" | "agent_default" | "global_default" | "env_fallback" | "runtime_default" | null;
   modelPresetId: string | null;
   modelPresetVersion: number | null;
+  modelError: string | null;
   tags: TagBinding[];
 };
 
@@ -283,15 +286,21 @@ function listSessionTagsForSummary(session: { sessionKey: string; name?: string 
 }
 
 function buildAgentJson(agent: AgentConfig, defaultAgent: string): AgentJsonSummary {
-  const effective = resolveEffectiveAgentModel(agent, loadConfig().model);
+  const defaults = resolveRuntimeDefaults();
+  const effective = resolveEffectiveAgentModel(agent, defaults.model.value, {
+    globalDefaultSource: defaults.model.source,
+  });
+  const provider = resolveRequestedRuntimeProvider({ agent, defaults });
   return {
     ...agent,
     isDefault: agent.id === defaultAgent,
-    effectiveProvider: effective.effectiveProvider,
+    effectiveProvider: provider.value,
+    providerSource: provider.source,
     effectiveModel: effective.effectiveModel,
     modelSource: effective.modelSource,
     modelPresetId: effective.modelPresetId,
     modelPresetVersion: effective.modelPresetVersion,
+    modelError: effective.error,
     tags: listAgentTags(agent.id),
   };
 }
@@ -638,9 +647,14 @@ export class AgentsCommands {
       console.log(`\nAgent: ${agent.id}${isDefault ? " (default)" : ""}`);
       console.log(`  Name:          ${agent.name || "-"}`);
       console.log(`  CWD:           ${agent.cwd}`);
-      console.log(`  Model:         ${agent.model || "-"}`);
+      console.log(
+        `  Model:         ${payload.agent.effectiveModel ?? "-"} (${payload.agent.modelSource ?? "unresolved"})`,
+      );
       console.log(`  Effort:        ${agent.effort || "-"}`);
-      console.log(`  Provider:      ${agent.provider || DEFAULT_RUNTIME_PROVIDER_ID}`);
+      console.log(`  Provider:      ${payload.agent.effectiveProvider} (${payload.agent.providerSource})`);
+      if (payload.agent.modelError) {
+        console.log(`  Model error:   ${payload.agent.modelError}`);
+      }
       console.log(`  DM Scope:      ${agent.dmScope || "-"}`);
       console.log(`  Mode:          ${agent.mode ?? "active"}`);
       console.log(`  Permissions:   ${describeRuntimePermissionConfig(runtimePermissions)}`);

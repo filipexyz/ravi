@@ -57,14 +57,8 @@ import {
 } from "../../router/sessions.js";
 import { deriveSourceFromSessionKey } from "../../router/session-key.js";
 import { loadRouterConfig, expandHome } from "../../router/index.js";
-import { loadConfig } from "../../utils/config.js";
-import { resolveEffectiveAgentModel } from "../../runtime/model-preset-resolver.js";
-import {
-  createRuntimeProvider,
-  DEFAULT_RUNTIME_PROVIDER_ID,
-  listRegisteredRuntimeProviderIds,
-} from "../../runtime/provider-registry.js";
-import { getDefaultModelForProvider } from "../../runtime/model-catalog.js";
+import { createRuntimeProvider, listRegisteredRuntimeProviderIds } from "../../runtime/provider-registry.js";
+import { resolveEffectiveSessionRuntime } from "../../runtime/runtime-selection.js";
 import type { ChannelContext, ResponseMessage, SessionRelayAction } from "../../runtime/message-types.js";
 import { buildSessionRelayTurnOrigin } from "../../runtime/turn-origin.js";
 import { toPersistedChannelContext } from "../../channels/context.js";
@@ -107,12 +101,7 @@ import {
   type ContextRecord,
 } from "../../router/router-db.js";
 import type { SessionEntry } from "../../router/types.js";
-import {
-  DEFAULT_RUNTIME_EFFORT,
-  RUNTIME_EFFORT_LEVELS,
-  formatRuntimeEffortLevels,
-  parseRuntimeEffort,
-} from "../../runtime/effort.js";
+import { RUNTIME_EFFORT_LEVELS, formatRuntimeEffortLevels, parseRuntimeEffort } from "../../runtime/effort.js";
 import type { RuntimeProviderId } from "../../runtime/types.js";
 import { publicRuntimeFailureDetail } from "../../runtime/public-failure.js";
 import { locateRuntimeTranscript } from "../../transcripts.js";
@@ -180,11 +169,6 @@ const MESSAGE_DELETE_TOPIC = "ravi.outbound.message.delete";
 const MESSAGE_DELETE_TIMEOUT_MS = 15000;
 const MESSAGE_EDIT_TOPIC = "ravi.outbound.message.edit";
 const MESSAGE_EDIT_TIMEOUT_MS = 15000;
-const CONFIG_DB_META = {
-  source: "config-db",
-  freshness: "persisted",
-  via: "router-config",
-} as const;
 const SESSION_DB_META = {
   source: "session-db",
   freshness: "persisted",
@@ -212,11 +196,20 @@ const NEXT_COMMANDS_META = {
   via: "session-inspect",
 } as const;
 const runtimeEffortReturnSchema = z.enum(RUNTIME_EFFORT_LEVELS);
-const sessionEffortSourceReturnSchema = z.enum(["session_override", "agent_default", "runtime_default"]);
+const sessionEffortSourceReturnSchema = z.enum([
+  "session_override",
+  "agent_default",
+  "global_default",
+  "runtime_default",
+]);
 const sessionRuntimeOptionsReturnSchema = z.object({
-  model: z.object({
+  provider: z.object({
     value: z.string(),
     source: z.string(),
+  }),
+  model: z.object({
+    value: z.string().nullable(),
+    source: z.string().nullable(),
   }),
   effort: z.object({
     value: runtimeEffortReturnSchema,
@@ -233,10 +226,12 @@ const sessionMutationSnapshotReturnSchema = z.object({
   label: z.string(),
   agentId: z.string(),
   effectiveProvider: z.string(),
-  effectiveModel: z.string(),
-  modelSource: z.string(),
+  providerSource: z.string(),
+  effectiveModel: z.string().nullable(),
+  modelSource: z.string().nullable(),
   modelPresetId: z.string().nullable(),
   modelPresetVersion: z.number().nullable(),
+  modelError: z.string().nullable(),
   modelOverride: z.string().optional(),
   effortOverride: runtimeEffortReturnSchema.optional(),
   ephemeral: z.boolean(),
@@ -264,6 +259,7 @@ const sessionSetProviderReturnSchema = z.object({
   after: sessionMutationSnapshotReturnSchema.nullable(),
   runtimeProviderOverride: z.string().nullable(),
   effectiveProvider: z.string(),
+  providerSource: z.string(),
   appliesOn: z.literal("next-turn-runtime-restart"),
 });
 const sessionCommandTargetReturnSchema = z
@@ -1111,10 +1107,12 @@ function buildSessionJson(session: SessionEntry, options: { live?: boolean } = {
     label: session.name ?? session.sessionKey,
     runtimeId,
     effectiveProvider: effective.effectiveProvider,
+    providerSource: effective.providerSource,
     effectiveModel: effective.effectiveModel,
     modelSource: effective.modelSource,
     modelPresetId: effective.modelPresetId,
     modelPresetVersion: effective.modelPresetVersion,
+    modelError: effective.modelError,
     // Legacy alias. This is a lifetime accumulator, not the live context size.
     tokenTotal: lifetimeTotal,
     lifetimeTokens: {
@@ -1344,91 +1342,49 @@ function buildRelatedContextJson(context: ContextRecord): Record<string, unknown
 
 interface EffectiveSessionModel {
   effectiveProvider: string;
-  effectiveModel: string;
-  modelSource: "session_override" | "agent_preset" | "agent_default" | "global_default";
+  providerSource: string;
+  effectiveModel: string | null;
+  modelSource: string | null;
   modelPresetId: string | null;
   modelPresetVersion: number | null;
+  modelError: string | null;
 }
 
 function resolveEffectiveSessionSelection(session: SessionEntry, modelOverride: string | null): EffectiveSessionModel {
   const routerConfig = loadRouterConfig();
-  const runtimeConfig = loadConfig();
   const agent = routerConfig.agents[session.agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
-  const agentEffective = agent
-    ? resolveEffectiveAgentModel(agent, runtimeConfig.model)
-    : {
-        effectiveProvider: DEFAULT_RUNTIME_PROVIDER_ID,
-        effectiveModel: runtimeConfig.model,
-        modelSource: "global_default" as const,
-        modelPresetId: null,
-        modelPresetVersion: null,
-      };
-
-  const providerOverride = session.runtimeProviderOverride?.trim() || undefined;
-  const effectiveProvider = providerOverride ?? agentEffective.effectiveProvider;
-
-  // Session model override wins over the agent-level selection.
-  if (modelOverride) {
-    return {
-      effectiveProvider,
-      effectiveModel: modelOverride,
-      modelSource: "session_override",
-      modelPresetId: agentEffective.modelPresetId,
-      modelPresetVersion: agentEffective.modelPresetVersion,
-    };
-  }
-
-  if (providerOverride && providerOverride !== agentEffective.effectiveProvider) {
-    return {
-      effectiveProvider: providerOverride,
-      effectiveModel: getDefaultModelForProvider(providerOverride),
-      modelSource: "session_override",
-      modelPresetId: agentEffective.modelPresetId,
-      modelPresetVersion: agentEffective.modelPresetVersion,
-    };
-  }
-
+  const candidate = modelOverride === null ? { ...session, modelOverride: undefined } : { ...session, modelOverride };
+  const resolved = resolveEffectiveSessionRuntime({ session: candidate, agent });
   return {
-    effectiveProvider,
-    effectiveModel: agentEffective.effectiveModel ?? runtimeConfig.model,
-    modelSource: agentEffective.modelSource ?? "global_default",
-    modelPresetId: agentEffective.modelPresetId,
-    modelPresetVersion: agentEffective.modelPresetVersion,
+    effectiveProvider: resolved.provider.value,
+    providerSource: resolved.provider.source,
+    effectiveModel: resolved.model.value,
+    modelSource: resolved.model.source,
+    modelPresetId: resolved.model.presetId,
+    modelPresetVersion: resolved.model.presetVersion,
+    modelError: resolved.model.error,
   };
 }
 
 function resolveEffectiveSessionModel(session: SessionEntry, modelOverride: string | null): string {
-  const candidate = modelOverride === null ? { ...session, modelOverride: undefined } : { ...session, modelOverride };
-  return resolveSessionRuntimeOptions(candidate).model.value;
+  return resolveEffectiveSessionSelection(session, modelOverride).effectiveModel ?? "";
 }
 
-type SessionRuntimeOptionSource =
-  | "session_override"
-  | "agent_preset"
-  | "agent_default"
-  | "global_default"
-  | "runtime_default"
-  | null;
-
 function resolveSessionRuntimeOptions(session: SessionEntry): {
-  model: { value: string; source: SessionRuntimeOptionSource };
-  effort: { value: NonNullable<SessionEntry["effortOverride"]>; source: SessionRuntimeOptionSource };
-  thinking: { value: SessionEntry["thinkingLevel"] | null; source: SessionRuntimeOptionSource };
+  provider: { value: string; source: string };
+  model: { value: string | null; source: string | null };
+  effort: { value: NonNullable<SessionEntry["effortOverride"]>; source: string };
+  thinking: { value: SessionEntry["thinkingLevel"] | null; source: string | null };
 } {
   const routerConfig = loadRouterConfig();
   const agent = routerConfig.agents[session.agentId] ?? routerConfig.agents[routerConfig.defaultAgent];
-  const modelSelection = resolveEffectiveSessionSelection(session, session.modelOverride ?? null);
-  const model = { value: modelSelection.effectiveModel, source: modelSelection.modelSource };
-  const effort =
-    session.effortOverride !== undefined
-      ? { value: session.effortOverride, source: "session_override" as const }
-      : agent?.effort
-        ? { value: agent.effort, source: "agent_default" as const }
-        : { value: DEFAULT_RUNTIME_EFFORT, source: "runtime_default" as const };
-  const thinking = session.thinkingLevel
-    ? { value: session.thinkingLevel, source: "session_override" as const }
-    : { value: null, source: null };
-  return { model, effort, thinking };
+  const resolved = resolveEffectiveSessionRuntime({ session, agent });
+  return {
+    provider: resolved.provider,
+    model: { value: resolved.model.value, source: resolved.model.source },
+    effort: resolved.effort,
+    thinking: resolved.thinking,
+  };
 }
 
 function resolveEffectiveSessionEffort(
@@ -1436,14 +1392,14 @@ function resolveEffectiveSessionEffort(
   effortOverride: SessionEntry["effortOverride"] | null,
 ): {
   effort: NonNullable<SessionEntry["effortOverride"]>;
-  source: "session_override" | "agent_default" | "runtime_default";
+  source: "session_override" | "agent_default" | "global_default" | "runtime_default";
 } {
   const candidate =
     effortOverride === null ? { ...session, effortOverride: undefined } : { ...session, effortOverride };
   const resolved = resolveSessionRuntimeOptions(candidate).effort;
   return {
     effort: resolved.value,
-    source: resolved.source as "session_override" | "agent_default" | "runtime_default",
+    source: resolved.source as "session_override" | "agent_default" | "global_default" | "runtime_default",
   };
 }
 
@@ -2667,6 +2623,7 @@ export class SessionCommands {
     const suggestedCommands = buildSuggestedDebugCommands(s, relatedContexts, relatedAdapters);
     const turnUsage = getSessionTurnUsageSummary(s.sessionKey);
     const runtimeOptions = resolveSessionRuntimeOptions(s);
+    const effective = resolveEffectiveSessionSelection(s, s.modelOverride ?? null);
 
     if (asJson) {
       const adapters = relatedAdapters.map((adapter) => {
@@ -2701,9 +2658,21 @@ export class SessionCommands {
     printInspectionField("Agent CWD", s.agentCwd, SESSION_DB_META, {
       labelWidth: 14,
     });
-    printInspectionField("Configured", agentConfig?.provider ?? "claude", CONFIG_DB_META, { labelWidth: 14 });
-    printInspectionField("Model", agentConfig?.model ?? "(default)", CONFIG_DB_META, { labelWidth: 14 });
-    printInspectionField("Override", s.modelOverride ?? "(agent default)", SESSION_DB_META, { labelWidth: 14 });
+    printInspectionField(
+      "Provider",
+      `${runtimeOptions.provider.value} (${runtimeOptions.provider.source})`,
+      SESSION_DB_META,
+      { labelWidth: 14 },
+    );
+    printInspectionField(
+      "Model",
+      runtimeOptions.model.value
+        ? `${runtimeOptions.model.value} (${runtimeOptions.model.source})`
+        : `(unresolved${effective.modelError ? `: ${effective.modelError}` : ""})`,
+      SESSION_DB_META,
+      { labelWidth: 14 },
+    );
+    printInspectionField("Override", s.modelOverride ?? "(none)", SESSION_DB_META, { labelWidth: 14 });
     printInspectionField(
       "Effort",
       `${runtimeOptions.effort.value} (${runtimeOptions.effort.source})`,
@@ -3250,6 +3219,7 @@ export class SessionCommands {
       const payload = buildSessionMutationJson("set-provider", s, after, beforeProviderOverride !== providerOverride, {
         runtimeProviderOverride: providerOverride,
         effectiveProvider: resolveEffectiveSessionSelection(after, after.modelOverride ?? null).effectiveProvider,
+        providerSource: resolveEffectiveSessionSelection(after, after.modelOverride ?? null).providerSource,
         appliesOn: "next-turn-runtime-restart",
       });
       printJson(payload);
