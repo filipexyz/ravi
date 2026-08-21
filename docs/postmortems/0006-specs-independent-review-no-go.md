@@ -283,3 +283,15 @@ invoke `npm pack --ignore-scripts`. This records the same publishable file set
 without rerunning the incompatible lifecycle hook. Installation and process
 checks still use the resulting archive. Linux CI must exercise the normal
 lifecycle path before merge.
+
+## Revision note: 2026-08-21, package command correction
+
+On npm 10.9.3, placing `--ignore-scripts` after `pack`, before `pack`, or in
+`npm_config_ignore_scripts` still ran this repository's `prepare` hook. Those
+attempts produced no archive. The successful repository-native command was
+`bun pm pack --ignore-scripts --destination <dir>` after `bun run build`.
+
+That command produced the expected eight-file publish set. Because this note
+changes the candidate commit, the first successful archive is diagnostic only;
+the final archive must be rebuilt from the replacement SHA with the same Bun
+command, then installed and process-tested from empty directories.

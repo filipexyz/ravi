@@ -2065,3 +2065,11 @@ inalterado `prepare`, que usa `2>/dev/null || true` e nao e aceito pelo
 o build ja validado seguido de `npm pack --ignore-scripts`; instalacao e testes
 de processo continuam obrigatorios sobre esse arquivo. O CI Linux deve executar
 o ciclo normal antes do merge.
+
+### Correcao do comando de pacote local
+
+No npm 10.9.3, as formas testadas de `ignore-scripts` ainda executaram o
+`prepare` incompativel e nao produziram pacote. O comando funcional e nativo do
+repositorio foi `bun pm pack --ignore-scripts --destination <dir>` depois de
+`bun run build`. O primeiro arquivo gerado serve apenas como diagnostico porque
+este registro altera o commit; o pacote final deve ser reconstruido no novo SHA.
