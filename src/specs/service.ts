@@ -1,12 +1,29 @@
-import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
+import { randomUUID } from "node:crypto";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { replaceSpecsIndex } from "./spec-db.js";
 import type {
+  AppliedSpecCreation,
+  ApplyPreparedSpecCreationOptions,
   GetSpecContextOptions,
   GetSpecOptions,
   ListSpecsOptions,
   NewSpecInput,
   NewSpecResult,
+  PreparedSpecCreation,
+  PreparedSpecFile,
+  SpecCreationInspection,
   SpecChainEntry,
   SpecContext,
   SpecContextFile,
@@ -463,8 +480,51 @@ function companionTemplate(fileName: (typeof COMPANION_FILES)[number], title: st
   }
 }
 
-export function createSpec(input: NewSpecInput): NewSpecResult {
-  const rootPath = getSpecsRoot(input.cwd);
+function canonicalWorkspace(cwd?: string): string {
+  const absolute = resolve(cwd ?? process.cwd());
+  if (!existsSync(absolute)) {
+    throw new Error(`Workspace not found: ${absolute}`);
+  }
+  return realpathSync(absolute);
+}
+
+function relativeInside(rootPath: string, targetPath: string): string {
+  const candidate = relative(rootPath, targetPath);
+  if (candidate === "" || (!candidate.startsWith("..") && !isAbsolute(candidate))) {
+    return candidate;
+  }
+  throw new Error(`Unsafe spec path outside workspace: ${targetPath}`);
+}
+
+function assertNoSymlinkOnExistingPath(workspace: string, targetPath: string): void {
+  const relativePath = relativeInside(workspace, targetPath);
+  let current = workspace;
+  for (const segment of relativePath.split(/[\\/]+/).filter(Boolean)) {
+    current = join(current, segment);
+    if (!existsSync(current)) continue;
+    const stat = lstatSync(current);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`Unsafe symbolic link in spec path: ${relative(workspace, current)}`);
+    }
+  }
+}
+
+function ensureSafeDirectory(workspace: string, targetPath: string): void {
+  const relativePath = relativeInside(workspace, targetPath);
+  let current = workspace;
+  for (const segment of relativePath.split(/[\\/]+/).filter(Boolean)) {
+    current = join(current, segment);
+    if (!existsSync(current)) mkdirSync(current);
+    const stat = lstatSync(current);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) {
+      throw new Error(`Unsafe non-directory component in spec path: ${relative(workspace, current)}`);
+    }
+  }
+}
+
+export function prepareSpecCreation(input: NewSpecInput): PreparedSpecCreation {
+  const cwd = canonicalWorkspace(input.cwd);
+  const rootPath = getSpecsRoot(cwd);
   const id = normalizeSpecId(input.id);
   const kind = normalizeSpecKind(input.kind);
   const expectedKind = expectedKindForId(id);
@@ -473,42 +533,157 @@ export function createSpec(input: NewSpecInput): NewSpecResult {
   }
 
   const title = normalizeText(input.title, "Spec title");
-  const dir = specDir(rootPath, id);
-  const path = join(dir, SPEC_FILE);
-  if (existsSync(path)) {
-    throw new Error(`Spec already exists: ${id}`);
+  const directoryPath = specDir(rootPath, id);
+  assertNoSymlinkOnExistingPath(cwd, directoryPath);
+
+  const requestedFiles: PreparedSpecFile["fileName"][] =
+    input.full === true ? [SPEC_FILE, ...COMPANION_FILES] : [SPEC_FILE];
+  const files = requestedFiles.map((fileName) => {
+    const path = join(directoryPath, fileName);
+    const content =
+      fileName === SPEC_FILE
+        ? `${buildSpecFrontmatter({ id, title, kind })}${buildSpecBody(title)}`
+        : companionTemplate(fileName, title);
+    return {
+      fileName,
+      path,
+      relativePath: relativeSpecPath(rootPath, path),
+      content,
+    };
+  });
+  const ancestors = chainIdsForSpec(id)
+    .slice(0, -1)
+    .map((chainId) => chainEntryForId(rootPath, chainId));
+
+  return {
+    cwd,
+    rootPath,
+    id,
+    title,
+    kind,
+    full: input.full === true,
+    directoryPath,
+    files,
+    ancestors,
+    missingAncestors: ancestors.filter((entry) => !entry.exists),
+  };
+}
+
+export function inspectPreparedSpecCreation(prepared: PreparedSpecCreation): SpecCreationInspection {
+  assertNoSymlinkOnExistingPath(prepared.cwd, prepared.directoryPath);
+  const targetDirectoryExists = existsSync(prepared.directoryPath);
+  const targetSpecExists = existsSync(join(prepared.directoryPath, SPEC_FILE));
+  const matchingFiles: string[] = [];
+  const missingFiles: string[] = [];
+  const divergentFiles: string[] = [];
+
+  for (const file of prepared.files) {
+    if (!existsSync(file.path)) {
+      missingFiles.push(file.path);
+      continue;
+    }
+    const stat = lstatSync(file.path);
+    if (!stat.isFile() || stat.isSymbolicLink() || readFileSync(file.path, "utf8") !== file.content) {
+      divergentFiles.push(file.path);
+      continue;
+    }
+    matchingFiles.push(file.path);
   }
 
-  mkdirSync(dir, { recursive: true });
-  const createdFiles: string[] = [];
-  writeFileSync(path, `${buildSpecFrontmatter({ id, title, kind })}${buildSpecBody(title)}`, "utf8");
-  createdFiles.push(path);
+  const expectedNames = new Set(prepared.files.map((file) => file.fileName));
+  const unexpectedFiles = targetDirectoryExists
+    ? readdirSync(prepared.directoryPath)
+        .filter((name) => !expectedNames.has(name as (typeof ALL_CONTEXT_FILES)[number]))
+        .map((name) => join(prepared.directoryPath, name))
+    : [];
 
-  if (input.full) {
-    for (const fileName of COMPANION_FILES) {
-      const companionPath = join(dir, fileName);
-      writeFileSync(companionPath, companionTemplate(fileName, title), "utf8");
-      createdFiles.push(companionPath);
+  return {
+    targetDirectoryExists,
+    targetSpecExists,
+    exactMatch: targetSpecExists && missingFiles.length === 0 && divergentFiles.length === 0,
+    matchingFiles,
+    missingFiles,
+    divergentFiles,
+    unexpectedFiles,
+  };
+}
+
+export function applyPreparedSpecCreation(
+  prepared: PreparedSpecCreation,
+  options: ApplyPreparedSpecCreationOptions,
+): AppliedSpecCreation {
+  const inspection = inspectPreparedSpecCreation(prepared);
+  if (inspection.targetSpecExists) {
+    if (options.existing === "noop" && inspection.exactMatch) {
+      return {
+        spec: getSpec(prepared.id, { cwd: prepared.cwd }),
+        createdFiles: [],
+        missingAncestors: prepared.missingAncestors,
+        changed: false,
+        status: "noop",
+      };
+    }
+    throw new Error(`Spec already exists: ${prepared.id}`);
+  }
+  if (options.requireAncestors && prepared.missingAncestors.length > 0) {
+    throw new Error(
+      `Missing ancestor specs for ${prepared.id}: ${prepared.missingAncestors.map((entry) => entry.id).join(", ")}`,
+    );
+  }
+  if (inspection.targetDirectoryExists) {
+    throw new Error(`Spec target directory already exists without SPEC.md: ${prepared.id}`);
+  }
+
+  const parent = dirname(prepared.directoryPath);
+  ensureSafeDirectory(prepared.cwd, parent);
+  assertNoSymlinkOnExistingPath(prepared.cwd, parent);
+  const stagingPath = join(parent, `.${basename(prepared.directoryPath)}.ravi-stage-${randomUUID()}`);
+  relativeInside(parent, stagingPath);
+  mkdirSync(stagingPath, { mode: 0o700 });
+  let renamed = false;
+  try {
+    for (const file of prepared.files) {
+      writeFileSync(join(stagingPath, file.fileName), file.content, { encoding: "utf8", flag: "wx" });
+    }
+    assertNoSymlinkOnExistingPath(prepared.cwd, parent);
+    renameSync(stagingPath, prepared.directoryPath);
+    renamed = true;
+  } finally {
+    if (!renamed && existsSync(stagingPath)) {
+      rmSync(stagingPath, { recursive: true, force: true });
     }
   }
 
-  const spec = getSpec(id, { cwd: input.cwd });
-  const missingAncestors = chainIdsForSpec(id)
-    .slice(0, -1)
-    .map((chainId) => chainEntryForId(rootPath, chainId))
-    .filter((entry) => !entry.exists);
+  return {
+    spec: getSpec(prepared.id, { cwd: prepared.cwd }),
+    createdFiles: prepared.files.map((file) => file.path.split("\\").join("/")),
+    missingAncestors: prepared.missingAncestors,
+    changed: true,
+    status: "created",
+  };
+}
 
-  return { spec, createdFiles, missingAncestors };
+export function createSpec(input: NewSpecInput): NewSpecResult {
+  const result = applyPreparedSpecCreation(prepareSpecCreation(input), {
+    requireAncestors: false,
+    existing: "error",
+  });
+  return {
+    spec: result.spec,
+    createdFiles: result.createdFiles,
+    missingAncestors: result.missingAncestors,
+  };
 }
 
 export function syncSpecs(options: SyncSpecsOptions = {}): SyncSpecsResult {
   const rootPath = getSpecsRoot(options.cwd);
   const specs = listSpecs(options);
-  replaceSpecsIndex(rootPath, specs);
+  const changed = replaceSpecsIndex(rootPath, specs);
   return {
     rootPath,
     total: specs.length,
     specs,
+    changed,
   };
 }
 

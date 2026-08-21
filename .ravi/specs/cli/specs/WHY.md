@@ -31,3 +31,13 @@ set by `cli` for `--value`.
 blob whose value is the content itself, while `list` is the scan surface
 where agents were dragging full records (path, title, tags, timestamps) just
 to see ids and kinds.
+
+The facade does not contradict the unbraked compatibility surface. `plan` is
+a real read, and `apply` is an explicitly named local-reversible step bound by
+the copied hash. Requiring an additional `--execute` would add ceremony without
+creating a second independent decision. Existing `new` and `sync` remain
+immediate because CI and established scripts already invoke them directly.
+
+Plans are stateless. Persisting a plan would make a command advertised as read
+write to the Ravi database. Repeating normalized input is more verbose, but it
+makes the target binding visible and leaves no hidden plan lifecycle to prune.

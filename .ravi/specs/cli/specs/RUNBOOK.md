@@ -20,11 +20,21 @@
 8. If `sync` or `new` ever demands `--execute`, the unbraked declaration
    regressed — the CI quality gate and every spec CHECKS that embeds
    `specs sync` will break; fix the CLI, not the callers.
+9. For an agent-created spec, prefer `specs facade plan new ... --json`, copy
+   `planHash`, and call `specs facade apply new <planHash> ... --json` with the
+   same normalized intent.
+10. `SPEC_ANCESTORS_MISSING`: create and review the listed ancestors, then
+    plan again. `PLAN_STALE`: do not reuse the hash; inspect target binding and
+    create a fresh plan. `SPEC_TARGET_CONFLICT`: inspect through `readback` and
+    do not overwrite.
+11. Use `facade verify` for a classified result and `facade recover` for the
+    safe next action. Recovery reports `replay:false` and never applies.
 
 ## Validation
 
 ```bash
 bun test src/cli/commands/specs.test.ts
+bun test src/specs/service.test.ts src/specs/facade.test.ts
 ```
 
 Live checks (use a scratch workspace; all reads/dry-safe ops):
@@ -34,4 +44,5 @@ ravi specs get nope-spec --json                 # expect exit 1 + suggestions
 ravi specs get cli/specs --mode bogus --json    # expect exit 2 + acceptedValues
 ravi specs list --fields id,kind --json         # expect compact items + specs
 ravi specs sync --json                          # expect status:synced, no flags needed
+ravi specs facade plan sync --json              # expect planHash and no write
 ```

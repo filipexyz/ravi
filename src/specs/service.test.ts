@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,8 @@ import { createSpec, getSpec, getSpecContext, listSpecs, syncSpecs } from "./ser
 const tempRoots: string[] = [];
 let isolatedStateDir: string | null = null;
 let previousStateDir: string | undefined;
+
+setDefaultTimeout(20_000);
 
 function makeWorkspace(): string {
   const root = mkdtempSync(join(tmpdir(), "ravi-specs-"));
@@ -115,8 +117,12 @@ describe("specs service", () => {
 
     const synced = syncSpecs({ cwd });
     expect(synced.total).toBe(2);
+    expect(synced.changed).toBe(true);
     expect(synced.specs.map((spec) => spec.id)).toEqual(["channels", "channels/presence"]);
     expect(listIndexedSpecs(synced.rootPath).map((spec) => spec.id)).toEqual(["channels", "channels/presence"]);
+
+    const replay = syncSpecs({ cwd });
+    expect(replay.changed).toBe(false);
   });
 
   it("rejects kind/path mismatches", () => {

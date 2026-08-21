@@ -1,22 +1,35 @@
 import "reflect-metadata";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
 import { fail } from "../context.js";
-import { CONTRACT_EXIT_USAGE, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import { CONTRACT_EXIT_USAGE, ContractError, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
+  applySpecsFacadePlan,
+  buildSpecsFacadePlan,
   createSpec,
   getSpecContext,
   listSpecs,
   normalizeSpecContextMode,
   normalizeSpecKind,
+  readbackSpecsFacade,
+  recoverSpecsFacade,
+  SPECS_FACADE_OPERATIONS,
+  SpecsFacadeError,
   syncSpecs,
+  verifySpecsFacade,
   type SpecContextMode,
+  type SpecsFacadeIntent,
   type SpecKind,
   type SpecRecord,
 } from "../../specs/index.js";
 import {
   specContextReturnSchema,
   specCreateReturnSchema,
+  specsFacadeApplyReturnSchema,
+  specsFacadePlanReturnSchema,
+  specsFacadeReadbackReturnSchema,
+  specsFacadeRecoveryReturnSchema,
+  specsFacadeVerificationReturnSchema,
   specsListReturnSchema,
   specsSyncReturnSchema,
 } from "./operational-return-schemas.js";
@@ -68,6 +81,54 @@ function failSpecsUsage(op: string, message: string, acceptedValues: readonly st
   });
 }
 
+function facadeIntent(
+  op: string,
+  operation: string,
+  id?: string,
+  title?: string,
+  kind?: string,
+  full?: boolean,
+  asJson?: boolean,
+): SpecsFacadeIntent {
+  if (!SPECS_FACADE_OPERATIONS.includes(operation as (typeof SPECS_FACADE_OPERATIONS)[number])) {
+    failSpecsUsage(op, `Invalid specs facade operation: ${operation}. Use new|sync.`, SPECS_FACADE_OPERATIONS, asJson);
+  }
+  if (operation === "sync") {
+    if (id?.trim() || title?.trim() || kind?.trim() || full === true) {
+      contractFail(op, "USAGE_ERROR", "The sync operation does not accept spec creation arguments.", {
+        asJson,
+        exitCode: CONTRACT_EXIT_USAGE,
+        details: { suggestedAction: `Run '${op} sync' without id, --title, --kind, or --full` },
+      });
+    }
+    return { operation: "sync" };
+  }
+  if (!id?.trim()) failSpecsUsage(op, "A spec id is required for facade new.", ["<id>"], asJson);
+  if (!title?.trim()) failSpecsUsage(op, "--title is required for facade new.", ["--title <title>"], asJson);
+  if (!kind?.trim()) failSpecsUsage(op, "--kind is required for facade new.", SPEC_KINDS, asJson);
+  let normalizedKind: SpecKind;
+  try {
+    normalizedKind = normalizeSpecKind(kind);
+  } catch {
+    failSpecsUsage(op, `Invalid --kind: ${kind}. Use domain|capability|feature.`, SPEC_KINDS, asJson);
+  }
+  return {
+    operation: "new",
+    id: id.trim(),
+    title: title.trim(),
+    kind: normalizedKind,
+    full: full === true,
+  };
+}
+
+function failFacade(op: string, error: unknown, asJson?: boolean): never {
+  if (error instanceof ContractError) throw error;
+  if (error instanceof SpecsFacadeError) {
+    contractFail(op, error.code, error.message, { asJson, details: error.details });
+  }
+  fail(error instanceof Error ? error.message : String(error));
+}
+
 @Group({
   name: "specs",
   description: "Versioned Ravi specs memory",
@@ -75,7 +136,7 @@ function failSpecsUsage(op: string, message: string, acceptedValues: readonly st
 })
 export class SpecsCommands {
   @Command({ name: "list", description: "List specs from .ravi/specs" })
-  @CommandAccess({ kind: "read", resource: "specs", action: "list", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "specs", action: "list", risk: "low", effectClass: "none" })
   @Returns(specsListReturnSchema)
   list(
     @Option({ flags: "--domain <domain>", description: "Filter by domain" }) domain?: string,
@@ -135,7 +196,7 @@ export class SpecsCommands {
   }
 
   @Command({ name: "get", description: "Get inherited spec context" })
-  @CommandAccess({ kind: "read", resource: "specs", action: "get", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "specs", action: "get", risk: "low", effectClass: "none" })
   @Returns(specContextReturnSchema)
   get(
     @Arg("id", { description: "Spec id: domain[/capability[/feature]]" }) id: string,
@@ -179,7 +240,13 @@ export class SpecsCommands {
   }
 
   @Command({ name: "new", description: "Create a new spec under .ravi/specs" })
-  @CommandAccess({ kind: "mutate", resource: "specs", action: "new", risk: "medium" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "specs",
+    action: "new",
+    risk: "medium",
+    effectClass: "local-reversible",
+  })
   @Returns(specCreateReturnSchema)
   new(
     @Arg("id", { description: "Spec id: domain[/capability[/feature]]" }) id: string,
@@ -240,7 +307,13 @@ export class SpecsCommands {
   // (Markdown stays the source of truth; the SQLite index is rebuildable), so
   // it stays UNBRAKED (no --execute). CI quality gates call syncSpecs() too.
   @Command({ name: "sync", description: "Rebuild the specs SQLite index from Markdown" })
-  @CommandAccess({ kind: "mutate", resource: "specs", action: "sync", risk: "high" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "specs",
+    action: "sync",
+    risk: "medium",
+    effectClass: "local-reversible",
+  })
   @Returns(specsSyncReturnSchema)
   sync(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean) {
     try {
@@ -254,6 +327,139 @@ export class SpecsCommands {
       return payload;
     } catch (error) {
       fail(error instanceof Error ? error.message : String(error));
+    }
+  }
+}
+
+@Group({
+  name: "specs.facade",
+  description: "Plan, apply, verify, and recover safe local specs effects",
+  scope: "open",
+})
+export class SpecsFacadeCommands {
+  @Command({ name: "plan", description: "Build a bound specs plan without writing state" })
+  @CommandAccess({ kind: "read", resource: "specs.facade", action: "plan", risk: "low", effectClass: "none" })
+  @Returns(specsFacadePlanReturnSchema)
+  plan(
+    @Arg("operation", { description: "new|sync" }) operation: string,
+    @Arg("id", { required: false, description: "Spec id for new" }) id?: string,
+    @Option({ flags: "--title <title>", description: "Spec title for new" }) title?: string,
+    @Option({ flags: "--kind <kind>", description: "domain|capability|feature for new" }) kind?: string,
+    @Option({ flags: "--full", description: "Include WHY.md, RUNBOOK.md, and CHECKS.md" }) full?: boolean,
+    @Option({ flags: "--json", description: "Print the bound plan as JSON" }) asJson?: boolean,
+  ) {
+    const op = "specs facade plan";
+    try {
+      const payload = buildSpecsFacadePlan(facadeIntent(op, operation, id, title, kind, full, asJson));
+      if (asJson) printJson(payload);
+      else console.log(JSON.stringify(payload, null, 2));
+      return payload;
+    } catch (error) {
+      failFacade(op, error, asJson);
+    }
+  }
+
+  @Command({ name: "apply", description: "Apply one bound specs plan and confirm it by readback" })
+  @CommandAccess({
+    kind: "mutate",
+    resource: "specs.facade",
+    action: "apply",
+    risk: "medium",
+    effectClass: "local-reversible",
+  })
+  @Returns(specsFacadeApplyReturnSchema)
+  apply(
+    @Arg("operation", { description: "new|sync" }) operation: string,
+    @Arg("planHash", { description: "Exact hash returned by facade plan" }) planHash: string,
+    @Arg("id", { required: false, description: "Spec id for new" }) id?: string,
+    @Option({ flags: "--title <title>", description: "Spec title for new" }) title?: string,
+    @Option({ flags: "--kind <kind>", description: "domain|capability|feature for new" }) kind?: string,
+    @Option({ flags: "--full", description: "Include WHY.md, RUNBOOK.md, and CHECKS.md" }) full?: boolean,
+    @Option({ flags: "--json", description: "Print application and readback as JSON" }) asJson?: boolean,
+  ) {
+    const op = "specs facade apply";
+    try {
+      const payload = applySpecsFacadePlan(facadeIntent(op, operation, id, title, kind, full, asJson), planHash);
+      if (asJson) printJson(payload);
+      else console.log(JSON.stringify(payload, null, 2));
+      return payload;
+    } catch (error) {
+      failFacade(op, error, asJson);
+    }
+  }
+
+  @Command({ name: "readback", description: "Read files, ancestors, and index for a bound specs plan" })
+  @CommandAccess({
+    kind: "read",
+    resource: "specs.facade",
+    action: "readback",
+    risk: "low",
+    effectClass: "none",
+  })
+  @Returns(specsFacadeReadbackReturnSchema)
+  readback(
+    @Arg("operation", { description: "new|sync" }) operation: string,
+    @Arg("planHash", { description: "Exact hash returned by facade plan" }) planHash: string,
+    @Arg("id", { required: false, description: "Spec id for new" }) id?: string,
+    @Option({ flags: "--title <title>", description: "Spec title for new" }) title?: string,
+    @Option({ flags: "--kind <kind>", description: "domain|capability|feature for new" }) kind?: string,
+    @Option({ flags: "--full", description: "Include WHY.md, RUNBOOK.md, and CHECKS.md" }) full?: boolean,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    const op = "specs facade readback";
+    try {
+      const payload = readbackSpecsFacade(facadeIntent(op, operation, id, title, kind, full, asJson), planHash);
+      if (asJson) printJson(payload);
+      else console.log(JSON.stringify(payload, null, 2));
+      return payload;
+    } catch (error) {
+      failFacade(op, error, asJson);
+    }
+  }
+
+  @Command({ name: "verify", description: "Classify current state against a bound specs plan" })
+  @CommandAccess({ kind: "read", resource: "specs.facade", action: "verify", risk: "low", effectClass: "none" })
+  @Returns(specsFacadeVerificationReturnSchema)
+  verify(
+    @Arg("operation", { description: "new|sync" }) operation: string,
+    @Arg("planHash", { description: "Exact hash returned by facade plan" }) planHash: string,
+    @Arg("id", { required: false, description: "Spec id for new" }) id?: string,
+    @Option({ flags: "--title <title>", description: "Spec title for new" }) title?: string,
+    @Option({ flags: "--kind <kind>", description: "domain|capability|feature for new" }) kind?: string,
+    @Option({ flags: "--full", description: "Include WHY.md, RUNBOOK.md, and CHECKS.md" }) full?: boolean,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    const op = "specs facade verify";
+    try {
+      const payload = verifySpecsFacade(facadeIntent(op, operation, id, title, kind, full, asJson), planHash);
+      if (asJson) printJson(payload);
+      else console.log(JSON.stringify(payload, null, 2));
+      return payload;
+    } catch (error) {
+      failFacade(op, error, asJson);
+    }
+  }
+
+  @Command({ name: "recover", description: "Inspect recovery without replaying a specs effect" })
+  @CommandAccess({ kind: "read", resource: "specs.facade", action: "recover", risk: "low", effectClass: "none" })
+  @Returns(specsFacadeRecoveryReturnSchema)
+  recover(
+    @Arg("operation", { description: "new|sync" }) operation: string,
+    @Arg("planHash", { description: "Exact hash returned by facade plan" }) planHash: string,
+    @Arg("id", { required: false, description: "Spec id for new" }) id?: string,
+    @Option({ flags: "--title <title>", description: "Spec title for new" }) title?: string,
+    @Option({ flags: "--kind <kind>", description: "domain|capability|feature for new" }) kind?: string,
+    @Option({ flags: "--full", description: "Include WHY.md, RUNBOOK.md, and CHECKS.md" }) full?: boolean,
+    @Option({ flags: "--json" }) asJson?: boolean,
+  ) {
+    const op = "specs facade recover";
+    try {
+      const payload = recoverSpecsFacade(facadeIntent(op, operation, id, title, kind, full, asJson), planHash);
+      if (asJson) printJson(payload);
+      else console.log(JSON.stringify(payload, null, 2));
+      return payload;
+    } catch (error) {
+      failFacade(op, error, asJson);
     }
   }
 }

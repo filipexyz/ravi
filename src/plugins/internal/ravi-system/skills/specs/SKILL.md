@@ -23,9 +23,11 @@ Taxonomia de saída:
 - `0` sucesso.
 - `1` erro de execução (ex.: `SPEC_NOT_FOUND`). O envelope traz `suggestions` com ids reais parecidos do índice — consulte antes de concluir "não existe". `Spec already exists` no `new` também é exit 1: atualize a spec existente, não há overwrite.
 - `2` erro de uso: `--mode`/`--kind` inválidos e `--title`/`--kind` faltando no `new`. O envelope traz `acceptedValues` — corrija a chamada, não insista na mesma sintaxe.
-- `3` não existe neste domínio: NENHUMA op de specs tem freio.
+- `3` não existe neste domínio: NENHUMA op de specs usa o freio genérico `--execute`.
 
-Sem freios (declarado): `new` só cria Markdown local e falha em id existente; `sync` é reindexação local idempotente (Markdown é a fonte de verdade) e é usada pelo quality gate de CI e por dezenas de CHECKS — os dois gravam na hora, sem `--execute`.
+Sem freios (declarado): `new` só cria Markdown local por promoção atômica e falha em id existente; `sync` é reindexação local idempotente (Markdown é a fonte de verdade) e é usada pelo quality gate de CI e por dezenas de CHECKS — os dois gravam na hora, sem `--execute`.
+
+Para automação nova, prefira `specs facade`: `plan` não grava, `apply` exige o `planHash` ligado ao cwd/raiz/banco reais e confirma por readback, e `verify|recover|readback` são somente leitura. `apply` já é o passo explícito de efeito local reversível; não acrescente `--execute`.
 
 Compact mode: `specs list` aceita `--fields a,b,c` (ex.: `--fields id,kind`) — use em varredura para não arrastar o registro inteiro de cada spec.
 
@@ -52,6 +54,17 @@ ravi specs get <spec-id> --mode checks --json
 ```
 
 3. Depois de corrigir bug ou descobrir uma regra nova, atualize a spec afetada ou crie uma nova.
+
+Para criação por agente, use o fluxo seguro:
+
+```bash
+ravi specs facade plan new channels/presence/lifecycle \
+  --title "Presence Lifecycle" --kind feature --full --json
+ravi specs facade apply new <planHash> channels/presence/lifecycle \
+  --title "Presence Lifecycle" --kind feature --full --json
+```
+
+Crie os ancestrais indicados antes de reaplicar. `PLAN_STALE` exige um plano novo; `SPEC_TARGET_CONFLICT` exige inspeção, nunca overwrite. Uma reaplicação exatamente igual retorna `noop`.
 
 4. Reindexe quando precisar validar a árvore toda:
 
@@ -130,6 +143,8 @@ ravi specs sync --json
 ```
 
 O índice SQLite é rebuildável. Markdown continua sendo source of truth.
+
+Para um ciclo verificável, use `specs facade plan sync --json`, copie o hash e execute `specs facade apply sync <planHash> --json`. A resposta indica `applied` ou `noop` e inclui a verificação independente.
 
 ## Linkar a Projects
 

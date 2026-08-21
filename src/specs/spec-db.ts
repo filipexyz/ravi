@@ -1,6 +1,9 @@
-import { getDb } from "../router/router-db.js";
+import { Database } from "bun:sqlite";
+import { existsSync } from "node:fs";
+import { relative } from "node:path";
+import { getDb, getRaviDbPath } from "../router/router-db.js";
 import { executeWrite } from "../db/write-retry.js";
-import type { SpecRecord } from "./types.js";
+import type { SpecRecord, SpecsIndexInspection } from "./types.js";
 
 interface SpecIndexRow {
   root_path: string;
@@ -35,7 +38,7 @@ function rowToSpec(row: SpecIndexRow): SpecRecord {
     rootPath: row.root_path,
     id: row.id,
     path: row.path,
-    relativePath: row.path.startsWith(`${row.root_path}/`) ? row.path.slice(row.root_path.length + 1) : row.path,
+    relativePath: relative(row.root_path, row.path),
     kind: row.kind,
     domain: row.domain,
     ...(row.capability ? { capability: row.capability } : {}),
@@ -52,8 +55,16 @@ function rowToSpec(row: SpecIndexRow): SpecRecord {
   };
 }
 
-export function ensureSpecsIndexSchema(): void {
+function specsIndexSchemaExists(db: Database): boolean {
+  const row = db
+    .query("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'specs_index'")
+    .get() as { present: number } | null;
+  return row?.present === 1;
+}
+
+export function ensureSpecsIndexSchema(): boolean {
   const db = getDb();
+  const existed = specsIndexSchemaExists(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS specs_index (
       root_path TEXT NOT NULL,
@@ -78,11 +89,44 @@ export function ensureSpecsIndexSchema(): void {
     CREATE INDEX IF NOT EXISTS idx_specs_index_domain_kind ON specs_index(root_path, domain, kind);
     CREATE INDEX IF NOT EXISTS idx_specs_index_status ON specs_index(root_path, status);
   `);
+  return !existed;
 }
 
-export function replaceSpecsIndex(rootPath: string, specs: SpecRecord[]): void {
-  ensureSpecsIndexSchema();
+function comparableSpec(spec: SpecRecord): string {
+  return JSON.stringify({
+    rootPath: spec.rootPath,
+    id: spec.id,
+    path: spec.path,
+    kind: spec.kind,
+    domain: spec.domain,
+    capability: spec.capability ?? null,
+    feature: spec.feature ?? null,
+    title: spec.title,
+    capabilities: spec.capabilities,
+    tags: spec.tags,
+    appliesTo: spec.appliesTo,
+    owners: spec.owners,
+    status: spec.status,
+    normative: spec.normative,
+    mtime: spec.mtime,
+  });
+}
+
+function sameSpecs(left: SpecRecord[], right: SpecRecord[]): boolean {
+  return (
+    left.length === right.length && left.every((spec, index) => comparableSpec(spec) === comparableSpec(right[index]!))
+  );
+}
+
+export function replaceSpecsIndex(rootPath: string, specs: SpecRecord[]): boolean {
+  const schemaCreated = ensureSpecsIndexSchema();
   const db = getDb();
+  const current = schemaCreated
+    ? []
+    : (db.prepare("SELECT * FROM specs_index WHERE root_path = ? ORDER BY id ASC").all(rootPath) as SpecIndexRow[]).map(
+        rowToSpec,
+      );
+  if (!schemaCreated && sameSpecs(current, specs)) return false;
   const now = Date.now();
   const insert = db.prepare(`
     INSERT INTO specs_index (
@@ -133,6 +177,7 @@ export function replaceSpecsIndex(rootPath: string, specs: SpecRecord[]): void {
     },
     { label: "specs:reindex" },
   );
+  return true;
 }
 
 export function listIndexedSpecs(rootPath: string): SpecRecord[] {
@@ -141,4 +186,37 @@ export function listIndexedSpecs(rootPath: string): SpecRecord[] {
     .prepare("SELECT * FROM specs_index WHERE root_path = ? ORDER BY id ASC")
     .all(rootPath) as SpecIndexRow[];
   return rows.map(rowToSpec);
+}
+
+export function inspectSpecsIndex(rootPath: string, specs: SpecRecord[]): SpecsIndexInspection {
+  const dbPath = getRaviDbPath();
+  const empty = {
+    dbPath,
+    schemaExists: false,
+    matches: false,
+    indexedTotal: 0,
+    sourceTotal: specs.length,
+    indexedIds: [] as string[],
+    sourceIds: specs.map((spec) => spec.id),
+  };
+  if (!existsSync(dbPath)) return empty;
+
+  const db = new Database(dbPath, { readonly: true, create: false });
+  try {
+    if (!specsIndexSchemaExists(db)) return empty;
+    const indexed = (
+      db.query("SELECT * FROM specs_index WHERE root_path = ? ORDER BY id ASC").all(rootPath) as SpecIndexRow[]
+    ).map(rowToSpec);
+    return {
+      dbPath,
+      schemaExists: true,
+      matches: sameSpecs(indexed, specs),
+      indexedTotal: indexed.length,
+      sourceTotal: specs.length,
+      indexedIds: indexed.map((spec) => spec.id),
+      sourceIds: specs.map((spec) => spec.id),
+    };
+  } finally {
+    db.close();
+  }
 }

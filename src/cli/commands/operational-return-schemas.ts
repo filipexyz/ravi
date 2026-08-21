@@ -1284,8 +1284,171 @@ export const specsSyncReturnSchema = z
     status: z.literal("synced"),
     total: z.number(),
     rootPath: z.string(),
+    changed: z.boolean(),
   })
   .passthrough();
+
+const specsFacadeBindingReturnSchema = z
+  .object({ cwd: z.string(), specsRoot: z.string(), dbPath: z.string() })
+  .strict();
+
+const specsFacadeIndexReturnSchema = z
+  .object({
+    dbPath: z.string(),
+    schemaExists: z.boolean(),
+    matches: z.boolean(),
+    indexedTotal: z.number(),
+    sourceTotal: z.number(),
+    indexedIds: z.array(z.string()),
+    sourceIds: z.array(z.string()),
+  })
+  .strict();
+
+const specsFacadeAncestorReturnSchema = z.object({ id: z.string(), path: z.string(), exists: z.boolean() }).strict();
+
+const specsFacadeCreationInspectionReturnSchema = z
+  .object({
+    targetDirectoryExists: z.boolean(),
+    targetSpecExists: z.boolean(),
+    exactMatch: z.boolean(),
+    matchingFiles: z.array(z.string()),
+    missingFiles: z.array(z.string()),
+    divergentFiles: z.array(z.string()),
+    unexpectedFiles: z.array(z.string()),
+  })
+  .strict();
+
+const specsFacadeBlockerReturnSchema = z
+  .object({
+    code: z.string(),
+    message: z.string(),
+    details: z
+      .union([
+        z.object({ ancestors: z.array(z.string()) }).strict(),
+        z.object({ divergentFiles: z.array(z.string()), missingFiles: z.array(z.string()) }).strict(),
+      ])
+      .optional(),
+  })
+  .strict();
+
+const specsFacadeNewInputReturnSchema = z
+  .object({ id: z.string(), title: z.string(), kind: z.enum(["domain", "capability", "feature"]), full: z.boolean() })
+  .strict();
+
+const specsFacadeNewTargetReturnSchema = z.object({ id: z.string(), directoryPath: z.string() }).strict();
+
+const specsFacadeSyncTargetReturnSchema = z.object({ dbPath: z.string(), rootPath: z.string() }).strict();
+
+const specsFacadeCreateEffectReturnSchema = z
+  .object({
+    type: z.literal("create-file"),
+    path: z.string(),
+    contentSha256: z.string(),
+    overwrite: z.literal(false),
+  })
+  .strict();
+
+const specsFacadeSyncEffectReturnSchema = z
+  .object({
+    type: z.literal("replace-index-if-changed"),
+    dbPath: z.string(),
+    rootPath: z.string(),
+    sourceDigest: z.string(),
+    sourceTotal: z.number(),
+  })
+  .strict();
+
+const specsFacadeNewObservationReturnSchema = z
+  .object({
+    ancestors: z.array(specsFacadeAncestorReturnSchema),
+    target: specsFacadeCreationInspectionReturnSchema,
+    replay: z.enum(["noop", "create"]),
+  })
+  .strict();
+
+const specsFacadeSyncObservationReturnSchema = z
+  .object({
+    sourceFiles: z.array(z.object({ id: z.string(), path: z.string() }).strict()),
+    index: specsFacadeIndexReturnSchema,
+    replay: z.enum(["noop", "sync"]),
+  })
+  .strict();
+
+export const specsFacadePlanReturnSchema = z
+  .object({
+    schemaVersion: z.literal("specs.agent-first/v1"),
+    operation: z.enum(["new", "sync"]),
+    planHash: z.string(),
+    executable: z.boolean(),
+    blockers: z.array(specsFacadeBlockerReturnSchema),
+    binding: specsFacadeBindingReturnSchema,
+    input: z.union([specsFacadeNewInputReturnSchema, z.object({ source: z.literal("workspace") }).strict()]),
+    target: z.union([specsFacadeNewTargetReturnSchema, specsFacadeSyncTargetReturnSchema]),
+    effects: z.array(z.union([specsFacadeCreateEffectReturnSchema, specsFacadeSyncEffectReturnSchema])),
+    observation: z.union([specsFacadeNewObservationReturnSchema, specsFacadeSyncObservationReturnSchema]),
+  })
+  .strict();
+
+const specsFacadeFileReturnSchema = z.union([
+  z.object({ path: z.string(), exists: z.literal(false), expectedSha256: z.string().nullable() }).strict(),
+  z
+    .object({
+      path: z.string(),
+      exists: z.literal(true),
+      regularFile: z.literal(false),
+      expectedSha256: z.string().nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      path: z.string(),
+      exists: z.literal(true),
+      regularFile: z.literal(true),
+      actualSha256: z.string(),
+      expectedSha256: z.string().nullable(),
+      matches: z.boolean(),
+    })
+    .strict(),
+]);
+
+export const specsFacadeReadbackReturnSchema = z
+  .object({
+    schemaVersion: z.literal("specs.agent-first/v1"),
+    operation: z.enum(["new", "sync"]),
+    planHash: z.string(),
+    binding: specsFacadeBindingReturnSchema,
+    target: z.union([specsFacadeNewTargetReturnSchema, specsFacadeSyncTargetReturnSchema]),
+    ancestors: z.array(specsFacadeAncestorReturnSchema),
+    files: z.array(specsFacadeFileReturnSchema),
+    index: specsFacadeIndexReturnSchema,
+    observedAt: z.string(),
+  })
+  .strict();
+
+export const specsFacadeVerificationReturnSchema = z
+  .object({
+    operation: z.enum(["new", "sync"]),
+    planHash: z.string(),
+    outcome: z.enum(["confirmed", "absent", "divergent"]),
+    readback: specsFacadeReadbackReturnSchema,
+  })
+  .strict();
+
+export const specsFacadeApplyReturnSchema = z
+  .object({
+    operation: z.enum(["new", "sync"]),
+    state: z.enum(["created", "applied", "noop"]),
+    changed: z.boolean(),
+    verification: specsFacadeVerificationReturnSchema,
+  })
+  .strict();
+
+export const specsFacadeRecoveryReturnSchema = specsFacadeVerificationReturnSchema
+  .extend({
+    action: z.enum(["none", "replan_and_apply", "manual_review"]),
+    replay: z.literal(false),
+  })
+  .strict();
 
 export const taskRecordReturnSchema = looseObjectSchema;
 export const taskEventReturnSchema = looseObjectSchema;

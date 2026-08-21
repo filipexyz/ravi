@@ -23,3 +23,14 @@
   returning empty suggestions instead of throwing a second error.
 - `bun test src/cli/commands/specs.test.ts` SHOULD pass after any change to
   the specs contract surface.
+- `specs facade plan` MUST have `effectClass:none` and leave files and SQLite
+  unchanged; `facade apply` MUST declare `local-reversible` and require the
+  exact copied hash, not `--execute`.
+- Invalid facade operation/kind MUST preserve `USAGE_ERROR` through the outer
+  catch. Missing ancestors, stale hashes, and conflicts MUST keep their typed
+  execution codes.
+- A blocked plan hash MUST fail as stale if its blockers change before apply.
+- `facade readback|verify|recover` MUST show target files, ancestors, and index
+  state without writes; recovery MUST report `replay:false`.
+- The facade commands MUST be present in registry, SDK, OpenAPI, and help
+  discovery with declared return schemas.

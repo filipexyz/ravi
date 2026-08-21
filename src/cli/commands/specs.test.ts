@@ -1,5 +1,5 @@
-import { afterAll, afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { afterAll, afterEach, beforeEach, describe, expect, it, mock, setDefaultTimeout } from "bun:test";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../../test/ravi-state.js";
@@ -18,8 +18,11 @@ mock.module("../context.js", () => ({
   },
 }));
 
-const { SpecsCommands } = await import("./specs.js");
+const { SpecsCommands, SpecsFacadeCommands } = await import("./specs.js");
 const { ContractError } = await import("../agent-contract.js");
+const { getCommandAccessMetadata } = await import("../decorators.js");
+
+setDefaultTimeout(20_000);
 
 const tempRoots: string[] = [];
 const originalCwd = process.cwd();
@@ -220,5 +223,61 @@ describe("specs agent-first contract", () => {
 
     const synced = captureConsole(() => commands.sync(true));
     expect(JSON.parse(synced.output)).toMatchObject({ status: "synced", total: 1 });
+  });
+});
+
+describe("SpecsFacadeCommands", () => {
+  it("declares reads and local reversible writes explicitly", () => {
+    const legacy = getCommandAccessMetadata(SpecsCommands);
+    const facade = getCommandAccessMetadata(SpecsFacadeCommands);
+
+    expect(legacy.get("new")).toMatchObject({ kind: "mutate", effectClass: "local-reversible" });
+    expect(legacy.get("sync")).toMatchObject({ kind: "mutate", effectClass: "local-reversible" });
+    expect(facade.get("plan")).toMatchObject({ kind: "read", effectClass: "none" });
+    expect(facade.get("apply")).toMatchObject({ kind: "mutate", effectClass: "local-reversible" });
+    expect(facade.get("readback")).toMatchObject({ kind: "read", effectClass: "none" });
+    expect(facade.get("verify")).toMatchObject({ kind: "read", effectClass: "none" });
+    expect(facade.get("recover")).toMatchObject({ kind: "read", effectClass: "none" });
+  });
+
+  it("plans without writing and applies the copied hash with independent readback", () => {
+    const cwd = makeWorkspace();
+    const commands = new SpecsFacadeCommands();
+
+    const planned = captureConsole(() => commands.plan("new", "channels", "Channels", "domain", false, true));
+    const plan = JSON.parse(planned.output) as { planHash: string; executable: boolean };
+    expect(plan.executable).toBe(true);
+    expect(existsSync(join(cwd, ".ravi"))).toBe(false);
+
+    const applied = captureConsole(() =>
+      commands.apply("new", plan.planHash, "channels", "Channels", "domain", false, true),
+    );
+    expect(JSON.parse(applied.output)).toMatchObject({
+      operation: "new",
+      state: "created",
+      changed: true,
+      verification: { outcome: "confirmed" },
+    });
+
+    const readback = captureConsole(() =>
+      commands.readback("new", plan.planHash, "channels", "Channels", "domain", false, true),
+    );
+    expect(JSON.parse(readback.output)).toMatchObject({ operation: "new", files: [{ exists: true, matches: true }] });
+  });
+
+  it("returns typed usage errors for invalid facade operation and kind", () => {
+    makeWorkspace();
+    const commands = new SpecsFacadeCommands();
+
+    expect(() => captureConsole(() => commands.plan("remove", undefined, undefined, undefined, false, true))).toThrow(
+      ContractError,
+    );
+    try {
+      captureConsole(() => commands.plan("new", "channels", "Channels", "bogus", false, true));
+      throw new Error("expected facade plan to fail");
+    } catch (error) {
+      expect(error).toBeInstanceOf(ContractError);
+      expect((error as InstanceType<typeof ContractError>).envelope().error.code).toBe("USAGE_ERROR");
+    }
   });
 });

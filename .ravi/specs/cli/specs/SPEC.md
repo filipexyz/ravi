@@ -16,6 +16,7 @@ applies_to:
   - src/cli/commands/specs.ts
   - src/cli/agent-contract.ts
   - src/specs/service.ts
+  - src/specs/facade.ts
   - src/plugins/internal/ravi-system/skills/specs/SKILL.md
 owners:
   - ravi-dev
@@ -31,7 +32,8 @@ defined by `cli`. Specs are the durable rules memory agents consult
 BEFORE editing code, so the priority here is precise not-found feedback and
 compact discovery. The domain has NO braked op: `new` creates local Markdown
 and fails on existing specs; `sync` is an idempotent local reindex whose
-source of truth remains the Markdown tree.
+source of truth remains the Markdown tree. The explicit facade adds bound
+planning and readback without changing those compatibility commands.
 
 ## Invariants
 
@@ -56,6 +58,19 @@ source of truth remains the Markdown tree.
    `ContractError` MUST preserve its exit code through the registry
    dispatcher.
 8. Without `--json`, error output keeps the legacy text path (exit 1).
+9. `specs facade` MUST expose `plan`, `apply`, `readback`, `verify`, and
+   `recover` for `new` and `sync`; all operations MUST have declared return
+   schemas and effect metadata.
+10. Facade `plan`, `readback`, `verify`, and `recover` MUST be reads with
+    `effectClass:none`. `apply` MUST be a `local-reversible` mutation and is
+    itself the explicit application step, with no redundant `--execute` flag.
+11. Invalid facade operation or kind MUST exit 2 with `USAGE_ERROR`; stale
+    hashes, missing ancestors, unsafe paths, and target conflicts MUST exit 1
+    with stable domain error codes.
+12. Facade output MUST expose the bound target and independent readback. It
+    MUST NOT accept a caller-provided `cwd`, specs root, or database path flag.
+13. `planHash` MUST bind the current blocker set. If a blocked context becomes
+    executable, the old hash MUST be rejected as stale before any mutation.
 
 ## Write classification (brake decision per op)
 
@@ -64,6 +79,8 @@ source of truth remains the Markdown tree.
 | new | creates local Markdown; refuses existing ids | not braked (declared) |
 | sync | idempotent local reindex; Markdown stays source of truth | not braked (declared) |
 | list / get | reads | n/a |
+| facade plan / readback / verify / recover | bound reads | n/a |
+| facade apply | explicit local reversible application | no extra brake |
 
 ## Official error cases
 
@@ -71,6 +88,9 @@ source of truth remains the Markdown tree.
 |---|---|---|
 | spec not found | `SPEC_NOT_FOUND` + suggestions | 1 |
 | invalid mode/kind, missing title/kind | `USAGE_ERROR` + acceptedValues | 2 |
+| stale facade hash | `PLAN_STALE` | 1 |
+| missing facade ancestor | `SPEC_ANCESTORS_MISSING` | 1 |
+| orphan/divergent target | `SPEC_TARGET_CONFLICT` | 1 |
 
 ## Internal consumers
 
@@ -82,6 +102,7 @@ the CI quality gate — all keep working unchanged because `sync` is unbraked.
 ## Validation
 
 - `bun test src/cli/commands/specs.test.ts` green (contract block included).
+- `bun test src/specs/service.test.ts src/specs/facade.test.ts src/cli/commands/specs.test.ts` green.
 - Live checks (isolated workspace): `specs get nope --json` →
   `SPEC_NOT_FOUND` + suggestions, exit 1; `specs get <id> --mode bogus --json`
   → `USAGE_ERROR`, exit 2; `specs list --fields id,kind --json` narrows both
@@ -96,3 +117,5 @@ the CI quality gate — all keep working unchanged because `sync` is unbraked.
 - `specs.test.ts` originally imported the SUT statically with the real
   `../context.js`; the file MUST mock it (with `hasContext: () => true`)
   BEFORE a dynamic import of `./specs.js`.
+- A broad facade catch can recapture `ContractError`; the facade error funnel
+  MUST rethrow the exact typed signal before generic conversion.

@@ -1710,3 +1710,140 @@ criacao de symlink negada por `EPERM`. O mesmo arquivo no commit exato da
 fundacao `560517a4` reproduziu as duas falhas. A suite ampla nao e declarada
 verde, mas a comparacao demonstra que essas duas falhas nao foram introduzidas
 por COMMANDS. A compilacao Swift segue reservada a CI Linux.
+---
+
+## FASE 10 - facade local segura de specs (2026-08-21)
+
+Esta fase inicia em estado **DRAFT** e depende da fundacao agent-first da PR
+426. Ela acrescenta uma facade estateless para `new` e `sync` sem remover ou
+frear os comandos de compatibilidade usados por CI e consumidores existentes.
+
+### Contrato implementado
+
+- `specs facade plan` nao persiste; o hash liga cwd canonico, raiz de specs,
+  banco Ravi, entrada normalizada e efeitos exatos;
+- a facade bloqueia ancestrais ausentes, diretorios orfaos, links simbolicos e
+  hash stale antes de escrever;
+- o quartet e escrito em staging privado e promovido por um rename de
+  diretorio; `new` legado usa o mesmo escritor atomico;
+- replay exato da facade retorna `noop`, enquanto `new` legado preserva
+  `Spec already exists`;
+- `sync` compara o indice e informa `changed`; o segundo sync inalterado nao
+  substitui linhas;
+- `readback`, `verify` e `recover` mostram alvo, ancestrais e indice sem
+  persistir ou repetir efeito.
+
+### Evidencia local parcial
+
+Os testes nativos de servico, facade e CLI passaram em conjunto com 22 casos
+antes da correcao do ultimo caso de uso. Os testes de registry e classificacao
+de acesso passaram com 22 casos e 770 assercoes. Typecheck passou. A execucao
+isolada posterior do arquivo CLI teve nove casos verdes e um timeout no setup
+frio de cinco segundos; o mesmo arquivo ja havia passado no recorte conjunto.
+O limite foi alinhado ao padrao nativo de 20 segundos usado por suites com
+inicializacao de banco, sem reduzir as assercoes.
+
+O primeiro caso de operacao invalida encontrou recaptura de `ContractError` no
+funil externo da facade. A instancia tipada agora e relancada antes da conversao
+generica; o ocorrido esta em
+`docs/postmortems/0002-specs-facade-contract-error-recapture.md`.
+
+Nenhum commit, push, PR de dominio, pacote ou acesso a VPS foi realizado nesta
+fase. SDK/OpenAPI, quality gate, build, pacote instalavel e revisao independente
+do SHA exato continuam obrigatorios antes de promover o estado.
+
+### Primeiro gate oficial do SDK
+
+O build passou, mas `test:sdk` bloqueou os cinco retornos novos como contratos
+publicos fracos: havia `@Returns`, porem objetos internos ainda eram permissivos.
+Setenta e quatro testes passaram e um falhou, sem alterar a baseline de
+excecoes. A candidata permaneceu **DRAFT**.
+
+Os schemas passaram a fechar bindings, entradas, alvos, efeitos, bloqueios,
+observacoes, arquivos, ancestrais, indice, verificacao e recuperacao. O teste
+focado de qualidade de retorno passou com dois casos, sem adicionar excecao. O
+historico completo esta em
+`docs/postmortems/0003-specs-facade-weak-return-schemas.md`. Regeneracao e
+repeticao da suite integral continuam pendentes nesta revisao do ledger.
+
+### Fechamento do gate do SDK
+
+Os artefatos TypeScript, OpenAPI e Swift foram regenerados com schemas
+concretos. A suite oficial completa passou com 75 testes e 297 assercoes,
+incluindo `sdk:check`, sem nova excecao de contrato fraco. O incidente de schema
+esta fechado; testes nativos finais, pacote instalavel, revisao independente do
+SHA exato e CI Linux ainda sao obrigatorios antes de promover a candidata.
+
+### Validacao final da arvore local
+
+A arvore regenerada passou:
+
+- 24 testes nativos de specs, facade e CLI, com 95 assercoes;
+- typecheck e build integral;
+- checks dos snapshots `docs/openapi.json` e `openapi.json`, ambos sem drift;
+- check do SDK Swift e Biome nos 11 arquivos TypeScript tocados;
+- quality gate dos 33 caminhos alterados, com 274 specs indexadas e os ids
+  `cli/specs` e `specs` aprovados.
+
+O CLI empacotado tambem foi executado como processo real em workspace e estado
+isolados. O plano `new` nao criou alvo nem banco; o apply criou o quartet e foi
+confirmado; o replay retornou `noop`; readback encontrou quatro arquivos;
+verify retornou `confirmed`; recover manteve `replay:false`. O facade sync
+retornou `applied` e depois `noop`. Operacao invalida saiu com codigo 2. Plano
+com ancestral ausente retornou `executable:false` e
+`SPEC_ANCESTORS_MISSING`; seu apply saiu com codigo 1 sem escrever alvo. A
+colisao do `new` legado saiu com codigo 1 e o segundo `sync` legado informou
+`changed:false`.
+
+As duas primeiras tentativas do roteiro de processo pararam por leitura errada
+do proprio verificador: ele procurou `status` em vez de `state` e confundiu um
+plano diagnostico bloqueado com o apply recusado. Nenhum defeito do produto foi
+confirmado nesses dois casos. O registro completo esta em
+`docs/postmortems/0004-specs-cli-smoke-contract-misread.md`.
+
+Pacote instalavel, revisao independente do SHA exato e CI Linux continuam
+obrigatorios antes de promover a candidata.
+
+### Correcao pre-pacote: hash de plano bloqueado
+
+A revisao manual encontrou que o `planHash` ainda nao incluia o conjunto de
+bloqueios. Um plano recusado por ancestral ausente poderia manter o mesmo hash
+depois que outro ator criasse o ancestral e, assim, tornar-se executavel sem
+novo planejamento. Nenhum commit, pacote, push, PR ou ambiente remoto recebeu
+esse comportamento.
+
+O hash canonico agora inclui os bloqueios estruturados. Replay exato de um
+plano originalmente executavel continua estavel e retorna `noop`; quando um
+plano bloqueado muda de contexto, o hash antigo falha com `PLAN_STALE` antes de
+qualquer escrita. O ocorrido esta em
+`docs/postmortems/0005-specs-blocked-plan-hash-gap.md`. Todas as evidencias
+anteriores a essa mudanca ficam superadas e os gates locais devem ser repetidos.
+
+### Gates repetidos e pacote instalavel
+
+Depois da correcao do hash, passaram novamente:
+
+- 24 testes nativos com 97 assercoes;
+- typecheck, build integral, Biome e lint dos 13 documentos alterados;
+- SDK completo com 75 testes e 297 assercoes, seguido de `sdk:check`;
+- dois checks OpenAPI sem drift e check deterministico do SDK Swift;
+- quality gate dos 35 caminhos alterados, com 274 specs indexadas e os ids
+  `cli/specs` e `specs` aprovados.
+
+O processo real do bundle repetiu todo o ciclo e acrescentou a transicao
+critica: um plano bloqueado saiu com `SPEC_ANCESTORS_MISSING`; depois da criacao
+do ancestral, o mesmo hash saiu com codigo 1 e `PLAN_STALE`, sem criar o alvo.
+Os demais resultados permaneceram: plano sem escrita, apply `created`, replay
+`noop`, readback de quatro arquivos, verify `confirmed`, recover
+`replay:false`, sync `applied`/`noop`, erro de uso 2, colisao legada 1 e segundo
+sync legado `changed:false`.
+
+O pacote `ravi.bot-3.260817.2.tgz` foi gerado fora do repositorio com SHA-256
+`80C2ED8F658DFE26397C15C9FCEA0F92BA25B8989EE3E274A7A770CB012E5D9B` e
+4.961.353 bytes. Ele foi instalado em diretorio vazio com 364 dependencias. A
+partir do bundle instalado, a ajuda descobriu `plan`, `apply`, `readback`,
+`verify` e `recover`; plano, criacao confirmada e replay `noop` passaram.
+
+A candidata esta pronta para commit local e revisao independente do SHA exato.
+Push, PR, merge e VPS continuam bloqueados ate os respectivos gates e
+autorizacoes.

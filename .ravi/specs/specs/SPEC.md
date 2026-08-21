@@ -13,6 +13,7 @@ tags:
 applies_to:
   - .ravi/specs
   - src/specs
+  - src/specs/facade.ts
   - src/cli/commands/specs.ts
   - docs/ravi-specs-memory-prd.md
 owners:
@@ -36,6 +37,14 @@ Ravi Specs is the durable rules memory for the codebase. It protects business ru
 - Specs MUST use normative language (`MUST`, `MUST NOT`, `SHOULD`, `MAY`) for rules that agents are expected to follow.
 - Companion files SHOULD use Diataxis roles: `WHY.md` for rationale, `RUNBOOK.md` for operational steps, and `CHECKS.md` for validation.
 - `ravi specs` commands MUST support `--json` so agents can consume them without parsing human output.
+- `specs facade plan` MUST NOT create directories, files, index rows, or other durable state.
+- A facade plan MUST bind canonical `cwd`, the `.ravi/specs` root, the Ravi database target, normalized input, intended effects, and current safety blockers into `planHash`.
+- A blocked facade plan MUST become stale when its blocker set changes and MUST be planned again before apply.
+- Facade `new` MUST block when ancestor `SPEC.md` files are missing and MUST reject orphan targets or symbolic links without overwrite.
+- A new spec quartet MUST become visible as one directory promotion; a failed write MUST NOT expose a partial target quartet.
+- Reapplying an identical facade `new` plan to an exact target MUST return `noop`; legacy `new` MUST preserve its existing collision error.
+- `sync` MUST compare source and index before replacement and MUST report whether the index changed.
+- Facade `readback`, `verify`, and `recover` MUST be read-only and MUST expose file targets, ancestors, and index state. Recovery MUST NOT replay an effect.
 - Project links MAY attach specs as context, but specs MUST remain reusable outside any single project.
 - The new specs system MUST remain separate from the legacy `src/spec` planning flow until that legacy flow is intentionally removed.
 
@@ -44,7 +53,7 @@ Ravi Specs is the durable rules memory for the codebase. It protects business ru
 - `bun src/cli/index.ts specs list --json`
 - `bun src/cli/index.ts specs get specs --mode full --json`
 - `bun src/cli/index.ts specs sync --json`
-- `bun test src/specs/service.test.ts src/cli/commands/specs.test.ts src/cli/commands/projects.test.ts src/cli/commands/json-coverage.test.ts`
+- `bun test src/specs/service.test.ts src/specs/facade.test.ts src/cli/commands/specs.test.ts src/cli/commands/projects.test.ts src/cli/commands/json-coverage.test.ts`
 - `bun run typecheck`
 - `bun run build`
 
@@ -55,3 +64,5 @@ Ravi Specs is the durable rules memory for the codebase. It protects business ru
 - A spec id is renamed without updating project links or generated indexes.
 - A command prints only human text and forces agents to scrape stdout.
 - The new `src/specs` domain is confused with legacy `src/spec`, causing accidental coupling to the old planning runtime.
+- A plan is generated in one workspace or state directory and applied against another target.
+- A broad catch converts a typed facade usage error into a generic execution error.
