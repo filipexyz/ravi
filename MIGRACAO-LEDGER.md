@@ -59,7 +59,7 @@ checks passarem.
 | 24 | work-objects | work-objects.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/work-objects |
 | 25 | commands | commands.ts | commands | **MIGRADO** | cli/commands |
 | 26 | settings | settings.ts | settings | **MIGRADO** | cli/settings |
-| 27 | self | self.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/self |
+| 27 | self | self.ts | (sem skill — decisão documentada) | **MIGRADO + FACHADA AGENT-FIRST** | cli/self (atualizada) |
 | 28 | feedback | feedback.ts | (sem skill — lacuna registrada) | **MIGRADO** | cli/feedback |
 | 29 | rules | rules.ts | ravi-rules (dev) | **MIGRADO** | cli/rules |
 | 30 | specs | specs.ts | specs | **MIGRADO** | cli/specs |
@@ -640,6 +640,15 @@ settings 10/10 · self 7/7 · feedback 4/4 · rules 7/7 · specs 8/8 · typechec
 limpo · spec gate PASSED (5 specs cli/*). **Rotina Y:** settings set →
 delete sem `--execute` → envelope exit 3 · delete de key nunca setada →
 exit 1 (not-found vence o freio, ao vivo).
+
+**Atualização SELF agent-first (base 560517a):** as oito operações foram
+unificadas como fachada de leitura, com seleção estrita de campos, erros
+públicos tipados, contrato explícito de ambiente, degradação honesta, schemas
+concretos e coerência entre root help, SELF e o contexto registrado. A ausência
+de skill passou de lacuna a decisão: descoberta, recuperação e contrato ficam
+na própria CLI, no manifesto e nos schemas. A evidência desta atualização está
+nos testes nativos de SELF, contexto operacional e cobertura de schemas; não
+foi criada bancada paralela.
 
 ### 38. slack — MIGRADO (estado original, superado pela FASE 7)
 
@@ -1710,3 +1719,33 @@ criacao de symlink negada por `EPERM`. O mesmo arquivo no commit exato da
 fundacao `560517a4` reproduziu as duas falhas. A suite ampla nao e declarada
 verde, mas a comparacao demonstra que essas duas falhas nao foram introduzidas
 por COMMANDS. A compilacao Swift segue reservada a CI Linux.
+### SELF voltou a NO-GO por drift Swift
+
+A verificacao final encontrou cinco artefatos Swift divergentes do registry vivo
+depois da concretizacao dos oito retornos de `self`. Os dois snapshots OpenAPI
+estavam atuais, mas isso nao prova Swift. Nao havia commit, pacote, push, PR,
+merge ou VPS do dominio.
+
+O incidente esta registrado em
+`docs/postmortems/0002-self-swift-contract-drift.md`. A geracao Swift e todos os
+gates devem ser repetidos. Uma execucao paralela tambem causou timeout em um
+hook do SDK e dois do quality gate; essas saidas foram descartadas e serao
+recapturadas isoladamente. O candidato permanece NO-GO.
+
+### Fechamento local da recaptura de SELF
+
+O gerador oficial atualizou os cinco arquivos Swift e o check deterministico
+passou. O SDK isolado passou 75 testes com 297 assercoes e `sdk:check`; o quality
+gate isolado passou 41 testes com 92 assercoes. Os dois OpenAPI continuaram
+atuais.
+
+O recorte final de self/runtime passou 24 testes com 101 assercoes. Passaram
+tambem typecheck, build, Biome dos 11 fontes, lint dos 14 documentos,
+`git diff --check` e o quality runner sobre 65 caminhos acumulados, com 274
+specs indexadas. Help real de raiz e self saiu com codigo zero, mostrou
+capacidades indisponiveis sem contexto, rotulou a fonte e publicou o contrato de
+ambiente read-only.
+
+Drift Swift, titulos duplicados e finais de linha estao corrigidos localmente.
+Ainda faltam commit exato, pacote instalado, auditoria independente e CI Linux;
+nao houve push, PR, merge ou VPS.

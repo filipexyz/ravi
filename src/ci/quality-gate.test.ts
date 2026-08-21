@@ -423,6 +423,18 @@ describe("runCoverageGate", () => {
     expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
   });
 
+  it("passes when the runtime operational context focused test is in the diff", () => {
+    const cwd = makeWorkspace();
+
+    const result = runCoverageGate(
+      ["src/runtime/runtime-operational-context.ts", "src/runtime/runtime-operational-context.test.ts"],
+      cwd,
+    );
+
+    expect(result.ok).toBe(true);
+    expect(result.triggeredPrefixes).toEqual(["src/runtime/"]);
+  });
+
   it("fails for runtime change without focused test", () => {
     const cwd = makeWorkspace();
 

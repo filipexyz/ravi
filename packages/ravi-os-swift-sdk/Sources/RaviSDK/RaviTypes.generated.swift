@@ -18488,24 +18488,26 @@ public struct SelfContextOptions: Codable, Sendable {
 }
 
 public struct SelfContextReturn: Codable, Sendable {
-  public var actor_: RaviJSON
-  public var chat: RaviJSON
-  public var depth: String
-  public var explain: [[String: RaviJSON]]
-  public var generatedAt: Double
-  public var identity: [String: RaviJSON]
-  public var knowledge: RaviJSON
-  public var limit: Double
-  public var nextReads: [String]
-  public var permissions: RaviJSON
-  public var recent: RaviJSON
-  public var route: RaviJSON
-  public var session: RaviJSON
+  public var actor_: RaviJSON?
+  public var chat: RaviJSON?
+  public var depth: String?
+  public var environment: RaviJSON?
+  public var explain: [RaviJSON]?
+  public var generatedAt: Double?
+  public var identity: RaviJSON?
+  public var knowledge: RaviJSON?
+  public var limit: Double?
+  public var nextReads: [String]?
+  public var permissions: RaviJSON?
+  public var recent: RaviJSON?
+  public var route: RaviJSON?
+  public var session: RaviJSON?
 
-  public init(actor_: RaviJSON, chat: RaviJSON, depth: String, explain: [[String: RaviJSON]], generatedAt: Double, identity: [String: RaviJSON], knowledge: RaviJSON, limit: Double, nextReads: [String], permissions: RaviJSON, recent: RaviJSON, route: RaviJSON, session: RaviJSON) {
+  public init(actor_: RaviJSON? = nil, chat: RaviJSON? = nil, depth: String? = nil, environment: RaviJSON? = nil, explain: [RaviJSON]? = nil, generatedAt: Double? = nil, identity: RaviJSON? = nil, knowledge: RaviJSON? = nil, limit: Double? = nil, nextReads: [String]? = nil, permissions: RaviJSON? = nil, recent: RaviJSON? = nil, route: RaviJSON? = nil, session: RaviJSON? = nil) {
     self.actor_ = actor_
     self.chat = chat
     self.depth = depth
+    self.environment = environment
     self.explain = explain
     self.generatedAt = generatedAt
     self.identity = identity
@@ -18522,6 +18524,7 @@ public struct SelfContextReturn: Codable, Sendable {
     case actor_ = "actor"
     case chat = "chat"
     case depth = "depth"
+    case environment = "environment"
     case explain = "explain"
     case generatedAt = "generatedAt"
     case identity = "identity"
@@ -18536,11 +18539,11 @@ public struct SelfContextReturn: Codable, Sendable {
 }
 
 public struct SelfExplainReturn: Codable, Sendable {
-  public var explain: [[String: RaviJSON]]
+  public var explain: [RaviJSON]
   public var generatedAt: Double
   public var nextReads: [String]
 
-  public init(explain: [[String: RaviJSON]], generatedAt: Double, nextReads: [String]) {
+  public init(explain: [RaviJSON], generatedAt: Double, nextReads: [String]) {
     self.explain = explain
     self.generatedAt = generatedAt
     self.nextReads = nextReads
@@ -18646,15 +18649,17 @@ public struct SelfRouteReturn: Codable, Sendable {
 public struct SelfWhoamiReturn: Codable, Sendable {
   public var actor_: RaviJSON
   public var chat: RaviJSON
+  public var environment: RaviJSON
   public var generatedAt: Double
-  public var identity: [String: RaviJSON]
+  public var identity: RaviJSON
   public var nextReads: [String]
   public var route: RaviJSON
   public var session: RaviJSON
 
-  public init(actor_: RaviJSON, chat: RaviJSON, generatedAt: Double, identity: [String: RaviJSON], nextReads: [String], route: RaviJSON, session: RaviJSON) {
+  public init(actor_: RaviJSON, chat: RaviJSON, environment: RaviJSON, generatedAt: Double, identity: RaviJSON, nextReads: [String], route: RaviJSON, session: RaviJSON) {
     self.actor_ = actor_
     self.chat = chat
+    self.environment = environment
     self.generatedAt = generatedAt
     self.identity = identity
     self.nextReads = nextReads
@@ -18665,6 +18670,7 @@ public struct SelfWhoamiReturn: Codable, Sendable {
   enum CodingKeys: String, CodingKey {
     case actor_ = "actor"
     case chat = "chat"
+    case environment = "environment"
     case generatedAt = "generatedAt"
     case identity = "identity"
     case nextReads = "nextReads"

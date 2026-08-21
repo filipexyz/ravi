@@ -176,6 +176,8 @@ export interface GroupOptions {
   hidden?: boolean;
   /** Print group help and succeed when the group is invoked without a subcommand. */
   showHelpOnBare?: boolean;
+  /** Optional extended help rendered after the group's generated command list. */
+  helpAfter?: string;
 }
 
 export interface CommandOptions {

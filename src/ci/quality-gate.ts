@@ -58,6 +58,7 @@ export const RUNTIME_PATH_MAP: Record<string, string[]> = {
     "src/runtime/context-registry.test.ts",
     "src/runtime/crash-recovery-store.test.ts",
     "src/runtime/observation-plane.test.ts",
+    "src/runtime/runtime-operational-context.test.ts",
     "src/runtime/runtime-request-context.test.ts",
     "src/runtime/session-goals.test.ts",
     "src/runtime/session-trace.test.ts",

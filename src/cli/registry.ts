@@ -123,6 +123,9 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
     if (groupMeta.showHelpOnBare) {
       bareHelpGroups.set(groupMeta.name, group);
     }
+    if (groupMeta.helpAfter) {
+      group.addHelpText("after", groupMeta.helpAfter);
+    }
 
     const instance = new cls();
 

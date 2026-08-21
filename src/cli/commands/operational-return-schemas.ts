@@ -2444,53 +2444,291 @@ export const observerProfileInitReturnSchema = z
   })
   .passthrough();
 
-const selfSectionReturnSchema = z
+const selfStatusReturnSchema = z.enum(["ok", "partial", "missing", "unavailable"]);
+
+function selfSectionReturnSchema<T extends ZodTypeAny>(dataSchema: T) {
+  return z
+    .object({
+      status: selfStatusReturnSchema,
+      reason: z.string().optional(),
+      data: dataSchema.optional(),
+    })
+    .strict();
+}
+
+const selfIdentityReturnSchema = z
   .object({
-    status: z.enum(["ok", "partial", "missing", "unavailable"]),
-    reason: z.string().optional(),
-    data: z.unknown().optional(),
+    sourceOfTruth: z.literal("context_registry"),
+    contextId: z.string(),
+    kind: z.string(),
+    agentId: z.string().nullable(),
+    sessionKey: z.string().nullable(),
+    sessionName: z.string().nullable(),
+    source: contextSourceReturnSchema.nullable(),
+    metadata: jsonObjectSchema.nullable(),
+    capabilitiesCount: z.number(),
+    createdAt: z.number(),
+    expiresAt: z.number().nullable(),
+    lastUsedAt: z.number().nullable(),
+    revokedAt: z.number().nullable(),
   })
-  .passthrough();
+  .strict();
+
+const selfEnvironmentReturnSchema = z
+  .object({
+    valuesIncludedInContract: z.literal(false),
+    actorValuesMayAppearInOutput: z.literal(true),
+    contextResolution: z
+      .object({
+        reads: z.array(z.literal("RAVI_CONTEXT_KEY")),
+        precedence: z.array(z.enum(["resolved_cli_context", "runtime_context_key"])),
+        resolvedCliContextSources: z.array(
+          z.enum(["runtime_context_key", "default_credential", "tool_or_gateway_context"]),
+        ),
+        trust: z.literal("authoritative"),
+      })
+      .strict(),
+    actorResolution: z
+      .object({
+        reads: z.array(z.string()),
+        precedence: z.array(z.enum(["context_metadata", "environment", "recent_message"])),
+        environmentTrust: z.literal("unverified"),
+      })
+      .strict(),
+    notIdentityFallbacks: z.array(z.string()),
+  })
+  .strict();
+
+const selfActorDataReturnSchema = z
+  .object({
+    actorType: z.string().nullable(),
+    contactId: z.string().nullable(),
+    agentId: z.string().nullable(),
+    platformIdentityId: z.string().nullable(),
+    canonicalChatId: z.string().nullable(),
+    rawSenderId: z.string().nullable(),
+    normalizedSenderId: z.string().nullable(),
+    senderId: z.string().nullable(),
+    senderPhone: z.string().nullable(),
+    sourceMessageId: z.string().nullable(),
+    identityConfidence: z.number().nullable(),
+    source: z.enum(["context_metadata", "environment", "recent_message"]),
+    trust: z.enum(["authoritative", "unverified", "inferred"]),
+  })
+  .strict();
+
+const selfSessionDataReturnSchema = z
+  .object({
+    sessionKey: z.string(),
+    name: z.string().nullable(),
+    agentId: z.string(),
+    agentCwd: z.string(),
+    runtimeProvider: z.string().nullable(),
+    runtimeSessionDisplayId: z.string().nullable(),
+    modelOverride: z.string().nullable(),
+    effortOverride: z.string().nullable(),
+    thinkingLevel: z.string().nullable(),
+    channel: z.string().nullable(),
+    accountId: z.string().nullable(),
+    chatType: z.string().nullable(),
+    displayName: z.string().nullable(),
+    subject: z.string().nullable(),
+    lastTarget: z
+      .object({
+        channel: z.string().nullable(),
+        accountId: z.string().nullable(),
+        chatId: z.string().nullable(),
+        threadId: z.string().nullable(),
+      })
+      .strict(),
+    usage: z
+      .object({
+        inputTokens: z.number().nullable(),
+        outputTokens: z.number().nullable(),
+        totalTokens: z.number().nullable(),
+        contextTokens: z.number().nullable(),
+        compactionCount: z.number().nullable(),
+      })
+      .strict(),
+    updatedAt: z.number(),
+    createdAt: z.number(),
+    ephemeral: z.boolean(),
+    expiresAt: z.number().nullable(),
+  })
+  .strict();
+
+const selfChatDataReturnSchema = z
+  .object({
+    binding: z
+      .object({
+        sessionKey: z.string(),
+        chatId: z.string(),
+        routeId: z.number().nullable(),
+        bindingReason: z.string().nullable(),
+        updatedAt: z.number(),
+      })
+      .strict()
+      .nullable(),
+    chat: z
+      .object({
+        id: z.string(),
+        channel: z.string(),
+        instanceId: z.string(),
+        platformChatId: z.string(),
+        normalizedChatId: z.string(),
+        chatType: z.string(),
+        title: z.string().nullable(),
+        firstSeenAt: z.number(),
+        lastSeenAt: z.number(),
+        updatedAt: z.number(),
+      })
+      .strict()
+      .nullable(),
+    sourceFallback: contextSourceReturnSchema.nullable(),
+    participants: z
+      .array(
+        z
+          .object({
+            id: z.string(),
+            participantType: z.string(),
+            contactId: z.string().nullable(),
+            agentId: z.string().nullable(),
+            platformIdentityId: z.string().nullable(),
+            rawPlatformUserId: z.string().nullable(),
+            role: z.string(),
+            status: z.string(),
+            source: z.string(),
+            lastSeenAt: z.number(),
+          })
+          .strict(),
+      )
+      .optional(),
+  })
+  .strict();
+
+const selfRouteRecordReturnSchema = z
+  .object({
+    id: z.number(),
+    pattern: z.string(),
+    accountId: z.string(),
+    agent: z.string(),
+    dmScope: z.string().nullable(),
+    session: z.string().nullable(),
+    priority: z.number(),
+    policy: z.string().nullable(),
+    channel: z.string().nullable(),
+  })
+  .strict();
+
+const selfRouteDataReturnSchema = z
+  .object({
+    boundRoute: selfRouteRecordReturnSchema.nullable(),
+    sessionRoutes: z.array(selfRouteRecordReturnSchema),
+  })
+  .strict();
+
+const selfRecentDataReturnSchema = z
+  .object({
+    limit: z.number(),
+    sourceChatId: z.string().nullable(),
+    messages: z.array(
+      z
+        .object({
+          messageId: z.string(),
+          chatId: z.string(),
+          canonicalChatId: z.string().nullable(),
+          actorType: z.string().nullable(),
+          contactId: z.string().nullable(),
+          agentId: z.string().nullable(),
+          platformIdentityId: z.string().nullable(),
+          rawSenderId: z.string().nullable(),
+          normalizedSenderId: z.string().nullable(),
+          mediaType: z.string().nullable(),
+          hasTranscription: z.boolean(),
+          createdAt: z.number(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+
+const selfPermissionsDataReturnSchema = z
+  .object({
+    capabilities: z.array(contextCapabilityReturnSchema),
+    count: z.number(),
+    byPermission: z.record(z.string(), z.number()),
+    byObjectType: z.record(z.string(), z.number()),
+  })
+  .strict();
+
+const selfKnowledgeDataReturnSchema = z
+  .object({
+    status: z.literal("not_implemented"),
+    specIds: z.array(z.string()),
+    expectedCommandFamily: z.string(),
+  })
+  .strict();
+
+const selfExplainStepReturnSchema = z
+  .object({
+    step: z.string(),
+    status: selfStatusReturnSchema,
+    detail: z.string(),
+  })
+  .strict();
+
+const selfActorReturnSchema = selfSectionReturnSchema(selfActorDataReturnSchema);
+const selfSessionReturnSchema = selfSectionReturnSchema(selfSessionDataReturnSchema);
+export const selfChatReturnSchema = selfSectionReturnSchema(selfChatDataReturnSchema);
+export const selfRouteReturnSchema = selfSectionReturnSchema(selfRouteDataReturnSchema);
+export const selfRecentReturnSchema = selfSectionReturnSchema(selfRecentDataReturnSchema);
+export const selfPermissionsReturnSchema = selfSectionReturnSchema(selfPermissionsDataReturnSchema);
+export const selfKnowledgeReturnSchema = selfSectionReturnSchema(selfKnowledgeDataReturnSchema);
 
 export const selfWhoamiReturnSchema = z
   .object({
     generatedAt: z.number(),
-    identity: looseObjectSchema,
-    actor: selfSectionReturnSchema,
-    session: selfSectionReturnSchema,
-    chat: selfSectionReturnSchema,
-    route: selfSectionReturnSchema,
+    identity: selfIdentityReturnSchema,
+    environment: selfEnvironmentReturnSchema,
+    actor: selfActorReturnSchema,
+    session: selfSessionReturnSchema,
+    chat: selfChatReturnSchema,
+    route: selfRouteReturnSchema,
     nextReads: z.array(z.string()),
   })
-  .passthrough();
+  .strict();
 
-export const selfContextReturnSchema = z
+const selfContextFullReturnSchema = z
   .object({
     generatedAt: z.number(),
-    depth: z.string(),
+    depth: z.enum(["summary", "normal", "full"]),
     limit: z.number(),
-    identity: looseObjectSchema,
-    actor: selfSectionReturnSchema,
-    session: selfSectionReturnSchema,
-    chat: selfSectionReturnSchema,
-    route: selfSectionReturnSchema,
-    recent: selfSectionReturnSchema,
-    permissions: selfSectionReturnSchema,
-    knowledge: selfSectionReturnSchema,
-    explain: z.array(looseObjectSchema),
+    identity: selfIdentityReturnSchema,
+    environment: selfEnvironmentReturnSchema,
+    actor: selfActorReturnSchema,
+    session: selfSessionReturnSchema,
+    chat: selfChatReturnSchema,
+    route: selfRouteReturnSchema,
+    recent: selfRecentReturnSchema,
+    permissions: selfPermissionsReturnSchema,
+    knowledge: selfKnowledgeReturnSchema,
+    explain: z.array(selfExplainStepReturnSchema),
     nextReads: z.array(z.string()),
   })
-  .passthrough();
+  .strict();
 
-export const selfSectionOnlyReturnSchema = selfSectionReturnSchema;
+// `self context --fields` projects this top-level packet before returning it.
+// Keeping the same concrete field schemas optional makes the SDK contract
+// honest for both the full packet and every valid projection.
+export const selfContextReturnSchema = selfContextFullReturnSchema.partial().strict();
 
 export const selfExplainReturnSchema = z
   .object({
     generatedAt: z.number(),
-    explain: z.array(looseObjectSchema),
+    explain: z.array(selfExplainStepReturnSchema),
     nextReads: z.array(z.string()),
   })
-  .passthrough();
+  .strict();
 
 const tagPageReturnSchema = z
   .object({

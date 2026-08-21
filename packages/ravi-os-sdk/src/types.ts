@@ -11293,10 +11293,47 @@ export type SelfChatInput = {
 
 /** Return shape for `self.chat`. */
 export type SelfChatReturn = {
-  data?: unknown;
+  data?: {
+    binding: ({
+      bindingReason: string | null;
+      chatId: string;
+      routeId: number | null;
+      sessionKey: string;
+      updatedAt: number;
+    }) | null;
+    chat: ({
+      channel: string;
+      chatType: string;
+      firstSeenAt: number;
+      id: string;
+      instanceId: string;
+      lastSeenAt: number;
+      normalizedChatId: string;
+      platformChatId: string;
+      title: string | null;
+      updatedAt: number;
+    }) | null;
+    participants?: Array<{
+      agentId: string | null;
+      contactId: string | null;
+      id: string;
+      lastSeenAt: number;
+      participantType: string;
+      platformIdentityId: string | null;
+      rawPlatformUserId: string | null;
+      role: string;
+      source: string;
+      status: string;
+    }>;
+    sourceFallback: ({
+      accountId: string;
+      channel: string;
+      chatId: string;
+      threadId?: string;
+    }) | null;
+  };
   reason?: string;
   status: "ok" | "partial" | "missing" | "unavailable";
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.context`. */
@@ -11308,55 +11345,224 @@ export type SelfContextInput = {
 
 /** Return shape for `self.context`. */
 export type SelfContextReturn = {
-  actor: {
-    data?: unknown;
+  actor?: {
+    data?: {
+      actorType: string | null;
+      agentId: string | null;
+      canonicalChatId: string | null;
+      contactId: string | null;
+      identityConfidence: number | null;
+      normalizedSenderId: string | null;
+      platformIdentityId: string | null;
+      rawSenderId: string | null;
+      senderId: string | null;
+      senderPhone: string | null;
+      source: "context_metadata" | "environment" | "recent_message";
+      sourceMessageId: string | null;
+      trust: "authoritative" | "unverified" | "inferred";
+    };
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
-  chat: {
-    data?: unknown;
+  chat?: {
+    data?: {
+      binding: ({
+        bindingReason: string | null;
+        chatId: string;
+        routeId: number | null;
+        sessionKey: string;
+        updatedAt: number;
+      }) | null;
+      chat: ({
+        channel: string;
+        chatType: string;
+        firstSeenAt: number;
+        id: string;
+        instanceId: string;
+        lastSeenAt: number;
+        normalizedChatId: string;
+        platformChatId: string;
+        title: string | null;
+        updatedAt: number;
+      }) | null;
+      participants?: Array<{
+        agentId: string | null;
+        contactId: string | null;
+        id: string;
+        lastSeenAt: number;
+        participantType: string;
+        platformIdentityId: string | null;
+        rawPlatformUserId: string | null;
+        role: string;
+        source: string;
+        status: string;
+      }>;
+      sourceFallback: ({
+        accountId: string;
+        channel: string;
+        chatId: string;
+        threadId?: string;
+      }) | null;
+    };
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
-  depth: string;
-  explain: Array<Record<string, unknown>>;
-  generatedAt: number;
-  identity: Record<string, unknown>;
-  knowledge: {
-    data?: unknown;
+  depth?: "summary" | "normal" | "full";
+  environment?: {
+    actorResolution: {
+      environmentTrust: "unverified";
+      precedence: Array<"context_metadata" | "environment" | "recent_message">;
+      reads: string[];
+    };
+    actorValuesMayAppearInOutput: true;
+    contextResolution: {
+      precedence: Array<"resolved_cli_context" | "runtime_context_key">;
+      reads: "RAVI_CONTEXT_KEY"[];
+      resolvedCliContextSources: Array<"runtime_context_key" | "default_credential" | "tool_or_gateway_context">;
+      trust: "authoritative";
+    };
+    notIdentityFallbacks: string[];
+    valuesIncludedInContract: false;
+  };
+  explain?: Array<{
+    detail: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    step: string;
+  }>;
+  generatedAt?: number;
+  identity?: {
+    agentId: string | null;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    kind: string;
+    lastUsedAt: number | null;
+    metadata: (Record<string, unknown>) | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    source: ({
+      accountId: string;
+      channel: string;
+      chatId: string;
+      threadId?: string;
+    }) | null;
+    sourceOfTruth: "context_registry";
+  };
+  knowledge?: {
+    data?: {
+      expectedCommandFamily: string;
+      specIds: string[];
+      status: "not_implemented";
+    };
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
-  limit: number;
-  nextReads: string[];
-  permissions: {
-    data?: unknown;
+  limit?: number;
+  nextReads?: string[];
+  permissions?: {
+    data?: {
+      byObjectType: Record<string, number>;
+      byPermission: Record<string, number>;
+      capabilities: Array<{
+        objectId: string;
+        objectType: string;
+        permission: string;
+        source?: string;
+      }>;
+      count: number;
+    };
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
-  recent: {
-    data?: unknown;
+  recent?: {
+    data?: {
+      limit: number;
+      messages: Array<{
+        actorType: string | null;
+        agentId: string | null;
+        canonicalChatId: string | null;
+        chatId: string;
+        contactId: string | null;
+        createdAt: number;
+        hasTranscription: boolean;
+        mediaType: string | null;
+        messageId: string;
+        normalizedSenderId: string | null;
+        platformIdentityId: string | null;
+        rawSenderId: string | null;
+      }>;
+      sourceChatId: string | null;
+    };
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
-  route: {
-    data?: unknown;
+  route?: {
+    data?: {
+      boundRoute: ({
+        accountId: string;
+        agent: string;
+        channel: string | null;
+        dmScope: string | null;
+        id: number;
+        pattern: string;
+        policy: string | null;
+        priority: number;
+        session: string | null;
+      }) | null;
+      sessionRoutes: Array<{
+        accountId: string;
+        agent: string;
+        channel: string | null;
+        dmScope: string | null;
+        id: number;
+        pattern: string;
+        policy: string | null;
+        priority: number;
+        session: string | null;
+      }>;
+    };
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
-  session: {
-    data?: unknown;
+  session?: {
+    data?: {
+      accountId: string | null;
+      agentCwd: string;
+      agentId: string;
+      channel: string | null;
+      chatType: string | null;
+      createdAt: number;
+      displayName: string | null;
+      effortOverride: string | null;
+      ephemeral: boolean;
+      expiresAt: number | null;
+      lastTarget: {
+        accountId: string | null;
+        channel: string | null;
+        chatId: string | null;
+        threadId: string | null;
+      };
+      modelOverride: string | null;
+      name: string | null;
+      runtimeProvider: string | null;
+      runtimeSessionDisplayId: string | null;
+      sessionKey: string;
+      subject: string | null;
+      thinkingLevel: string | null;
+      updatedAt: number;
+      usage: {
+        compactionCount: number | null;
+        contextTokens: number | null;
+        inputTokens: number | null;
+        outputTokens: number | null;
+        totalTokens: number | null;
+      };
+    };
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.explain`. */
@@ -11364,10 +11570,13 @@ export type SelfExplainInput = Record<string, never>;
 
 /** Return shape for `self.explain`. */
 export type SelfExplainReturn = {
-  explain: Array<Record<string, unknown>>;
+  explain: Array<{
+    detail: string;
+    status: "ok" | "partial" | "missing" | "unavailable";
+    step: string;
+  }>;
   generatedAt: number;
   nextReads: string[];
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.knowledge`. */
@@ -11375,10 +11584,13 @@ export type SelfKnowledgeInput = Record<string, never>;
 
 /** Return shape for `self.knowledge`. */
 export type SelfKnowledgeReturn = {
-  data?: unknown;
+  data?: {
+    expectedCommandFamily: string;
+    specIds: string[];
+    status: "not_implemented";
+  };
   reason?: string;
   status: "ok" | "partial" | "missing" | "unavailable";
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.permissions`. */
@@ -11386,10 +11598,19 @@ export type SelfPermissionsInput = Record<string, never>;
 
 /** Return shape for `self.permissions`. */
 export type SelfPermissionsReturn = {
-  data?: unknown;
+  data?: {
+    byObjectType: Record<string, number>;
+    byPermission: Record<string, number>;
+    capabilities: Array<{
+      objectId: string;
+      objectType: string;
+      permission: string;
+      source?: string;
+    }>;
+    count: number;
+  };
   reason?: string;
   status: "ok" | "partial" | "missing" | "unavailable";
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.recent`. */
@@ -11399,10 +11620,26 @@ export type SelfRecentInput = {
 
 /** Return shape for `self.recent`. */
 export type SelfRecentReturn = {
-  data?: unknown;
+  data?: {
+    limit: number;
+    messages: Array<{
+      actorType: string | null;
+      agentId: string | null;
+      canonicalChatId: string | null;
+      chatId: string;
+      contactId: string | null;
+      createdAt: number;
+      hasTranscription: boolean;
+      mediaType: string | null;
+      messageId: string;
+      normalizedSenderId: string | null;
+      platformIdentityId: string | null;
+      rawSenderId: string | null;
+    }>;
+    sourceChatId: string | null;
+  };
   reason?: string;
   status: "ok" | "partial" | "missing" | "unavailable";
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.route`. */
@@ -11410,10 +11647,32 @@ export type SelfRouteInput = Record<string, never>;
 
 /** Return shape for `self.route`. */
 export type SelfRouteReturn = {
-  data?: unknown;
+  data?: {
+    boundRoute: ({
+      accountId: string;
+      agent: string;
+      channel: string | null;
+      dmScope: string | null;
+      id: number;
+      pattern: string;
+      policy: string | null;
+      priority: number;
+      session: string | null;
+    }) | null;
+    sessionRoutes: Array<{
+      accountId: string;
+      agent: string;
+      channel: string | null;
+      dmScope: string | null;
+      id: number;
+      pattern: string;
+      policy: string | null;
+      priority: number;
+      session: string | null;
+    }>;
+  };
   reason?: string;
   status: "ok" | "partial" | "missing" | "unavailable";
-  [k: string]: unknown;
 };
 
 /** Input shape for `self.whoami`. */
@@ -11422,33 +11681,170 @@ export type SelfWhoamiInput = Record<string, never>;
 /** Return shape for `self.whoami`. */
 export type SelfWhoamiReturn = {
   actor: {
-    data?: unknown;
+    data?: {
+      actorType: string | null;
+      agentId: string | null;
+      canonicalChatId: string | null;
+      contactId: string | null;
+      identityConfidence: number | null;
+      normalizedSenderId: string | null;
+      platformIdentityId: string | null;
+      rawSenderId: string | null;
+      senderId: string | null;
+      senderPhone: string | null;
+      source: "context_metadata" | "environment" | "recent_message";
+      sourceMessageId: string | null;
+      trust: "authoritative" | "unverified" | "inferred";
+    };
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
   chat: {
-    data?: unknown;
+    data?: {
+      binding: ({
+        bindingReason: string | null;
+        chatId: string;
+        routeId: number | null;
+        sessionKey: string;
+        updatedAt: number;
+      }) | null;
+      chat: ({
+        channel: string;
+        chatType: string;
+        firstSeenAt: number;
+        id: string;
+        instanceId: string;
+        lastSeenAt: number;
+        normalizedChatId: string;
+        platformChatId: string;
+        title: string | null;
+        updatedAt: number;
+      }) | null;
+      participants?: Array<{
+        agentId: string | null;
+        contactId: string | null;
+        id: string;
+        lastSeenAt: number;
+        participantType: string;
+        platformIdentityId: string | null;
+        rawPlatformUserId: string | null;
+        role: string;
+        source: string;
+        status: string;
+      }>;
+      sourceFallback: ({
+        accountId: string;
+        channel: string;
+        chatId: string;
+        threadId?: string;
+      }) | null;
+    };
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
+  };
+  environment: {
+    actorResolution: {
+      environmentTrust: "unverified";
+      precedence: Array<"context_metadata" | "environment" | "recent_message">;
+      reads: string[];
+    };
+    actorValuesMayAppearInOutput: true;
+    contextResolution: {
+      precedence: Array<"resolved_cli_context" | "runtime_context_key">;
+      reads: "RAVI_CONTEXT_KEY"[];
+      resolvedCliContextSources: Array<"runtime_context_key" | "default_credential" | "tool_or_gateway_context">;
+      trust: "authoritative";
+    };
+    notIdentityFallbacks: string[];
+    valuesIncludedInContract: false;
   };
   generatedAt: number;
-  identity: Record<string, unknown>;
+  identity: {
+    agentId: string | null;
+    capabilitiesCount: number;
+    contextId: string;
+    createdAt: number;
+    expiresAt: number | null;
+    kind: string;
+    lastUsedAt: number | null;
+    metadata: (Record<string, unknown>) | null;
+    revokedAt: number | null;
+    sessionKey: string | null;
+    sessionName: string | null;
+    source: ({
+      accountId: string;
+      channel: string;
+      chatId: string;
+      threadId?: string;
+    }) | null;
+    sourceOfTruth: "context_registry";
+  };
   nextReads: string[];
   route: {
-    data?: unknown;
+    data?: {
+      boundRoute: ({
+        accountId: string;
+        agent: string;
+        channel: string | null;
+        dmScope: string | null;
+        id: number;
+        pattern: string;
+        policy: string | null;
+        priority: number;
+        session: string | null;
+      }) | null;
+      sessionRoutes: Array<{
+        accountId: string;
+        agent: string;
+        channel: string | null;
+        dmScope: string | null;
+        id: number;
+        pattern: string;
+        policy: string | null;
+        priority: number;
+        session: string | null;
+      }>;
+    };
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
   session: {
-    data?: unknown;
+    data?: {
+      accountId: string | null;
+      agentCwd: string;
+      agentId: string;
+      channel: string | null;
+      chatType: string | null;
+      createdAt: number;
+      displayName: string | null;
+      effortOverride: string | null;
+      ephemeral: boolean;
+      expiresAt: number | null;
+      lastTarget: {
+        accountId: string | null;
+        channel: string | null;
+        chatId: string | null;
+        threadId: string | null;
+      };
+      modelOverride: string | null;
+      name: string | null;
+      runtimeProvider: string | null;
+      runtimeSessionDisplayId: string | null;
+      sessionKey: string;
+      subject: string | null;
+      thinkingLevel: string | null;
+      updatedAt: number;
+      usage: {
+        compactionCount: number | null;
+        contextTokens: number | null;
+        inputTokens: number | null;
+        outputTokens: number | null;
+        totalTokens: number | null;
+      };
+    };
     reason?: string;
     status: "ok" | "partial" | "missing" | "unavailable";
-    [k: string]: unknown;
   };
-  [k: string]: unknown;
 };
 
 /** Input shape for `sessions.actions`. */

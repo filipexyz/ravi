@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { readFileSync } from "node:fs";
 
 const actualCliContextModule = await import("../context.js");
 const actualRuntimeContextRegistryModule = await import("../../runtime/context-registry.js");
@@ -32,6 +33,30 @@ let sessionRoutes: Record<string, unknown>[] = [];
 let chatParticipants: Record<string, unknown>[] = [];
 let messageMeta: Record<string, unknown>[] = [];
 let messageMetaLimits: number[] = [];
+const ACTOR_ENV_KEYS = [
+  "RAVI_ACTOR_TYPE",
+  "RAVI_CONTACT_ID",
+  "RAVI_ACTOR_AGENT_ID",
+  "RAVI_PLATFORM_IDENTITY_ID",
+  "RAVI_CANONICAL_CHAT_ID",
+  "RAVI_RAW_SENDER_ID",
+  "RAVI_NORMALIZED_SENDER_ID",
+  "RAVI_SENDER_ID",
+  "RAVI_SENDER_PHONE",
+] as const;
+const ORIGINAL_ACTOR_ENV = Object.fromEntries(ACTOR_ENV_KEYS.map((key) => [key, process.env[key]]));
+
+function clearActorEnv(): void {
+  for (const key of ACTOR_ENV_KEYS) delete process.env[key];
+}
+
+function restoreActorEnv(): void {
+  for (const key of ACTOR_ENV_KEYS) {
+    const value = ORIGINAL_ACTOR_ENV[key];
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
 
 mock.module("../context.js", () => ({
   ...actualCliContextModule,
@@ -72,7 +97,19 @@ mock.module("../../router/router-db.js", () => ({
   },
 }));
 
-const { SelfCommands } = await import("./self.js");
+const { SelfCommands, SELF_CONTEXT_FIELDS, SELF_ENVIRONMENT_CONTRACT } = await import("./self.js");
+const { CliExpectedError } = await import("../expected-error.js");
+const { getCommandAccessMetadata, getGroupMetadata } = await import("../decorators.js");
+const {
+  selfChatReturnSchema,
+  selfContextReturnSchema,
+  selfExplainReturnSchema,
+  selfKnowledgeReturnSchema,
+  selfPermissionsReturnSchema,
+  selfRecentReturnSchema,
+  selfRouteReturnSchema,
+  selfWhoamiReturnSchema,
+} = await import("./operational-return-schemas.js");
 
 function captureConsole<T>(run: () => T): { output: string; result: T } {
   const lines: string[] = [];
@@ -206,34 +243,18 @@ function seedLinkedContext(): void {
 
 describe("SelfCommands", () => {
   const originalContextKey = process.env.RAVI_CONTEXT_KEY;
-  const actorEnvKeys = [
-    "RAVI_ACTOR_TYPE",
-    "RAVI_CONTACT_ID",
-    "RAVI_ACTOR_AGENT_ID",
-    "RAVI_PLATFORM_IDENTITY_ID",
-    "RAVI_CANONICAL_CHAT_ID",
-    "RAVI_RAW_SENDER_ID",
-    "RAVI_NORMALIZED_SENDER_ID",
-    "RAVI_SENDER_ID",
-    "RAVI_SENDER_PHONE",
-  ] as const;
-  const originalActorEnv = Object.fromEntries(actorEnvKeys.map((key) => [key, process.env[key]]));
 
   beforeEach(() => {
     seedLinkedContext();
     resolvedContextOptions = undefined;
     messageMetaLimits = [];
-    for (const key of actorEnvKeys) delete process.env[key];
+    clearActorEnv();
   });
 
   afterEach(() => {
     if (originalContextKey === undefined) delete process.env.RAVI_CONTEXT_KEY;
     else process.env.RAVI_CONTEXT_KEY = originalContextKey;
-    for (const key of actorEnvKeys) {
-      const value = originalActorEnv[key];
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
-    }
+    restoreActorEnv();
     inlineContext = undefined;
     resolvedContext = undefined;
     session = null;
@@ -251,6 +272,7 @@ describe("SelfCommands", () => {
     const payload = JSON.parse(output);
 
     expect(payload.identity).toMatchObject({
+      sourceOfTruth: "context_registry",
       contextId: "ctx_self_123",
       agentId: "main",
       sessionName: "main",
@@ -264,6 +286,7 @@ describe("SelfCommands", () => {
         canonicalChatId: "chat_123",
         sourceMessageId: "msg_1",
         source: "recent_message",
+        trust: "inferred",
       },
     });
     expect(payload.session.data).toMatchObject({
@@ -276,6 +299,7 @@ describe("SelfCommands", () => {
     expect(payload.route.data.boundRoute).toMatchObject({ id: 7, pattern: "group:120363" });
     expect(payload.recent.data.messages).toHaveLength(2);
     expect(payload.permissions.data.count).toBe(2);
+    expect(payload.environment).toEqual(SELF_ENVIRONMENT_CONTRACT);
     expect(JSON.stringify(payload)).not.toContain("rctx_secret_123");
     expect(payload.identity.metadata).toMatchObject({ apiToken: "[redacted]" });
     expect(JSON.stringify(payload)).not.toContain("secret-token");
@@ -312,7 +336,16 @@ describe("SelfCommands", () => {
     resolvedContext = undefined;
     delete process.env.RAVI_CONTEXT_KEY;
 
-    expect(() => new SelfCommands().whoami(true)).toThrow("Missing RAVI_CONTEXT_KEY");
+    let failure: unknown;
+    try {
+      new SelfCommands().whoami(true);
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(CliExpectedError);
+    expect(failure).toMatchObject({ code: "SELF_CONTEXT_REQUIRED", exitCode: 1, publicMessage: true });
+    expect((failure as Error).message).toContain("Missing RAVI_CONTEXT_KEY");
   });
 });
 
@@ -321,10 +354,12 @@ describe("SelfCommands", () => {
 // is compact mode on the largest payload (`self context --fields`).
 describe("self agent-first contract", () => {
   beforeEach(() => {
+    clearActorEnv();
     seedLinkedContext();
   });
 
   afterEach(() => {
+    restoreActorEnv();
     inlineContext = undefined;
   });
 
@@ -339,6 +374,23 @@ describe("self agent-first contract", () => {
     expect(result as unknown as Record<string, unknown>).toEqual(payload);
   });
 
+  it("rejects unknown --fields through the shared usage contract", () => {
+    let failure: unknown;
+    try {
+      new SelfCommands().context("summary", "2", true, "identity,unknown");
+    } catch (error) {
+      failure = error;
+    }
+
+    expect(failure).toBeInstanceOf(CliExpectedError);
+    expect(failure).toMatchObject({
+      code: "USAGE_ERROR",
+      exitCode: 2,
+      publicMessage: true,
+      details: { acceptedFields: [...SELF_CONTEXT_FIELDS] },
+    });
+  });
+
   it("prints the projected packet as JSON even without --json when --fields is set", () => {
     const { output } = captureConsole(() => new SelfCommands().context("summary", "2", false, "identity"));
     const payload = JSON.parse(output) as Record<string, unknown>;
@@ -350,8 +402,172 @@ describe("self agent-first contract", () => {
     const { output } = captureConsole(() => new SelfCommands().context("summary", "2", true));
     const payload = JSON.parse(output) as Record<string, unknown>;
 
-    for (const key of ["identity", "actor", "session", "chat", "route", "recent", "permissions", "knowledge"]) {
+    for (const key of [
+      "identity",
+      "environment",
+      "actor",
+      "session",
+      "chat",
+      "route",
+      "recent",
+      "permissions",
+      "knowledge",
+    ]) {
       expect(payload).toHaveProperty(key);
     }
+  });
+
+  it("keeps --depth validation public and typed", () => {
+    let failure: unknown;
+    try {
+      new SelfCommands().chat("turbo", true);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({ code: "ARG_INVALID", exitCode: 1, publicMessage: true });
+    expect((failure as Error).message).toContain("Invalid --depth: turbo");
+  });
+
+  it("keeps --limit validation public and typed", () => {
+    let failure: unknown;
+    try {
+      new SelfCommands().recent("0", true);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({ code: "ARG_INVALID", exitCode: 1, publicMessage: true });
+    expect((failure as Error).message).toContain("Invalid --limit: 0");
+  });
+});
+
+describe("self read-only operations", () => {
+  beforeEach(() => {
+    clearActorEnv();
+    seedLinkedContext();
+  });
+
+  afterEach(() => {
+    restoreActorEnv();
+    inlineContext = undefined;
+  });
+
+  it("chat returns the typed binding, canonical chat and full participants", () => {
+    const { result } = captureConsole(() => new SelfCommands().chat("full", true));
+    expect(result).toMatchObject({ status: "ok", data: { binding: { chatId: "chat_123" } } });
+    expect(result.data?.participants).toHaveLength(1);
+    expect(() => selfChatReturnSchema.parse(result)).not.toThrow();
+  });
+
+  it("route returns the bound route provenance", () => {
+    const { result } = captureConsole(() => new SelfCommands().route(true));
+    expect(result).toMatchObject({ status: "ok", data: { boundRoute: { id: 7, pattern: "group:120363" } } });
+    expect(() => selfRouteReturnSchema.parse(result)).not.toThrow();
+  });
+
+  it("permissions returns the same context capability facts and rollups", () => {
+    const { result } = captureConsole(() => new SelfCommands().permissions(true));
+    expect(result).toMatchObject({
+      status: "ok",
+      data: { count: 2, byPermission: { execute: 1, use: 1 }, byObjectType: { group: 1, tool: 1 } },
+    });
+    expect(() => selfPermissionsReturnSchema.parse(result)).not.toThrow();
+  });
+
+  it("knowledge reports an honest typed unavailable fallback", () => {
+    const { result } = captureConsole(() => new SelfCommands().knowledge(true));
+    expect(result).toMatchObject({
+      status: "unavailable",
+      data: { status: "not_implemented", expectedCommandFamily: "ravi knowledge" },
+    });
+    expect(() => selfKnowledgeReturnSchema.parse(result)).not.toThrow();
+  });
+
+  it("explain exposes resolution provenance and env-sourced actor trust", () => {
+    process.env.RAVI_CONTACT_ID = "contact_private_value";
+    const { output, result } = captureConsole(() => new SelfCommands().explain(true));
+
+    expect(result.explain.map((step) => step.step)).toContain("environment_contract");
+    expect(output).toContain("RAVI_CONTACT_ID");
+    expect(output).toContain("contact_private_value");
+    expect(output).toContain("unverified");
+    expect(() => selfExplainReturnSchema.parse(result)).not.toThrow();
+  });
+
+  it("marks an env-sourced actor as unverified partial data", () => {
+    messageMeta = [];
+    process.env.RAVI_ACTOR_TYPE = "contact";
+    process.env.RAVI_CONTACT_ID = "contact_env";
+
+    const { result } = captureConsole(() => new SelfCommands().whoami(true));
+    expect(result.actor).toMatchObject({
+      status: "partial",
+      reason: "actor values came from process environment and are unverified",
+      data: { contactId: "contact_env", source: "environment", trust: "unverified" },
+    });
+  });
+
+  it("validates the concrete return schema for every operation", () => {
+    const commands = new SelfCommands();
+    const cases: Array<{ schema: { parse(value: unknown): unknown }; operation: () => unknown }> = [
+      { schema: selfWhoamiReturnSchema, operation: () => commands.whoami(true) },
+      { schema: selfContextReturnSchema, operation: () => commands.context("full", "2", true) },
+      { schema: selfChatReturnSchema, operation: () => commands.chat("full", true) },
+      { schema: selfRouteReturnSchema, operation: () => commands.route(true) },
+      { schema: selfRecentReturnSchema, operation: () => commands.recent("2", true) },
+      { schema: selfPermissionsReturnSchema, operation: () => commands.permissions(true) },
+      { schema: selfKnowledgeReturnSchema, operation: () => commands.knowledge(true) },
+      { schema: selfExplainReturnSchema, operation: () => commands.explain(true) },
+    ];
+
+    for (const { schema, operation } of cases) {
+      const { result } = captureConsole(operation);
+      expect(() => schema.parse(result)).not.toThrow();
+    }
+  });
+
+  it("validates a compact context projection against the public return schema", () => {
+    const { result } = captureConsole(() => new SelfCommands().context(undefined, undefined, true, "identity,session"));
+
+    expect(Object.keys(result).sort()).toEqual(["identity", "session"]);
+    expect(() => selfContextReturnSchema.parse(result)).not.toThrow();
+  });
+
+  it("declares all operations as reads and imports no write surface", () => {
+    const access = getCommandAccessMetadata(SelfCommands);
+    expect([...access.values()]).toHaveLength(8);
+    expect([...access.values()].every((entry) => entry.kind === "read")).toBe(true);
+
+    const source = readFileSync(new URL("./self.ts", import.meta.url), "utf8");
+    expect(source).not.toMatch(/\bdb(?:Create|Insert|Update|Delete|Upsert|Set|Revoke|Remove|Add)/);
+    expect(source).not.toMatch(/\bnats\.(?:emit|publish|request)/);
+  });
+
+  it("publishes the env, degradation, schema and exit contracts in group help", () => {
+    const help = getGroupMetadata(SelfCommands)?.helpAfter ?? "";
+    expect(help).toContain("RAVI_ACTOR_TYPE");
+    expect(help).toContain("USAGE_ERROR");
+    expect(help).toContain("ARG_INVALID");
+    expect(help).toContain("partial, missing, unavailable");
+    expect(help).toContain("sdk returns show self.<command>");
+    expect(help).not.toContain("contact_env");
+  });
+});
+
+describe("self human output", () => {
+  beforeEach(() => {
+    clearActorEnv();
+    seedLinkedContext();
+  });
+
+  afterEach(() => {
+    restoreActorEnv();
+    inlineContext = undefined;
+  });
+
+  it("renders actor, chat and route only once in the full context view", () => {
+    const { output } = captureConsole(() => new SelfCommands().context("normal", "2", false));
+    expect(output.match(/^Actor:/gm)).toHaveLength(1);
+    expect(output.match(/^Chat:/gm)).toHaveLength(1);
+    expect(output.match(/^Route:/gm)).toHaveLength(1);
   });
 });

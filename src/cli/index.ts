@@ -37,6 +37,7 @@ import { spawnDirectTui } from "./tui-launcher.js";
 import { maybeRunAppAliasRoute } from "../apps/router.js";
 import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
 import { CliTerminationRequest, terminateCliProcess, writeProcessStdout } from "./process-output.js";
+import { getContext } from "./context.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
@@ -53,7 +54,13 @@ function isRootVersionRequest(args: string[]): boolean {
 program
   .name("ravi")
   .description("Ravi Bot CLI - Claude-powered bot management")
-  .addHelpText("after", `\nRoot options:\n  ravi --version    Print Ravi CLI version\n${buildRootOperationalHelp()}`);
+  .addHelpText(
+    "after",
+    `\nRoot options:\n  ravi --version    Print Ravi CLI version\n${buildRootOperationalHelp(
+      process.env,
+      getContext()?.context ?? null,
+    )}`,
+  );
 
 program.showSuggestionAfterError();
 

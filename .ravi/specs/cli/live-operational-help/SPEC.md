@@ -22,8 +22,6 @@ status: draft
 normative: true
 ---
 
-# Live Operational Help
-
 ## Objective
 
 Make the Ravi CLI act as a live operational skill for agents and humans.
@@ -39,6 +37,8 @@ surface the agent sees.
 - `--json` is for structured machine consumption after the operator already
   knows which command to run.
 - The prompt and CLI help must share one renderer/source of truth.
+- Repeated identity and capability facts must come from the resolved
+  context-registry record. Ambient legacy env never overrides that record.
 - The text is Markdown, not JSON.
 - Do not print secret context keys or credential values.
 
@@ -62,10 +62,15 @@ bounded preview and point to `ravi self permissions --json` for the full list.
 
 ## Root Help
 
-`ravi --help` should include the same operational section. When the CLI is run
-inside an agent context (`RAVI_CONTEXT_KEY`), it should resolve that context in
-read-only mode and include the same agent/session/capability summary. Outside an
-agent context, it should say that it is running as a direct CLI invocation.
+`ravi --help` should include the same operational section. It first uses the
+CLI's already resolved context, including a valid default credential, then a
+direct `RAVI_CONTEXT_KEY` resolution. Resolution remains read-only and must not
+touch `lastUsedAt`.
+
+If no context record exists, legacy agent/session env may be displayed only as
+a labeled fallback. Capabilities must be reported as unavailable, not as an
+authoritative empty set. Context source and invocation source are separate
+facts and must not silently override one another.
 
 ## Debug Commands
 

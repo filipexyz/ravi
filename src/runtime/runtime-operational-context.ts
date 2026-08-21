@@ -4,7 +4,9 @@ import type { ContextCapability, ContextRecord } from "../router/router-db.js";
 
 export interface RuntimeOperationalContextInput {
   agentId?: string | null;
+  agentSource?: "runtime-input" | "legacy-environment";
   sessionName?: string | null;
+  sessionSource?: "runtime-input" | "legacy-environment";
   cwd?: string | null;
   ctx?: ChannelContext;
   runtimeContext?: Pick<
@@ -17,14 +19,21 @@ const CAPABILITY_PREVIEW_LIMIT = 18;
 
 export function buildRuntimeOperationalContextContent(input: RuntimeOperationalContextInput): string {
   const runtimeContext = input.runtimeContext ?? null;
-  const agentId = input.agentId ?? runtimeContext?.agentId ?? "-";
-  const sessionName = input.sessionName ?? runtimeContext?.sessionName ?? "-";
+  const agentId = runtimeContext?.agentId ?? input.agentId ?? "-";
+  const agentSource = runtimeContext?.agentId
+    ? "context-registry"
+    : input.agentId
+      ? (input.agentSource ?? "runtime-input")
+      : "unavailable";
+  const sessionName = runtimeContext?.sessionName ?? input.sessionName ?? "-";
+  const sessionSource = runtimeContext?.sessionName
+    ? "context-registry"
+    : input.sessionName
+      ? (input.sessionSource ?? "runtime-input")
+      : "unavailable";
   const cwd = input.cwd ?? "-";
-  const source = input.ctx
-    ? formatChannelSource(input.ctx)
-    : runtimeContext?.source
-      ? formatRuntimeSource(runtimeContext.source)
-      : "-";
+  const source = runtimeContext?.source ? formatRuntimeSource(runtimeContext.source) : "-";
+  const invocationSource = input.ctx ? formatChannelSource(input.ctx) : "-";
   const capabilities = runtimeContext?.capabilities ?? [];
 
   return [
@@ -33,9 +42,12 @@ export function buildRuntimeOperationalContextContent(input: RuntimeOperationalC
     `## Current Runtime`,
     ``,
     `- agent: \`${agentId}\``,
+    `- agent source: ${agentSource}`,
     `- session: \`${sessionName}\``,
+    `- session source: ${sessionSource}`,
     `- cwd: \`${cwd}\``,
-    `- source: ${source}`,
+    `- context source: ${source}`,
+    `- invocation source: ${invocationSource}`,
     `- context: ${runtimeContext ? `\`${runtimeContext.contextId}\` (${runtimeContext.kind})` : "direct CLI or unavailable"}`,
     ``,
     `## How To Inspect Yourself`,
@@ -49,7 +61,7 @@ export function buildRuntimeOperationalContextContent(input: RuntimeOperationalC
     ``,
     `## Permissions Snapshot`,
     ``,
-    ...formatCapabilities(capabilities),
+    ...formatCapabilities(capabilities, Boolean(runtimeContext)),
     ``,
     `## Operating Rules`,
     ``,
@@ -60,17 +72,27 @@ export function buildRuntimeOperationalContextContent(input: RuntimeOperationalC
   ].join("\n");
 }
 
-export function buildRootOperationalHelp(env: NodeJS.ProcessEnv = process.env): string {
+export function buildRootOperationalHelp(
+  env: NodeJS.ProcessEnv = process.env,
+  resolvedContext?: RuntimeOperationalContextInput["runtimeContext"],
+): string {
   const contextKey = env[RAVI_CONTEXT_KEY_ENV];
-  const runtimeContext = contextKey ? resolveRuntimeContext(contextKey, { readOnly: true, touch: false }) : null;
+  const runtimeContext =
+    resolvedContext === undefined
+      ? contextKey
+        ? resolveRuntimeContext(contextKey, { readOnly: true, touch: false })
+        : null
+      : (resolvedContext ?? null);
 
   return [
     "",
     "Ravi Operational Context:",
     "",
     buildRuntimeOperationalContextContent({
-      agentId: env.RAVI_AGENT_ID ?? runtimeContext?.agentId,
-      sessionName: env.RAVI_SESSION_NAME ?? runtimeContext?.sessionName,
+      agentId: env.RAVI_AGENT_ID,
+      agentSource: "legacy-environment",
+      sessionName: env.RAVI_SESSION_NAME,
+      sessionSource: "legacy-environment",
       cwd: env.PWD ?? process.cwd(),
       runtimeContext,
       ctx: buildChannelContextFromEnv(env),
@@ -110,7 +132,13 @@ function formatRuntimeSource(source: ContextRecord["source"]): string {
   return parts.length > 0 ? `\`${parts.join(" | ")}\`` : "-";
 }
 
-function formatCapabilities(capabilities: ContextCapability[]): string[] {
+function formatCapabilities(capabilities: ContextCapability[], contextResolved: boolean): string[] {
+  if (!contextResolved) {
+    return [
+      `- capabilities: unavailable because no runtime context was resolved.`,
+      `- resolution: run \`ravi context whoami --json\`, then \`ravi self permissions --json\`.`,
+    ];
+  }
   if (capabilities.length === 0) {
     return [
       `- capabilities: none materialized in this context.`,
