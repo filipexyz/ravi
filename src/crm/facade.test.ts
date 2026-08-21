@@ -432,7 +432,7 @@ describe("CRM facade", () => {
     expect(completedTaskIds).toEqual([]);
   });
 
-  it("accepts only canonical contact enums and resolves relationship references", () => {
+  it("accepts normalized contact field names, aliases, clear values, and common fields", () => {
     const lifecycle = buildCrmFacadePlan({
       operation: "contact.set",
       target: "contact-1",
@@ -447,7 +447,31 @@ describe("CRM facade", () => {
       field: "primary-account",
       value: "acct-1",
     });
-    expect(account.arguments.value).toBe("acct-1");
+    expect(account.arguments).toMatchObject({ field: "primary-account", value: "acct-1" });
+
+    const uppercaseAccount = buildCrmFacadePlan({
+      operation: "contact.set",
+      target: "contact-1",
+      field: " PRIMARY-ACCOUNT ",
+      value: "acct-1",
+    });
+    expect(uppercaseAccount.arguments).toMatchObject({ field: "primary-account", value: "acct-1" });
+
+    const uppercaseOpportunity = buildCrmFacadePlan({
+      operation: "contact.set",
+      target: "contact-1",
+      field: " PRIMARY-OPPORTUNITY ",
+      value: "opp-1",
+    });
+    expect(uppercaseOpportunity.arguments).toMatchObject({ field: "primary-opportunity", value: "opp-1" });
+
+    const healthAlias = buildCrmFacadePlan({
+      operation: "contact.set",
+      target: "contact-1",
+      field: " Health ",
+      value: "AT_RISK",
+    });
+    expect(healthAlias.arguments).toMatchObject({ field: "relationship-health", value: "at_risk" });
 
     const clearedPriority = buildCrmFacadePlan({
       operation: "contact.set",
@@ -456,6 +480,24 @@ describe("CRM facade", () => {
       value: "-",
     });
     expect(clearedPriority.arguments.value).toBeNull();
+    for (const clearValue of ["null", "NULL", " null "]) {
+      const clearedRelationship = buildCrmFacadePlan({
+        operation: "contact.set",
+        target: "contact-1",
+        field: " primary-account ",
+        value: clearValue,
+      });
+      expect(clearedRelationship.arguments).toMatchObject({ field: "primary-account", value: null });
+    }
+
+    const nextAction = buildCrmFacadePlan({
+      operation: "contact.set",
+      target: "contact-1",
+      field: "next-action",
+      value: "Call back next week",
+    });
+    expect(nextAction.arguments).toMatchObject({ field: "next-action", value: "Call back next week" });
+
     expect(() =>
       buildCrmFacadePlan({
         operation: "contact.set",

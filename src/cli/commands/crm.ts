@@ -90,6 +90,8 @@ import {
   recordCrmFacadeApprovalRequest,
   approveCrmFacadePlan,
   applyCrmFacadePlan,
+  isCrmContactClearValue,
+  normalizeCrmContactFieldName,
   verifyCrmFacadePlan,
   CRM_FACADE_OPERATIONS,
   CrmFacadeResolutionError,
@@ -618,6 +620,14 @@ function assertCrmFacadePlanVisible(plan: CrmFacadePlan, op: string, asJson?: bo
   if (typeof contact === "string") assertCanReadCrmContact(op, contact, asJson);
   const account = plan.arguments.account;
   if (typeof account === "string") assertCrmAccountMutationTarget(op, account, asJson);
+  if (plan.operation === "contact.set") {
+    const field = normalizeCrmContactFieldName(String(plan.arguments.field ?? ""));
+    const value = plan.arguments.value;
+    if (field === "primary-account" && typeof value === "string") assertCrmAccountMutationTarget(op, value, asJson);
+    if (field === "primary-opportunity" && typeof value === "string") {
+      assertCrmOpportunityMutationTarget(op, value, asJson);
+    }
+  }
 }
 
 function assertCrmFacadeIntentVisible(input: CrmFacadePlanInput, op: string, asJson?: boolean): void {
@@ -629,9 +639,10 @@ function assertCrmFacadeIntentVisible(input: CrmFacadePlanInput, op: string, asJ
 
   if (input.contact) assertCanReadCrmContact(op, input.contact, asJson);
   if (input.account) assertCrmAccountMutationTarget(op, input.account, asJson);
-  if (input.operation === "contact.set" && input.value && input.value !== "-" && input.value !== "null") {
-    if (input.field === "primary-account") assertCrmAccountMutationTarget(op, input.value, asJson);
-    if (input.field === "primary-opportunity") assertCrmOpportunityMutationTarget(op, input.value, asJson);
+  if (input.operation === "contact.set" && typeof input.value === "string" && !isCrmContactClearValue(input.value)) {
+    const field = normalizeCrmContactFieldName(input.field ?? "");
+    if (field === "primary-account") assertCrmAccountMutationTarget(op, input.value, asJson);
+    if (field === "primary-opportunity") assertCrmOpportunityMutationTarget(op, input.value, asJson);
   }
 }
 

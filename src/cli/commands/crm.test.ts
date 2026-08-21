@@ -5,6 +5,17 @@ afterAll(() => mock.restore());
 
 const actualCliContextModule = await import("../context.js");
 const actualContactsModule = await import("../../contacts.js");
+type StoredPlan = {
+  planId: string;
+  planHash: string;
+  planJson: string;
+  state: string;
+  createdAt: string;
+  expiresAt: string;
+  updatedAt: string;
+  approvalJson: string | null;
+  appliedAt: string | null;
+};
 
 let crmContactProfile: Record<string, unknown> | null = null;
 let crmAccount: Record<string, unknown> | null = null;
@@ -38,6 +49,8 @@ let lastPipelineStageCreateInput: Record<string, unknown> | null = null;
 let lastPipelineStageUpdateInput: Record<string, unknown> | null = null;
 let lastPipelineTopicCreateInput: Record<string, unknown> | null = null;
 let lastPipelineTopicUpdateInput: Record<string, unknown> | null = null;
+const facadePlans = new Map<string, StoredPlan>();
+const facadeEffects: Array<Record<string, unknown>> = [];
 
 function pageRecords<T>(
   records: T[],
@@ -105,6 +118,14 @@ mock.module("../../contacts.js", () => ({
           tasks: [],
           nextActions: [],
           facts: [],
+        }
+      : null,
+  getContactDetails: (contactRef: string) =>
+    crmContactProfile
+      ? {
+          contact: { id: contactRef, displayName: "Alice" },
+          policy: null,
+          platformIdentities: [],
         }
       : null,
   getAllContactAccessRecords: () =>
@@ -367,6 +388,50 @@ mock.module("../../contacts.js", () => ({
       priority: input.priority ?? "normal",
     };
   },
+  saveCrmFacadePlan: (record: StoredPlan) => facadePlans.set(record.planId, { ...record }),
+  pruneExpiredUnapprovedCrmFacadePlans: () => [],
+  getCrmFacadePlan: (planId: string) => facadePlans.get(planId) ?? null,
+  updateCrmFacadePlanState: (planId: string, state: string, updatedAt: string, appliedAt?: string) => {
+    const plan = facadePlans.get(planId);
+    if (plan) facadePlans.set(planId, { ...plan, state, updatedAt, appliedAt: appliedAt ?? plan.appliedAt });
+  },
+  recordCrmFacadeApprovalRequest: (planId: string, approvalJson: string, updatedAt: string) => {
+    const plan = facadePlans.get(planId);
+    if (
+      plan?.state !== "planned" ||
+      plan.approvalJson !== null ||
+      Date.parse(plan.expiresAt) <= Date.parse(updatedAt)
+    ) {
+      return false;
+    }
+    facadePlans.set(planId, { ...plan, approvalJson, updatedAt });
+    return true;
+  },
+  recordCrmFacadeApproval: (planId: string, expectedApprovalJson: string, approvalJson: string, updatedAt: string) => {
+    const plan = facadePlans.get(planId);
+    if (
+      plan?.state !== "planned" ||
+      plan.approvalJson !== expectedApprovalJson ||
+      Date.parse(plan.expiresAt) <= Date.parse(updatedAt)
+    ) {
+      return false;
+    }
+    facadePlans.set(planId, { ...plan, state: "approved", approvalJson, updatedAt });
+    return true;
+  },
+  claimCrmFacadePlanApply: (planId: string) => {
+    const plan = facadePlans.get(planId);
+    if (!plan || plan.state !== "approved" || Date.parse(plan.expiresAt) <= Date.now()) return false;
+    facadePlans.set(planId, { ...plan, state: "applying", updatedAt: new Date().toISOString() });
+    return true;
+  },
+  saveCrmFacadeEffect: (effect: Record<string, unknown>) => {
+    facadeEffects.push(effect);
+  },
+  updateCrmFacadeEffect: (effectId: string, update: Record<string, unknown>) => {
+    const effect = facadeEffects.find((candidate) => candidate.effectId === effectId);
+    if (effect) Object.assign(effect, update);
+  },
 }));
 
 const {
@@ -388,6 +453,7 @@ const {
 const { ContractError: CrmContractError, installUsageContract } = await import("../agent-contract.js");
 const { Command: CommanderCommand } = await import("commander");
 const { registerCommands } = await import("../registry.js");
+const { buildCrmFacadePlan, persistCrmFacadePlan } = await import("../../crm/facade.js");
 
 /**
  * Real commander tree for the `crm` group, wired exactly like `src/cli/index.ts`
@@ -439,6 +505,25 @@ function captureJsonError(run: () => unknown): { payload: Record<string, unknown
   let error: unknown;
   try {
     run();
+  } catch (caught) {
+    error = caught;
+  } finally {
+    console.log = original;
+  }
+  return { payload: JSON.parse(lines.join("\n")) as Record<string, unknown>, error };
+}
+
+async function captureJsonErrorAsync(
+  run: () => Promise<unknown>,
+): Promise<{ payload: Record<string, unknown>; error: unknown }> {
+  const original = console.log;
+  const lines: string[] = [];
+  console.log = (...args: unknown[]) => {
+    lines.push(args.map(String).join(" "));
+  };
+  let error: unknown;
+  try {
+    await run();
   } catch (caught) {
     error = caught;
   } finally {
@@ -609,6 +694,8 @@ describe("CRM commands", () => {
     lastPipelineStageUpdateInput = null;
     lastPipelineTopicCreateInput = null;
     lastPipelineTopicUpdateInput = null;
+    facadePlans.clear();
+    facadeEffects.length = 0;
   });
 
   it("lists CRM next actions as a paginated JSON surface", () => {
@@ -1564,6 +1651,142 @@ describe("CRM commands", () => {
     expect(error).toBeInstanceOf(CrmContractError);
     expect((error as InstanceType<typeof CrmContractError>).code).toBe("CRM_TASK_NOT_FOUND");
     expect(JSON.stringify(payload)).not.toContain("Follow up");
+  });
+
+  it("fails closed for uppercase primary-account before persisting a plan", () => {
+    scopeEnforced = true;
+    readableContactIds = new Set(["contact-1"]);
+    crmAccount = { id: "crm_acc_hidden", lifecycle: "lead" };
+    accountContactIds = ["contact-hidden"];
+
+    const { payload, error } = captureJsonError(() =>
+      planFacade({
+        operation: "contact.set",
+        target: "contact-1",
+        field: "PRIMARY-ACCOUNT",
+        value: "crm_acc_hidden",
+      }),
+    );
+
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+    expect(payload).toMatchObject({ success: false, op: "crm facade plan" });
+    expect(facadePlans.size).toBe(0);
+  });
+
+  it("fails closed for spaced primary-account before persisting a plan", () => {
+    scopeEnforced = true;
+    readableContactIds = new Set(["contact-1"]);
+    crmAccount = { id: "crm_acc_hidden", lifecycle: "lead" };
+    accountContactIds = ["contact-hidden"];
+
+    const { payload, error } = captureJsonError(() =>
+      planFacade({
+        operation: "contact.set",
+        target: "contact-1",
+        field: " primary-account ",
+        value: "crm_acc_hidden",
+      }),
+    );
+
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+    expect(payload).toMatchObject({ success: false, op: "crm facade plan" });
+    expect(facadePlans.size).toBe(0);
+  });
+
+  it("fails closed for uppercase primary-opportunity before persisting a plan", () => {
+    scopeEnforced = true;
+    readableContactIds = new Set(["contact-1"]);
+    crmOpportunity = { id: "crm_opp_hidden", valueCents: 500_000 };
+    opportunityContactRecords = [{ opportunityId: "crm_opp_hidden", contactId: "contact-hidden", role: "observer" }];
+
+    const { payload, error } = captureJsonError(() =>
+      planFacade({
+        operation: "contact.set",
+        target: "contact-1",
+        field: "PRIMARY-OPPORTUNITY",
+        value: "crm_opp_hidden",
+      }),
+    );
+
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("OPPORTUNITY_NOT_FOUND");
+    expect(payload).toMatchObject({ success: false, op: "crm facade plan" });
+    expect(facadePlans.size).toBe(0);
+  });
+
+  it("fails closed for spaced primary-opportunity before persisting a plan", () => {
+    scopeEnforced = true;
+    readableContactIds = new Set(["contact-1"]);
+    crmOpportunity = { id: "crm_opp_hidden", valueCents: 500_000 };
+    opportunityContactRecords = [{ opportunityId: "crm_opp_hidden", contactId: "contact-hidden", role: "observer" }];
+
+    const { payload, error } = captureJsonError(() =>
+      planFacade({
+        operation: "contact.set",
+        target: "contact-1",
+        field: " primary-opportunity ",
+        value: "crm_opp_hidden",
+      }),
+    );
+
+    expect(error).toBeInstanceOf(CrmContractError);
+    expect((error as InstanceType<typeof CrmContractError>).code).toBe("OPPORTUNITY_NOT_FOUND");
+    expect(payload).toMatchObject({ success: false, op: "crm facade plan" });
+    expect(facadePlans.size).toBe(0);
+  });
+
+  for (const clearValue of ["-", "null", "NULL", " null "]) {
+    it(`treats '${clearValue}' as a clear value without relational lookup`, () => {
+      scopeEnforced = true;
+      readableContactIds = new Set(["contact-1"]);
+      crmAccount = { id: "crm_acc_hidden", lifecycle: "lead" };
+      accountContactIds = ["contact-hidden"];
+
+      const plan = captureJson(() =>
+        planFacade({
+          operation: "contact.set",
+          target: "contact-1",
+          field: " PRIMARY-ACCOUNT ",
+          value: clearValue,
+        }),
+      ) as unknown as CrmFacadePlan;
+
+      expect(plan.arguments).toMatchObject({ field: "primary-account", value: null });
+      expect(facadePlans.size).toBe(1);
+    });
+  }
+
+  it("blocks a persisted hidden relationship plan in verify, recover, approve, and apply", async () => {
+    scopeEnforced = true;
+    readableContactIds = new Set(["contact-1"]);
+    crmAccount = { id: "crm_acc_hidden", lifecycle: "lead" };
+    accountContactIds = ["contact-hidden"];
+
+    const plan = buildCrmFacadePlan({
+      operation: "contact.set",
+      target: "contact-1",
+      field: "primary-account",
+      value: "crm_acc_hidden",
+    });
+    persistCrmFacadePlan(plan);
+
+    const verify = captureJsonError(() => new CrmFacadeCommands().verify(plan.planId, true));
+    expect(verify.error).toBeInstanceOf(CrmContractError);
+    expect((verify.error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+
+    const recover = captureJsonError(() => new CrmFacadeCommands().recover(plan.planId, true));
+    expect(recover.error).toBeInstanceOf(CrmContractError);
+    expect((recover.error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+
+    const approve = await captureJsonErrorAsync(() => new CrmFacadeCommands().approve(plan.planId, true));
+    expect(approve.error).toBeInstanceOf(CrmContractError);
+    expect((approve.error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
+
+    const apply = captureJsonError(() => new CrmFacadeCommands().apply(plan.planId, true));
+    expect(apply.error).toBeInstanceOf(CrmContractError);
+    expect((apply.error as InstanceType<typeof CrmContractError>).code).toBe("CRM_ACCOUNT_NOT_FOUND");
   });
 
   const hiddenFacadeCases: Array<{

@@ -171,7 +171,6 @@ const CONTACT_PRIORITY_VALUES = ["low", "normal", "high", "urgent"] as const;
 const CONTACT_FIELDS = [
   "lifecycle",
   "relationship-health",
-  "health",
   "priority",
   "score",
   "health-score",
@@ -186,6 +185,16 @@ const CONTACT_FIELDS = [
 
 type ResolvedTarget = { type: string; id: string; label: string; subject: unknown };
 
+export function normalizeCrmContactFieldName(field: string): string {
+  const normalized = field.trim().toLowerCase();
+  return normalized === "health" ? "relationship-health" : normalized;
+}
+
+export function isCrmContactClearValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return normalized === "-" || normalized === "null";
+}
+
 function normalizedEnum(value: string, field: string, acceptedValues: readonly string[]): string {
   const normalized = value.trim().toLowerCase();
   if (!acceptedValues.includes(normalized)) {
@@ -197,13 +206,8 @@ function normalizedEnum(value: string, field: string, acceptedValues: readonly s
   return normalized;
 }
 
-function isContactClearValue(value: string): boolean {
-  const normalized = value.trim().toLowerCase();
-  return normalized === "-" || normalized === "null";
-}
-
 function normalizeContactFieldValue(field: string, rawValue: string): unknown {
-  if (isContactClearValue(rawValue)) return null;
+  if (isCrmContactClearValue(rawValue)) return null;
   switch (field) {
     case "lifecycle":
       return normalizedEnum(rawValue, field, CONTACT_LIFECYCLE_VALUES);
@@ -324,8 +328,7 @@ function normalizeArguments(input: CrmFacadePlanInput, target: ResolvedTarget): 
     args.contact = contact.contact.id;
   }
   if (input.operation === "contact.set") {
-    const field = required(input.field, "field").toLowerCase();
-    const canonicalField = field === "health" ? "relationship-health" : field;
+    const canonicalField = normalizeCrmContactFieldName(required(input.field, "field"));
     args.field = canonicalField;
     args.value = normalizeContactFieldValue(canonicalField, required(input.value, "value"));
   }
@@ -359,7 +362,7 @@ function validateOperationInputs(input: CrmFacadePlanInput): void {
   }
   if (input.operation === "opportunity.move") required(input.stage, "stage");
   if (input.operation === "contact.set") {
-    const field = required(input.field, "field").toLowerCase();
+    const field = normalizeCrmContactFieldName(required(input.field, "field"));
     required(input.value, "value");
     if (!(CONTACT_FIELDS as readonly string[]).includes(field))
       throw new CrmFacadeResolutionError("UNSUPPORTED_CONTACT_FIELD", `Unsupported CRM contact field: ${field}`, {
