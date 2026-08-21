@@ -106,3 +106,26 @@ Na primeira normalização, o Biome também identificou a constante antiga
 `GIT_SHA_MASK` sem uso depois que a máscara passou a preservar prefixo e
 sufixo da declaração. A constante foi removida; o algoritmo e sua prova
 permanecem inalterados.
+
+## Nota de revisão — 2026-08-21 (pré-envio no Windows)
+
+O primeiro `git push` foi interrompido porque o hook completo permaneceu sem
+progresso visível em `bun test src/channels/`. A interrupção encerrou o processo
+Git, mas deixou dois processos Bun filhos órfãos, que continuaram consumindo CPU
+e disputando os bancos temporários das reproduções seguintes. Os dois processos
+foram identificados pelo comando e horário de criação e encerrados de forma
+direcionada; nenhum arquivo ou estado do produto foi removido.
+
+Em ambiente limpo, o teste filtrado de timeout do `auth.test` terminou da mesma
+forma na candidata e na `dev`: o setup isolado excedeu o limite de 5 segundos.
+A suíte completa também demonstrou flutuação na própria `dev`: uma execução
+terminou em 57 segundos com somente a falha Windows de separador no caminho de
+áudio; outra permaneceu no teste de timeout sem avançar. A candidata terminou
+quando executada sem os processos órfãos, mas acumulou timeouts de setup sob a
+carga local. O comportamento não foi atribuído à fundação e o hook local não é
+registrado como aprovado.
+
+A publicação deve usar o commit já aprovado pelos gates focados e pela revisão
+independente, com o hook local explicitamente dispensado apenas para acionar a
+CI Linux. Merge, pacote promovido e VPS continuam bloqueados até a CI do SHA
+exato concluir todos os jobs obrigatórios.
