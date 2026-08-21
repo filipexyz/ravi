@@ -30,3 +30,14 @@ Implementation findings specific to this wave:
   `projects list` would not print anyway.
 - Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
   `acceptedFlags`.
+
+The read path now has a dedicated facade because the previous service calls
+could initialize schemas while answering a question. A project read also joins
+links, tags, workflow summaries, nodes, and task lead data; opening each owner
+store would multiply hidden writes and produce snapshots from different
+moments. One read-only snapshot preserves the current output while making
+absence, ambiguity, and incompatible schemas explicit.
+
+`projects next` previously returned every enriched project and could exceed one
+megabyte. The default page of 20 preserves ranking while bounding context cost;
+callers can continue with the emitted next command.

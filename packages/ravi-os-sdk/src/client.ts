@@ -4461,6 +4461,8 @@ export class RaviClient {
     /** List projects as an operational next-work surface */
     next: async (options?: {
       fields?: string;
+      limit?: string;
+      offset?: string;
       status?: string;
       tag?: string;
     }): Promise<ProjectsNextReturn> => {

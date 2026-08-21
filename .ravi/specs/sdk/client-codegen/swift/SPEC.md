@@ -224,3 +224,18 @@ When added, streaming MUST follow `sdk/streaming` and expose SSE as
 - `ravi sdk swift check` detects drift in generated Swift files.
 - If `swift` is available, `swift build` passes for
   `packages/ravi-os-swift-sdk`.
+
+## Required nullable key presence amendment
+
+Generated `Codable` models MUST treat wire-key presence and Swift optional
+values as separate facts. A required nullable property MUST reject a missing
+key, accept JSON `null`, and re-encode that value with the key present. A truly
+optional missing property MUST remain omitted when its Swift value is `nil`.
+
+For a named compact-union model, a key required by the selected alternative
+MUST preserve present `null` through a decode/encode round-trip when nullable.
+If that selected field is not nullable, a present JSON `null` MUST fail strict
+decoding. An empty compact object and unknown keys MUST continue to fail.
+
+This behavior MUST originate in the generator. Generated files MUST NOT carry
+manual patches that disappear on the next `ravi sdk swift generate`.

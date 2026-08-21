@@ -33,9 +33,17 @@ Taxonomia de saída:
 - `2` erro de uso (flag/argumento inválido). O envelope traz `acceptedFlags`: corrija a chamada, não insista na mesma sintaxe.
 - `3` freio de escrita — não é erro. Nada foi gravado; o envelope traz `dryRun:true` e `plan` com exatamente o que seria feito. Revise o plano e repita com `--execute`.
 
-Onde o freio existe hoje: `projects tasks dispatch` e `projects workflows start` (disparam execução real de agente/workflow), `projects fixtures seed` (reseta e resemeia as fixtures — destrutivo) e `projects resources import` (ingestão em massa) são dry-run por default e exigem `--execute`. Todas as demais escritas gravam na hora, sem dry-run: `init`, `create`, `update`, `link`, `workflows attach`, `tasks create`, `tasks attach`, `resources add`. Nessas o freio é você: confira o alvo antes de rodar.
+Onde o freio existe hoje: `projects tasks dispatch` e `projects workflows start` (disparam execução real de agente/workflow) e `projects fixtures seed` (reseta e resemeia as fixtures — destrutivo) são dry-run por default e exigem `--execute`. As demais escritas, inclusive `projects resources import`, gravam na hora sem dry-run: `init`, `create`, `update`, `link`, `workflows attach`, `tasks create`, `tasks attach`, `resources add`, `resources import`. Nessas o freio é você: confira o alvo antes de rodar.
 
 Compact mode: `projects list`, `projects next` e `projects resources list` aceitam `--fields a,b,c` (ex.: `--fields slug,status`) — use em varredura para não arrastar o objeto inteiro de cada project.
+
+`projects next` retorna 20 entradas por padrão. Continue por
+`pagination.nextCommand` ou ajuste `--limit` e `--offset`; não presuma que a
+primeira página representa todos os projetos.
+
+Leituras ambíguas falham com `AMBIGUOUS_PROJECT_REF` ou
+`AMBIGUOUS_RESOURCE_REF`. Use o id canônico indicado nos candidatos; nunca
+escolha o primeiro resultado por conta própria.
 
 Help por operação: `ravi projects <op> --help` (idem nos grupos `workflows`, `tasks`, `resources`, `fixtures`) é enxuto; prefira-o ao help do domínio inteiro.
 
@@ -186,14 +194,13 @@ Adicionar um resource:
 ravi projects resources add ravi-projects-system <ravi.bot repo> --type worktree --role source
 ```
 
-Importar vários (freado: sem `--execute` é dry-run, exit 3):
+Importar vários (escrita imediata; revise todos os locators antes de executar):
 
 ```bash
 ravi projects resources import ravi-projects-system \
   --worktree <ravi.bot repo> \
   --url https://example.com/spec \
-  --group 120363424772797713@g.us \
-  --execute
+  --group 120363424772797713@g.us
 ```
 
 Listar e mostrar:
@@ -245,7 +252,7 @@ project -> workflow run -> node run -> task
 ## Fluxo Recomendado
 
 1. `projects init` para criar o namespace/contexto.
-2. `projects resources import --execute` para anexar substrato útil (sem `--execute` só mostra o plano).
+2. `projects resources import` para anexar substrato útil; a gravação é imediata.
 3. `projects workflows start --execute` para iniciar a trilha coordenada (sem `--execute` só mostra o plano).
 4. `projects tasks create|attach --dispatch` para abrir trabalho concreto no node.
 5. `projects status` ou `projects next` para decidir o próximo movimento.

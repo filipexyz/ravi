@@ -1038,32 +1038,98 @@ export const commandIssueReturnSchema = z
   })
   .passthrough();
 
-export const commandRecordReturnSchema = z
-  .object({
-    id: z.string(),
-    token: z.string(),
-    title: z.string().nullable(),
-    description: z.string().nullable(),
-    argumentHint: z.string().nullable(),
-    arguments: z.array(z.unknown()),
-    disabled: z.boolean(),
-    scope: z.string(),
-    path: z.string(),
-    relativePath: z.string(),
-    shadowedBy: z.string().nullable(),
-    shadows: z.array(z.string()),
-    issues: z.array(commandIssueReturnSchema),
-  })
-  .passthrough();
+const commandRecordReturnShape = {
+  id: z.string(),
+  token: z.string(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  argumentHint: z.string().nullable(),
+  arguments: z.array(z.unknown()),
+  disabled: z.boolean(),
+  scope: z.string(),
+  path: z.string(),
+  relativePath: z.string(),
+  shadowedBy: z.string().nullable(),
+  shadows: z.array(z.string()),
+  issues: z.array(commandIssueReturnSchema),
+};
 
-export const commandsListReturnSchema = pagedItemsReturnSchema
-  .extend({
-    agent: looseObjectSchema,
-    locations: looseObjectSchema,
-    commands: z.array(commandRecordReturnSchema),
-    issues: z.array(commandIssueReturnSchema),
+export const commandRecordReturnSchema = z.object(commandRecordReturnShape).passthrough();
+
+const commandsListIssueReturnSchema = z
+  .object({
+    level: z.enum(["error", "warning"]),
+    code: z.string(),
+    message: z.string(),
+    id: z.string().nullable(),
+    scope: z.string().nullable(),
+    path: z.string().nullable(),
   })
-  .passthrough();
+  .strict()
+  .meta({ title: "CommandsListIssue" });
+
+const commandsListItemShape = {
+  id: z.string(),
+  token: z.string(),
+  title: z.string().nullable(),
+  description: z.string().nullable(),
+  argumentHint: z.string().nullable(),
+  arguments: z.array(z.string()),
+  disabled: z.boolean(),
+  scope: z.string(),
+  path: z.string(),
+  relativePath: z.string(),
+  shadowedBy: z.string().nullable(),
+  shadows: z.array(z.string()),
+  issues: z.array(commandsListIssueReturnSchema),
+};
+
+const commandsListItemSubsetSchema = z.object(commandsListItemShape).partial().strict();
+const commandsListItemFields = new Set(Object.keys(commandsListItemShape));
+const projectedCommandRecordVariants = Object.entries(commandsListItemShape).map(([requiredKey, schema]) =>
+  z.object({ [requiredKey]: schema }).passthrough(),
+);
+const projectedCommandRecordReturnSchema = z
+  .intersection(
+    commandsListItemSubsetSchema,
+    z.union(projectedCommandRecordVariants as unknown as [ZodTypeAny, ZodTypeAny, ...ZodTypeAny[]]),
+  )
+  .superRefine((record, context) => {
+    const unknownFields = Object.keys(record).filter((field) => !commandsListItemFields.has(field));
+    if (unknownFields.length > 0) {
+      context.addIssue({
+        code: "custom",
+        message: `Unrecognized projected command fields: ${unknownFields.join(", ")}`,
+      });
+    }
+  })
+  .meta({ title: "CommandsListItem" });
+
+const commandsListAgentReturnSchema = z
+  .object({ id: z.string(), cwd: z.string() })
+  .strict()
+  .meta({ title: "CommandsListAgent" });
+const commandsListLocationsReturnSchema = z
+  .object({ agent: z.string().nullable(), global: z.string() })
+  .strict()
+  .meta({ title: "CommandsListLocations" });
+const commandsListFiltersReturnSchema = z.object({ tag: z.string() }).strict().meta({ title: "CommandsListFilters" });
+const commandsListPaginationReturnSchema = strictCliOffsetPaginationSchema
+  .strict()
+  .meta({ title: "CommandsListPagination" });
+
+export const commandsListReturnSchema = z
+  .object({
+    total: z.number(),
+    pagination: commandsListPaginationReturnSchema,
+    filters: commandsListFiltersReturnSchema.optional(),
+    agent: commandsListAgentReturnSchema,
+    locations: commandsListLocationsReturnSchema,
+    items: z.array(projectedCommandRecordReturnSchema),
+    commands: z.array(projectedCommandRecordReturnSchema),
+    issues: z.array(commandsListIssueReturnSchema),
+  })
+  .strict();
 
 export const commandShowReturnSchema = z
   .object({
@@ -1536,8 +1602,202 @@ export const workflowTaskCreateReturnSchema = z
   })
   .passthrough();
 
-export const projectDetailsReturnSchema = looseObjectSchema;
-export const projectResourceReturnSchema = looseObjectSchema;
+const projectStatusReturnSchema = z.enum(["active", "paused", "blocked", "done", "archived"]);
+const projectWorkflowStatusReturnSchema = z
+  .enum(["draft", "waiting", "ready", "running", "blocked", "done", "failed", "cancelled", "archived"])
+  .nullable();
+
+const projectTagBindingReturnSchema = z
+  .object({
+    id: z.string(),
+    tagId: z.string(),
+    tagSlug: z.string(),
+    assetType: z.literal("project"),
+    assetId: z.string(),
+    metadata: jsonObjectSchema.optional(),
+    source: z.string(),
+    createdBy: z.string().optional(),
+    updatedBy: z.string().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict()
+  .meta({ title: "ProjectTagBinding" });
+
+const projectRecordShape = {
+  id: z.string(),
+  slug: z.string(),
+  title: z.string(),
+  status: projectStatusReturnSchema,
+  summary: z.string(),
+  hypothesis: z.string(),
+  nextStep: z.string(),
+  lastSignalAt: z.number(),
+  ownerAgentId: z.string().optional(),
+  operatorSessionName: z.string().optional(),
+  createdBy: z.string().optional(),
+  createdByAgentId: z.string().optional(),
+  createdBySessionName: z.string().optional(),
+  archivedAt: z.number().optional(),
+  createdAt: z.number(),
+  updatedAt: z.number(),
+};
+
+const projectRecordReturnSchema = z.object(projectRecordShape).strict().meta({ title: "ProjectRecord" });
+
+const projectSummaryShape = {
+  ...projectRecordShape,
+  linkCount: z.number(),
+  tags: z.array(projectTagBindingReturnSchema).optional(),
+};
+
+const projectSummaryReturnSchema = z.object(projectSummaryShape).strict().meta({ title: "ProjectSummary" });
+
+function nonEmptyProjectProjection(shape: Record<string, ZodTypeAny>, title: string): ZodTypeAny {
+  const projectedShape = Object.fromEntries(
+    Object.entries(shape).map(([key, schema]) => [
+      key,
+      schema instanceof z.ZodOptional ? z.optional(z.nullable(schema.unwrap() as ZodTypeAny)) : z.optional(schema),
+    ]),
+  );
+  const subset = z.object(projectedShape).strict();
+  const variants = Object.entries(shape).map(([requiredKey, schema]) => {
+    const requiredSchema = schema instanceof z.ZodOptional ? z.nullable(schema.unwrap() as ZodTypeAny) : schema;
+    return z.object({ [requiredKey]: requiredSchema }).passthrough();
+  });
+  return z
+    .intersection(subset, z.union(variants as unknown as [ZodTypeAny, ZodTypeAny, ...ZodTypeAny[]]))
+    .meta({ title });
+}
+
+const projectedProjectSummaryReturnSchema = nonEmptyProjectProjection(projectSummaryShape, "ProjectedProjectSummary");
+
+const projectLinkReturnSchema = z
+  .object({
+    id: z.string(),
+    projectId: z.string(),
+    assetType: z.enum(["workflow", "session", "agent", "resource", "spec"]),
+    assetId: z.string(),
+    role: z.string().optional(),
+    metadata: jsonObjectSchema.optional(),
+    createdBy: z.string().optional(),
+    createdByAgentId: z.string().optional(),
+    createdBySessionName: z.string().optional(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict()
+  .meta({ title: "ProjectLink" });
+
+const projectWorkflowLinkReturnSchema = z
+  .object({
+    linkId: z.string(),
+    role: z.string().nullable(),
+    workflowRunId: z.string(),
+    workflowRunTitle: z.string().nullable(),
+    workflowRunStatus: projectWorkflowStatusReturnSchema,
+    workflowSpecId: z.string().nullable(),
+    workflowSpecTitle: z.string().nullable(),
+    createdAt: z.number(),
+    updatedAt: z.number(),
+  })
+  .strict()
+  .meta({ title: "ProjectWorkflowLink" });
+
+const projectWorkflowAggregateReturnSchema = z
+  .object({
+    total: z.number(),
+    missing: z.number(),
+    draft: z.number(),
+    waiting: z.number(),
+    ready: z.number(),
+    running: z.number(),
+    blocked: z.number(),
+    done: z.number(),
+    failed: z.number(),
+    cancelled: z.number(),
+    archived: z.number(),
+    primaryWorkflowRunId: z.string().nullable(),
+    primaryWorkflowTitle: z.string().nullable(),
+    primaryWorkflowStatus: projectWorkflowStatusReturnSchema,
+    focusedWorkflowRunId: z.string().nullable(),
+    focusedWorkflowTitle: z.string().nullable(),
+    focusedWorkflowStatus: projectWorkflowStatusReturnSchema,
+    focusedWorkflowRole: z.string().nullable(),
+    overallStatus: projectWorkflowStatusReturnSchema,
+  })
+  .strict()
+  .meta({ title: "ProjectWorkflowAggregate" });
+
+const projectOperationalReturnSchema = z
+  .object({
+    runtimeStatus: projectWorkflowStatusReturnSchema,
+    workflowCount: z.number(),
+    hottestWorkflowRunId: z.string().nullable(),
+    hottestWorkflowTitle: z.string().nullable(),
+    hottestWorkflowStatus: projectWorkflowStatusReturnSchema,
+    hottestNodeRunId: z.string().nullable(),
+    hottestNodeKey: z.string().nullable(),
+    hottestNodeLabel: z.string().nullable(),
+    hottestNodeKind: z.enum(["task", "gate", "approval"]).nullable(),
+    hottestNodeRequirement: z.enum(["required", "optional"]).nullable(),
+    hottestNodeReleaseMode: z.enum(["auto", "manual"]).nullable(),
+    hottestNodeStatus: z
+      .enum([
+        "pending",
+        "awaiting_release",
+        "ready",
+        "running",
+        "blocked",
+        "done",
+        "failed",
+        "skipped",
+        "cancelled",
+        "archived",
+      ])
+      .nullable(),
+    hottestTaskId: z.string().nullable(),
+    hottestTaskTitle: z.string().nullable(),
+    hottestTaskStatus: z.string().nullable(),
+    hottestTaskProgress: z.number().nullable(),
+    hottestTaskPriority: z.enum(["low", "normal", "high", "urgent"]).nullable(),
+  })
+  .strict()
+  .meta({ title: "ProjectOperational" });
+
+export const projectDetailsReturnSchema = z
+  .object({
+    project: projectRecordReturnSchema,
+    tags: z.array(projectTagBindingReturnSchema),
+    links: z.array(projectLinkReturnSchema),
+    linkedWorkflows: z.array(projectWorkflowLinkReturnSchema),
+    workflowAggregate: projectWorkflowAggregateReturnSchema.nullable(),
+    operational: projectOperationalReturnSchema.nullable(),
+  })
+  .strict()
+  .meta({ title: "ProjectDetails" });
+
+const projectResourceShape = {
+  ...projectLinkReturnSchema.shape,
+  assetType: z.literal("resource"),
+  resourceType: z
+    .enum(["repo", "worktree", "notion_page", "notion_database", "file", "url", "group", "contact"])
+    .nullable(),
+  locator: z.string(),
+  label: z.string().nullable(),
+};
+
+export const projectResourceReturnSchema = z.object(projectResourceShape).strict().meta({ title: "ProjectResource" });
+
+const projectedProjectResourceReturnSchema = nonEmptyProjectProjection(
+  projectResourceShape,
+  "ProjectedProjectResource",
+);
+
+const projectListFiltersReturnSchema = z
+  .object({ status: projectStatusReturnSchema.nullable(), tagSlug: z.string().nullable() })
+  .strict()
+  .meta({ title: "ProjectListFilters" });
 
 export const projectInitReturnSchema = z
   .object({
@@ -1548,18 +1808,43 @@ export const projectInitReturnSchema = z
 
 export const projectsListReturnSchema = pagedItemsReturnSchema
   .extend({
-    filters: looseObjectSchema,
-    projects: z.array(looseObjectSchema),
+    filters: projectListFiltersReturnSchema,
+    items: z.array(projectedProjectSummaryReturnSchema),
+    projects: z.array(projectedProjectSummaryReturnSchema),
   })
-  .passthrough();
+  .strict();
 
 export const projectsNextReturnSchema = z
   .object({
     total: z.number(),
-    filters: looseObjectSchema,
-    projects: z.array(looseObjectSchema),
+    pagination: strictCliOffsetPaginationSchema.strict(),
+    filters: projectListFiltersReturnSchema,
+    items: z.array(
+      nonEmptyProjectProjection(
+        {
+          project: projectSummaryReturnSchema,
+          links: z.array(projectLinkReturnSchema),
+          linkedWorkflows: z.array(projectWorkflowLinkReturnSchema),
+          workflowAggregate: projectWorkflowAggregateReturnSchema.nullable(),
+          operational: projectOperationalReturnSchema.nullable(),
+        },
+        "ProjectedProjectStatusEntry",
+      ),
+    ),
+    projects: z.array(
+      nonEmptyProjectProjection(
+        {
+          project: projectSummaryReturnSchema,
+          links: z.array(projectLinkReturnSchema),
+          linkedWorkflows: z.array(projectWorkflowLinkReturnSchema),
+          workflowAggregate: projectWorkflowAggregateReturnSchema.nullable(),
+          operational: projectOperationalReturnSchema.nullable(),
+        },
+        "ProjectedProjectStatusEntryAlias",
+      ),
+    ),
   })
-  .passthrough();
+  .strict();
 
 export const projectWorkflowOperationReturnSchema = z
   .object({
@@ -1578,9 +1863,10 @@ export const projectTaskOperationReturnSchema = z
 
 export const projectResourcesListReturnSchema = pagedItemsReturnSchema
   .extend({
-    resources: z.array(projectResourceReturnSchema),
+    items: z.array(projectedProjectResourceReturnSchema),
+    resources: z.array(projectedProjectResourceReturnSchema),
   })
-  .passthrough();
+  .strict();
 
 export const projectResourcesImportReturnSchema = z
   .object({

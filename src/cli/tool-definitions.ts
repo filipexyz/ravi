@@ -3,6 +3,7 @@
  */
 
 import { extractTools, type ExportedTool } from "./tools-export.js";
+import type { CommandSafetyMetadata } from "./decorators.js";
 import { setCliToolsInitializer } from "./tool-registry.js";
 import { extractOptionName, isBooleanOption } from "./utils.js";
 
@@ -15,6 +16,11 @@ type CommandClass = new () => object;
 export interface SdkToolDefinition {
   name: string;
   description: string;
+  operationKind: CommandSafetyMetadata["operationKind"];
+  effectClass: CommandSafetyMetadata["effectClass"];
+  risk: CommandSafetyMetadata["risk"];
+  requiresConfirmation: boolean;
+  classificationSource: CommandSafetyMetadata["classificationSource"];
   inputSchema: {
     type: "object";
     properties: Record<string, { type: string; description?: string }>;
@@ -97,9 +103,11 @@ export function getCliToolsByGroup(): Record<string, string[]> {
 export function createSdkTools(classes: CommandClass[], options: CreateSdkToolsOptions = {}): SdkToolDefinition[] {
   const { filter } = options;
 
-  // Use cache if using all classes, otherwise extract fresh
-  const allClasses = getAllCommandClasses();
-  let tools = classes === allClasses ? getCachedTools() : extractTools(classes);
+  // Do not initialize the complete command catalog merely to compare array
+  // identity. Focused callers and tests must remain proportional to the command
+  // classes they supplied. The cache is used only after getAllCommandClasses()
+  // has already established the canonical array.
+  let tools = _commandClasses !== null && classes === _commandClasses ? getCachedTools() : extractTools(classes);
 
   if (filter) {
     const regex = typeof filter === "string" ? new RegExp(filter) : filter;
@@ -147,6 +155,11 @@ function toSdkDefinition(tool: ExportedTool): SdkToolDefinition {
   return {
     name: tool.name,
     description: tool.description,
+    operationKind: tool.metadata.safety.operationKind,
+    effectClass: tool.metadata.safety.effectClass,
+    risk: tool.metadata.safety.risk,
+    requiresConfirmation: tool.metadata.safety.requiresConfirmation,
+    classificationSource: tool.metadata.safety.classificationSource,
     inputSchema: { type: "object", properties, required },
   };
 }

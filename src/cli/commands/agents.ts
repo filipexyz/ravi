@@ -172,6 +172,37 @@ type AgentJsonSummary = Omit<AgentConfig, "modelPresetId"> & {
   tags: TagBinding[];
 };
 
+const AGENT_LIST_FIELDS = [
+  "id",
+  "name",
+  "cwd",
+  "model",
+  "effort",
+  "provider",
+  "modelPresetId",
+  "dmScope",
+  "systemPromptAppend",
+  "debounceMs",
+  "groupDebounceMs",
+  "matrixAccount",
+  "heartbeat",
+  "settingSources",
+  "memoryModel",
+  "specMode",
+  "contactScope",
+  "allowedSessions",
+  "mode",
+  "remote",
+  "remoteUser",
+  "defaults",
+  "isDefault",
+  "effectiveProvider",
+  "effectiveModel",
+  "modelSource",
+  "modelPresetVersion",
+  "tags",
+] as const satisfies ReadonlyArray<keyof AgentJsonSummary>;
+
 function printJson(payload: unknown): void {
   console.log(JSON.stringify(payload, null, 2));
 }
@@ -560,7 +591,7 @@ export class AgentsCommands {
       total: page.total,
       options: ["--tag", tagSlug?.trim() || null],
     });
-    const projectedRows = pickFields(agentRows, fields);
+    const projectedRows = pickFields(agentRows, fields, { acceptedFields: AGENT_LIST_FIELDS });
     const payload = {
       total: page.total,
       pagination,

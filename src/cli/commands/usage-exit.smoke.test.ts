@@ -106,6 +106,43 @@ describe("usage exit taxonomy smoke", () => {
     });
   });
 
+  it("rejects unknown fields with the stable agents field set even when state is empty", () => {
+    const result = runCli(["agents", "list", "--fields", "id,unknown", "--json"], {
+      RAVI_AGENT_ID: undefined,
+    });
+
+    expect(result.status).toBe(2);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      success: false,
+      op: "agents list",
+      error: {
+        code: "USAGE_ERROR",
+        message: "--fields contains one or more unknown fields.",
+        acceptedFields: expect.arrayContaining(["id", "cwd", "effectiveModel"]),
+      },
+    });
+  });
+
+  it("returns usage exit 2 for invalid shared pagination values", () => {
+    const cases = [
+      ["agents", "list", "--limit", "many", "--json"],
+      ["agents", "list", "--limit", "501", "--json"],
+      ["agents", "list", "--offset", "-1", "--json"],
+    ];
+
+    for (const args of cases) {
+      const result = runCli(args, { RAVI_AGENT_ID: undefined });
+      expect(result.status).toBe(2);
+      expect(result.stderr).toBe("");
+      expect(JSON.parse(result.stdout)).toMatchObject({
+        success: false,
+        op: "agents list",
+        error: { code: "USAGE_ERROR", retryable: false },
+      });
+    }
+  });
+
   it("renders migrated handler failures as canonical JSON at the real process boundary", () => {
     const cases = [
       {

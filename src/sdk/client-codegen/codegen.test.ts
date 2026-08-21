@@ -13,6 +13,7 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
+import { commandsListReturnSchema, projectsListReturnSchema } from "../../cli/commands/operational-return-schemas.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { compareSdkSource, computeRegistryHash, emitAll } from "./index.js";
 
@@ -67,6 +68,24 @@ class CrmCommands {
 class CrmAccountCommands {
   @Command({ name: "create", description: "Create account" })
   create(@Arg("name") _name: string) {
+    return {};
+  }
+}
+
+@Group({ name: "commands", description: "Ravi commands", scope: "open" })
+class CommandsContractCommands {
+  @Command({ name: "list", description: "List Ravi commands" })
+  @Returns(commandsListReturnSchema)
+  list() {
+    return {};
+  }
+}
+
+@Group({ name: "projects", description: "Ravi projects", scope: "open" })
+class ProjectsContractCommands {
+  @Command({ name: "list", description: "List Ravi projects" })
+  @Returns(projectsListReturnSchema)
+  list() {
     return {};
   }
 }
@@ -146,6 +165,37 @@ describe("client-codegen :: emitAll", () => {
     expect(output.types).toMatch(/kind: string;/);
   });
 
+  it("keeps commands projected rows non-empty and fully typed in generated TypeScript", () => {
+    const output = emitAll(buildRegistry([CommandsContractCommands]), { version: FIXED_VERSION });
+
+    expect(output.types).toContain("export type CommandsListReturn = {");
+    expect(output.types).toContain("arguments?: string[];");
+    expect(output.types).toContain("issues?: Array<{");
+    expect(output.types).not.toContain("RaviJSON");
+    expect(output.types).not.toContain("Record<string, unknown>");
+    expect(output.types).not.toContain("[k: string]: unknown");
+    expect(output.schemas).toContain('"title": "CommandsListItem"');
+    expect(
+      output.schemas.match(
+        /"required": \[\s+"(?:id|token|title|description|argumentHint|arguments|disabled|scope|path|relativePath|shadowedBy|shadows|issues)"\s+\]/g,
+      )?.length,
+    ).toBeGreaterThanOrEqual(13);
+  });
+
+  it("keeps project projections non-empty and typed in generated TypeScript", () => {
+    const output = emitAll(buildRegistry([ProjectsContractCommands]), { version: FIXED_VERSION });
+
+    expect(output.types).toContain("export type ProjectsListReturn = {");
+    expect(output.types).toContain("slug?: string;");
+    expect(output.types).toContain("linkCount?: number;");
+    expect(output.types).toContain("slug: string;");
+    expect(output.types).toMatch(/ownerAgentId\?: string \| null;/);
+    expect(output.types).toMatch(/ownerAgentId: string \| null;/);
+    expect(output.types).not.toContain("items: Array<Record<string, unknown>>");
+    expect(output.schemas).toContain('"title": "ProjectedProjectSummary"');
+    expect(output.schemas).toMatch(/"ownerAgentId": \{[\s\S]{0,180}"type": "null"/);
+  });
+
   it("falls back to unknown for return when no @Returns", () => {
     const { output } = emitMockSdk();
     expect(output.types).toContain("export type ContextCredentialsListReturn = unknown;");
@@ -219,7 +269,7 @@ describe("client-codegen :: compareSdkSource", () => {
     expect(result.equal).toBe(false);
   });
 
-  it("requires byte equality for client.ts / schemas.ts / types.ts", () => {
+  it("requires source equality for client.ts / schemas.ts / types.ts", () => {
     const a = emitWith({});
     expect(compareSdkSource("client.ts", a.client, a.client).equal).toBe(true);
     expect(compareSdkSource("schemas.ts", a.schemas, a.schemas).equal).toBe(true);
@@ -228,7 +278,7 @@ describe("client-codegen :: compareSdkSource", () => {
     const mutatedClient = `${a.client}// drift\n`;
     const clientResult = compareSdkSource("client.ts", mutatedClient, a.client);
     expect(clientResult.equal).toBe(false);
-    expect(clientResult.reason).toMatch(/byte mismatch/);
+    expect(clientResult.reason).toMatch(/source mismatch/);
     expect(clientResult.reason).not.toMatch(/GIT_SHA/);
 
     const mutatedSchemas = a.schemas.replace("export const", "export  const");
@@ -238,10 +288,32 @@ describe("client-codegen :: compareSdkSource", () => {
     expect(compareSdkSource("types.ts", mutatedTypes, a.types).equal).toBe(false);
   });
 
+  it("ignores checkout line-ending conversion without hiding source drift", () => {
+    const a = emitWith({});
+    const crlfClient = a.client.replace(/\n/g, "\r\n");
+    const crlfVersion = a.version.replace(/\n/g, "\r\n");
+
+    expect(compareSdkSource("client.ts", crlfClient, a.client).equal).toBe(true);
+    expect(compareSdkSource("version.ts", crlfVersion, a.version).equal).toBe(true);
+    expect(compareSdkSource("client.ts", `${crlfClient}// real drift\r\n`, a.client).equal).toBe(false);
+  });
+
   it("ignores GIT_SHA even when stored has the literal `unknown` placeholder", () => {
     const a = emitWith({ gitSha: "unknown" });
     const b = emitWith({ gitSha: "5e17fe5608f7" });
     expect(compareSdkSource("version.ts", a.version, b.version).equal).toBe(true);
+  });
+
+  it("rejects source appended to the GIT_SHA declaration line", () => {
+    const generated = emitWith({});
+    const storedWithAppendedSource = generated.version.replace(
+      /^(export const GIT_SHA = .*;)$/m,
+      "$1 void globalThis;",
+    );
+
+    const result = compareSdkSource("version.ts", storedWithAppendedSource, generated.version);
+    expect(result.equal).toBe(false);
+    expect(result.reason).toMatch(/source mismatch/);
   });
 });
 

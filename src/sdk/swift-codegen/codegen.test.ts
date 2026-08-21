@@ -1,7 +1,12 @@
 import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
+import { commandsListReturnSchema, projectsListReturnSchema } from "../../cli/commands/operational-return-schemas.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { compareSwiftSdkSource, computeRegistryHash, emitAllSwift } from "./index.js";
 import { jsonSchemaToSwift } from "./json-schema-to-swift.js";
@@ -18,6 +23,19 @@ class ArtifactsCommands {
   @Returns.binary()
   blob(@Arg("id") _id: string) {
     return new Response("x");
+  }
+
+  @Command({ name: "nullable", description: "Exercise nullable return fields" })
+  @Returns(
+    z.object({
+      requiredNullable: z.string().nullable(),
+      optionalNullable: z.string().nullable().optional(),
+      optionalValue: z.string().optional(),
+      requiredValue: z.string(),
+    }),
+  )
+  nullable() {
+    return { requiredNullable: null, requiredValue: "x" };
   }
 }
 
@@ -100,6 +118,48 @@ class CollisionCommands {
   }
 }
 
+@Group({ name: "commands", description: "Ravi commands", scope: "open" })
+class CommandsContractCommands {
+  @Command({ name: "list", description: "List Ravi commands" })
+  @Returns(commandsListReturnSchema)
+  list() {
+    return {};
+  }
+}
+
+@Group({ name: "projects", description: "Ravi projects", scope: "open" })
+class ProjectsContractCommands {
+  @Command({ name: "list", description: "List Ravi projects" })
+  @Returns(projectsListReturnSchema)
+  list() {
+    return {};
+  }
+}
+
+const projectedNullableItemSchema = z
+  .intersection(
+    z
+      .object({
+        optionalNullable: z.string().nullable().optional(),
+        requiredValue: z.string().optional(),
+      })
+      .strict(),
+    z.union([
+      z.object({ optionalNullable: z.string().nullable() }).passthrough(),
+      z.object({ requiredValue: z.string() }).passthrough(),
+    ]),
+  )
+  .meta({ title: "ProjectedNullableItem" });
+
+@Group({ name: "projection-tests", description: "Projection codec tests", scope: "open" })
+class ProjectionContractCommands {
+  @Command({ name: "list", description: "List projected values" })
+  @Returns(z.object({ items: z.array(projectedNullableItemSchema) }))
+  list() {
+    return { items: [] };
+  }
+}
+
 const FIXED_VERSION = {
   sdkVersion: "9.9.9",
   registryHash: "sha256:fixed",
@@ -109,6 +169,14 @@ const FIXED_VERSION = {
 function emitMockSwiftSdk() {
   const registry = buildRegistry([ArtifactsCommands, ContextCredentialsCommands]);
   return { registry, output: emitAllSwift(registry, { version: FIXED_VERSION }) };
+}
+
+function extractSwiftDeclaration(source: string, marker: string): string {
+  const start = source.indexOf(marker);
+  const end = source.indexOf("\n\npublic ", start + marker.length);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  return source.slice(start, end);
 }
 
 describe("swift-codegen :: emitAllSwift", () => {
@@ -166,11 +234,135 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.client).toContain("return try await transport.callBinary");
   });
 
+  it("emits typed commands projection models without RaviJSON", () => {
+    const output = emitAllSwift(buildRegistry([CommandsContractCommands]), { version: FIXED_VERSION });
+
+    expect(output.types).toContain("public struct CommandsListItem: Codable, Sendable");
+    expect(output.types).toContain("public var arguments: [String]?");
+    expect(output.types).toContain("public var issues: [CommandsListIssue]?");
+    expect(output.types).toContain("CommandsListItem requires at least one field.");
+    expect(output.types).toContain("CommandsListItem contains an unknown field.");
+    expect(output.types).toContain("public var items: [CommandsListItem]");
+    expect(output.types).toContain("public var agent: CommandsListAgent");
+    expect(output.types).not.toContain("RaviJSON");
+  });
+
+  it("emits typed non-empty project projection models", () => {
+    const output = emitAllSwift(buildRegistry([ProjectsContractCommands]), { version: FIXED_VERSION });
+
+    expect(output.types).toContain("public struct ProjectedProjectSummary: Codable, Sendable");
+    expect(output.types).toContain("public var slug: String?");
+    expect(output.types).toContain("public var ownerAgentId: String?");
+    expect(output.types).toContain("ProjectedProjectSummary requires at least one field.");
+    expect(output.types).toContain("ProjectedProjectSummary contains an unknown field.");
+    expect(output.types).toContain("public var items: [ProjectedProjectSummary]");
+    expect(output.types).not.toContain("public var items: [RaviJSON]");
+    expect(output.schemas).toMatch(/"ownerAgentId": \{[\s\S]{0,180}"type": "null"/);
+    expect(output.types).toContain('self._raviPresentKeys.contains("ownerAgentId")');
+    expect(output.types).toContain("try container.encodeNil(forKey: .ownerAgentId)");
+    expect(output.types).toContain("if container.contains(.slug) {");
+    expect(output.types).toContain("self.slug = try container.decode(String.self, forKey: .slug)");
+  });
+
   it("emits Swift return structs for top-level object schemas", () => {
     const { output } = emitMockSwiftSdk();
     expect(output.types).toContain("public struct ArtifactsShowReturn: Codable, Sendable");
     expect(output.types).toContain("public var id: String");
     expect(output.types).toContain("public var links: [RaviJSON]");
+  });
+
+  it("distinguishes required nullable return keys from truly optional keys", () => {
+    const { output } = emitMockSwiftSdk();
+
+    expect(output.types).toContain("public var requiredNullable: String?");
+    expect(output.types).toContain("guard container.contains(.requiredNullable) else {");
+    expect(output.types).toContain(
+      "self.requiredNullable = try container.decodeIfPresent(String.self, forKey: .requiredNullable)",
+    );
+    expect(output.types).toContain("try container.encodeNil(forKey: .requiredNullable)");
+    expect(output.types).not.toContain("guard container.contains(.optionalNullable) else {");
+    expect(output.types).not.toContain("guard container.contains(.optionalValue) else {");
+    expect(output.types).toContain("try container.encodeIfPresent(self.optionalNullable, forKey: .optionalNullable)");
+    expect(output.types).toContain("try container.encodeIfPresent(self.optionalValue, forKey: .optionalValue)");
+  });
+
+  it("preserves selected nullable projection keys and rejects invalid selected values", () => {
+    const output = emitAllSwift(buildRegistry([ProjectionContractCommands]), { version: FIXED_VERSION });
+
+    expect(output.types).toContain("public struct ProjectedNullableItem: Codable, Sendable");
+    expect(output.types).toContain("ProjectedNullableItem requires at least one field.");
+    expect(output.types).toContain('self._raviPresentKeys.contains("optionalNullable")');
+    expect(output.types).toContain("try container.encodeNil(forKey: .optionalNullable)");
+    expect(output.types).toContain("if container.contains(.requiredValue) {");
+    expect(output.types).toContain("self.requiredValue = try container.decode(String.self, forKey: .requiredValue)");
+  });
+
+  it("round-trips projection key presence when a Swift compiler is available", () => {
+    const output = emitAllSwift(buildRegistry([ProjectionContractCommands]), { version: FIXED_VERSION });
+    const codingKey = extractSwiftDeclaration(output.types, "private struct RaviGeneratedCodingKey: CodingKey {");
+    const generatedStruct = extractSwiftDeclaration(
+      output.types,
+      "public struct ProjectedNullableItem: Codable, Sendable {",
+    );
+
+    const compilerProbe = spawnSync("swiftc", ["--version"], { encoding: "utf8" });
+    if (compilerProbe.status !== 0) return;
+
+    const directory = mkdtempSync(join(tmpdir(), "ravi-swift-projection-"));
+    const sourcePath = join(directory, "main.swift");
+    const executablePath = join(directory, process.platform === "win32" ? "roundtrip.exe" : "roundtrip");
+    const source = `import Foundation
+
+${codingKey}
+
+${generatedStruct}
+
+let decoder = JSONDecoder()
+do {
+  _ = try decoder.decode(ProjectedNullableItem.self, from: Data(#"{}"#.utf8))
+  fatalError("empty projection was accepted")
+} catch DecodingError.dataCorrupted(_) {
+  // Expected: a projection must select at least one field.
+}
+
+let decodedNull = try decoder.decode(
+  ProjectedNullableItem.self,
+  from: Data(#"{"optionalNullable":null}"#.utf8)
+)
+let encodedNull = try JSONEncoder().encode(decodedNull)
+let nullObject = try JSONSerialization.jsonObject(with: encodedNull) as! [String: Any]
+guard nullObject["optionalNullable"] is NSNull else { fatalError("selected null key was omitted") }
+
+let decodedValue = try decoder.decode(
+  ProjectedNullableItem.self,
+  from: Data(#"{"requiredValue":"x"}"#.utf8)
+)
+let encodedValue = try JSONEncoder().encode(decodedValue)
+let valueObject = try JSONSerialization.jsonObject(with: encodedValue) as! [String: Any]
+guard valueObject["requiredValue"] as? String == "x" else { fatalError("required value changed") }
+guard valueObject["optionalNullable"] == nil else { fatalError("absent optional key was emitted") }
+
+do {
+  _ = try decoder.decode(ProjectedNullableItem.self, from: Data(#"{"requiredValue":null}"#.utf8))
+  fatalError("null was accepted for a non-null selected field")
+} catch DecodingError.valueNotFound(_, _) {
+  // Expected: a selected non-null field must contain a value.
+}
+`;
+
+    try {
+      writeFileSync(sourcePath, source, "utf8");
+      const compilation = spawnSync("swiftc", [sourcePath, "-o", executablePath], { encoding: "utf8" });
+      if (compilation.status !== 0) {
+        throw new Error(`swiftc failed:\n${compilation.stdout}\n${compilation.stderr}`);
+      }
+      const execution = spawnSync(executablePath, [], { encoding: "utf8" });
+      if (execution.status !== 0) {
+        throw new Error(`Swift round-trip failed:\n${execution.stdout}\n${execution.stderr}`);
+      }
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
 
   it("disambiguates property names that normalize to the same Swift identifier", () => {

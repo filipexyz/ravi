@@ -36,6 +36,7 @@ import { configureCliLogging } from "./logging.js";
 import { spawnDirectTui } from "./tui-launcher.js";
 import { maybeRunAppAliasRoute } from "../apps/router.js";
 import { buildRootOperationalHelp } from "../runtime/runtime-operational-context.js";
+import { CliTerminationRequest, terminateCliProcess, writeProcessStdout } from "./process-output.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkg = JSON.parse(readFileSync(join(__dirname, "../../package.json"), "utf-8"));
@@ -47,11 +48,6 @@ const program = new Command();
 
 function isRootVersionRequest(args: string[]): boolean {
   return args.length === 1 && (args[0] === "--version" || args[0] === "-V");
-}
-
-if (isRootVersionRequest(process.argv.slice(2))) {
-  console.log(pkg.version);
-  process.exit(0);
 }
 
 program
@@ -321,6 +317,9 @@ program
 installRootUsageContract(program);
 
 void bootstrapCli().catch(async (error: unknown) => {
+  if (error instanceof CliTerminationRequest) {
+    return terminateCliProcess(error.exitCode);
+  }
   if (error instanceof ContractError) {
     // Contract helpers render once and throw. Audit the semantic outcome before
     // preserving the process taxonomy (1 failure · 2 usage · 3 blocked).
@@ -337,8 +336,7 @@ void bootstrapCli().catch(async (error: unknown) => {
         closeLazyConnection: true,
       });
     }
-    process.exitCode = error.exitCode;
-    return;
+    return terminateCliProcess(error.exitCode);
   }
   const contractError = unexpectedErrorToContractError("cli bootstrap");
   renderContractError(contractError, process.argv.includes("--json"));
@@ -352,17 +350,22 @@ void bootstrapCli().catch(async (error: unknown) => {
     status: "completed",
     closeLazyConnection: true,
   });
-  process.exitCode = contractError.exitCode;
+  return terminateCliProcess(contractError.exitCode);
 });
 
 async function bootstrapCli(): Promise<void> {
+  if (isRootVersionRequest(process.argv.slice(2))) {
+    await writeProcessStdout(`${pkg.version}\n`);
+    return terminateCliProcess(0);
+  }
+
   if (await maybeRunManagedRuntimeRebindFromEnv()) return;
 
   const handledByAppAlias = await maybeRunAppAliasRoute(process.argv.slice(2), {
     staticRootCommands: rootCommandNames(program),
   });
   if (handledByAppAlias) {
-    process.exit(process.exitCode ?? 0);
+    return terminateCliProcess(process.exitCode ?? 0);
   }
 
   await program.parseAsync();

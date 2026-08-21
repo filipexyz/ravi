@@ -12,6 +12,7 @@ import {
   getArgsMetadata,
   getOptionsMetadata,
   getScopeMetadata,
+  shouldEmitCommandAudit,
   type CommandAccessOptions,
   type CommandMetadata,
   type ScopeType,
@@ -41,6 +42,7 @@ import {
   type RemoteDispatchResult,
   type RemoteGatewayConfig,
 } from "./remote-gateway.js";
+import { terminateCliProcess, writeProcessStdout } from "./process-output.js";
 
 type CommandClass = new () => object;
 
@@ -88,6 +90,7 @@ function resolveCommandPath(
  */
 export function registerCommands(program: CommanderCommand, classes: CommandClass[]): void {
   const seen = new Map<string, { cls: CommandClass; method: string }>();
+  const bareHelpGroups = new Map<string, CommanderCommand>();
   for (const cls of classes) {
     const groupMeta = getGroupMetadata(cls);
     if (!groupMeta) continue;
@@ -117,6 +120,9 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
     // Support nested groups via dot notation
     const segments = groupMeta.name.split(".");
     const group = resolveCommandPath(program, segments, groupMeta.description, groupMeta.aliases);
+    if (groupMeta.showHelpOnBare) {
+      bareHelpGroups.set(groupMeta.name, group);
+    }
 
     const instance = new cls();
 
@@ -131,6 +137,12 @@ export function registerCommands(program: CommanderCommand, classes: CommandClas
       const effectiveScope: ScopeType = scopeMap.get(cmdMeta.method) ?? groupMeta.scope ?? "admin";
       registerCommand(group, instance, cmdMeta, toolGroupName, effectiveScope, commandAccessMap.get(cmdMeta.method));
     }
+  }
+
+  for (const [groupPath, group] of bareHelpGroups) {
+    // A dotted group can share its node with a direct parent command. Preserve
+    // that direct handler regardless of class registration order.
+    if (!seen.has(groupPath)) group.action(() => group.outputHelp());
   }
 }
 
@@ -230,7 +242,7 @@ function registerCommand(
     } catch (error) {
       if (!(error instanceof ContractError)) throw error;
       renderContractError(error, input.json === true);
-      process.exit(error.exitCode);
+      return terminateCliProcess(error.exitCode);
     }
 
     // The target gateway owns authorization for its context key. Performing a
@@ -247,6 +259,7 @@ function registerCommand(
       return;
     }
 
+    const auditEnabled = shouldEmitCommandAudit(access, toolName);
     const accessResult = enforceCliCommandAuthorization({
       group: groupName,
       command: cmdMeta.name,
@@ -262,19 +275,22 @@ function registerCommand(
         accessResult.errorMessage,
       );
       renderContractError(contractError, input.json === true);
-      await emitCliAuditEvent({
-        group: groupName,
-        name: cmdMeta.name,
-        tool: toolName,
-        input: auditInput,
-        outcome: "denied",
-        exitCode: 1,
-        errorCode: "PERMISSION_DENIED",
-        status: "completed",
-        closeLazyConnection: false,
-      });
-      const { flushAuditAndExit } = await import("../permissions/scope.js");
-      await flushAuditAndExit(1);
+      if (auditEnabled) {
+        await emitCliAuditEvent({
+          group: groupName,
+          name: cmdMeta.name,
+          tool: toolName,
+          input: auditInput,
+          outcome: "denied",
+          exitCode: 1,
+          errorCode: "PERMISSION_DENIED",
+          status: "completed",
+          closeLazyConnection: false,
+        });
+        const { flushAuditAndExit } = await import("../permissions/scope.js");
+        await flushAuditAndExit(1);
+      }
+      return terminateCliProcess(1);
     }
 
     // Execute and emit single event with input + output
@@ -293,7 +309,7 @@ function registerCommand(
           renderContractError(error, input.json === true);
           throw error;
         }
-        process.stdout.write(new Uint8Array(await returnValue.arrayBuffer()));
+        await writeProcessStdout(new Uint8Array(await returnValue.arrayBuffer()));
       }
     } catch (err) {
       const op = commandOperation(groupName, cmdMeta.name);
@@ -315,20 +331,22 @@ function registerCommand(
       }
     }
 
-    await emitCliAuditEvent({
-      group: groupName,
-      name: cmdMeta.name,
-      tool: toolName,
-      input: auditInput,
-      outcome,
-      exitCode: contractExitCode ?? undefined,
-      errorCode: contractErrorCode,
-      status: "completed",
-      durationMs: Date.now() - startTime,
-      closeLazyConnection: true,
-    });
+    if (auditEnabled) {
+      await emitCliAuditEvent({
+        group: groupName,
+        name: cmdMeta.name,
+        tool: toolName,
+        input: auditInput,
+        outcome,
+        exitCode: contractExitCode ?? undefined,
+        errorCode: contractErrorCode,
+        status: "completed",
+        durationMs: Date.now() - startTime,
+        closeLazyConnection: true,
+      });
+    }
 
-    if (contractExitCode !== null) process.exit(contractExitCode);
+    if (contractExitCode !== null) return terminateCliProcess(contractExitCode);
   });
 }
 
@@ -383,7 +401,7 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
       },
     );
     renderContractError(error, input.input.json === true);
-    process.exit(error.exitCode);
+    return terminateCliProcess(error.exitCode);
   }
 
   let result;
@@ -401,21 +419,21 @@ async function dispatchRemoteCommand(input: DispatchRemoteCommandInput): Promise
       suggestedAction: "Check gateway availability and retry",
     });
     renderContractError(error, input.input.json === true);
-    process.exit(error.exitCode);
+    return terminateCliProcess(error.exitCode);
   }
 
   const remoteError = remoteGatewayErrorToContractError(op, result);
   if (remoteError) {
     renderContractError(remoteError, input.input.json === true);
-    process.exit(remoteError.exitCode);
+    return terminateCliProcess(remoteError.exitCode);
   }
-  printRemoteResponse(result);
+  await printRemoteResponse(result);
   if (!result.ok) {
-    process.exit(remoteGatewayExitCode(result));
+    return terminateCliProcess(remoteGatewayExitCode(result));
   }
 }
 
-function printRemoteResponse(result: RemoteDispatchResult): void {
+async function printRemoteResponse(result: RemoteDispatchResult): Promise<void> {
   const output = remoteDispatchOutput(result);
-  if (output.value.length > 0) process.stdout.write(output.value);
+  if (output.value.length > 0) await writeProcessStdout(output.value);
 }

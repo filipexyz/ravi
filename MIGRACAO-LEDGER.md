@@ -1388,3 +1388,507 @@ TypeScript/Swift foram alinhados em commit dedicado, com `GIT_SHA` preservado.
 Por instrucao explicita do operador, nenhum Bun foi executado localmente. O
 head final com este registro e os snapshots atualizados ainda precisa passar a
 CI completa antes de restaurar o veredito **APPROVE**.
+
+---
+
+## FASE 9 - fundacao compartilhada de CLI agent-first (2026-08-21)
+
+Esta fase inicia em estado **DRAFT**. Ela adiciona a fronteira comum de saida,
+erros publicos tipados, validadores de campos e paginacao e metadados
+descobríveis de operacao, efeito, risco e confirmacao. As regras de negocio e a
+prova de ausencia de efeito de cada mutacao continuam pertencendo aos PRs de
+dominio.
+
+A primeira candidata foi classificada como **NO-GO** pela revisao independente:
+os gates `test:agent-contract` e `test:sdk` excederam limites de tempo, os dois
+testes centrais novos nao estavam listados em `CHECKS.md` e a spec prometia
+rigidez de campos e classificacao real alem do recorte migrado. O ocorrido esta
+registrado em `docs/postmortems/0001-cli-foundation-gates-no-go.md`.
+
+O recorte factual desta fase e:
+
+- `agents list` e o primeiro comando com campos estritos; os demais permanecem
+  legados ate o PR de seu dominio;
+- leituras sao projetadas como `none`, enquanto mutacoes sem revisao permanecem
+  visivelmente `unclassified`;
+- a prova sintetica valida o mecanismo comum de freio, nao substitui a prova de
+  uma mutacao real;
+- a fronteira de flush cobre comandos registrados de execucao unica; loops
+  interativos e callbacks de ciclo de vida permanecem excecoes declaradas;
+- o limite maximo de paginacao deixa de ser reduzido silenciosamente e passa a
+  falhar como erro de uso.
+
+Promocao para `active`, commit, push e PR ficam condicionados aos gates oficiais
+aplicaveis e a uma nova revisao independente do SHA exato.
+
+### Terceira revisao independente e liberacao para PR
+
+A terceira revisao independente classificou a candidata local como
+**CLOSABILITY_READY · INDEPENDENTLY_VERIFIED · LIVE_UNAUTHORIZED**. Ela
+confirmou a supressao NATS em chamadas permitidas e negadas, a mascara restrita
+ao literal de `GIT_SHA`, a taxonomia de exit e a coerencia entre codigo, Ravi
+Spec, ADR, runbook e postmortem.
+
+No estado aprovado, `test:sdk` passou com 75 testes e 297 assercoes,
+`tools-export` com 14 testes e 65 assercoes, typecheck, build, quality gate
+sobre 34 caminhos e lint documental passaram. O `test:agent-contract` passou
+fora das mesmas duas falhas de portabilidade de `artifacts/store.test.ts`
+reproduzidas na `dev` no Windows. O pacote instalavel local tem SHA-256
+`581CA4862028E0A91C5025B9AE575188F8E16C1AA857731088F13DE436DF4B75`.
+
+Este GO autoriza commit, push e abertura da PR. A spec permanece `draft` e
+qualquer merge ou uso na VPS continua condicionado a CI Linux verde no commit
+exato e a autorizacao humana de implantacao.
+
+### Correcao da espera de saida sem limite
+
+A auditoria posterior ao primeiro commit encontrou uma espera sem prazo quando
+o Bun mantinha o indicador de buffer ativo. A fundacao passou a verificar o
+progresso em intervalos curtos, interromper a espera depois de cinco segundos,
+garantir a terminacao em `finally` e remover a segunda descarga no encerramento
+global.
+
+O teste nativo agora cobre stream permanentemente preso e processo-filho que
+excede seu prazo, alem dos caminhos reais de JSON maior que 64 KiB, falha e
+versao. O recorte focado passou com 23 testes e 93 assercoes; metadados,
+paginacao e runtime passaram com 27 testes e 107 assercoes; `test:sdk` passou
+com 75 testes e 297 assercoes, seguido de `sdk:check`. Typecheck, build, quality
+gate dos 34 caminhos e lint documental tambem passaram.
+
+O GO anterior fica superado pela mudanca de codigo. Novo commit, pacote e
+revisao independente do SHA exato sao obrigatorios antes de push e PR.
+
+### Primeira CI Linux da PR 426
+
+O run Linux `32450827025` do SHA
+`677cd83857fe6b6d2f92e66b3fd2dd61d4928f3c` passou pela suite de canais e
+avancou ate os testes da CLI, mas falhou ao carregar sincronamente o bundle do
+daemon. O top-level await adicionado pela fronteira de saida tornou o bundle
+incompativel com o `require` usado pelo PM2, embora a execucao direta local
+continuasse funcional.
+
+O caminho de versao foi movido para `bootstrapCli` e a promessa raiz voltou a
+ser iniciada sem top-level await. A CI vermelha invalida o GO e o pacote do SHA
+anterior. Nova validacao integral, pacote, revisao independente e CI Linux sao
+obrigatorios.
+
+Na revalidacao local, uma selecao ampliada incluiu indevidamente
+`src/runtime/codex-provider.test.ts`: 20 casos de scripts `.mjs` temporarios
+falharam com `ENOENT` no Windows e 50 passaram. O recorte correto da fundacao,
+sem esse arquivo alheio, passou com 27 testes e 107 assercoes. A suite integral
+permanece sob autoridade da CI Linux do novo SHA.
+
+O bundle corrigido foi carregado sincronamente por `require` e `daemon status`
+terminou com codigo 0. O recorte de saida e erros passou com 23 testes e 93
+assercoes; o SDK completo passou com 75 testes e 297 assercoes, seguido de
+`sdk:check`. Typecheck, build integral, quality gate dos 34 caminhos e lint
+documental tambem passaram. O fechamento ainda depende de commit exato, revisao
+independente, novo pacote e CI Linux verde no mesmo SHA.
+
+A segunda CI Linux, run `32451955010` no SHA
+`ec6d13ccdcbcdb90b7b8a224c90a4f8892e2af16`, passou build, typecheck e o teste
+sincrono do daemon, mas falhou em dois casos de `sdk.test.ts`. Catches antigos
+do SDK recapturavam o sinal privado de termino de `fail()` e substituiam a
+mensagem publica por `CLI termination requested.`.
+
+A correcao relanca a mesma instancia privada antes de qualquer conversao de
+erro e concentra todos os catches externos do SDK nesse funil. Os dois testes
+agora exigem codigo 1, exatamente uma mensagem publica e ausencia do texto
+interno. O recorte afetado passou com 26 testes e 74 assercoes. Os testes de
+comandos posteriores ao SDK tambem passaram; somente o cleanup de
+`tasks-profiles.test.ts` repetiu os tres `EBUSY` ja conhecidos da base Windows.
+O NO-GO permanece ate novo commit, pacote, revisao independente e CI Linux.
+
+Na revalidacao final da segunda correcao, contexto, sinal, saida nativa, SDK,
+ferramentas e gateway passaram com 86 testes e 310 assercoes. O processo real
+passou com 11 testes e 63 assercoes; o SDK completo passou com 75 testes e 297
+assercoes, seguido de `sdk:check`. Typecheck, build integral e quality gate dos
+36 caminhos passaram.
+
+O primeiro `biome check` apontou apenas finais de linha misturados nos dois
+arquivos SDK editados no Windows. A formatacao oficial corrigiu o problema; o
+check e os 20 testes dos arquivos formatados passaram. Novo SHA, pacote, revisao
+independente e CI Linux verde continuam obrigatorios.
+
+### COMMANDS read-only agent-first - incremento local
+
+**Base:** `560517a43248c3798f82e3da98c088df0743016e`. O slice cobre
+`commands list`, `show`, `validate` e `run`; nenhuma operacao escreve e `run`
+continua sendo somente preview do prompt. A fachada conversacional proposta no
+dossie foi adiada porque revisao do registry, integridade do envelope,
+sombreamento real, materialidade e roteamento de engine ainda exigem decisao.
+
+**Contrato implementado:** nome vazio/invalido vira
+`INVALID_COMMAND_NAME`, exit 2, antes da resolucao do agente; paginacao invalida
+preserva o `USAGE_ERROR`, exit 2, da fundacao; `--fields` usa um conjunto
+estavel de 13 campos e rejeita qualquer desconhecido, inclusive misturado ou
+com lista vazia. Permanecem compativeis nomes sem distincao de caixa e com `#`,
+`items` igual a `commands`, veredito exit 1 de `validate` e
+`renderedPromptSha256`.
+
+**Evidencia nativa:** contrato do handler 24/24, 93 assercoes; registro e
+renderer 7/7, 24 assercoes; processo real isolado 9/9, 33 assercoes. O grupo
+sem subcomando imprimiu help com exit 0. As quatro
+operacoes preservaram hashes dos command files e o digest logico final de
+agente, rotas e sessoes; auditoria NATS ficou suprimida no processo isolado.
+Os testes proporcionais da fundacao de registry passaram 27/27, com 76
+assercoes. Codegen e `sdk:check`, typecheck, build integral, Biome dos seis
+arquivos TS, markdownlint dos dez documentos e quality gate explicito dos 18
+caminhos passaram. A geracao atualizou a descricao de `--fields` no schema SDK
+e o hash de registry/versionamento derivado.
+
+**Estado:** implementacao local pronta para revisao, sem commit, push, PR ou
+VPS. A fachada futura e as decisoes acima permanecem fora deste incremento.
+
+### Correcao da divergencia dos contratos gerados
+
+A verificacao independente do handoff encontrou os dois snapshots OpenAPI e
+cinco artefatos Swift divergentes do registry vivo, apesar do relato anterior
+de que estavam atuais. O TypeScript SDK estava sincronizado, mas isso nao prova
+as outras superficies. A candidata voltou para **NO-GO** sem commit, pacote,
+push, PR ou acesso remoto.
+
+Os dois OpenAPI e todos os arquivos Swift foram regenerados pelos comandos
+oficiais. O incidente esta em
+`docs/postmortems/0002-commands-generated-contract-drift.md`. Checks de drift,
+SDK e gates finais devem ser repetidos antes de qualquer promocao.
+
+### Fechamento local da divergencia gerada de COMMANDS
+
+Depois da regeneracao oficial, os dois checks OpenAPI e o check deterministico
+do SDK Swift passaram separadamente. O SDK completo passou 75 testes com 297
+assercoes e `sdk:check` verde. O recorte de commands foi repetido e passou 40
+testes com 150 assercoes, incluindo nove casos de processo real isolado.
+
+Typecheck, build integral, Biome focado, lint dos nove documentos aplicaveis e
+quality gate dos 23 caminhos com 274 specs indexadas tambem passaram. Isso
+fecha apenas a correcao local do drift. Commit exato, pacote, nova auditoria
+independente e CI Linux ainda sao obrigatorios antes de push ou PR; merge e VPS
+continuam fora deste checkpoint.
+
+Uma recaptura posterior do Biome encontrou finais de linha Windows no arquivo
+compartilhado de schemas depois da geracao. O formatador oficial normalizou
+somente esse arquivo, sem mudanca semantica. O Biome focado e os 40 testes de
+commands foram repetidos; as 150 assercoes passaram. A evidencia de estilo e
+teste anterior a essa normalizacao nao e usada como captura final.
+
+### Recaptura final do coordenador para COMMANDS
+
+O recorte final passou 40 testes com 150 assercoes e typecheck. A primeira
+execucao do SDK sob carga paralela teve timeout em dois hooks inalterados de
+cinco segundos e foi descartada; a repeticao isolada passou os 75 testes com
+297 assercoes e `sdk:check`.
+
+Passaram tambem os dois checks OpenAPI, o check deterministico Swift, build
+integral, Biome dos seis fontes de commands/framework, lint dos 11 documentos
+alterados localmente, `git diff --check`, os 40 testes nativos do quality gate e
+o runner sobre 56 caminhos acumulados da foundation e do dominio. Foram
+indexadas 274 specs, com aprovacao de `cli/commands`, `cli/foundation` e
+`commands`. O drift gerado esta fechado localmente. Ainda faltam commit exato,
+pacote, auditoria independente e CI Linux; nao houve push, PR, merge ou VPS.
+
+### NO-GO independente do pacote COMMANDS
+
+A auditoria independente rejeitou o commit
+`d648b40691300af98818331313a7445b93ab1e90` e o pacote de 4.944.320 bytes com
+SHA-256
+`206A02D753F590AEF798A74DA80C93D93A0963EF0F0ED721A1E9B253A4C2F4AB`.
+Nada foi enviado ou usado para abrir PR.
+
+O `--fields` produzia registros parciais que os schemas publicados ainda
+tratavam como completos; propriedades nao enumeraveis mascaravam o erro antes
+do JSON real. As operacoes chamadas read-only tambem abriam SQLite gravavel,
+alteravam WAL/SHM e tentavam auditoria NATS. O teste de processo suprimia esses
+eventos e observava apenas parte do estado, deixando os efeitos escaparem.
+
+Novo candidato deve tornar a projecao honesta depois de serializar, usar leitura
+de configuracao sem inicializacao ou escrita, impedir auditoria por politica
+declarada do dominio, comparar todos os arquivos e tabelas relevantes, testar o
+help compartilhado e regenerar todos os contratos. O candidato rejeitado fica
+em NO-GO definitivo.
+
+### Recaptura do substituto de COMMANDS
+
+O substituto removeu campos ocultos, publicou schema de projecao parcial
+estrito, passou o retorno por round-trip JSON e usa leitura SQLite dedicada sem
+inicializacao ou escrita. CLI, tool e gateway compartilham `audit: none`; a
+politica agora recusa esse opt-out fora de leituras de baixo risco e efeito
+`none`.
+
+Passaram nove testes de processo com 51 assercoes sem supressao de auditoria,
+41 testes isolados de gateway com 171 assercoes, 12 testes do router com 60
+assercoes, 75 testes SDK com 297 assercoes, build, typecheck, Biome, Markdown e
+todos os checks gerados. Uma captura paralela do gateway teve dois timeouts e
+foi descartada; a repeticao isolada passou. O primeiro quality gate bloqueou a
+falta do teste aprovado de router; depois dos dois casos nativos, o runner
+passou sobre 35 caminhos e indexou 274 specs. Commit, pacote, auditoria
+independente e CI Linux ainda sao obrigatorios; segue NO-GO para push ou PR.
+
+### Captura do pacote substituto de COMMANDS
+
+O commit `e78e106c5b63df66d16ecccec2f70e29ccfdc844` gerou pacote de
+4.945.479 bytes com SHA-256
+`C763E1991CDED3A0E2BD50A237FE2F0C6D8BEEB3C018A5239AC140BBB7D42845`.
+Uma instalacao vazia resolveu 367 pacotes; o Bun bloqueou dois postinstalls de
+dependencias pela politica padrao, mas instalou o binario e o bundle do Ravi.
+
+O bundle instalado passou help, list compacto, show, validate, preview de run,
+erro `COMMAND_NOT_FOUND` exit 1 e fields invalido exit 2. Os sete processos nao
+emitiram stderr, nao criaram arquivo de estado e nao alteraram o fixture. Como
+este registro muda o commit, o primeiro arquivo fica apenas como diagnostico;
+o pacote final deve ser reconstruido, rehashado, reinstalado e auditado no novo
+SHA antes de push ou PR.
+
+### NO-GO independente do candidato `d67ad42a`
+
+A auditoria read-only rejeitou o commit
+`d67ad42acbb3fe33c1c89d413f1c5f691a37b7a0` e o pacote herdado. A projecao
+honesta havia sido aplicada no helper compartilhado e quebrou a validacao
+estrita anterior ao JSON de AGENTS e de outros dominios compactos ainda nao
+migrados. O teste de processo tambem herdava
+`RAVI_SUPPRESS_AUDIT_EVENTS=1` do helper de estado, portanto nao provava
+transporte zero por `audit: none`. O refinamento de linha nao vazia funcionava
+em Returns, mas desaparecia do TypeScript e do OpenAPI gerados; Swift publicava
+o item como `RaviJSON`.
+
+A rodada corretiva restaura a compatibilidade do helper por padrao e ativa a
+projecao serializada somente em COMMANDS. Um teste nativo de AGENTS exige, ao
+mesmo tempo, Returns estrito valido antes da serializacao e JSON contendo apenas
+os campos pedidos. COMMANDS agora representa qualquer subconjunto nao vazio dos
+13 campos como uniao estrita; TypeScript e OpenAPI preservam cada alternativa,
+e Swift gera modelos tipados com rejeicao de linha vazia e campo desconhecido.
+
+O processo filho remove explicitamente `RAVI_SUPPRESS_AUDIT_EVENTS` e
+`RAVI_NO_AUDIT`. Os dez casos nativos passaram mantendo fontes, todos os
+arquivos de estado e todas as tabelas SQLite sem alteracao. Os artefatos SDK e
+OpenAPI foram regenerados e seus checks deterministas passaram. O host Windows
+nao possui o executavel Swift, entao compilacao Swift local nao foi declarada;
+o teste nativo do gerador passou. Nao houve pacote, push, PR ou VPS. O novo
+commit continuara NO-GO ate auditoria independente, novo pacote e validacao
+posterior autorizada.
+
+### NO-GO independente do candidato `aec8c019`
+
+A nova auditoria confirmou que os bloqueadores de projecao, auditoria e
+contratos gerados foram corrigidos, mas rejeitou o commit
+`aec8c0196aab68b15f283092e1a9119db90b38da` por dois gaps de prova. O contrato
+exigia identidade de bytes do `ravi.db-shm`, embora esse arquivo seja indice
+efemero de coordenacao do SQLite e possa mudar durante leitura segura com o
+daemon escrevendo em WAL. O teste tambem abria uma leitora logica antes de
+capturar os hashes, o que podia mascarar a primeira coordenacao.
+
+A fronteira corrigida protege fontes de comandos, todas as linhas logicas e
+todos os arquivos duraveis, incluindo DB e WAL. O `-shm` fica explicitamente
+fora da identidade de estado duravel, e uma prova nativa mantem uma conexao
+escritora WAL aberta enquanto o processo real executa. O teste OpenAPI do
+registro vivo, que estourava o timeout padrao de cinco segundos neste host,
+agora declara 30 segundos nos dois casos pesados e passa pelo comando normal.
+
+A primeira fixture WAL falhou porque inseriu uma configuracao sem o campo
+obrigatorio `updated_at`; essa captura foi descartada. Com a fixture corrigida,
+o arquivo de processo passou 11 testes/57 assercoes e o OpenAPI normal passou
+22 testes/61 assercoes. Ainda nao existe novo commit candidato. Gates integrais,
+nova revisao independente, pacote e CI Linux continuam obrigatorios; nao houve
+push, PR ou VPS.
+
+### Recaptura dos gates apos a correcao concorrente
+
+Passaram 93 testes focados de COMMANDS, AGENTS, renderer e fundacao com 303
+assercoes; 11 testes de processo com 57 assercoes; 12 do router com 60; 41 do
+gateway com 171; seis de saida nativa com 19; e 22 do OpenAPI normal com 61.
+O SDK passou 76 testes/305 assercoes. Os dois snapshots OpenAPI, o check Swift,
+typecheck, build, Biome, Markdown e `git diff --check` tambem passaram.
+
+A primeira chamada local do quality runner foi invalida porque o fallback
+procura `origin/main`, referencia ausente neste worktree. Com os 43 caminhos
+exatos fornecidos por `CHANGED_FILES`, o runner passou e indexou 274 specs; os
+40 testes nativos do proprio gate passaram com 90 assercoes.
+
+O encadeamento `test:agent-contract` passou todos os arquivos anteriores e
+parou em dois casos Windows do artifact store: uma expectativa de blob e a
+criacao de symlink negada por `EPERM`. O mesmo arquivo no commit exato da
+fundacao `560517a4` reproduziu as duas falhas. A suite ampla nao e declarada
+verde, mas a comparacao demonstra que essas duas falhas nao foram introduzidas
+por COMMANDS. A compilacao Swift segue reservada a CI Linux.
+
+### Projects: facade de leitura sem inicializacao de schema
+
+A fatia de leitura de PROJECTS passou a usar um snapshot unico aberto com
+`readonly: true` e `create: false`, mantendo uma transacao explicita de leitura
+durante todas as consultas. `list`, `next`, `show`, `status`, `resources list`
+e `resources show` nao chamam mais os stores que inicializam schema e declaram
+`audit: none`. Consultas preparadas sao finalizadas explicitamente antes do
+fechamento, inclusive para liberar o arquivo no Windows.
+
+O contrato agora falha fechado em colisao exata de id/slug, rotulo de recurso
+ambiguo e schema incompativel. `next` preserva o ranking, mas limita a primeira
+pagina a 20 itens e publica continuacao deterministica. Erros de status, tag e
+tipo de recurso mantem a causa publica tipada.
+
+Os cinco testes nativos da facade passaram com 12 assercoes. Tres processos
+reais, sem variaveis de supressao de auditoria, passaram com 17 assercoes e
+preservaram todos os arquivos duraveis. A matriz nativa completa de Projects
+passou 53 testes/180 assercoes. Gates integrais, geracao de contratos, revisao
+independente, pacote e CI ainda sao obrigatorios; nao houve push, PR ou VPS.
+
+### Correcao do smoke multiplataforma de Projects
+
+A matriz ampla passou 52 de 53 testes e falhou apenas em `init.smoke.test.ts`:
+o fixture exigia `/tmp/ravi.bot` mesmo no Windows, embora o CLI normalizasse o
+locator para `C:\tmp\ravi.bot`. O SHA aprovado de COMMANDS `e91cfec9`
+reproduziu a mesma falha, portanto ela era preexistente e a suite nao foi
+declarada verde nessa captura.
+
+O fixture passou a usar o caminho real e resolvido do worktree, com label
+derivado de `basename`, e substituiu o matcher aninhado pouco informativo por
+assertivas explicitas dos quatro links. A repeticao isolada passou com sete
+assercoes. Depois da estabilizacao dos artefatos gerados, a matriz completa foi
+recapturada e passou 53 testes/180 assercoes.
+
+### Projects: recaptura dos gates e contratos gerados
+
+Os artefatos TypeScript, OpenAPI e Swift foram regenerados pelos comandos
+oficiais e todos os checks de drift passaram. A primeira execucao integral do
+SDK identificou sete contratos de Projects que haviam sido fortalecidos, mas
+continuavam listados na baseline historica de respostas fracas. Depois da
+remocao dessas entradas obsoletas, a suite SDK passou 77 testes/311 assercoes.
+
+Tambem passaram typecheck, build, os 40 testes nativos do quality gate com 90
+assercoes e o runner com os 33 caminhos locais exatos, incluindo a indexacao de
+274 specs. A matriz nativa de Projects foi recapturada apos o Biome e manteve
+53 testes/180 assercoes.
+
+O encadeamento amplo `test:agent-contract`, executado ao mesmo tempo que a
+matriz pesada de Projects, passou os arquivos anteriores e excedeu por oito
+milissegundos o timeout de cinco segundos no preparo do primeiro caso de
+`command-access.test.ts`. A repeticao isolada, sem concorrencia, passou os 24
+testes/105 assercoes; o caso antes interrompido terminou em 29 milissegundos.
+A captura concorrente nao foi declarada verde.
+
+Na repeticao serial do encadeamento, `command-access.test.ts` passou, mas o
+caso de carregamento dinamico em `skill-gate.test.ts` levou sete segundos e
+estourou seu timeout fixo de cinco. O mesmo arquivo no SHA-base aprovado de
+COMMANDS `e91cfec9` reproduziu a falha no mesmo caso, em 5,3 segundos. Os quatro
+arquivos posteriores foram executados diretamente: confirmation, consumers e
+inferencia passaram; o artifact store repetiu as duas falhas Windows ja
+documentadas em COMMANDS (separador de caminho e symlink negado), com 49 testes
+verdes de 51. A suite ampla permanece honestamente nao verde por fragilidades
+preexistentes; nenhuma delas toca a fatia de Projects. Nao houve push, PR ou
+VPS.
+
+### Projects: fechamento da revisao do coordenador
+
+A revisao final percebeu que abrir uma unica conexao nao bastava para garantir
+o mesmo instante logico entre consultas sequenciais. O reader passou a manter
+uma transacao SQLite explicita desde a descoberta das tabelas ate a montagem
+completa do snapshot, com rollback seguro em erro e fechamento posterior. Os
+cinco testes da facade passaram novamente com 12 assercoes e os tres processos
+reais passaram novamente com 17 assercoes, sem alterar arquivos duraveis.
+
+Depois dessa correcao, typecheck, build, Biome, Markdown, `git diff --check`, o
+quality runner e os quatro checks finais de drift permaneceram verdes. Os
+checks SDK/OpenAPI/Swift registraram NATS local indisponivel, mas todos
+terminaram com codigo zero e confirmaram artefatos atuais. Revisao independente,
+pacote e CI Linux continuam obrigatorios; nao houve push, PR ou VPS.
+
+### Projects: correcao da validacao de campos compactos
+
+O candidato `649dd1d2` foi invalidado antes da auditoria porque `--fields`
+aceitava nomes desconhecidos e produzia uma resposta parcial silenciosa. A
+primeira tentativa de correcao tambem foi rejeitada localmente: o mapeador
+generico de erros de uso executava antes dos mapeamentos proprios de Projects e
+poderia apagar codigos historicos de status, tag e tipo de recurso.
+
+A correcao final define campos publicos por operacao, rejeita selecao vazia ou
+desconhecida com `USAGE_ERROR`, exit 2 e `acceptedFields`, e aplica o mapeador
+generico somente depois dos erros especificos do dominio. O teste de processo
+passou quatro casos com 39 assercoes, incluindo as tres superficies compactas
+e a preservacao de `INVALID_PROJECT_STATUS` e
+`INVALID_PROJECT_RESOURCE_TYPE`. A matriz completa de Projects passou 54
+testes/202 assercoes; typecheck, build, Biome, Markdown, quality gate nativo,
+SDK 77/77 e os quatro checks de drift tambem passaram. O commit anterior
+permanece apenas como historico; revisao independente, pacote, PR e VPS exigem
+o novo SHA.
+
+### Projects: retificacao do contrato de projecao compacta
+
+A alegacao anterior de que o candidato
+`163c1565ac6833bc99fb3849f5bd7cf98137106a` encerrava integralmente a correcao
+de `--fields` era falsa. Esse SHA foi invalidado: ainda descartava tokens
+vazios, aceitando entrada vazia, somente virgulas, virgula final e lacunas entre
+campos; alem disso, um campo opcional solicitado mas ausente podia produzir um
+item `{}`. Esta retificacao e append-only e nao altera as capturas historicas.
+
+A correcao valida a estrutura original dos tokens antes da normalizacao e
+responde `USAGE_ERROR`, exit 2 e `acceptedFields` para toda entrada malformada.
+Uma projecao valida agora representa campo opcional solicitado e ausente com
+`null`, preservando item, ordem, ranking e paginacao. Zod, OpenAPI, TypeScript e
+Swift publicam o mesmo contrato required+nullable apenas na variante compacta;
+entidades completas e mutacoes nao mudaram.
+
+A recaptura serial passou os 57 testes nativos de Projects com 235 assercoes,
+incluindo seis processos reais com 70 assercoes. Commands process permaneceu
+11/11 com 57 assercoes; SDK passou 77/77 com 314 assercoes; OpenAPI e Swift
+codegen passaram 45/45 com 146 assercoes; quality passou 40/40 com 90 assercoes.
+Typecheck, build, Biome, Markdown, diff check e os quatro checks de drift tambem
+passaram. O encadeamento amplo `test:agent-contract` continuou nao verde apenas
+nas duas falhas Windows preexistentes do artifact store: separador POSIX no
+matcher e `symlinkSync` negado. Elas foram registradas como comparacao, nao como
+sucesso. Nao houve pacote, push, PR, merge ou VPS.
+
+### NO-GO de Projects `75cfa478` e correcao de presenca Swift
+
+A auditoria independente invalidou formalmente
+`75cfa478f8cdb546f72386c5a079b3977db01882`. O candidato corrigia o contrato
+JSON de projecao, mas o codec Swift gerado ainda transformava uma chave
+selecionada com `null` em chave ausente no round-trip, permitindo que o item
+voltasse a `{}`. A prova de leitura com escritor WAL ativo tambem existia apenas
+como experimento e nao como teste nativo versionado.
+
+A fonte global do gerador Swift foi corrigida a partir da regra comprovada em
+Routes `ca928d76bb04e31f18711af112781aec629aaedd` e ampliada para unioes de
+projecao: required+nullable preserva a chave, opcionais ausentes continuam
+omitidos e campo selecionado nao anulavel rejeita `null`. Testes de geracao
+protegem todos os hosts; o round-trip compilado roda somente onde `swiftc`
+estiver disponivel e continua gate obrigatorio de CI.
+
+Projects agora mantem um escritor SQLite WAL aberto, executa a leitura Ravi em
+processo separado e exige identidade byte a byte do banco principal e do WAL.
+O teste focado passou localmente junto com os testes do gerador. Esta e uma
+captura de implementacao, nao uma auditoria independente final. Nenhum pacote,
+push, PR, merge ou acesso a VPS foi realizado.
+
+### Projects: recaptura apos a correcao Swift e a prova WAL
+
+A matriz serial de Projects passou 65 testes com 262 assercoes, incluindo o
+processo separado com escritor WAL aberto. Commands preservou seus 11 casos de
+processo e 26 contratos locais; uma execucao compartilhada contaminou o estado
+de `sdk-returns`, mas a repeticao isolada passou 1/1 com 10 assercoes.
+
+O SDK passou 77/77 com 314 assercoes. OpenAPI e Swift codegen passaram 48/48
+com 168 assercoes, e os checks de drift do TypeScript, dos dois snapshots
+OpenAPI e do Swift terminaram com codigo zero. Typecheck e build passaram. O
+quality gate nativo passou 40/40 com 90 assercoes na repeticao isolada, e o
+runner passou com a lista exata de arquivos, indexando 274 specs.
+
+Os TypeScript alterados passaram Biome e `git diff --check` passou. Sete dos
+nove Markdown alterados passaram o lint; os dois contratos Swift mantiveram a
+falha MD025 ja presente em seus titulos originais, tambem observada no contrato
+Rust equivalente. Os scripts globais de Biome e Markdown continuam nao verdes
+por problemas de fim de linha e documentacao fora deste delta; nenhuma
+correcao em massa foi feita. Este host Windows nao possui
+`swiftc`, portanto a compilacao e o
+round-trip Swift executavel permanecem gates de CI, sem alegacao de execucao
+local. As tentativas de contato com NATS local falharam durante geracao e drift,
+mas esses comandos terminaram com codigo zero e confirmaram os artefatos. Nao
+houve auditoria final do proprio codigo, pacote, push, PR, merge ou VPS.
+
+O encadeamento amplo de `agent-contract` nao ficou integralmente verde neste
+host. O dispatcher passou isoladamente 41/41 depois de dois timeouts na
+execucao encadeada. O teste de carregamento dinamico de ferramenta continuou
+expirando, e o artifact store manteve duas falhas Windows: comparacao com
+separador POSIX e criacao de symlink negada. As mesmas tres falhas foram
+reproduzidas na base Commands exata
+`e91cfec9c85c84f4051910996e26634ad64459eb`, cuja arvore permaneceu limpa;
+portanto sao limitacoes comparadas da base/host, nao gates declarados verdes e
+nao evidenciam regressao introduzida pelo delta de Projects.
