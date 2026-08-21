@@ -3,6 +3,7 @@ node_modules/
 
 # Build output
 dist/
+native/prebuilds/
 
 # Generated files
 src/cli/commands/index.ts

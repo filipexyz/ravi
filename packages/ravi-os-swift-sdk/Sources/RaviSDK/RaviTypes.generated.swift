@@ -23560,17 +23560,20 @@ public struct SpecsFacadeNewApplyReturnVerificationReadbackBinding: Codable, Sen
   public var cwd: String
   public var dbPath: String
   public var specsRoot: String
+  public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String) {
+  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
     self.dbPath = dbPath
     self.specsRoot = specsRoot
+    self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
     case dbPath = "dbPath"
     case specsRoot = "specsRoot"
+    case workspaceIdentity = "workspaceIdentity"
   }
 }
 
@@ -23749,17 +23752,20 @@ public struct SpecsFacadeNewPlanReturnBinding: Codable, Sendable {
   public var cwd: String
   public var dbPath: String
   public var specsRoot: String
+  public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String) {
+  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
     self.dbPath = dbPath
     self.specsRoot = specsRoot
+    self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
     case dbPath = "dbPath"
     case specsRoot = "specsRoot"
+    case workspaceIdentity = "workspaceIdentity"
   }
 }
 
@@ -24004,17 +24010,20 @@ public struct SpecsFacadeNewReadbackReturnBinding: Codable, Sendable {
   public var cwd: String
   public var dbPath: String
   public var specsRoot: String
+  public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String) {
+  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
     self.dbPath = dbPath
     self.specsRoot = specsRoot
+    self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
     case dbPath = "dbPath"
     case specsRoot = "specsRoot"
+    case workspaceIdentity = "workspaceIdentity"
   }
 }
 
@@ -24169,17 +24178,20 @@ public struct SpecsFacadeNewRecoverReturnReadbackBinding: Codable, Sendable {
   public var cwd: String
   public var dbPath: String
   public var specsRoot: String
+  public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String) {
+  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
     self.dbPath = dbPath
     self.specsRoot = specsRoot
+    self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
     case dbPath = "dbPath"
     case specsRoot = "specsRoot"
+    case workspaceIdentity = "workspaceIdentity"
   }
 }
 
@@ -24361,17 +24373,20 @@ public struct SpecsFacadeNewVerifyReturnReadbackBinding: Codable, Sendable {
   public var cwd: String
   public var dbPath: String
   public var specsRoot: String
+  public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String) {
+  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
     self.dbPath = dbPath
     self.specsRoot = specsRoot
+    self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
     case dbPath = "dbPath"
     case specsRoot = "specsRoot"
+    case workspaceIdentity = "workspaceIdentity"
   }
 }
 
@@ -24529,17 +24544,20 @@ public struct SpecsFacadeSyncApplyReturnVerificationReadbackBinding: Codable, Se
   public var cwd: String
   public var dbPath: String
   public var specsRoot: String
+  public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String) {
+  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
     self.dbPath = dbPath
     self.specsRoot = specsRoot
+    self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
     case dbPath = "dbPath"
     case specsRoot = "specsRoot"
+    case workspaceIdentity = "workspaceIdentity"
   }
 }
 
@@ -24700,17 +24718,20 @@ public struct SpecsFacadeSyncPlanReturnBinding: Codable, Sendable {
   public var cwd: String
   public var dbPath: String
   public var specsRoot: String
+  public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String) {
+  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
     self.dbPath = dbPath
     self.specsRoot = specsRoot
+    self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
     case dbPath = "dbPath"
     case specsRoot = "specsRoot"
+    case workspaceIdentity = "workspaceIdentity"
   }
 }
 
@@ -24928,17 +24949,20 @@ public struct SpecsFacadeSyncReadbackReturnBinding: Codable, Sendable {
   public var cwd: String
   public var dbPath: String
   public var specsRoot: String
+  public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String) {
+  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
     self.dbPath = dbPath
     self.specsRoot = specsRoot
+    self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
     case dbPath = "dbPath"
     case specsRoot = "specsRoot"
+    case workspaceIdentity = "workspaceIdentity"
   }
 }
 
@@ -25075,17 +25099,20 @@ public struct SpecsFacadeSyncRecoverReturnReadbackBinding: Codable, Sendable {
   public var cwd: String
   public var dbPath: String
   public var specsRoot: String
+  public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String) {
+  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
     self.dbPath = dbPath
     self.specsRoot = specsRoot
+    self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
     case dbPath = "dbPath"
     case specsRoot = "specsRoot"
+    case workspaceIdentity = "workspaceIdentity"
   }
 }
 
@@ -25249,17 +25276,20 @@ public struct SpecsFacadeSyncVerifyReturnReadbackBinding: Codable, Sendable {
   public var cwd: String
   public var dbPath: String
   public var specsRoot: String
+  public var workspaceIdentity: String
 
-  public init(cwd: String, dbPath: String, specsRoot: String) {
+  public init(cwd: String, dbPath: String, specsRoot: String, workspaceIdentity: String) {
     self.cwd = cwd
     self.dbPath = dbPath
     self.specsRoot = specsRoot
+    self.workspaceIdentity = workspaceIdentity
   }
 
   enum CodingKeys: String, CodingKey {
     case cwd = "cwd"
     case dbPath = "dbPath"
     case specsRoot = "specsRoot"
+    case workspaceIdentity = "workspaceIdentity"
   }
 }
 

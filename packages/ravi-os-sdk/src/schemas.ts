@@ -67794,12 +67794,16 @@ export const SpecsFacadeNewApplyReturnSchema = {
                 },
                 "specsRoot": {
                   "type": "string"
+                },
+                "workspaceIdentity": {
+                  "type": "string"
                 }
               },
               "required": [
                 "cwd",
                 "specsRoot",
-                "dbPath"
+                "dbPath",
+                "workspaceIdentity"
               ],
               "type": "object"
             },
@@ -68001,12 +68005,16 @@ export const SpecsFacadeNewPlanReturnSchema = {
         },
         "specsRoot": {
           "type": "string"
+        },
+        "workspaceIdentity": {
+          "type": "string"
         }
       },
       "required": [
         "cwd",
         "specsRoot",
-        "dbPath"
+        "dbPath",
+        "workspaceIdentity"
       ],
       "type": "object"
     },
@@ -68325,12 +68333,16 @@ export const SpecsFacadeNewReadbackReturnSchema = {
         },
         "specsRoot": {
           "type": "string"
+        },
+        "workspaceIdentity": {
+          "type": "string"
         }
       },
       "required": [
         "cwd",
         "specsRoot",
-        "dbPath"
+        "dbPath",
+        "workspaceIdentity"
       ],
       "type": "object"
     },
@@ -68566,12 +68578,16 @@ export const SpecsFacadeNewRecoverReturnSchema = {
             },
             "specsRoot": {
               "type": "string"
+            },
+            "workspaceIdentity": {
+              "type": "string"
             }
           },
           "required": [
             "cwd",
             "specsRoot",
-            "dbPath"
+            "dbPath",
+            "workspaceIdentity"
           ],
           "type": "object"
         },
@@ -68815,12 +68831,16 @@ export const SpecsFacadeNewVerifyReturnSchema = {
             },
             "specsRoot": {
               "type": "string"
+            },
+            "workspaceIdentity": {
+              "type": "string"
             }
           },
           "required": [
             "cwd",
             "specsRoot",
-            "dbPath"
+            "dbPath",
+            "workspaceIdentity"
           ],
           "type": "object"
         },
@@ -69057,12 +69077,16 @@ export const SpecsFacadeSyncApplyReturnSchema = {
                 },
                 "specsRoot": {
                   "type": "string"
+                },
+                "workspaceIdentity": {
+                  "type": "string"
                 }
               },
               "required": [
                 "cwd",
                 "specsRoot",
-                "dbPath"
+                "dbPath",
+                "workspaceIdentity"
               ],
               "type": "object"
             },
@@ -69242,12 +69266,16 @@ export const SpecsFacadeSyncPlanReturnSchema = {
         },
         "specsRoot": {
           "type": "string"
+        },
+        "workspaceIdentity": {
+          "type": "string"
         }
       },
       "required": [
         "cwd",
         "specsRoot",
-        "dbPath"
+        "dbPath",
+        "workspaceIdentity"
       ],
       "type": "object"
     },
@@ -69527,12 +69555,16 @@ export const SpecsFacadeSyncReadbackReturnSchema = {
         },
         "specsRoot": {
           "type": "string"
+        },
+        "workspaceIdentity": {
+          "type": "string"
         }
       },
       "required": [
         "cwd",
         "specsRoot",
-        "dbPath"
+        "dbPath",
+        "workspaceIdentity"
       ],
       "type": "object"
     },
@@ -69750,12 +69782,16 @@ export const SpecsFacadeSyncRecoverReturnSchema = {
             },
             "specsRoot": {
               "type": "string"
+            },
+            "workspaceIdentity": {
+              "type": "string"
             }
           },
           "required": [
             "cwd",
             "specsRoot",
-            "dbPath"
+            "dbPath",
+            "workspaceIdentity"
           ],
           "type": "object"
         },
@@ -69981,12 +70017,16 @@ export const SpecsFacadeSyncVerifyReturnSchema = {
             },
             "specsRoot": {
               "type": "string"
+            },
+            "workspaceIdentity": {
+              "type": "string"
             }
           },
           "required": [
             "cwd",
             "specsRoot",
-            "dbPath"
+            "dbPath",
+            "workspaceIdentity"
           ],
           "type": "object"
         },

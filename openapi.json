@@ -12,7 +12,7 @@
   "info": {
     "description": "OpenAPI 3.1 spec auto-generated from the Ravi CLI registry. Each operation maps 1:1 to a `ravi <group> <command>` invocation.",
     "title": "Ravi API",
-    "version": "7aa418f992d199c4"
+    "version": "2389eff0609a0f09"
   },
   "openapi": "3.1.0",
   "paths": {
@@ -84945,12 +84945,16 @@
                                 },
                                 "specsRoot": {
                                   "type": "string"
+                                },
+                                "workspaceIdentity": {
+                                  "type": "string"
                                 }
                               },
                               "required": [
                                 "cwd",
                                 "specsRoot",
-                                "dbPath"
+                                "dbPath",
+                                "workspaceIdentity"
                               ],
                               "type": "object"
                             },
@@ -85180,12 +85184,16 @@
                         },
                         "specsRoot": {
                           "type": "string"
+                        },
+                        "workspaceIdentity": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "cwd",
                         "specsRoot",
-                        "dbPath"
+                        "dbPath",
+                        "workspaceIdentity"
                       ],
                       "type": "object"
                     },
@@ -85532,12 +85540,16 @@
                         },
                         "specsRoot": {
                           "type": "string"
+                        },
+                        "workspaceIdentity": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "cwd",
                         "specsRoot",
-                        "dbPath"
+                        "dbPath",
+                        "workspaceIdentity"
                       ],
                       "type": "object"
                     },
@@ -85801,12 +85813,16 @@
                             },
                             "specsRoot": {
                               "type": "string"
+                            },
+                            "workspaceIdentity": {
+                              "type": "string"
                             }
                           },
                           "required": [
                             "cwd",
                             "specsRoot",
-                            "dbPath"
+                            "dbPath",
+                            "workspaceIdentity"
                           ],
                           "type": "object"
                         },
@@ -86078,12 +86094,16 @@
                             },
                             "specsRoot": {
                               "type": "string"
+                            },
+                            "workspaceIdentity": {
+                              "type": "string"
                             }
                           },
                           "required": [
                             "cwd",
                             "specsRoot",
-                            "dbPath"
+                            "dbPath",
+                            "workspaceIdentity"
                           ],
                           "type": "object"
                         },
@@ -86348,12 +86368,16 @@
                                 },
                                 "specsRoot": {
                                   "type": "string"
+                                },
+                                "workspaceIdentity": {
+                                  "type": "string"
                                 }
                               },
                               "required": [
                                 "cwd",
                                 "specsRoot",
-                                "dbPath"
+                                "dbPath",
+                                "workspaceIdentity"
                               ],
                               "type": "object"
                             },
@@ -86549,12 +86573,16 @@
                         },
                         "specsRoot": {
                           "type": "string"
+                        },
+                        "workspaceIdentity": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "cwd",
                         "specsRoot",
-                        "dbPath"
+                        "dbPath",
+                        "workspaceIdentity"
                       ],
                       "type": "object"
                     },
@@ -86862,12 +86890,16 @@
                         },
                         "specsRoot": {
                           "type": "string"
+                        },
+                        "workspaceIdentity": {
+                          "type": "string"
                         }
                       },
                       "required": [
                         "cwd",
                         "specsRoot",
-                        "dbPath"
+                        "dbPath",
+                        "workspaceIdentity"
                       ],
                       "type": "object"
                     },
@@ -87113,12 +87145,16 @@
                             },
                             "specsRoot": {
                               "type": "string"
+                            },
+                            "workspaceIdentity": {
+                              "type": "string"
                             }
                           },
                           "required": [
                             "cwd",
                             "specsRoot",
-                            "dbPath"
+                            "dbPath",
+                            "workspaceIdentity"
                           ],
                           "type": "object"
                         },
@@ -87372,12 +87408,16 @@
                             },
                             "specsRoot": {
                               "type": "string"
+                            },
+                            "workspaceIdentity": {
+                              "type": "string"
                             }
                           },
                           "required": [
                             "cwd",
                             "specsRoot",
-                            "dbPath"
+                            "dbPath",
+                            "workspaceIdentity"
                           ],
                           "type": "object"
                         },

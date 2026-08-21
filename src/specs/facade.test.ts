@@ -575,25 +575,37 @@ describe("specs facade", () => {
     expect(parentEntries.some((entry) => entry.includes("ravi-stage"))).toBe(false);
   });
 
-  it("lets exactly one competing creator promote the target without partial files", () => {
+  it("fails a competing creator closed while the pinned owner promotes, then replays as noop", () => {
     const cwd = makeWorkspace();
     const prepared = prepareSpecCreation({ cwd, id: "channels", title: "Channels", kind: "domain", full: true });
-    let competitorState: string | null = null;
+    let competitorError: unknown;
 
-    expect(() =>
-      applyPreparedSpecCreation(prepared, {
-        requireAncestors: true,
-        existing: "noop",
-        beforePromote: () => {
-          competitorState = applyPreparedSpecCreation(prepared, {
+    const owner = applyPreparedSpecCreation(prepared, {
+      requireAncestors: true,
+      existing: "noop",
+      beforePromote: () => {
+        try {
+          applyPreparedSpecCreation(prepared, {
             requireAncestors: true,
             existing: "noop",
-          }).status;
-        },
-      }),
-    ).toThrow();
+          });
+        } catch (error) {
+          competitorError = error;
+        }
+      },
+    });
 
-    expect(String(competitorState)).toBe("created");
+    expect(owner.status).toBe("created");
+    expect(competitorError).toBeInstanceOf(Error);
+    expect(
+      applyPreparedSpecCreation(
+        prepareSpecCreation({ cwd, id: "channels", title: "Channels", kind: "domain", full: true }),
+        {
+          requireAncestors: true,
+          existing: "noop",
+        },
+      ).status,
+    ).toBe("noop");
     expect(
       ["SPEC.md", "WHY.md", "RUNBOOK.md", "CHECKS.md"].every((name) => existsSync(join(prepared.directoryPath, name))),
     ).toBe(true);

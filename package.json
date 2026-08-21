@@ -14,6 +14,7 @@
     "bin/ravi",
     "dist/bundle/",
     "dist/tui/",
+    "native/prebuilds/",
     "README.md"
   ],
   "repository": {
@@ -33,7 +34,10 @@
     "gen:commands": "bun scripts/gen-commands.ts",
     "gen:plugins": "bun scripts/gen-plugins.ts",
     "prebuild": "bun run gen:commands",
-    "build": "bun run build:cli && bun run build:tui && bun run gen:plugins",
+    "build": "bun run build:native && bun run build:cli && bun run build:tui && bun run gen:plugins",
+    "build:native": "bun scripts/build-specs-native.ts current",
+    "build:native:all": "bun scripts/build-specs-native.ts all",
+    "check:native-package": "bun scripts/build-specs-native.ts check",
     "build:cli": "bun build src/cli/index.ts --outdir dist/bundle --target bun --minify --keep-names --sourcemap=linked --external ink --external react --external '@anthropic-ai/*' --external openai --external '@google/*' --external nats --external '@elevenlabs/*'",
     "build:tui": "bun build src/tui/index.tsx --outdir dist/tui --target bun --keep-names --sourcemap=linked --external '@opentui/core' --external '@opentui/react' --external react --external nats",
     "prepack": "bun run build",
@@ -46,7 +50,8 @@
     "typecheck": "bun tsc --noEmit",
     "lint": "bunx biome check src/",
     "lint:fix": "bunx biome check --write src/",
-    "test": "bun test src/channels/ && bun test src/bash/ src/hooks/ src/router/ src/heartbeat/ src/permissions/ src/triggers/ src/omni/ src/plugins/ src/adapters/ src/approval/ src/apps/router.test.ts src/tui/hooks/runtime-feed.test.ts src/tui/hooks/runtime-display.test.ts src/gateway-typing.test.ts && bun test src/tasks/ src/projects/ src/workflow-substrate/ src/whatsapp-overlay/ && bun run test:cli-commands && bun test src/bot.runtime-guards.test.ts && bun test src/remote-spawn-nats.test.ts && bun test src/runtime/index.test.ts src/runtime/model-catalog.test.ts src/runtime/allowed-skills.test.ts src/runtime/observation-plane.test.ts src/runtime/runtime-request-context.test.ts && bun test src/runtime/context-registry.test.ts && bun test src/cli/context.test.ts src/cli/logging.test.ts src/cli/tui-launcher.test.ts && bun test src/utils/logger.test.ts && bun test src/transcripts.test.ts && bun test src/ci/quality-gate.test.ts && bun run test:agent-contract && bun run test:sdk && bun src/cli/index.ts sdk openapi check --against docs/openapi.json && bun src/cli/index.ts sdk openapi check --against openapi.json && bun src/cli/index.ts sdk swift check",
+    "test": "bun test src/channels/ && bun test src/bash/ src/hooks/ src/router/ src/heartbeat/ src/permissions/ src/triggers/ src/omni/ src/plugins/ src/adapters/ src/approval/ src/apps/router.test.ts src/tui/hooks/runtime-feed.test.ts src/tui/hooks/runtime-display.test.ts src/gateway-typing.test.ts && bun test src/tasks/ src/projects/ src/workflow-substrate/ src/whatsapp-overlay/ && bun run test:specs && bun run test:cli-commands && bun test src/bot.runtime-guards.test.ts && bun test src/remote-spawn-nats.test.ts && bun test src/runtime/index.test.ts src/runtime/model-catalog.test.ts src/runtime/allowed-skills.test.ts src/runtime/observation-plane.test.ts src/runtime/runtime-request-context.test.ts && bun test src/runtime/context-registry.test.ts && bun test src/cli/context.test.ts src/cli/logging.test.ts src/cli/tui-launcher.test.ts && bun test src/utils/logger.test.ts && bun test src/transcripts.test.ts && bun test src/ci/quality-gate.test.ts && bun run test:agent-contract && bun run test:sdk && bun src/cli/index.ts sdk openapi check --against docs/openapi.json && bun src/cli/index.ts sdk openapi check --against openapi.json && bun src/cli/index.ts sdk swift check",
+    "test:specs": "bun run build:native && bun test src/specs/",
     "test:agent-contract": "bun test src/cli/commands/usage-exit.smoke.test.ts && bun test src/cli/transport-contract.test.ts && bun test src/cli/tools-export.test.ts && bun test src/sdk/gateway/dispatcher.test.ts && bun test src/cli/remote-gateway.test.ts && bun test src/cli/redaction.test.ts && bun test src/cli/audit.test.ts && bun test src/cli/provenance.test.ts && bun test src/cli/registry.test.ts && bun test src/cloud-auth/errors.test.ts && bun test src/cli/command-access.test.ts && bun test src/runtime/skill-gate.test.ts && bun test src/cli/confirmation-policy.test.ts && bun test src/cli/execute-consumers.test.ts && bun test src/cli/schema-inference.test.ts && bun test src/artifacts/store.test.ts",
     "test:sdk": "bun test src/sdk/client-codegen/ ./src/sdk/gateway/channel-backend.integration.test.ts ./tests/integration/sdk-roundtrip.test.ts ./packages/ravi-os-sdk/src/__tests__/channel-backend-core.test.ts ./packages/ravi-os-sdk/src/__tests__/channel-runtime-events.test.ts ./packages/ravi-os-sdk/src/__tests__/errors.test.ts ./packages/ravi-os-sdk/src/__tests__/native-channel-driver.test.ts ./packages/ravi-os-sdk/src/__tests__/package-exports.test.ts ./packages/ravi-os-sdk/src/__tests__/types.test-d.ts ./packages/ravi-os-sdk/src/__tests__/streaming.test.ts && bun run sdk:check",
     "test:swift-sdk": "swift test --package-path packages/ravi-os-swift-sdk",
@@ -99,11 +104,14 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",
+    "@oven/zig": "0.12.0-dev.1286",
     "@types/node": "^22.0.0",
     "@types/qrcode-terminal": "^0.12.2",
     "@types/react": "^19.2.10",
     "@types/ws": "^8.18.1",
     "bun-types": "^1.3.8",
+    "node-addon-api": "8.9.2",
+    "node-api-headers": "1.9.0",
     "typescript": "^5.6.0"
   }
 }

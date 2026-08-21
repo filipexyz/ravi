@@ -295,3 +295,66 @@ That command produced the expected eight-file publish set. Because this note
 changes the candidate commit, the first successful archive is diagnostic only;
 the final archive must be rebuilt from the replacement SHA with the same Bun
 command, then installed and process-tested from empty directories.
+
+## Revision note: 2026-08-21, fourth independent review NO-GO
+
+Independent review rejected commit
+`8d871e802f200626865f709a9ccd1ed2b74112ba` and its 4,970,966-byte package
+with SHA-256
+`08F57268162BD9135D27944E31AE4315FC59DFE8E304935B62DC7283914E8C17`.
+Neither candidate was pushed or opened as a PR.
+
+The complete-tree checks correctly reject static links and the tested late
+swaps, but path-based operations still leave a time-of-check/time-of-use
+window. A competing process can replace an entry after `lstat` and before
+`readdir`, `readFile`, or final promotion reopens the same path by name. This
+remains a high-severity confinement failure and blocks promotion.
+
+The review also found one documentation contradiction. Runtime and native
+tests intentionally apply the immutable Markdown snapshot captured by the
+plan; the PRD incorrectly said that source snapshot was reread before mutation.
+The PRD now describes the immutable-snapshot behavior already required by the
+SPEC and ADR.
+
+Positive evidence remains diagnostic only: exact package/source matching,
+focused and SDK tests, generated-contract checks, process checks, atomic index
+replacement, native paths, and the three-state verification contract passed.
+The next candidate must prevent link replacement during traversal, reads, and
+promotion through verified handles or an equivalent mechanism, add native
+concurrent coverage, then repeat commit, package, independent review, and Linux
+CI. The fourth package remains permanently NO-GO.
+
+## Revision note: 2026-08-21, native-handle remediation checkpoint
+
+The remediation replaces path-check/path-use sequences with complete native
+Node-API operations over pinned handles. Windows uses relative NT opens that
+reject reparse points and prevent delete/rename sharing, then promotes with a
+relative no-replace NT rename. Linux uses `openat2` confinement flags for every
+relative open and `renameat2(RENAME_NOREPLACE)` for promotion. Missing addons or
+unsupported primitives fail closed; there is no path-based fallback.
+
+The final Windows build executed through both Bun and Node. Five direct native
+tests passed, covering deep unrelated junction replacement, spec and companion
+replacement between enumeration and open, target replacement before promotion,
+staging tampering, cleanup, and dual-runtime loading. The complete specs suite
+passed 37 tests with 137 assertions, and the focused CLI/return-contract capture
+passed 14 tests with 83 assertions. Build, typecheck, focused Biome, Markdown
+lint, TypeScript SDK drift, both OpenAPI drift checks, Swift drift, and the
+repository quality gate against `origin/dev` passed.
+
+Two clean cross-builds produced byte-identical outputs. Linux x64 was 3,006,408
+bytes with SHA-256
+`A3329235554C8D585383E3EBB65BD3C288D238EF6F4B185508FEA908052214E2`;
+Windows x64 was 866,816 bytes with SHA-256
+`9F4B8546DF8443362CB5EFE68AC663A6F60CE47A584FFB4CA80220EB8D0BBED4`.
+Each publish directory contained only `ravi_specs_safe_fs.node`. Import
+libraries, PDBs, and diagnostic binaries were confined to ignored temporary
+storage and removed.
+
+Linux compilation is proven locally, but Linux execution is not. This Windows
+host has neither WSL nor a running Linux Docker daemon. A Windows/Ubuntu CI
+matrix now executes the domain suite on each native host, but that CI cannot run
+before an authorized push. No package, push, PR, or VPS access occurred in this
+checkpoint. The implementation may be committed locally because every locally
+available relevant gate is green, but promotion remains NO-GO until Ubuntu CI
+executes the exact commit and a fresh independent review finds no blocker.

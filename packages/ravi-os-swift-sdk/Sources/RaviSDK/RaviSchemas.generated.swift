@@ -68864,12 +68864,16 @@ public enum RaviSchemas {
                   },
                   "specsRoot": {
                     "type": "string"
+                  },
+                  "workspaceIdentity": {
+                    "type": "string"
                   }
                 },
                 "required": [
                   "cwd",
                   "specsRoot",
-                  "dbPath"
+                  "dbPath",
+                  "workspaceIdentity"
                 ],
                 "type": "object"
               },
@@ -69073,12 +69077,16 @@ public enum RaviSchemas {
           },
           "specsRoot": {
             "type": "string"
+          },
+          "workspaceIdentity": {
+            "type": "string"
           }
         },
         "required": [
           "cwd",
           "specsRoot",
-          "dbPath"
+          "dbPath",
+          "workspaceIdentity"
         ],
         "type": "object"
       },
@@ -69399,12 +69407,16 @@ public enum RaviSchemas {
           },
           "specsRoot": {
             "type": "string"
+          },
+          "workspaceIdentity": {
+            "type": "string"
           }
         },
         "required": [
           "cwd",
           "specsRoot",
-          "dbPath"
+          "dbPath",
+          "workspaceIdentity"
         ],
         "type": "object"
       },
@@ -69642,12 +69654,16 @@ public enum RaviSchemas {
               },
               "specsRoot": {
                 "type": "string"
+              },
+              "workspaceIdentity": {
+                "type": "string"
               }
             },
             "required": [
               "cwd",
               "specsRoot",
-              "dbPath"
+              "dbPath",
+              "workspaceIdentity"
             ],
             "type": "object"
           },
@@ -69893,12 +69909,16 @@ public enum RaviSchemas {
               },
               "specsRoot": {
                 "type": "string"
+              },
+              "workspaceIdentity": {
+                "type": "string"
               }
             },
             "required": [
               "cwd",
               "specsRoot",
-              "dbPath"
+              "dbPath",
+              "workspaceIdentity"
             ],
             "type": "object"
           },
@@ -70137,12 +70157,16 @@ public enum RaviSchemas {
                   },
                   "specsRoot": {
                     "type": "string"
+                  },
+                  "workspaceIdentity": {
+                    "type": "string"
                   }
                 },
                 "required": [
                   "cwd",
                   "specsRoot",
-                  "dbPath"
+                  "dbPath",
+                  "workspaceIdentity"
                 ],
                 "type": "object"
               },
@@ -70324,12 +70348,16 @@ public enum RaviSchemas {
           },
           "specsRoot": {
             "type": "string"
+          },
+          "workspaceIdentity": {
+            "type": "string"
           }
         },
         "required": [
           "cwd",
           "specsRoot",
-          "dbPath"
+          "dbPath",
+          "workspaceIdentity"
         ],
         "type": "object"
       },
@@ -70611,12 +70639,16 @@ public enum RaviSchemas {
           },
           "specsRoot": {
             "type": "string"
+          },
+          "workspaceIdentity": {
+            "type": "string"
           }
         },
         "required": [
           "cwd",
           "specsRoot",
-          "dbPath"
+          "dbPath",
+          "workspaceIdentity"
         ],
         "type": "object"
       },
@@ -70836,12 +70868,16 @@ public enum RaviSchemas {
               },
               "specsRoot": {
                 "type": "string"
+              },
+              "workspaceIdentity": {
+                "type": "string"
               }
             },
             "required": [
               "cwd",
               "specsRoot",
-              "dbPath"
+              "dbPath",
+              "workspaceIdentity"
             ],
             "type": "object"
           },
@@ -71069,12 +71105,16 @@ public enum RaviSchemas {
               },
               "specsRoot": {
                 "type": "string"
+              },
+              "workspaceIdentity": {
+                "type": "string"
               }
             },
             "required": [
               "cwd",
               "specsRoot",
-              "dbPath"
+              "dbPath",
+              "workspaceIdentity"
             ],
             "type": "object"
           },

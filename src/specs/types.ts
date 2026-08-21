@@ -107,6 +107,10 @@ export interface PreparedSpecCreation {
   files: PreparedSpecFile[];
   ancestors: SpecChainEntry[];
   missingAncestors: SpecChainEntry[];
+  securityBinding: {
+    workspaceIdentity: string;
+    rootBinding: string;
+  };
 }
 
 export interface SpecCreationInspection {

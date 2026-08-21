@@ -2073,3 +2073,53 @@ No npm 10.9.3, as formas testadas de `ignore-scripts` ainda executaram o
 repositorio foi `bun pm pack --ignore-scripts --destination <dir>` depois de
 `bun run build`. O primeiro arquivo gerado serve apenas como diagnostico porque
 este registro altera o commit; o pacote final deve ser reconstruido no novo SHA.
+
+### Quarto NO-GO independente de SPECS
+
+A revisao independente rejeitou o commit
+`8d871e802f200626865f709a9ccd1ed2b74112ba` e o pacote de 4.970.966 bytes com
+SHA-256
+`08F57268162BD9135D27944E31AE4315FC59DFE8E304935B62DC7283914E8C17`.
+Nenhum dos dois foi publicado ou usado para abrir PR.
+
+As verificacoes da arvore completa ainda deixavam uma janela entre conferir um
+caminho e reutiliza-lo por nome. Um processo concorrente podia trocar uma
+entrada por junction ou link antes de `readdir`, `readFile` ou da promocao
+final. O proximo candidato deve usar handles verificados ou mecanismo
+equivalente que impeça essa troca durante travessia, leitura e promocao, com
+cobertura concorrente nativa. O PRD tambem foi alinhado ao comportamento
+intencional: `apply` usa o snapshot imutavel capturado pelo plano, sem reler o
+Markdown. Novo commit, pacote, auditoria independente e CI Linux continuam
+obrigatorios.
+
+### Checkpoint da camada nativa por handles
+
+A correcao do quarto NO-GO substitui a sequencia de conferir e reabrir caminhos
+por operacoes Node-API completas sobre handles presos. Windows usa aberturas NT
+relativas, recusa reparse points e bloqueia troca por delete/rename enquanto a
+operacao esta aberta. Linux usa `openat2` com confinamento, sem links, magic
+links ou travessia de mount, e promove com `renameat2(RENAME_NOREPLACE)`. Nao ha
+fallback por caminho: addon, arquitetura ou primitiva ausente falha fechado.
+
+No Windows, o binario final executou em Bun e Node. Passaram cinco testes
+nativos adversariais, 37 testes de SPECS com 137 assercoes e 14 testes focados
+de CLI/contratos com 83 assercoes. Build, typecheck, Biome focado, lint Markdown,
+drift do SDK TypeScript, dois snapshots OpenAPI, Swift e quality gate contra
+`origin/dev` passaram.
+
+Duas compilacoes limpas e completas geraram os mesmos bytes: Linux x64 com
+3.006.408 bytes e SHA-256
+`A3329235554C8D585383E3EBB65BD3C288D238EF6F4B185508FEA908052214E2`, e
+Windows x64 com 866.816 bytes e SHA-256
+`9F4B8546DF8443362CB5EFE68AC663A6F60CE47A584FFB4CA80220EB8D0BBED4`.
+Cada pasta publicavel ficou somente com `ravi_specs_safe_fs.node`. Bibliotecas
+de importacao, PDBs e binarios de diagnostico foram mantidos fora da fronteira
+publicavel e removidos da area temporaria.
+
+O binario Linux compilou, mas nao executou neste host: WSL nao esta instalado e
+nao ha daemon Linux do Docker. A matriz de CI Windows/Ubuntu foi adicionada para
+executar o dominio nos dois sistemas quando houver push autorizado. Nenhum
+pacote foi formado e nao houve push, PR ou acesso a VPS. O checkpoint pode
+receber commit local porque tudo que era executavel localmente ficou verde, mas
+permanece NO-GO para promocao ate o CI Ubuntu executar o commit exato e uma nova
+auditoria independente nao encontrar bloqueador.

@@ -283,8 +283,9 @@ Agents use a closed sequence for creation and index synchronization:
 
 1. `plan` returns the normalized intent, bound paths, blockers, expected
    effects, and `planHash` without writing state.
-2. `apply` requires that exact hash and revalidates the bound workspace, specs
-   root, database path, ancestors, and source snapshot before mutation.
+2. `apply` requires that exact hash, revalidates the bound workspace, specs
+   root, database path, and ancestors, then applies the immutable source
+   snapshot captured by the plan.
 3. `readback` observes files and index state independently of the write result.
 4. `verify` classifies the result as `confirmed`, `absent`, or `divergent`.
 5. `recover` recommends no action, a fresh plan, or manual review; it never
@@ -297,9 +298,12 @@ only apply to creation from being sent to synchronization.
 
 Plans do not accept an arbitrary root. They are bound to the current workspace,
 its `.ravi/specs` directory, and the resolved Ravi database. Existing symbolic
-links or junctions in those bindings are rejected. Creation also requires every
-ancestor `SPEC.md` and revalidates that hierarchy immediately before publishing
-the staged directory.
+links or junctions in those bindings are rejected. Traversal, reads, staging,
+and promotion run through native Windows or Linux handles opened relative to a
+pinned parent, so an entry cannot be redirected by replacing its name after a
+separate path check. There is no path-based fallback. Creation also requires
+every ancestor `SPEC.md` and revalidates that hierarchy immediately before
+publishing the staged directory.
 
 ### Project Integration
 

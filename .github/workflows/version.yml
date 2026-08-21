@@ -62,7 +62,7 @@ jobs:
           CHANGED_FILES="$(mktemp)"
           git diff --name-only "${BASE}"..HEAD | tee "$CHANGED_FILES"
 
-          if grep -Eq '^(src/|bin/|scripts/|package\.json$|bun\.lock$|tsconfig\.json$)' "$CHANGED_FILES"; then
+          if grep -Eq '^(src/|native/|bin/|scripts/|package\.json$|bun\.lock$|tsconfig\.json$)' "$CHANGED_FILES"; then
             echo "publish=true" >> "$GITHUB_OUTPUT"
             echo "Publishable changes detected."
           else
@@ -145,7 +145,7 @@ jobs:
           git push --atomic origin "HEAD:refs/heads/${BRANCH}" "refs/tags/v${VERSION}"
 
       - name: Build package
-        run: bun run build
+        run: bun run build:native:all && bun run build && bun run check:native-package
 
       - name: Publish to npm
         env:

@@ -13776,6 +13776,7 @@ export type SpecsFacadeNewApplyReturn = {
         cwd: string;
         dbPath: string;
         specsRoot: string;
+        workspaceIdentity: string;
       };
       files: Array<{
         actualSha256?: string;
@@ -13821,6 +13822,7 @@ export type SpecsFacadeNewPlanReturn = {
     cwd: string;
     dbPath: string;
     specsRoot: string;
+    workspaceIdentity: string;
   };
   blockers: Array<{
     code: string;
@@ -13891,6 +13893,7 @@ export type SpecsFacadeNewReadbackReturn = {
     cwd: string;
     dbPath: string;
     specsRoot: string;
+    workspaceIdentity: string;
   };
   files: Array<{
     actualSha256?: string;
@@ -13945,6 +13948,7 @@ export type SpecsFacadeNewRecoverReturn = {
       cwd: string;
       dbPath: string;
       specsRoot: string;
+      workspaceIdentity: string;
     };
     files: Array<{
       actualSha256?: string;
@@ -14000,6 +14004,7 @@ export type SpecsFacadeNewVerifyReturn = {
       cwd: string;
       dbPath: string;
       specsRoot: string;
+      workspaceIdentity: string;
     };
     files: Array<{
       actualSha256?: string;
@@ -14054,6 +14059,7 @@ export type SpecsFacadeSyncApplyReturn = {
         cwd: string;
         dbPath: string;
         specsRoot: string;
+        workspaceIdentity: string;
       };
       files: Array<{
         actualSha256?: string;
@@ -14094,6 +14100,7 @@ export type SpecsFacadeSyncPlanReturn = {
     cwd: string;
     dbPath: string;
     specsRoot: string;
+    workspaceIdentity: string;
   };
   blockers: Array<{
     code: string;
@@ -14157,6 +14164,7 @@ export type SpecsFacadeSyncReadbackReturn = {
     cwd: string;
     dbPath: string;
     specsRoot: string;
+    workspaceIdentity: string;
   };
   files: Array<{
     actualSha256?: string;
@@ -14207,6 +14215,7 @@ export type SpecsFacadeSyncRecoverReturn = {
       cwd: string;
       dbPath: string;
       specsRoot: string;
+      workspaceIdentity: string;
     };
     files: Array<{
       actualSha256?: string;
@@ -14258,6 +14267,7 @@ export type SpecsFacadeSyncVerifyReturn = {
       cwd: string;
       dbPath: string;
       specsRoot: string;
+      workspaceIdentity: string;
     };
     files: Array<{
       actualSha256?: string;
