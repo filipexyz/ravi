@@ -1586,3 +1586,23 @@ o runner sobre 56 caminhos acumulados da foundation e do dominio. Foram
 indexadas 274 specs, com aprovacao de `cli/commands`, `cli/foundation` e
 `commands`. O drift gerado esta fechado localmente. Ainda faltam commit exato,
 pacote, auditoria independente e CI Linux; nao houve push, PR, merge ou VPS.
+
+### NO-GO independente do pacote COMMANDS
+
+A auditoria independente rejeitou o commit
+`d648b40691300af98818331313a7445b93ab1e90` e o pacote de 4.944.320 bytes com
+SHA-256
+`206A02D753F590AEF798A74DA80C93D93A0963EF0F0ED721A1E9B253A4C2F4AB`.
+Nada foi enviado ou usado para abrir PR.
+
+O `--fields` produzia registros parciais que os schemas publicados ainda
+tratavam como completos; propriedades nao enumeraveis mascaravam o erro antes
+do JSON real. As operacoes chamadas read-only tambem abriam SQLite gravavel,
+alteravam WAL/SHM e tentavam auditoria NATS. O teste de processo suprimia esses
+eventos e observava apenas parte do estado, deixando os efeitos escaparem.
+
+Novo candidato deve tornar a projecao honesta depois de serializar, usar leitura
+de configuracao sem inicializacao ou escrita, impedir auditoria por politica
+declarada do dominio, comparar todos os arquivos e tabelas relevantes, testar o
+help compartilhado e regenerar todos os contratos. O candidato rejeitado fica
+em NO-GO definitivo.

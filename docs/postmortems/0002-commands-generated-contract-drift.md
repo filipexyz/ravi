@@ -83,3 +83,32 @@ indexed 274 specs and approved `cli/commands`, `cli/foundation`, and `commands`.
 The generated-drift correction is locally closed. Exact commit, package,
 independent review, and Linux CI remain mandatory; push, PR, merge, and VPS have
 not occurred.
+
+## Revision note: 2026-08-21, independent package review NO-GO
+
+Independent review rejected commit
+`d648b40691300af98818331313a7445b93ab1e90` and its 4,944,320-byte package
+with SHA-256
+`206A02D753F590AEF798A74DA80C93D93A0963EF0F0ED721A1E9B253A4C2F4AB`.
+Neither candidate was pushed or opened as a PR. The historical status in this
+document's header describes the earlier generated-drift incident; it does not
+override this later NO-GO.
+
+The review found that `--fields` serialized partial records while the Returns,
+TypeScript, OpenAPI, and Swift schemas still required complete command records.
+Non-enumerable properties let validation pass before serialization but vanished
+from actual JSON, so the published contract rejected its own compact output.
+
+The review also disproved the strict read-only claim. Resolving the active agent
+through the normal config store opened writable SQLite, initialized schema/WAL,
+and changed `ravi.db-wal` and `ravi.db-shm`. The normal registry path also tried
+to publish audit events to NATS. The process test hid that transport with
+`RAVI_SUPPRESS_AUDIT_EVENTS` and compared only selected tables and command-file
+hashes, so it could not detect the state-file changes.
+
+A replacement candidate must publish an honest projected-record schema after
+JSON round-trip, remove the non-enumerable-field workaround, resolve command
+configuration through a genuinely read-only path, suppress domain audit effects
+by declared policy rather than test environment, compare all relevant SQLite
+tables and state files, add focused group-help tests, and repeat every generated
+artifact and package review. This candidate remains permanently NO-GO.
