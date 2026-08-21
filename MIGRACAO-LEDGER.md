@@ -2056,3 +2056,12 @@ dominio specs passou. O lint Markdown encontrou dois titulos de nivel um
 duplicados pelos titulos do frontmatter nas specs normativas; ambos foram
 rebaixados para nivel dois. O SHA anterior a essa correcao nao foi empacotado,
 auditado nem publicado. Todos os gates seguintes devem usar o novo SHA.
+
+### Limite do prepare no empacotamento Windows
+
+O primeiro `npm pack` concluiu o build de prepack, mas falhou no script
+inalterado `prepare`, que usa `2>/dev/null || true` e nao e aceito pelo
+`cmd.exe`. Nenhum arquivo de pacote foi produzido. A captura Windows deve usar
+o build ja validado seguido de `npm pack --ignore-scripts`; instalacao e testes
+de processo continuam obrigatorios sobre esse arquivo. O CI Linux deve executar
+o ciclo normal antes do merge.

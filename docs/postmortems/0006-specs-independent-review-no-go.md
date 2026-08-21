@@ -270,3 +270,16 @@ lowered to level two. The candidate SHA before this correction was never
 packaged, reviewed, pushed, or opened as a PR. Markdown lint, focused tests,
 package verification, independent review, and Linux CI must use the replacement
 SHA.
+
+## Revision note: 2026-08-21, Windows package prepare boundary
+
+The first package command completed the Ravi prepack build but then failed in
+the unchanged `prepare` script. That script uses the POSIX expression
+`2>/dev/null || true`, which Windows `cmd.exe` cannot execute. No archive was
+produced by the failed command, and the source tree stayed clean.
+
+The Windows package capture must therefore run the already validated build and
+invoke `npm pack --ignore-scripts`. This records the same publishable file set
+without rerunning the incompatible lifecycle hook. Installation and process
+checks still use the resulting archive. Linux CI must exercise the normal
+lifecycle path before merge.
