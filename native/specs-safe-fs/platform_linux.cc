@@ -191,11 +191,16 @@ Handle create_file_at(const Handle& parent, const std::string& name) {
 }
 
 std::vector<std::string> list_directory(const Handle& directory) {
-  const int duplicate = dup(directory.get());
-  if (duplicate < 0) fail_errno("SAFE_ENUMERATION_FAILED", "", "Cannot duplicate specs directory handle");
-  DIR* stream = fdopendir(duplicate);
+  // dup() shares the directory offset with the pinned descriptor. Open "."
+  // relative to the pinned directory so every scan has an independent offset.
+  const int enumeration_handle =
+      openat(directory.get(), ".", O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+  if (enumeration_handle < 0) {
+    fail_errno("SAFE_ENUMERATION_FAILED", "", "Cannot open an independent specs directory view");
+  }
+  DIR* stream = fdopendir(enumeration_handle);
   if (stream == nullptr) {
-    close(duplicate);
+    close(enumeration_handle);
     fail_errno("SAFE_ENUMERATION_FAILED", "", "Cannot enumerate specs directory");
   }
   std::vector<std::string> names;

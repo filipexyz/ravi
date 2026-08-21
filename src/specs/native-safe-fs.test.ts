@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import {
   captureNativeSpecsTree,
   createNativeSpec,
@@ -22,8 +23,38 @@ import {
 } from "./native-safe-fs.js";
 
 const tempRoots: string[] = [];
+const openat2RollbackChildFlag = "--ravi-test-openat2-rollback-child";
 
 setDefaultTimeout(20_000);
+
+function runOpenat2RollbackChild(): void {
+  const flagIndex = process.argv.indexOf(openat2RollbackChildFlag);
+  if (flagIndex < 0) return;
+  const cwd = process.argv[flagIndex + 1];
+  if (!cwd) process.exit(10);
+  const snapshot = captureNativeSpecsTree(cwd);
+  const stagingPath = join(cwd, ".ravi", "specs", ".channels.ravi-stage-openat2");
+  try {
+    createNativeSpec({
+      workspacePath: cwd,
+      expectedWorkspaceIdentity: snapshot.workspaceIdentity,
+      expectedRootBinding: snapshot.rootBinding,
+      targetSegments: ["channels"],
+      files: [{ name: "SPEC.md", content: "safe payload" }],
+      requireAncestors: false,
+      existing: "error",
+      existingDirectory: "error",
+      stagingName: ".channels.ravi-stage-openat2",
+      stagingPath,
+      originalRecoveryPath: `${stagingPath}.original`,
+    });
+    process.exit(11);
+  } catch (error) {
+    process.exit(error instanceof NativeSpecsSafetyError ? 0 : 12);
+  }
+}
+
+runOpenat2RollbackChild();
 
 function makeWorkspace(prefix = "ravi-specs-native-"): string {
   const root = mkdtempSync(join(tmpdir(), prefix));
@@ -236,35 +267,16 @@ describe("specs native safe filesystem", () => {
   it.skipIf(process.platform !== "linux")(
     "rolls back directories created before a forced openat2 availability failure",
     () => {
-      const previous = process.env.RAVI_TEST_ONLY_FORCE_OPENAT2_ENOSYS_AFTER_MKDIR;
-      process.env.RAVI_TEST_ONLY_FORCE_OPENAT2_ENOSYS_AFTER_MKDIR = "specs";
-      try {
-        for (const precreateRavi of [false, true]) {
-          const cwd = makeWorkspace();
-          if (precreateRavi) mkdirSync(join(cwd, ".ravi"));
-          const snapshot = captureNativeSpecsTree(cwd);
-          const stagingPath = join(cwd, ".ravi", "specs", ".channels.ravi-stage-openat2");
-          expect(() =>
-            createNativeSpec({
-              workspacePath: cwd,
-              expectedWorkspaceIdentity: snapshot.workspaceIdentity,
-              expectedRootBinding: snapshot.rootBinding,
-              targetSegments: ["channels"],
-              files: [{ name: "SPEC.md", content: "safe payload" }],
-              requireAncestors: false,
-              existing: "error",
-              existingDirectory: "error",
-              stagingName: ".channels.ravi-stage-openat2",
-              stagingPath,
-              originalRecoveryPath: `${stagingPath}.original`,
-            }),
-          ).toThrow(NativeSpecsSafetyError);
-          expect(existsSync(join(cwd, ".ravi", "specs"))).toBe(false);
-          expect(existsSync(join(cwd, ".ravi"))).toBe(precreateRavi);
-        }
-      } finally {
-        if (previous === undefined) delete process.env.RAVI_TEST_ONLY_FORCE_OPENAT2_ENOSYS_AFTER_MKDIR;
-        else process.env.RAVI_TEST_ONLY_FORCE_OPENAT2_ENOSYS_AFTER_MKDIR = previous;
+      for (const precreateRavi of [false, true]) {
+        const cwd = makeWorkspace();
+        if (precreateRavi) mkdirSync(join(cwd, ".ravi"));
+        const child = spawnSync(process.execPath, [fileURLToPath(import.meta.url), openat2RollbackChildFlag, cwd], {
+          encoding: "utf8",
+          env: { ...process.env, RAVI_TEST_ONLY_FORCE_OPENAT2_ENOSYS_AFTER_MKDIR: "specs" },
+        });
+        expect(child.status, `${child.stdout}\n${child.stderr}`).toBe(0);
+        expect(existsSync(join(cwd, ".ravi", "specs"))).toBe(false);
+        expect(existsSync(join(cwd, ".ravi"))).toBe(precreateRavi);
       }
     },
   );

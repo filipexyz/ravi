@@ -604,3 +604,30 @@ distinct physical roots, rejects the absolute roots, requires identical bytes
 and SHA-256 values, and loads/exercises the host addon. Final gates and SHA are
 not claimed in this note. No final package, push, PR, merge, or VPS operation
 occurred.
+
+## Revision note: 2026-08-21, first Specs PR Linux CI failures
+
+The Specs Native Linux job and the Quality Gate for PR 431 rejected candidate
+`c907de2172c29decf5372653572fde695f1aecbb` for the same cause. Native
+compilation and typecheck succeeded, but the Specs suite reported 27 failures
+among 45 tests. Twenty-six were one cascade: the returned target snapshot was
+empty. The files had been created correctly; the Linux directory enumerator
+used `dup()` on the pinned descriptor, and both descriptors shared one
+directory offset. An earlier safety scan consumed that offset, so the later
+read-back incorrectly observed no entries. Windows uses a different directory
+enumeration primitive and did not expose the defect; its native job passed.
+
+The remaining Linux-only rollback proof changed `process.env` after Bun had
+started, but the native `getenv()` test hook did not observe that late update.
+The proof now launches a short child process with the hook present at startup
+and checks both initially absent and pre-existing `.ravi` cases. This changes
+only the test harness, not the runtime contract.
+
+The runtime correction opens `.` relative to the already pinned directory for
+each enumeration, producing an independent offset without weakening handle
+confinement. Cross-compilation, the two-root reproducibility proof, the native
+package boundary, 43 Specs tests with 159 assertions, and typecheck passed
+locally before the test-harness correction. Linux execution and the replacement
+candidate remain NO-GO until focused local checks are repeated, an independent
+review approves the complete diff, a new exact package is created, and CI on
+the replacement commit passes. No merge or VPS operation occurred.

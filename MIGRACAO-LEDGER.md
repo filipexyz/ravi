@@ -2366,3 +2366,28 @@ Linux e Windows em duas raizes fisicas diferentes, rejeita as raizes absolutas,
 exige bytes e SHA-256 identicos e carrega/exercita o addon do host. Gates e SHA
 finais ainda nao sao alegados neste adendo. Nao houve pacote final, push, PR,
 merge ou VPS.
+
+### Retificacao de `c907de21` pelas primeiras CIs Linux da PR 431
+
+Os jobs Specs Native Linux e Quality Gate da PR 431 rejeitaram
+`c907de2172c29decf5372653572fde695f1aecbb` pela mesma causa. A compilacao
+nativa e o typecheck passaram, mas a suite Specs registrou 27 falhas em 45
+testes. Vinte e seis formavam uma unica cascata: o snapshot final vinha vazio.
+Os arquivos existiam; no Linux, `dup()` compartilhava a posicao de leitura da
+pasta com o descritor protegido. Uma leitura anterior consumia a lista e a
+confirmacao seguinte observava incorretamente zero entradas. O job nativo do
+Windows passou porque ele usa outra primitiva.
+
+A prova restante, exclusiva de Linux, alterava `process.env` depois que o Bun
+ja havia iniciado, mas o hook nativo via `getenv()` nao recebia essa mudanca
+tardia. A prova agora inicia um processo curto com o hook presente desde o
+inicio e verifica os casos `.ravi` ausente e preexistente. Essa mudanca afeta
+somente o teste, nao o contrato de runtime.
+
+A correcao de runtime abre `.` a partir da pasta ja protegida em cada
+enumeracao, criando uma posicao independente sem relaxar o confinamento por
+descritor. Antes da correcao da prova passaram localmente a compilacao cruzada,
+a reproducao em duas raizes, a fronteira do pacote nativo, 43 testes Specs com
+159 assercoes e o typecheck. A execucao Linux e o candidato substituto continuam
+NO-GO ate repeticao dos checks focados, aprovacao independente do diff completo,
+novo pacote exato e CI verde. Nao houve merge nem VPS.
