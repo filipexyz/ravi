@@ -19943,17 +19943,19 @@ public struct SessionsSetProviderReturn: Codable, Sendable {
   public var before: RaviJSON
   public var changed: Bool
   public var effectiveProvider: String
+  public var providerSource: String
   public var runtimeProviderOverride: RaviJSON
   public var sessionKey: String
   public var sessionName: RaviJSON
 
-  public init(action: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, effectiveProvider: String, runtimeProviderOverride: RaviJSON, sessionKey: String, sessionName: RaviJSON) {
+  public init(action: String, after: RaviJSON, appliesOn: String, before: RaviJSON, changed: Bool, effectiveProvider: String, providerSource: String, runtimeProviderOverride: RaviJSON, sessionKey: String, sessionName: RaviJSON) {
     self.action = action
     self.after = after
     self.appliesOn = appliesOn
     self.before = before
     self.changed = changed
     self.effectiveProvider = effectiveProvider
+    self.providerSource = providerSource
     self.runtimeProviderOverride = runtimeProviderOverride
     self.sessionKey = sessionKey
     self.sessionName = sessionName
@@ -19966,6 +19968,7 @@ public struct SessionsSetProviderReturn: Codable, Sendable {
     case before = "before"
     case changed = "changed"
     case effectiveProvider = "effectiveProvider"
+    case providerSource = "providerSource"
     case runtimeProviderOverride = "runtimeProviderOverride"
     case sessionKey = "sessionKey"
     case sessionName = "sessionName"

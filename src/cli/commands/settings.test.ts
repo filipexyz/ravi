@@ -108,7 +108,7 @@ describe("SettingsCommands", () => {
       new SettingsCommands().list(true);
     });
 
-    expect(output).toContain("Settings (14 returned of 14, limit 50, offset 0):");
+    expect(output).toContain("Settings (17 returned of 17, limit 50, offset 0):");
     expect(output).toContain("account.main.dmPolicy: pairing");
     expect(output).toContain("section: legacy");
   });
@@ -124,6 +124,25 @@ describe("SettingsCommands", () => {
 
     expect(output).toContain("Legacy setting shadowed by instances: account.main.dmPolicy: pairing");
     expect(output).toContain("Use `ravi instances set main dmPolicy <value>` instead.");
+  });
+
+  it("registers stored runtime defaults and keeps env as fallback only", () => {
+    const commands = new SettingsCommands();
+    expect(() => commands.set("runtime.defaultProvider", "not-a-provider")).toThrow(/Invalid provider/);
+    expect(() => commands.set("runtime.defaultProvider", "claude", true)).not.toThrow();
+    expect(settingsStore["runtime.defaultProvider"]).toBe("claude");
+
+    expect(() => commands.set("runtime.defaultEffort", "ludicrous")).toThrow(/Invalid runtime effort/);
+    expect(() => commands.set("runtime.defaultEffort", "high", true)).not.toThrow();
+    expect(settingsStore["runtime.defaultEffort"]).toBe("high");
+
+    expect(() => commands.set("runtime.defaultModel", "opus", true)).not.toThrow();
+    expect(settingsStore["runtime.defaultModel"]).toBe("opus");
+
+    const output = captureLogs(() => {
+      commands.get("runtime.defaultModel");
+    });
+    expect(output).toContain("runtime.defaultModel: opus");
   });
 
   it("registers a strict global model-broker-required switch", () => {

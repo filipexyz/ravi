@@ -16,6 +16,7 @@ import { notifyRuntimeRecoveryExhausted } from "./runtime/runtime-recovery-alert
 import { safeEmit } from "./runtime/safe-emit.js";
 import { RuntimeSessionDispatcher, type RuntimeAbortProvenance } from "./runtime/session-dispatcher.js";
 import { resolveRuntimeInteractiveReservedSlots, resolveRuntimeSessionPoolMax } from "./runtime/session-pool.js";
+import { resolveGlobalRuntimeModel } from "./runtime/runtime-defaults.js";
 
 export type {
   ChannelContext,
@@ -76,7 +77,7 @@ export class RaviBot {
       notifyRuntimeRecoveryExhausted: async (input) => {
         await notifyRuntimeRecoveryExhausted(input);
       },
-      getConfigModel: () => this.config.model,
+      getConfigModel: () => resolveGlobalRuntimeModel(),
       crashRecovery: this.crashRecovery,
     });
     this.hostSubscriptions = new RuntimeHostSubscriptions({

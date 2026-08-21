@@ -215,11 +215,13 @@ export type AgentsListReturn = {
     memoryModel?: string;
     mode?: "active" | "sentinel";
     model?: string;
+    modelError: string | null;
     modelPresetId: string | null;
     modelPresetVersion: number | null;
-    modelSource: ("agent_preset" | "agent_default" | "global_default") | null;
+    modelSource: ("agent_preset" | "agent_default" | "global_default" | "env_fallback" | "runtime_default") | null;
     name?: string;
     provider?: string;
+    providerSource: string;
     remote?: string;
     remoteUser?: string;
     settingSources?: Array<"user" | "project">;
@@ -269,11 +271,13 @@ export type AgentsListReturn = {
     memoryModel?: string;
     mode?: "active" | "sentinel";
     model?: string;
+    modelError: string | null;
     modelPresetId: string | null;
     modelPresetVersion: number | null;
-    modelSource: ("agent_preset" | "agent_default" | "global_default") | null;
+    modelSource: ("agent_preset" | "agent_default" | "global_default" | "env_fallback" | "runtime_default") | null;
     name?: string;
     provider?: string;
+    providerSource: string;
     remote?: string;
     remoteUser?: string;
     settingSources?: Array<"user" | "project">;
@@ -344,11 +348,13 @@ export type AgentsModelBrokerReturn = {
     memoryModel?: string;
     mode?: "active" | "sentinel";
     model?: string;
+    modelError: string | null;
     modelPresetId: string | null;
     modelPresetVersion: number | null;
-    modelSource: ("agent_preset" | "agent_default" | "global_default") | null;
+    modelSource: ("agent_preset" | "agent_default" | "global_default" | "env_fallback" | "runtime_default") | null;
     name?: string;
     provider?: string;
+    providerSource: string;
     remote?: string;
     remoteUser?: string;
     settingSources?: Array<"user" | "project">;
@@ -425,11 +431,13 @@ export type AgentsPermissionsReturn = {
     memoryModel?: string;
     mode?: "active" | "sentinel";
     model?: string;
+    modelError: string | null;
     modelPresetId: string | null;
     modelPresetVersion: number | null;
-    modelSource: ("agent_preset" | "agent_default" | "global_default") | null;
+    modelSource: ("agent_preset" | "agent_default" | "global_default" | "env_fallback" | "runtime_default") | null;
     name?: string;
     provider?: string;
+    providerSource: string;
     remote?: string;
     remoteUser?: string;
     settingSources?: Array<"user" | "project">;
@@ -565,11 +573,13 @@ export type AgentsShowReturn = {
     memoryModel?: string;
     mode?: "active" | "sentinel";
     model?: string;
+    modelError: string | null;
     modelPresetId: string | null;
     modelPresetVersion: number | null;
-    modelSource: ("agent_preset" | "agent_default" | "global_default") | null;
+    modelSource: ("agent_preset" | "agent_default" | "global_default" | "env_fallback" | "runtime_default") | null;
     name?: string;
     provider?: string;
+    providerSource: string;
     remote?: string;
     remoteUser?: string;
     settingSources?: Array<"user" | "project">;
@@ -12075,23 +12085,29 @@ export type SessionsSetEffortReturn = {
   action: "set-effort";
   after: ({
     agentId: string;
-    effectiveModel: string;
+    effectiveModel: string | null;
     effectiveProvider: string;
     effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
     ephemeral: boolean;
     expiresAt: number | null;
     label: string;
+    modelError: string | null;
     modelOverride?: string;
     modelPresetId: string | null;
     modelPresetVersion: number | null;
-    modelSource: string;
+    modelSource: string | null;
     name?: string;
+    providerSource: string;
     runtimeOptions: {
       effort: {
-        source: "session_override" | "agent_default" | "runtime_default";
+        source: "session_override" | "agent_default" | "global_default" | "runtime_default";
         value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
       };
       model: {
+        source: string | null;
+        value: string | null;
+      };
+      provider: {
         source: string;
         value: string;
       };
@@ -12105,23 +12121,29 @@ export type SessionsSetEffortReturn = {
   appliesOn: "next-turn-runtime-restart";
   before: {
     agentId: string;
-    effectiveModel: string;
+    effectiveModel: string | null;
     effectiveProvider: string;
     effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
     ephemeral: boolean;
     expiresAt: number | null;
     label: string;
+    modelError: string | null;
     modelOverride?: string;
     modelPresetId: string | null;
     modelPresetVersion: number | null;
-    modelSource: string;
+    modelSource: string | null;
     name?: string;
+    providerSource: string;
     runtimeOptions: {
       effort: {
-        source: "session_override" | "agent_default" | "runtime_default";
+        source: "session_override" | "agent_default" | "global_default" | "runtime_default";
         value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
       };
       model: {
+        source: string | null;
+        value: string | null;
+      };
+      provider: {
         source: string;
         value: string;
       };
@@ -12134,7 +12156,7 @@ export type SessionsSetEffortReturn = {
   };
   changed: boolean;
   effectiveEffort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
-  effectiveEffortSource: "session_override" | "agent_default" | "runtime_default";
+  effectiveEffortSource: "session_override" | "agent_default" | "global_default" | "runtime_default";
   effortOverride: ("none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra") | null;
   sessionKey: string;
   sessionName: string | null;
@@ -12160,23 +12182,29 @@ export type SessionsSetProviderReturn = {
   action: "set-provider";
   after: ({
     agentId: string;
-    effectiveModel: string;
+    effectiveModel: string | null;
     effectiveProvider: string;
     effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
     ephemeral: boolean;
     expiresAt: number | null;
     label: string;
+    modelError: string | null;
     modelOverride?: string;
     modelPresetId: string | null;
     modelPresetVersion: number | null;
-    modelSource: string;
+    modelSource: string | null;
     name?: string;
+    providerSource: string;
     runtimeOptions: {
       effort: {
-        source: "session_override" | "agent_default" | "runtime_default";
+        source: "session_override" | "agent_default" | "global_default" | "runtime_default";
         value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
       };
       model: {
+        source: string | null;
+        value: string | null;
+      };
+      provider: {
         source: string;
         value: string;
       };
@@ -12190,23 +12218,29 @@ export type SessionsSetProviderReturn = {
   appliesOn: "next-turn-runtime-restart";
   before: {
     agentId: string;
-    effectiveModel: string;
+    effectiveModel: string | null;
     effectiveProvider: string;
     effortOverride?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
     ephemeral: boolean;
     expiresAt: number | null;
     label: string;
+    modelError: string | null;
     modelOverride?: string;
     modelPresetId: string | null;
     modelPresetVersion: number | null;
-    modelSource: string;
+    modelSource: string | null;
     name?: string;
+    providerSource: string;
     runtimeOptions: {
       effort: {
-        source: "session_override" | "agent_default" | "runtime_default";
+        source: "session_override" | "agent_default" | "global_default" | "runtime_default";
         value: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max" | "ultra";
       };
       model: {
+        source: string | null;
+        value: string | null;
+      };
+      provider: {
         source: string;
         value: string;
       };
@@ -12219,6 +12253,7 @@ export type SessionsSetProviderReturn = {
   };
   changed: boolean;
   effectiveProvider: string;
+  providerSource: string;
   runtimeProviderOverride: string | null;
   sessionKey: string;
   sessionName: string | null;

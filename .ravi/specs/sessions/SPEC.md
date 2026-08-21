@@ -143,8 +143,11 @@ Agents MUST consult `ravi sessions actions --json` before using a conversational
 ## Effective Model And Presets
 
 Session JSON (`sessions list/info`) exposes the resolved `effectiveProvider`,
-`effectiveModel`, `modelSource` (`session_override` | `agent_preset` |
-`agent_default` | `global_default`), `modelPresetId`, and `modelPresetVersion`.
-A session `modelOverride` continues to win over the agent-level selection and is
-reported as `session_override`, shadowing any agent preset. Applying a preset
-MUST NOT mutate session state. See `runtime/model-presets`.
+`providerSource`, `effectiveModel`, `modelSource` (`session_override` |
+`agent_preset` | `agent_default` | `global_default` | `env_fallback` |
+`runtime_default`), `modelPresetId`, `modelPresetVersion`, and `modelError`.
+Display MUST match launch and MUST NOT invent a model when only a provider
+override is set. A session `modelOverride` continues to win over the
+agent-level selection and is reported as `session_override`, shadowing any
+agent preset. Applying a preset MUST NOT mutate session state. See
+`runtime/model-presets` and `runtime/defaults`.

@@ -3,7 +3,7 @@ import { subscribe } from "../../nats.js";
 import { dbGetAgent } from "../../router/router-db.js";
 import { resolveSession } from "../../router/sessions.js";
 import type { AgentConfig, SessionEntry } from "../../router/index.js";
-import { loadConfig } from "../../utils/config.js";
+import { resolveGlobalRuntimeModel } from "../../runtime/runtime-defaults.js";
 
 export interface SessionMetadata {
   session: SessionEntry | null;
@@ -15,7 +15,7 @@ function snapshot(sessionName: string): SessionMetadata {
   const session = resolveSession(sessionName);
   const agentId = session?.agentId;
   const agent = agentId ? dbGetAgent(agentId) : null;
-  return { session, agent, defaultModel: loadConfig().model };
+  return { session, agent, defaultModel: resolveGlobalRuntimeModel() };
 }
 
 /**

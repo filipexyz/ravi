@@ -151,4 +151,14 @@ describe("agent model preset resolution", () => {
     expect(direct.modelSource).toBe("agent_default");
     expect(direct.effectiveModel).toBe("opus");
   });
+
+  test("does not swallow an unusable preset into the global or env default", () => {
+    const effective = resolveEffectiveAgentModel({ modelPresetId: "fast-sonnet" }, "haiku", {
+      lookupPreset: lookupPreset(fakePreset({ enabled: false })),
+      globalDefaultSource: "env_fallback",
+    });
+    expect(effective.effectiveModel).toBeNull();
+    expect(effective.modelSource).toBeNull();
+    expect(effective.error).toContain("disabled");
+  });
 });

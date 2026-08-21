@@ -40,7 +40,8 @@ bun test src/tasks/runtime-options.test.ts
 - Direct `model` and `modelPresetId` are mutually exclusive in one transaction;
   clearing both falls through to the global default.
 - Missing/disabled/provider-incompatible preset references fail before commit
-  without silent global fallback.
+  without silent global or env fallback. A stale unusable reference MUST also
+  fail the next unshadowed launch instead of swallowing into `RAVI_MODEL`.
 - Legacy agents without a preset preserve current behavior exactly.
 - Session, prompt/dispatch, task, and profile overrides win over the preset and
   are reported as shadowing.

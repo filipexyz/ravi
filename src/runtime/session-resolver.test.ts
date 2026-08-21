@@ -7,6 +7,8 @@ import {
   updateProviderSession,
   updateSessionRuntimeProviderOverride,
 } from "../router/sessions.js";
+import { dbSetSetting } from "../router/router-db.js";
+import { RUNTIME_DEFAULT_PROVIDER_SETTING } from "./runtime-defaults.js";
 import { cleanupIsolatedRaviState, createIsolatedRaviState } from "../test/ravi-state.js";
 import { configStore } from "../config-store.js";
 import { resolveRuntimeSession } from "./session-resolver.js";
@@ -118,6 +120,20 @@ describe("runtime session resolver", () => {
       staleCleared: true,
     });
     expect(getSession(SESSION_KEY)?.providerSessionId).toBeUndefined();
+  });
+
+  it("uses a stored runtime.defaultProvider before the hardcoded default", () => {
+    getOrCreateSession(SESSION_KEY, "main", stateDir ?? "/tmp", { name: SESSION_NAME });
+    dbSetSetting(RUNTIME_DEFAULT_PROVIDER_SETTING, "claude");
+    configStore.refresh();
+
+    const resolved = resolveRuntimeSession({
+      sessionName: SESSION_NAME,
+      prompt: { prompt: "use stored provider default" },
+      defaultRuntimeProviderId: "codex",
+    });
+
+    expect(resolved?.runtimeProviderId).toBe("claude");
   });
 
   it("uses session runtime provider override before agent/default provider", () => {

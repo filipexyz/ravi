@@ -1053,6 +1053,16 @@ export const AgentsListReturnSchema = {
           "model": {
             "type": "string"
           },
+          "modelError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "modelPresetId": {
             "anyOf": [
               {
@@ -1079,7 +1089,9 @@ export const AgentsListReturnSchema = {
                 "enum": [
                   "agent_preset",
                   "agent_default",
-                  "global_default"
+                  "global_default",
+                  "env_fallback",
+                  "runtime_default"
                 ],
                 "type": "string"
               },
@@ -1092,6 +1104,9 @@ export const AgentsListReturnSchema = {
             "type": "string"
           },
           "provider": {
+            "type": "string"
+          },
+          "providerSource": {
             "type": "string"
           },
           "remote": {
@@ -1218,9 +1233,11 @@ export const AgentsListReturnSchema = {
           "modelPresetId",
           "isDefault",
           "effectiveProvider",
+          "providerSource",
           "effectiveModel",
           "modelSource",
           "modelPresetVersion",
+          "modelError",
           "tags"
         ],
         "type": "object"
@@ -1375,6 +1392,16 @@ export const AgentsListReturnSchema = {
           "model": {
             "type": "string"
           },
+          "modelError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "modelPresetId": {
             "anyOf": [
               {
@@ -1401,7 +1428,9 @@ export const AgentsListReturnSchema = {
                 "enum": [
                   "agent_preset",
                   "agent_default",
-                  "global_default"
+                  "global_default",
+                  "env_fallback",
+                  "runtime_default"
                 ],
                 "type": "string"
               },
@@ -1414,6 +1443,9 @@ export const AgentsListReturnSchema = {
             "type": "string"
           },
           "provider": {
+            "type": "string"
+          },
+          "providerSource": {
             "type": "string"
           },
           "remote": {
@@ -1540,9 +1572,11 @@ export const AgentsListReturnSchema = {
           "modelPresetId",
           "isDefault",
           "effectiveProvider",
+          "providerSource",
           "effectiveModel",
           "modelSource",
           "modelPresetVersion",
+          "modelError",
           "tags"
         ],
         "type": "object"
@@ -1816,6 +1850,16 @@ export const AgentsModelBrokerReturnSchema = {
         "model": {
           "type": "string"
         },
+        "modelError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "modelPresetId": {
           "anyOf": [
             {
@@ -1842,7 +1886,9 @@ export const AgentsModelBrokerReturnSchema = {
               "enum": [
                 "agent_preset",
                 "agent_default",
-                "global_default"
+                "global_default",
+                "env_fallback",
+                "runtime_default"
               ],
               "type": "string"
             },
@@ -1855,6 +1901,9 @@ export const AgentsModelBrokerReturnSchema = {
           "type": "string"
         },
         "provider": {
+          "type": "string"
+        },
+        "providerSource": {
           "type": "string"
         },
         "remote": {
@@ -1981,9 +2030,11 @@ export const AgentsModelBrokerReturnSchema = {
         "modelPresetId",
         "isDefault",
         "effectiveProvider",
+        "providerSource",
         "effectiveModel",
         "modelSource",
         "modelPresetVersion",
+        "modelError",
         "tags"
       ],
       "type": "object"
@@ -2295,6 +2346,16 @@ export const AgentsPermissionsReturnSchema = {
         "model": {
           "type": "string"
         },
+        "modelError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "modelPresetId": {
           "anyOf": [
             {
@@ -2321,7 +2382,9 @@ export const AgentsPermissionsReturnSchema = {
               "enum": [
                 "agent_preset",
                 "agent_default",
-                "global_default"
+                "global_default",
+                "env_fallback",
+                "runtime_default"
               ],
               "type": "string"
             },
@@ -2334,6 +2397,9 @@ export const AgentsPermissionsReturnSchema = {
           "type": "string"
         },
         "provider": {
+          "type": "string"
+        },
+        "providerSource": {
           "type": "string"
         },
         "remote": {
@@ -2460,9 +2526,11 @@ export const AgentsPermissionsReturnSchema = {
         "modelPresetId",
         "isDefault",
         "effectiveProvider",
+        "providerSource",
         "effectiveModel",
         "modelSource",
         "modelPresetVersion",
+        "modelError",
         "tags"
       ],
       "type": "object"
@@ -2999,6 +3067,16 @@ export const AgentsShowReturnSchema = {
         "model": {
           "type": "string"
         },
+        "modelError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "modelPresetId": {
           "anyOf": [
             {
@@ -3025,7 +3103,9 @@ export const AgentsShowReturnSchema = {
               "enum": [
                 "agent_preset",
                 "agent_default",
-                "global_default"
+                "global_default",
+                "env_fallback",
+                "runtime_default"
               ],
               "type": "string"
             },
@@ -3038,6 +3118,9 @@ export const AgentsShowReturnSchema = {
           "type": "string"
         },
         "provider": {
+          "type": "string"
+        },
+        "providerSource": {
           "type": "string"
         },
         "remote": {
@@ -3164,9 +3247,11 @@ export const AgentsShowReturnSchema = {
         "modelPresetId",
         "isDefault",
         "effectiveProvider",
+        "providerSource",
         "effectiveModel",
         "modelSource",
         "modelPresetVersion",
+        "modelError",
         "tags"
       ],
       "type": "object"
@@ -58531,7 +58616,14 @@ export const SessionsSetEffortReturnSchema = {
               "type": "string"
             },
             "effectiveModel": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "effectiveProvider": {
               "type": "string"
@@ -58565,6 +58657,16 @@ export const SessionsSetEffortReturnSchema = {
             "label": {
               "type": "string"
             },
+            "modelError": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "modelOverride": {
               "type": "string"
             },
@@ -58589,9 +58691,19 @@ export const SessionsSetEffortReturnSchema = {
               ]
             },
             "modelSource": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "name": {
+              "type": "string"
+            },
+            "providerSource": {
               "type": "string"
             },
             "runtimeOptions": {
@@ -58604,6 +58716,7 @@ export const SessionsSetEffortReturnSchema = {
                       "enum": [
                         "session_override",
                         "agent_default",
+                        "global_default",
                         "runtime_default"
                       ],
                       "type": "string"
@@ -58629,6 +58742,36 @@ export const SessionsSetEffortReturnSchema = {
                   "type": "object"
                 },
                 "model": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "provider": {
                   "additionalProperties": false,
                   "properties": {
                     "source": {
@@ -58676,6 +58819,7 @@ export const SessionsSetEffortReturnSchema = {
                 }
               },
               "required": [
+                "provider",
                 "model",
                 "effort",
                 "thinking"
@@ -58691,10 +58835,12 @@ export const SessionsSetEffortReturnSchema = {
             "label",
             "agentId",
             "effectiveProvider",
+            "providerSource",
             "effectiveModel",
             "modelSource",
             "modelPresetId",
             "modelPresetVersion",
+            "modelError",
             "ephemeral",
             "expiresAt",
             "runtimeOptions"
@@ -58717,7 +58863,14 @@ export const SessionsSetEffortReturnSchema = {
           "type": "string"
         },
         "effectiveModel": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "effectiveProvider": {
           "type": "string"
@@ -58751,6 +58904,16 @@ export const SessionsSetEffortReturnSchema = {
         "label": {
           "type": "string"
         },
+        "modelError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "modelOverride": {
           "type": "string"
         },
@@ -58775,9 +58938,19 @@ export const SessionsSetEffortReturnSchema = {
           ]
         },
         "modelSource": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "name": {
+          "type": "string"
+        },
+        "providerSource": {
           "type": "string"
         },
         "runtimeOptions": {
@@ -58790,6 +58963,7 @@ export const SessionsSetEffortReturnSchema = {
                   "enum": [
                     "session_override",
                     "agent_default",
+                    "global_default",
                     "runtime_default"
                   ],
                   "type": "string"
@@ -58815,6 +58989,36 @@ export const SessionsSetEffortReturnSchema = {
               "type": "object"
             },
             "model": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            },
+            "provider": {
               "additionalProperties": false,
               "properties": {
                 "source": {
@@ -58862,6 +59066,7 @@ export const SessionsSetEffortReturnSchema = {
             }
           },
           "required": [
+            "provider",
             "model",
             "effort",
             "thinking"
@@ -58877,10 +59082,12 @@ export const SessionsSetEffortReturnSchema = {
         "label",
         "agentId",
         "effectiveProvider",
+        "providerSource",
         "effectiveModel",
         "modelSource",
         "modelPresetId",
         "modelPresetVersion",
+        "modelError",
         "ephemeral",
         "expiresAt",
         "runtimeOptions"
@@ -58907,6 +59114,7 @@ export const SessionsSetEffortReturnSchema = {
       "enum": [
         "session_override",
         "agent_default",
+        "global_default",
         "runtime_default"
       ],
       "type": "string"
@@ -59024,7 +59232,14 @@ export const SessionsSetProviderReturnSchema = {
               "type": "string"
             },
             "effectiveModel": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "effectiveProvider": {
               "type": "string"
@@ -59058,6 +59273,16 @@ export const SessionsSetProviderReturnSchema = {
             "label": {
               "type": "string"
             },
+            "modelError": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
             "modelOverride": {
               "type": "string"
             },
@@ -59082,9 +59307,19 @@ export const SessionsSetProviderReturnSchema = {
               ]
             },
             "modelSource": {
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "name": {
+              "type": "string"
+            },
+            "providerSource": {
               "type": "string"
             },
             "runtimeOptions": {
@@ -59097,6 +59332,7 @@ export const SessionsSetProviderReturnSchema = {
                       "enum": [
                         "session_override",
                         "agent_default",
+                        "global_default",
                         "runtime_default"
                       ],
                       "type": "string"
@@ -59122,6 +59358,36 @@ export const SessionsSetProviderReturnSchema = {
                   "type": "object"
                 },
                 "model": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "source": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "value": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "value",
+                    "source"
+                  ],
+                  "type": "object"
+                },
+                "provider": {
                   "additionalProperties": false,
                   "properties": {
                     "source": {
@@ -59169,6 +59435,7 @@ export const SessionsSetProviderReturnSchema = {
                 }
               },
               "required": [
+                "provider",
                 "model",
                 "effort",
                 "thinking"
@@ -59184,10 +59451,12 @@ export const SessionsSetProviderReturnSchema = {
             "label",
             "agentId",
             "effectiveProvider",
+            "providerSource",
             "effectiveModel",
             "modelSource",
             "modelPresetId",
             "modelPresetVersion",
+            "modelError",
             "ephemeral",
             "expiresAt",
             "runtimeOptions"
@@ -59210,7 +59479,14 @@ export const SessionsSetProviderReturnSchema = {
           "type": "string"
         },
         "effectiveModel": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "effectiveProvider": {
           "type": "string"
@@ -59244,6 +59520,16 @@ export const SessionsSetProviderReturnSchema = {
         "label": {
           "type": "string"
         },
+        "modelError": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "modelOverride": {
           "type": "string"
         },
@@ -59268,9 +59554,19 @@ export const SessionsSetProviderReturnSchema = {
           ]
         },
         "modelSource": {
-          "type": "string"
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "name": {
+          "type": "string"
+        },
+        "providerSource": {
           "type": "string"
         },
         "runtimeOptions": {
@@ -59283,6 +59579,7 @@ export const SessionsSetProviderReturnSchema = {
                   "enum": [
                     "session_override",
                     "agent_default",
+                    "global_default",
                     "runtime_default"
                   ],
                   "type": "string"
@@ -59308,6 +59605,36 @@ export const SessionsSetProviderReturnSchema = {
               "type": "object"
             },
             "model": {
+              "additionalProperties": false,
+              "properties": {
+                "source": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "value": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "value",
+                "source"
+              ],
+              "type": "object"
+            },
+            "provider": {
               "additionalProperties": false,
               "properties": {
                 "source": {
@@ -59355,6 +59682,7 @@ export const SessionsSetProviderReturnSchema = {
             }
           },
           "required": [
+            "provider",
             "model",
             "effort",
             "thinking"
@@ -59370,10 +59698,12 @@ export const SessionsSetProviderReturnSchema = {
         "label",
         "agentId",
         "effectiveProvider",
+        "providerSource",
         "effectiveModel",
         "modelSource",
         "modelPresetId",
         "modelPresetVersion",
+        "modelError",
         "ephemeral",
         "expiresAt",
         "runtimeOptions"
@@ -59384,6 +59714,9 @@ export const SessionsSetProviderReturnSchema = {
       "type": "boolean"
     },
     "effectiveProvider": {
+      "type": "string"
+    },
+    "providerSource": {
       "type": "string"
     },
     "runtimeProviderOverride": {
@@ -59419,6 +59752,7 @@ export const SessionsSetProviderReturnSchema = {
     "after",
     "runtimeProviderOverride",
     "effectiveProvider",
+    "providerSource",
     "appliesOn"
   ],
   "type": "object"

@@ -79,8 +79,15 @@ ravi sessions rename <name> <novo-nome-canonico>
 # Definir label humano/display-only
 ravi sessions set-display <name> "Novo Nome Humano"
 
-# Definir modelo override
+# Definir modelo override (vence agent/global/env no próximo turno)
 ravi sessions set-model <name> <model>
+
+# Definir provider override (eixo independente do model)
+ravi sessions set-provider <name> <provider|clear>
+
+# Defaults globais do próximo turno (sem restart; env fica só fallback)
+# ravi settings set runtime.defaultProvider claude
+# ravi settings set runtime.defaultModel opus
 
 # Definir thinking level
 ravi sessions set-thinking <name> <level>
