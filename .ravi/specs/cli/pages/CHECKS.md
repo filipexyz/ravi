@@ -26,6 +26,9 @@
   suggestedAction `ravi pages published --json`.
 - A `ContractError` thrown by the brake or a not-found mapping MUST pass
   through `runPagesCommand`'s CloudAuthError funnel untouched.
+- A 400 Console response carrying `DOMAIN_SETUP_REQUIRED` MUST preserve that
+  code through cloud-auth mapping and render the sanitized TXT/CNAME instruction
+  with exit 1; other provider messages MUST remain redacted.
 - `pages list --fields a,b,c --json` and `pages published --fields a,b,c
   --json` MUST return items containing only the requested fields.
 - Unbraked ops (visibility reductions and `password status`) MUST keep

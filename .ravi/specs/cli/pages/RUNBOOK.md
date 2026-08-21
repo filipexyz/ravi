@@ -35,6 +35,7 @@ Live checks against the local CLI (read-only or dry-run):
 ravi pages publish proj site ./dist --route / --visibility public --json  # expect exit 3 + plan, no Console call
 ravi pages create proj site --visibility private --json                   # expect exit 3 before credentials
 ravi pages domains proj site docs.example.com --json                      # expect exit 3 before credentials
+ravi pages domains proj site docs.example.com --execute                  # add shown DNS records, then rerun
 ravi pages password set proj site --route / --json                        # expect exit 3, no prompt
 ravi pages password remove proj site --route / --json                     # expect PAYLOAD_INVALID (missing --visibility)
 ravi pages visibility proj site public --json                             # expect exit 3

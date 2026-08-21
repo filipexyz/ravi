@@ -223,6 +223,40 @@ describe("ConsoleApiClient", () => {
     }
   });
 
+  it("preserves the Pages domain setup code and safe DNS instruction", async () => {
+    const message = [
+      "Pages domain setup was saved but is not ready yet.",
+      "TXT _ravi-verify.example.com = ravi-domain-verification=test-token",
+    ].join("\n");
+    const client = new ConsoleApiClient({
+      consoleUrl: "https://console.example",
+      fetch: async () =>
+        jsonResponse(
+          {
+            error: {
+              code: "DOMAIN_SETUP_REQUIRED",
+              message,
+            },
+          },
+          400,
+        ),
+    });
+
+    try {
+      await client.requestJson("POST", "/api/cli/projects/proj/pages/site/domains", {
+        hostnames: ["docs.example.com"],
+      });
+      throw new Error("Expected domain setup to remain pending");
+    } catch (error) {
+      expect(error).toBeInstanceOf(CloudAuthError);
+      expect(error).toMatchObject({
+        code: "DOMAIN_SETUP_REQUIRED",
+        message,
+        status: 400,
+      });
+    }
+  });
+
   it("maps OAuth device authorization pending responses", async () => {
     const client = new ConsoleApiClient({
       consoleUrl: "https://console.example",

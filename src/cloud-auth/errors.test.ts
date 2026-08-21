@@ -52,4 +52,24 @@ describe("cloudErrorToContractError", () => {
     expect(contract.details.suggestedAction).toBeString();
     expect(JSON.stringify(contract.envelope())).not.toContain("PRIVATE_PROVIDER_BODY_8K2R");
   });
+
+  it("surfaces the sanitized DNS instruction for Pages domain setup", () => {
+    const source = new CloudAuthError(
+      "DOMAIN_SETUP_REQUIRED",
+      "Add TXT _ravi-verify.example.com = ravi-domain-verification=test-token\u001b[31m",
+      { status: 400 },
+    );
+    const contract = cloudErrorToContractError("pages domains", source);
+
+    expect(contract).toMatchObject({
+      code: "DOMAIN_SETUP_REQUIRED",
+      exitCode: 1,
+      message: "Add TXT _ravi-verify.example.com = ravi-domain-verification=test-token",
+      details: {
+        retryable: false,
+        status: 400,
+        suggestedAction: "complete the displayed DNS action, wait for propagation, then rerun the same command",
+      },
+    });
+  });
 });

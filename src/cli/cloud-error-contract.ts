@@ -1,3 +1,4 @@
+import { stripVTControlCharacters } from "node:util";
 import { CloudAuthError } from "../cloud-auth/errors.js";
 import { ContractError, CONTRACT_EXIT_ERROR, CONTRACT_EXIT_USAGE } from "./agent-contract.js";
 import { getContext } from "./context.js";
@@ -14,7 +15,7 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
   return new ContractError(
     op,
     error.code,
-    publicMessage(error.code),
+    publicMessage(error.code, error.message),
     error.code === "PAYLOAD_INVALID" ? CONTRACT_EXIT_USAGE : CONTRACT_EXIT_ERROR,
     {
       retryable: RETRYABLE_CODES.has(error.code),
@@ -24,7 +25,7 @@ export function cloudErrorToContractError(op: string, error: CloudAuthError): Co
   );
 }
 
-function publicMessage(code: CloudAuthError["code"]): string {
+function publicMessage(code: CloudAuthError["code"], sourceMessage: string): string {
   switch (code) {
     case "AUTH_REQUIRED":
       return "Console authentication is required.";
@@ -40,6 +41,8 @@ function publicMessage(code: CloudAuthError["code"]): string {
       return "Console project access was denied.";
     case "PUBLISH_NOT_ALLOWED":
       return "Console publishing is not allowed.";
+    case "DOMAIN_SETUP_REQUIRED":
+      return safeDomainSetupMessage(sourceMessage);
     case "PAYLOAD_INVALID":
       return "Console request input was invalid.";
     case "RATE_LIMITED":
@@ -79,6 +82,8 @@ function suggestedAction(code: CloudAuthError["code"]): string {
     case "PROJECT_ACCESS_DENIED":
     case "PUBLISH_NOT_ALLOWED":
       return "request the required Console access before retrying";
+    case "DOMAIN_SETUP_REQUIRED":
+      return "complete the displayed DNS action, wait for propagation, then rerun the same command";
     case "PAYLOAD_INVALID":
       return "correct the command input and retry";
     case "RATE_LIMITED":
@@ -88,4 +93,12 @@ function suggestedAction(code: CloudAuthError["code"]): string {
     case "CLOUD_PUBLISH_NOT_IMPLEMENTED":
       return "use a supported publish path";
   }
+}
+
+function safeDomainSetupMessage(message: string): string {
+  const sanitized = stripVTControlCharacters(message)
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "")
+    .trim();
+  if (!sanitized) return "Ravi Pages domain setup requires an external DNS action.";
+  return sanitized.length > 4096 ? `${sanitized.slice(0, 4093)}...` : sanitized;
 }
