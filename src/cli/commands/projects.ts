@@ -8,6 +8,8 @@ import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
   attachProjectTask,
   attachProjectWorkflowRun,
+  AmbiguousProjectReferenceError,
+  AmbiguousProjectResourceReferenceError,
   createProject,
   createProjectTask,
   dispatchProjectTask,
@@ -15,11 +17,10 @@ import {
   getProjectResourceLink,
   getProjectDetails,
   linkProject,
-  listProjectResourceLinks,
-  listProjectStatusEntries,
-  listProjects,
   normalizeProjectStatus,
   normalizeProjectWorkflowLinkRole,
+  ProjectsReadFacade,
+  ProjectsReadSchemaError,
   requireProjectWorkflowTemplateId,
   startProjectWorkflowRun,
   updateProject,
@@ -128,12 +129,10 @@ function requireAssetType(value: string): ProjectLinkAssetType {
   return normalized;
 }
 
-function requireResourceType(value?: string): ProjectResourceType {
+function requireResourceType(value?: string, option = "--resource-type"): ProjectResourceType {
   const normalized = value?.trim().toLowerCase() as ProjectResourceType | undefined;
   if (!normalized || !VALID_RESOURCE_TYPES.has(normalized)) {
-    fail(
-      "Resource links require --resource-type <type>. Use repo|worktree|notion_page|notion_database|file|url|group|contact.",
-    );
+    fail(`${option} must be repo|worktree|notion_page|notion_database|file|url|group|contact.`);
   }
   return normalized;
 }
@@ -802,13 +801,19 @@ function resolveLinkTarget(
 // {success:false, error:{code, ...suggestions}} envelope. Exit taxonomy:
 // 1 not-found/provider · 2 usage · 3 policy (write brake / dry-run).
 //
-// Suggestion source: `listProjects` applies no visibility/scope filter — it is
-// the exact source `projects list` prints — so PROJECT_NOT_FOUND candidates
-// are real slugs/titles with no cloaking to preserve.
+// Suggestion source: the same read-only facade used by `projects list`, so
+// PROJECT_NOT_FOUND candidates are real slugs/titles without opening the
+// mutating schema initializer.
 // ============================================================
 
-function failProjectNotFound(op: string, projectRef: string, asJson?: boolean): never {
-  const candidates = listProjects({})
+function failProjectNotFound(
+  op: string,
+  projectRef: string,
+  asJson?: boolean,
+  facade = new ProjectsReadFacade(),
+): never {
+  const candidates = facade
+    .list({})
     .slice(0, 40)
     .flatMap((project) => [project.slug, project.title]);
   contractFail(op, "PROJECT_NOT_FOUND", `Project not found: ${projectRef}`, {
@@ -841,14 +846,18 @@ function failWorkflowNodeNotFound(op: string, nodeKey: string, workflowRunId: st
   });
 }
 
-function failProjectResourceNotFound(op: string, projectRef: string, resourceRef: string, asJson?: boolean): never {
+function failProjectResourceNotFound(
+  op: string,
+  projectRef: string,
+  resourceRef: string,
+  asJson?: boolean,
+  facade = new ProjectsReadFacade(),
+): never {
   let candidates: string[] = [];
   try {
-    candidates = listProjectResourceLinks(projectRef).flatMap((resource) => [
-      resource.id,
-      resource.label ?? "",
-      resource.locator,
-    ]);
+    candidates = facade
+      .resources(projectRef)
+      .flatMap((resource) => [resource.id, resource.label ?? "", resource.locator]);
   } catch {
     // Project itself missing: keep the resource envelope with no suggestions.
   }
@@ -871,7 +880,54 @@ function failProjectResourceNotFound(op: string, projectRef: string, resourceRef
  */
 function rethrowProjectCommandError(op: string, error: unknown, asJson?: boolean): never {
   if (error instanceof ContractError) throw error;
+  if (error instanceof AmbiguousProjectReferenceError) {
+    contractFail(op, "AMBIGUOUS_PROJECT_REF", error.message, {
+      asJson,
+      details: {
+        reference: error.reference,
+        candidates: error.candidates,
+        suggestedAction: "Use the exact project id after reviewing the candidates.",
+      },
+    });
+  }
+  if (error instanceof AmbiguousProjectResourceReferenceError) {
+    contractFail(op, "AMBIGUOUS_RESOURCE_REF", error.message, {
+      asJson,
+      details: {
+        projectId: error.projectId,
+        reference: error.reference,
+        candidates: error.candidates,
+        suggestedAction: "Use the exact resource link id after reviewing the candidates.",
+      },
+    });
+  }
+  if (error instanceof ProjectsReadSchemaError) {
+    contractFail(op, "PROJECTS_READ_SCHEMA_UNSUPPORTED", error.message, {
+      asJson,
+      details: { table: error.table, missingColumns: error.missingColumns },
+    });
+  }
   const message = error instanceof Error ? error.message : String(error);
+  if (/^Invalid project status:/.test(message)) {
+    contractFail(op, "INVALID_PROJECT_STATUS", message, {
+      asJson,
+      details: { validValues: ["active", "paused", "blocked", "done", "archived"] },
+    });
+  }
+  if (/^Invalid tag slug:/.test(message)) {
+    contractFail(op, "INVALID_PROJECT_TAG", message, {
+      asJson,
+      details: { pattern: "[a-z0-9._:-]+" },
+    });
+  }
+  if (/^--(?:resource-type|type) must be/.test(message)) {
+    contractFail(op, "INVALID_PROJECT_RESOURCE_TYPE", message, {
+      asJson,
+      details: {
+        validValues: ["repo", "worktree", "notion_page", "notion_database", "file", "url", "group", "contact"],
+      },
+    });
+  }
   const project = /^Project not found: (.+)$/.exec(message);
   if (project?.[1]) failProjectNotFound(op, project[1], asJson);
   const run = /^Workflow run not found: (.+)$/.exec(message);
@@ -1017,7 +1073,7 @@ export class ProjectCommands {
   }
 
   @Command({ name: "list", description: "List projects" })
-  @CommandAccess({ kind: "read", resource: "projects", action: "list", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "projects", action: "list", risk: "low", audit: "none" })
   @Returns(projectsListReturnSchema)
   list(
     @Option({ flags: "--status <status>", description: "Filter by status" }) status?: string,
@@ -1030,7 +1086,7 @@ export class ProjectCommands {
   ) {
     try {
       const normalizedTagSlug = parseTagSlug(tagSlug);
-      const projects = listProjects({
+      const projects = new ProjectsReadFacade().list({
         ...(status ? { status: normalizeProjectStatus(status) } : {}),
         ...(normalizedTagSlug ? { tagSlug: normalizedTagSlug } : {}),
       });
@@ -1087,47 +1143,45 @@ export class ProjectCommands {
   }
 
   @Command({ name: "show", description: "Show one project with linked context" })
-  @CommandAccess({ kind: "read", resource: "projects", action: "show", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "projects", action: "show", risk: "low", audit: "none" })
   @Returns(projectDetailsReturnSchema)
   show(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const details = getProjectDetails(projectRef.trim());
-    if (!details) {
-      failProjectNotFound("projects show", projectRef, asJson);
+    const facade = new ProjectsReadFacade();
+    try {
+      const details = facade.get(projectRef);
+      if (!details) failProjectNotFound("projects show", projectRef, asJson, facade);
+      if (asJson) console.log(JSON.stringify(details, null, 2));
+      else printProject(details);
+      return details;
+    } catch (error) {
+      rethrowProjectCommandError("projects show", error, asJson);
     }
-
-    if (asJson) {
-      console.log(JSON.stringify(details, null, 2));
-    } else {
-      printProject(details);
-    }
-    return details;
   }
 
   @Command({ name: "status", description: "Show one project with workflow runtime rollup" })
-  @CommandAccess({ kind: "read", resource: "projects", action: "status", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "projects", action: "status", risk: "low", audit: "none" })
   @Returns(projectDetailsReturnSchema)
   status(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
-    const details = getProjectDetails(projectRef.trim());
-    if (!details) {
-      failProjectNotFound("projects status", projectRef, asJson);
+    const facade = new ProjectsReadFacade();
+    try {
+      const details = facade.get(projectRef);
+      if (!details) failProjectNotFound("projects status", projectRef, asJson, facade);
+      if (asJson) console.log(JSON.stringify(details, null, 2));
+      else printProjectStatus(details);
+      return details;
+    } catch (error) {
+      rethrowProjectCommandError("projects status", error, asJson);
     }
-
-    if (asJson) {
-      console.log(JSON.stringify(details, null, 2));
-    } else {
-      printProjectStatus(details);
-    }
-    return details;
   }
 
   @Command({ name: "next", description: "List projects as an operational next-work surface" })
-  @CommandAccess({ kind: "read", resource: "projects", action: "next", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "projects", action: "next", risk: "low", audit: "none" })
   @Returns(projectsNextReturnSchema)
   next(
     @Option({ flags: "--status <status>", description: "Filter by project status" }) status?: string,
@@ -1135,26 +1189,41 @@ export class ProjectCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
     @Option({ flags: "--fields <a,b,c>", description: "Compact mode: keep only these fields of each item" })
     fields?: string,
+    @Option({ flags: "--limit <n>", description: "Page size (default: 20, max: 500)" }) limit?: string,
+    @Option({ flags: "--offset <n>", description: "Number of ranked projects to skip (default: 0)" }) offset?: string,
   ) {
     try {
       const normalizedTagSlug = parseTagSlug(tagSlug);
-      const entries = listProjectStatusEntries({
+      const entries = new ProjectsReadFacade().status({
         ...(status ? { status: normalizeProjectStatus(status) } : {}),
         ...(normalizedTagSlug ? { tagSlug: normalizedTagSlug } : {}),
       });
+      const page = paginateCliItems(entries, { limit: limit ?? "20", offset });
+      const pagination = buildCliOffsetPagination({
+        fields,
+        baseCommand: ["ravi", "projects", "next"],
+        limit: page.limit,
+        offset: page.offset,
+        returned: page.items.length,
+        total: page.total,
+        options: ["--status", status, "--tag", normalizedTagSlug],
+      });
+      const projectedItems = pickFields(page.items, fields);
       const payload = {
         total: entries.length,
+        pagination,
         filters: {
           status: status ? normalizeProjectStatus(status) : null,
           tagSlug: normalizedTagSlug ?? null,
         },
-        projects: pickFields(entries, fields),
+        items: projectedItems,
+        projects: projectedItems,
       };
 
       if (asJson) {
         console.log(JSON.stringify(payload, null, 2));
       } else {
-        printProjectNext(entries);
+        printProjectNext(page.items);
       }
       return payload;
     } catch (error) {
@@ -1593,7 +1662,7 @@ export class ProjectResourceCommands {
   }
 
   @Command({ name: "list", description: "List resource links for a project" })
-  @CommandAccess({ kind: "read", resource: "projects.resources", action: "list", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "projects.resources", action: "list", risk: "low", audit: "none" })
   @Returns(projectResourcesListReturnSchema)
   list(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
@@ -1606,10 +1675,13 @@ export class ProjectResourceCommands {
     fields?: string,
   ) {
     try {
-      const resources = listProjectResourceLinks(
-        projectRef,
-        resourceType?.trim() ? requireResourceType(resourceType) : undefined,
-      );
+      const facade = new ProjectsReadFacade();
+      const details = facade.get(projectRef);
+      if (!details) failProjectNotFound("projects resources list", projectRef, asJson, facade);
+      const resolvedType = resourceType?.trim() ? requireResourceType(resourceType, "--type") : undefined;
+      const resources = facade
+        .resources(details.project.id)
+        .filter((resource) => !resolvedType || resource.resourceType === resolvedType);
       const page = paginateCliItems(resources, { limit, offset });
       const pagination = buildCliOffsetPagination({
         fields,
@@ -1646,7 +1718,7 @@ export class ProjectResourceCommands {
   }
 
   @Command({ name: "show", description: "Show one resource link on a project" })
-  @CommandAccess({ kind: "read", resource: "projects.resources", action: "show", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "projects.resources", action: "show", risk: "low", audit: "none" })
   @Returns(projectResourceReturnSchema)
   show(
     @Arg("project", { description: "Project id or slug" }) projectRef: string,
@@ -1654,9 +1726,12 @@ export class ProjectResourceCommands {
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson?: boolean,
   ) {
     try {
-      const resource = getProjectResourceLink(projectRef, resourceRef);
+      const facade = new ProjectsReadFacade();
+      const details = facade.get(projectRef);
+      if (!details) failProjectNotFound("projects resources show", projectRef, asJson, facade);
+      const resource = facade.resource(details.project.id, resourceRef);
       if (!resource) {
-        failProjectResourceNotFound("projects resources show", projectRef, resourceRef, asJson);
+        failProjectResourceNotFound("projects resources show", projectRef, resourceRef, asJson, facade);
       }
 
       if (asJson) {

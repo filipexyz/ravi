@@ -1710,3 +1710,83 @@ criacao de symlink negada por `EPERM`. O mesmo arquivo no commit exato da
 fundacao `560517a4` reproduziu as duas falhas. A suite ampla nao e declarada
 verde, mas a comparacao demonstra que essas duas falhas nao foram introduzidas
 por COMMANDS. A compilacao Swift segue reservada a CI Linux.
+
+### Projects: facade de leitura sem inicializacao de schema
+
+A fatia de leitura de PROJECTS passou a usar um snapshot unico aberto com
+`readonly: true` e `create: false`, mantendo uma transacao explicita de leitura
+durante todas as consultas. `list`, `next`, `show`, `status`, `resources list`
+e `resources show` nao chamam mais os stores que inicializam schema e declaram
+`audit: none`. Consultas preparadas sao finalizadas explicitamente antes do
+fechamento, inclusive para liberar o arquivo no Windows.
+
+O contrato agora falha fechado em colisao exata de id/slug, rotulo de recurso
+ambiguo e schema incompativel. `next` preserva o ranking, mas limita a primeira
+pagina a 20 itens e publica continuacao deterministica. Erros de status, tag e
+tipo de recurso mantem a causa publica tipada.
+
+Os cinco testes nativos da facade passaram com 12 assercoes. Tres processos
+reais, sem variaveis de supressao de auditoria, passaram com 17 assercoes e
+preservaram todos os arquivos duraveis. A matriz nativa completa de Projects
+passou 53 testes/180 assercoes. Gates integrais, geracao de contratos, revisao
+independente, pacote e CI ainda sao obrigatorios; nao houve push, PR ou VPS.
+
+### Correcao do smoke multiplataforma de Projects
+
+A matriz ampla passou 52 de 53 testes e falhou apenas em `init.smoke.test.ts`:
+o fixture exigia `/tmp/ravi.bot` mesmo no Windows, embora o CLI normalizasse o
+locator para `C:\tmp\ravi.bot`. O SHA aprovado de COMMANDS `e91cfec9`
+reproduziu a mesma falha, portanto ela era preexistente e a suite nao foi
+declarada verde nessa captura.
+
+O fixture passou a usar o caminho real e resolvido do worktree, com label
+derivado de `basename`, e substituiu o matcher aninhado pouco informativo por
+assertivas explicitas dos quatro links. A repeticao isolada passou com sete
+assercoes. Depois da estabilizacao dos artefatos gerados, a matriz completa foi
+recapturada e passou 53 testes/180 assercoes.
+
+### Projects: recaptura dos gates e contratos gerados
+
+Os artefatos TypeScript, OpenAPI e Swift foram regenerados pelos comandos
+oficiais e todos os checks de drift passaram. A primeira execucao integral do
+SDK identificou sete contratos de Projects que haviam sido fortalecidos, mas
+continuavam listados na baseline historica de respostas fracas. Depois da
+remocao dessas entradas obsoletas, a suite SDK passou 77 testes/311 assercoes.
+
+Tambem passaram typecheck, build, os 40 testes nativos do quality gate com 90
+assercoes e o runner com os 33 caminhos locais exatos, incluindo a indexacao de
+274 specs. A matriz nativa de Projects foi recapturada apos o Biome e manteve
+53 testes/180 assercoes.
+
+O encadeamento amplo `test:agent-contract`, executado ao mesmo tempo que a
+matriz pesada de Projects, passou os arquivos anteriores e excedeu por oito
+milissegundos o timeout de cinco segundos no preparo do primeiro caso de
+`command-access.test.ts`. A repeticao isolada, sem concorrencia, passou os 24
+testes/105 assercoes; o caso antes interrompido terminou em 29 milissegundos.
+A captura concorrente nao foi declarada verde.
+
+Na repeticao serial do encadeamento, `command-access.test.ts` passou, mas o
+caso de carregamento dinamico em `skill-gate.test.ts` levou sete segundos e
+estourou seu timeout fixo de cinco. O mesmo arquivo no SHA-base aprovado de
+COMMANDS `e91cfec9` reproduziu a falha no mesmo caso, em 5,3 segundos. Os quatro
+arquivos posteriores foram executados diretamente: confirmation, consumers e
+inferencia passaram; o artifact store repetiu as duas falhas Windows ja
+documentadas em COMMANDS (separador de caminho e symlink negado), com 49 testes
+verdes de 51. A suite ampla permanece honestamente nao verde por fragilidades
+preexistentes; nenhuma delas toca a fatia de Projects. Nao houve push, PR ou
+VPS.
+
+### Projects: fechamento da revisao do coordenador
+
+A revisao final percebeu que abrir uma unica conexao nao bastava para garantir
+o mesmo instante logico entre consultas sequenciais. O reader passou a manter
+uma transacao SQLite explicita desde a descoberta das tabelas ate a montagem
+completa do snapshot, com rollback seguro em erro e fechamento posterior. Os
+cinco testes da facade passaram novamente com 12 assercoes e os tres processos
+reais passaram novamente com 17 assercoes, sem alterar arquivos duraveis.
+
+Depois dessa correcao, typecheck, build, Biome, Markdown, `git diff --check`, o
+quality runner e os quatro checks finais de drift permaneceram verdes. Os
+checks SDK/OpenAPI/Swift registraram NATS local indisponivel, mas todos
+terminaram com codigo zero e confirmaram artefatos atuais. Revisao independente,
+pacote e CI Linux continuam obrigatorios; nao houve push, PR ou VPS.

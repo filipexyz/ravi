@@ -2,7 +2,7 @@ import "reflect-metadata";
 import { describe, expect, it } from "bun:test";
 import { z } from "zod";
 import { Arg, Command, Group, Option, Returns } from "../../cli/decorators.js";
-import { commandsListReturnSchema } from "../../cli/commands/operational-return-schemas.js";
+import { commandsListReturnSchema, projectsListReturnSchema } from "../../cli/commands/operational-return-schemas.js";
 import { buildRegistry } from "../../cli/registry-snapshot.js";
 import { compareSwiftSdkSource, computeRegistryHash, emitAllSwift } from "./index.js";
 import { jsonSchemaToSwift } from "./json-schema-to-swift.js";
@@ -110,6 +110,15 @@ class CommandsContractCommands {
   }
 }
 
+@Group({ name: "projects", description: "Ravi projects", scope: "open" })
+class ProjectsContractCommands {
+  @Command({ name: "list", description: "List Ravi projects" })
+  @Returns(projectsListReturnSchema)
+  list() {
+    return {};
+  }
+}
+
 const FIXED_VERSION = {
   sdkVersion: "9.9.9",
   registryHash: "sha256:fixed",
@@ -187,6 +196,17 @@ describe("swift-codegen :: emitAllSwift", () => {
     expect(output.types).toContain("public var items: [CommandsListItem]");
     expect(output.types).toContain("public var agent: CommandsListAgent");
     expect(output.types).not.toContain("RaviJSON");
+  });
+
+  it("emits typed non-empty project projection models", () => {
+    const output = emitAllSwift(buildRegistry([ProjectsContractCommands]), { version: FIXED_VERSION });
+
+    expect(output.types).toContain("public struct ProjectedProjectSummary: Codable, Sendable");
+    expect(output.types).toContain("public var slug: String?");
+    expect(output.types).toContain("ProjectedProjectSummary requires at least one field.");
+    expect(output.types).toContain("ProjectedProjectSummary contains an unknown field.");
+    expect(output.types).toContain("public var items: [ProjectedProjectSummary]");
+    expect(output.types).not.toContain("public var items: [RaviJSON]");
   });
 
   it("emits Swift return structs for top-level object schemas", () => {

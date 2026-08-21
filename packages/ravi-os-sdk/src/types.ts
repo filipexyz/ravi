@@ -10031,7 +10031,103 @@ export type ProjectsCreateInput = {
 };
 
 /** Return shape for `projects.create`. */
-export type ProjectsCreateReturn = Record<string, unknown>;
+export type ProjectsCreateReturn = {
+  linkedWorkflows: Array<{
+    createdAt: number;
+    linkId: string;
+    role: string | null;
+    updatedAt: number;
+    workflowRunId: string;
+    workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    workflowRunTitle: string | null;
+    workflowSpecId: string | null;
+    workflowSpecTitle: string | null;
+  }>;
+  links: Array<{
+    assetId: string;
+    assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+    createdAt: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    projectId: string;
+    role?: string;
+    updatedAt: number;
+  }>;
+  operational: ({
+    hottestNodeKey: string | null;
+    hottestNodeKind: ("task" | "gate" | "approval") | null;
+    hottestNodeLabel: string | null;
+    hottestNodeReleaseMode: ("auto" | "manual") | null;
+    hottestNodeRequirement: ("required" | "optional") | null;
+    hottestNodeRunId: string | null;
+    hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+    hottestTaskId: string | null;
+    hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+    hottestTaskProgress: number | null;
+    hottestTaskStatus: string | null;
+    hottestTaskTitle: string | null;
+    hottestWorkflowRunId: string | null;
+    hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    hottestWorkflowTitle: string | null;
+    runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    workflowCount: number;
+  }) | null;
+  project: {
+    archivedAt?: number;
+    createdAt: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    hypothesis: string;
+    id: string;
+    lastSignalAt: number;
+    nextStep: string;
+    operatorSessionName?: string;
+    ownerAgentId?: string;
+    slug: string;
+    status: "active" | "paused" | "blocked" | "done" | "archived";
+    summary: string;
+    title: string;
+    updatedAt: number;
+  };
+  tags: Array<{
+    assetId: string;
+    assetType: "project";
+    createdAt: number;
+    createdBy?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    source: string;
+    tagId: string;
+    tagSlug: string;
+    updatedAt: number;
+    updatedBy?: string;
+  }>;
+  workflowAggregate: ({
+    archived: number;
+    blocked: number;
+    cancelled: number;
+    done: number;
+    draft: number;
+    failed: number;
+    focusedWorkflowRole: string | null;
+    focusedWorkflowRunId: string | null;
+    focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    focusedWorkflowTitle: string | null;
+    missing: number;
+    overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    primaryWorkflowRunId: string | null;
+    primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    primaryWorkflowTitle: string | null;
+    ready: number;
+    running: number;
+    total: number;
+    waiting: number;
+  }) | null;
+};
 
 /** Input shape for `projects.fixtures.seed`. */
 export type ProjectsFixturesSeedInput = {
@@ -10064,7 +10160,103 @@ export type ProjectsInitInput = {
 
 /** Return shape for `projects.init`. */
 export type ProjectsInitReturn = {
-  details: Record<string, unknown>;
+  details: {
+    linkedWorkflows: Array<{
+      createdAt: number;
+      linkId: string;
+      role: string | null;
+      updatedAt: number;
+      workflowRunId: string;
+      workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowRunTitle: string | null;
+      workflowSpecId: string | null;
+      workflowSpecTitle: string | null;
+    }>;
+    links: Array<{
+      assetId: string;
+      assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      projectId: string;
+      role?: string;
+      updatedAt: number;
+    }>;
+    operational: ({
+      hottestNodeKey: string | null;
+      hottestNodeKind: ("task" | "gate" | "approval") | null;
+      hottestNodeLabel: string | null;
+      hottestNodeReleaseMode: ("auto" | "manual") | null;
+      hottestNodeRequirement: ("required" | "optional") | null;
+      hottestNodeRunId: string | null;
+      hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+      hottestTaskId: string | null;
+      hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+      hottestTaskProgress: number | null;
+      hottestTaskStatus: string | null;
+      hottestTaskTitle: string | null;
+      hottestWorkflowRunId: string | null;
+      hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      hottestWorkflowTitle: string | null;
+      runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowCount: number;
+    }) | null;
+    project: {
+      archivedAt?: number;
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      hypothesis: string;
+      id: string;
+      lastSignalAt: number;
+      nextStep: string;
+      operatorSessionName?: string;
+      ownerAgentId?: string;
+      slug: string;
+      status: "active" | "paused" | "blocked" | "done" | "archived";
+      summary: string;
+      title: string;
+      updatedAt: number;
+    };
+    tags: Array<{
+      assetId: string;
+      assetType: "project";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+    workflowAggregate: ({
+      archived: number;
+      blocked: number;
+      cancelled: number;
+      done: number;
+      draft: number;
+      failed: number;
+      focusedWorkflowRole: string | null;
+      focusedWorkflowRunId: string | null;
+      focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      focusedWorkflowTitle: string | null;
+      missing: number;
+      overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowRunId: string | null;
+      primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowTitle: string | null;
+      ready: number;
+      running: number;
+      total: number;
+      waiting: number;
+    }) | null;
+  };
   workflows: Array<Record<string, unknown>>;
   [k: string]: unknown;
 };
@@ -10081,7 +10273,103 @@ export type ProjectsLinkInput = {
 };
 
 /** Return shape for `projects.link`. */
-export type ProjectsLinkReturn = Record<string, unknown>;
+export type ProjectsLinkReturn = {
+  linkedWorkflows: Array<{
+    createdAt: number;
+    linkId: string;
+    role: string | null;
+    updatedAt: number;
+    workflowRunId: string;
+    workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    workflowRunTitle: string | null;
+    workflowSpecId: string | null;
+    workflowSpecTitle: string | null;
+  }>;
+  links: Array<{
+    assetId: string;
+    assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+    createdAt: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    projectId: string;
+    role?: string;
+    updatedAt: number;
+  }>;
+  operational: ({
+    hottestNodeKey: string | null;
+    hottestNodeKind: ("task" | "gate" | "approval") | null;
+    hottestNodeLabel: string | null;
+    hottestNodeReleaseMode: ("auto" | "manual") | null;
+    hottestNodeRequirement: ("required" | "optional") | null;
+    hottestNodeRunId: string | null;
+    hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+    hottestTaskId: string | null;
+    hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+    hottestTaskProgress: number | null;
+    hottestTaskStatus: string | null;
+    hottestTaskTitle: string | null;
+    hottestWorkflowRunId: string | null;
+    hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    hottestWorkflowTitle: string | null;
+    runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    workflowCount: number;
+  }) | null;
+  project: {
+    archivedAt?: number;
+    createdAt: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    hypothesis: string;
+    id: string;
+    lastSignalAt: number;
+    nextStep: string;
+    operatorSessionName?: string;
+    ownerAgentId?: string;
+    slug: string;
+    status: "active" | "paused" | "blocked" | "done" | "archived";
+    summary: string;
+    title: string;
+    updatedAt: number;
+  };
+  tags: Array<{
+    assetId: string;
+    assetType: "project";
+    createdAt: number;
+    createdBy?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    source: string;
+    tagId: string;
+    tagSlug: string;
+    updatedAt: number;
+    updatedBy?: string;
+  }>;
+  workflowAggregate: ({
+    archived: number;
+    blocked: number;
+    cancelled: number;
+    done: number;
+    draft: number;
+    failed: number;
+    focusedWorkflowRole: string | null;
+    focusedWorkflowRunId: string | null;
+    focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    focusedWorkflowTitle: string | null;
+    missing: number;
+    overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    primaryWorkflowRunId: string | null;
+    primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    primaryWorkflowTitle: string | null;
+    ready: number;
+    running: number;
+    total: number;
+    waiting: number;
+  }) | null;
+};
 
 /** Input shape for `projects.list`. */
 export type ProjectsListInput = {
@@ -10094,8 +10382,90 @@ export type ProjectsListInput = {
 
 /** Return shape for `projects.list`. */
 export type ProjectsListReturn = {
-  filters: Record<string, unknown>;
-  items: Array<Record<string, unknown>>;
+  filters: {
+    status: ("active" | "paused" | "blocked" | "done" | "archived") | null;
+    tagSlug: string | null;
+  };
+  items: Array<({
+    archivedAt?: number;
+    createdAt?: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    hypothesis?: string;
+    id?: string;
+    lastSignalAt?: number;
+    linkCount?: number;
+    nextStep?: string;
+    operatorSessionName?: string;
+    ownerAgentId?: string;
+    slug?: string;
+    status?: "active" | "paused" | "blocked" | "done" | "archived";
+    summary?: string;
+    tags?: Array<{
+      assetId: string;
+      assetType: "project";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+    title?: string;
+    updatedAt?: number;
+  }) & (({
+    id: string;
+  }) | ({
+    slug: string;
+  }) | ({
+    title: string;
+  }) | ({
+    status: "active" | "paused" | "blocked" | "done" | "archived";
+  }) | ({
+    summary: string;
+  }) | ({
+    hypothesis: string;
+  }) | ({
+    nextStep: string;
+  }) | ({
+    lastSignalAt: number;
+  }) | ({
+    ownerAgentId: string;
+  }) | ({
+    operatorSessionName: string;
+  }) | ({
+    createdBy: string;
+  }) | ({
+    createdByAgentId: string;
+  }) | ({
+    createdBySessionName: string;
+  }) | ({
+    archivedAt: number;
+  }) | ({
+    createdAt: number;
+  }) | ({
+    updatedAt: number;
+  }) | ({
+    linkCount: number;
+  }) | ({
+    tags: Array<{
+      assetId: string;
+      assetType: "project";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+  }))>;
   pagination: {
     hasMore: boolean;
     limit: number;
@@ -10106,24 +10476,512 @@ export type ProjectsListReturn = {
     total: number;
     [k: string]: unknown;
   };
-  projects: Array<Record<string, unknown>>;
+  projects: Array<({
+    archivedAt?: number;
+    createdAt?: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    hypothesis?: string;
+    id?: string;
+    lastSignalAt?: number;
+    linkCount?: number;
+    nextStep?: string;
+    operatorSessionName?: string;
+    ownerAgentId?: string;
+    slug?: string;
+    status?: "active" | "paused" | "blocked" | "done" | "archived";
+    summary?: string;
+    tags?: Array<{
+      assetId: string;
+      assetType: "project";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+    title?: string;
+    updatedAt?: number;
+  }) & (({
+    id: string;
+  }) | ({
+    slug: string;
+  }) | ({
+    title: string;
+  }) | ({
+    status: "active" | "paused" | "blocked" | "done" | "archived";
+  }) | ({
+    summary: string;
+  }) | ({
+    hypothesis: string;
+  }) | ({
+    nextStep: string;
+  }) | ({
+    lastSignalAt: number;
+  }) | ({
+    ownerAgentId: string;
+  }) | ({
+    operatorSessionName: string;
+  }) | ({
+    createdBy: string;
+  }) | ({
+    createdByAgentId: string;
+  }) | ({
+    createdBySessionName: string;
+  }) | ({
+    archivedAt: number;
+  }) | ({
+    createdAt: number;
+  }) | ({
+    updatedAt: number;
+  }) | ({
+    linkCount: number;
+  }) | ({
+    tags: Array<{
+      assetId: string;
+      assetType: "project";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+  }))>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.next`. */
 export type ProjectsNextInput = {
   fields?: string;
+  limit?: string;
+  offset?: string;
   status?: string;
   tag?: string;
 };
 
 /** Return shape for `projects.next`. */
 export type ProjectsNextReturn = {
-  filters: Record<string, unknown>;
-  projects: Array<Record<string, unknown>>;
+  filters: {
+    status: ("active" | "paused" | "blocked" | "done" | "archived") | null;
+    tagSlug: string | null;
+  };
+  items: Array<({
+    linkedWorkflows?: Array<{
+      createdAt: number;
+      linkId: string;
+      role: string | null;
+      updatedAt: number;
+      workflowRunId: string;
+      workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowRunTitle: string | null;
+      workflowSpecId: string | null;
+      workflowSpecTitle: string | null;
+    }>;
+    links?: Array<{
+      assetId: string;
+      assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      projectId: string;
+      role?: string;
+      updatedAt: number;
+    }>;
+    operational?: ({
+      hottestNodeKey: string | null;
+      hottestNodeKind: ("task" | "gate" | "approval") | null;
+      hottestNodeLabel: string | null;
+      hottestNodeReleaseMode: ("auto" | "manual") | null;
+      hottestNodeRequirement: ("required" | "optional") | null;
+      hottestNodeRunId: string | null;
+      hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+      hottestTaskId: string | null;
+      hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+      hottestTaskProgress: number | null;
+      hottestTaskStatus: string | null;
+      hottestTaskTitle: string | null;
+      hottestWorkflowRunId: string | null;
+      hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      hottestWorkflowTitle: string | null;
+      runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowCount: number;
+    }) | null;
+    project?: {
+      archivedAt?: number;
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      hypothesis: string;
+      id: string;
+      lastSignalAt: number;
+      linkCount: number;
+      nextStep: string;
+      operatorSessionName?: string;
+      ownerAgentId?: string;
+      slug: string;
+      status: "active" | "paused" | "blocked" | "done" | "archived";
+      summary: string;
+      tags?: Array<{
+        assetId: string;
+        assetType: "project";
+        createdAt: number;
+        createdBy?: string;
+        id: string;
+        metadata?: Record<string, unknown>;
+        source: string;
+        tagId: string;
+        tagSlug: string;
+        updatedAt: number;
+        updatedBy?: string;
+      }>;
+      title: string;
+      updatedAt: number;
+    };
+    workflowAggregate?: ({
+      archived: number;
+      blocked: number;
+      cancelled: number;
+      done: number;
+      draft: number;
+      failed: number;
+      focusedWorkflowRole: string | null;
+      focusedWorkflowRunId: string | null;
+      focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      focusedWorkflowTitle: string | null;
+      missing: number;
+      overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowRunId: string | null;
+      primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowTitle: string | null;
+      ready: number;
+      running: number;
+      total: number;
+      waiting: number;
+    }) | null;
+  }) & (({
+    project: {
+      archivedAt?: number;
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      hypothesis: string;
+      id: string;
+      lastSignalAt: number;
+      linkCount: number;
+      nextStep: string;
+      operatorSessionName?: string;
+      ownerAgentId?: string;
+      slug: string;
+      status: "active" | "paused" | "blocked" | "done" | "archived";
+      summary: string;
+      tags?: Array<{
+        assetId: string;
+        assetType: "project";
+        createdAt: number;
+        createdBy?: string;
+        id: string;
+        metadata?: Record<string, unknown>;
+        source: string;
+        tagId: string;
+        tagSlug: string;
+        updatedAt: number;
+        updatedBy?: string;
+      }>;
+      title: string;
+      updatedAt: number;
+    };
+  }) | ({
+    links: Array<{
+      assetId: string;
+      assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      projectId: string;
+      role?: string;
+      updatedAt: number;
+    }>;
+  }) | ({
+    linkedWorkflows: Array<{
+      createdAt: number;
+      linkId: string;
+      role: string | null;
+      updatedAt: number;
+      workflowRunId: string;
+      workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowRunTitle: string | null;
+      workflowSpecId: string | null;
+      workflowSpecTitle: string | null;
+    }>;
+  }) | ({
+    workflowAggregate: ({
+      archived: number;
+      blocked: number;
+      cancelled: number;
+      done: number;
+      draft: number;
+      failed: number;
+      focusedWorkflowRole: string | null;
+      focusedWorkflowRunId: string | null;
+      focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      focusedWorkflowTitle: string | null;
+      missing: number;
+      overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowRunId: string | null;
+      primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowTitle: string | null;
+      ready: number;
+      running: number;
+      total: number;
+      waiting: number;
+    }) | null;
+  }) | ({
+    operational: ({
+      hottestNodeKey: string | null;
+      hottestNodeKind: ("task" | "gate" | "approval") | null;
+      hottestNodeLabel: string | null;
+      hottestNodeReleaseMode: ("auto" | "manual") | null;
+      hottestNodeRequirement: ("required" | "optional") | null;
+      hottestNodeRunId: string | null;
+      hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+      hottestTaskId: string | null;
+      hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+      hottestTaskProgress: number | null;
+      hottestTaskStatus: string | null;
+      hottestTaskTitle: string | null;
+      hottestWorkflowRunId: string | null;
+      hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      hottestWorkflowTitle: string | null;
+      runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowCount: number;
+    }) | null;
+  }))>;
+  pagination: {
+    hasMore?: boolean;
+    limit: number;
+    nextCommand?: string | null;
+    nextOffset?: number | null;
+    offset: number;
+    returned: number;
+    total: number;
+  };
+  projects: Array<({
+    linkedWorkflows?: Array<{
+      createdAt: number;
+      linkId: string;
+      role: string | null;
+      updatedAt: number;
+      workflowRunId: string;
+      workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowRunTitle: string | null;
+      workflowSpecId: string | null;
+      workflowSpecTitle: string | null;
+    }>;
+    links?: Array<{
+      assetId: string;
+      assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      projectId: string;
+      role?: string;
+      updatedAt: number;
+    }>;
+    operational?: ({
+      hottestNodeKey: string | null;
+      hottestNodeKind: ("task" | "gate" | "approval") | null;
+      hottestNodeLabel: string | null;
+      hottestNodeReleaseMode: ("auto" | "manual") | null;
+      hottestNodeRequirement: ("required" | "optional") | null;
+      hottestNodeRunId: string | null;
+      hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+      hottestTaskId: string | null;
+      hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+      hottestTaskProgress: number | null;
+      hottestTaskStatus: string | null;
+      hottestTaskTitle: string | null;
+      hottestWorkflowRunId: string | null;
+      hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      hottestWorkflowTitle: string | null;
+      runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowCount: number;
+    }) | null;
+    project?: {
+      archivedAt?: number;
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      hypothesis: string;
+      id: string;
+      lastSignalAt: number;
+      linkCount: number;
+      nextStep: string;
+      operatorSessionName?: string;
+      ownerAgentId?: string;
+      slug: string;
+      status: "active" | "paused" | "blocked" | "done" | "archived";
+      summary: string;
+      tags?: Array<{
+        assetId: string;
+        assetType: "project";
+        createdAt: number;
+        createdBy?: string;
+        id: string;
+        metadata?: Record<string, unknown>;
+        source: string;
+        tagId: string;
+        tagSlug: string;
+        updatedAt: number;
+        updatedBy?: string;
+      }>;
+      title: string;
+      updatedAt: number;
+    };
+    workflowAggregate?: ({
+      archived: number;
+      blocked: number;
+      cancelled: number;
+      done: number;
+      draft: number;
+      failed: number;
+      focusedWorkflowRole: string | null;
+      focusedWorkflowRunId: string | null;
+      focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      focusedWorkflowTitle: string | null;
+      missing: number;
+      overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowRunId: string | null;
+      primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowTitle: string | null;
+      ready: number;
+      running: number;
+      total: number;
+      waiting: number;
+    }) | null;
+  }) & (({
+    project: {
+      archivedAt?: number;
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      hypothesis: string;
+      id: string;
+      lastSignalAt: number;
+      linkCount: number;
+      nextStep: string;
+      operatorSessionName?: string;
+      ownerAgentId?: string;
+      slug: string;
+      status: "active" | "paused" | "blocked" | "done" | "archived";
+      summary: string;
+      tags?: Array<{
+        assetId: string;
+        assetType: "project";
+        createdAt: number;
+        createdBy?: string;
+        id: string;
+        metadata?: Record<string, unknown>;
+        source: string;
+        tagId: string;
+        tagSlug: string;
+        updatedAt: number;
+        updatedBy?: string;
+      }>;
+      title: string;
+      updatedAt: number;
+    };
+  }) | ({
+    links: Array<{
+      assetId: string;
+      assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      projectId: string;
+      role?: string;
+      updatedAt: number;
+    }>;
+  }) | ({
+    linkedWorkflows: Array<{
+      createdAt: number;
+      linkId: string;
+      role: string | null;
+      updatedAt: number;
+      workflowRunId: string;
+      workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowRunTitle: string | null;
+      workflowSpecId: string | null;
+      workflowSpecTitle: string | null;
+    }>;
+  }) | ({
+    workflowAggregate: ({
+      archived: number;
+      blocked: number;
+      cancelled: number;
+      done: number;
+      draft: number;
+      failed: number;
+      focusedWorkflowRole: string | null;
+      focusedWorkflowRunId: string | null;
+      focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      focusedWorkflowTitle: string | null;
+      missing: number;
+      overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowRunId: string | null;
+      primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowTitle: string | null;
+      ready: number;
+      running: number;
+      total: number;
+      waiting: number;
+    }) | null;
+  }) | ({
+    operational: ({
+      hottestNodeKey: string | null;
+      hottestNodeKind: ("task" | "gate" | "approval") | null;
+      hottestNodeLabel: string | null;
+      hottestNodeReleaseMode: ("auto" | "manual") | null;
+      hottestNodeRequirement: ("required" | "optional") | null;
+      hottestNodeRunId: string | null;
+      hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+      hottestTaskId: string | null;
+      hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+      hottestTaskProgress: number | null;
+      hottestTaskStatus: string | null;
+      hottestTaskTitle: string | null;
+      hottestWorkflowRunId: string | null;
+      hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      hottestWorkflowTitle: string | null;
+      runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowCount: number;
+    }) | null;
+  }))>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.resources.add`. */
@@ -10137,7 +10995,22 @@ export type ProjectsResourcesAddInput = {
 };
 
 /** Return shape for `projects.resources.add`. */
-export type ProjectsResourcesAddReturn = Record<string, unknown>;
+export type ProjectsResourcesAddReturn = {
+  assetId: string;
+  assetType: "resource";
+  createdAt: number;
+  createdBy?: string;
+  createdByAgentId?: string;
+  createdBySessionName?: string;
+  id: string;
+  label: string | null;
+  locator: string;
+  metadata?: Record<string, unknown>;
+  projectId: string;
+  resourceType: ("repo" | "worktree" | "notion_page" | "notion_database" | "file" | "url" | "group" | "contact") | null;
+  role?: string;
+  updatedAt: number;
+};
 
 /** Input shape for `projects.resources.import`. */
 export type ProjectsResourcesImportInput = {
@@ -10152,7 +11025,22 @@ export type ProjectsResourcesImportInput = {
 
 /** Return shape for `projects.resources.import`. */
 export type ProjectsResourcesImportReturn = {
-  resources: Array<Record<string, unknown>>;
+  resources: Array<{
+    assetId: string;
+    assetType: "resource";
+    createdAt: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    id: string;
+    label: string | null;
+    locator: string;
+    metadata?: Record<string, unknown>;
+    projectId: string;
+    resourceType: ("repo" | "worktree" | "notion_page" | "notion_database" | "file" | "url" | "group" | "contact") | null;
+    role?: string;
+    updatedAt: number;
+  }>;
   total: number;
   [k: string]: unknown;
 };
@@ -10168,7 +11056,50 @@ export type ProjectsResourcesListInput = {
 
 /** Return shape for `projects.resources.list`. */
 export type ProjectsResourcesListReturn = {
-  items: Array<Record<string, unknown>>;
+  items: Array<({
+    assetId?: string;
+    assetType?: "resource";
+    createdAt?: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    id?: string;
+    label?: string | null;
+    locator?: string;
+    metadata?: Record<string, unknown>;
+    projectId?: string;
+    resourceType?: ("repo" | "worktree" | "notion_page" | "notion_database" | "file" | "url" | "group" | "contact") | null;
+    role?: string;
+    updatedAt?: number;
+  }) & (({
+    id: string;
+  }) | ({
+    projectId: string;
+  }) | ({
+    assetType: "resource";
+  }) | ({
+    assetId: string;
+  }) | ({
+    role: string;
+  }) | ({
+    metadata: Record<string, unknown>;
+  }) | ({
+    createdBy: string;
+  }) | ({
+    createdByAgentId: string;
+  }) | ({
+    createdBySessionName: string;
+  }) | ({
+    createdAt: number;
+  }) | ({
+    updatedAt: number;
+  }) | ({
+    resourceType: ("repo" | "worktree" | "notion_page" | "notion_database" | "file" | "url" | "group" | "contact") | null;
+  }) | ({
+    locator: string;
+  }) | ({
+    label: string | null;
+  }))>;
   pagination: {
     hasMore: boolean;
     limit: number;
@@ -10179,9 +11110,51 @@ export type ProjectsResourcesListReturn = {
     total: number;
     [k: string]: unknown;
   };
-  resources: Array<Record<string, unknown>>;
+  resources: Array<({
+    assetId?: string;
+    assetType?: "resource";
+    createdAt?: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    id?: string;
+    label?: string | null;
+    locator?: string;
+    metadata?: Record<string, unknown>;
+    projectId?: string;
+    resourceType?: ("repo" | "worktree" | "notion_page" | "notion_database" | "file" | "url" | "group" | "contact") | null;
+    role?: string;
+    updatedAt?: number;
+  }) & (({
+    id: string;
+  }) | ({
+    projectId: string;
+  }) | ({
+    assetType: "resource";
+  }) | ({
+    assetId: string;
+  }) | ({
+    role: string;
+  }) | ({
+    metadata: Record<string, unknown>;
+  }) | ({
+    createdBy: string;
+  }) | ({
+    createdByAgentId: string;
+  }) | ({
+    createdBySessionName: string;
+  }) | ({
+    createdAt: number;
+  }) | ({
+    updatedAt: number;
+  }) | ({
+    resourceType: ("repo" | "worktree" | "notion_page" | "notion_database" | "file" | "url" | "group" | "contact") | null;
+  }) | ({
+    locator: string;
+  }) | ({
+    label: string | null;
+  }))>;
   total: number;
-  [k: string]: unknown;
 };
 
 /** Input shape for `projects.resources.show`. */
@@ -10191,7 +11164,22 @@ export type ProjectsResourcesShowInput = {
 };
 
 /** Return shape for `projects.resources.show`. */
-export type ProjectsResourcesShowReturn = Record<string, unknown>;
+export type ProjectsResourcesShowReturn = {
+  assetId: string;
+  assetType: "resource";
+  createdAt: number;
+  createdBy?: string;
+  createdByAgentId?: string;
+  createdBySessionName?: string;
+  id: string;
+  label: string | null;
+  locator: string;
+  metadata?: Record<string, unknown>;
+  projectId: string;
+  resourceType: ("repo" | "worktree" | "notion_page" | "notion_database" | "file" | "url" | "group" | "contact") | null;
+  role?: string;
+  updatedAt: number;
+};
 
 /** Input shape for `projects.show`. */
 export type ProjectsShowInput = {
@@ -10199,7 +11187,103 @@ export type ProjectsShowInput = {
 };
 
 /** Return shape for `projects.show`. */
-export type ProjectsShowReturn = Record<string, unknown>;
+export type ProjectsShowReturn = {
+  linkedWorkflows: Array<{
+    createdAt: number;
+    linkId: string;
+    role: string | null;
+    updatedAt: number;
+    workflowRunId: string;
+    workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    workflowRunTitle: string | null;
+    workflowSpecId: string | null;
+    workflowSpecTitle: string | null;
+  }>;
+  links: Array<{
+    assetId: string;
+    assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+    createdAt: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    projectId: string;
+    role?: string;
+    updatedAt: number;
+  }>;
+  operational: ({
+    hottestNodeKey: string | null;
+    hottestNodeKind: ("task" | "gate" | "approval") | null;
+    hottestNodeLabel: string | null;
+    hottestNodeReleaseMode: ("auto" | "manual") | null;
+    hottestNodeRequirement: ("required" | "optional") | null;
+    hottestNodeRunId: string | null;
+    hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+    hottestTaskId: string | null;
+    hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+    hottestTaskProgress: number | null;
+    hottestTaskStatus: string | null;
+    hottestTaskTitle: string | null;
+    hottestWorkflowRunId: string | null;
+    hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    hottestWorkflowTitle: string | null;
+    runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    workflowCount: number;
+  }) | null;
+  project: {
+    archivedAt?: number;
+    createdAt: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    hypothesis: string;
+    id: string;
+    lastSignalAt: number;
+    nextStep: string;
+    operatorSessionName?: string;
+    ownerAgentId?: string;
+    slug: string;
+    status: "active" | "paused" | "blocked" | "done" | "archived";
+    summary: string;
+    title: string;
+    updatedAt: number;
+  };
+  tags: Array<{
+    assetId: string;
+    assetType: "project";
+    createdAt: number;
+    createdBy?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    source: string;
+    tagId: string;
+    tagSlug: string;
+    updatedAt: number;
+    updatedBy?: string;
+  }>;
+  workflowAggregate: ({
+    archived: number;
+    blocked: number;
+    cancelled: number;
+    done: number;
+    draft: number;
+    failed: number;
+    focusedWorkflowRole: string | null;
+    focusedWorkflowRunId: string | null;
+    focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    focusedWorkflowTitle: string | null;
+    missing: number;
+    overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    primaryWorkflowRunId: string | null;
+    primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    primaryWorkflowTitle: string | null;
+    ready: number;
+    running: number;
+    total: number;
+    waiting: number;
+  }) | null;
+};
 
 /** Input shape for `projects.status`. */
 export type ProjectsStatusInput = {
@@ -10207,7 +11291,103 @@ export type ProjectsStatusInput = {
 };
 
 /** Return shape for `projects.status`. */
-export type ProjectsStatusReturn = Record<string, unknown>;
+export type ProjectsStatusReturn = {
+  linkedWorkflows: Array<{
+    createdAt: number;
+    linkId: string;
+    role: string | null;
+    updatedAt: number;
+    workflowRunId: string;
+    workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    workflowRunTitle: string | null;
+    workflowSpecId: string | null;
+    workflowSpecTitle: string | null;
+  }>;
+  links: Array<{
+    assetId: string;
+    assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+    createdAt: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    projectId: string;
+    role?: string;
+    updatedAt: number;
+  }>;
+  operational: ({
+    hottestNodeKey: string | null;
+    hottestNodeKind: ("task" | "gate" | "approval") | null;
+    hottestNodeLabel: string | null;
+    hottestNodeReleaseMode: ("auto" | "manual") | null;
+    hottestNodeRequirement: ("required" | "optional") | null;
+    hottestNodeRunId: string | null;
+    hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+    hottestTaskId: string | null;
+    hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+    hottestTaskProgress: number | null;
+    hottestTaskStatus: string | null;
+    hottestTaskTitle: string | null;
+    hottestWorkflowRunId: string | null;
+    hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    hottestWorkflowTitle: string | null;
+    runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    workflowCount: number;
+  }) | null;
+  project: {
+    archivedAt?: number;
+    createdAt: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    hypothesis: string;
+    id: string;
+    lastSignalAt: number;
+    nextStep: string;
+    operatorSessionName?: string;
+    ownerAgentId?: string;
+    slug: string;
+    status: "active" | "paused" | "blocked" | "done" | "archived";
+    summary: string;
+    title: string;
+    updatedAt: number;
+  };
+  tags: Array<{
+    assetId: string;
+    assetType: "project";
+    createdAt: number;
+    createdBy?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    source: string;
+    tagId: string;
+    tagSlug: string;
+    updatedAt: number;
+    updatedBy?: string;
+  }>;
+  workflowAggregate: ({
+    archived: number;
+    blocked: number;
+    cancelled: number;
+    done: number;
+    draft: number;
+    failed: number;
+    focusedWorkflowRole: string | null;
+    focusedWorkflowRunId: string | null;
+    focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    focusedWorkflowTitle: string | null;
+    missing: number;
+    overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    primaryWorkflowRunId: string | null;
+    primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    primaryWorkflowTitle: string | null;
+    ready: number;
+    running: number;
+    total: number;
+    waiting: number;
+  }) | null;
+};
 
 /** Input shape for `projects.tasks.attach`. */
 export type ProjectsTasksAttachInput = {
@@ -10223,7 +11403,103 @@ export type ProjectsTasksAttachInput = {
 /** Return shape for `projects.tasks.attach`. */
 export type ProjectsTasksAttachReturn = {
   defaults: Record<string, unknown>;
-  details: Record<string, unknown>;
+  details: {
+    linkedWorkflows: Array<{
+      createdAt: number;
+      linkId: string;
+      role: string | null;
+      updatedAt: number;
+      workflowRunId: string;
+      workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowRunTitle: string | null;
+      workflowSpecId: string | null;
+      workflowSpecTitle: string | null;
+    }>;
+    links: Array<{
+      assetId: string;
+      assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      projectId: string;
+      role?: string;
+      updatedAt: number;
+    }>;
+    operational: ({
+      hottestNodeKey: string | null;
+      hottestNodeKind: ("task" | "gate" | "approval") | null;
+      hottestNodeLabel: string | null;
+      hottestNodeReleaseMode: ("auto" | "manual") | null;
+      hottestNodeRequirement: ("required" | "optional") | null;
+      hottestNodeRunId: string | null;
+      hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+      hottestTaskId: string | null;
+      hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+      hottestTaskProgress: number | null;
+      hottestTaskStatus: string | null;
+      hottestTaskTitle: string | null;
+      hottestWorkflowRunId: string | null;
+      hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      hottestWorkflowTitle: string | null;
+      runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowCount: number;
+    }) | null;
+    project: {
+      archivedAt?: number;
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      hypothesis: string;
+      id: string;
+      lastSignalAt: number;
+      nextStep: string;
+      operatorSessionName?: string;
+      ownerAgentId?: string;
+      slug: string;
+      status: "active" | "paused" | "blocked" | "done" | "archived";
+      summary: string;
+      title: string;
+      updatedAt: number;
+    };
+    tags: Array<{
+      assetId: string;
+      assetType: "project";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+    workflowAggregate: ({
+      archived: number;
+      blocked: number;
+      cancelled: number;
+      done: number;
+      draft: number;
+      failed: number;
+      focusedWorkflowRole: string | null;
+      focusedWorkflowRunId: string | null;
+      focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      focusedWorkflowTitle: string | null;
+      missing: number;
+      overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowRunId: string | null;
+      primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowTitle: string | null;
+      ready: number;
+      running: number;
+      total: number;
+      waiting: number;
+    }) | null;
+  };
   workflow: Record<string, unknown>;
   [k: string]: unknown;
 };
@@ -10245,7 +11521,103 @@ export type ProjectsTasksCreateInput = {
 /** Return shape for `projects.tasks.create`. */
 export type ProjectsTasksCreateReturn = {
   defaults: Record<string, unknown>;
-  details: Record<string, unknown>;
+  details: {
+    linkedWorkflows: Array<{
+      createdAt: number;
+      linkId: string;
+      role: string | null;
+      updatedAt: number;
+      workflowRunId: string;
+      workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowRunTitle: string | null;
+      workflowSpecId: string | null;
+      workflowSpecTitle: string | null;
+    }>;
+    links: Array<{
+      assetId: string;
+      assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      projectId: string;
+      role?: string;
+      updatedAt: number;
+    }>;
+    operational: ({
+      hottestNodeKey: string | null;
+      hottestNodeKind: ("task" | "gate" | "approval") | null;
+      hottestNodeLabel: string | null;
+      hottestNodeReleaseMode: ("auto" | "manual") | null;
+      hottestNodeRequirement: ("required" | "optional") | null;
+      hottestNodeRunId: string | null;
+      hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+      hottestTaskId: string | null;
+      hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+      hottestTaskProgress: number | null;
+      hottestTaskStatus: string | null;
+      hottestTaskTitle: string | null;
+      hottestWorkflowRunId: string | null;
+      hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      hottestWorkflowTitle: string | null;
+      runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowCount: number;
+    }) | null;
+    project: {
+      archivedAt?: number;
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      hypothesis: string;
+      id: string;
+      lastSignalAt: number;
+      nextStep: string;
+      operatorSessionName?: string;
+      ownerAgentId?: string;
+      slug: string;
+      status: "active" | "paused" | "blocked" | "done" | "archived";
+      summary: string;
+      title: string;
+      updatedAt: number;
+    };
+    tags: Array<{
+      assetId: string;
+      assetType: "project";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+    workflowAggregate: ({
+      archived: number;
+      blocked: number;
+      cancelled: number;
+      done: number;
+      draft: number;
+      failed: number;
+      focusedWorkflowRole: string | null;
+      focusedWorkflowRunId: string | null;
+      focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      focusedWorkflowTitle: string | null;
+      missing: number;
+      overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowRunId: string | null;
+      primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowTitle: string | null;
+      ready: number;
+      running: number;
+      total: number;
+      waiting: number;
+    }) | null;
+  };
   workflow: Record<string, unknown>;
   [k: string]: unknown;
 };
@@ -10262,7 +11634,103 @@ export type ProjectsTasksDispatchInput = {
 /** Return shape for `projects.tasks.dispatch`. */
 export type ProjectsTasksDispatchReturn = {
   defaults: Record<string, unknown>;
-  details: Record<string, unknown>;
+  details: {
+    linkedWorkflows: Array<{
+      createdAt: number;
+      linkId: string;
+      role: string | null;
+      updatedAt: number;
+      workflowRunId: string;
+      workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowRunTitle: string | null;
+      workflowSpecId: string | null;
+      workflowSpecTitle: string | null;
+    }>;
+    links: Array<{
+      assetId: string;
+      assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      projectId: string;
+      role?: string;
+      updatedAt: number;
+    }>;
+    operational: ({
+      hottestNodeKey: string | null;
+      hottestNodeKind: ("task" | "gate" | "approval") | null;
+      hottestNodeLabel: string | null;
+      hottestNodeReleaseMode: ("auto" | "manual") | null;
+      hottestNodeRequirement: ("required" | "optional") | null;
+      hottestNodeRunId: string | null;
+      hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+      hottestTaskId: string | null;
+      hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+      hottestTaskProgress: number | null;
+      hottestTaskStatus: string | null;
+      hottestTaskTitle: string | null;
+      hottestWorkflowRunId: string | null;
+      hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      hottestWorkflowTitle: string | null;
+      runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowCount: number;
+    }) | null;
+    project: {
+      archivedAt?: number;
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      hypothesis: string;
+      id: string;
+      lastSignalAt: number;
+      nextStep: string;
+      operatorSessionName?: string;
+      ownerAgentId?: string;
+      slug: string;
+      status: "active" | "paused" | "blocked" | "done" | "archived";
+      summary: string;
+      title: string;
+      updatedAt: number;
+    };
+    tags: Array<{
+      assetId: string;
+      assetType: "project";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+    workflowAggregate: ({
+      archived: number;
+      blocked: number;
+      cancelled: number;
+      done: number;
+      draft: number;
+      failed: number;
+      focusedWorkflowRole: string | null;
+      focusedWorkflowRunId: string | null;
+      focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      focusedWorkflowTitle: string | null;
+      missing: number;
+      overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowRunId: string | null;
+      primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowTitle: string | null;
+      ready: number;
+      running: number;
+      total: number;
+      waiting: number;
+    }) | null;
+  };
   workflow: Record<string, unknown>;
   [k: string]: unknown;
 };
@@ -10282,7 +11750,103 @@ export type ProjectsUpdateInput = {
 };
 
 /** Return shape for `projects.update`. */
-export type ProjectsUpdateReturn = Record<string, unknown>;
+export type ProjectsUpdateReturn = {
+  linkedWorkflows: Array<{
+    createdAt: number;
+    linkId: string;
+    role: string | null;
+    updatedAt: number;
+    workflowRunId: string;
+    workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    workflowRunTitle: string | null;
+    workflowSpecId: string | null;
+    workflowSpecTitle: string | null;
+  }>;
+  links: Array<{
+    assetId: string;
+    assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+    createdAt: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    projectId: string;
+    role?: string;
+    updatedAt: number;
+  }>;
+  operational: ({
+    hottestNodeKey: string | null;
+    hottestNodeKind: ("task" | "gate" | "approval") | null;
+    hottestNodeLabel: string | null;
+    hottestNodeReleaseMode: ("auto" | "manual") | null;
+    hottestNodeRequirement: ("required" | "optional") | null;
+    hottestNodeRunId: string | null;
+    hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+    hottestTaskId: string | null;
+    hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+    hottestTaskProgress: number | null;
+    hottestTaskStatus: string | null;
+    hottestTaskTitle: string | null;
+    hottestWorkflowRunId: string | null;
+    hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    hottestWorkflowTitle: string | null;
+    runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    workflowCount: number;
+  }) | null;
+  project: {
+    archivedAt?: number;
+    createdAt: number;
+    createdBy?: string;
+    createdByAgentId?: string;
+    createdBySessionName?: string;
+    hypothesis: string;
+    id: string;
+    lastSignalAt: number;
+    nextStep: string;
+    operatorSessionName?: string;
+    ownerAgentId?: string;
+    slug: string;
+    status: "active" | "paused" | "blocked" | "done" | "archived";
+    summary: string;
+    title: string;
+    updatedAt: number;
+  };
+  tags: Array<{
+    assetId: string;
+    assetType: "project";
+    createdAt: number;
+    createdBy?: string;
+    id: string;
+    metadata?: Record<string, unknown>;
+    source: string;
+    tagId: string;
+    tagSlug: string;
+    updatedAt: number;
+    updatedBy?: string;
+  }>;
+  workflowAggregate: ({
+    archived: number;
+    blocked: number;
+    cancelled: number;
+    done: number;
+    draft: number;
+    failed: number;
+    focusedWorkflowRole: string | null;
+    focusedWorkflowRunId: string | null;
+    focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    focusedWorkflowTitle: string | null;
+    missing: number;
+    overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    primaryWorkflowRunId: string | null;
+    primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+    primaryWorkflowTitle: string | null;
+    ready: number;
+    running: number;
+    total: number;
+    waiting: number;
+  }) | null;
+};
 
 /** Input shape for `projects.workflows.attach`. */
 export type ProjectsWorkflowsAttachInput = {
@@ -10293,7 +11857,103 @@ export type ProjectsWorkflowsAttachInput = {
 
 /** Return shape for `projects.workflows.attach`. */
 export type ProjectsWorkflowsAttachReturn = {
-  details: Record<string, unknown>;
+  details: {
+    linkedWorkflows: Array<{
+      createdAt: number;
+      linkId: string;
+      role: string | null;
+      updatedAt: number;
+      workflowRunId: string;
+      workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowRunTitle: string | null;
+      workflowSpecId: string | null;
+      workflowSpecTitle: string | null;
+    }>;
+    links: Array<{
+      assetId: string;
+      assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      projectId: string;
+      role?: string;
+      updatedAt: number;
+    }>;
+    operational: ({
+      hottestNodeKey: string | null;
+      hottestNodeKind: ("task" | "gate" | "approval") | null;
+      hottestNodeLabel: string | null;
+      hottestNodeReleaseMode: ("auto" | "manual") | null;
+      hottestNodeRequirement: ("required" | "optional") | null;
+      hottestNodeRunId: string | null;
+      hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+      hottestTaskId: string | null;
+      hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+      hottestTaskProgress: number | null;
+      hottestTaskStatus: string | null;
+      hottestTaskTitle: string | null;
+      hottestWorkflowRunId: string | null;
+      hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      hottestWorkflowTitle: string | null;
+      runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowCount: number;
+    }) | null;
+    project: {
+      archivedAt?: number;
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      hypothesis: string;
+      id: string;
+      lastSignalAt: number;
+      nextStep: string;
+      operatorSessionName?: string;
+      ownerAgentId?: string;
+      slug: string;
+      status: "active" | "paused" | "blocked" | "done" | "archived";
+      summary: string;
+      title: string;
+      updatedAt: number;
+    };
+    tags: Array<{
+      assetId: string;
+      assetType: "project";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+    workflowAggregate: ({
+      archived: number;
+      blocked: number;
+      cancelled: number;
+      done: number;
+      draft: number;
+      failed: number;
+      focusedWorkflowRole: string | null;
+      focusedWorkflowRunId: string | null;
+      focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      focusedWorkflowTitle: string | null;
+      missing: number;
+      overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowRunId: string | null;
+      primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowTitle: string | null;
+      ready: number;
+      running: number;
+      total: number;
+      waiting: number;
+    }) | null;
+  };
   workflow: Record<string, unknown>;
   [k: string]: unknown;
 };
@@ -10309,7 +11969,103 @@ export type ProjectsWorkflowsStartInput = {
 
 /** Return shape for `projects.workflows.start`. */
 export type ProjectsWorkflowsStartReturn = {
-  details: Record<string, unknown>;
+  details: {
+    linkedWorkflows: Array<{
+      createdAt: number;
+      linkId: string;
+      role: string | null;
+      updatedAt: number;
+      workflowRunId: string;
+      workflowRunStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowRunTitle: string | null;
+      workflowSpecId: string | null;
+      workflowSpecTitle: string | null;
+    }>;
+    links: Array<{
+      assetId: string;
+      assetType: "workflow" | "session" | "agent" | "resource" | "spec";
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      projectId: string;
+      role?: string;
+      updatedAt: number;
+    }>;
+    operational: ({
+      hottestNodeKey: string | null;
+      hottestNodeKind: ("task" | "gate" | "approval") | null;
+      hottestNodeLabel: string | null;
+      hottestNodeReleaseMode: ("auto" | "manual") | null;
+      hottestNodeRequirement: ("required" | "optional") | null;
+      hottestNodeRunId: string | null;
+      hottestNodeStatus: ("pending" | "awaiting_release" | "ready" | "running" | "blocked" | "done" | "failed" | "skipped" | "cancelled" | "archived") | null;
+      hottestTaskId: string | null;
+      hottestTaskPriority: ("low" | "normal" | "high" | "urgent") | null;
+      hottestTaskProgress: number | null;
+      hottestTaskStatus: string | null;
+      hottestTaskTitle: string | null;
+      hottestWorkflowRunId: string | null;
+      hottestWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      hottestWorkflowTitle: string | null;
+      runtimeStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      workflowCount: number;
+    }) | null;
+    project: {
+      archivedAt?: number;
+      createdAt: number;
+      createdBy?: string;
+      createdByAgentId?: string;
+      createdBySessionName?: string;
+      hypothesis: string;
+      id: string;
+      lastSignalAt: number;
+      nextStep: string;
+      operatorSessionName?: string;
+      ownerAgentId?: string;
+      slug: string;
+      status: "active" | "paused" | "blocked" | "done" | "archived";
+      summary: string;
+      title: string;
+      updatedAt: number;
+    };
+    tags: Array<{
+      assetId: string;
+      assetType: "project";
+      createdAt: number;
+      createdBy?: string;
+      id: string;
+      metadata?: Record<string, unknown>;
+      source: string;
+      tagId: string;
+      tagSlug: string;
+      updatedAt: number;
+      updatedBy?: string;
+    }>;
+    workflowAggregate: ({
+      archived: number;
+      blocked: number;
+      cancelled: number;
+      done: number;
+      draft: number;
+      failed: number;
+      focusedWorkflowRole: string | null;
+      focusedWorkflowRunId: string | null;
+      focusedWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      focusedWorkflowTitle: string | null;
+      missing: number;
+      overallStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowRunId: string | null;
+      primaryWorkflowStatus: ("draft" | "waiting" | "ready" | "running" | "blocked" | "done" | "failed" | "cancelled" | "archived") | null;
+      primaryWorkflowTitle: string | null;
+      ready: number;
+      running: number;
+      total: number;
+      waiting: number;
+    }) | null;
+  };
   workflow: Record<string, unknown>;
   [k: string]: unknown;
 };

@@ -373,6 +373,40 @@ mock.module("../../projects/index.js", () => ({
     [...new Map([...projectResourceLinks.values()].map((resource) => [String(resource.id), resource])).values()].filter(
       (resource) => !resourceType || resource.resourceType === resourceType,
     ),
+  ProjectsReadFacade: class {
+    list(query: Record<string, unknown>) {
+      listProjectsCalls.push(query);
+      return [{ ...projectDetails.project, linkCount: 1 }];
+    }
+
+    get(ref: string) {
+      getProjectDetailsCalls.push(ref);
+      return unknownProjectRefs.has(ref) ? null : projectDetails;
+    }
+
+    status(query: Record<string, unknown>) {
+      listProjectStatusEntriesCalls.push(query);
+      return [
+        {
+          project: { ...projectDetails.project, linkCount: 1 },
+          links: projectDetails.links,
+          linkedWorkflows: projectDetails.linkedWorkflows,
+          workflowAggregate: projectDetails.workflowAggregate,
+          operational: projectDetails.operational,
+        },
+      ];
+    }
+
+    resources(_projectRef: string) {
+      return [
+        ...new Map([...projectResourceLinks.values()].map((resource) => [String(resource.id), resource])).values(),
+      ];
+    }
+
+    resource(_projectRef: string, resourceRef: string) {
+      return projectResourceLinks.get(resourceRef) ?? null;
+    }
+  },
   normalizeProjectStatus: (value?: string) => value?.trim().toLowerCase() || "active",
   normalizeProjectWorkflowLinkRole: (value?: string) =>
     value?.trim().toLowerCase() === "secondary" ? "support" : value?.trim().toLowerCase(),

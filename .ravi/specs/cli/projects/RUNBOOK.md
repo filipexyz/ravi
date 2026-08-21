@@ -39,3 +39,20 @@ ravi projects fixtures seed --json                           # expect exit 3 + r
 ravi projects resources import <slug> --url https://x.dev --json  # expect exit 0 + local link
 ravi projects list --fields slug,status --json               # expect compact items
 ```
+
+For read-facade failures:
+
+1. `AMBIGUOUS_PROJECT_REF` or `AMBIGUOUS_RESOURCE_REF`: inspect candidates and
+   retry with the exact canonical id; never pick the first candidate.
+2. `PROJECTS_READ_SCHEMA_UNSUPPORTED`: stop. Do not run a write merely to make
+   the read succeed; reconcile the installed package and database migration
+   through the normal release path.
+3. For large next-work queues, follow `pagination.nextCommand`; do not raise the
+   limit merely to reconstruct the previous unbounded response.
+
+Native validation:
+
+```bash
+bun test src/projects/read-facade.test.ts
+bun test src/cli/commands/projects-read-process.test.ts
+```

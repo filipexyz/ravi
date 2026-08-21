@@ -35,3 +35,18 @@
   explicitly as unbraked.
 - `bun test src/cli/commands/projects.test.ts` SHOULD pass after any change to
   the projects contract surface.
+
+## Read-only facade checks
+
+- Run `bun test src/projects/read-facade.test.ts`; missing databases MUST stay
+  missing, incompatible schemas MUST remain byte-identical, and ambiguous
+  project/resource references MUST fail closed.
+- Run `bun test src/cli/commands/projects-read-process.test.ts` without
+  `RAVI_NO_AUDIT` or `RAVI_SUPPRESS_AUDIT_EVENTS`; stderr MUST stay empty and
+  durable state MUST remain identical.
+- `projects next --json` over more than 20 projects MUST return 20 entries,
+  `hasMore: true`, and a deterministic next command.
+- `projects list --status bogus --json` MUST return
+  `INVALID_PROJECT_STATUS` with the valid values, never `COMMAND_FAILED`.
+- Every prepared read query MUST be finalized before the read-only database is
+  closed, including Windows where a leaked statement keeps the file locked.

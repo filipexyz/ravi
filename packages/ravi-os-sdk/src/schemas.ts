@@ -51477,8 +51477,777 @@ export const ProjectsCreateInputSchema = {
 
 /** JSON Schema for the return shape of `projects.create`. */
 export const ProjectsCreateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "linkedWorkflows": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "linkId": {
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "workflowRunId": {
+            "type": "string"
+          },
+          "workflowRunStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "draft",
+                  "waiting",
+                  "ready",
+                  "running",
+                  "blocked",
+                  "done",
+                  "failed",
+                  "cancelled",
+                  "archived"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowRunTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowSpecId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowSpecTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "linkId",
+          "role",
+          "workflowRunId",
+          "workflowRunTitle",
+          "workflowRunStatus",
+          "workflowSpecId",
+          "workflowSpecTitle",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectWorkflowLink",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "links": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetType": {
+            "enum": [
+              "workflow",
+              "session",
+              "agent",
+              "resource",
+              "spec"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdByAgentId": {
+            "type": "string"
+          },
+          "createdBySessionName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "assetType",
+          "assetId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectLink",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "operational": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "hottestNodeKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeKind": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "task",
+                    "gate",
+                    "approval"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeLabel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeReleaseMode": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeRequirement": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "required",
+                    "optional"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "awaiting_release",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "skipped",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskPriority": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "low",
+                    "normal",
+                    "high",
+                    "urgent"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskProgress": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskStatus": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtimeStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "workflowCount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "runtimeStatus",
+            "workflowCount",
+            "hottestWorkflowRunId",
+            "hottestWorkflowTitle",
+            "hottestWorkflowStatus",
+            "hottestNodeRunId",
+            "hottestNodeKey",
+            "hottestNodeLabel",
+            "hottestNodeKind",
+            "hottestNodeRequirement",
+            "hottestNodeReleaseMode",
+            "hottestNodeStatus",
+            "hottestTaskId",
+            "hottestTaskTitle",
+            "hottestTaskStatus",
+            "hottestTaskProgress",
+            "hottestTaskPriority"
+          ],
+          "title": "ProjectOperational",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "createdByAgentId": {
+          "type": "string"
+        },
+        "createdBySessionName": {
+          "type": "string"
+        },
+        "hypothesis": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastSignalAt": {
+          "type": "number"
+        },
+        "nextStep": {
+          "type": "string"
+        },
+        "operatorSessionName": {
+          "type": "string"
+        },
+        "ownerAgentId": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "blocked",
+            "done",
+            "archived"
+          ],
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "title",
+        "status",
+        "summary",
+        "hypothesis",
+        "nextStep",
+        "lastSignalAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "title": "ProjectRecord",
+      "type": "object"
+    },
+    "tags": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetType": {
+            "const": "project",
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "source": {
+            "type": "string"
+          },
+          "tagId": {
+            "type": "string"
+          },
+          "tagSlug": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "updatedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tagId",
+          "tagSlug",
+          "assetType",
+          "assetId",
+          "source",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectTagBinding",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "workflowAggregate": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "number"
+            },
+            "blocked": {
+              "type": "number"
+            },
+            "cancelled": {
+              "type": "number"
+            },
+            "done": {
+              "type": "number"
+            },
+            "draft": {
+              "type": "number"
+            },
+            "failed": {
+              "type": "number"
+            },
+            "focusedWorkflowRole": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "missing": {
+              "type": "number"
+            },
+            "overallStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ready": {
+              "type": "number"
+            },
+            "running": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            },
+            "waiting": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "missing",
+            "draft",
+            "waiting",
+            "ready",
+            "running",
+            "blocked",
+            "done",
+            "failed",
+            "cancelled",
+            "archived",
+            "primaryWorkflowRunId",
+            "primaryWorkflowTitle",
+            "primaryWorkflowStatus",
+            "focusedWorkflowRunId",
+            "focusedWorkflowTitle",
+            "focusedWorkflowStatus",
+            "focusedWorkflowRole",
+            "overallStatus"
+          ],
+          "title": "ProjectWorkflowAggregate",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "project",
+    "tags",
+    "links",
+    "linkedWorkflows",
+    "workflowAggregate",
+    "operational"
+  ],
+  "title": "ProjectDetails",
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -51591,11 +52360,780 @@ export const ProjectsInitInputSchema = {
 
 /** JSON Schema for the return shape of `projects.init`. */
 export const ProjectsInitReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": {},
   "properties": {
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "linkedWorkflows": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "linkId": {
+                "type": "string"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "workflowRunId": {
+                "type": "string"
+              },
+              "workflowRunStatus": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "draft",
+                      "waiting",
+                      "ready",
+                      "running",
+                      "blocked",
+                      "done",
+                      "failed",
+                      "cancelled",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowRunTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowSpecId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowSpecTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "linkId",
+              "role",
+              "workflowRunId",
+              "workflowRunTitle",
+              "workflowRunStatus",
+              "workflowSpecId",
+              "workflowSpecTitle",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectWorkflowLink",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "links": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "enum": [
+                  "workflow",
+                  "session",
+                  "agent",
+                  "resource",
+                  "spec"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "createdByAgentId": {
+                "type": "string"
+              },
+              "createdBySessionName": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "projectId": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "projectId",
+              "assetType",
+              "assetId",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectLink",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "operational": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "hottestNodeKey": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeKind": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "task",
+                        "gate",
+                        "approval"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeLabel": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeReleaseMode": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "auto",
+                        "manual"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeRequirement": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "required",
+                        "optional"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "pending",
+                        "awaiting_release",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "skipped",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskPriority": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "low",
+                        "normal",
+                        "high",
+                        "urgent"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskProgress": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskStatus": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runtimeStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workflowCount": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "runtimeStatus",
+                "workflowCount",
+                "hottestWorkflowRunId",
+                "hottestWorkflowTitle",
+                "hottestWorkflowStatus",
+                "hottestNodeRunId",
+                "hottestNodeKey",
+                "hottestNodeLabel",
+                "hottestNodeKind",
+                "hottestNodeRequirement",
+                "hottestNodeReleaseMode",
+                "hottestNodeStatus",
+                "hottestTaskId",
+                "hottestTaskTitle",
+                "hottestTaskStatus",
+                "hottestTaskProgress",
+                "hottestTaskPriority"
+              ],
+              "title": "ProjectOperational",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "additionalProperties": false,
+          "properties": {
+            "archivedAt": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "createdBy": {
+              "type": "string"
+            },
+            "createdByAgentId": {
+              "type": "string"
+            },
+            "createdBySessionName": {
+              "type": "string"
+            },
+            "hypothesis": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastSignalAt": {
+              "type": "number"
+            },
+            "nextStep": {
+              "type": "string"
+            },
+            "operatorSessionName": {
+              "type": "string"
+            },
+            "ownerAgentId": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "blocked",
+                "done",
+                "archived"
+              ],
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "slug",
+            "title",
+            "status",
+            "summary",
+            "hypothesis",
+            "nextStep",
+            "lastSignalAt",
+            "createdAt",
+            "updatedAt"
+          ],
+          "title": "ProjectRecord",
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "const": "project",
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tagId": {
+                "type": "string"
+              },
+              "tagSlug": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "updatedBy": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tagId",
+              "tagSlug",
+              "assetType",
+              "assetId",
+              "source",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectTagBinding",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "workflowAggregate": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "archived": {
+                  "type": "number"
+                },
+                "blocked": {
+                  "type": "number"
+                },
+                "cancelled": {
+                  "type": "number"
+                },
+                "done": {
+                  "type": "number"
+                },
+                "draft": {
+                  "type": "number"
+                },
+                "failed": {
+                  "type": "number"
+                },
+                "focusedWorkflowRole": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "missing": {
+                  "type": "number"
+                },
+                "overallStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "number"
+                },
+                "running": {
+                  "type": "number"
+                },
+                "total": {
+                  "type": "number"
+                },
+                "waiting": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "total",
+                "missing",
+                "draft",
+                "waiting",
+                "ready",
+                "running",
+                "blocked",
+                "done",
+                "failed",
+                "cancelled",
+                "archived",
+                "primaryWorkflowRunId",
+                "primaryWorkflowTitle",
+                "primaryWorkflowStatus",
+                "focusedWorkflowRunId",
+                "focusedWorkflowTitle",
+                "focusedWorkflowStatus",
+                "focusedWorkflowRole",
+                "overallStatus"
+              ],
+              "title": "ProjectWorkflowAggregate",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "project",
+        "tags",
+        "links",
+        "linkedWorkflows",
+        "workflowAggregate",
+        "operational"
+      ],
+      "title": "ProjectDetails",
       "type": "object"
     },
     "workflows": {
@@ -51657,8 +53195,777 @@ export const ProjectsLinkInputSchema = {
 
 /** JSON Schema for the return shape of `projects.link`. */
 export const ProjectsLinkReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "linkedWorkflows": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "linkId": {
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "workflowRunId": {
+            "type": "string"
+          },
+          "workflowRunStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "draft",
+                  "waiting",
+                  "ready",
+                  "running",
+                  "blocked",
+                  "done",
+                  "failed",
+                  "cancelled",
+                  "archived"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowRunTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowSpecId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowSpecTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "linkId",
+          "role",
+          "workflowRunId",
+          "workflowRunTitle",
+          "workflowRunStatus",
+          "workflowSpecId",
+          "workflowSpecTitle",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectWorkflowLink",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "links": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetType": {
+            "enum": [
+              "workflow",
+              "session",
+              "agent",
+              "resource",
+              "spec"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdByAgentId": {
+            "type": "string"
+          },
+          "createdBySessionName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "assetType",
+          "assetId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectLink",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "operational": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "hottestNodeKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeKind": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "task",
+                    "gate",
+                    "approval"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeLabel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeReleaseMode": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeRequirement": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "required",
+                    "optional"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "awaiting_release",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "skipped",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskPriority": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "low",
+                    "normal",
+                    "high",
+                    "urgent"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskProgress": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskStatus": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtimeStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "workflowCount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "runtimeStatus",
+            "workflowCount",
+            "hottestWorkflowRunId",
+            "hottestWorkflowTitle",
+            "hottestWorkflowStatus",
+            "hottestNodeRunId",
+            "hottestNodeKey",
+            "hottestNodeLabel",
+            "hottestNodeKind",
+            "hottestNodeRequirement",
+            "hottestNodeReleaseMode",
+            "hottestNodeStatus",
+            "hottestTaskId",
+            "hottestTaskTitle",
+            "hottestTaskStatus",
+            "hottestTaskProgress",
+            "hottestTaskPriority"
+          ],
+          "title": "ProjectOperational",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "createdByAgentId": {
+          "type": "string"
+        },
+        "createdBySessionName": {
+          "type": "string"
+        },
+        "hypothesis": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastSignalAt": {
+          "type": "number"
+        },
+        "nextStep": {
+          "type": "string"
+        },
+        "operatorSessionName": {
+          "type": "string"
+        },
+        "ownerAgentId": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "blocked",
+            "done",
+            "archived"
+          ],
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "title",
+        "status",
+        "summary",
+        "hypothesis",
+        "nextStep",
+        "lastSignalAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "title": "ProjectRecord",
+      "type": "object"
+    },
+    "tags": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetType": {
+            "const": "project",
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "source": {
+            "type": "string"
+          },
+          "tagId": {
+            "type": "string"
+          },
+          "tagSlug": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "updatedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tagId",
+          "tagSlug",
+          "assetType",
+          "assetId",
+          "source",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectTagBinding",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "workflowAggregate": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "number"
+            },
+            "blocked": {
+              "type": "number"
+            },
+            "cancelled": {
+              "type": "number"
+            },
+            "done": {
+              "type": "number"
+            },
+            "draft": {
+              "type": "number"
+            },
+            "failed": {
+              "type": "number"
+            },
+            "focusedWorkflowRole": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "missing": {
+              "type": "number"
+            },
+            "overallStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ready": {
+              "type": "number"
+            },
+            "running": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            },
+            "waiting": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "missing",
+            "draft",
+            "waiting",
+            "ready",
+            "running",
+            "blocked",
+            "done",
+            "failed",
+            "cancelled",
+            "archived",
+            "primaryWorkflowRunId",
+            "primaryWorkflowTitle",
+            "primaryWorkflowStatus",
+            "focusedWorkflowRunId",
+            "focusedWorkflowTitle",
+            "focusedWorkflowStatus",
+            "focusedWorkflowRole",
+            "overallStatus"
+          ],
+          "title": "ProjectWorkflowAggregate",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "project",
+    "tags",
+    "links",
+    "linkedWorkflows",
+    "workflowAggregate",
+    "operational"
+  ],
+  "title": "ProjectDetails",
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -51692,18 +53999,496 @@ export const ProjectsListInputSchema = {
 
 /** JSON Schema for the return shape of `projects.list`. */
 export const ProjectsListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "filters": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "active",
+                "paused",
+                "blocked",
+                "done",
+                "archived"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tagSlug": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "tagSlug"
+      ],
+      "title": "ProjectListFilters",
       "type": "object"
     },
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "archivedAt": {
+                "type": "number"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "createdByAgentId": {
+                "type": "string"
+              },
+              "createdBySessionName": {
+                "type": "string"
+              },
+              "hypothesis": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "lastSignalAt": {
+                "type": "number"
+              },
+              "linkCount": {
+                "type": "number"
+              },
+              "nextStep": {
+                "type": "string"
+              },
+              "operatorSessionName": {
+                "type": "string"
+              },
+              "ownerAgentId": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "paused",
+                  "blocked",
+                  "done",
+                  "archived"
+                ],
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assetId": {
+                      "type": "string"
+                    },
+                    "assetType": {
+                      "const": "project",
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "tagId": {
+                      "type": "string"
+                    },
+                    "tagSlug": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    },
+                    "updatedBy": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "tagId",
+                    "tagSlug",
+                    "assetType",
+                    "assetId",
+                    "source",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "title": "ProjectTagBinding",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "slug": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "slug"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "active",
+                      "paused",
+                      "blocked",
+                      "done",
+                      "archived"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "hypothesis": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "hypothesis"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "nextStep": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "nextStep"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "lastSignalAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "lastSignalAt"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "ownerAgentId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ownerAgentId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "operatorSessionName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "operatorSessionName"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdBy": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "createdBy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdByAgentId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "createdByAgentId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdBySessionName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "createdBySessionName"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "archivedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "archivedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "linkCount": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "linkCount"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "tags": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "type": "string"
+                        },
+                        "assetType": {
+                          "const": "project",
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "tagId": {
+                          "type": "string"
+                        },
+                        "tagSlug": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        },
+                        "updatedBy": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "tagId",
+                        "tagSlug",
+                        "assetType",
+                        "assetId",
+                        "source",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "ProjectTagBinding",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "tags"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ],
+        "title": "ProjectedProjectSummary"
       },
       "type": "array"
     },
@@ -51759,9 +54544,417 @@ export const ProjectsListReturnSchema = {
     },
     "projects": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "archivedAt": {
+                "type": "number"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "createdByAgentId": {
+                "type": "string"
+              },
+              "createdBySessionName": {
+                "type": "string"
+              },
+              "hypothesis": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "lastSignalAt": {
+                "type": "number"
+              },
+              "linkCount": {
+                "type": "number"
+              },
+              "nextStep": {
+                "type": "string"
+              },
+              "operatorSessionName": {
+                "type": "string"
+              },
+              "ownerAgentId": {
+                "type": "string"
+              },
+              "slug": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "paused",
+                  "blocked",
+                  "done",
+                  "archived"
+                ],
+                "type": "string"
+              },
+              "summary": {
+                "type": "string"
+              },
+              "tags": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assetId": {
+                      "type": "string"
+                    },
+                    "assetType": {
+                      "const": "project",
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "tagId": {
+                      "type": "string"
+                    },
+                    "tagSlug": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    },
+                    "updatedBy": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "tagId",
+                    "tagSlug",
+                    "assetType",
+                    "assetId",
+                    "source",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "title": "ProjectTagBinding",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "title": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "slug": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "slug"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "title": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "title"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "status": {
+                    "enum": [
+                      "active",
+                      "paused",
+                      "blocked",
+                      "done",
+                      "archived"
+                    ],
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "status"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "summary"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "hypothesis": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "hypothesis"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "nextStep": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "nextStep"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "lastSignalAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "lastSignalAt"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "ownerAgentId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "ownerAgentId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "operatorSessionName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "operatorSessionName"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdBy": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "createdBy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdByAgentId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "createdByAgentId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdBySessionName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "createdBySessionName"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "archivedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "archivedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "linkCount": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "linkCount"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "tags": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "type": "string"
+                        },
+                        "assetType": {
+                          "const": "project",
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "tagId": {
+                          "type": "string"
+                        },
+                        "tagSlug": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        },
+                        "updatedBy": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "tagId",
+                        "tagSlug",
+                        "assetType",
+                        "assetId",
+                        "source",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "ProjectTagBinding",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "tags"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ],
+        "title": "ProjectedProjectSummary"
       },
       "type": "array"
     },
@@ -51787,6 +54980,14 @@ export const ProjectsNextInputSchema = {
       "description": "Compact mode: keep only these fields of each item",
       "type": "string"
     },
+    "limit": {
+      "description": "Page size (default: 20, max: 500)",
+      "type": "string"
+    },
+    "offset": {
+      "description": "Number of ranked projects to skip (default: 0)",
+      "type": "string"
+    },
     "status": {
       "description": "Filter by project status",
       "type": "string"
@@ -51801,18 +55002,3157 @@ export const ProjectsNextInputSchema = {
 
 /** JSON Schema for the return shape of `projects.next`. */
 export const ProjectsNextReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "filters": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "status": {
+          "anyOf": [
+            {
+              "enum": [
+                "active",
+                "paused",
+                "blocked",
+                "done",
+                "archived"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "tagSlug": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "status",
+        "tagSlug"
+      ],
+      "title": "ProjectListFilters",
+      "type": "object"
+    },
+    "items": {
+      "items": {
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "linkedWorkflows": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "linkId": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    },
+                    "workflowRunId": {
+                      "type": "string"
+                    },
+                    "workflowRunStatus": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "draft",
+                            "waiting",
+                            "ready",
+                            "running",
+                            "blocked",
+                            "done",
+                            "failed",
+                            "cancelled",
+                            "archived"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workflowRunTitle": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workflowSpecId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workflowSpecTitle": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "linkId",
+                    "role",
+                    "workflowRunId",
+                    "workflowRunTitle",
+                    "workflowRunStatus",
+                    "workflowSpecId",
+                    "workflowSpecTitle",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "title": "ProjectWorkflowLink",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "links": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assetId": {
+                      "type": "string"
+                    },
+                    "assetType": {
+                      "enum": [
+                        "workflow",
+                        "session",
+                        "agent",
+                        "resource",
+                        "spec"
+                      ],
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "createdByAgentId": {
+                      "type": "string"
+                    },
+                    "createdBySessionName": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "projectId",
+                    "assetType",
+                    "assetId",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "title": "ProjectLink",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "operational": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "hottestNodeKey": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestNodeKind": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "task",
+                              "gate",
+                              "approval"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestNodeLabel": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestNodeReleaseMode": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "auto",
+                              "manual"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestNodeRequirement": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "required",
+                              "optional"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestNodeRunId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestNodeStatus": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "pending",
+                              "awaiting_release",
+                              "ready",
+                              "running",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "skipped",
+                              "cancelled",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestTaskId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestTaskPriority": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "low",
+                              "normal",
+                              "high",
+                              "urgent"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestTaskProgress": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestTaskStatus": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestTaskTitle": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestWorkflowRunId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestWorkflowStatus": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "draft",
+                              "waiting",
+                              "ready",
+                              "running",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "cancelled",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestWorkflowTitle": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "runtimeStatus": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "draft",
+                              "waiting",
+                              "ready",
+                              "running",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "cancelled",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "workflowCount": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "runtimeStatus",
+                      "workflowCount",
+                      "hottestWorkflowRunId",
+                      "hottestWorkflowTitle",
+                      "hottestWorkflowStatus",
+                      "hottestNodeRunId",
+                      "hottestNodeKey",
+                      "hottestNodeLabel",
+                      "hottestNodeKind",
+                      "hottestNodeRequirement",
+                      "hottestNodeReleaseMode",
+                      "hottestNodeStatus",
+                      "hottestTaskId",
+                      "hottestTaskTitle",
+                      "hottestTaskStatus",
+                      "hottestTaskProgress",
+                      "hottestTaskPriority"
+                    ],
+                    "title": "ProjectOperational",
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "project": {
+                "additionalProperties": false,
+                "properties": {
+                  "archivedAt": {
+                    "type": "number"
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "createdBy": {
+                    "type": "string"
+                  },
+                  "createdByAgentId": {
+                    "type": "string"
+                  },
+                  "createdBySessionName": {
+                    "type": "string"
+                  },
+                  "hypothesis": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "lastSignalAt": {
+                    "type": "number"
+                  },
+                  "linkCount": {
+                    "type": "number"
+                  },
+                  "nextStep": {
+                    "type": "string"
+                  },
+                  "operatorSessionName": {
+                    "type": "string"
+                  },
+                  "ownerAgentId": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "active",
+                      "paused",
+                      "blocked",
+                      "done",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "type": "string"
+                        },
+                        "assetType": {
+                          "const": "project",
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "tagId": {
+                          "type": "string"
+                        },
+                        "tagSlug": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        },
+                        "updatedBy": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "tagId",
+                        "tagSlug",
+                        "assetType",
+                        "assetId",
+                        "source",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "ProjectTagBinding",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "slug",
+                  "title",
+                  "status",
+                  "summary",
+                  "hypothesis",
+                  "nextStep",
+                  "lastSignalAt",
+                  "createdAt",
+                  "updatedAt",
+                  "linkCount"
+                ],
+                "title": "ProjectSummary",
+                "type": "object"
+              },
+              "workflowAggregate": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "archived": {
+                        "type": "number"
+                      },
+                      "blocked": {
+                        "type": "number"
+                      },
+                      "cancelled": {
+                        "type": "number"
+                      },
+                      "done": {
+                        "type": "number"
+                      },
+                      "draft": {
+                        "type": "number"
+                      },
+                      "failed": {
+                        "type": "number"
+                      },
+                      "focusedWorkflowRole": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "focusedWorkflowRunId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "focusedWorkflowStatus": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "draft",
+                              "waiting",
+                              "ready",
+                              "running",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "cancelled",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "focusedWorkflowTitle": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "missing": {
+                        "type": "number"
+                      },
+                      "overallStatus": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "draft",
+                              "waiting",
+                              "ready",
+                              "running",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "cancelled",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "primaryWorkflowRunId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "primaryWorkflowStatus": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "draft",
+                              "waiting",
+                              "ready",
+                              "running",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "cancelled",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "primaryWorkflowTitle": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ready": {
+                        "type": "number"
+                      },
+                      "running": {
+                        "type": "number"
+                      },
+                      "total": {
+                        "type": "number"
+                      },
+                      "waiting": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "total",
+                      "missing",
+                      "draft",
+                      "waiting",
+                      "ready",
+                      "running",
+                      "blocked",
+                      "done",
+                      "failed",
+                      "cancelled",
+                      "archived",
+                      "primaryWorkflowRunId",
+                      "primaryWorkflowTitle",
+                      "primaryWorkflowStatus",
+                      "focusedWorkflowRunId",
+                      "focusedWorkflowTitle",
+                      "focusedWorkflowStatus",
+                      "focusedWorkflowRole",
+                      "overallStatus"
+                    ],
+                    "title": "ProjectWorkflowAggregate",
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "project": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "archivedAt": {
+                        "type": "number"
+                      },
+                      "createdAt": {
+                        "type": "number"
+                      },
+                      "createdBy": {
+                        "type": "string"
+                      },
+                      "createdByAgentId": {
+                        "type": "string"
+                      },
+                      "createdBySessionName": {
+                        "type": "string"
+                      },
+                      "hypothesis": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "lastSignalAt": {
+                        "type": "number"
+                      },
+                      "linkCount": {
+                        "type": "number"
+                      },
+                      "nextStep": {
+                        "type": "string"
+                      },
+                      "operatorSessionName": {
+                        "type": "string"
+                      },
+                      "ownerAgentId": {
+                        "type": "string"
+                      },
+                      "slug": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "enum": [
+                          "active",
+                          "paused",
+                          "blocked",
+                          "done",
+                          "archived"
+                        ],
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "tags": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "assetId": {
+                              "type": "string"
+                            },
+                            "assetType": {
+                              "const": "project",
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "number"
+                            },
+                            "createdBy": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "metadata": {
+                              "additionalProperties": {
+                                "$ref": "#/$defs/__schema0"
+                              },
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "tagId": {
+                              "type": "string"
+                            },
+                            "tagSlug": {
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "type": "number"
+                            },
+                            "updatedBy": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "tagId",
+                            "tagSlug",
+                            "assetType",
+                            "assetId",
+                            "source",
+                            "createdAt",
+                            "updatedAt"
+                          ],
+                          "title": "ProjectTagBinding",
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "slug",
+                      "title",
+                      "status",
+                      "summary",
+                      "hypothesis",
+                      "nextStep",
+                      "lastSignalAt",
+                      "createdAt",
+                      "updatedAt",
+                      "linkCount"
+                    ],
+                    "title": "ProjectSummary",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "project"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "links": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "type": "string"
+                        },
+                        "assetType": {
+                          "enum": [
+                            "workflow",
+                            "session",
+                            "agent",
+                            "resource",
+                            "spec"
+                          ],
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "createdByAgentId": {
+                          "type": "string"
+                        },
+                        "createdBySessionName": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "projectId": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "projectId",
+                        "assetType",
+                        "assetId",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "ProjectLink",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "links"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "linkedWorkflows": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "linkId": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        },
+                        "workflowRunId": {
+                          "type": "string"
+                        },
+                        "workflowRunStatus": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "draft",
+                                "waiting",
+                                "ready",
+                                "running",
+                                "blocked",
+                                "done",
+                                "failed",
+                                "cancelled",
+                                "archived"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workflowRunTitle": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workflowSpecId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workflowSpecTitle": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "linkId",
+                        "role",
+                        "workflowRunId",
+                        "workflowRunTitle",
+                        "workflowRunStatus",
+                        "workflowSpecId",
+                        "workflowSpecTitle",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "ProjectWorkflowLink",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "linkedWorkflows"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "workflowAggregate": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "archived": {
+                            "type": "number"
+                          },
+                          "blocked": {
+                            "type": "number"
+                          },
+                          "cancelled": {
+                            "type": "number"
+                          },
+                          "done": {
+                            "type": "number"
+                          },
+                          "draft": {
+                            "type": "number"
+                          },
+                          "failed": {
+                            "type": "number"
+                          },
+                          "focusedWorkflowRole": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "focusedWorkflowRunId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "focusedWorkflowStatus": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "draft",
+                                  "waiting",
+                                  "ready",
+                                  "running",
+                                  "blocked",
+                                  "done",
+                                  "failed",
+                                  "cancelled",
+                                  "archived"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "focusedWorkflowTitle": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "missing": {
+                            "type": "number"
+                          },
+                          "overallStatus": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "draft",
+                                  "waiting",
+                                  "ready",
+                                  "running",
+                                  "blocked",
+                                  "done",
+                                  "failed",
+                                  "cancelled",
+                                  "archived"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "primaryWorkflowRunId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "primaryWorkflowStatus": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "draft",
+                                  "waiting",
+                                  "ready",
+                                  "running",
+                                  "blocked",
+                                  "done",
+                                  "failed",
+                                  "cancelled",
+                                  "archived"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "primaryWorkflowTitle": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ready": {
+                            "type": "number"
+                          },
+                          "running": {
+                            "type": "number"
+                          },
+                          "total": {
+                            "type": "number"
+                          },
+                          "waiting": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "total",
+                          "missing",
+                          "draft",
+                          "waiting",
+                          "ready",
+                          "running",
+                          "blocked",
+                          "done",
+                          "failed",
+                          "cancelled",
+                          "archived",
+                          "primaryWorkflowRunId",
+                          "primaryWorkflowTitle",
+                          "primaryWorkflowStatus",
+                          "focusedWorkflowRunId",
+                          "focusedWorkflowTitle",
+                          "focusedWorkflowStatus",
+                          "focusedWorkflowRole",
+                          "overallStatus"
+                        ],
+                        "title": "ProjectWorkflowAggregate",
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "workflowAggregate"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "operational": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "hottestNodeKey": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestNodeKind": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "task",
+                                  "gate",
+                                  "approval"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestNodeLabel": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestNodeReleaseMode": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "auto",
+                                  "manual"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestNodeRequirement": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "required",
+                                  "optional"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestNodeRunId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestNodeStatus": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pending",
+                                  "awaiting_release",
+                                  "ready",
+                                  "running",
+                                  "blocked",
+                                  "done",
+                                  "failed",
+                                  "skipped",
+                                  "cancelled",
+                                  "archived"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestTaskId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestTaskPriority": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "low",
+                                  "normal",
+                                  "high",
+                                  "urgent"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestTaskProgress": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestTaskStatus": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestTaskTitle": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestWorkflowRunId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestWorkflowStatus": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "draft",
+                                  "waiting",
+                                  "ready",
+                                  "running",
+                                  "blocked",
+                                  "done",
+                                  "failed",
+                                  "cancelled",
+                                  "archived"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestWorkflowTitle": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "runtimeStatus": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "draft",
+                                  "waiting",
+                                  "ready",
+                                  "running",
+                                  "blocked",
+                                  "done",
+                                  "failed",
+                                  "cancelled",
+                                  "archived"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "workflowCount": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "runtimeStatus",
+                          "workflowCount",
+                          "hottestWorkflowRunId",
+                          "hottestWorkflowTitle",
+                          "hottestWorkflowStatus",
+                          "hottestNodeRunId",
+                          "hottestNodeKey",
+                          "hottestNodeLabel",
+                          "hottestNodeKind",
+                          "hottestNodeRequirement",
+                          "hottestNodeReleaseMode",
+                          "hottestNodeStatus",
+                          "hottestTaskId",
+                          "hottestTaskTitle",
+                          "hottestTaskStatus",
+                          "hottestTaskProgress",
+                          "hottestTaskPriority"
+                        ],
+                        "title": "ProjectOperational",
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "operational"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ],
+        "title": "ProjectedProjectStatusEntry"
+      },
+      "type": "array"
+    },
+    "pagination": {
+      "additionalProperties": false,
+      "properties": {
+        "hasMore": {
+          "type": "boolean"
+        },
+        "limit": {
+          "type": "number"
+        },
+        "nextCommand": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "nextOffset": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "offset": {
+          "type": "number"
+        },
+        "returned": {
+          "type": "number"
+        },
+        "total": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "limit",
+        "offset",
+        "returned",
+        "total"
+      ],
       "type": "object"
     },
     "projects": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "linkedWorkflows": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "linkId": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    },
+                    "workflowRunId": {
+                      "type": "string"
+                    },
+                    "workflowRunStatus": {
+                      "anyOf": [
+                        {
+                          "enum": [
+                            "draft",
+                            "waiting",
+                            "ready",
+                            "running",
+                            "blocked",
+                            "done",
+                            "failed",
+                            "cancelled",
+                            "archived"
+                          ],
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workflowRunTitle": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workflowSpecId": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "workflowSpecTitle": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "linkId",
+                    "role",
+                    "workflowRunId",
+                    "workflowRunTitle",
+                    "workflowRunStatus",
+                    "workflowSpecId",
+                    "workflowSpecTitle",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "title": "ProjectWorkflowLink",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "links": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assetId": {
+                      "type": "string"
+                    },
+                    "assetType": {
+                      "enum": [
+                        "workflow",
+                        "session",
+                        "agent",
+                        "resource",
+                        "spec"
+                      ],
+                      "type": "string"
+                    },
+                    "createdAt": {
+                      "type": "number"
+                    },
+                    "createdBy": {
+                      "type": "string"
+                    },
+                    "createdByAgentId": {
+                      "type": "string"
+                    },
+                    "createdBySessionName": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "metadata": {
+                      "additionalProperties": {
+                        "$ref": "#/$defs/__schema0"
+                      },
+                      "propertyNames": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "projectId": {
+                      "type": "string"
+                    },
+                    "role": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "projectId",
+                    "assetType",
+                    "assetId",
+                    "createdAt",
+                    "updatedAt"
+                  ],
+                  "title": "ProjectLink",
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "operational": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "hottestNodeKey": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestNodeKind": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "task",
+                              "gate",
+                              "approval"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestNodeLabel": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestNodeReleaseMode": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "auto",
+                              "manual"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestNodeRequirement": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "required",
+                              "optional"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestNodeRunId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestNodeStatus": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "pending",
+                              "awaiting_release",
+                              "ready",
+                              "running",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "skipped",
+                              "cancelled",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestTaskId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestTaskPriority": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "low",
+                              "normal",
+                              "high",
+                              "urgent"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestTaskProgress": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestTaskStatus": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestTaskTitle": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestWorkflowRunId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestWorkflowStatus": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "draft",
+                              "waiting",
+                              "ready",
+                              "running",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "cancelled",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "hottestWorkflowTitle": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "runtimeStatus": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "draft",
+                              "waiting",
+                              "ready",
+                              "running",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "cancelled",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "workflowCount": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "runtimeStatus",
+                      "workflowCount",
+                      "hottestWorkflowRunId",
+                      "hottestWorkflowTitle",
+                      "hottestWorkflowStatus",
+                      "hottestNodeRunId",
+                      "hottestNodeKey",
+                      "hottestNodeLabel",
+                      "hottestNodeKind",
+                      "hottestNodeRequirement",
+                      "hottestNodeReleaseMode",
+                      "hottestNodeStatus",
+                      "hottestTaskId",
+                      "hottestTaskTitle",
+                      "hottestTaskStatus",
+                      "hottestTaskProgress",
+                      "hottestTaskPriority"
+                    ],
+                    "title": "ProjectOperational",
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "project": {
+                "additionalProperties": false,
+                "properties": {
+                  "archivedAt": {
+                    "type": "number"
+                  },
+                  "createdAt": {
+                    "type": "number"
+                  },
+                  "createdBy": {
+                    "type": "string"
+                  },
+                  "createdByAgentId": {
+                    "type": "string"
+                  },
+                  "createdBySessionName": {
+                    "type": "string"
+                  },
+                  "hypothesis": {
+                    "type": "string"
+                  },
+                  "id": {
+                    "type": "string"
+                  },
+                  "lastSignalAt": {
+                    "type": "number"
+                  },
+                  "linkCount": {
+                    "type": "number"
+                  },
+                  "nextStep": {
+                    "type": "string"
+                  },
+                  "operatorSessionName": {
+                    "type": "string"
+                  },
+                  "ownerAgentId": {
+                    "type": "string"
+                  },
+                  "slug": {
+                    "type": "string"
+                  },
+                  "status": {
+                    "enum": [
+                      "active",
+                      "paused",
+                      "blocked",
+                      "done",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  "summary": {
+                    "type": "string"
+                  },
+                  "tags": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "type": "string"
+                        },
+                        "assetType": {
+                          "const": "project",
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "source": {
+                          "type": "string"
+                        },
+                        "tagId": {
+                          "type": "string"
+                        },
+                        "tagSlug": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        },
+                        "updatedBy": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "tagId",
+                        "tagSlug",
+                        "assetType",
+                        "assetId",
+                        "source",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "ProjectTagBinding",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "id",
+                  "slug",
+                  "title",
+                  "status",
+                  "summary",
+                  "hypothesis",
+                  "nextStep",
+                  "lastSignalAt",
+                  "createdAt",
+                  "updatedAt",
+                  "linkCount"
+                ],
+                "title": "ProjectSummary",
+                "type": "object"
+              },
+              "workflowAggregate": {
+                "anyOf": [
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "archived": {
+                        "type": "number"
+                      },
+                      "blocked": {
+                        "type": "number"
+                      },
+                      "cancelled": {
+                        "type": "number"
+                      },
+                      "done": {
+                        "type": "number"
+                      },
+                      "draft": {
+                        "type": "number"
+                      },
+                      "failed": {
+                        "type": "number"
+                      },
+                      "focusedWorkflowRole": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "focusedWorkflowRunId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "focusedWorkflowStatus": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "draft",
+                              "waiting",
+                              "ready",
+                              "running",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "cancelled",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "focusedWorkflowTitle": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "missing": {
+                        "type": "number"
+                      },
+                      "overallStatus": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "draft",
+                              "waiting",
+                              "ready",
+                              "running",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "cancelled",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "primaryWorkflowRunId": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "primaryWorkflowStatus": {
+                        "anyOf": [
+                          {
+                            "enum": [
+                              "draft",
+                              "waiting",
+                              "ready",
+                              "running",
+                              "blocked",
+                              "done",
+                              "failed",
+                              "cancelled",
+                              "archived"
+                            ],
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "primaryWorkflowTitle": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "ready": {
+                        "type": "number"
+                      },
+                      "running": {
+                        "type": "number"
+                      },
+                      "total": {
+                        "type": "number"
+                      },
+                      "waiting": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "total",
+                      "missing",
+                      "draft",
+                      "waiting",
+                      "ready",
+                      "running",
+                      "blocked",
+                      "done",
+                      "failed",
+                      "cancelled",
+                      "archived",
+                      "primaryWorkflowRunId",
+                      "primaryWorkflowTitle",
+                      "primaryWorkflowStatus",
+                      "focusedWorkflowRunId",
+                      "focusedWorkflowTitle",
+                      "focusedWorkflowStatus",
+                      "focusedWorkflowRole",
+                      "overallStatus"
+                    ],
+                    "title": "ProjectWorkflowAggregate",
+                    "type": "object"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "project": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "archivedAt": {
+                        "type": "number"
+                      },
+                      "createdAt": {
+                        "type": "number"
+                      },
+                      "createdBy": {
+                        "type": "string"
+                      },
+                      "createdByAgentId": {
+                        "type": "string"
+                      },
+                      "createdBySessionName": {
+                        "type": "string"
+                      },
+                      "hypothesis": {
+                        "type": "string"
+                      },
+                      "id": {
+                        "type": "string"
+                      },
+                      "lastSignalAt": {
+                        "type": "number"
+                      },
+                      "linkCount": {
+                        "type": "number"
+                      },
+                      "nextStep": {
+                        "type": "string"
+                      },
+                      "operatorSessionName": {
+                        "type": "string"
+                      },
+                      "ownerAgentId": {
+                        "type": "string"
+                      },
+                      "slug": {
+                        "type": "string"
+                      },
+                      "status": {
+                        "enum": [
+                          "active",
+                          "paused",
+                          "blocked",
+                          "done",
+                          "archived"
+                        ],
+                        "type": "string"
+                      },
+                      "summary": {
+                        "type": "string"
+                      },
+                      "tags": {
+                        "items": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "assetId": {
+                              "type": "string"
+                            },
+                            "assetType": {
+                              "const": "project",
+                              "type": "string"
+                            },
+                            "createdAt": {
+                              "type": "number"
+                            },
+                            "createdBy": {
+                              "type": "string"
+                            },
+                            "id": {
+                              "type": "string"
+                            },
+                            "metadata": {
+                              "additionalProperties": {
+                                "$ref": "#/$defs/__schema0"
+                              },
+                              "propertyNames": {
+                                "type": "string"
+                              },
+                              "type": "object"
+                            },
+                            "source": {
+                              "type": "string"
+                            },
+                            "tagId": {
+                              "type": "string"
+                            },
+                            "tagSlug": {
+                              "type": "string"
+                            },
+                            "updatedAt": {
+                              "type": "number"
+                            },
+                            "updatedBy": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "id",
+                            "tagId",
+                            "tagSlug",
+                            "assetType",
+                            "assetId",
+                            "source",
+                            "createdAt",
+                            "updatedAt"
+                          ],
+                          "title": "ProjectTagBinding",
+                          "type": "object"
+                        },
+                        "type": "array"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "updatedAt": {
+                        "type": "number"
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "slug",
+                      "title",
+                      "status",
+                      "summary",
+                      "hypothesis",
+                      "nextStep",
+                      "lastSignalAt",
+                      "createdAt",
+                      "updatedAt",
+                      "linkCount"
+                    ],
+                    "title": "ProjectSummary",
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "project"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "links": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "assetId": {
+                          "type": "string"
+                        },
+                        "assetType": {
+                          "enum": [
+                            "workflow",
+                            "session",
+                            "agent",
+                            "resource",
+                            "spec"
+                          ],
+                          "type": "string"
+                        },
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "createdBy": {
+                          "type": "string"
+                        },
+                        "createdByAgentId": {
+                          "type": "string"
+                        },
+                        "createdBySessionName": {
+                          "type": "string"
+                        },
+                        "id": {
+                          "type": "string"
+                        },
+                        "metadata": {
+                          "additionalProperties": {
+                            "$ref": "#/$defs/__schema0"
+                          },
+                          "propertyNames": {
+                            "type": "string"
+                          },
+                          "type": "object"
+                        },
+                        "projectId": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "type": "string"
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": [
+                        "id",
+                        "projectId",
+                        "assetType",
+                        "assetId",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "ProjectLink",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "links"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "linkedWorkflows": {
+                    "items": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "createdAt": {
+                          "type": "number"
+                        },
+                        "linkId": {
+                          "type": "string"
+                        },
+                        "role": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "updatedAt": {
+                          "type": "number"
+                        },
+                        "workflowRunId": {
+                          "type": "string"
+                        },
+                        "workflowRunStatus": {
+                          "anyOf": [
+                            {
+                              "enum": [
+                                "draft",
+                                "waiting",
+                                "ready",
+                                "running",
+                                "blocked",
+                                "done",
+                                "failed",
+                                "cancelled",
+                                "archived"
+                              ],
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workflowRunTitle": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workflowSpecId": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "workflowSpecTitle": {
+                          "anyOf": [
+                            {
+                              "type": "string"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "linkId",
+                        "role",
+                        "workflowRunId",
+                        "workflowRunTitle",
+                        "workflowRunStatus",
+                        "workflowSpecId",
+                        "workflowSpecTitle",
+                        "createdAt",
+                        "updatedAt"
+                      ],
+                      "title": "ProjectWorkflowLink",
+                      "type": "object"
+                    },
+                    "type": "array"
+                  }
+                },
+                "required": [
+                  "linkedWorkflows"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "workflowAggregate": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "archived": {
+                            "type": "number"
+                          },
+                          "blocked": {
+                            "type": "number"
+                          },
+                          "cancelled": {
+                            "type": "number"
+                          },
+                          "done": {
+                            "type": "number"
+                          },
+                          "draft": {
+                            "type": "number"
+                          },
+                          "failed": {
+                            "type": "number"
+                          },
+                          "focusedWorkflowRole": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "focusedWorkflowRunId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "focusedWorkflowStatus": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "draft",
+                                  "waiting",
+                                  "ready",
+                                  "running",
+                                  "blocked",
+                                  "done",
+                                  "failed",
+                                  "cancelled",
+                                  "archived"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "focusedWorkflowTitle": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "missing": {
+                            "type": "number"
+                          },
+                          "overallStatus": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "draft",
+                                  "waiting",
+                                  "ready",
+                                  "running",
+                                  "blocked",
+                                  "done",
+                                  "failed",
+                                  "cancelled",
+                                  "archived"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "primaryWorkflowRunId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "primaryWorkflowStatus": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "draft",
+                                  "waiting",
+                                  "ready",
+                                  "running",
+                                  "blocked",
+                                  "done",
+                                  "failed",
+                                  "cancelled",
+                                  "archived"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "primaryWorkflowTitle": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "ready": {
+                            "type": "number"
+                          },
+                          "running": {
+                            "type": "number"
+                          },
+                          "total": {
+                            "type": "number"
+                          },
+                          "waiting": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "total",
+                          "missing",
+                          "draft",
+                          "waiting",
+                          "ready",
+                          "running",
+                          "blocked",
+                          "done",
+                          "failed",
+                          "cancelled",
+                          "archived",
+                          "primaryWorkflowRunId",
+                          "primaryWorkflowTitle",
+                          "primaryWorkflowStatus",
+                          "focusedWorkflowRunId",
+                          "focusedWorkflowTitle",
+                          "focusedWorkflowStatus",
+                          "focusedWorkflowRole",
+                          "overallStatus"
+                        ],
+                        "title": "ProjectWorkflowAggregate",
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "workflowAggregate"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "operational": {
+                    "anyOf": [
+                      {
+                        "additionalProperties": false,
+                        "properties": {
+                          "hottestNodeKey": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestNodeKind": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "task",
+                                  "gate",
+                                  "approval"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestNodeLabel": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestNodeReleaseMode": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "auto",
+                                  "manual"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestNodeRequirement": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "required",
+                                  "optional"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestNodeRunId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestNodeStatus": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "pending",
+                                  "awaiting_release",
+                                  "ready",
+                                  "running",
+                                  "blocked",
+                                  "done",
+                                  "failed",
+                                  "skipped",
+                                  "cancelled",
+                                  "archived"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestTaskId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestTaskPriority": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "low",
+                                  "normal",
+                                  "high",
+                                  "urgent"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestTaskProgress": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestTaskStatus": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestTaskTitle": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestWorkflowRunId": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestWorkflowStatus": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "draft",
+                                  "waiting",
+                                  "ready",
+                                  "running",
+                                  "blocked",
+                                  "done",
+                                  "failed",
+                                  "cancelled",
+                                  "archived"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "hottestWorkflowTitle": {
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "runtimeStatus": {
+                            "anyOf": [
+                              {
+                                "enum": [
+                                  "draft",
+                                  "waiting",
+                                  "ready",
+                                  "running",
+                                  "blocked",
+                                  "done",
+                                  "failed",
+                                  "cancelled",
+                                  "archived"
+                                ],
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
+                          },
+                          "workflowCount": {
+                            "type": "number"
+                          }
+                        },
+                        "required": [
+                          "runtimeStatus",
+                          "workflowCount",
+                          "hottestWorkflowRunId",
+                          "hottestWorkflowTitle",
+                          "hottestWorkflowStatus",
+                          "hottestNodeRunId",
+                          "hottestNodeKey",
+                          "hottestNodeLabel",
+                          "hottestNodeKind",
+                          "hottestNodeRequirement",
+                          "hottestNodeReleaseMode",
+                          "hottestNodeStatus",
+                          "hottestTaskId",
+                          "hottestTaskTitle",
+                          "hottestTaskStatus",
+                          "hottestTaskProgress",
+                          "hottestTaskPriority"
+                        ],
+                        "title": "ProjectOperational",
+                        "type": "object"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "operational"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ],
+        "title": "ProjectedProjectStatusEntryAlias"
       },
       "type": "array"
     },
@@ -51822,7 +58162,9 @@ export const ProjectsNextReturnSchema = {
   },
   "required": [
     "total",
+    "pagination",
     "filters",
+    "items",
     "projects"
   ],
   "type": "object"
@@ -51866,8 +58208,131 @@ export const ProjectsResourcesAddInputSchema = {
 
 /** JSON Schema for the return shape of `projects.resources.add`. */
 export const ProjectsResourcesAddReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assetId": {
+      "type": "string"
+    },
+    "assetType": {
+      "const": "resource",
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "number"
+    },
+    "createdBy": {
+      "type": "string"
+    },
+    "createdByAgentId": {
+      "type": "string"
+    },
+    "createdBySessionName": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "locator": {
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "projectId": {
+      "type": "string"
+    },
+    "resourceType": {
+      "anyOf": [
+        {
+          "enum": [
+            "repo",
+            "worktree",
+            "notion_page",
+            "notion_database",
+            "file",
+            "url",
+            "group",
+            "contact"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "role": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "id",
+    "projectId",
+    "assetType",
+    "assetId",
+    "createdAt",
+    "updatedAt",
+    "resourceType",
+    "locator",
+    "label"
+  ],
+  "title": "ProjectResource",
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -51924,12 +58389,135 @@ export const ProjectsResourcesImportInputSchema = {
 
 /** JSON Schema for the return shape of `projects.resources.import`. */
 export const ProjectsResourcesImportReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": {},
   "properties": {
     "resources": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetType": {
+            "const": "resource",
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdByAgentId": {
+            "type": "string"
+          },
+          "createdBySessionName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "locator": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "resourceType": {
+            "anyOf": [
+              {
+                "enum": [
+                  "repo",
+                  "worktree",
+                  "notion_page",
+                  "notion_database",
+                  "file",
+                  "url",
+                  "group",
+                  "contact"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "role": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "assetType",
+          "assetId",
+          "createdAt",
+          "updatedAt",
+          "resourceType",
+          "locator",
+          "label"
+        ],
+        "title": "ProjectResource",
         "type": "object"
       },
       "type": "array"
@@ -51978,13 +58566,332 @@ export const ProjectsResourcesListInputSchema = {
 
 /** JSON Schema for the return shape of `projects.resources.list`. */
 export const ProjectsResourcesListReturnSchema = {
-  "additionalProperties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
   "properties": {
     "items": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "const": "resource",
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "createdByAgentId": {
+                "type": "string"
+              },
+              "createdBySessionName": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "locator": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "projectId": {
+                "type": "string"
+              },
+              "resourceType": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "repo",
+                      "worktree",
+                      "notion_page",
+                      "notion_database",
+                      "file",
+                      "url",
+                      "group",
+                      "contact"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "projectId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "projectId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "assetType": {
+                    "const": "resource",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "assetType"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "assetId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "assetId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "role": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "role"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "metadata": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "metadata"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdBy": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "createdBy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdByAgentId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "createdByAgentId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdBySessionName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "createdBySessionName"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "resourceType": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "repo",
+                          "worktree",
+                          "notion_page",
+                          "notion_database",
+                          "file",
+                          "url",
+                          "group",
+                          "contact"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "resourceType"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "locator": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "locator"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "label": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "label"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ],
+        "title": "ProjectedProjectResource"
       },
       "type": "array"
     },
@@ -52040,9 +58947,291 @@ export const ProjectsResourcesListReturnSchema = {
     },
     "resources": {
       "items": {
-        "additionalProperties": {},
-        "properties": {},
-        "type": "object"
+        "allOf": [
+          {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "const": "resource",
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "createdByAgentId": {
+                "type": "string"
+              },
+              "createdBySessionName": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "label": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "locator": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "projectId": {
+                "type": "string"
+              },
+              "resourceType": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "repo",
+                      "worktree",
+                      "notion_page",
+                      "notion_database",
+                      "file",
+                      "url",
+                      "group",
+                      "contact"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "role": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "anyOf": [
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "id"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "projectId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "projectId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "assetType": {
+                    "const": "resource",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "assetType"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "assetId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "assetId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "role": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "role"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "metadata": {
+                    "additionalProperties": {
+                      "$ref": "#/$defs/__schema0"
+                    },
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "type": "object"
+                  }
+                },
+                "required": [
+                  "metadata"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdBy": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "createdBy"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdByAgentId": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "createdByAgentId"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdBySessionName": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "createdBySessionName"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "createdAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "createdAt"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "updatedAt": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "updatedAt"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "resourceType": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "repo",
+                          "worktree",
+                          "notion_page",
+                          "notion_database",
+                          "file",
+                          "url",
+                          "group",
+                          "contact"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "resourceType"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "locator": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "locator"
+                ],
+                "type": "object"
+              },
+              {
+                "additionalProperties": {},
+                "properties": {
+                  "label": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "label"
+                ],
+                "type": "object"
+              }
+            ]
+          }
+        ],
+        "title": "ProjectedProjectResource"
       },
       "type": "array"
     },
@@ -52081,8 +59270,131 @@ export const ProjectsResourcesShowInputSchema = {
 
 /** JSON Schema for the return shape of `projects.resources.show`. */
 export const ProjectsResourcesShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "assetId": {
+      "type": "string"
+    },
+    "assetType": {
+      "const": "resource",
+      "type": "string"
+    },
+    "createdAt": {
+      "type": "number"
+    },
+    "createdBy": {
+      "type": "string"
+    },
+    "createdByAgentId": {
+      "type": "string"
+    },
+    "createdBySessionName": {
+      "type": "string"
+    },
+    "id": {
+      "type": "string"
+    },
+    "label": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "locator": {
+      "type": "string"
+    },
+    "metadata": {
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "propertyNames": {
+        "type": "string"
+      },
+      "type": "object"
+    },
+    "projectId": {
+      "type": "string"
+    },
+    "resourceType": {
+      "anyOf": [
+        {
+          "enum": [
+            "repo",
+            "worktree",
+            "notion_page",
+            "notion_database",
+            "file",
+            "url",
+            "group",
+            "contact"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "role": {
+      "type": "string"
+    },
+    "updatedAt": {
+      "type": "number"
+    }
+  },
+  "required": [
+    "id",
+    "projectId",
+    "assetType",
+    "assetId",
+    "createdAt",
+    "updatedAt",
+    "resourceType",
+    "locator",
+    "label"
+  ],
+  "title": "ProjectResource",
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -52103,8 +59415,777 @@ export const ProjectsShowInputSchema = {
 
 /** JSON Schema for the return shape of `projects.show`. */
 export const ProjectsShowReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "linkedWorkflows": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "linkId": {
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "workflowRunId": {
+            "type": "string"
+          },
+          "workflowRunStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "draft",
+                  "waiting",
+                  "ready",
+                  "running",
+                  "blocked",
+                  "done",
+                  "failed",
+                  "cancelled",
+                  "archived"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowRunTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowSpecId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowSpecTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "linkId",
+          "role",
+          "workflowRunId",
+          "workflowRunTitle",
+          "workflowRunStatus",
+          "workflowSpecId",
+          "workflowSpecTitle",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectWorkflowLink",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "links": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetType": {
+            "enum": [
+              "workflow",
+              "session",
+              "agent",
+              "resource",
+              "spec"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdByAgentId": {
+            "type": "string"
+          },
+          "createdBySessionName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "assetType",
+          "assetId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectLink",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "operational": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "hottestNodeKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeKind": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "task",
+                    "gate",
+                    "approval"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeLabel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeReleaseMode": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeRequirement": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "required",
+                    "optional"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "awaiting_release",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "skipped",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskPriority": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "low",
+                    "normal",
+                    "high",
+                    "urgent"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskProgress": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskStatus": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtimeStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "workflowCount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "runtimeStatus",
+            "workflowCount",
+            "hottestWorkflowRunId",
+            "hottestWorkflowTitle",
+            "hottestWorkflowStatus",
+            "hottestNodeRunId",
+            "hottestNodeKey",
+            "hottestNodeLabel",
+            "hottestNodeKind",
+            "hottestNodeRequirement",
+            "hottestNodeReleaseMode",
+            "hottestNodeStatus",
+            "hottestTaskId",
+            "hottestTaskTitle",
+            "hottestTaskStatus",
+            "hottestTaskProgress",
+            "hottestTaskPriority"
+          ],
+          "title": "ProjectOperational",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "createdByAgentId": {
+          "type": "string"
+        },
+        "createdBySessionName": {
+          "type": "string"
+        },
+        "hypothesis": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastSignalAt": {
+          "type": "number"
+        },
+        "nextStep": {
+          "type": "string"
+        },
+        "operatorSessionName": {
+          "type": "string"
+        },
+        "ownerAgentId": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "blocked",
+            "done",
+            "archived"
+          ],
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "title",
+        "status",
+        "summary",
+        "hypothesis",
+        "nextStep",
+        "lastSignalAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "title": "ProjectRecord",
+      "type": "object"
+    },
+    "tags": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetType": {
+            "const": "project",
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "source": {
+            "type": "string"
+          },
+          "tagId": {
+            "type": "string"
+          },
+          "tagSlug": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "updatedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tagId",
+          "tagSlug",
+          "assetType",
+          "assetId",
+          "source",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectTagBinding",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "workflowAggregate": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "number"
+            },
+            "blocked": {
+              "type": "number"
+            },
+            "cancelled": {
+              "type": "number"
+            },
+            "done": {
+              "type": "number"
+            },
+            "draft": {
+              "type": "number"
+            },
+            "failed": {
+              "type": "number"
+            },
+            "focusedWorkflowRole": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "missing": {
+              "type": "number"
+            },
+            "overallStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ready": {
+              "type": "number"
+            },
+            "running": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            },
+            "waiting": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "missing",
+            "draft",
+            "waiting",
+            "ready",
+            "running",
+            "blocked",
+            "done",
+            "failed",
+            "cancelled",
+            "archived",
+            "primaryWorkflowRunId",
+            "primaryWorkflowTitle",
+            "primaryWorkflowStatus",
+            "focusedWorkflowRunId",
+            "focusedWorkflowTitle",
+            "focusedWorkflowStatus",
+            "focusedWorkflowRole",
+            "overallStatus"
+          ],
+          "title": "ProjectWorkflowAggregate",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "project",
+    "tags",
+    "links",
+    "linkedWorkflows",
+    "workflowAggregate",
+    "operational"
+  ],
+  "title": "ProjectDetails",
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -52125,8 +60206,777 @@ export const ProjectsStatusInputSchema = {
 
 /** JSON Schema for the return shape of `projects.status`. */
 export const ProjectsStatusReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "linkedWorkflows": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "linkId": {
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "workflowRunId": {
+            "type": "string"
+          },
+          "workflowRunStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "draft",
+                  "waiting",
+                  "ready",
+                  "running",
+                  "blocked",
+                  "done",
+                  "failed",
+                  "cancelled",
+                  "archived"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowRunTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowSpecId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowSpecTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "linkId",
+          "role",
+          "workflowRunId",
+          "workflowRunTitle",
+          "workflowRunStatus",
+          "workflowSpecId",
+          "workflowSpecTitle",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectWorkflowLink",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "links": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetType": {
+            "enum": [
+              "workflow",
+              "session",
+              "agent",
+              "resource",
+              "spec"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdByAgentId": {
+            "type": "string"
+          },
+          "createdBySessionName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "assetType",
+          "assetId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectLink",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "operational": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "hottestNodeKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeKind": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "task",
+                    "gate",
+                    "approval"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeLabel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeReleaseMode": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeRequirement": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "required",
+                    "optional"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "awaiting_release",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "skipped",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskPriority": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "low",
+                    "normal",
+                    "high",
+                    "urgent"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskProgress": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskStatus": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtimeStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "workflowCount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "runtimeStatus",
+            "workflowCount",
+            "hottestWorkflowRunId",
+            "hottestWorkflowTitle",
+            "hottestWorkflowStatus",
+            "hottestNodeRunId",
+            "hottestNodeKey",
+            "hottestNodeLabel",
+            "hottestNodeKind",
+            "hottestNodeRequirement",
+            "hottestNodeReleaseMode",
+            "hottestNodeStatus",
+            "hottestTaskId",
+            "hottestTaskTitle",
+            "hottestTaskStatus",
+            "hottestTaskProgress",
+            "hottestTaskPriority"
+          ],
+          "title": "ProjectOperational",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "createdByAgentId": {
+          "type": "string"
+        },
+        "createdBySessionName": {
+          "type": "string"
+        },
+        "hypothesis": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastSignalAt": {
+          "type": "number"
+        },
+        "nextStep": {
+          "type": "string"
+        },
+        "operatorSessionName": {
+          "type": "string"
+        },
+        "ownerAgentId": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "blocked",
+            "done",
+            "archived"
+          ],
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "title",
+        "status",
+        "summary",
+        "hypothesis",
+        "nextStep",
+        "lastSignalAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "title": "ProjectRecord",
+      "type": "object"
+    },
+    "tags": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetType": {
+            "const": "project",
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "source": {
+            "type": "string"
+          },
+          "tagId": {
+            "type": "string"
+          },
+          "tagSlug": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "updatedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tagId",
+          "tagSlug",
+          "assetType",
+          "assetId",
+          "source",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectTagBinding",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "workflowAggregate": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "number"
+            },
+            "blocked": {
+              "type": "number"
+            },
+            "cancelled": {
+              "type": "number"
+            },
+            "done": {
+              "type": "number"
+            },
+            "draft": {
+              "type": "number"
+            },
+            "failed": {
+              "type": "number"
+            },
+            "focusedWorkflowRole": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "missing": {
+              "type": "number"
+            },
+            "overallStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ready": {
+              "type": "number"
+            },
+            "running": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            },
+            "waiting": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "missing",
+            "draft",
+            "waiting",
+            "ready",
+            "running",
+            "blocked",
+            "done",
+            "failed",
+            "cancelled",
+            "archived",
+            "primaryWorkflowRunId",
+            "primaryWorkflowTitle",
+            "primaryWorkflowStatus",
+            "focusedWorkflowRunId",
+            "focusedWorkflowTitle",
+            "focusedWorkflowStatus",
+            "focusedWorkflowRole",
+            "overallStatus"
+          ],
+          "title": "ProjectWorkflowAggregate",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "project",
+    "tags",
+    "links",
+    "linkedWorkflows",
+    "workflowAggregate",
+    "operational"
+  ],
+  "title": "ProjectDetails",
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -52173,6 +61023,43 @@ export const ProjectsTasksAttachInputSchema = {
 
 /** JSON Schema for the return shape of `projects.tasks.attach`. */
 export const ProjectsTasksAttachReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": {},
   "properties": {
     "defaults": {
@@ -52181,8 +61068,740 @@ export const ProjectsTasksAttachReturnSchema = {
       "type": "object"
     },
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "linkedWorkflows": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "linkId": {
+                "type": "string"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "workflowRunId": {
+                "type": "string"
+              },
+              "workflowRunStatus": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "draft",
+                      "waiting",
+                      "ready",
+                      "running",
+                      "blocked",
+                      "done",
+                      "failed",
+                      "cancelled",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowRunTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowSpecId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowSpecTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "linkId",
+              "role",
+              "workflowRunId",
+              "workflowRunTitle",
+              "workflowRunStatus",
+              "workflowSpecId",
+              "workflowSpecTitle",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectWorkflowLink",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "links": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "enum": [
+                  "workflow",
+                  "session",
+                  "agent",
+                  "resource",
+                  "spec"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "createdByAgentId": {
+                "type": "string"
+              },
+              "createdBySessionName": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "projectId": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "projectId",
+              "assetType",
+              "assetId",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectLink",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "operational": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "hottestNodeKey": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeKind": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "task",
+                        "gate",
+                        "approval"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeLabel": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeReleaseMode": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "auto",
+                        "manual"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeRequirement": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "required",
+                        "optional"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "pending",
+                        "awaiting_release",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "skipped",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskPriority": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "low",
+                        "normal",
+                        "high",
+                        "urgent"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskProgress": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskStatus": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runtimeStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workflowCount": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "runtimeStatus",
+                "workflowCount",
+                "hottestWorkflowRunId",
+                "hottestWorkflowTitle",
+                "hottestWorkflowStatus",
+                "hottestNodeRunId",
+                "hottestNodeKey",
+                "hottestNodeLabel",
+                "hottestNodeKind",
+                "hottestNodeRequirement",
+                "hottestNodeReleaseMode",
+                "hottestNodeStatus",
+                "hottestTaskId",
+                "hottestTaskTitle",
+                "hottestTaskStatus",
+                "hottestTaskProgress",
+                "hottestTaskPriority"
+              ],
+              "title": "ProjectOperational",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "additionalProperties": false,
+          "properties": {
+            "archivedAt": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "createdBy": {
+              "type": "string"
+            },
+            "createdByAgentId": {
+              "type": "string"
+            },
+            "createdBySessionName": {
+              "type": "string"
+            },
+            "hypothesis": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastSignalAt": {
+              "type": "number"
+            },
+            "nextStep": {
+              "type": "string"
+            },
+            "operatorSessionName": {
+              "type": "string"
+            },
+            "ownerAgentId": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "blocked",
+                "done",
+                "archived"
+              ],
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "slug",
+            "title",
+            "status",
+            "summary",
+            "hypothesis",
+            "nextStep",
+            "lastSignalAt",
+            "createdAt",
+            "updatedAt"
+          ],
+          "title": "ProjectRecord",
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "const": "project",
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tagId": {
+                "type": "string"
+              },
+              "tagSlug": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "updatedBy": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tagId",
+              "tagSlug",
+              "assetType",
+              "assetId",
+              "source",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectTagBinding",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "workflowAggregate": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "archived": {
+                  "type": "number"
+                },
+                "blocked": {
+                  "type": "number"
+                },
+                "cancelled": {
+                  "type": "number"
+                },
+                "done": {
+                  "type": "number"
+                },
+                "draft": {
+                  "type": "number"
+                },
+                "failed": {
+                  "type": "number"
+                },
+                "focusedWorkflowRole": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "missing": {
+                  "type": "number"
+                },
+                "overallStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "number"
+                },
+                "running": {
+                  "type": "number"
+                },
+                "total": {
+                  "type": "number"
+                },
+                "waiting": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "total",
+                "missing",
+                "draft",
+                "waiting",
+                "ready",
+                "running",
+                "blocked",
+                "done",
+                "failed",
+                "cancelled",
+                "archived",
+                "primaryWorkflowRunId",
+                "primaryWorkflowTitle",
+                "primaryWorkflowStatus",
+                "focusedWorkflowRunId",
+                "focusedWorkflowTitle",
+                "focusedWorkflowStatus",
+                "focusedWorkflowRole",
+                "overallStatus"
+              ],
+              "title": "ProjectWorkflowAggregate",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "project",
+        "tags",
+        "links",
+        "linkedWorkflows",
+        "workflowAggregate",
+        "operational"
+      ],
+      "title": "ProjectDetails",
       "type": "object"
     },
     "workflow": {
@@ -52254,6 +61873,43 @@ export const ProjectsTasksCreateInputSchema = {
 
 /** JSON Schema for the return shape of `projects.tasks.create`. */
 export const ProjectsTasksCreateReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": {},
   "properties": {
     "defaults": {
@@ -52262,8 +61918,740 @@ export const ProjectsTasksCreateReturnSchema = {
       "type": "object"
     },
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "linkedWorkflows": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "linkId": {
+                "type": "string"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "workflowRunId": {
+                "type": "string"
+              },
+              "workflowRunStatus": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "draft",
+                      "waiting",
+                      "ready",
+                      "running",
+                      "blocked",
+                      "done",
+                      "failed",
+                      "cancelled",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowRunTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowSpecId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowSpecTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "linkId",
+              "role",
+              "workflowRunId",
+              "workflowRunTitle",
+              "workflowRunStatus",
+              "workflowSpecId",
+              "workflowSpecTitle",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectWorkflowLink",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "links": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "enum": [
+                  "workflow",
+                  "session",
+                  "agent",
+                  "resource",
+                  "spec"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "createdByAgentId": {
+                "type": "string"
+              },
+              "createdBySessionName": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "projectId": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "projectId",
+              "assetType",
+              "assetId",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectLink",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "operational": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "hottestNodeKey": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeKind": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "task",
+                        "gate",
+                        "approval"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeLabel": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeReleaseMode": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "auto",
+                        "manual"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeRequirement": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "required",
+                        "optional"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "pending",
+                        "awaiting_release",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "skipped",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskPriority": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "low",
+                        "normal",
+                        "high",
+                        "urgent"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskProgress": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskStatus": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runtimeStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workflowCount": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "runtimeStatus",
+                "workflowCount",
+                "hottestWorkflowRunId",
+                "hottestWorkflowTitle",
+                "hottestWorkflowStatus",
+                "hottestNodeRunId",
+                "hottestNodeKey",
+                "hottestNodeLabel",
+                "hottestNodeKind",
+                "hottestNodeRequirement",
+                "hottestNodeReleaseMode",
+                "hottestNodeStatus",
+                "hottestTaskId",
+                "hottestTaskTitle",
+                "hottestTaskStatus",
+                "hottestTaskProgress",
+                "hottestTaskPriority"
+              ],
+              "title": "ProjectOperational",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "additionalProperties": false,
+          "properties": {
+            "archivedAt": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "createdBy": {
+              "type": "string"
+            },
+            "createdByAgentId": {
+              "type": "string"
+            },
+            "createdBySessionName": {
+              "type": "string"
+            },
+            "hypothesis": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastSignalAt": {
+              "type": "number"
+            },
+            "nextStep": {
+              "type": "string"
+            },
+            "operatorSessionName": {
+              "type": "string"
+            },
+            "ownerAgentId": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "blocked",
+                "done",
+                "archived"
+              ],
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "slug",
+            "title",
+            "status",
+            "summary",
+            "hypothesis",
+            "nextStep",
+            "lastSignalAt",
+            "createdAt",
+            "updatedAt"
+          ],
+          "title": "ProjectRecord",
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "const": "project",
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tagId": {
+                "type": "string"
+              },
+              "tagSlug": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "updatedBy": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tagId",
+              "tagSlug",
+              "assetType",
+              "assetId",
+              "source",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectTagBinding",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "workflowAggregate": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "archived": {
+                  "type": "number"
+                },
+                "blocked": {
+                  "type": "number"
+                },
+                "cancelled": {
+                  "type": "number"
+                },
+                "done": {
+                  "type": "number"
+                },
+                "draft": {
+                  "type": "number"
+                },
+                "failed": {
+                  "type": "number"
+                },
+                "focusedWorkflowRole": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "missing": {
+                  "type": "number"
+                },
+                "overallStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "number"
+                },
+                "running": {
+                  "type": "number"
+                },
+                "total": {
+                  "type": "number"
+                },
+                "waiting": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "total",
+                "missing",
+                "draft",
+                "waiting",
+                "ready",
+                "running",
+                "blocked",
+                "done",
+                "failed",
+                "cancelled",
+                "archived",
+                "primaryWorkflowRunId",
+                "primaryWorkflowTitle",
+                "primaryWorkflowStatus",
+                "focusedWorkflowRunId",
+                "focusedWorkflowTitle",
+                "focusedWorkflowStatus",
+                "focusedWorkflowRole",
+                "overallStatus"
+              ],
+              "title": "ProjectWorkflowAggregate",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "project",
+        "tags",
+        "links",
+        "linkedWorkflows",
+        "workflowAggregate",
+        "operational"
+      ],
+      "title": "ProjectDetails",
       "type": "object"
     },
     "workflow": {
@@ -52314,6 +62702,43 @@ export const ProjectsTasksDispatchInputSchema = {
 
 /** JSON Schema for the return shape of `projects.tasks.dispatch`. */
 export const ProjectsTasksDispatchReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": {},
   "properties": {
     "defaults": {
@@ -52322,8 +62747,740 @@ export const ProjectsTasksDispatchReturnSchema = {
       "type": "object"
     },
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "linkedWorkflows": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "linkId": {
+                "type": "string"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "workflowRunId": {
+                "type": "string"
+              },
+              "workflowRunStatus": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "draft",
+                      "waiting",
+                      "ready",
+                      "running",
+                      "blocked",
+                      "done",
+                      "failed",
+                      "cancelled",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowRunTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowSpecId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowSpecTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "linkId",
+              "role",
+              "workflowRunId",
+              "workflowRunTitle",
+              "workflowRunStatus",
+              "workflowSpecId",
+              "workflowSpecTitle",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectWorkflowLink",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "links": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "enum": [
+                  "workflow",
+                  "session",
+                  "agent",
+                  "resource",
+                  "spec"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "createdByAgentId": {
+                "type": "string"
+              },
+              "createdBySessionName": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "projectId": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "projectId",
+              "assetType",
+              "assetId",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectLink",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "operational": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "hottestNodeKey": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeKind": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "task",
+                        "gate",
+                        "approval"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeLabel": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeReleaseMode": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "auto",
+                        "manual"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeRequirement": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "required",
+                        "optional"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "pending",
+                        "awaiting_release",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "skipped",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskPriority": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "low",
+                        "normal",
+                        "high",
+                        "urgent"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskProgress": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskStatus": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runtimeStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workflowCount": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "runtimeStatus",
+                "workflowCount",
+                "hottestWorkflowRunId",
+                "hottestWorkflowTitle",
+                "hottestWorkflowStatus",
+                "hottestNodeRunId",
+                "hottestNodeKey",
+                "hottestNodeLabel",
+                "hottestNodeKind",
+                "hottestNodeRequirement",
+                "hottestNodeReleaseMode",
+                "hottestNodeStatus",
+                "hottestTaskId",
+                "hottestTaskTitle",
+                "hottestTaskStatus",
+                "hottestTaskProgress",
+                "hottestTaskPriority"
+              ],
+              "title": "ProjectOperational",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "additionalProperties": false,
+          "properties": {
+            "archivedAt": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "createdBy": {
+              "type": "string"
+            },
+            "createdByAgentId": {
+              "type": "string"
+            },
+            "createdBySessionName": {
+              "type": "string"
+            },
+            "hypothesis": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastSignalAt": {
+              "type": "number"
+            },
+            "nextStep": {
+              "type": "string"
+            },
+            "operatorSessionName": {
+              "type": "string"
+            },
+            "ownerAgentId": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "blocked",
+                "done",
+                "archived"
+              ],
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "slug",
+            "title",
+            "status",
+            "summary",
+            "hypothesis",
+            "nextStep",
+            "lastSignalAt",
+            "createdAt",
+            "updatedAt"
+          ],
+          "title": "ProjectRecord",
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "const": "project",
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tagId": {
+                "type": "string"
+              },
+              "tagSlug": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "updatedBy": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tagId",
+              "tagSlug",
+              "assetType",
+              "assetId",
+              "source",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectTagBinding",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "workflowAggregate": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "archived": {
+                  "type": "number"
+                },
+                "blocked": {
+                  "type": "number"
+                },
+                "cancelled": {
+                  "type": "number"
+                },
+                "done": {
+                  "type": "number"
+                },
+                "draft": {
+                  "type": "number"
+                },
+                "failed": {
+                  "type": "number"
+                },
+                "focusedWorkflowRole": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "missing": {
+                  "type": "number"
+                },
+                "overallStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "number"
+                },
+                "running": {
+                  "type": "number"
+                },
+                "total": {
+                  "type": "number"
+                },
+                "waiting": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "total",
+                "missing",
+                "draft",
+                "waiting",
+                "ready",
+                "running",
+                "blocked",
+                "done",
+                "failed",
+                "cancelled",
+                "archived",
+                "primaryWorkflowRunId",
+                "primaryWorkflowTitle",
+                "primaryWorkflowStatus",
+                "focusedWorkflowRunId",
+                "focusedWorkflowTitle",
+                "focusedWorkflowStatus",
+                "focusedWorkflowRole",
+                "overallStatus"
+              ],
+              "title": "ProjectWorkflowAggregate",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "project",
+        "tags",
+        "links",
+        "linkedWorkflows",
+        "workflowAggregate",
+        "operational"
+      ],
+      "title": "ProjectDetails",
       "type": "object"
     },
     "workflow": {
@@ -52393,8 +63550,777 @@ export const ProjectsUpdateInputSchema = {
 
 /** JSON Schema for the return shape of `projects.update`. */
 export const ProjectsUpdateReturnSchema = {
-  "additionalProperties": {},
-  "properties": {},
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "linkedWorkflows": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "createdAt": {
+            "type": "number"
+          },
+          "linkId": {
+            "type": "string"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "workflowRunId": {
+            "type": "string"
+          },
+          "workflowRunStatus": {
+            "anyOf": [
+              {
+                "enum": [
+                  "draft",
+                  "waiting",
+                  "ready",
+                  "running",
+                  "blocked",
+                  "done",
+                  "failed",
+                  "cancelled",
+                  "archived"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowRunTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowSpecId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "workflowSpecTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "linkId",
+          "role",
+          "workflowRunId",
+          "workflowRunTitle",
+          "workflowRunStatus",
+          "workflowSpecId",
+          "workflowSpecTitle",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectWorkflowLink",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "links": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetType": {
+            "enum": [
+              "workflow",
+              "session",
+              "agent",
+              "resource",
+              "spec"
+            ],
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdByAgentId": {
+            "type": "string"
+          },
+          "createdBySessionName": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "projectId": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "assetType",
+          "assetId",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectLink",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "operational": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "hottestNodeKey": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeKind": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "task",
+                    "gate",
+                    "approval"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeLabel": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeReleaseMode": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "auto",
+                    "manual"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeRequirement": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "required",
+                    "optional"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestNodeStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "awaiting_release",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "skipped",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskPriority": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "low",
+                    "normal",
+                    "high",
+                    "urgent"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskProgress": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskStatus": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestTaskTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "hottestWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "runtimeStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "workflowCount": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "runtimeStatus",
+            "workflowCount",
+            "hottestWorkflowRunId",
+            "hottestWorkflowTitle",
+            "hottestWorkflowStatus",
+            "hottestNodeRunId",
+            "hottestNodeKey",
+            "hottestNodeLabel",
+            "hottestNodeKind",
+            "hottestNodeRequirement",
+            "hottestNodeReleaseMode",
+            "hottestNodeStatus",
+            "hottestTaskId",
+            "hottestTaskTitle",
+            "hottestTaskStatus",
+            "hottestTaskProgress",
+            "hottestTaskPriority"
+          ],
+          "title": "ProjectOperational",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "project": {
+      "additionalProperties": false,
+      "properties": {
+        "archivedAt": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "number"
+        },
+        "createdBy": {
+          "type": "string"
+        },
+        "createdByAgentId": {
+          "type": "string"
+        },
+        "createdBySessionName": {
+          "type": "string"
+        },
+        "hypothesis": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "lastSignalAt": {
+          "type": "number"
+        },
+        "nextStep": {
+          "type": "string"
+        },
+        "operatorSessionName": {
+          "type": "string"
+        },
+        "ownerAgentId": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "paused",
+            "blocked",
+            "done",
+            "archived"
+          ],
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "updatedAt": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "slug",
+        "title",
+        "status",
+        "summary",
+        "hypothesis",
+        "nextStep",
+        "lastSignalAt",
+        "createdAt",
+        "updatedAt"
+      ],
+      "title": "ProjectRecord",
+      "type": "object"
+    },
+    "tags": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "assetId": {
+            "type": "string"
+          },
+          "assetType": {
+            "const": "project",
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "number"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "metadata": {
+            "additionalProperties": {
+              "$ref": "#/$defs/__schema0"
+            },
+            "propertyNames": {
+              "type": "string"
+            },
+            "type": "object"
+          },
+          "source": {
+            "type": "string"
+          },
+          "tagId": {
+            "type": "string"
+          },
+          "tagSlug": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "number"
+          },
+          "updatedBy": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "tagId",
+          "tagSlug",
+          "assetType",
+          "assetId",
+          "source",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ProjectTagBinding",
+        "type": "object"
+      },
+      "type": "array"
+    },
+    "workflowAggregate": {
+      "anyOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "archived": {
+              "type": "number"
+            },
+            "blocked": {
+              "type": "number"
+            },
+            "cancelled": {
+              "type": "number"
+            },
+            "done": {
+              "type": "number"
+            },
+            "draft": {
+              "type": "number"
+            },
+            "failed": {
+              "type": "number"
+            },
+            "focusedWorkflowRole": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "focusedWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "missing": {
+              "type": "number"
+            },
+            "overallStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowRunId": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowStatus": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "draft",
+                    "waiting",
+                    "ready",
+                    "running",
+                    "blocked",
+                    "done",
+                    "failed",
+                    "cancelled",
+                    "archived"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "primaryWorkflowTitle": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "ready": {
+              "type": "number"
+            },
+            "running": {
+              "type": "number"
+            },
+            "total": {
+              "type": "number"
+            },
+            "waiting": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "total",
+            "missing",
+            "draft",
+            "waiting",
+            "ready",
+            "running",
+            "blocked",
+            "done",
+            "failed",
+            "cancelled",
+            "archived",
+            "primaryWorkflowRunId",
+            "primaryWorkflowTitle",
+            "primaryWorkflowStatus",
+            "focusedWorkflowRunId",
+            "focusedWorkflowTitle",
+            "focusedWorkflowStatus",
+            "focusedWorkflowRole",
+            "overallStatus"
+          ],
+          "title": "ProjectWorkflowAggregate",
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "project",
+    "tags",
+    "links",
+    "linkedWorkflows",
+    "workflowAggregate",
+    "operational"
+  ],
+  "title": "ProjectDetails",
   "type": "object"
 } as const satisfies SdkJsonSchema;
 
@@ -52424,11 +64350,780 @@ export const ProjectsWorkflowsAttachInputSchema = {
 
 /** JSON Schema for the return shape of `projects.workflows.attach`. */
 export const ProjectsWorkflowsAttachReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": {},
   "properties": {
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "linkedWorkflows": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "linkId": {
+                "type": "string"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "workflowRunId": {
+                "type": "string"
+              },
+              "workflowRunStatus": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "draft",
+                      "waiting",
+                      "ready",
+                      "running",
+                      "blocked",
+                      "done",
+                      "failed",
+                      "cancelled",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowRunTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowSpecId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowSpecTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "linkId",
+              "role",
+              "workflowRunId",
+              "workflowRunTitle",
+              "workflowRunStatus",
+              "workflowSpecId",
+              "workflowSpecTitle",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectWorkflowLink",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "links": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "enum": [
+                  "workflow",
+                  "session",
+                  "agent",
+                  "resource",
+                  "spec"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "createdByAgentId": {
+                "type": "string"
+              },
+              "createdBySessionName": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "projectId": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "projectId",
+              "assetType",
+              "assetId",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectLink",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "operational": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "hottestNodeKey": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeKind": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "task",
+                        "gate",
+                        "approval"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeLabel": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeReleaseMode": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "auto",
+                        "manual"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeRequirement": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "required",
+                        "optional"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "pending",
+                        "awaiting_release",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "skipped",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskPriority": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "low",
+                        "normal",
+                        "high",
+                        "urgent"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskProgress": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskStatus": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runtimeStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workflowCount": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "runtimeStatus",
+                "workflowCount",
+                "hottestWorkflowRunId",
+                "hottestWorkflowTitle",
+                "hottestWorkflowStatus",
+                "hottestNodeRunId",
+                "hottestNodeKey",
+                "hottestNodeLabel",
+                "hottestNodeKind",
+                "hottestNodeRequirement",
+                "hottestNodeReleaseMode",
+                "hottestNodeStatus",
+                "hottestTaskId",
+                "hottestTaskTitle",
+                "hottestTaskStatus",
+                "hottestTaskProgress",
+                "hottestTaskPriority"
+              ],
+              "title": "ProjectOperational",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "additionalProperties": false,
+          "properties": {
+            "archivedAt": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "createdBy": {
+              "type": "string"
+            },
+            "createdByAgentId": {
+              "type": "string"
+            },
+            "createdBySessionName": {
+              "type": "string"
+            },
+            "hypothesis": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastSignalAt": {
+              "type": "number"
+            },
+            "nextStep": {
+              "type": "string"
+            },
+            "operatorSessionName": {
+              "type": "string"
+            },
+            "ownerAgentId": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "blocked",
+                "done",
+                "archived"
+              ],
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "slug",
+            "title",
+            "status",
+            "summary",
+            "hypothesis",
+            "nextStep",
+            "lastSignalAt",
+            "createdAt",
+            "updatedAt"
+          ],
+          "title": "ProjectRecord",
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "const": "project",
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tagId": {
+                "type": "string"
+              },
+              "tagSlug": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "updatedBy": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tagId",
+              "tagSlug",
+              "assetType",
+              "assetId",
+              "source",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectTagBinding",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "workflowAggregate": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "archived": {
+                  "type": "number"
+                },
+                "blocked": {
+                  "type": "number"
+                },
+                "cancelled": {
+                  "type": "number"
+                },
+                "done": {
+                  "type": "number"
+                },
+                "draft": {
+                  "type": "number"
+                },
+                "failed": {
+                  "type": "number"
+                },
+                "focusedWorkflowRole": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "missing": {
+                  "type": "number"
+                },
+                "overallStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "number"
+                },
+                "running": {
+                  "type": "number"
+                },
+                "total": {
+                  "type": "number"
+                },
+                "waiting": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "total",
+                "missing",
+                "draft",
+                "waiting",
+                "ready",
+                "running",
+                "blocked",
+                "done",
+                "failed",
+                "cancelled",
+                "archived",
+                "primaryWorkflowRunId",
+                "primaryWorkflowTitle",
+                "primaryWorkflowStatus",
+                "focusedWorkflowRunId",
+                "focusedWorkflowTitle",
+                "focusedWorkflowStatus",
+                "focusedWorkflowRole",
+                "overallStatus"
+              ],
+              "title": "ProjectWorkflowAggregate",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "project",
+        "tags",
+        "links",
+        "linkedWorkflows",
+        "workflowAggregate",
+        "operational"
+      ],
+      "title": "ProjectDetails",
       "type": "object"
     },
     "workflow": {
@@ -52478,11 +65173,780 @@ export const ProjectsWorkflowsStartInputSchema = {
 
 /** JSON Schema for the return shape of `projects.workflows.start`. */
 export const ProjectsWorkflowsStartReturnSchema = {
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "type": "array"
+        },
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
   "additionalProperties": {},
   "properties": {
     "details": {
-      "additionalProperties": {},
-      "properties": {},
+      "additionalProperties": false,
+      "properties": {
+        "linkedWorkflows": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "createdAt": {
+                "type": "number"
+              },
+              "linkId": {
+                "type": "string"
+              },
+              "role": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "workflowRunId": {
+                "type": "string"
+              },
+              "workflowRunStatus": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "draft",
+                      "waiting",
+                      "ready",
+                      "running",
+                      "blocked",
+                      "done",
+                      "failed",
+                      "cancelled",
+                      "archived"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowRunTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowSpecId": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "workflowSpecTitle": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "linkId",
+              "role",
+              "workflowRunId",
+              "workflowRunTitle",
+              "workflowRunStatus",
+              "workflowSpecId",
+              "workflowSpecTitle",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectWorkflowLink",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "links": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "enum": [
+                  "workflow",
+                  "session",
+                  "agent",
+                  "resource",
+                  "spec"
+                ],
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "createdByAgentId": {
+                "type": "string"
+              },
+              "createdBySessionName": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "projectId": {
+                "type": "string"
+              },
+              "role": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "id",
+              "projectId",
+              "assetType",
+              "assetId",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectLink",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "operational": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "hottestNodeKey": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeKind": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "task",
+                        "gate",
+                        "approval"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeLabel": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeReleaseMode": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "auto",
+                        "manual"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeRequirement": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "required",
+                        "optional"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestNodeStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "pending",
+                        "awaiting_release",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "skipped",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskPriority": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "low",
+                        "normal",
+                        "high",
+                        "urgent"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskProgress": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskStatus": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestTaskTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "hottestWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "runtimeStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "workflowCount": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "runtimeStatus",
+                "workflowCount",
+                "hottestWorkflowRunId",
+                "hottestWorkflowTitle",
+                "hottestWorkflowStatus",
+                "hottestNodeRunId",
+                "hottestNodeKey",
+                "hottestNodeLabel",
+                "hottestNodeKind",
+                "hottestNodeRequirement",
+                "hottestNodeReleaseMode",
+                "hottestNodeStatus",
+                "hottestTaskId",
+                "hottestTaskTitle",
+                "hottestTaskStatus",
+                "hottestTaskProgress",
+                "hottestTaskPriority"
+              ],
+              "title": "ProjectOperational",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "project": {
+          "additionalProperties": false,
+          "properties": {
+            "archivedAt": {
+              "type": "number"
+            },
+            "createdAt": {
+              "type": "number"
+            },
+            "createdBy": {
+              "type": "string"
+            },
+            "createdByAgentId": {
+              "type": "string"
+            },
+            "createdBySessionName": {
+              "type": "string"
+            },
+            "hypothesis": {
+              "type": "string"
+            },
+            "id": {
+              "type": "string"
+            },
+            "lastSignalAt": {
+              "type": "number"
+            },
+            "nextStep": {
+              "type": "string"
+            },
+            "operatorSessionName": {
+              "type": "string"
+            },
+            "ownerAgentId": {
+              "type": "string"
+            },
+            "slug": {
+              "type": "string"
+            },
+            "status": {
+              "enum": [
+                "active",
+                "paused",
+                "blocked",
+                "done",
+                "archived"
+              ],
+              "type": "string"
+            },
+            "summary": {
+              "type": "string"
+            },
+            "title": {
+              "type": "string"
+            },
+            "updatedAt": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "id",
+            "slug",
+            "title",
+            "status",
+            "summary",
+            "hypothesis",
+            "nextStep",
+            "lastSignalAt",
+            "createdAt",
+            "updatedAt"
+          ],
+          "title": "ProjectRecord",
+          "type": "object"
+        },
+        "tags": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "assetId": {
+                "type": "string"
+              },
+              "assetType": {
+                "const": "project",
+                "type": "string"
+              },
+              "createdAt": {
+                "type": "number"
+              },
+              "createdBy": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "metadata": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/__schema0"
+                },
+                "propertyNames": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "source": {
+                "type": "string"
+              },
+              "tagId": {
+                "type": "string"
+              },
+              "tagSlug": {
+                "type": "string"
+              },
+              "updatedAt": {
+                "type": "number"
+              },
+              "updatedBy": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "id",
+              "tagId",
+              "tagSlug",
+              "assetType",
+              "assetId",
+              "source",
+              "createdAt",
+              "updatedAt"
+            ],
+            "title": "ProjectTagBinding",
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "workflowAggregate": {
+          "anyOf": [
+            {
+              "additionalProperties": false,
+              "properties": {
+                "archived": {
+                  "type": "number"
+                },
+                "blocked": {
+                  "type": "number"
+                },
+                "cancelled": {
+                  "type": "number"
+                },
+                "done": {
+                  "type": "number"
+                },
+                "draft": {
+                  "type": "number"
+                },
+                "failed": {
+                  "type": "number"
+                },
+                "focusedWorkflowRole": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "focusedWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "missing": {
+                  "type": "number"
+                },
+                "overallStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowRunId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowStatus": {
+                  "anyOf": [
+                    {
+                      "enum": [
+                        "draft",
+                        "waiting",
+                        "ready",
+                        "running",
+                        "blocked",
+                        "done",
+                        "failed",
+                        "cancelled",
+                        "archived"
+                      ],
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "primaryWorkflowTitle": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "ready": {
+                  "type": "number"
+                },
+                "running": {
+                  "type": "number"
+                },
+                "total": {
+                  "type": "number"
+                },
+                "waiting": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "total",
+                "missing",
+                "draft",
+                "waiting",
+                "ready",
+                "running",
+                "blocked",
+                "done",
+                "failed",
+                "cancelled",
+                "archived",
+                "primaryWorkflowRunId",
+                "primaryWorkflowTitle",
+                "primaryWorkflowStatus",
+                "focusedWorkflowRunId",
+                "focusedWorkflowTitle",
+                "focusedWorkflowStatus",
+                "focusedWorkflowRole",
+                "overallStatus"
+              ],
+              "title": "ProjectWorkflowAggregate",
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "project",
+        "tags",
+        "links",
+        "linkedWorkflows",
+        "workflowAggregate",
+        "operational"
+      ],
+      "title": "ProjectDetails",
       "type": "object"
     },
     "workflow": {

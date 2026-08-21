@@ -14,6 +14,7 @@ tags:
   - write-brake
 applies_to:
   - src/cli/commands/projects.ts
+  - src/projects/read-facade.ts
   - src/cli/agent-contract.ts
   - src/plugins/internal/ravi-system/skills/projects/SKILL.md
 owners:
@@ -21,7 +22,6 @@ owners:
 status: active
 normative: true
 ---
-# Projects agent-first CLI contract
 
 ## Intent
 
@@ -134,3 +134,29 @@ Parser-level usage errors use the global exit-2 `USAGE_ERROR` envelope with
   `Project not found: X` — both paths MUST map to `PROJECT_NOT_FOUND`.
 - `projects.test.ts` mocks `../context.js`; the mock MUST export `hasContext`
   (→ true) or the contract helpers process.exit inside bun tests.
+
+## Read-only facade amendment
+
+The six read operations (`list`, `next`, `show`, `status`, `resources list`,
+`resources show`) MUST use `ProjectsReadFacade`; they MUST NOT invoke the
+schema-initializing project, workflow, task, tag, or router stores.
+
+The facade opens the existing SQLite database with `readonly: true` and
+`create: false`, holds one explicit read transaction across every query,
+finalizes every prepared query, and closes the database after one coherent
+snapshot. The durable database and WAL MUST remain byte-identical; SQLite's
+ephemeral `-shm` coordination is not durable state.
+
+Project references match exact id or exact slug. If one value identifies two
+rows, the facade MUST return `AMBIGUOUS_PROJECT_REF` and MUST NOT choose a row.
+Resource id, asset id, locator, and case-insensitive label follow the same rule
+with `AMBIGUOUS_RESOURCE_REF`.
+
+`projects next` MUST default to a bounded page of 20 entries and expose
+pagination. `--limit`, `--offset`, and `--fields` MUST compose without changing
+the rank order. A read command declares `audit: none`; it MUST NOT require NATS
+or emit an audit event after reading.
+
+Invalid status, tag, and resource-type filters MUST return typed public causes.
+An incompatible read schema MUST fail closed with
+`PROJECTS_READ_SCHEMA_UNSUPPORTED`; the reader MUST NOT migrate it.

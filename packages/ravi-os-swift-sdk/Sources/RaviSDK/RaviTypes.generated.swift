@@ -272,6 +272,1049 @@ public struct CommandsListPagination: Codable, Sendable {
   }
 }
 
+public struct ProjectDetails: Codable, Sendable {
+  public var linkedWorkflows: [ProjectWorkflowLink]
+  public var links: [ProjectLink]
+  public var operational: ProjectOperational?
+  public var project: ProjectRecord
+  public var tags: [ProjectTagBinding]
+  public var workflowAggregate: ProjectWorkflowAggregate?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case linkedWorkflows = "linkedWorkflows"
+    case links = "links"
+    case operational = "operational"
+    case project = "project"
+    case tags = "tags"
+    case workflowAggregate = "workflowAggregate"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectDetails contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.linkedWorkflows = try container.decode([ProjectWorkflowLink].self, forKey: .linkedWorkflows)
+    self.links = try container.decode([ProjectLink].self, forKey: .links)
+    guard container.contains(.operational) else {
+      throw DecodingError.keyNotFound(CodingKeys.operational, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field operational."))
+    }
+    self.operational = try container.decodeIfPresent(ProjectOperational.self, forKey: .operational)
+    self.project = try container.decode(ProjectRecord.self, forKey: .project)
+    self.tags = try container.decode([ProjectTagBinding].self, forKey: .tags)
+    guard container.contains(.workflowAggregate) else {
+      throw DecodingError.keyNotFound(CodingKeys.workflowAggregate, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field workflowAggregate."))
+    }
+    self.workflowAggregate = try container.decodeIfPresent(ProjectWorkflowAggregate.self, forKey: .workflowAggregate)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.linkedWorkflows, forKey: .linkedWorkflows)
+    try container.encode(self.links, forKey: .links)
+    try container.encode(self.operational, forKey: .operational)
+    try container.encode(self.project, forKey: .project)
+    try container.encode(self.tags, forKey: .tags)
+    try container.encode(self.workflowAggregate, forKey: .workflowAggregate)
+  }
+}
+
+public struct ProjectedProjectResource: Codable, Sendable {
+  public var assetId: String?
+  public var assetType: String?
+  public var createdAt: Double?
+  public var createdBy: String?
+  public var createdByAgentId: String?
+  public var createdBySessionName: String?
+  public var id: String?
+  public var label: String?
+  public var locator: String?
+  public var metadata: [String: RaviJSON]?
+  public var projectId: String?
+  public var resourceType: String?
+  public var role: String?
+  public var updatedAt: Double?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case assetId = "assetId"
+    case assetType = "assetType"
+    case createdAt = "createdAt"
+    case createdBy = "createdBy"
+    case createdByAgentId = "createdByAgentId"
+    case createdBySessionName = "createdBySessionName"
+    case id = "id"
+    case label = "label"
+    case locator = "locator"
+    case metadata = "metadata"
+    case projectId = "projectId"
+    case resourceType = "resourceType"
+    case role = "role"
+    case updatedAt = "updatedAt"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectedProjectResource contains an unknown field."))
+    }
+    guard !rawContainer.allKeys.isEmpty else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectedProjectResource requires at least one field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.assetId = try container.decodeIfPresent(String.self, forKey: .assetId)
+    self.assetType = try container.decodeIfPresent(String.self, forKey: .assetType)
+    self.createdAt = try container.decodeIfPresent(Double.self, forKey: .createdAt)
+    self.createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
+    self.createdByAgentId = try container.decodeIfPresent(String.self, forKey: .createdByAgentId)
+    self.createdBySessionName = try container.decodeIfPresent(String.self, forKey: .createdBySessionName)
+    self.id = try container.decodeIfPresent(String.self, forKey: .id)
+    self.label = try container.decodeIfPresent(String.self, forKey: .label)
+    self.locator = try container.decodeIfPresent(String.self, forKey: .locator)
+    self.metadata = try container.decodeIfPresent([String: RaviJSON].self, forKey: .metadata)
+    self.projectId = try container.decodeIfPresent(String.self, forKey: .projectId)
+    self.resourceType = try container.decodeIfPresent(String.self, forKey: .resourceType)
+    self.role = try container.decodeIfPresent(String.self, forKey: .role)
+    self.updatedAt = try container.decodeIfPresent(Double.self, forKey: .updatedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.assetId, forKey: .assetId)
+    try container.encodeIfPresent(self.assetType, forKey: .assetType)
+    try container.encodeIfPresent(self.createdAt, forKey: .createdAt)
+    try container.encodeIfPresent(self.createdBy, forKey: .createdBy)
+    try container.encodeIfPresent(self.createdByAgentId, forKey: .createdByAgentId)
+    try container.encodeIfPresent(self.createdBySessionName, forKey: .createdBySessionName)
+    try container.encodeIfPresent(self.id, forKey: .id)
+    try container.encodeIfPresent(self.label, forKey: .label)
+    try container.encodeIfPresent(self.locator, forKey: .locator)
+    try container.encodeIfPresent(self.metadata, forKey: .metadata)
+    try container.encodeIfPresent(self.projectId, forKey: .projectId)
+    try container.encodeIfPresent(self.resourceType, forKey: .resourceType)
+    try container.encodeIfPresent(self.role, forKey: .role)
+    try container.encodeIfPresent(self.updatedAt, forKey: .updatedAt)
+  }
+}
+
+public struct ProjectedProjectStatusEntry: Codable, Sendable {
+  public var linkedWorkflows: [ProjectWorkflowLink]?
+  public var links: [ProjectLink]?
+  public var operational: ProjectOperational?
+  public var project: ProjectSummary?
+  public var workflowAggregate: ProjectWorkflowAggregate?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case linkedWorkflows = "linkedWorkflows"
+    case links = "links"
+    case operational = "operational"
+    case project = "project"
+    case workflowAggregate = "workflowAggregate"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectedProjectStatusEntry contains an unknown field."))
+    }
+    guard !rawContainer.allKeys.isEmpty else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectedProjectStatusEntry requires at least one field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.linkedWorkflows = try container.decodeIfPresent([ProjectWorkflowLink].self, forKey: .linkedWorkflows)
+    self.links = try container.decodeIfPresent([ProjectLink].self, forKey: .links)
+    self.operational = try container.decodeIfPresent(ProjectOperational.self, forKey: .operational)
+    self.project = try container.decodeIfPresent(ProjectSummary.self, forKey: .project)
+    self.workflowAggregate = try container.decodeIfPresent(ProjectWorkflowAggregate.self, forKey: .workflowAggregate)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.linkedWorkflows, forKey: .linkedWorkflows)
+    try container.encodeIfPresent(self.links, forKey: .links)
+    try container.encodeIfPresent(self.operational, forKey: .operational)
+    try container.encodeIfPresent(self.project, forKey: .project)
+    try container.encodeIfPresent(self.workflowAggregate, forKey: .workflowAggregate)
+  }
+}
+
+public struct ProjectedProjectStatusEntryAlias: Codable, Sendable {
+  public var linkedWorkflows: [ProjectWorkflowLink]?
+  public var links: [ProjectLink]?
+  public var operational: ProjectOperational?
+  public var project: ProjectSummary?
+  public var workflowAggregate: ProjectWorkflowAggregate?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case linkedWorkflows = "linkedWorkflows"
+    case links = "links"
+    case operational = "operational"
+    case project = "project"
+    case workflowAggregate = "workflowAggregate"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectedProjectStatusEntryAlias contains an unknown field."))
+    }
+    guard !rawContainer.allKeys.isEmpty else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectedProjectStatusEntryAlias requires at least one field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.linkedWorkflows = try container.decodeIfPresent([ProjectWorkflowLink].self, forKey: .linkedWorkflows)
+    self.links = try container.decodeIfPresent([ProjectLink].self, forKey: .links)
+    self.operational = try container.decodeIfPresent(ProjectOperational.self, forKey: .operational)
+    self.project = try container.decodeIfPresent(ProjectSummary.self, forKey: .project)
+    self.workflowAggregate = try container.decodeIfPresent(ProjectWorkflowAggregate.self, forKey: .workflowAggregate)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.linkedWorkflows, forKey: .linkedWorkflows)
+    try container.encodeIfPresent(self.links, forKey: .links)
+    try container.encodeIfPresent(self.operational, forKey: .operational)
+    try container.encodeIfPresent(self.project, forKey: .project)
+    try container.encodeIfPresent(self.workflowAggregate, forKey: .workflowAggregate)
+  }
+}
+
+public struct ProjectedProjectSummary: Codable, Sendable {
+  public var archivedAt: Double?
+  public var createdAt: Double?
+  public var createdBy: String?
+  public var createdByAgentId: String?
+  public var createdBySessionName: String?
+  public var hypothesis: String?
+  public var id: String?
+  public var lastSignalAt: Double?
+  public var linkCount: Double?
+  public var nextStep: String?
+  public var operatorSessionName: String?
+  public var ownerAgentId: String?
+  public var slug: String?
+  public var status: String?
+  public var summary: String?
+  public var tags: [ProjectTagBinding]?
+  public var title: String?
+  public var updatedAt: Double?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case archivedAt = "archivedAt"
+    case createdAt = "createdAt"
+    case createdBy = "createdBy"
+    case createdByAgentId = "createdByAgentId"
+    case createdBySessionName = "createdBySessionName"
+    case hypothesis = "hypothesis"
+    case id = "id"
+    case lastSignalAt = "lastSignalAt"
+    case linkCount = "linkCount"
+    case nextStep = "nextStep"
+    case operatorSessionName = "operatorSessionName"
+    case ownerAgentId = "ownerAgentId"
+    case slug = "slug"
+    case status = "status"
+    case summary = "summary"
+    case tags = "tags"
+    case title = "title"
+    case updatedAt = "updatedAt"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectedProjectSummary contains an unknown field."))
+    }
+    guard !rawContainer.allKeys.isEmpty else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectedProjectSummary requires at least one field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.archivedAt = try container.decodeIfPresent(Double.self, forKey: .archivedAt)
+    self.createdAt = try container.decodeIfPresent(Double.self, forKey: .createdAt)
+    self.createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
+    self.createdByAgentId = try container.decodeIfPresent(String.self, forKey: .createdByAgentId)
+    self.createdBySessionName = try container.decodeIfPresent(String.self, forKey: .createdBySessionName)
+    self.hypothesis = try container.decodeIfPresent(String.self, forKey: .hypothesis)
+    self.id = try container.decodeIfPresent(String.self, forKey: .id)
+    self.lastSignalAt = try container.decodeIfPresent(Double.self, forKey: .lastSignalAt)
+    self.linkCount = try container.decodeIfPresent(Double.self, forKey: .linkCount)
+    self.nextStep = try container.decodeIfPresent(String.self, forKey: .nextStep)
+    self.operatorSessionName = try container.decodeIfPresent(String.self, forKey: .operatorSessionName)
+    self.ownerAgentId = try container.decodeIfPresent(String.self, forKey: .ownerAgentId)
+    self.slug = try container.decodeIfPresent(String.self, forKey: .slug)
+    self.status = try container.decodeIfPresent(String.self, forKey: .status)
+    self.summary = try container.decodeIfPresent(String.self, forKey: .summary)
+    self.tags = try container.decodeIfPresent([ProjectTagBinding].self, forKey: .tags)
+    self.title = try container.decodeIfPresent(String.self, forKey: .title)
+    self.updatedAt = try container.decodeIfPresent(Double.self, forKey: .updatedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.archivedAt, forKey: .archivedAt)
+    try container.encodeIfPresent(self.createdAt, forKey: .createdAt)
+    try container.encodeIfPresent(self.createdBy, forKey: .createdBy)
+    try container.encodeIfPresent(self.createdByAgentId, forKey: .createdByAgentId)
+    try container.encodeIfPresent(self.createdBySessionName, forKey: .createdBySessionName)
+    try container.encodeIfPresent(self.hypothesis, forKey: .hypothesis)
+    try container.encodeIfPresent(self.id, forKey: .id)
+    try container.encodeIfPresent(self.lastSignalAt, forKey: .lastSignalAt)
+    try container.encodeIfPresent(self.linkCount, forKey: .linkCount)
+    try container.encodeIfPresent(self.nextStep, forKey: .nextStep)
+    try container.encodeIfPresent(self.operatorSessionName, forKey: .operatorSessionName)
+    try container.encodeIfPresent(self.ownerAgentId, forKey: .ownerAgentId)
+    try container.encodeIfPresent(self.slug, forKey: .slug)
+    try container.encodeIfPresent(self.status, forKey: .status)
+    try container.encodeIfPresent(self.summary, forKey: .summary)
+    try container.encodeIfPresent(self.tags, forKey: .tags)
+    try container.encodeIfPresent(self.title, forKey: .title)
+    try container.encodeIfPresent(self.updatedAt, forKey: .updatedAt)
+  }
+}
+
+public struct ProjectLink: Codable, Sendable {
+  public var assetId: String
+  public var assetType: String
+  public var createdAt: Double
+  public var createdBy: String?
+  public var createdByAgentId: String?
+  public var createdBySessionName: String?
+  public var id: String
+  public var metadata: [String: RaviJSON]?
+  public var projectId: String
+  public var role: String?
+  public var updatedAt: Double
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case assetId = "assetId"
+    case assetType = "assetType"
+    case createdAt = "createdAt"
+    case createdBy = "createdBy"
+    case createdByAgentId = "createdByAgentId"
+    case createdBySessionName = "createdBySessionName"
+    case id = "id"
+    case metadata = "metadata"
+    case projectId = "projectId"
+    case role = "role"
+    case updatedAt = "updatedAt"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectLink contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.assetId = try container.decode(String.self, forKey: .assetId)
+    self.assetType = try container.decode(String.self, forKey: .assetType)
+    self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    self.createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
+    self.createdByAgentId = try container.decodeIfPresent(String.self, forKey: .createdByAgentId)
+    self.createdBySessionName = try container.decodeIfPresent(String.self, forKey: .createdBySessionName)
+    self.id = try container.decode(String.self, forKey: .id)
+    self.metadata = try container.decodeIfPresent([String: RaviJSON].self, forKey: .metadata)
+    self.projectId = try container.decode(String.self, forKey: .projectId)
+    self.role = try container.decodeIfPresent(String.self, forKey: .role)
+    self.updatedAt = try container.decode(Double.self, forKey: .updatedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.assetId, forKey: .assetId)
+    try container.encode(self.assetType, forKey: .assetType)
+    try container.encode(self.createdAt, forKey: .createdAt)
+    try container.encodeIfPresent(self.createdBy, forKey: .createdBy)
+    try container.encodeIfPresent(self.createdByAgentId, forKey: .createdByAgentId)
+    try container.encodeIfPresent(self.createdBySessionName, forKey: .createdBySessionName)
+    try container.encode(self.id, forKey: .id)
+    try container.encodeIfPresent(self.metadata, forKey: .metadata)
+    try container.encode(self.projectId, forKey: .projectId)
+    try container.encodeIfPresent(self.role, forKey: .role)
+    try container.encode(self.updatedAt, forKey: .updatedAt)
+  }
+}
+
+public struct ProjectListFilters: Codable, Sendable {
+  public var status: String?
+  public var tagSlug: String?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case status = "status"
+    case tagSlug = "tagSlug"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectListFilters contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.status) else {
+      throw DecodingError.keyNotFound(CodingKeys.status, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field status."))
+    }
+    self.status = try container.decodeIfPresent(String.self, forKey: .status)
+    guard container.contains(.tagSlug) else {
+      throw DecodingError.keyNotFound(CodingKeys.tagSlug, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field tagSlug."))
+    }
+    self.tagSlug = try container.decodeIfPresent(String.self, forKey: .tagSlug)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.tagSlug, forKey: .tagSlug)
+  }
+}
+
+public struct ProjectOperational: Codable, Sendable {
+  public var hottestNodeKey: String?
+  public var hottestNodeKind: String?
+  public var hottestNodeLabel: String?
+  public var hottestNodeReleaseMode: String?
+  public var hottestNodeRequirement: String?
+  public var hottestNodeRunId: String?
+  public var hottestNodeStatus: String?
+  public var hottestTaskId: String?
+  public var hottestTaskPriority: String?
+  public var hottestTaskProgress: Double?
+  public var hottestTaskStatus: String?
+  public var hottestTaskTitle: String?
+  public var hottestWorkflowRunId: String?
+  public var hottestWorkflowStatus: String?
+  public var hottestWorkflowTitle: String?
+  public var runtimeStatus: String?
+  public var workflowCount: Double
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case hottestNodeKey = "hottestNodeKey"
+    case hottestNodeKind = "hottestNodeKind"
+    case hottestNodeLabel = "hottestNodeLabel"
+    case hottestNodeReleaseMode = "hottestNodeReleaseMode"
+    case hottestNodeRequirement = "hottestNodeRequirement"
+    case hottestNodeRunId = "hottestNodeRunId"
+    case hottestNodeStatus = "hottestNodeStatus"
+    case hottestTaskId = "hottestTaskId"
+    case hottestTaskPriority = "hottestTaskPriority"
+    case hottestTaskProgress = "hottestTaskProgress"
+    case hottestTaskStatus = "hottestTaskStatus"
+    case hottestTaskTitle = "hottestTaskTitle"
+    case hottestWorkflowRunId = "hottestWorkflowRunId"
+    case hottestWorkflowStatus = "hottestWorkflowStatus"
+    case hottestWorkflowTitle = "hottestWorkflowTitle"
+    case runtimeStatus = "runtimeStatus"
+    case workflowCount = "workflowCount"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectOperational contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    guard container.contains(.hottestNodeKey) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestNodeKey, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestNodeKey."))
+    }
+    self.hottestNodeKey = try container.decodeIfPresent(String.self, forKey: .hottestNodeKey)
+    guard container.contains(.hottestNodeKind) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestNodeKind, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestNodeKind."))
+    }
+    self.hottestNodeKind = try container.decodeIfPresent(String.self, forKey: .hottestNodeKind)
+    guard container.contains(.hottestNodeLabel) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestNodeLabel, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestNodeLabel."))
+    }
+    self.hottestNodeLabel = try container.decodeIfPresent(String.self, forKey: .hottestNodeLabel)
+    guard container.contains(.hottestNodeReleaseMode) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestNodeReleaseMode, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestNodeReleaseMode."))
+    }
+    self.hottestNodeReleaseMode = try container.decodeIfPresent(String.self, forKey: .hottestNodeReleaseMode)
+    guard container.contains(.hottestNodeRequirement) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestNodeRequirement, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestNodeRequirement."))
+    }
+    self.hottestNodeRequirement = try container.decodeIfPresent(String.self, forKey: .hottestNodeRequirement)
+    guard container.contains(.hottestNodeRunId) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestNodeRunId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestNodeRunId."))
+    }
+    self.hottestNodeRunId = try container.decodeIfPresent(String.self, forKey: .hottestNodeRunId)
+    guard container.contains(.hottestNodeStatus) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestNodeStatus, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestNodeStatus."))
+    }
+    self.hottestNodeStatus = try container.decodeIfPresent(String.self, forKey: .hottestNodeStatus)
+    guard container.contains(.hottestTaskId) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestTaskId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestTaskId."))
+    }
+    self.hottestTaskId = try container.decodeIfPresent(String.self, forKey: .hottestTaskId)
+    guard container.contains(.hottestTaskPriority) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestTaskPriority, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestTaskPriority."))
+    }
+    self.hottestTaskPriority = try container.decodeIfPresent(String.self, forKey: .hottestTaskPriority)
+    guard container.contains(.hottestTaskProgress) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestTaskProgress, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestTaskProgress."))
+    }
+    self.hottestTaskProgress = try container.decodeIfPresent(Double.self, forKey: .hottestTaskProgress)
+    guard container.contains(.hottestTaskStatus) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestTaskStatus, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestTaskStatus."))
+    }
+    self.hottestTaskStatus = try container.decodeIfPresent(String.self, forKey: .hottestTaskStatus)
+    guard container.contains(.hottestTaskTitle) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestTaskTitle, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestTaskTitle."))
+    }
+    self.hottestTaskTitle = try container.decodeIfPresent(String.self, forKey: .hottestTaskTitle)
+    guard container.contains(.hottestWorkflowRunId) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestWorkflowRunId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestWorkflowRunId."))
+    }
+    self.hottestWorkflowRunId = try container.decodeIfPresent(String.self, forKey: .hottestWorkflowRunId)
+    guard container.contains(.hottestWorkflowStatus) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestWorkflowStatus, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestWorkflowStatus."))
+    }
+    self.hottestWorkflowStatus = try container.decodeIfPresent(String.self, forKey: .hottestWorkflowStatus)
+    guard container.contains(.hottestWorkflowTitle) else {
+      throw DecodingError.keyNotFound(CodingKeys.hottestWorkflowTitle, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field hottestWorkflowTitle."))
+    }
+    self.hottestWorkflowTitle = try container.decodeIfPresent(String.self, forKey: .hottestWorkflowTitle)
+    guard container.contains(.runtimeStatus) else {
+      throw DecodingError.keyNotFound(CodingKeys.runtimeStatus, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field runtimeStatus."))
+    }
+    self.runtimeStatus = try container.decodeIfPresent(String.self, forKey: .runtimeStatus)
+    self.workflowCount = try container.decode(Double.self, forKey: .workflowCount)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.hottestNodeKey, forKey: .hottestNodeKey)
+    try container.encode(self.hottestNodeKind, forKey: .hottestNodeKind)
+    try container.encode(self.hottestNodeLabel, forKey: .hottestNodeLabel)
+    try container.encode(self.hottestNodeReleaseMode, forKey: .hottestNodeReleaseMode)
+    try container.encode(self.hottestNodeRequirement, forKey: .hottestNodeRequirement)
+    try container.encode(self.hottestNodeRunId, forKey: .hottestNodeRunId)
+    try container.encode(self.hottestNodeStatus, forKey: .hottestNodeStatus)
+    try container.encode(self.hottestTaskId, forKey: .hottestTaskId)
+    try container.encode(self.hottestTaskPriority, forKey: .hottestTaskPriority)
+    try container.encode(self.hottestTaskProgress, forKey: .hottestTaskProgress)
+    try container.encode(self.hottestTaskStatus, forKey: .hottestTaskStatus)
+    try container.encode(self.hottestTaskTitle, forKey: .hottestTaskTitle)
+    try container.encode(self.hottestWorkflowRunId, forKey: .hottestWorkflowRunId)
+    try container.encode(self.hottestWorkflowStatus, forKey: .hottestWorkflowStatus)
+    try container.encode(self.hottestWorkflowTitle, forKey: .hottestWorkflowTitle)
+    try container.encode(self.runtimeStatus, forKey: .runtimeStatus)
+    try container.encode(self.workflowCount, forKey: .workflowCount)
+  }
+}
+
+public struct ProjectRecord: Codable, Sendable {
+  public var archivedAt: Double?
+  public var createdAt: Double
+  public var createdBy: String?
+  public var createdByAgentId: String?
+  public var createdBySessionName: String?
+  public var hypothesis: String
+  public var id: String
+  public var lastSignalAt: Double
+  public var nextStep: String
+  public var operatorSessionName: String?
+  public var ownerAgentId: String?
+  public var slug: String
+  public var status: String
+  public var summary: String
+  public var title: String
+  public var updatedAt: Double
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case archivedAt = "archivedAt"
+    case createdAt = "createdAt"
+    case createdBy = "createdBy"
+    case createdByAgentId = "createdByAgentId"
+    case createdBySessionName = "createdBySessionName"
+    case hypothesis = "hypothesis"
+    case id = "id"
+    case lastSignalAt = "lastSignalAt"
+    case nextStep = "nextStep"
+    case operatorSessionName = "operatorSessionName"
+    case ownerAgentId = "ownerAgentId"
+    case slug = "slug"
+    case status = "status"
+    case summary = "summary"
+    case title = "title"
+    case updatedAt = "updatedAt"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectRecord contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.archivedAt = try container.decodeIfPresent(Double.self, forKey: .archivedAt)
+    self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    self.createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
+    self.createdByAgentId = try container.decodeIfPresent(String.self, forKey: .createdByAgentId)
+    self.createdBySessionName = try container.decodeIfPresent(String.self, forKey: .createdBySessionName)
+    self.hypothesis = try container.decode(String.self, forKey: .hypothesis)
+    self.id = try container.decode(String.self, forKey: .id)
+    self.lastSignalAt = try container.decode(Double.self, forKey: .lastSignalAt)
+    self.nextStep = try container.decode(String.self, forKey: .nextStep)
+    self.operatorSessionName = try container.decodeIfPresent(String.self, forKey: .operatorSessionName)
+    self.ownerAgentId = try container.decodeIfPresent(String.self, forKey: .ownerAgentId)
+    self.slug = try container.decode(String.self, forKey: .slug)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.summary = try container.decode(String.self, forKey: .summary)
+    self.title = try container.decode(String.self, forKey: .title)
+    self.updatedAt = try container.decode(Double.self, forKey: .updatedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.archivedAt, forKey: .archivedAt)
+    try container.encode(self.createdAt, forKey: .createdAt)
+    try container.encodeIfPresent(self.createdBy, forKey: .createdBy)
+    try container.encodeIfPresent(self.createdByAgentId, forKey: .createdByAgentId)
+    try container.encodeIfPresent(self.createdBySessionName, forKey: .createdBySessionName)
+    try container.encode(self.hypothesis, forKey: .hypothesis)
+    try container.encode(self.id, forKey: .id)
+    try container.encode(self.lastSignalAt, forKey: .lastSignalAt)
+    try container.encode(self.nextStep, forKey: .nextStep)
+    try container.encodeIfPresent(self.operatorSessionName, forKey: .operatorSessionName)
+    try container.encodeIfPresent(self.ownerAgentId, forKey: .ownerAgentId)
+    try container.encode(self.slug, forKey: .slug)
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.summary, forKey: .summary)
+    try container.encode(self.title, forKey: .title)
+    try container.encode(self.updatedAt, forKey: .updatedAt)
+  }
+}
+
+public struct ProjectResource: Codable, Sendable {
+  public var assetId: String
+  public var assetType: String
+  public var createdAt: Double
+  public var createdBy: String?
+  public var createdByAgentId: String?
+  public var createdBySessionName: String?
+  public var id: String
+  public var label: String?
+  public var locator: String
+  public var metadata: [String: RaviJSON]?
+  public var projectId: String
+  public var resourceType: String?
+  public var role: String?
+  public var updatedAt: Double
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case assetId = "assetId"
+    case assetType = "assetType"
+    case createdAt = "createdAt"
+    case createdBy = "createdBy"
+    case createdByAgentId = "createdByAgentId"
+    case createdBySessionName = "createdBySessionName"
+    case id = "id"
+    case label = "label"
+    case locator = "locator"
+    case metadata = "metadata"
+    case projectId = "projectId"
+    case resourceType = "resourceType"
+    case role = "role"
+    case updatedAt = "updatedAt"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectResource contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.assetId = try container.decode(String.self, forKey: .assetId)
+    self.assetType = try container.decode(String.self, forKey: .assetType)
+    self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    self.createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
+    self.createdByAgentId = try container.decodeIfPresent(String.self, forKey: .createdByAgentId)
+    self.createdBySessionName = try container.decodeIfPresent(String.self, forKey: .createdBySessionName)
+    self.id = try container.decode(String.self, forKey: .id)
+    guard container.contains(.label) else {
+      throw DecodingError.keyNotFound(CodingKeys.label, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field label."))
+    }
+    self.label = try container.decodeIfPresent(String.self, forKey: .label)
+    self.locator = try container.decode(String.self, forKey: .locator)
+    self.metadata = try container.decodeIfPresent([String: RaviJSON].self, forKey: .metadata)
+    self.projectId = try container.decode(String.self, forKey: .projectId)
+    guard container.contains(.resourceType) else {
+      throw DecodingError.keyNotFound(CodingKeys.resourceType, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field resourceType."))
+    }
+    self.resourceType = try container.decodeIfPresent(String.self, forKey: .resourceType)
+    self.role = try container.decodeIfPresent(String.self, forKey: .role)
+    self.updatedAt = try container.decode(Double.self, forKey: .updatedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.assetId, forKey: .assetId)
+    try container.encode(self.assetType, forKey: .assetType)
+    try container.encode(self.createdAt, forKey: .createdAt)
+    try container.encodeIfPresent(self.createdBy, forKey: .createdBy)
+    try container.encodeIfPresent(self.createdByAgentId, forKey: .createdByAgentId)
+    try container.encodeIfPresent(self.createdBySessionName, forKey: .createdBySessionName)
+    try container.encode(self.id, forKey: .id)
+    try container.encode(self.label, forKey: .label)
+    try container.encode(self.locator, forKey: .locator)
+    try container.encodeIfPresent(self.metadata, forKey: .metadata)
+    try container.encode(self.projectId, forKey: .projectId)
+    try container.encode(self.resourceType, forKey: .resourceType)
+    try container.encodeIfPresent(self.role, forKey: .role)
+    try container.encode(self.updatedAt, forKey: .updatedAt)
+  }
+}
+
+public struct ProjectSummary: Codable, Sendable {
+  public var archivedAt: Double?
+  public var createdAt: Double
+  public var createdBy: String?
+  public var createdByAgentId: String?
+  public var createdBySessionName: String?
+  public var hypothesis: String
+  public var id: String
+  public var lastSignalAt: Double
+  public var linkCount: Double
+  public var nextStep: String
+  public var operatorSessionName: String?
+  public var ownerAgentId: String?
+  public var slug: String
+  public var status: String
+  public var summary: String
+  public var tags: [ProjectTagBinding]?
+  public var title: String
+  public var updatedAt: Double
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case archivedAt = "archivedAt"
+    case createdAt = "createdAt"
+    case createdBy = "createdBy"
+    case createdByAgentId = "createdByAgentId"
+    case createdBySessionName = "createdBySessionName"
+    case hypothesis = "hypothesis"
+    case id = "id"
+    case lastSignalAt = "lastSignalAt"
+    case linkCount = "linkCount"
+    case nextStep = "nextStep"
+    case operatorSessionName = "operatorSessionName"
+    case ownerAgentId = "ownerAgentId"
+    case slug = "slug"
+    case status = "status"
+    case summary = "summary"
+    case tags = "tags"
+    case title = "title"
+    case updatedAt = "updatedAt"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectSummary contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.archivedAt = try container.decodeIfPresent(Double.self, forKey: .archivedAt)
+    self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    self.createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
+    self.createdByAgentId = try container.decodeIfPresent(String.self, forKey: .createdByAgentId)
+    self.createdBySessionName = try container.decodeIfPresent(String.self, forKey: .createdBySessionName)
+    self.hypothesis = try container.decode(String.self, forKey: .hypothesis)
+    self.id = try container.decode(String.self, forKey: .id)
+    self.lastSignalAt = try container.decode(Double.self, forKey: .lastSignalAt)
+    self.linkCount = try container.decode(Double.self, forKey: .linkCount)
+    self.nextStep = try container.decode(String.self, forKey: .nextStep)
+    self.operatorSessionName = try container.decodeIfPresent(String.self, forKey: .operatorSessionName)
+    self.ownerAgentId = try container.decodeIfPresent(String.self, forKey: .ownerAgentId)
+    self.slug = try container.decode(String.self, forKey: .slug)
+    self.status = try container.decode(String.self, forKey: .status)
+    self.summary = try container.decode(String.self, forKey: .summary)
+    self.tags = try container.decodeIfPresent([ProjectTagBinding].self, forKey: .tags)
+    self.title = try container.decode(String.self, forKey: .title)
+    self.updatedAt = try container.decode(Double.self, forKey: .updatedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encodeIfPresent(self.archivedAt, forKey: .archivedAt)
+    try container.encode(self.createdAt, forKey: .createdAt)
+    try container.encodeIfPresent(self.createdBy, forKey: .createdBy)
+    try container.encodeIfPresent(self.createdByAgentId, forKey: .createdByAgentId)
+    try container.encodeIfPresent(self.createdBySessionName, forKey: .createdBySessionName)
+    try container.encode(self.hypothesis, forKey: .hypothesis)
+    try container.encode(self.id, forKey: .id)
+    try container.encode(self.lastSignalAt, forKey: .lastSignalAt)
+    try container.encode(self.linkCount, forKey: .linkCount)
+    try container.encode(self.nextStep, forKey: .nextStep)
+    try container.encodeIfPresent(self.operatorSessionName, forKey: .operatorSessionName)
+    try container.encodeIfPresent(self.ownerAgentId, forKey: .ownerAgentId)
+    try container.encode(self.slug, forKey: .slug)
+    try container.encode(self.status, forKey: .status)
+    try container.encode(self.summary, forKey: .summary)
+    try container.encodeIfPresent(self.tags, forKey: .tags)
+    try container.encode(self.title, forKey: .title)
+    try container.encode(self.updatedAt, forKey: .updatedAt)
+  }
+}
+
+public struct ProjectTagBinding: Codable, Sendable {
+  public var assetId: String
+  public var assetType: String
+  public var createdAt: Double
+  public var createdBy: String?
+  public var id: String
+  public var metadata: [String: RaviJSON]?
+  public var source: String
+  public var tagId: String
+  public var tagSlug: String
+  public var updatedAt: Double
+  public var updatedBy: String?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case assetId = "assetId"
+    case assetType = "assetType"
+    case createdAt = "createdAt"
+    case createdBy = "createdBy"
+    case id = "id"
+    case metadata = "metadata"
+    case source = "source"
+    case tagId = "tagId"
+    case tagSlug = "tagSlug"
+    case updatedAt = "updatedAt"
+    case updatedBy = "updatedBy"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectTagBinding contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.assetId = try container.decode(String.self, forKey: .assetId)
+    self.assetType = try container.decode(String.self, forKey: .assetType)
+    self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    self.createdBy = try container.decodeIfPresent(String.self, forKey: .createdBy)
+    self.id = try container.decode(String.self, forKey: .id)
+    self.metadata = try container.decodeIfPresent([String: RaviJSON].self, forKey: .metadata)
+    self.source = try container.decode(String.self, forKey: .source)
+    self.tagId = try container.decode(String.self, forKey: .tagId)
+    self.tagSlug = try container.decode(String.self, forKey: .tagSlug)
+    self.updatedAt = try container.decode(Double.self, forKey: .updatedAt)
+    self.updatedBy = try container.decodeIfPresent(String.self, forKey: .updatedBy)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.assetId, forKey: .assetId)
+    try container.encode(self.assetType, forKey: .assetType)
+    try container.encode(self.createdAt, forKey: .createdAt)
+    try container.encodeIfPresent(self.createdBy, forKey: .createdBy)
+    try container.encode(self.id, forKey: .id)
+    try container.encodeIfPresent(self.metadata, forKey: .metadata)
+    try container.encode(self.source, forKey: .source)
+    try container.encode(self.tagId, forKey: .tagId)
+    try container.encode(self.tagSlug, forKey: .tagSlug)
+    try container.encode(self.updatedAt, forKey: .updatedAt)
+    try container.encodeIfPresent(self.updatedBy, forKey: .updatedBy)
+  }
+}
+
+public struct ProjectWorkflowAggregate: Codable, Sendable {
+  public var archived: Double
+  public var blocked: Double
+  public var cancelled: Double
+  public var done: Double
+  public var draft: Double
+  public var failed: Double
+  public var focusedWorkflowRole: String?
+  public var focusedWorkflowRunId: String?
+  public var focusedWorkflowStatus: String?
+  public var focusedWorkflowTitle: String?
+  public var missing: Double
+  public var overallStatus: String?
+  public var primaryWorkflowRunId: String?
+  public var primaryWorkflowStatus: String?
+  public var primaryWorkflowTitle: String?
+  public var ready: Double
+  public var running: Double
+  public var total: Double
+  public var waiting: Double
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case archived = "archived"
+    case blocked = "blocked"
+    case cancelled = "cancelled"
+    case done = "done"
+    case draft = "draft"
+    case failed = "failed"
+    case focusedWorkflowRole = "focusedWorkflowRole"
+    case focusedWorkflowRunId = "focusedWorkflowRunId"
+    case focusedWorkflowStatus = "focusedWorkflowStatus"
+    case focusedWorkflowTitle = "focusedWorkflowTitle"
+    case missing = "missing"
+    case overallStatus = "overallStatus"
+    case primaryWorkflowRunId = "primaryWorkflowRunId"
+    case primaryWorkflowStatus = "primaryWorkflowStatus"
+    case primaryWorkflowTitle = "primaryWorkflowTitle"
+    case ready = "ready"
+    case running = "running"
+    case total = "total"
+    case waiting = "waiting"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectWorkflowAggregate contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.archived = try container.decode(Double.self, forKey: .archived)
+    self.blocked = try container.decode(Double.self, forKey: .blocked)
+    self.cancelled = try container.decode(Double.self, forKey: .cancelled)
+    self.done = try container.decode(Double.self, forKey: .done)
+    self.draft = try container.decode(Double.self, forKey: .draft)
+    self.failed = try container.decode(Double.self, forKey: .failed)
+    guard container.contains(.focusedWorkflowRole) else {
+      throw DecodingError.keyNotFound(CodingKeys.focusedWorkflowRole, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field focusedWorkflowRole."))
+    }
+    self.focusedWorkflowRole = try container.decodeIfPresent(String.self, forKey: .focusedWorkflowRole)
+    guard container.contains(.focusedWorkflowRunId) else {
+      throw DecodingError.keyNotFound(CodingKeys.focusedWorkflowRunId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field focusedWorkflowRunId."))
+    }
+    self.focusedWorkflowRunId = try container.decodeIfPresent(String.self, forKey: .focusedWorkflowRunId)
+    guard container.contains(.focusedWorkflowStatus) else {
+      throw DecodingError.keyNotFound(CodingKeys.focusedWorkflowStatus, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field focusedWorkflowStatus."))
+    }
+    self.focusedWorkflowStatus = try container.decodeIfPresent(String.self, forKey: .focusedWorkflowStatus)
+    guard container.contains(.focusedWorkflowTitle) else {
+      throw DecodingError.keyNotFound(CodingKeys.focusedWorkflowTitle, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field focusedWorkflowTitle."))
+    }
+    self.focusedWorkflowTitle = try container.decodeIfPresent(String.self, forKey: .focusedWorkflowTitle)
+    self.missing = try container.decode(Double.self, forKey: .missing)
+    guard container.contains(.overallStatus) else {
+      throw DecodingError.keyNotFound(CodingKeys.overallStatus, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field overallStatus."))
+    }
+    self.overallStatus = try container.decodeIfPresent(String.self, forKey: .overallStatus)
+    guard container.contains(.primaryWorkflowRunId) else {
+      throw DecodingError.keyNotFound(CodingKeys.primaryWorkflowRunId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field primaryWorkflowRunId."))
+    }
+    self.primaryWorkflowRunId = try container.decodeIfPresent(String.self, forKey: .primaryWorkflowRunId)
+    guard container.contains(.primaryWorkflowStatus) else {
+      throw DecodingError.keyNotFound(CodingKeys.primaryWorkflowStatus, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field primaryWorkflowStatus."))
+    }
+    self.primaryWorkflowStatus = try container.decodeIfPresent(String.self, forKey: .primaryWorkflowStatus)
+    guard container.contains(.primaryWorkflowTitle) else {
+      throw DecodingError.keyNotFound(CodingKeys.primaryWorkflowTitle, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field primaryWorkflowTitle."))
+    }
+    self.primaryWorkflowTitle = try container.decodeIfPresent(String.self, forKey: .primaryWorkflowTitle)
+    self.ready = try container.decode(Double.self, forKey: .ready)
+    self.running = try container.decode(Double.self, forKey: .running)
+    self.total = try container.decode(Double.self, forKey: .total)
+    self.waiting = try container.decode(Double.self, forKey: .waiting)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.archived, forKey: .archived)
+    try container.encode(self.blocked, forKey: .blocked)
+    try container.encode(self.cancelled, forKey: .cancelled)
+    try container.encode(self.done, forKey: .done)
+    try container.encode(self.draft, forKey: .draft)
+    try container.encode(self.failed, forKey: .failed)
+    try container.encode(self.focusedWorkflowRole, forKey: .focusedWorkflowRole)
+    try container.encode(self.focusedWorkflowRunId, forKey: .focusedWorkflowRunId)
+    try container.encode(self.focusedWorkflowStatus, forKey: .focusedWorkflowStatus)
+    try container.encode(self.focusedWorkflowTitle, forKey: .focusedWorkflowTitle)
+    try container.encode(self.missing, forKey: .missing)
+    try container.encode(self.overallStatus, forKey: .overallStatus)
+    try container.encode(self.primaryWorkflowRunId, forKey: .primaryWorkflowRunId)
+    try container.encode(self.primaryWorkflowStatus, forKey: .primaryWorkflowStatus)
+    try container.encode(self.primaryWorkflowTitle, forKey: .primaryWorkflowTitle)
+    try container.encode(self.ready, forKey: .ready)
+    try container.encode(self.running, forKey: .running)
+    try container.encode(self.total, forKey: .total)
+    try container.encode(self.waiting, forKey: .waiting)
+  }
+}
+
+public struct ProjectWorkflowLink: Codable, Sendable {
+  public var createdAt: Double
+  public var linkId: String
+  public var role: String?
+  public var updatedAt: Double
+  public var workflowRunId: String
+  public var workflowRunStatus: String?
+  public var workflowRunTitle: String?
+  public var workflowSpecId: String?
+  public var workflowSpecTitle: String?
+
+  enum CodingKeys: String, CodingKey, CaseIterable {
+    case createdAt = "createdAt"
+    case linkId = "linkId"
+    case role = "role"
+    case updatedAt = "updatedAt"
+    case workflowRunId = "workflowRunId"
+    case workflowRunStatus = "workflowRunStatus"
+    case workflowRunTitle = "workflowRunTitle"
+    case workflowSpecId = "workflowSpecId"
+    case workflowSpecTitle = "workflowSpecTitle"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let rawContainer = try decoder.container(keyedBy: RaviGeneratedCodingKey.self)
+    let allowedKeys = Set(CodingKeys.allCases.map(\.rawValue))
+    guard rawContainer.allKeys.allSatisfy({ allowedKeys.contains($0.stringValue) }) else {
+      throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "ProjectWorkflowLink contains an unknown field."))
+    }
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    self.createdAt = try container.decode(Double.self, forKey: .createdAt)
+    self.linkId = try container.decode(String.self, forKey: .linkId)
+    guard container.contains(.role) else {
+      throw DecodingError.keyNotFound(CodingKeys.role, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field role."))
+    }
+    self.role = try container.decodeIfPresent(String.self, forKey: .role)
+    self.updatedAt = try container.decode(Double.self, forKey: .updatedAt)
+    self.workflowRunId = try container.decode(String.self, forKey: .workflowRunId)
+    guard container.contains(.workflowRunStatus) else {
+      throw DecodingError.keyNotFound(CodingKeys.workflowRunStatus, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field workflowRunStatus."))
+    }
+    self.workflowRunStatus = try container.decodeIfPresent(String.self, forKey: .workflowRunStatus)
+    guard container.contains(.workflowRunTitle) else {
+      throw DecodingError.keyNotFound(CodingKeys.workflowRunTitle, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field workflowRunTitle."))
+    }
+    self.workflowRunTitle = try container.decodeIfPresent(String.self, forKey: .workflowRunTitle)
+    guard container.contains(.workflowSpecId) else {
+      throw DecodingError.keyNotFound(CodingKeys.workflowSpecId, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field workflowSpecId."))
+    }
+    self.workflowSpecId = try container.decodeIfPresent(String.self, forKey: .workflowSpecId)
+    guard container.contains(.workflowSpecTitle) else {
+      throw DecodingError.keyNotFound(CodingKeys.workflowSpecTitle, .init(codingPath: decoder.codingPath, debugDescription: "Missing required field workflowSpecTitle."))
+    }
+    self.workflowSpecTitle = try container.decodeIfPresent(String.self, forKey: .workflowSpecTitle)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(self.createdAt, forKey: .createdAt)
+    try container.encode(self.linkId, forKey: .linkId)
+    try container.encode(self.role, forKey: .role)
+    try container.encode(self.updatedAt, forKey: .updatedAt)
+    try container.encode(self.workflowRunId, forKey: .workflowRunId)
+    try container.encode(self.workflowRunStatus, forKey: .workflowRunStatus)
+    try container.encode(self.workflowRunTitle, forKey: .workflowRunTitle)
+    try container.encode(self.workflowSpecId, forKey: .workflowSpecId)
+    try container.encode(self.workflowSpecTitle, forKey: .workflowSpecTitle)
+  }
+}
+
 public struct AdaptersListOptions: Codable, Sendable {
   public var limit: String?
   public var offset: String?
@@ -15433,7 +16476,32 @@ public struct ProjectsCreateOptions: Codable, Sendable {
   }
 }
 
-public typealias ProjectsCreateReturn = [String: RaviJSON]
+public struct ProjectsCreateReturn: Codable, Sendable {
+  public var linkedWorkflows: [ProjectWorkflowLink]
+  public var links: [ProjectLink]
+  public var operational: RaviJSON
+  public var project: ProjectRecord
+  public var tags: [ProjectTagBinding]
+  public var workflowAggregate: RaviJSON
+
+  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: RaviJSON, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: RaviJSON) {
+    self.linkedWorkflows = linkedWorkflows
+    self.links = links
+    self.operational = operational
+    self.project = project
+    self.tags = tags
+    self.workflowAggregate = workflowAggregate
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case linkedWorkflows = "linkedWorkflows"
+    case links = "links"
+    case operational = "operational"
+    case project = "project"
+    case tags = "tags"
+    case workflowAggregate = "workflowAggregate"
+  }
+}
 
 public struct ProjectsFixturesSeedOptions: Codable, Sendable {
   public var execute: Bool?
@@ -15553,10 +16621,10 @@ public struct ProjectsInitOptions: Codable, Sendable {
 }
 
 public struct ProjectsInitReturn: Codable, Sendable {
-  public var details: [String: RaviJSON]
+  public var details: ProjectDetails
   public var workflows: [[String: RaviJSON]]
 
-  public init(details: [String: RaviJSON], workflows: [[String: RaviJSON]]) {
+  public init(details: ProjectDetails, workflows: [[String: RaviJSON]]) {
     self.details = details
     self.workflows = workflows
   }
@@ -15603,7 +16671,32 @@ public struct ProjectsLinkOptions: Codable, Sendable {
   }
 }
 
-public typealias ProjectsLinkReturn = [String: RaviJSON]
+public struct ProjectsLinkReturn: Codable, Sendable {
+  public var linkedWorkflows: [ProjectWorkflowLink]
+  public var links: [ProjectLink]
+  public var operational: RaviJSON
+  public var project: ProjectRecord
+  public var tags: [ProjectTagBinding]
+  public var workflowAggregate: RaviJSON
+
+  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: RaviJSON, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: RaviJSON) {
+    self.linkedWorkflows = linkedWorkflows
+    self.links = links
+    self.operational = operational
+    self.project = project
+    self.tags = tags
+    self.workflowAggregate = workflowAggregate
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case linkedWorkflows = "linkedWorkflows"
+    case links = "links"
+    case operational = "operational"
+    case project = "project"
+    case tags = "tags"
+    case workflowAggregate = "workflowAggregate"
+  }
+}
 
 public struct ProjectsListOptions: Codable, Sendable {
   public var fields: String?
@@ -15648,13 +16741,13 @@ public struct ProjectsListOptions: Codable, Sendable {
 }
 
 public struct ProjectsListReturn: Codable, Sendable {
-  public var filters: [String: RaviJSON]
-  public var items: [[String: RaviJSON]]
+  public var filters: ProjectListFilters
+  public var items: [ProjectedProjectSummary]
   public var pagination: RaviJSON
-  public var projects: [[String: RaviJSON]]
+  public var projects: [ProjectedProjectSummary]
   public var total: Double
 
-  public init(filters: [String: RaviJSON], items: [[String: RaviJSON]], pagination: RaviJSON, projects: [[String: RaviJSON]], total: Double) {
+  public init(filters: ProjectListFilters, items: [ProjectedProjectSummary], pagination: RaviJSON, projects: [ProjectedProjectSummary], total: Double) {
     self.filters = filters
     self.items = items
     self.pagination = pagination
@@ -15673,17 +16766,23 @@ public struct ProjectsListReturn: Codable, Sendable {
 
 public struct ProjectsNextOptions: Codable, Sendable {
   public var fields: String?
+  public var limit: String?
+  public var offset: String?
   public var status: String?
   public var tag: String?
 
-  public init(fields: String? = nil, status: String? = nil, tag: String? = nil) {
+  public init(fields: String? = nil, limit: String? = nil, offset: String? = nil, status: String? = nil, tag: String? = nil) {
     self.fields = fields
+    self.limit = limit
+    self.offset = offset
     self.status = status
     self.tag = tag
   }
 
   enum CodingKeys: String, CodingKey {
     case fields = "fields"
+    case limit = "limit"
+    case offset = "offset"
     case status = "status"
     case tag = "tag"
   }
@@ -15691,6 +16790,12 @@ public struct ProjectsNextOptions: Codable, Sendable {
   func encodeBody(into body: inout [String: RaviJSON]) throws {
     if let value = self.fields {
       body["fields"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.limit {
+      body["limit"] = try RaviJSON.fromEncodable(value)
+    }
+    if let value = self.offset {
+      body["offset"] = try RaviJSON.fromEncodable(value)
     }
     if let value = self.status {
       body["status"] = try RaviJSON.fromEncodable(value)
@@ -15702,18 +16807,24 @@ public struct ProjectsNextOptions: Codable, Sendable {
 }
 
 public struct ProjectsNextReturn: Codable, Sendable {
-  public var filters: [String: RaviJSON]
-  public var projects: [[String: RaviJSON]]
+  public var filters: ProjectListFilters
+  public var items: [ProjectedProjectStatusEntry]
+  public var pagination: RaviJSON
+  public var projects: [ProjectedProjectStatusEntryAlias]
   public var total: Double
 
-  public init(filters: [String: RaviJSON], projects: [[String: RaviJSON]], total: Double) {
+  public init(filters: ProjectListFilters, items: [ProjectedProjectStatusEntry], pagination: RaviJSON, projects: [ProjectedProjectStatusEntryAlias], total: Double) {
     self.filters = filters
+    self.items = items
+    self.pagination = pagination
     self.projects = projects
     self.total = total
   }
 
   enum CodingKeys: String, CodingKey {
     case filters = "filters"
+    case items = "items"
+    case pagination = "pagination"
     case projects = "projects"
     case total = "total"
   }
@@ -15755,7 +16866,56 @@ public struct ProjectsResourcesAddOptions: Codable, Sendable {
   }
 }
 
-public typealias ProjectsResourcesAddReturn = [String: RaviJSON]
+public struct ProjectsResourcesAddReturn: Codable, Sendable {
+  public var assetId: String
+  public var assetType: String
+  public var createdAt: Double
+  public var createdBy: String?
+  public var createdByAgentId: String?
+  public var createdBySessionName: String?
+  public var id: String
+  public var label: RaviJSON
+  public var locator: String
+  public var metadata: [String: RaviJSON]?
+  public var projectId: String
+  public var resourceType: RaviJSON
+  public var role: String?
+  public var updatedAt: Double
+
+  public init(assetId: String, assetType: String, createdAt: Double, createdBy: String? = nil, createdByAgentId: String? = nil, createdBySessionName: String? = nil, id: String, label: RaviJSON, locator: String, metadata: [String: RaviJSON]? = nil, projectId: String, resourceType: RaviJSON, role: String? = nil, updatedAt: Double) {
+    self.assetId = assetId
+    self.assetType = assetType
+    self.createdAt = createdAt
+    self.createdBy = createdBy
+    self.createdByAgentId = createdByAgentId
+    self.createdBySessionName = createdBySessionName
+    self.id = id
+    self.label = label
+    self.locator = locator
+    self.metadata = metadata
+    self.projectId = projectId
+    self.resourceType = resourceType
+    self.role = role
+    self.updatedAt = updatedAt
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case assetId = "assetId"
+    case assetType = "assetType"
+    case createdAt = "createdAt"
+    case createdBy = "createdBy"
+    case createdByAgentId = "createdByAgentId"
+    case createdBySessionName = "createdBySessionName"
+    case id = "id"
+    case label = "label"
+    case locator = "locator"
+    case metadata = "metadata"
+    case projectId = "projectId"
+    case resourceType = "resourceType"
+    case role = "role"
+    case updatedAt = "updatedAt"
+  }
+}
 
 public struct ProjectsResourcesImportOptions: Codable, Sendable {
   public var group: [String]?
@@ -15806,10 +16966,10 @@ public struct ProjectsResourcesImportOptions: Codable, Sendable {
 }
 
 public struct ProjectsResourcesImportReturn: Codable, Sendable {
-  public var resources: [[String: RaviJSON]]
+  public var resources: [ProjectResource]
   public var total: Double
 
-  public init(resources: [[String: RaviJSON]], total: Double) {
+  public init(resources: [ProjectResource], total: Double) {
     self.resources = resources
     self.total = total
   }
@@ -15857,12 +17017,12 @@ public struct ProjectsResourcesListOptions: Codable, Sendable {
 }
 
 public struct ProjectsResourcesListReturn: Codable, Sendable {
-  public var items: [[String: RaviJSON]]
+  public var items: [ProjectedProjectResource]
   public var pagination: RaviJSON
-  public var resources: [[String: RaviJSON]]
+  public var resources: [ProjectedProjectResource]
   public var total: Double
 
-  public init(items: [[String: RaviJSON]], pagination: RaviJSON, resources: [[String: RaviJSON]], total: Double) {
+  public init(items: [ProjectedProjectResource], pagination: RaviJSON, resources: [ProjectedProjectResource], total: Double) {
     self.items = items
     self.pagination = pagination
     self.resources = resources
@@ -15877,11 +17037,110 @@ public struct ProjectsResourcesListReturn: Codable, Sendable {
   }
 }
 
-public typealias ProjectsResourcesShowReturn = [String: RaviJSON]
+public struct ProjectsResourcesShowReturn: Codable, Sendable {
+  public var assetId: String
+  public var assetType: String
+  public var createdAt: Double
+  public var createdBy: String?
+  public var createdByAgentId: String?
+  public var createdBySessionName: String?
+  public var id: String
+  public var label: RaviJSON
+  public var locator: String
+  public var metadata: [String: RaviJSON]?
+  public var projectId: String
+  public var resourceType: RaviJSON
+  public var role: String?
+  public var updatedAt: Double
 
-public typealias ProjectsShowReturn = [String: RaviJSON]
+  public init(assetId: String, assetType: String, createdAt: Double, createdBy: String? = nil, createdByAgentId: String? = nil, createdBySessionName: String? = nil, id: String, label: RaviJSON, locator: String, metadata: [String: RaviJSON]? = nil, projectId: String, resourceType: RaviJSON, role: String? = nil, updatedAt: Double) {
+    self.assetId = assetId
+    self.assetType = assetType
+    self.createdAt = createdAt
+    self.createdBy = createdBy
+    self.createdByAgentId = createdByAgentId
+    self.createdBySessionName = createdBySessionName
+    self.id = id
+    self.label = label
+    self.locator = locator
+    self.metadata = metadata
+    self.projectId = projectId
+    self.resourceType = resourceType
+    self.role = role
+    self.updatedAt = updatedAt
+  }
 
-public typealias ProjectsStatusReturn = [String: RaviJSON]
+  enum CodingKeys: String, CodingKey {
+    case assetId = "assetId"
+    case assetType = "assetType"
+    case createdAt = "createdAt"
+    case createdBy = "createdBy"
+    case createdByAgentId = "createdByAgentId"
+    case createdBySessionName = "createdBySessionName"
+    case id = "id"
+    case label = "label"
+    case locator = "locator"
+    case metadata = "metadata"
+    case projectId = "projectId"
+    case resourceType = "resourceType"
+    case role = "role"
+    case updatedAt = "updatedAt"
+  }
+}
+
+public struct ProjectsShowReturn: Codable, Sendable {
+  public var linkedWorkflows: [ProjectWorkflowLink]
+  public var links: [ProjectLink]
+  public var operational: RaviJSON
+  public var project: ProjectRecord
+  public var tags: [ProjectTagBinding]
+  public var workflowAggregate: RaviJSON
+
+  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: RaviJSON, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: RaviJSON) {
+    self.linkedWorkflows = linkedWorkflows
+    self.links = links
+    self.operational = operational
+    self.project = project
+    self.tags = tags
+    self.workflowAggregate = workflowAggregate
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case linkedWorkflows = "linkedWorkflows"
+    case links = "links"
+    case operational = "operational"
+    case project = "project"
+    case tags = "tags"
+    case workflowAggregate = "workflowAggregate"
+  }
+}
+
+public struct ProjectsStatusReturn: Codable, Sendable {
+  public var linkedWorkflows: [ProjectWorkflowLink]
+  public var links: [ProjectLink]
+  public var operational: RaviJSON
+  public var project: ProjectRecord
+  public var tags: [ProjectTagBinding]
+  public var workflowAggregate: RaviJSON
+
+  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: RaviJSON, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: RaviJSON) {
+    self.linkedWorkflows = linkedWorkflows
+    self.links = links
+    self.operational = operational
+    self.project = project
+    self.tags = tags
+    self.workflowAggregate = workflowAggregate
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case linkedWorkflows = "linkedWorkflows"
+    case links = "links"
+    case operational = "operational"
+    case project = "project"
+    case tags = "tags"
+    case workflowAggregate = "workflowAggregate"
+  }
+}
 
 public struct ProjectsTasksAttachOptions: Codable, Sendable {
   public var agent: String?
@@ -15921,10 +17180,10 @@ public struct ProjectsTasksAttachOptions: Codable, Sendable {
 
 public struct ProjectsTasksAttachReturn: Codable, Sendable {
   public var defaults: [String: RaviJSON]
-  public var details: [String: RaviJSON]
+  public var details: ProjectDetails
   public var workflow: [String: RaviJSON]
 
-  public init(defaults: [String: RaviJSON], details: [String: RaviJSON], workflow: [String: RaviJSON]) {
+  public init(defaults: [String: RaviJSON], details: ProjectDetails, workflow: [String: RaviJSON]) {
     self.defaults = defaults
     self.details = details
     self.workflow = workflow
@@ -15993,10 +17252,10 @@ public struct ProjectsTasksCreateOptions: Codable, Sendable {
 
 public struct ProjectsTasksCreateReturn: Codable, Sendable {
   public var defaults: [String: RaviJSON]
-  public var details: [String: RaviJSON]
+  public var details: ProjectDetails
   public var workflow: [String: RaviJSON]
 
-  public init(defaults: [String: RaviJSON], details: [String: RaviJSON], workflow: [String: RaviJSON]) {
+  public init(defaults: [String: RaviJSON], details: ProjectDetails, workflow: [String: RaviJSON]) {
     self.defaults = defaults
     self.details = details
     self.workflow = workflow
@@ -16041,10 +17300,10 @@ public struct ProjectsTasksDispatchOptions: Codable, Sendable {
 
 public struct ProjectsTasksDispatchReturn: Codable, Sendable {
   public var defaults: [String: RaviJSON]
-  public var details: [String: RaviJSON]
+  public var details: ProjectDetails
   public var workflow: [String: RaviJSON]
 
-  public init(defaults: [String: RaviJSON], details: [String: RaviJSON], workflow: [String: RaviJSON]) {
+  public init(defaults: [String: RaviJSON], details: ProjectDetails, workflow: [String: RaviJSON]) {
     self.defaults = defaults
     self.details = details
     self.workflow = workflow
@@ -16123,7 +17382,32 @@ public struct ProjectsUpdateOptions: Codable, Sendable {
   }
 }
 
-public typealias ProjectsUpdateReturn = [String: RaviJSON]
+public struct ProjectsUpdateReturn: Codable, Sendable {
+  public var linkedWorkflows: [ProjectWorkflowLink]
+  public var links: [ProjectLink]
+  public var operational: RaviJSON
+  public var project: ProjectRecord
+  public var tags: [ProjectTagBinding]
+  public var workflowAggregate: RaviJSON
+
+  public init(linkedWorkflows: [ProjectWorkflowLink], links: [ProjectLink], operational: RaviJSON, project: ProjectRecord, tags: [ProjectTagBinding], workflowAggregate: RaviJSON) {
+    self.linkedWorkflows = linkedWorkflows
+    self.links = links
+    self.operational = operational
+    self.project = project
+    self.tags = tags
+    self.workflowAggregate = workflowAggregate
+  }
+
+  enum CodingKeys: String, CodingKey {
+    case linkedWorkflows = "linkedWorkflows"
+    case links = "links"
+    case operational = "operational"
+    case project = "project"
+    case tags = "tags"
+    case workflowAggregate = "workflowAggregate"
+  }
+}
 
 public struct ProjectsWorkflowsAttachOptions: Codable, Sendable {
   public var role: String?
@@ -16144,10 +17428,10 @@ public struct ProjectsWorkflowsAttachOptions: Codable, Sendable {
 }
 
 public struct ProjectsWorkflowsAttachReturn: Codable, Sendable {
-  public var details: [String: RaviJSON]
+  public var details: ProjectDetails
   public var workflow: [String: RaviJSON]
 
-  public init(details: [String: RaviJSON], workflow: [String: RaviJSON]) {
+  public init(details: ProjectDetails, workflow: [String: RaviJSON]) {
     self.details = details
     self.workflow = workflow
   }
@@ -16189,10 +17473,10 @@ public struct ProjectsWorkflowsStartOptions: Codable, Sendable {
 }
 
 public struct ProjectsWorkflowsStartReturn: Codable, Sendable {
-  public var details: [String: RaviJSON]
+  public var details: ProjectDetails
   public var workflow: [String: RaviJSON]
 
-  public init(details: [String: RaviJSON], workflow: [String: RaviJSON]) {
+  public init(details: ProjectDetails, workflow: [String: RaviJSON]) {
     self.details = details
     self.workflow = workflow
   }

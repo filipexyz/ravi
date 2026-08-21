@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, setDefaultTimeout } from "bun:test";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import { basename, resolve } from "node:path";
 import { cleanupIsolatedRaviState, createIsolatedRaviState, withoutRaviRuntimeContextEnv } from "../test/ravi-state.js";
 
 const PROJECT_ROOT = fileURLToPath(new URL("../..", import.meta.url));
@@ -54,6 +55,7 @@ describe("project init smoke", () => {
   });
 
   it("initializes a project through the CLI with a canonical workflow template", () => {
+    const resourcePath = resolve(PROJECT_ROOT);
     const result = JSON.parse(
       runCli([
         "projects",
@@ -66,7 +68,7 @@ describe("project init smoke", () => {
         "--session",
         "ops-room",
         "--resource",
-        "worktree:/tmp/ravi.bot",
+        `worktree:${resourcePath}`,
         "--workflow-template",
         "technical-change",
         "--json",
@@ -89,23 +91,27 @@ describe("project init smoke", () => {
       ownerAgentId: "main",
       operatorSessionName: "ops-room",
     });
-    expect(result.details.links).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ assetType: "agent", assetId: "main", role: "owner" }),
-        expect.objectContaining({ assetType: "session", assetId: "ops-room", role: "operator" }),
-        expect.objectContaining({
-          assetType: "resource",
-          assetId: "/tmp/ravi.bot",
-          role: "substrate",
-          metadata: expect.objectContaining({
-            type: "worktree",
-            locator: "/tmp/ravi.bot",
-            label: "ravi.bot worktree",
-          }),
-        }),
-        expect.objectContaining({ assetType: "workflow", role: "primary" }),
-      ]),
-    );
+    expect(
+      result.details.links.some(
+        (link) => link.assetType === "agent" && link.assetId === "main" && link.role === "owner",
+      ),
+    ).toBe(true);
+    expect(
+      result.details.links.some(
+        (link) => link.assetType === "session" && link.assetId === "ops-room" && link.role === "operator",
+      ),
+    ).toBe(true);
+    const resourceLink = result.details.links.find((link) => link.assetType === "resource");
+    expect(resourceLink).toMatchObject({
+      assetId: resourcePath,
+      role: "substrate",
+      metadata: {
+        type: "worktree",
+        locator: resourcePath,
+        label: `${basename(resourcePath)} worktree`,
+      },
+    });
+    expect(result.details.links.some((link) => link.assetType === "workflow" && link.role === "primary")).toBe(true);
     expect(result.details.workflowAggregate).toMatchObject({
       overallStatus: "ready",
     });
