@@ -1790,3 +1790,22 @@ quality runner e os quatro checks finais de drift permaneceram verdes. Os
 checks SDK/OpenAPI/Swift registraram NATS local indisponivel, mas todos
 terminaram com codigo zero e confirmaram artefatos atuais. Revisao independente,
 pacote e CI Linux continuam obrigatorios; nao houve push, PR ou VPS.
+
+### Projects: correcao da validacao de campos compactos
+
+O candidato `649dd1d2` foi invalidado antes da auditoria porque `--fields`
+aceitava nomes desconhecidos e produzia uma resposta parcial silenciosa. A
+primeira tentativa de correcao tambem foi rejeitada localmente: o mapeador
+generico de erros de uso executava antes dos mapeamentos proprios de Projects e
+poderia apagar codigos historicos de status, tag e tipo de recurso.
+
+A correcao final define campos publicos por operacao, rejeita selecao vazia ou
+desconhecida com `USAGE_ERROR`, exit 2 e `acceptedFields`, e aplica o mapeador
+generico somente depois dos erros especificos do dominio. O teste de processo
+passou quatro casos com 39 assercoes, incluindo as tres superficies compactas
+e a preservacao de `INVALID_PROJECT_STATUS` e
+`INVALID_PROJECT_RESOURCE_TYPE`. A matriz completa de Projects passou 54
+testes/202 assercoes; typecheck, build, Biome, Markdown, quality gate nativo,
+SDK 77/77 e os quatro checks de drift tambem passaram. O commit anterior
+permanece apenas como historico; revisao independente, pacote, PR e VPS exigem
+o novo SHA.

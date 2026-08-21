@@ -121,5 +121,38 @@ describe("projects read process contract", () => {
     const payload = JSON.parse(result.stdout) as { error: { code: string; validValues: string[] } };
     expect(payload.error.code).toBe("INVALID_PROJECT_STATUS");
     expect(payload.error.validValues).toEqual(["active", "paused", "blocked", "done", "archived"]);
+
+    const resourceResult = expectReadOnly(
+      ["projects", "resources", "list", "project-00", "--type", "bogus", "--json"],
+      1,
+    );
+    const resourcePayload = JSON.parse(resourceResult.stdout) as {
+      error: { code: string; validValues: string[] };
+    };
+    expect(resourcePayload.error.code).toBe("INVALID_PROJECT_RESOURCE_TYPE");
+    expect(resourcePayload.error.validValues).toContain("repo");
+  });
+
+  it("rejects unknown compact fields before emitting a successful payload", () => {
+    const cases = [
+      { args: ["projects", "list", "--fields", "slug,unknown", "--json"], accepted: "slug" },
+      { args: ["projects", "next", "--fields", "project,unknown", "--json"], accepted: "project" },
+      {
+        args: ["projects", "resources", "list", "project-00", "--fields", "id,unknown", "--json"],
+        accepted: "id",
+      },
+    ];
+
+    for (const testCase of cases) {
+      const result = expectReadOnly(testCase.args, 2);
+      expect(result.stderr).toBe("");
+      const payload = JSON.parse(result.stdout) as {
+        success: boolean;
+        error: { code: string; acceptedFields: string[] };
+      };
+      expect(payload).toMatchObject({ success: false, error: { code: "USAGE_ERROR" } });
+      expect(payload.error.acceptedFields).toContain(testCase.accepted);
+      expect(payload.error.acceptedFields).not.toContain("unknown");
+    }
   });
 });

@@ -157,6 +157,12 @@ pagination. `--limit`, `--offset`, and `--fields` MUST compose without changing
 the rank order. A read command declares `audit: none`; it MUST NOT require NATS
 or emit an audit event after reading.
 
+The compact projections have a fixed public field set per operation. An empty
+or unknown field in `--fields`, including one mixed with valid fields, MUST fail
+before success output with `USAGE_ERROR`, exit 2, and `acceptedFields`. This
+usage mapping MUST NOT replace the domain-specific validation errors for
+status, tag, or resource type.
+
 Invalid status, tag, and resource-type filters MUST return typed public causes.
 An incompatible read schema MUST fail closed with
 `PROJECTS_READ_SCHEMA_UNSUPPORTED`; the reader MUST NOT migrate it.

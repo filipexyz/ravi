@@ -2,7 +2,14 @@ import "reflect-metadata";
 import { statSync } from "node:fs";
 import { basename, resolve as resolvePath } from "node:path";
 import { Arg, Command, CommandAccess, Group, Option, Returns } from "../decorators.js";
-import { ContractError, contractDryRun, contractFail, pickFields, suggestSimilar } from "../agent-contract.js";
+import {
+  ContractError,
+  contractDryRun,
+  contractFail,
+  expectedErrorToContractError,
+  pickFields,
+  suggestSimilar,
+} from "../agent-contract.js";
 import { fail, getContext } from "../context.js";
 import { buildCliOffsetPagination, paginateCliItems } from "../pagination.js";
 import {
@@ -68,6 +75,43 @@ const VALID_RESOURCE_TYPES = new Set<ProjectResourceType>([
   "contact",
 ]);
 const VALID_TASK_PRIORITIES = new Set<TaskPriority>(["low", "normal", "high", "urgent"]);
+const PROJECT_LIST_FIELDS = [
+  "id",
+  "slug",
+  "title",
+  "status",
+  "summary",
+  "hypothesis",
+  "nextStep",
+  "lastSignalAt",
+  "ownerAgentId",
+  "operatorSessionName",
+  "createdBy",
+  "createdByAgentId",
+  "createdBySessionName",
+  "archivedAt",
+  "createdAt",
+  "updatedAt",
+  "linkCount",
+  "tags",
+] as const;
+const PROJECT_NEXT_FIELDS = ["project", "links", "linkedWorkflows", "workflowAggregate", "operational"] as const;
+const PROJECT_RESOURCE_FIELDS = [
+  "id",
+  "projectId",
+  "assetType",
+  "assetId",
+  "role",
+  "metadata",
+  "createdBy",
+  "createdByAgentId",
+  "createdBySessionName",
+  "createdAt",
+  "updatedAt",
+  "resourceType",
+  "locator",
+  "label",
+] as const;
 
 function parseMetadata(value?: string): Record<string, unknown> | undefined {
   if (!value?.trim()) return undefined;
@@ -941,6 +985,14 @@ function rethrowProjectCommandError(op: string, error: unknown, asJson?: boolean
       details: { suggestedAction: "Check the task id (list with: ravi tasks list --json)" },
     });
   }
+  const expected = expectedErrorToContractError(op, error);
+  if (expected) {
+    contractFail(op, expected.code, expected.message, {
+      asJson,
+      exitCode: expected.exitCode,
+      details: expected.details,
+    });
+  }
   fail(message);
 }
 
@@ -1100,7 +1152,7 @@ export class ProjectCommands {
         total: page.total,
         options: ["--status", status, "--tag", normalizedTagSlug],
       });
-      const projectedItems = pickFields(page.items, fields);
+      const projectedItems = pickFields(page.items, fields, { acceptedFields: PROJECT_LIST_FIELDS });
       const payload = {
         total: page.total,
         pagination,
@@ -1208,7 +1260,7 @@ export class ProjectCommands {
         total: page.total,
         options: ["--status", status, "--tag", normalizedTagSlug],
       });
-      const projectedItems = pickFields(page.items, fields);
+      const projectedItems = pickFields(page.items, fields, { acceptedFields: PROJECT_NEXT_FIELDS });
       const payload = {
         total: entries.length,
         pagination,
@@ -1692,7 +1744,7 @@ export class ProjectResourceCommands {
         total: page.total,
         options: ["--type", resourceType?.trim() || null],
       });
-      const projectedResources = pickFields(page.items, fields);
+      const projectedResources = pickFields(page.items, fields, { acceptedFields: PROJECT_RESOURCE_FIELDS });
       const payload = { total: page.total, pagination, items: projectedResources, resources: projectedResources };
 
       if (asJson) {

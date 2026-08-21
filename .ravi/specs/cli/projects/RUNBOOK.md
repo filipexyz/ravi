@@ -11,7 +11,9 @@
    `TASK_NOT_FOUND` / `RESOURCE_NOT_FOUND`: the project resolved but the nested
    ref did not; inspect with `ravi projects show <project> --json` (linked runs)
    or `ravi projects resources list <project> --json`.
-5. Exit `2`: read `error.acceptedFlags`; the list is authoritative for that op.
+5. Exit `2`: read `error.acceptedFlags` for parser errors or
+   `error.acceptedFields` for compact projection errors; the list is
+   authoritative for that operation.
 6. Exit `3`: read `error.plan`, confirm the dispatch/start/seed is
    intended, then re-run the same command adding `--execute`.
 7. If dispatch/start/seed executed without `--execute`, the brake regressed: check the
@@ -38,6 +40,7 @@ ravi projects workflows start <slug> <spec-id> --json        # expect exit 3 + d
 ravi projects fixtures seed --json                           # expect exit 3 + reset flag, nothing reseeded
 ravi projects resources import <slug> --url https://x.dev --json  # expect exit 0 + local link
 ravi projects list --fields slug,status --json               # expect compact items
+ravi projects list --fields slug,unknown --json              # expect USAGE_ERROR, exit 2
 ```
 
 For read-facade failures:

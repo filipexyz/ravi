@@ -29,6 +29,10 @@
 - `projects list --fields a,b,c --json` and
   `projects resources list <project> --fields a,b,c --json` MUST return items
   containing only the requested fields.
+- Unknown or empty selections on `projects list`, `projects next`, and
+  `projects resources list` MUST exit 2 with `USAGE_ERROR` and
+  `acceptedFields`; a valid field mixed with an unknown one MUST NOT produce a
+  partial success payload.
 - Unbraked writes listed in the spec (`init`, `create`, `update`, `link`,
   `workflows attach`, `tasks create|attach`, `resources add|import`) MUST keep
   immediate-write behavior, and the shipped `projects` skill MUST list them
@@ -48,5 +52,8 @@
   `hasMore: true`, and a deterministic next command.
 - `projects list --status bogus --json` MUST return
   `INVALID_PROJECT_STATUS` with the valid values, never `COMMAND_FAILED`.
+- `projects resources list <project> --type bogus --json` MUST preserve
+  `INVALID_PROJECT_RESOURCE_TYPE`; the generic usage mapper MUST run only
+  after domain-specific error mapping.
 - Every prepared read query MUST be finalized before the read-only database is
   closed, including Windows where a leaked statement keeps the file locked.
