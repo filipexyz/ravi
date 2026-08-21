@@ -158,3 +158,14 @@ introducing the snapshot API.
   build, TypeScript SDK drift, both OpenAPI drifts, Swift drift, and the quality
   runner against `origin/dev` also passed. Formatting, Markdown and final diff
   checks remain required on the documentary tree before commit.
+- 2026-08-21: independent review rejected candidate `56052bcb` for provenance.
+  Its ROUTES history descended from `9f13a821`, not from the binding Commands
+  commit `e91cfec9`. Those Commands commits shared tree `f1217562`, so the
+  defect did not change the reviewed functional content, but tree equality did
+  not satisfy the required ancestry. Branch
+  `feat/routes-agent-first-provenance` was created directly from `e91cfec9` and
+  replayed only the three ROUTES commits as `8522a705`, `a466dde0` and
+  `ca928d76`. Before this append-only note, the corrected branch and rejected
+  candidate shared tree `8704fff8`. The old branch and rejected SHA remain
+  preserved; no reset, rebase, force, package, push, PR, merge or VPS operation
+  occurred.

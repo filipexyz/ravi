@@ -1929,3 +1929,23 @@ de TypeScript, dos dois OpenAPI e de Swift, e o quality runner contra
 `origin/dev` tambem passaram. Biome, Markdown e `git diff --check` ainda devem
 ser repetidos na arvore documental final antes do commit. Nao houve bancada de
 testes, pacote, push, PR, merge ou operacao em VPS.
+
+### Retificacao append-only da proveniencia de ROUTES
+
+A auditoria independente rejeitou o candidato
+`56052bcb52dcf835010b7c43e025c87d9e33190b` para integracao. Embora sua arvore
+funcional tivesse passado a revisao e fosse identica ao conteudo do Commands
+vinculante, o historico de ROUTES descendia de
+`9f13a8219307d5ac06000fc71c78447b0b04b1b1`, e nao do commit Commands exigido
+`e91cfec9c85c84f4051910996e26634ad64459eb`. Os dois commits Commands tinham a
+mesma arvore `f12175629cf4f036d2ffc49f5e66a1f7369cbd77`; essa equivalencia de
+conteudo nao substitui a proveniencia vinculante. Assim, a afirmacao anterior
+de integracao de `e91cfec9` deve ser lida como incorreta quanto a ancestralidade.
+
+A branch `feat/routes-agent-first-provenance` foi criada diretamente em
+`e91cfec9`. Somente os tres commits de ROUTES foram reaplicados, como
+`8522a705`, `a466dde0` e `ca928d76`. Antes desta retificacao documental, a nova
+arvore e a arvore rejeitada eram exatamente `8704fff8b9086a4a2f352cfe345ee00280e5becb`.
+A branch antiga `feat/routes-agent-first` e o SHA rejeitado permanecem
+preservados; nao houve reset, rebase, force, pacote, push, PR, merge ou operacao
+em VPS.
