@@ -1,5 +1,6 @@
 import type { RuntimeEffort } from "./effort.js";
 import type { RuntimeModelBrokerBinding, RuntimeModelBrokerCapabilities } from "./model-broker.js";
+import type { CommandSafetyMetadata } from "../cli/decorators.js";
 
 export type { RuntimeEffort } from "./effort.js";
 
@@ -177,6 +178,7 @@ export interface RuntimeDynamicToolSpec {
   name: string;
   description: string;
   inputSchema: unknown;
+  safety: CommandSafetyMetadata;
   deferLoading?: boolean;
 }
 

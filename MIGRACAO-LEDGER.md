@@ -1388,3 +1388,54 @@ TypeScript/Swift foram alinhados em commit dedicado, com `GIT_SHA` preservado.
 Por instrucao explicita do operador, nenhum Bun foi executado localmente. O
 head final com este registro e os snapshots atualizados ainda precisa passar a
 CI completa antes de restaurar o veredito **APPROVE**.
+
+---
+
+## FASE 9 - fundacao compartilhada de CLI agent-first (2026-08-21)
+
+Esta fase inicia em estado **DRAFT**. Ela adiciona a fronteira comum de saida,
+erros publicos tipados, validadores de campos e paginacao e metadados
+descobríveis de operacao, efeito, risco e confirmacao. As regras de negocio e a
+prova de ausencia de efeito de cada mutacao continuam pertencendo aos PRs de
+dominio.
+
+A primeira candidata foi classificada como **NO-GO** pela revisao independente:
+os gates `test:agent-contract` e `test:sdk` excederam limites de tempo, os dois
+testes centrais novos nao estavam listados em `CHECKS.md` e a spec prometia
+rigidez de campos e classificacao real alem do recorte migrado. O ocorrido esta
+registrado em `docs/postmortems/0001-cli-foundation-gates-no-go.md`.
+
+O recorte factual desta fase e:
+
+- `agents list` e o primeiro comando com campos estritos; os demais permanecem
+  legados ate o PR de seu dominio;
+- leituras sao projetadas como `none`, enquanto mutacoes sem revisao permanecem
+  visivelmente `unclassified`;
+- a prova sintetica valida o mecanismo comum de freio, nao substitui a prova de
+  uma mutacao real;
+- a fronteira de flush cobre comandos registrados de execucao unica; loops
+  interativos e callbacks de ciclo de vida permanecem excecoes declaradas;
+- o limite maximo de paginacao deixa de ser reduzido silenciosamente e passa a
+  falhar como erro de uso.
+
+Promocao para `active`, commit, push e PR ficam condicionados aos gates oficiais
+aplicaveis e a uma nova revisao independente do SHA exato.
+
+### Terceira revisao independente e liberacao para PR
+
+A terceira revisao independente classificou a candidata local como
+**CLOSABILITY_READY · INDEPENDENTLY_VERIFIED · LIVE_UNAUTHORIZED**. Ela
+confirmou a supressao NATS em chamadas permitidas e negadas, a mascara restrita
+ao literal de `GIT_SHA`, a taxonomia de exit e a coerencia entre codigo, Ravi
+Spec, ADR, runbook e postmortem.
+
+No estado aprovado, `test:sdk` passou com 75 testes e 297 assercoes,
+`tools-export` com 14 testes e 65 assercoes, typecheck, build, quality gate
+sobre 34 caminhos e lint documental passaram. O `test:agent-contract` passou
+fora das mesmas duas falhas de portabilidade de `artifacts/store.test.ts`
+reproduzidas na `dev` no Windows. O pacote instalavel local tem SHA-256
+`581CA4862028E0A91C5025B9AE575188F8E16C1AA857731088F13DE436DF4B75`.
+
+Este GO autoriza commit, push e abertura da PR. A spec permanece `draft` e
+qualquer merge ou uso na VPS continua condicionado a CI Linux verde no commit
+exato e a autorizacao humana de implantacao.

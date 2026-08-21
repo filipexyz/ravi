@@ -263,6 +263,13 @@ describe("createCodexRuntimeProvider", () => {
       name: "tools_list",
       description: "List tools",
       inputSchema: { type: "object" },
+      safety: {
+        operationKind: "read" as const,
+        effectClass: "none" as const,
+        risk: "low" as const,
+        requiresConfirmation: false,
+        classificationSource: "declared" as const,
+      },
     };
 
     writeFileSync(

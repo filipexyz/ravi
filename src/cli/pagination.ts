@@ -1,4 +1,4 @@
-import { fail } from "./context.js";
+import { cliUsageError } from "./expected-error.js";
 import {
   buildCommand,
   buildOffsetPagination,
@@ -87,10 +87,22 @@ function parseBoundedIntegerOption(
   if (value === undefined || value === null || value === "") return options.defaultValue;
   const parsed = typeof value === "number" ? value : Number(value);
   if (!Number.isFinite(parsed) || !Number.isInteger(parsed)) {
-    fail(`${label} must be an integer.`);
+    throw cliUsageError(`${label} must be an integer.`, {
+      suggestedAction: `Retry with an integer value for ${label}`,
+      details: { option: label, minimum: options.min, ...(options.max === undefined ? {} : { maximum: options.max }) },
+    });
   }
   if (parsed < options.min) {
-    fail(`${label} must be greater than or equal to ${options.min}.`);
+    throw cliUsageError(`${label} must be greater than or equal to ${options.min}.`, {
+      suggestedAction: `Retry with ${label} greater than or equal to ${options.min}`,
+      details: { option: label, minimum: options.min, ...(options.max === undefined ? {} : { maximum: options.max }) },
+    });
   }
-  return Math.min(options.max ?? parsed, parsed);
+  if (options.max !== undefined && parsed > options.max) {
+    throw cliUsageError(`${label} must be less than or equal to ${options.max}.`, {
+      suggestedAction: `Retry with ${label} less than or equal to ${options.max}`,
+      details: { option: label, minimum: options.min, maximum: options.max },
+    });
+  }
+  return parsed;
 }
