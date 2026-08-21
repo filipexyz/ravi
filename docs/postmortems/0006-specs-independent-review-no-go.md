@@ -254,3 +254,19 @@ preserve native legacy paths; align the PRD with the actual verify outcomes;
 and add native regression coverage for nested, target, file, late-swap, and
 writer-interleaving cases. A new commit, package, independent review, and Linux
 CI are mandatory. The rejected package remains permanently NO-GO.
+
+## Revision note: 2026-08-21, fourth candidate document-gate correction
+
+The first accumulated-diff Biome capture included foundation files whose CRLF
+checkout conversion is inherited from the prerequisite branch. That broad
+command therefore cannot be represented as a formatting pass, even though the
+later commands in the same PowerShell sequence exited successfully. A scoped
+Biome check over the 13 TypeScript sources owned by the specs branch passed.
+
+The corresponding Markdown capture then found duplicate top-level headings in
+the two normative specs. Their frontmatter titles already act as document
+titles under the repository lint configuration, so the visible headings were
+lowered to level two. The candidate SHA before this correction was never
+packaged, reviewed, pushed, or opened as a PR. Markdown lint, focused tests,
+package verification, independent review, and Linux CI must use the replacement
+SHA.

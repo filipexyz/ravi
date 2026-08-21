@@ -2047,3 +2047,12 @@ substituir o indice dentro da mesma transacao, preservar os caminhos legados e
 cobrir os casos de junction aninhada, alvo, arquivo, troca tardia e concorrencia
 com testes nativos. Novo commit, pacote, auditoria independente e CI Linux no
 SHA exato continuam obrigatorios. O terceiro pacote permanece NO-GO definitivo.
+
+### Correcao documental antes do pacote do quarto candidato
+
+A tentativa ampla de Biome incluiu arquivos da fundacao com conversao CRLF
+herdada e nao conta como passe. A recaptura focada nos 13 fontes TypeScript do
+dominio specs passou. O lint Markdown encontrou dois titulos de nivel um
+duplicados pelos titulos do frontmatter nas specs normativas; ambos foram
+rebaixados para nivel dois. O SHA anterior a essa correcao nao foi empacotado,
+auditado nem publicado. Todos os gates seguintes devem usar o novo SHA.

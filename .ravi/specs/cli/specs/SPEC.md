@@ -23,7 +23,7 @@ owners:
 status: active
 normative: true
 ---
-# Specs agent-first CLI contract
+## Specs agent-first CLI contract
 
 ## Intent
 
