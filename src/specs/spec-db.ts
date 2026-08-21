@@ -1,6 +1,7 @@
-import { Database } from "bun:sqlite";
+import { constants, Database } from "bun:sqlite";
 import { existsSync } from "node:fs";
 import { relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { getDb, getRaviDbPath } from "../router/router-db.js";
 import { executeWrite } from "../db/write-retry.js";
 import { captureNativeDatabaseBinding, NativeSpecsSafetyError, withNativeDatabaseBinding } from "./native-safe-fs.js";
@@ -61,6 +62,23 @@ function specsIndexSchemaExists(db: Database): boolean {
     .query("SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'specs_index'")
     .get() as { present: number } | null;
   return row?.present === 1;
+}
+
+function openSpecsIndexReadonly(databasePath: string): Database {
+  const walExists = existsSync(`${databasePath}-wal`);
+  const shmExists = existsSync(`${databasePath}-shm`);
+  if (walExists !== shmExists) {
+    throw new NativeSpecsSafetyError(
+      "DB_SIDECAR_STATE_INCOMPLETE",
+      databasePath,
+      "Readonly specs inspection requires both SQLite WAL sidecars or neither sidecar.",
+    );
+  }
+  if (walExists) return new Database(databasePath, { readonly: true, create: false });
+
+  const immutableUrl = pathToFileURL(databasePath);
+  immutableUrl.searchParams.set("immutable", "1");
+  return new Database(immutableUrl.href, constants.SQLITE_OPEN_READONLY | constants.SQLITE_OPEN_URI);
 }
 
 export function ensureSpecsIndexSchema(): boolean {
@@ -261,7 +279,7 @@ export function inspectSpecsIndex(
   };
   if (!existsSync(dbPath)) return empty;
 
-  const db = new Database(dbPath, { readonly: true, create: false });
+  const db = openSpecsIndexReadonly(dbPath);
   try {
     if (!specsIndexSchemaExists(db)) return empty;
     const indexed = (
@@ -300,7 +318,7 @@ export function inspectSpecsIndexBound(
     return withNativeDatabaseBinding(
       { databasePath, expectedBinding, write: false, create: false },
       (safePath, confirmOpen) => {
-        const db = new Database(safePath, { readonly: true, create: false });
+        const db = openSpecsIndexReadonly(safePath);
         try {
           confirmOpen();
           if (!specsIndexSchemaExists(db)) return empty;

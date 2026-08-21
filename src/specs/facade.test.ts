@@ -8,6 +8,7 @@ import {
   readdirSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -30,6 +31,8 @@ let isolatedStateDir: string | null = null;
 let previousStateDir: string | undefined;
 
 setDefaultTimeout(20_000);
+
+declare const Bun: { gc(force?: boolean): void };
 
 function makeWorkspace(): string {
   const root = mkdtempSync(join(tmpdir(), "ravi-specs-facade-"));
@@ -558,6 +561,45 @@ describe("specs facade", () => {
       action: "none",
       replay: false,
     });
+  });
+
+  it("keeps WAL sidecars absent across every facade read operation", async () => {
+    const cwd = makeWorkspace();
+    createSpec({ cwd, id: "channels", title: "Channels", kind: "domain" });
+    const intent = { operation: "sync" as const, cwd };
+    const seedPlan = buildSpecsFacadePlan(intent);
+    applySpecsFacadePlan(intent, seedPlan.planHash);
+
+    const databasePath = join(isolatedStateDir!, "ravi.db");
+    for (const suffix of ["-wal", "-shm"]) {
+      for (let attempt = 0; attempt < 20; attempt++) {
+        try {
+          Bun.gc(true);
+          rmSync(`${databasePath}${suffix}`, { force: true });
+          break;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "EBUSY" || attempt === 19) throw error;
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 25));
+        }
+      }
+    }
+    const durableFiles = () =>
+      readdirSync(isolatedStateDir!)
+        .sort()
+        .map((name) => {
+          const stat = statSync(join(isolatedStateDir!, name));
+          return { name, size: stat.size, mtimeMs: stat.mtimeMs };
+        });
+    const before = durableFiles();
+
+    const plan = buildSpecsFacadePlan(intent);
+    expect(readbackSpecsFacade(intent, plan.planHash).index.matches).toBe(true);
+    expect(verifySpecsFacade(intent, plan.planHash).outcome).toBe("confirmed");
+    expect(recoverSpecsFacade(intent, plan.planHash)).toMatchObject({ outcome: "confirmed", replay: false });
+
+    expect(durableFiles()).toEqual(before);
+    expect(existsSync(`${databasePath}-wal`)).toBe(false);
+    expect(existsSync(`${databasePath}-shm`)).toBe(false);
   });
 
   it("never opens a replacement SQLite directory after the native binding is pinned", () => {

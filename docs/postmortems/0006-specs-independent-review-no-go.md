@@ -547,3 +547,23 @@ the native publication-boundary check passed. `swiftc` remains unavailable, so
 the conditional round-trip test checked emitted source but did not compile
 Swift locally. Linux binaries compiled but did not execute on this Windows host.
 No package, push, PR, merge, or VPS operation occurred.
+
+## Revision note: 2026-08-21, rejection of `141defef` for WAL read effects
+
+Independent audit rejected
+`141defef52bb2334b0f5e0226c6c305f1ea8cb07`. On Windows, the
+`inspectSpecsIndexBound` connection used `readonly:true` and `create:false`,
+but SQLite still recreated `ravi.db-shm` and `ravi.db-wal` when a WAL database
+had no sidecars. The prior claim that `plan`, `readback`, `verify`, and
+`recover` were fully read-only was therefore false.
+
+The corrected reader uses an immutable SQLite URI when both sidecars are
+absent, retains normal WAL reading when both exist, and fails closed for a
+partial sidecar state. One native proof removes the sidecars after seeding the
+index, runs all four facade read operations, and compares every durable file's
+name, size, and modification time before and after. The focused proof passed
+1 test with 6 assertions, and the direct facade regression passed 30 tests
+with 112 assertions. The first proof setup stopped on `EBUSY` before exercising
+the reader; after explicitly releasing Bun's SQLite mapping, the valid run
+passed. Remaining gates and the final SHA are not claimed in this note. No
+package, push, PR, merge, or VPS operation occurred.

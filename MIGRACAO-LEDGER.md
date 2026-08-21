@@ -2309,3 +2309,23 @@ Windows e verificacao da fronteira nativa publicavel. `swiftc` nao existe neste
 host: o teste condicional validou o codigo emitido, mas nao executou compilacao
 Swift. O binario Linux compilou e nao executou no Windows. Nao houve pacote,
 push, PR, merge ou VPS.
+
+### Retificacao do candidato `141defef` por leitura WAL com efeito duravel
+
+A auditoria independente rejeitou
+`141defef52bb2334b0f5e0226c6c305f1ea8cb07`. No Windows, a abertura usada por
+`inspectSpecsIndexBound` com `readonly:true` e `create:false` recriava
+`ravi.db-shm` e `ravi.db-wal` quando um banco configurado para WAL nao possuia
+os sidecars. Portanto, a alegacao de que `plan`, `readback`, `verify` e
+`recover` eram integralmente read-only era falsa.
+
+A leitura corrigida usa uma URI SQLite `immutable` quando ambos os sidecars
+estao ausentes, preserva a leitura WAL normal quando ambos existem e falha
+fechada diante de estado parcial. Uma unica prova nativa remove os sidecars
+depois de semear o indice, executa as quatro operacoes de leitura e compara
+nome, tamanho e data de modificacao de todos os arquivos duraveis antes e
+depois. A prova focada passou 1 teste/6 assercoes, e a regressao direta da
+facade passou 30/112. A primeira preparacao da prova parou em `EBUSY` antes de
+exercitar a leitura; depois de liberar explicitamente o mapeamento SQLite do
+Bun, a execucao valida passou. Gates restantes e SHA final ainda nao sao
+alegados neste adendo. Nao houve pacote, push, PR, merge ou VPS.
