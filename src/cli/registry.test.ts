@@ -5,6 +5,7 @@ import { runWithContext } from "./context.js";
 import { Arg, Command, CommandAccess, Group, Option } from "./decorators.js";
 import { registerCommands } from "./registry.js";
 import type { ContextRecord } from "../router/router-db.js";
+import { nats } from "../nats.js";
 
 @Group({ name: "demo.child", description: "Nested child", scope: "open" })
 class NestedChildCommands {
@@ -107,6 +108,20 @@ class NegatedOptionCommands {
   }
 }
 
+@Group({ name: "quiet", description: "Effect-free read", scope: "open" })
+class QuietRegistryCommands {
+  @Command({ name: "inspect", description: "Inspect without audit transport" })
+  @CommandAccess({
+    kind: "read",
+    resource: "quiet",
+    action: "inspect",
+    risk: "low",
+    effectClass: "none",
+    audit: "none",
+  })
+  inspect() {}
+}
+
 @Group({ name: "paired", description: "Positive and negated options", scope: "open" })
 class PairedOptionCommands {
   @Command({ name: "run", description: "Capture paired options" })
@@ -131,6 +146,27 @@ async function parseAsLocalOperator(program: CommanderCommand, argv: string[]): 
 }
 
 describe("registerCommands", () => {
+  it("does not emit NATS for audit:none CLI reads", async () => {
+    const program = new CommanderCommand();
+    program.exitOverride();
+    registerCommands(program, [QuietRegistryCommands]);
+    const originalEmit = nats.emit;
+    const previousSuppression = process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    let emits = 0;
+    delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+    nats.emit = async () => {
+      emits += 1;
+    };
+    try {
+      await parseAsLocalOperator(program, ["node", "test", "quiet", "inspect"]);
+      expect(emits).toBe(0);
+    } finally {
+      nats.emit = originalEmit;
+      if (previousSuppression === undefined) delete process.env.RAVI_SUPPRESS_AUDIT_EVENTS;
+      else process.env.RAVI_SUPPRESS_AUDIT_EVENTS = previousSuppression;
+    }
+  });
+
   it("binds negated Commander options as no-prefixed flag presence", async () => {
     capturedNegated.length = 0;
     const program = new CommanderCommand();

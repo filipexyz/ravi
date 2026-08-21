@@ -210,7 +210,7 @@ async function processGatewayRequest(request: Request, url: URL, ctx: GatewayHan
   }
 
   const isOpenRoute = cmd.scope === "open";
-  const resolved = resolveAuth(request, ctx.auth);
+  const resolved = resolveAuth(request, ctx.auth, { readOnly: cmd.access?.kind === "read" });
   if (!isOpenRoute) {
     if (!resolved.authenticated) {
       return unauthorized(authFailureMessage(resolved.reason));

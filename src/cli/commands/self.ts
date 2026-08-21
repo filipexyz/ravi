@@ -19,15 +19,8 @@ import {
   selfWhoamiReturnSchema,
 } from "./operational-return-schemas.js";
 import { RAVI_CONTEXT_KEY_ENV, resolveRuntimeContextOrThrow } from "../../runtime/context-registry.js";
-import { resolveSession } from "../../router/sessions.js";
 import type { RouteConfig, SessionEntry } from "../../router/types.js";
 import {
-  dbGetChat,
-  dbGetRouteById,
-  dbGetSessionChatBinding,
-  dbListChatParticipants,
-  dbListMessageMetaByChatId,
-  dbListRoutesBySessionName,
   type ChatParticipantRecord,
   type ChatRecord,
   type ContextCapability,
@@ -35,6 +28,7 @@ import {
   type MessageMetadata,
   type SessionChatBindingRecord,
 } from "../../router/router-db.js";
+import { readSelfSnapshot } from "./self-read-snapshot.js";
 
 type SectionStatus = "ok" | "partial" | "missing" | "unavailable";
 type SelfDepth = "summary" | "normal" | "full";
@@ -291,7 +285,7 @@ const SELF_HELP_AFTER = `
 })
 export class SelfCommands {
   @Command({ name: "whoami", description: "Show the current agent/session identity" })
-  @CommandAccess({ kind: "read", resource: "self", action: "whoami", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "self", action: "whoami", risk: "low", effectClass: "none", audit: "none" })
   whoami(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "summary", limit: 5 });
     const payload = {
@@ -309,7 +303,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "context", description: "Show the full current self-context packet" })
-  @CommandAccess({ kind: "read", resource: "self", action: "context", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "self", action: "context", risk: "low", effectClass: "none", audit: "none" })
   context(
     @Option({ flags: "--depth <depth>", description: "Depth: summary, normal, or full" }) depth?: string,
     @Option({ flags: "--limit <limit>", description: "Maximum recent messages to inspect" }) limit?: string,
@@ -331,7 +325,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "chat", description: "Show the current chat binding and participants" })
-  @CommandAccess({ kind: "read", resource: "self", action: "chat", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "self", action: "chat", risk: "low", effectClass: "none", audit: "none" })
   chat(
     @Option({ flags: "--depth <depth>", description: "Depth: summary, normal, or full" }) depth?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -343,7 +337,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "route", description: "Show route information that led to the current session" })
-  @CommandAccess({ kind: "read", resource: "self", action: "route", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "self", action: "route", risk: "low", effectClass: "none", audit: "none" })
   route(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "normal", limit: 5 });
     const payload = packet.route;
@@ -352,7 +346,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "recent", description: "Show bounded recent message metadata for the current chat" })
-  @CommandAccess({ kind: "read", resource: "self", action: "recent", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "self", action: "recent", risk: "low", effectClass: "none", audit: "none" })
   recent(
     @Option({ flags: "--limit <limit>", description: "Maximum recent messages to inspect" }) limit?: string,
     @Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false,
@@ -364,7 +358,14 @@ export class SelfCommands {
   }
 
   @Command({ name: "permissions", description: "Show capabilities inherited by the current context" })
-  @CommandAccess({ kind: "read", resource: "self", action: "permissions", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "self",
+    action: "permissions",
+    risk: "low",
+    effectClass: "none",
+    audit: "none",
+  })
   permissions(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "summary", limit: 5 });
     const payload = packet.permissions;
@@ -373,7 +374,14 @@ export class SelfCommands {
   }
 
   @Command({ name: "knowledge", description: "Show current knowledge integration status for this context" })
-  @CommandAccess({ kind: "read", resource: "self", action: "knowledge", risk: "low" })
+  @CommandAccess({
+    kind: "read",
+    resource: "self",
+    action: "knowledge",
+    risk: "low",
+    effectClass: "none",
+    audit: "none",
+  })
   knowledge(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "summary", limit: 5 });
     const payload = packet.knowledge;
@@ -382,7 +390,7 @@ export class SelfCommands {
   }
 
   @Command({ name: "explain", description: "Explain how Ravi resolved the current self-context" })
-  @CommandAccess({ kind: "read", resource: "self", action: "explain", risk: "low" })
+  @CommandAccess({ kind: "read", resource: "self", action: "explain", risk: "low", effectClass: "none", audit: "none" })
   explain(@Option({ flags: "--json", description: "Print raw JSON result" }) asJson = false) {
     const packet = this.buildPacket({ depth: "full", limit: 5 });
     const payload = {
@@ -401,12 +409,19 @@ export class SelfCommands {
 
   private buildPacket(options: { depth: SelfDepth; limit: number }): SelfContextPacket {
     const context = this.requireResolvedContext();
-    const session = this.resolveCurrentSession(context);
-    const binding = session.data ? dbGetSessionChatBinding(session.data.sessionKey) : null;
-    const chatRecord = binding ? dbGetChat(binding.chatId) : null;
-    const route = this.buildRouteSection(session.data, binding);
-    const chat = this.buildChatSection(context, binding, chatRecord, options.depth);
-    const recent = this.buildRecentSection(context, binding, chatRecord, options.limit);
+    const sessionCandidates = [context.sessionKey, context.sessionName].filter((value): value is string =>
+      Boolean(value),
+    );
+    const snapshot = readSelfSnapshot({
+      sessionCandidates,
+      sourceChatId: context.source?.chatId,
+      includeParticipants: options.depth === "full",
+      messageLimit: options.limit,
+    });
+    const session = this.resolveCurrentSession(sessionCandidates, snapshot.session);
+    const route = this.buildRouteSection(session.data, snapshot.binding, snapshot.boundRoute, snapshot.sessionRoutes);
+    const chat = this.buildChatSection(context, snapshot.binding, snapshot.chat, options.depth, snapshot.participants);
+    const recent = this.buildRecentSection(context, snapshot.binding, snapshot.chat, options.limit, snapshot.messages);
     const actor = this.buildActorSection(context, recent);
     const permissions = this.buildPermissionsSection(context);
     const knowledge = this.buildKnowledgeSection();
@@ -443,7 +458,7 @@ export class SelfCommands {
   }
 
   private requireResolvedContext(): ContextRecord {
-    const inlineContext = getContext()?.context;
+    const inlineContext = getContext({ localOnly: true })?.context;
     if (inlineContext) return inlineContext;
 
     const contextKey = process.env[RAVI_CONTEXT_KEY_ENV];
@@ -466,13 +481,8 @@ export class SelfCommands {
     }
   }
 
-  private resolveCurrentSession(context: ContextRecord): SelfSection<SessionEntry> {
-    const candidates = [context.sessionKey, context.sessionName].filter((value): value is string => Boolean(value));
-    for (const candidate of candidates) {
-      const session = resolveSession(candidate);
-      if (session) return { status: "ok", data: session };
-    }
-
+  private resolveCurrentSession(candidates: string[], session: SessionEntry | null): SelfSection<SessionEntry> {
+    if (session) return { status: "ok", data: session };
     if (candidates.length === 0) {
       return { status: "missing", reason: "current context has no session key/name" };
     }
@@ -484,6 +494,7 @@ export class SelfCommands {
     binding: SessionChatBindingRecord | null,
     chat: ChatRecord | null,
     depth: SelfDepth,
+    participants: ChatParticipantRecord[],
   ): SelfSection<SelfChatSummary> {
     if (!binding && !context.source) {
       return { status: "missing", reason: "no canonical chat binding or source context found" };
@@ -504,7 +515,7 @@ export class SelfCommands {
     };
 
     if (depth === "full" && binding) {
-      data.participants = dbListChatParticipants(binding.chatId).map(serializeChatParticipant);
+      data.participants = participants.map(serializeChatParticipant);
     }
 
     if (binding && !chat) {
@@ -544,13 +555,13 @@ export class SelfCommands {
   private buildRouteSection(
     session: SessionEntry | undefined,
     binding: SessionChatBindingRecord | null,
+    boundRoute: (RouteConfig & { id: number }) | null,
+    sessionRoutes: Array<RouteConfig & { id: number }>,
   ): SelfSection<SelfRouteSummary> {
     if (!session && !binding?.routeId) {
       return { status: "missing", reason: "no session or route binding available" };
     }
 
-    const boundRoute = binding?.routeId ? dbGetRouteById(binding.routeId) : null;
-    const sessionRoutes = session?.name ? dbListRoutesBySessionName(session.name) : [];
     return {
       status: boundRoute || sessionRoutes.length > 0 ? "ok" : "missing",
       reason: boundRoute || sessionRoutes.length > 0 ? undefined : "no route is explicitly bound to this session",
@@ -566,13 +577,14 @@ export class SelfCommands {
     binding: SessionChatBindingRecord | null,
     chat: ChatRecord | null,
     limit: number,
+    messageMetadata: MessageMetadata[],
   ): SelfSection<SelfRecentSummary> {
     const chatId = binding?.chatId ?? chat?.id ?? context.source?.chatId ?? null;
     if (!chatId) {
       return { status: "missing", reason: "no chat id available for recent message lookup" };
     }
 
-    const messages = dbListMessageMetaByChatId(chatId, limit).map(serializeMessageMetadata);
+    const messages = messageMetadata.map(serializeMessageMetadata);
     return {
       status: messages.length > 0 ? "ok" : "partial",
       reason: messages.length > 0 ? undefined : "no recent message metadata found for this chat id",
@@ -968,6 +980,7 @@ function redactSensitiveMetadata(metadata: Record<string, unknown>): Record<stri
 }
 
 function redactSensitiveValue(value: unknown): unknown {
+  if (typeof value === "string" && isSensitiveStringValue(value)) return "[redacted]";
   if (!value || typeof value !== "object") return value;
   if (Array.isArray(value)) return value.map(redactSensitiveValue);
   const input = value as Record<string, unknown>;
@@ -979,7 +992,15 @@ function redactSensitiveValue(value: unknown): unknown {
 }
 
 function isSensitiveKey(key: string): boolean {
-  return /key|token|secret|password|credential/i.test(key);
+  return /key|token|secret|password|credential|authorization|cookie|headers?/i.test(key);
+}
+
+function isSensitiveStringValue(value: string): boolean {
+  return (
+    /^rctx_[A-Za-z0-9_-]+$/i.test(value.trim()) ||
+    /\bbearer\s+[A-Za-z0-9._~+/-]+=*/i.test(value) ||
+    /(?:api[_-]?key|access[_-]?token|secret|password|credential|authorization|cookie)\s*[:=]\s*\S+/i.test(value)
+  );
 }
 
 function buildExplainSteps(input: {

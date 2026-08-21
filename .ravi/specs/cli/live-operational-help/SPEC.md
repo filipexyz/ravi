@@ -67,10 +67,11 @@ CLI's already resolved context, including a valid default credential, then a
 direct `RAVI_CONTEXT_KEY` resolution. Resolution remains read-only and must not
 touch `lastUsedAt`.
 
-If no context record exists, legacy agent/session env may be displayed only as
-a labeled fallback. Capabilities must be reported as unavailable, not as an
-authoritative empty set. Context source and invocation source are separate
-facts and must not silently override one another.
+Root help MUST NOT print values read from `RAVI_*` variables. If no context
+record exists, identity and capabilities must be reported as unavailable, not
+inferred from ambient env or represented as an authoritative empty set.
+Context source and invocation source are separate facts and must not silently
+override one another.
 
 ## Debug Commands
 

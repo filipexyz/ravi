@@ -45,15 +45,17 @@ registered context facts whenever one is resolved.
    set. Unknown names MUST use the shared `USAGE_ERROR` exit 2 contract and
    include `acceptedFields`. With `--fields`, output is projected JSON even
    without `--json`, and the returned payload matches it.
-5. Sensitive values MUST stay protected: the context key is never printed and
-   metadata keys matching key/token/secret/password/credential are redacted.
+5. Sensitive values MUST stay protected: the context key is never printed;
+   metadata keys matching key/token/secret/password/credential/authorization/
+   cookie/header are redacted recursively; secret-shaped values are redacted
+   even when stored under an innocuous key.
 6. Recent-message inspection MUST stay bounded by `--limit` (1..100).
 7. `--depth` and `--limit` validation MUST use public `ARG_INVALID` failures
    that preserve the offending value and corrective action in every transport.
 8. Identity values come from the resolved context-registry record. Root help
-   MUST prefer that record over ambient legacy env. If no record exists, env
-   fallback MUST be labeled and capabilities MUST be `unavailable`, not an
-   invented empty capability set.
+   MUST prefer that record and MUST NOT display `RAVI_*` values. If no record
+   exists, identity and capabilities MUST be `unavailable`, not inferred from
+   ambient env or represented as an authoritative empty set.
 9. Actor precedence is context metadata, declared actor env, then recent
    non-agent message metadata. Env-derived actor data MUST be `partial`, carry
    `source: environment` and `trust: unverified`.
@@ -114,7 +116,7 @@ their policy.
 ## Validation
 
 - `bun test src/cli/commands/self.test.ts` proves each operation, typed errors,
-  environment fallback, schemas, single-render human output and zero-write
+  actor-source precedence, schemas, single-render human output and zero-write
   structure.
 - `bun test src/runtime/runtime-operational-context.test.ts` proves root
   registry precedence, labeled legacy fallback and honest capabilities.

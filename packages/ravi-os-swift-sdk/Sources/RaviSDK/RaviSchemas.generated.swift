@@ -57254,6 +57254,7 @@ public enum RaviSchemas {
       }
     },
     "additionalProperties": false,
+    "minProperties": 1,
     "properties": {
       "actor": {
         "additionalProperties": false,

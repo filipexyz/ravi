@@ -1920,3 +1920,66 @@ criacao de symlink negada por `EPERM`. O mesmo arquivo no commit exato da
 fundacao `560517a4` reproduziu as duas falhas. A suite ampla nao e declarada
 verde, mas a comparacao demonstra que essas duas falhas nao foram introduzidas
 por COMMANDS. A compilacao Swift segue reservada a CI Linux.
+
+
+### Auditoria independente de SELF reabre NO-GO
+
+A auditoria read-only do SHA
+`2bf5288b0dd0706a0fab303ed33239a055f4a264` encontrou efeitos anteriores ao
+handler, inicializacao SQLite gravavel em leituras, auditoria NATS nas tres
+superficies SELF, contratos Swift ainda fracos, contexto projetado vazio,
+redaction incompleta e valores `RAVI_*` no help raiz. O GO local anterior fica
+formalmente superado.
+
+A rodada corretiva foi autorizada apenas no worktree SELF, sem bancada de teste,
+push, PR ou VPS. Ela deve corrigir todos os HIGH/MEDIUM, adicionar somente
+testes nativos de processo, SQLite, NATS, redaction, schema e help, regenerar os
+SDKs e repetir os gates. Commit Conventional Commit somente sera permitido com
+o conjunto verde. Linux CI ainda nao rodou e permanece obrigatoria antes de
+qualquer promocao posterior.
+
+### SELF aguarda integracao do dominio commands
+
+A propriedade compartilhada foi corrigida durante a rodada: o dominio
+`commands` passou a ser o dono exclusivo dos geradores TypeScript, OpenAPI e
+Swift. Todos os diffs desta rodada em `src/sdk/client-codegen`,
+`src/sdk/swift-codegen` e no teste generico de OpenAPI foram removidos de forma
+seletiva. Nenhum desses arquivos ficou modificado ou staged.
+
+O recorte SELF passou 122 testes nativos com 476 assercoes, incluindo processo
+real, snapshot SQLite, bootstrap/contexto e auditoria CLI/tool/gateway. Tambem
+passaram typecheck, Biome nos 23 arquivos do escopo, Markdown lint nos quatro
+documentos alterados e `git diff --check`.
+
+Os artefatos SDK/OpenAPI ja gerados permanecem apenas temporariamente e nao
+constituem prova de drift. SELF depende de rebase sobre a correcao de
+`commands`, nova geracao oficial e repeticao dos gates de contratos. Por isso,
+nao houve commit, push, PR ou VPS; Linux CI continua sem execucao.
+
+### SELF integrado sobre a correcao de commands
+
+O commit aprovado `e91cfec9c85c84f4051910996e26634ad64459eb` foi
+integrado preservando integralmente a implementacao SELF. A propriedade dos
+geradores, da auditoria e dos contratos compartilhados permaneceu em
+`commands`; SELF nao voltou a alterar as fontes desses geradores. Os artefatos
+TypeScript, OpenAPI e Swift foram regenerados pelos comandos oficiais e os
+checks deterministas nao encontraram drift.
+
+O primeiro quality runner identificou corretamente que `router-db.ts` havia
+mudado sem um teste de router no recorte. O commit aprovado e a ponta de uma
+sequencia de seis commits e o teste correspondente estava em um ancestral. O
+arquivo aprovado `src/router/router.test.ts` foi restaurado da arvore exata de
+`e91cfec9`; seus 12 testes passaram com 60 assercoes e o quality runner passou
+com os 56 caminhos acumulados.
+
+O recorte SELF foi repetido em processos isolados para impedir interferencia de
+estado global: 67 testes/246 assercoes, 14/61 e 41/169, totalizando os 122
+testes e 476 assercoes exigidos. Typecheck, build, SDK, OpenAPI, Swift drift,
+Biome e os gates nativos do dominio passaram. O encadeamento amplo
+`test:agent-contract` manteve somente as duas falhas Windows ja reproduzidas na
+fundacao `560517a4`: expectativa de blob e criacao de symlink negada por
+`EPERM`. Elas nao foram ocultadas nem atribuidas a SELF.
+
+Nao houve alteracao de versao, pacote, push, PR, merge ou operacao na VPS. A
+compilacao Swift permanece reservada a um host que possua o compilador; neste
+host, a geracao e o drift deterministico passaram.

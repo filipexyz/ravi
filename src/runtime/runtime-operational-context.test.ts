@@ -33,7 +33,7 @@ describe("buildRuntimeOperationalContextContent", () => {
     expect(text).not.toContain("contextKey");
   });
 
-  it("keeps registry identity and capabilities authoritative over ambient env", () => {
+  it("keeps registry identity authoritative and never prints ambient env values", () => {
     const text = buildRootOperationalHelp(
       {
         RAVI_AGENT_ID: "ambient-agent",
@@ -58,20 +58,26 @@ describe("buildRuntimeOperationalContextContent", () => {
     expect(text).toContain("session: `registry-session`");
     expect(text).toContain("capabilities: 1");
     expect(text).toContain("context source: `slack | account=main | chat=chat_registry`");
-    expect(text).toContain("invocation source: `ambient-channel`");
+    expect(text).toContain("invocation source: -");
     expect(text).not.toContain("agent: `ambient-agent`");
+    expect(text).not.toContain("ambient-session");
+    expect(text).not.toContain("ambient-channel");
+    expect(text).not.toContain("ambient-chat");
   });
 
-  it("labels legacy env as fallback and does not invent capabilities", () => {
+  it("does not print legacy env values and does not invent capabilities", () => {
     const text = buildRootOperationalHelp(
       { RAVI_AGENT_ID: "ambient-agent", RAVI_SESSION_NAME: "ambient-session", PWD: "/repo" },
       null,
     );
 
-    expect(text).toContain("agent: `ambient-agent`");
-    expect(text).toContain("agent source: legacy-environment");
-    expect(text).toContain("session source: legacy-environment");
+    expect(text).toContain("agent: `-`");
+    expect(text).toContain("agent source: unavailable");
+    expect(text).toContain("session source: unavailable");
     expect(text).toContain("capabilities: unavailable because no runtime context was resolved");
     expect(text).not.toContain("capabilities: none materialized");
+    expect(text).not.toContain("ambient-agent");
+    expect(text).not.toContain("ambient-session");
+    expect(text).not.toContain("/repo");
   });
 });

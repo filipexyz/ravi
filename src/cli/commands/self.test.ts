@@ -4,7 +4,6 @@ import { readFileSync } from "node:fs";
 const actualCliContextModule = await import("../context.js");
 const actualRuntimeContextRegistryModule = await import("../../runtime/context-registry.js");
 const actualRouterDbModule = await import("../../router/router-db.js");
-const actualRouterSessionsModule = await import("../../router/sessions.js");
 
 type FakeContext = {
   contextId: string;
@@ -79,21 +78,22 @@ mock.module("../../runtime/context-registry.js", () => ({
   },
 }));
 
-mock.module("../../router/sessions.js", () => ({
-  ...actualRouterSessionsModule,
-  resolveSession: () => session,
-}));
-
 mock.module("../../router/router-db.js", () => ({
   ...actualRouterDbModule,
-  dbGetSessionChatBinding: () => chatBinding,
-  dbGetChat: () => chat,
-  dbGetRouteById: () => boundRoute,
-  dbListRoutesBySessionName: () => sessionRoutes,
-  dbListChatParticipants: () => chatParticipants,
-  dbListMessageMetaByChatId: (_chatId: string, limit: number) => {
-    messageMetaLimits.push(limit);
-    return messageMeta.slice(0, limit);
+}));
+
+mock.module("./self-read-snapshot.js", () => ({
+  readSelfSnapshot: (options: { messageLimit: number; includeParticipants: boolean }) => {
+    messageMetaLimits.push(options.messageLimit);
+    return {
+      session,
+      binding: chatBinding,
+      chat,
+      boundRoute,
+      sessionRoutes,
+      participants: options.includeParticipants ? chatParticipants : [],
+      messages: messageMeta.slice(0, options.messageLimit),
+    };
   },
 }));
 
@@ -306,6 +306,36 @@ describe("SelfCommands", () => {
     expect(result).toEqual(payload);
   });
 
+  it("redacts sensitive keys, headers and secret-shaped values recursively", () => {
+    inlineContext = fakeContext({
+      metadata: {
+        authorization: "Bearer top-secret",
+        cookie: "session=private",
+        headers: { "x-safe": "visible", authorization: "Bearer nested" },
+        nested: {
+          harmless: "Bearer hidden-value",
+          contextReference: "rctx_hidden_value",
+          safe: "public",
+        },
+      },
+    });
+
+    const { result } = captureConsole(() => new SelfCommands().whoami(true));
+    expect(result.identity.metadata).toEqual({
+      authorization: "[redacted]",
+      cookie: "[redacted]",
+      headers: "[redacted]",
+      nested: {
+        harmless: "[redacted]",
+        contextReference: "[redacted]",
+        safe: "public",
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain("top-secret");
+    expect(JSON.stringify(result)).not.toContain("hidden-value");
+    expect(JSON.stringify(result)).not.toContain("rctx_hidden_value");
+  });
+
   it("resolves context from RAVI_CONTEXT_KEY in read-only mode when no inline context exists", () => {
     inlineContext = undefined;
     resolvedContext = fakeContext({ contextId: "ctx_env_123", contextKey: "rctx_env_secret" });
@@ -372,6 +402,10 @@ describe("self agent-first contract", () => {
     expect(Object.keys(payload).sort()).toEqual(["identity", "session"]);
     expect((payload.identity as Record<string, unknown>).contextId).toBe("ctx_self_123");
     expect(result as unknown as Record<string, unknown>).toEqual(payload);
+  });
+
+  it("rejects an empty projected context return", () => {
+    expect(selfContextReturnSchema.safeParse({}).success).toBe(false);
   });
 
   it("rejects unknown --fields through the shared usage contract", () => {
@@ -493,8 +527,7 @@ describe("self read-only operations", () => {
     expect(() => selfExplainReturnSchema.parse(result)).not.toThrow();
   });
 
-  it("marks an env-sourced actor as unverified partial data", () => {
-    messageMeta = [];
+  it("prefers an env-sourced actor over recent messages and marks it unverified", () => {
     process.env.RAVI_ACTOR_TYPE = "contact";
     process.env.RAVI_CONTACT_ID = "contact_env";
 
@@ -503,6 +536,26 @@ describe("self read-only operations", () => {
       status: "partial",
       reason: "actor values came from process environment and are unverified",
       data: { contactId: "contact_env", source: "environment", trust: "unverified" },
+    });
+  });
+
+  it("prefers authoritative context metadata over env and recent messages", () => {
+    process.env.RAVI_ACTOR_TYPE = "contact";
+    process.env.RAVI_CONTACT_ID = "contact_env";
+    inlineContext = fakeContext({
+      metadata: {
+        actor: { actorType: "contact", contactId: "contact_context" },
+      },
+    });
+
+    const { result } = captureConsole(() => new SelfCommands().whoami(true));
+    expect(result.actor).toMatchObject({
+      status: "ok",
+      data: {
+        contactId: "contact_context",
+        source: "context_metadata",
+        trust: "authoritative",
+      },
     });
   });
 
@@ -536,10 +589,12 @@ describe("self read-only operations", () => {
     const access = getCommandAccessMetadata(SelfCommands);
     expect([...access.values()]).toHaveLength(8);
     expect([...access.values()].every((entry) => entry.kind === "read")).toBe(true);
+    expect([...access.values()].every((entry) => entry.effectClass === "none" && entry.audit === "none")).toBe(true);
 
     const source = readFileSync(new URL("./self.ts", import.meta.url), "utf8");
     expect(source).not.toMatch(/\bdb(?:Create|Insert|Update|Delete|Upsert|Set|Revoke|Remove|Add)/);
     expect(source).not.toMatch(/\bnats\.(?:emit|publish|request)/);
+    expect(source).not.toMatch(/\b(?:resolveSession|dbGetChat|dbGetRouteById|dbGetSessionChatBinding)\b/);
   });
 
   it("publishes the env, degradation, schema and exit contracts in group help", () => {

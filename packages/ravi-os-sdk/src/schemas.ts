@@ -56408,6 +56408,7 @@ export const SelfContextReturnSchema = {
     }
   },
   "additionalProperties": false,
+  "minProperties": 1,
   "properties": {
     "actor": {
       "additionalProperties": false,

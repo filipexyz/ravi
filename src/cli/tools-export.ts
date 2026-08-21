@@ -233,20 +233,22 @@ function buildHandler(
   access: CommandAccessOptions | undefined,
 ): (args: Record<string, unknown>) => Promise<ToolResult> {
   return async (toolArgs: Record<string, unknown>): Promise<ToolResult> => {
-    const ctx = getContext();
+    const ctx = access?.kind === "read" ? getContext({ touch: false, readOnly: true }) : getContext();
     const sessionKey = ctx?.sessionKey ?? "_cli";
     const agentId = ctx?.agentId;
     const startTime = Date.now();
     const auditInput = redactCommandAccessInput(access, toolArgs);
     const auditEnabled = shouldEmitCommandAudit(access, toolName);
-    const accessResult = enforceCliCommandAuthorization({
-      group,
-      command,
-      access,
-      input: toolArgs,
-      source: "tool",
-      scope,
-    });
+    const accessResult = runWithContext(ctx ?? {}, () =>
+      enforceCliCommandAuthorization({
+        group,
+        command,
+        access,
+        input: toolArgs,
+        source: "tool",
+        scope,
+      }),
+    );
     if (!accessResult.allowed) {
       const contractError = permissionDeniedToContractError(
         commandOperation(group, command),

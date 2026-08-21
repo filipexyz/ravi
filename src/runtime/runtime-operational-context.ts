@@ -89,27 +89,10 @@ export function buildRootOperationalHelp(
     "Ravi Operational Context:",
     "",
     buildRuntimeOperationalContextContent({
-      agentId: env.RAVI_AGENT_ID,
-      agentSource: "legacy-environment",
-      sessionName: env.RAVI_SESSION_NAME,
-      sessionSource: "legacy-environment",
-      cwd: env.PWD ?? process.cwd(),
+      cwd: process.cwd(),
       runtimeContext,
-      ctx: buildChannelContextFromEnv(env),
     }),
   ].join("\n");
-}
-
-function buildChannelContextFromEnv(env: NodeJS.ProcessEnv): ChannelContext | undefined {
-  const channelId = env.RAVI_CHANNEL?.trim();
-  const chatId = env.RAVI_CHAT_ID?.trim();
-  if (!channelId && !chatId) return undefined;
-
-  return {
-    channelId: channelId ?? "unknown",
-    channelName: channelId ?? "CLI",
-    isGroup: Boolean(chatId?.includes("@g.us") || chatId?.startsWith("group:")),
-  };
 }
 
 function formatChannelSource(ctx: ChannelContext): string {

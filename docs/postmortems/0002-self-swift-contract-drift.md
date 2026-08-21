@@ -61,3 +61,74 @@ source, and exposed the read-only environment contract.
 The Swift drift and duplicate spec-title/line-ending corrections are closed
 locally. Exact commit, installed package, independent review, and Linux CI are
 still mandatory before push or PR; merge and VPS remain out of scope.
+
+## Revision note: 2026-08-21, independent audit returned NO-GO
+
+The independent read-only audit of commit
+`2bf5288b0dd0706a0fab303ed33239a055f4a264` superseded the previous local
+recapture. Although the focused native gates were green, inspection and real
+process probes found release-blocking gaps in the side-effect boundary and in
+the generated contract.
+
+The `self` bootstrap could still touch a registered context before the command
+handler ran. Its SQLite reads used the normal writable initializer, which may
+create the state directory, migrate data, enable WAL, and update schema. The
+CLI, tool adapter, and gateway also emitted NATS audit events for these
+read-only orientation calls. In addition, Swift retained weak nested JSON
+types, projected context accepted an empty object, recursive redaction did not
+cover authorization, cookies, headers, or sensitive values, and root help
+could print live `RAVI_*` values.
+
+The candidate is therefore **NO-GO** for push or PR. The corrective round must
+use no-touch/read-only bootstrap resolution, an SQLite snapshot opened with
+`readonly: true` and `create: false`, `audit: none` across every SELF surface,
+concrete generated contracts, non-empty projected context, recursive
+redaction, and value-free root help. Native process, SQLite, NATS, redaction,
+schema, and help tests plus complete regeneration and gates are required before
+a new commit can be considered. Linux CI has not run and is not represented as
+passing.
+
+## Revision note: 2026-08-21, generator ownership moved to commands
+
+The `commands` domain is now the exclusive owner of the TypeScript, OpenAPI,
+and Swift generator correction. This SELF round selectively removed every
+uncommitted change it had made under `src/sdk/client-codegen`,
+`src/sdk/swift-codegen`, and the generic OpenAPI emitter test. Those source and
+test files have no remaining worktree or staged diff.
+
+The constrained SELF slice passed 122 native tests with 476 assertions,
+covering a real process, read-only SQLite snapshot, bootstrap/context behavior,
+and CLI/tool/gateway audit suppression. Typecheck, focused Biome, Markdown
+lint, and `git diff --check` also passed.
+
+Generated SDK and OpenAPI files currently present are temporary and are not a
+valid drift result after the generator changes were removed. The candidate
+remains **NO-GO** and must not be committed until it is rebased onto the
+`commands` correction, regenerated with the official generators, and the
+contract gates are repeated. No push, PR, VPS operation, or Linux CI run took
+place.
+
+## Revision note: 2026-08-21, commands integration gates corrected
+
+The approved commit `e91cfec9c85c84f4051910996e26634ad64459eb` was
+integrated while preserving the SELF implementation. It is the tip of a
+six-commit sequence, so its final delta changed `router-db.ts` while the
+matching approved test remained in an ancestor. The first quality runner
+correctly rejected that incomplete changed-file slice. Restoring the exact
+`src/router/router.test.ts` from the approved commit tree produced 12 passing
+tests with 60 assertions; the runner then passed over all 56 accumulated
+paths.
+
+An initial attempt to execute all 122 SELF tests in one Bun process was also
+discarded: context-registry and dispatcher tests share global state and
+interfered with one another. The required files passed in isolated native
+processes as 67 tests/246 assertions, 14/61, and 41/169, preserving the exact
+122-test/476-assertion proof.
+
+Official TypeScript, OpenAPI, and Swift regeneration and deterministic drift
+checks passed. Typecheck, build, focused Biome, native quality gates, and the
+domain checks passed. The broad `test:agent-contract` chain still has the same
+two Windows artifact-store failures reproduced at foundation `560517a4`: a
+blob expectation and symlink creation denied with `EPERM`. These remain a
+known base limitation rather than a SELF regression. No version change,
+package, push, PR, merge, VPS operation, or Linux CI run occurred.

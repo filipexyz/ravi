@@ -356,6 +356,28 @@ const tasksContext = gatewayContext([executeGroup("tasks")]);
 const secretContext = gatewayContext([executeGroup("secret"), adminSystem()]);
 
 describe("dispatch — body shape (flat-only)", () => {
+  it("suppresses gateway audit for audit:none reads on success and usage failure", async () => {
+    const audits = captureAudits();
+    const success = await dispatch(
+      findCmd("demo.quiet"),
+      {},
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+    const invalid = await dispatch(
+      findCmd("demo.quiet"),
+      { unknown: true },
+      {},
+      { contextRecord: demoContext, emitAudit: audits.emit },
+    );
+
+    expect(success.response.status).toBe(200);
+    expect(success.audit).toBeNull();
+    expect(invalid.response.status).toBe(400);
+    expect(invalid.audit).toBeNull();
+    expect(audits.events).toEqual([]);
+  });
+
   it("accepts a flat body with args + options merged at top level", async () => {
     const audits = captureAudits();
     const result = await dispatch(

@@ -2720,7 +2720,13 @@ const selfContextFullReturnSchema = z
 // `self context --fields` projects this top-level packet before returning it.
 // Keeping the same concrete field schemas optional makes the SDK contract
 // honest for both the full packet and every valid projection.
-export const selfContextReturnSchema = selfContextFullReturnSchema.partial().strict();
+export const selfContextReturnSchema = selfContextFullReturnSchema
+  .partial()
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "Projected SELF context must contain at least one field.",
+  })
+  .meta({ minProperties: 1 });
 
 export const selfExplainReturnSchema = z
   .object({

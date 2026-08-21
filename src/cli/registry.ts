@@ -263,14 +263,17 @@ function registerCommand(
     }
 
     const auditEnabled = shouldEmitCommandAudit(access, toolName);
-    const accessResult = enforceCliCommandAuthorization({
-      group: groupName,
-      command: cmdMeta.name,
-      access,
-      input,
-      source: "cli",
-      scope,
-    });
+    const commandContext = access?.kind === "read" ? getContext({ touch: false, readOnly: true }) : getContext();
+    const accessResult = runWithContext(commandContext ?? {}, () =>
+      enforceCliCommandAuthorization({
+        group: groupName,
+        command: cmdMeta.name,
+        access,
+        input,
+        source: "cli",
+        scope,
+      }),
+    );
     const auditInput = redactCommandAccessInput(access, input);
     if (!accessResult.allowed) {
       const contractError = permissionDeniedToContractError(
@@ -304,7 +307,7 @@ function registerCommand(
 
     try {
       const method = (instance as Record<string, Function>)[cmdMeta.method];
-      const result = runWithContext(getContext() ?? {}, () => method.apply(instance, finalArgs));
+      const result = runWithContext(commandContext ?? {}, () => method.apply(instance, finalArgs));
       const returnValue = result instanceof Promise ? await result : result;
       if (returnValue instanceof Response) {
         if (!returnValue.ok) {

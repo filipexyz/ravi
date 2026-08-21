@@ -58,7 +58,7 @@ program
     "after",
     `\nRoot options:\n  ravi --version    Print Ravi CLI version\n${buildRootOperationalHelp(
       process.env,
-      getContext()?.context ?? null,
+      getContext({ touch: false, readOnly: true })?.context ?? null,
     )}`,
   );
 
@@ -330,7 +330,7 @@ void bootstrapCli().catch(async (error: unknown) => {
   if (error instanceof ContractError) {
     // Contract helpers render once and throw. Audit the semantic outcome before
     // preserving the process taxonomy (1 failure · 2 usage · 3 blocked).
-    if (!wasContractErrorAudited(error)) {
+    if (!wasContractErrorAudited(error) && !isSelfReadOperation(error.op)) {
       const [group = "cli", ...operationParts] = error.op.trim().split(/\s+/);
       await emitCliAuditEvent({
         group,
@@ -376,6 +376,10 @@ async function bootstrapCli(): Promise<void> {
   }
 
   await program.parseAsync();
+}
+
+function isSelfReadOperation(operation: string): boolean {
+  return /^self (whoami|context|chat|route|recent|permissions|knowledge|explain)$/.test(operation.trim());
 }
 
 function rootCommandNames(command: Command): Set<string> {
